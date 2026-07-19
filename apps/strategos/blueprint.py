@@ -2392,6 +2392,134 @@ def api_wargame_assess(wargame_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Wargame Turn Engine (ported from legacy tools/strategos/blueprint.py,
+# nav-strat-05).  Backs the Advance-Turn / turns-table / ORBAT-seed / Monte
+# Carlo controls in strategos/wargame.html, which fetch these under the
+# /api/strategos/wargame/... prefix.
+# ---------------------------------------------------------------------------
+
+@_api.route("/wargame/<wargame_id>/orbat-seed", methods=["GET"])
+def api_wargame_orbat_seed(wargame_id: str):
+    from tools.strategos.wargame_orbat import load_orbat_strengths
+    try:
+        result = load_orbat_strengths(wargame_id)
+    except ValueError as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify(result))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/wargame/<wargame_id>/turn/advance", methods=["POST"])
+def api_wargame_turn_advance(wargame_id: str):
+    from tools.strategos.wargame_turn_engine import advance_turn
+    try:
+        turn = advance_turn(wargame_id)
+    except ValueError as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify(turn), 201)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/wargame/<wargame_id>/lanchester/monte-carlo", methods=["GET"])
+def api_wargame_lanchester_monte_carlo(wargame_id: str):
+    from tools.strategos.ooda import lanchester_monte_carlo
+
+    try:
+        iterations = int(request.args.get("iterations", 500))
+        sigma = float(request.args.get("sigma", 0.15))
+    except (ValueError, TypeError) as exc:
+        resp = make_response(jsonify({"error": f"invalid query param: {exc}"}), 400)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    ph = "%s" if is_pg() else "?"
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"SELECT blue_strength, red_strength, attrition_coefficients_json "  # nosec B608
+            f"FROM sg_wargames WHERE id = {ph}",
+            (wargame_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        resp = make_response(jsonify({"error": f"Wargame {wargame_id!r} not found"}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    b0_db = float(row[0] or 0)
+    r0_db = float(row[1] or 0)
+    coeff: dict = {}
+    if row[2]:
+        try:
+            coeff = json.loads(row[2])
+        except Exception:
+            pass
+    beta_db = float(coeff.get("beta", 0.01))
+    rho_db  = float(coeff.get("rho",  0.01))
+
+    # Allow UI overrides for b0/r0/beta/rho (user may have edited the fields)
+    try:
+        b0   = float(request.args["b0"])   if "b0"   in request.args else b0_db
+        r0   = float(request.args["r0"])   if "r0"   in request.args else r0_db
+        beta = float(request.args["beta"]) if "beta" in request.args else beta_db
+        rho  = float(request.args["rho"])  if "rho"  in request.args else rho_db
+    except (ValueError, TypeError) as exc:
+        resp = make_response(jsonify({"error": f"invalid param: {exc}"}), 400)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    try:
+        result = lanchester_monte_carlo(b0, r0, beta=beta, rho=rho,
+                                        iterations=iterations, sigma=sigma)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    resp = make_response(jsonify(result))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/wargame/<wargame_id>/turns", methods=["GET"])
+def api_wargame_turns(wargame_id: str):
+    ph = "%s" if is_pg() else "?"
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            f"SELECT id, wargame_id, turn_number, blue_losses, red_losses, "  # nosec B608
+            f"blue_remaining, red_remaining, tempo_delta, notes, created_at "
+            f"FROM sg_wargame_turns WHERE wargame_id = {ph} "
+            f"ORDER BY turn_number ASC",
+            (wargame_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    cols = ("id", "wargame_id", "turn_number", "blue_losses", "red_losses",
+            "blue_remaining", "red_remaining", "tempo_delta", "notes", "created_at")
+    turns = [dict(zip(cols, r)) for r in rows]
+    resp = make_response(jsonify({"wargame_id": wargame_id, "turns": turns, "total": len(turns)}))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # Info endpoints
 # ---------------------------------------------------------------------------
 
