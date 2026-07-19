@@ -306,20 +306,28 @@
   }
 
   // ── Fetch ────────────────────────────────────────────────────────────────
+  // nav-plat-04: an outage (HTTP 503 / status:"error") must render an explicit
+  // "unavailable" state, never fall through to NEUTRAL badges.
+  function renderUnavailable(detail) {
+    document.getElementById("macroPanelContent").innerHTML =
+      '<div class="macro-error">Macro intelligence unavailable' +
+      (detail ? ': ' + escHtml(detail) : '') + '</div>';
+    document.getElementById("macroPanelSummaryLine").innerHTML = "Macro intelligence unavailable";
+  }
+
   function fetchIntelligence() {
+    var httpOk = true;
     fetch("/api/macro/intelligence")
-      .then(function (r) { return r.json(); })
+      .then(function (r) { httpOk = r.ok; return r.json(); })
       .then(function (data) {
-        if (data.error) {
-          document.getElementById("macroPanelContent").innerHTML =
-            '<div class="macro-error">Error: ' + escHtml(data.error) + '</div>';
+        if (!httpOk || (data && (data.status === "error" || data.error))) {
+          renderUnavailable(data && (data.detail || data.error));
         } else {
           render(data);
         }
       })
       .catch(function (err) {
-        document.getElementById("macroPanelContent").innerHTML =
-          '<div class="macro-error">Failed to load macro data: ' + escHtml(String(err)) + '</div>';
+        renderUnavailable(String(err));
       });
   }
 
