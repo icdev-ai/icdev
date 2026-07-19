@@ -11119,15 +11119,21 @@ def create_app(testing: bool = False) -> Flask:
                 "fetched_at": ctx.get("fetched_at"),
             })
         except Exception as exc:
+            # nav-plat-04: a data outage must NOT masquerade as a benign NEUTRAL
+            # regime. Log it and return an explicit error state (HTTP 503) with
+            # null badges so no consumer renders NEUTRAL for missing data.
+            app.logger.exception("macro/intelligence fetch failed: %s", exc)
             return jsonify({
-                "qeqt_phase": "NEUTRAL",
-                "credit_stress": "NEUTRAL",
-                "rotation_signal": "UNKNOWN",
+                "status": "error",
+                "detail": str(exc),
+                "qeqt_phase": None,
+                "credit_stress": None,
+                "rotation_signal": None,
                 "macro_score": None,
                 "summary": "",
                 "fetched_at": None,
                 "error": str(exc),
-            }), 200
+            }), 503
 
     @app.route("/api/trading/market")
     def api_trading_market():
