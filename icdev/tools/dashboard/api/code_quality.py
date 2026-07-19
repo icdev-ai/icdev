@@ -16,6 +16,12 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from tools.dashboard.auth import require_role
+
+# Roles allowed to trigger a full-tree code-quality scan (heavy filesystem walk
+# + DB write). nav-intel-01: previously unauthenticated.
+_CODE_QUALITY_SCAN_ROLES = ("admin", "pm")
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
@@ -226,6 +232,7 @@ def feedback_stats():
 
 
 @code_quality_api.route("/scan", methods=["POST"])
+@require_role(*_CODE_QUALITY_SCAN_ROLES)
 def trigger_scan():
     """Trigger a code quality scan on the tools/ directory."""
     try:

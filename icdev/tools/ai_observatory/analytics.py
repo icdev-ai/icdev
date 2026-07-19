@@ -71,10 +71,10 @@ def get_decisions(
         clauses = []
         params: list = []
         if canvas:
-            clauses.append("canvas_type = ?")
+            clauses.append("canvas_type = %s")
             params.append(canvas)
         if decision_type:
-            clauses.append("decision_type = ?")
+            clauses.append("decision_type = %s")
             params.append(decision_type)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.append(limit)

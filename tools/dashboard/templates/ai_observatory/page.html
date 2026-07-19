@@ -227,13 +227,20 @@ function _confBar(c) {
   return '<span class="conf-bar' + cls + '" style="width:' + pct + 'px"></span>' + pct + '%';
 }
 
+function _esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+  });
+}
+
 function _truncate(s, n) {
   if (!s) return '—';
-  return s.length > n ? s.substring(0, n) + '…' : s;
+  var t = s.length > n ? s.substring(0, n) + '…' : s;
+  return _esc(t);
 }
 
 function _canvasBadge(c) {
-  return '<span class="ao-badge ' + (c || 'ndc') + '">' + (c || '?').toUpperCase() + '</span>';
+  return '<span class="ao-badge ' + _esc(c || 'ndc') + '">' + _esc((c || '?').toUpperCase()) + '</span>';
 }
 
 function loadDecisions() {
@@ -259,9 +266,9 @@ function loadDecisions() {
         : '<span style="color:#4a5568">—</span>';
       html += '<tr>';
       html += '<td>' + _canvasBadge(d.canvas_type) + '</td>';
-      html += '<td><span style="font-size:10px;color:#a78bfa;">' + (d.decision_type || '—') + '</span></td>';
+      html += '<td><span style="font-size:10px;color:#a78bfa;">' + _esc(d.decision_type || '—') + '</span></td>';
       html += '<td style="max-width:300px;word-break:break-word;">' + _truncate(d.decision, 120) + '</td>';
-      html += '<td style="font-size:10px;color:#7a8cb0;">' + (d.model_used || '—') + '</td>';
+      html += '<td style="font-size:10px;color:#7a8cb0;">' + _esc(d.model_used || '—') + '</td>';
       html += '<td>' + _confBar(d.confidence) + '</td>';
       html += '<td style="font-size:10px;color:#5a6e8c;white-space:nowrap;">' + (d.created_at || '').replace('T', ' ').replace('Z', '') + '</td>';
       html += '<td>' + trace + '</td>';
@@ -269,7 +276,7 @@ function loadDecisions() {
     });
     tbody.innerHTML = html;
   }).catch(function(e) {
-    tbody.innerHTML = '<tr><td colspan="7" style="color:#ef4444;padding:12px;">Error: ' + e.message + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="color:#ef4444;padding:12px;">Error: ' + _esc(e.message) + '</td></tr>';
   });
 }
 

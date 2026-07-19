@@ -683,7 +683,7 @@ def query_federation(
             etypes = [c.split(":")[-1].lower() for c in search_classes]
             etypes += [c.replace(":", "_").lower() for c in search_classes]
 
-            ph = ",".join("?" for _ in etypes)
+            ph = ",".join("%s" for _ in etypes)
             rows = conn.execute(
                 f"SELECT id, graph_id, label, entity_type, properties FROM kg_nodes "  # nosec B608 -- internal constants
                 f"WHERE LOWER(entity_type) IN ({ph})",
@@ -717,7 +717,7 @@ def query_federation(
             etypes = [c.split(":")[-1].lower() for c in search_classes]
             etypes += [c.replace(":", "_").lower() for c in search_classes]
 
-            ph = ",".join("?" for _ in etypes)
+            ph = ",".join("%s" for _ in etypes)
             rows = conn.execute(
                 f"SELECT id, graph_id, label, entity_type, properties FROM kg_nodes "  # nosec B608 -- internal constants
                 f"WHERE LOWER(entity_type) IN ({ph}) LIMIT 100",
