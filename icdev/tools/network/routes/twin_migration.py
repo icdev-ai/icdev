@@ -1460,7 +1460,14 @@ Planning rules:
                         analysis = run_consolidation_analysis(current_graph, post_graph)
                         save_consolidation(topo_id, analysis)
                     except Exception:
-                        pass
+                        # Best-effort cache write — never block the phase status
+                        # update — but log the failure so a broken upsert
+                        # (e.g. missing UNIQUE constraint) is visible rather than
+                        # silently swallowed (ndc-fix-03).
+                        logger.warning(
+                            "consolidation cache update failed during phase completion "
+                            "(topo_id=%s)", topo_id, exc_info=True,
+                        )
 
                 _audit(conn, "phase_completed", {
                     "phase_id": phase_id,

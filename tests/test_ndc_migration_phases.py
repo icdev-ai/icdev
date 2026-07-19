@@ -348,5 +348,67 @@ def test_save_consolidation_missing_table_is_swallowed(monkeypatch):
     monkeypatch.setattr(storage, "get_connection", lambda *a, **k: shared)
 
     # Must not raise even though nc_consolidation_analysis does not exist.
-    mp.save_consolidation("topo-x", {"devices_removed": 1})
+    result = mp.save_consolidation("topo-x", {"devices_removed": 1})
+    assert result is None  # benign no-op signalled explicitly, not silently
     assert mp.load_consolidation("topo-x") == {}
+
+
+def test_save_consolidation_upsert_updates_not_duplicates(_consolidation_db):
+    """ndc-fix-03: a second save for the same topo_id must UPDATE the existing
+    row (not duplicate, not silently no-op). Regression guard for the
+    ON CONFLICT(topo_id) upsert path."""
+    first = mp.save_consolidation("topo-up", {"devices_removed": 3, "power_saved_watts": 100})
+    second = mp.save_consolidation("topo-up", {"devices_removed": 9, "power_saved_watts": 250})
+
+    # Both calls succeed and return a row id.
+    assert first and second
+
+    loaded = mp.load_consolidation("topo-up")
+    assert loaded["devices_removed"] == 9          # updated value wins
+    assert loaded["power_saved_watts"] == 250
+
+    # Exactly one physical row for this topo_id — the update did not duplicate.
+    count = _consolidation_db.execute(
+        "SELECT COUNT(*) FROM nc_consolidation_analysis WHERE topo_id=?", ("topo-up",)
+    ).fetchone()[0]
+    assert count == 1
+
+
+def test_save_consolidation_missing_unique_constraint_raises(monkeypatch):
+    """ndc-fix-03: when the table lacks the UNIQUE(topo_id) needed by
+    ON CONFLICT, the save must SURFACE the error rather than warn-and-continue
+    (which would make every save a silent no-op)."""
+    import importlib
+    storage = importlib.import_module("tools.db.storage")
+
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    # Same columns as production, but NO unique constraint on topo_id.
+    raw.executescript(
+        """
+        CREATE TABLE nc_consolidation_analysis (
+            id TEXT PRIMARY KEY,
+            topo_id TEXT,
+            current_device_count INTEGER,
+            final_device_count INTEGER,
+            devices_removed INTEGER,
+            rack_units_freed INTEGER,
+            power_saved_watts INTEGER,
+            capex_delta REAL,
+            opex_annual_delta REAL,
+            tco_3yr_delta REAL,
+            bw_increase_pct REAL,
+            spof_count_before INTEGER,
+            spof_count_after INTEGER,
+            analysis_json TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        );
+        """
+    )
+    raw.commit()
+    shared = _NoCloseConn(StorageConnection(raw, "sqlite"))
+    monkeypatch.setattr(storage, "get_connection", lambda *a, **k: shared)
+
+    with pytest.raises(Exception):
+        mp.save_consolidation("topo-noconstraint", {"devices_removed": 1})

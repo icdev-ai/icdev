@@ -14722,6 +14722,25 @@ def init_db():
                 except Exception:
                     pass  # Column might already exist with different syntax
 
+        # ndc-fix-03: guarantee the UNIQUE index that backs
+        # save_consolidation()'s ON CONFLICT(topo_id) upsert. Fresh installs get
+        # it from the column-level UNIQUE in the CREATE TABLE above; this
+        # retrofits pre-existing databases created before that constraint
+        # shipped, so the upsert can never silently no-op. A UNIQUE index is a
+        # valid ON CONFLICT arbiter in both SQLite and PostgreSQL, and
+        # CREATE UNIQUE INDEX IF NOT EXISTS is idempotent on both backends.
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_consolidation_topo_id "
+                "ON nc_consolidation_analysis(topo_id)"
+            )
+            conn.commit()
+        except Exception:
+            # Missing table (not yet created) or duplicate topo_id rows on a
+            # legacy DB — best-effort; the column-level UNIQUE still covers
+            # fresh installs.
+            pass
+
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM nc_templates")
