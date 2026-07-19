@@ -1687,9 +1687,11 @@
     }
 
     function renderContent(text) {
-        // Use marked.js if available, otherwise escape HTML and preserve whitespace
-        if (typeof marked !== 'undefined') {
-            try { return marked.parse(text); } catch (e) { /* fall through */ }
+        // nav-sec-08: render markdown through the shared fail-closed sanitizer
+        // (marked + DOMPurify) so LLM/user message content cannot inject <script>,
+        // event handlers, or javascript: URIs into the message stream.
+        if (typeof window.safeMarkdown === 'function') {
+            return window.safeMarkdown(text);
         }
         return '<span style="white-space:pre-wrap;word-break:break-word;">' + escHtml(text) + '</span>';
     }

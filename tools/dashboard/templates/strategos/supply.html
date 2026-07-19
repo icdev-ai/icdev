@@ -157,8 +157,8 @@
 {% block scripts %}
 <script>
 (function () {
-  const NODES = {{ nodes_json | safe }};
-  const EDGES = {{ edges_json | safe }};
+  const NODES = {{ nodes_json | json_script_safe }};
+  const EDGES = {{ edges_json | json_script_safe }};
 
   const nodeIndex = {};
   NODES.forEach(n => { nodeIndex[n.id] = n; });

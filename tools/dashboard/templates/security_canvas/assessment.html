@@ -21,8 +21,8 @@
   <div class="panel-header"><h2 class="panel-title">Findings</h2></div>
   <div id="findings-container" style="padding:1rem;">
     <script>
-      const findings = {{ assessment.findings_json|safe if assessment.findings_json else '[]' }};
-      const recs = {{ assessment.recommendations_json|safe if assessment.recommendations_json else '[]' }};
+      const findings = {{ assessment.findings_json|json_script_safe if assessment.findings_json else '[]' }};
+      const recs = {{ assessment.recommendations_json|json_script_safe if assessment.recommendations_json else '[]' }};
       let html = '';
       if (findings.length) {
         html += '<table class="data-table"><thead><tr><th>Rule</th><th>Sev</th><th>Title</th><th>Description</th></tr></thead><tbody>';

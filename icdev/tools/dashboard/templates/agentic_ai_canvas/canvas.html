@@ -778,7 +778,7 @@ function esc(v) {
 
 // ── State ──
 const DESIGN_ID = "{{ design.id or '' }}";
-let graph = {{ design.graph_json | safe }};
+let graph = {{ design.graph_json | json_script_safe }};
 let selectedNode = null;
 let connectingFrom = null;
 let nextId = () => 'n-' + Math.random().toString(36).substr(2, 10);

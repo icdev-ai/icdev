@@ -228,18 +228,21 @@ function renderResults(data) {
     const riskClass = row.risk === "HIGH" ? "text-red" : row.risk === "LOW" ? "text-green" : "text-yellow";
     const encIcon = row.encrypted ? "🔒" : "⚠";
     const fipsIcon = row.fips_validated ? "✓" : "—";
-    const eps = (row.endpoints || []).slice(0, 3).join("<br>");
+    // nav-sec-08: escape ingested/parsed topology fields before innerHTML.
+    const _e = window.escHtml || (s => String(s == null ? '' : s));
+    const _a = window.escAttr || _e;
+    const eps = (row.endpoints || []).slice(0, 3).map(_e).join("<br>");
     tbody.insertAdjacentHTML("beforeend", `
-      <tr class="pps-row" data-proto="${row.protocol.toLowerCase()}">
+      <tr class="pps-row" data-proto="${_a(String(row.protocol || '').toLowerCase())}">
         <td>${i+1}</td>
-        <td><strong>${row.protocol}</strong></td>
-        <td style="font-family:monospace;font-size:0.82rem;">${row.port}</td>
-        <td>${row.service}</td>
-        <td style="font-size:0.82rem;">${row.direction}</td>
+        <td><strong>${_e(row.protocol)}</strong></td>
+        <td style="font-family:monospace;font-size:0.82rem;">${_e(row.port)}</td>
+        <td>${_e(row.service)}</td>
+        <td style="font-size:0.82rem;">${_e(row.direction)}</td>
         <td style="text-align:center;">${encIcon}</td>
         <td style="text-align:center;">${fipsIcon}</td>
-        <td><span class="${riskClass}">${row.risk}</span></td>
-        <td style="font-size:0.82rem;max-width:280px;">${row.justification}</td>
+        <td><span class="${riskClass}">${_e(row.risk)}</span></td>
+        <td style="font-size:0.82rem;max-width:280px;">${_e(row.justification)}</td>
         <td style="font-size:0.78rem;color:var(--text-dim);">${eps}</td>
       </tr>
     `);
@@ -253,16 +256,18 @@ function renderResults(data) {
     data.firewall_rules.forEach((row, i) => {
       const riskClass = row.risk === "HIGH" ? "text-red" : "text-yellow";
       const encIcon = row.encrypted ? "🔒" : "—";
+      // nav-sec-08: escape ingested firewall-rule fields before innerHTML.
+      const _e = window.escHtml || (s => String(s == null ? '' : s));
       fwTbody.insertAdjacentHTML("beforeend", `
         <tr>
           <td>${i+1}</td>
-          <td><strong>${row.protocol}</strong></td>
-          <td style="font-family:monospace;font-size:0.82rem;">${row.port}</td>
-          <td>${row.service}</td>
-          <td style="font-size:0.82rem;">${row.direction}</td>
+          <td><strong>${_e(row.protocol)}</strong></td>
+          <td style="font-family:monospace;font-size:0.82rem;">${_e(row.port)}</td>
+          <td>${_e(row.service)}</td>
+          <td style="font-size:0.82rem;">${_e(row.direction)}</td>
           <td style="text-align:center;">${encIcon}</td>
-          <td><span class="${riskClass}">${row.risk}</span></td>
-          <td style="font-size:0.82rem;">${row.justification}</td>
+          <td><span class="${riskClass}">${_e(row.risk)}</span></td>
+          <td style="font-size:0.82rem;">${_e(row.justification)}</td>
         </tr>
       `);
     });

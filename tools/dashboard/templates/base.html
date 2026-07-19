@@ -690,6 +690,11 @@
     <script defer src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/api.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/ux.js') }}"></script>
+    <!-- nav-sec-08: DOMPurify (air-gap, no CDN) + shared XSS-safe escaping/markdown
+         helpers (window.escHtml / escAttr / safeMarkdown). Loaded globally and early
+         so every page script can sanitize untrusted (user/LLM/API) content. -->
+    <script defer src="{{ url_for('static', filename='vendor/dompurify/purify.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/esc.js') }}"></script>
     <script defer src="{{ url_for('static', filename='vendor/mermaid/mermaid.min.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/mermaid-icdev.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/charts.js') }}"></script>
@@ -711,9 +716,8 @@
     <!-- Onboarding Wizard JS (ECR-ONB) -->
     <script defer src="{{ url_for('static', filename='js/onboarding.js') }}"></script>
     {% if '/strategos' in request.path %}
-    <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages) -->
-    <!-- nav-sec-07: DOMPurify vendored locally (air-gap, no CDN) to sanitize marked() chat output -->
-    <script defer src="{{ url_for('static', filename='vendor/dompurify/purify.min.js') }}"></script>
+    <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages).
+         DOMPurify is now loaded globally above (nav-sec-08). -->
     <script defer src="{{ url_for('static', filename='js/strategos-chat.js') }}"></script>
     {% endif %}
     {% block scripts %}{% endblock %}

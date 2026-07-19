@@ -114,12 +114,14 @@
             if (isUser) {
                 html += escHtml(msg.content);
             } else {
-                // Render markdown if available
-                var rendered = msg.content;
-                if (typeof ICDEV !== 'undefined' && ICDEV.renderMarkdown) {
+                // nav-sec-08: render LLM markdown through the shared fail-closed
+                // sanitizer (marked + DOMPurify) so answer content can't inject
+                // active markup. Falls back to escaped text if unavailable.
+                var rendered;
+                if (typeof window.safeMarkdown === 'function') {
+                    rendered = window.safeMarkdown(msg.content);
+                } else if (typeof ICDEV !== 'undefined' && ICDEV.renderMarkdown) {
                     rendered = ICDEV.renderMarkdown(msg.content);
-                } else if (typeof marked !== 'undefined') {
-                    try { rendered = marked.parse(msg.content); } catch (e) { rendered = escHtml(msg.content); }
                 } else {
                     rendered = escHtml(msg.content);
                 }
