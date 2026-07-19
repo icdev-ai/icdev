@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}GovCon Intelligence - ICDEV™ Dashboard{% endblock %}
 {% block content %}
+{% include "includes/_degraded_banner.html" %}
 {% from "includes/classification_macros.html" import design_classification_banner %}
 {{ design_classification_banner('CUI') }}
 {% include "includes/ai_brief_banner.html" ignore missing %}

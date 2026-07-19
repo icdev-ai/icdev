@@ -1398,9 +1398,13 @@ def _register_govcon_pages(app: "Flask", _get_db):
             return render_template(
                 "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids,
                 pipeline_rollup=pipeline_rollup, active_proposals=active_proposals,
-                forecast_notices=forecast_notices,
+                forecast_notices=forecast_notices, degraded=False,
             )
-        except Exception:
+        except Exception as exc:
+            # nav-misc-02: a total pipeline failure previously rendered an all-zeros
+            # page indistinguishable from an empty-but-healthy pipeline. Log it and
+            # flag the page as degraded so operators know the numbers are stale.
+            get_logger("icdev.dashboard").warning("govcon_pipeline_page: pipeline load failed: %s", exc)
             stats = {
                 "total_opportunities": 0,
                 "total_requirements": 0,
@@ -1415,7 +1419,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             }
             return render_template(
                 "govcon/pipeline.html", stats=stats, opportunities=[], linked_opp_ids=set(),
-                forecast_notices={"notices": [], "count": 0},
+                forecast_notices={"notices": [], "count": 0}, degraded=True,
             )
         finally:
             conn.close()
@@ -3792,9 +3796,12 @@ def create_app(testing: bool = False) -> Flask:
             return render_template(
                 "events/timeline.html",
                 recent_events=[dict(r) for r in recent_events],
+                degraded=False,
             )
-        except Exception:
-            return render_template("events/timeline.html", recent_events=[])
+        except Exception as exc:
+            # nav-misc-02: an empty timeline on read failure looks like "no events".
+            get_logger("icdev.dashboard").warning("events_page: hook_events read failed: %s", exc)
+            return render_template("events/timeline.html", recent_events=[], degraded=True)
         finally:
             conn.close()
 
@@ -4251,9 +4258,12 @@ def create_app(testing: bool = False) -> Flask:
             return render_template(
                 "query/nlq.html",
                 recent_queries=[dict(r) for r in recent_queries],
+                degraded=False,
             )
-        except Exception:
-            return render_template("query/nlq.html", recent_queries=[])
+        except Exception as exc:
+            # nav-misc-02: an empty query history on read failure looks like "no queries".
+            get_logger("icdev.dashboard").warning("query_page: nlq_queries read failed: %s", exc)
+            return render_template("query/nlq.html", recent_queries=[], degraded=True)
         finally:
             conn.close()
 
@@ -4538,13 +4548,18 @@ def create_app(testing: bool = False) -> Flask:
     def children_page():
         """Child application registry — health, genome, capabilities, heartbeats."""
         conn = _get_db()
+        degraded = False
         try:
             # Fetch all registered child applications
             try:
                 children_rows = conn.execute("SELECT * FROM child_app_registry ORDER BY created_at DESC").fetchall()
                 children_rows = [dict(r) for r in children_rows]
-            except Exception:
+            except Exception as exc:
+                # nav-misc-02: registry read failed — an empty roster here would
+                # falsely imply "no child apps registered".
                 children_rows = []
+                degraded = True
+                get_logger("icdev.dashboard").warning("children_page: child_app_registry read failed: %s", exc)
 
             # Fetch latest heartbeat per child from telemetry
             heartbeat_map = {}
@@ -4592,6 +4607,7 @@ def create_app(testing: bool = False) -> Flask:
                 healthy_count=healthy_count,
                 degraded_count=degraded_count,
                 unhealthy_count=unhealthy_count,
+                degraded=degraded,
             )
         finally:
             conn.close()
@@ -4628,6 +4644,8 @@ def create_app(testing: bool = False) -> Flask:
     def dev_profiles_api_templates():
         """List available starter templates (JSON)."""
         templates = []
+        _degraded = False
+        _detail = None
         templates_dir = Path(__file__).resolve().parent.parent.parent / "context" / "profiles"
         if templates_dir.exists():
             try:
@@ -4644,9 +4662,17 @@ def create_app(testing: bool = False) -> Flask:
                                 "impact_levels": data.get("impact_levels", []),
                             }
                         )
-            except Exception:
-                pass
-        return jsonify({"templates": templates})
+            except Exception as exc:
+                # nav-misc-02: a malformed template file must not silently hide the
+                # whole starter-template list.
+                _degraded = True
+                _detail = str(exc)
+                get_logger("icdev.dashboard").warning("dev_profiles_api_templates: template load failed: %s", exc)
+        _resp = {"templates": templates}
+        if _degraded:
+            _resp["error"] = True
+            _resp["detail"] = _detail
+        return jsonify(_resp)
 
     @app.route("/dev-profiles/api/create", methods=["POST"])
     def dev_profiles_api_create():
@@ -4913,6 +4939,8 @@ def create_app(testing: bool = False) -> Flask:
     def api_charts_translations():
         """Chart data for translations page."""
         conn = _get_db()
+        degraded = False
+        detail = None
         try:
             # Status distribution
             status_dist = {}
@@ -4921,8 +4949,11 @@ def create_app(testing: bool = False) -> Flask:
                 for r in rows:
                     r_dict = dict(r)
                     status_dist[r_dict["status"]] = r_dict["cnt"]
-            except Exception:
-                pass
+            except Exception as exc:
+                # nav-misc-02: chart empties silently otherwise — flag the outage.
+                degraded = True
+                detail = str(exc)
+                get_logger("icdev.dashboard").warning("api_charts_translations: status query failed: %s", exc)
 
             # Language pair frequency
             lang_pairs = {}
@@ -4935,15 +4966,19 @@ def create_app(testing: bool = False) -> Flask:
                 for r in rows:
                     r_dict = dict(r)
                     lang_pairs[r_dict["pair"]] = r_dict["cnt"]
-            except Exception:
-                pass
+            except Exception as exc:
+                degraded = True
+                detail = str(exc)
+                get_logger("icdev.dashboard").warning("api_charts_translations: lang-pair query failed: %s", exc)
 
-            return jsonify(
-                {
-                    "status_distribution": status_dist,
-                    "language_pair_frequency": lang_pairs,
-                }
-            )
+            payload = {
+                "status_distribution": status_dist,
+                "language_pair_frequency": lang_pairs,
+            }
+            if degraded:
+                payload["error"] = True
+                payload["detail"] = detail
+            return jsonify(payload)
         finally:
             conn.close()
 
@@ -5073,6 +5108,7 @@ def create_app(testing: bool = False) -> Flask:
         """Digital Program Twin — 6-dimension what-if simulation, Monte Carlo, COA analysis."""
         stats = {"total_scenarios": 0, "running": 0, "completed": 0, "monte_carlo_runs": 0, "coas_generated": 0}
         scenarios = []
+        degraded = False
         try:
             conn = _get_db()
             stats["total_scenarios"] = conn.execute(
@@ -5094,9 +5130,11 @@ def create_app(testing: bool = False) -> Flask:
                 ).fetchall()
             ]
             conn.close()
-        except Exception:
-            pass
-        return render_template("simulation.html", stats=stats, scenarios=scenarios)
+        except Exception as exc:
+            # nav-misc-02: surface a simulation DB outage instead of an empty board.
+            degraded = True
+            get_logger("icdev.dashboard").warning("simulation_page: DB read failed: %s", exc)
+        return render_template("simulation.html", stats=stats, scenarios=scenarios, degraded=degraded)
 
     # ------------------------------------------------------------------
     # Phase 73: Cloud Migration Security Pages (5 new dashboard pages)
@@ -5842,6 +5880,7 @@ def create_app(testing: bool = False) -> Flask:
         stats = {"total_sessions": 0, "active_sessions": 0, "verticals_loaded": 0, "dossiers_generated": 0}
         sessions = []
         verticals = []
+        degraded = False
         try:
             conn = _get_db()
             stats["total_sessions"] = conn.execute("SELECT COUNT(*) FROM research_sessions").fetchone()[0]
@@ -5859,9 +5898,13 @@ def create_app(testing: bool = False) -> Flask:
             ]
             verticals = [dict(r) for r in conn.execute("SELECT * FROM research_verticals ORDER BY name").fetchall()]
             conn.close()
-        except Exception:
-            pass
-        return render_template("research.html", stats=stats, sessions=sessions, verticals=verticals)
+        except Exception as exc:
+            # nav-misc-02: a research DB outage must not look like "no sessions yet".
+            degraded = True
+            get_logger("icdev.dashboard").warning("research_page: DB read failed: %s", exc)
+        return render_template(
+            "research.html", stats=stats, sessions=sessions, verticals=verticals, degraded=degraded
+        )
 
     @app.route("/api/research/sessions", methods=["POST"])
     def api_research_create_session():
@@ -6015,14 +6058,18 @@ def create_app(testing: bool = False) -> Flask:
         status = None
         recent_searches = []
         source_types = []
+        degraded = False
         try:
             from tools.rag.ingestion_manager import get_status as rag_get_status
             from tools.rag.source_registry import SOURCE_REGISTRY
 
             status = rag_get_status()
             source_types = sorted(SOURCE_REGISTRY.keys())
-        except Exception:
-            pass
+        except Exception as exc:
+            # nav-misc-02: RAG subsystem unavailable — flag it rather than showing
+            # an empty search page as if the index were simply empty.
+            degraded = True
+            get_logger("icdev.dashboard").warning("knowledge_search_page: RAG status unavailable: %s", exc)
         try:
             conn = _get_db()
             recent_searches = [
@@ -6030,13 +6077,15 @@ def create_app(testing: bool = False) -> Flask:
                 for r in conn.execute("SELECT * FROM rag_retrieval_log ORDER BY created_at DESC LIMIT 20").fetchall()
             ]
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            degraded = True
+            get_logger("icdev.dashboard").warning("knowledge_search_page: retrieval-log read failed: %s", exc)
         return render_template(
             "rag/knowledge_search.html",
             status=status,
             recent_searches=recent_searches,
             source_types=source_types,
+            degraded=degraded,
         )
 
     @app.route("/api/rag/search", methods=["POST"])
@@ -6092,6 +6141,7 @@ def create_app(testing: bool = False) -> Flask:
         stats = None
         graphs = []
         recent_queries = []
+        degraded = False
         try:
             conn = _get_db()
             # Stats
@@ -6126,13 +6176,17 @@ def create_app(testing: bool = False) -> Flask:
             except Exception:
                 pass
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            # nav-misc-02: a KG store outage must not render an empty graph page
+            # that looks like "no knowledge graphs built yet".
+            degraded = True
+            get_logger("icdev.dashboard").warning("knowledge_graph_page: kg_graphs read failed: %s", exc)
         return render_template(
             "knowledge_graph.html",
             stats=stats,
             graphs=graphs,
             recent_queries=recent_queries,
+            degraded=degraded,
         )
 
     @app.route("/api/knowledge-graph/search", methods=["POST"])
@@ -8560,19 +8614,28 @@ def create_app(testing: bool = False) -> Flask:
         _active = _gat()
         _available: list[str] = []
         _locked: list[str] = []
+        _degraded = False
+        _detail = None
         try:
             for _comp in _REGISTRY.iter_canvases():
                 if _ts(_active, _comp.min_tier):
                     _available.append(_comp.key)
                 else:
                     _locked.append(_comp.key)
-        except Exception:
-            pass
-        return jsonify({
+        except Exception as exc:
+            # nav-misc-02: an empty feature list must not read as "nothing licensed".
+            _degraded = True
+            _detail = str(exc)
+            get_logger("icdev.dashboard").warning("api_license_tier: registry enumeration failed: %s", exc)
+        _resp = {
             "active_tier": _active,
             "available_features": sorted(_available),
             "locked_features": sorted(_locked),
-        })
+        }
+        if _degraded:
+            _resp["error"] = True
+            _resp["detail"] = _detail
+        return jsonify(_resp)
 
     @app.errorhandler(401)
     def unauthorized(e):
@@ -8962,6 +9025,7 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as exc:
             status = {"error": str(exc)}
         # Summary stats
+        degraded = False
         try:
             conn = _get_db()
             try:
@@ -8996,9 +9060,12 @@ def create_app(testing: bool = False) -> Flask:
             except Exception:
                 summary["pulse_links"] = 0
             conn.close()
-        except Exception:
-            pass
-        return render_template("proposal_genesis.html", status=status, summary=summary)
+        except Exception as exc:
+            # nav-misc-02: a DB-connection failure here dropped the whole summary
+            # to zeros silently. Log + flag so the empty pipeline reads as an outage.
+            degraded = True
+            get_logger("icdev.dashboard").warning("proposal_genesis: summary DB read failed: %s", exc)
+        return render_template("proposal_genesis.html", status=status, summary=summary, degraded=degraded)
 
     # ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
 
@@ -9211,13 +9278,17 @@ def create_app(testing: bool = False) -> Flask:
             health = {"enabled": False, "adapters": {}, "error": "Gateway unavailable"}
         # Recent delivery log
         history = []
+        degraded = not health.get("enabled", True) and bool(health.get("error"))
         try:
             conn = _get_db()
             history = conn.execute("SELECT * FROM notification_log ORDER BY created_at DESC LIMIT 50").fetchall()
             conn.close()
-        except Exception:
-            pass
-        return render_template("notifications.html", health=health, history=history)
+        except Exception as exc:
+            # nav-misc-02: a delivery-log read failure must not render an empty
+            # history that implies "no notifications ever sent".
+            degraded = True
+            get_logger("icdev.dashboard").warning("notifications_page: delivery-log read failed: %s", exc)
+        return render_template("notifications.html", health=health, history=history, degraded=degraded)
 
     @app.route("/genesis")
     def genesis():
