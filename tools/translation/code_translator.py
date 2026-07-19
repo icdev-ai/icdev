@@ -488,7 +488,9 @@ def main():
         # Pre-resolve imports from IR
         imports = ir_data.get("imports", [])
         if imports:
-            resolutions = resolve_imports(args.source_language, args.target_language, imports, mappings)
+            # resolve_imports(import_list, source_lang, target_lang, mappings) —
+            # import list is the first positional arg.
+            resolutions = resolve_imports(imports, args.source_language, args.target_language, mappings)
             dep_mappings = {r["source_import"]: r for r in resolutions}
     except ImportError:
         pass
