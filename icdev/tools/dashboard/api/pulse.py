@@ -326,11 +326,13 @@ def api_pulse_judge_post(post_id):
 
     try:
         conn = _get_db()
-        row = conn.execute(
-            "SELECT id, body_markdown, readability_score FROM pulse_posts WHERE id = %s",
-            (post_id,),
-        ).fetchone()
-        conn.close()
+        try:
+            row = conn.execute(
+                "SELECT id, body_markdown, readability_score FROM pulse_posts WHERE id = %s",
+                (post_id,),
+            ).fetchone()
+        finally:
+            conn.close()
         if not row:
             return jsonify({"error": "Post not found"}), 404
 
@@ -347,18 +349,24 @@ def api_pulse_judge_post(post_id):
                 )
                 if result.get("status") == "evaluated":
                     conn2 = _get_db()
-                    conn2.execute(
-                        "UPDATE pulse_posts SET judge_color = %s, judge_composite = %s, "
-                        "judge_combined = %s WHERE id = %s",
-                        (
-                            result["color_rating"]["color"],
-                            result["composite_score"],
-                            result.get("combined_score", 0),
-                            pid,
-                        ),
-                    )
-                    conn2.commit()
-                    conn2.close()
+                    # try/finally: this runs on a daemon thread under a bare
+                    # `except Exception: pass`, so a raise between open and close
+                    # leaks the connection silently -- an idle-in-transaction
+                    # backend on PostgreSQL that never gets reclaimed.
+                    try:
+                        conn2.execute(
+                            "UPDATE pulse_posts SET judge_color = %s, judge_composite = %s, "
+                            "judge_combined = %s WHERE id = %s",
+                            (
+                                result["color_rating"]["color"],
+                                result["composite_score"],
+                                result.get("combined_score", 0),
+                                pid,
+                            ),
+                        )
+                        conn2.commit()
+                    finally:
+                        conn2.close()
             except Exception:
                 pass
 
