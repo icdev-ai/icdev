@@ -23,14 +23,20 @@
         <div class="pm-metric-label">To Do</div>
     </div>
     <div class="pm-metric-card">
-        <div class="pm-metric-value">{{ test_coverage }}%</div>
+        <div class="pm-metric-value">{% if test_coverage is not none %}{{ test_coverage }}%{% else %}—{% endif %}</div>
         <div class="pm-metric-label">Test Coverage</div>
     </div>
     <div class="pm-metric-card">
-        <div class="pm-metric-value">{{ build_pass_rate }}%</div>
+        <div class="pm-metric-value">{% if build_pass_rate is not none %}{{ build_pass_rate }}%{% else %}—{% endif %}</div>
         <div class="pm-metric-label">Build Pass Rate</div>
     </div>
 </div>
+
+{% if data_source_error %}
+<div class="pm-empty" style="border-color:var(--warning,#f59e0b);">
+    Live data unavailable — the board could not be reached. No sample data is shown.
+</div>
+{% endif %}
 
 <!-- Sprint Tasks (main section) -->
 <div class="pm-section" id="sprint-tasks-section">
@@ -70,6 +76,8 @@
                     {% else %}<span class="badge" style="font-size:0.75rem;background:var(--bg-elevated);">To Do</span>{% endif %}
                 </td>
             </tr>
+            {% else %}
+            <tr><td colspan="5" class="pm-empty-cell">No tasks on the board yet. Generate a sprint to populate this view.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -80,6 +88,7 @@
     <!-- Velocity -->
     <div class="pm-section">
         <h3>Sprint Velocity</h3>
+        {% if velocity_data %}
         <div class="velocity-chart">
             {% for s in velocity_data %}
             <div class="velocity-item">
@@ -95,6 +104,9 @@
             <span class="legend-dot planned"></span>Planned
             <span class="legend-dot completed" style="margin-left:16px;"></span>Completed
         </div>
+        {% else %}
+        <div class="pm-empty">No recent board activity to chart.</div>
+        {% endif %}
     </div>
 
     <!-- Learning Milestones -->
@@ -109,6 +121,8 @@
             <div class="milestone-desc">{{ m.milestone }}</div>
             <div class="milestone-date" style="font-size:0.78rem;color:var(--text-dim);">{{ m.date }}</div>
         </div>
+        {% else %}
+        <div class="pm-empty">No learner progress recorded yet.</div>
         {% endfor %}
         <a href="/ai-learning" class="btn btn-sm" style="margin-top:12px;">View Learning Paths →</a>
     </div>
@@ -143,5 +157,7 @@
 .milestone-card { background: var(--bg-elevated, rgba(255,255,255,0.04)); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
 .milestone-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .milestone-desc { font-size: 0.88rem; margin-bottom: 2px; }
+.pm-empty { padding: 20px; text-align: center; color: var(--text-dim); font-size: 0.86rem; background: var(--bg-elevated, rgba(255,255,255,0.03)); border: 1px dashed var(--border); border-radius: 8px; margin: 12px 0; }
+.pm-empty-cell { padding: 24px 12px; text-align: center; color: var(--text-dim); font-size: 0.86rem; }
 </style>
 {% endblock %}
