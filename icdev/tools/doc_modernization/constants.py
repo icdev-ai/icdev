@@ -11,7 +11,8 @@ FINDING_TYPES: list[str] = [
     "eol_hardware",          # device model past EOL/EOS
     "eol_software",          # software product/cycle past EOL
     "deprecated_tech",       # rulebook match (TLS 1.1, telnet, MD5, ...)
-    "stale_reference",       # reference that no longer resolves / decommissioned
+    "stale_reference",       # reference that no longer resolves / decommissioned (incl. past its sunset_date)
+    "expiring_reference",    # reference within N days of its sunset_date (proactive temporal warning)
     "superseded_standard",   # NIST rev / RFC / STIG replaced by a successor
     "defacto_divergence",    # deployment reality disagrees with curated catalog
     "catalog_gap",           # heavily deployed item missing from curated catalog

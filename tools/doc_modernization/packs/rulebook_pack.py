@@ -38,9 +38,19 @@ from pathlib import Path
 
 from tools.logging.icdev_logger import get_logger
 
+from .. import temporal
 from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict
 
 logger = get_logger(__name__)
+
+
+def _engine_config() -> dict:
+    """docmod_config.yaml (for the temporal warning window), best-effort."""
+    try:
+        from ..pack_loader import load_config
+        return load_config()
+    except Exception:  # pragma: no cover - config optional
+        return {}
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -97,6 +107,14 @@ class RulebookPack(DomainPack):
     label = "Rulebook"
     entity_types = ["protocol"]
 
+    def __init__(self, config: dict | None = None):
+        super().__init__(config)
+        # Tests inject a frozen datetime here; None => live UTC clock.
+        self.clock = None
+
+    def _utcnow(self):
+        return self.clock or temporal.utcnow()
+
     def _rulebook_path(self) -> Path:
         raw = (self.config or {}).get("rulebook_path")
         if not raw:
@@ -135,6 +153,12 @@ class RulebookPack(DomainPack):
                     # between a match and its evidence.
                     attributes={"rule_id": rule["id"]},
                 ))
+        # Additive proactive temporal entities for rules carrying date fields —
+        # dateless rulebooks (the common case) add none and behave as before.
+        out.extend(temporal.temporal_entities(
+            self._rules(), text, chunk_ref,
+            pack_id=self.pack_id, entity_type=self._default_entity_type(),
+        ))
         return out
 
     def _rule_for(self, entity: CandidateEntity) -> dict | None:
@@ -142,6 +166,12 @@ class RulebookPack(DomainPack):
         return next((r for r in self._rules() if r["id"] == rid), None)
 
     def evaluate(self, entity: CandidateEntity, conn) -> Verdict:
+        # Time-bounded verdict when this is a temporal entity; None otherwise.
+        tv = temporal.evaluate_temporal(
+            entity, self._rules(), self._utcnow(), _engine_config(),
+        )
+        if tv is not None:
+            return tv
         rule = self._rule_for(entity)
         if rule is None:
             # The rulebook changed under us between extract and evaluate.
@@ -191,6 +221,7 @@ class RulebookPack(DomainPack):
         """
         payload = "|".join(
             f"{r['id']}:{r.get('pattern','')}:{r.get('verdict','')}:{r.get('replacement','')}"
+            f":{r.get('effective_date','')}:{r.get('sunset_date','')}:{r.get('review_by','')}"
             for r in self._rules()
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()

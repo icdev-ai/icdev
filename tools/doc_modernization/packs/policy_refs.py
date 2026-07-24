@@ -13,9 +13,19 @@ from pathlib import Path
 
 from tools.logging.icdev_logger import get_logger
 
+from .. import temporal
 from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict
 
 logger = get_logger(__name__)
+
+
+def _engine_config() -> dict:
+    """docmod_config.yaml (for the temporal warning window), best-effort."""
+    try:
+        from ..pack_loader import load_config
+        return load_config()
+    except Exception:  # pragma: no cover - config optional
+        return {}
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 RULEBOOK_PATH = _REPO_ROOT / "args" / "docmod" / "rulebook_policy.yaml"
@@ -48,9 +58,18 @@ class PolicyRefsPack(DomainPack):
     pack_id = "policy_refs"
     entity_types = ["standard"]
 
+    def __init__(self, config: dict | None = None):
+        super().__init__(config)
+        # Tests inject a frozen datetime here; None => live UTC clock.
+        self.clock = None
+
+    def _utcnow(self):
+        return self.clock or temporal.utcnow()
+
     def extract(self, text: str, chunk_ref: ChunkRef) -> list[CandidateEntity]:
+        rules = load_supersession_map()
         out, seen = [], set()
-        for rule in load_supersession_map():
+        for rule in rules:
             for m in rule["compiled"].finditer(text):
                 label = m.group(0).strip()
                 key = f"{rule['id']}|{label.lower()}"
@@ -64,9 +83,20 @@ class PolicyRefsPack(DomainPack):
                     context=text[start:m.end() + 60].strip(),
                     attributes={"rule_id": rule["id"]},
                 ))
+        # Additive proactive temporal entities for rules carrying date fields —
+        # disjoint from the supersession entities above (dateless rules add none).
+        out.extend(temporal.temporal_entities(
+            rules, text, chunk_ref, pack_id=self.pack_id, entity_type="standard",
+        ))
         return out
 
     def evaluate(self, entity: CandidateEntity, conn) -> Verdict:
+        # Time-bounded verdict when this is a temporal entity; None otherwise.
+        tv = temporal.evaluate_temporal(
+            entity, load_supersession_map(), self._utcnow(), _engine_config(),
+        )
+        if tv is not None:
+            return tv
         rule = next(
             (r for r in load_supersession_map()
              if r["id"] == entity.attributes.get("rule_id")),
@@ -119,8 +149,11 @@ class PolicyRefsPack(DomainPack):
         )
 
     def evidence_snapshot(self, conn) -> str:
+        # Date fields are part of the evidence: editing a sunset_date must
+        # re-scan documents, so it has to change this hash.
         payload = "|".join(
             f"{r['id']}:{r['pattern']}:{r.get('superseded_by','')}"
+            f":{r.get('effective_date','')}:{r.get('sunset_date','')}:{r.get('review_by','')}"
             for r in load_supersession_map()
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()

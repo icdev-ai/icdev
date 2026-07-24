@@ -6,6 +6,9 @@ confidence_threshold: 0.7        # findings below this never promote to kanban
 recency_half_life_days: 180      # de-facto learner deployment recency weighting
 max_redlines_per_sweep: 10       # cap AI redline drafts per reflex sweep
 scan_cadence_hours: 24
+sunset_warning_window_days: 90   # rulebook temporal validity: WARN when a cited
+                                 # standard's sunset_date is within this many days
+                                 # (past sunset -> HIGH). See doc_modernization/temporal.py
 
 # endoflife.date integration (software EOL). offline: true forces seed/import only.
 endoflife_base_url: "https://endoflife.date/api"
