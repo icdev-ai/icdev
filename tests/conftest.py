@@ -961,6 +961,21 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
 );
 CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_tenant ON dic_doc_freshness(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_collection ON dic_doc_freshness(collection_id);
+CREATE TABLE IF NOT EXISTS dic_cross_references (
+    id              TEXT    PRIMARY KEY,
+    source_doc_id   TEXT    NOT NULL,
+    source_section  TEXT    DEFAULT '',
+    target_doc_ref  TEXT    NOT NULL,
+    target_doc_id   TEXT,
+    target_section  TEXT    DEFAULT '',
+    ref_text        TEXT    DEFAULT '',
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI',
+    extracted_at    TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_source ON dic_cross_references(source_doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_target ON dic_cross_references(target_doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_tenant ON dic_cross_references(tenant_id);
 CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL DEFAULT 'Untitled Mapping',

@@ -18,6 +18,8 @@ FINDING_TYPES: list[str] = [
     "catalog_gap",           # heavily deployed item missing from curated catalog
     "unreflected_change",    # an approved change document supersedes this doc's claims
     "unverifiable_evidence", # document has no evidence anchors — currency uncheckable
+    "dangling_reference",    # inter-doc cross-reference resolves to no known document
+    "cross_reference_cascade",  # a cited document changed; this citing doc may be stale
 ]
 
 # Currency verdict for an extracted entity. Mirrors the CHECK constraint in
@@ -85,3 +87,34 @@ APPEND_ONLY_TABLES: tuple[str, ...] = (
 # Confidence bands mirror tools/quality/citation_grounding.classify_confidence.
 CONF_INCLUDE: float = 0.7
 CONF_ABSTAIN: float = 0.4
+
+# ── Inter-document cross-reference patterns (dmx-ref-01) ───────────────────────
+# Deterministic regex used by tools.document_intelligence.cross_reference_tracker
+# to detect textual references from one document to another ("see Section 3 of
+# the Backup SOP", "per <Title> §N"). NO LLM — pure regex, air-gap safe.
+#
+# EXTENSIBLE: append a regex to grow coverage; the tracker iterates this list and
+# needs no code change. Each pattern MUST expose a named group ``doc`` (the cited
+# document, as raw text) and MAY expose ``section`` (the cited section number).
+# A doc-type suffix keyword (SOP/Policy/Plan/...) anchors the match so ordinary
+# prose does not trip a false reference.
+_XREF_DOC_SUFFIX: str = (
+    r"(?:SOP|Policy|Plan|Manual|Guide|Guideline|Standard|Procedure|Document|"
+    r"Runbook|Handbook|Specification|Spec|Directive|Instruction|Playbook|Charter)"
+)
+REFERENCE_PATTERNS: list[str] = [
+    # "see Section 3 of the Backup SOP"
+    rf"(?i)\bsee\s+Section\s+(?P<section>\d+(?:\.\d+)*)\s+of\s+(?:the\s+)?"
+    rf"(?P<doc>[A-Za-z0-9][A-Za-z0-9 .\-]{{1,60}}?\b{_XREF_DOC_SUFFIX})\b",
+    # "per the Incident Response Policy §4.2"
+    rf"(?i)\bper\s+(?:the\s+)?"
+    rf"(?P<doc>[A-Za-z0-9][A-Za-z0-9 .\-]{{1,60}}?\b{_XREF_DOC_SUFFIX})\s*§\s*"
+    rf"(?P<section>\d+(?:\.\d+)*)",
+    # "refer to the Change Management Plan, Section 2"
+    rf"(?i)\brefer\s+to\s+(?:the\s+)?"
+    rf"(?P<doc>[A-Za-z0-9][A-Za-z0-9 .\-]{{1,60}}?\b{_XREF_DOC_SUFFIX}),?\s+"
+    rf"Section\s+(?P<section>\d+(?:\.\d+)*)",
+    # Whole-document reference (no section): "as described in the Backup SOP"
+    rf"(?i)\bas\s+(?:described|defined|specified|documented|outlined)\s+in\s+"
+    rf"(?:the\s+)?(?P<doc>[A-Za-z0-9][A-Za-z0-9 .\-]{{1,60}}?\b{_XREF_DOC_SUFFIX})\b",
+]
