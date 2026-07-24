@@ -13,3 +13,20 @@ sunset_warning_window_days: 90   # rulebook temporal validity: WARN when a cited
 # endoflife.date integration (software EOL). offline: true forces seed/import only.
 endoflife_base_url: "https://endoflife.date/api"
 offline: false
+
+# URL link-rot detection (tools/doc_modernization/link_check.py). This is a
+# NETWORK feature and is OFF by default — enable only where the sweep host has
+# controlled outbound egress. Outbound checks are guarded: https-only, the
+# hostname is resolved and every resolved IP is rejected if it falls in
+# loopback / private / link-local (incl. instance-metadata) / reserved space,
+# and the allow/denylist below is honored (denylist wins). When offline: true
+# (air-gap) link checking skips cleanly — URLs are reported "not checked", never
+# rotted.
+link_rot:
+  enabled: false            # network feature — default OFF
+  max_urls_per_sweep: 50    # cap URL checks per sweep (blast-radius + politeness)
+  timeout_seconds: 5        # tight per-request timeout
+  max_redirects: 3          # cap redirect chain depth; each hop is re-validated
+  head_hash_bytes: 4096     # bytes of the (ranged) response hashed for drift detection
+  allowlist: []             # if non-empty, ONLY these hostnames (+subdomains) are checked
+  denylist: []              # hostnames (+subdomains) never checked

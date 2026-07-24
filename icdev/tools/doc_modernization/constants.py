@@ -20,6 +20,7 @@ FINDING_TYPES: list[str] = [
     "unverifiable_evidence", # document has no evidence anchors — currency uncheckable
     "dangling_reference",    # inter-doc cross-reference resolves to no known document
     "cross_reference_cascade",  # a cited document changed; this citing doc may be stale
+    "link_rot",              # a cited URL is unreachable (404/410), permanently moved, or its head content drifted
 ]
 
 # Currency verdict for an extracted entity. Mirrors the CHECK constraint in
