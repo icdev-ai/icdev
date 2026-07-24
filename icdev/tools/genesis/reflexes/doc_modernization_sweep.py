@@ -73,6 +73,17 @@ class DocModernizationSweepReflex:
             result["scan"] = {"error": str(exc)}
             scan = {}
 
+        # 3b. Egress-safe URL link-rot check. NETWORK feature, default OFF; the
+        # checker self-skips when disabled or when there is no egress (air-gap),
+        # and its outbound calls pass an SSRF egress guard (https-only, every
+        # resolved IP checked against internal ranges before connecting).
+        try:
+            from tools.doc_modernization.link_check import check_corpus_links
+            result["link_rot"] = check_corpus_links(trigger="reflex")
+        except Exception as exc:
+            logger.warning("docmod sweep: link-rot check failed: %s", exc)
+            result["link_rot"] = {"error": str(exc)}
+
         # 4. Capped TRUST-gated redline drafting
         try:
             from tools.doc_modernization.redline_drafter import draft_open_redlines
