@@ -202,6 +202,26 @@ def scan_collection(
         except Exception:
             drift_count = 0
 
+        # Snapshot prior freshness states + last-notified times BEFORE the
+        # upsert loop overwrites them, so the notifier can detect crossings.
+        # Degrades to an empty snapshot on any error (e.g. a pre-migration DB
+        # without last_notified_at) — no crossings, no crash.
+        prior_states: dict[str, dict] = {}
+        try:
+            cur.execute(
+                "SELECT doc_id, state, last_notified_at FROM dic_doc_freshness "
+                "WHERE collection_id = %s AND tenant_id = %s",
+                (collection_id, tenant_id),
+            )
+            for pr in cur.fetchall():
+                pid = pr[0] if hasattr(pr, "__getitem__") else pr["doc_id"]
+                prior_states[pid] = {
+                    "state": pr[1] if hasattr(pr, "__getitem__") else pr["state"],
+                    "last_notified_at": pr[2] if hasattr(pr, "__getitem__") else pr["last_notified_at"],
+                }
+        except Exception:
+            prior_states = {}
+
         results: list[FreshnessResult] = []
         stale_count = 0
         aging_count = 0
@@ -262,6 +282,22 @@ def scan_collection(
             )
         except Exception as exc:
             logger.warning("freshness: insert scan failed: %s", exc)
+
+        # Proactive owner notifications for state crossings (dmx-loop-01).
+        # Config-gated (default OFF) and fully isolated: any failure here must
+        # never cost us the scan/persistence. The notifier updates
+        # last_notified_at on `conn`; the commit below persists it alongside the
+        # freshness upserts. Notify-only — no document edits.
+        try:
+            from tools.document_intelligence.freshness_notifier import (
+                notify_freshness_crossings,
+            )
+
+            notify_freshness_crossings(
+                results, prior_states, conn=conn, tenant_id=tenant_id,
+            )
+        except Exception as exc:
+            logger.warning("freshness: notification hook failed: %s", exc)
 
         conn.commit()
 
