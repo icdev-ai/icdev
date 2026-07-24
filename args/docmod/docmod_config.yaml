@@ -14,6 +14,20 @@ sunset_warning_window_days: 90   # rulebook temporal validity: WARN when a cited
 endoflife_base_url: "https://endoflife.date/api"
 offline: false
 
+# External-feed wiring (dmx-loop-02). Scheduled pull only — no push/webhooks.
+# offline: true (above) forces seed/import for the NIST feed too; both pollers
+# degrade gracefully (skip + log, never fail the sweep) when egress is absent.
+#
+# NIST publication revision feed → docmod_nist_pubs cache (policy_refs evidence).
+nist_pubs_feed_url: "https://csrc.nist.gov/CSRC/media/feeds/rss/publications.xml"
+nist_pubs_cadence_hours: 24        # skip live sync if one ran inside this window
+nist_pubs_timeout_seconds: 15      # tight timeout on the outbound feed GET
+#
+# CVE → docmod bridge: products cited in documents matched against the existing
+# supply-chain cve_triage store (no new poller). Emits HITL drift via acoic.
+cve_bridge_enabled: true
+cve_bridge_project_id: null        # null = scan CVEs across all projects
+
 # Proactive freshness owner notifications (dmx-loop-01). Fires an owner/steward
 # alert via tools/notifications/gateway.py the first time a document CROSSES into
 # `aging` or `stale`. Crossing-only (a doc already stale does NOT re-alert every

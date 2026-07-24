@@ -2546,6 +2546,21 @@ CREATE TABLE IF NOT EXISTS docmod_eol_products (
     classification  TEXT DEFAULT 'CUI',
     UNIQUE (product, cycle)
 );
+CREATE TABLE IF NOT EXISTS docmod_nist_pubs (
+    id              TEXT PRIMARY KEY,
+    pub_id          TEXT NOT NULL,
+    latest_revision TEXT,
+    revision_num    INTEGER,
+    title           TEXT,
+    url             TEXT,
+    published_date  TEXT,
+    source          TEXT NOT NULL DEFAULT 'nist.gov'
+                        CHECK (source IN ('nist.gov','seed','manual')),
+    synced_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    UNIQUE (pub_id)
+);
 CREATE TABLE IF NOT EXISTS docmod_defacto_standards (
     id              TEXT PRIMARY KEY,
     domain          TEXT NOT NULL,
