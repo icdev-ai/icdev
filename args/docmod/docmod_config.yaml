@@ -14,6 +14,24 @@ sunset_warning_window_days: 90   # rulebook temporal validity: WARN when a cited
 endoflife_base_url: "https://endoflife.date/api"
 offline: false
 
+# Proactive freshness owner notifications (dmx-loop-01). Fires an owner/steward
+# alert via tools/notifications/gateway.py the first time a document CROSSES into
+# `aging` or `stale`. Crossing-only (a doc already stale does NOT re-alert every
+# scan) with a per-document cooldown so a stale doc alerts at most once per
+# window. DEFAULT OFF — no notifications are sent until enabled. Notify-only:
+# never edits documents (HITL pending_review gating is untouched). Air-gap safe:
+# if the gateway/channel is unreachable the crossing is logged and skipped.
+freshness_notifications:
+  enabled: false                 # master toggle — DEFAULT OFF
+  cooldown_hours: 168            # min hours between alerts for the same document (1 week)
+  event_type: dic_freshness_alert  # gateway routing key (args/notification_config.yaml)
+  default_channel: ""            # fallback owner/channel when the collection has no owner_id
+  base_url: ""                   # dashboard base URL for the modernization link (e.g. https://icdev.example.mil)
+  max_findings: 3                # top-N modernization findings listed in the alert body
+  severity_by_state:             # gateway severity per target state
+    aging: warning
+    stale: error
+
 # URL link-rot detection (tools/doc_modernization/link_check.py). This is a
 # NETWORK feature and is OFF by default — enable only where the sweep host has
 # controlled outbound egress. Outbound checks are guarded: https-only, the

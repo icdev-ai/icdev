@@ -948,6 +948,16 @@ CREATE TABLE IF NOT EXISTS dic_handoff_items (
     classification  TEXT    DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_handoff_items_session ON dic_handoff_items(session_id);
+CREATE TABLE IF NOT EXISTS dic_collections (
+    collection_id   TEXT    PRIMARY KEY,
+    name            TEXT    NOT NULL DEFAULT '',
+    description     TEXT    DEFAULT '',
+    owner_id        TEXT    DEFAULT '',
+    retention_days  INTEGER DEFAULT 90,
+    classification  TEXT    DEFAULT 'CUI',
+    tenant_id       TEXT    DEFAULT 'default',
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS dic_doc_freshness (
     doc_id          TEXT    PRIMARY KEY,
     collection_id   TEXT    NOT NULL DEFAULT 'default',
@@ -956,6 +966,7 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
     source_event    TEXT    DEFAULT '',
     score           REAL    DEFAULT 0.0,
     updated_at      TEXT    DEFAULT (datetime('now')),
+    last_notified_at TEXT,
     tenant_id       TEXT    DEFAULT 'default',
     classification  TEXT    DEFAULT 'CUI'
 );
