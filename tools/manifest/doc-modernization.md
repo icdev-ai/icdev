@@ -22,6 +22,7 @@
 | Software Pack | tools/doc_modernization/packs/software.py | Product+version extraction; verdicts from docmod_eol_products; unmapped → `unknown` never `eol`; replacement = newest supported cycle | pack API | Verdict/Replacement |
 | Network HW Pack | tools/doc_modernization/packs/network_hardware.py | Curated catalog PRIMARY (NetworkCatalogAdapter + generic store) → mc_net_eol_data fallback → de facto stats tie-breaker; inventory-vocabulary extraction | pack API | Verdict/Replacement |
 | Policy Pack | tools/doc_modernization/packs/policy_refs.py | Supersession map (args/docmod/rulebook_policy.yaml): NIST rev withdrawals, RFC obsoletions, FIPS 140-2→3; KG standard-node corroboration | pack API | Verdict/Replacement |
+| SOP Workflows Pack | args/docmod/packs/sop_workflows.yaml (no Python — shared RulebookPack) | TOOL/COMMAND/PLATFORM drift in procedures (args/docmod/rulebook_sop_workflows.yaml, 18 rules): retired CI (Travis), container/k8s tooling (docker-compose v1, docker-machine, `helm init`, `--generator`, `--export`, PodSecurityPolicy, gcr.io), build commands (python2, easy_install, nosetests, apt-key), host commands (ifconfig, netstat, wmic), shut-down platforms (HipChat, Skype for Business, Bitbucket Server). entity_type `tool_reference`; platform shutdowns → `stale_reference`, commands → `deprecated_tech`. Ships `enabled: false` pending validation against a real corpus; org-specific rules (Jenkins deploy.sh, svn) ship commented. Org/role drift is OUT OF SCOPE — needs an org catalog this repo lacks. | pack API | Verdict/Replacement |
 | EOL Products Sync | tools/doc_modernization/eol_products_sync.py | endoflife.date cache (docmod_eol_products): live sync + `args/docmod/eol_products.yaml` seed + `import_dataset()` air-gap bundle; `get_product_eol()` alias-aware lookup; `newest_supported_cycle()` | `--seed/--sync/--import <path> --json` | JSON |
 | De Facto Learner | tools/doc_modernization/defacto_learner.py | Recency-weighted (half-life 180d) deployment stats over ni_devices → docmod_defacto_standards; `get_recommended(category)`; `cross_check(catalog)` → divergence/gap records | `recompute()` | dict |
 
@@ -32,6 +33,8 @@ software_product / protocol / crypto_algorithm KG nodes. MCP repair:
 previously-dangling `kg_stale_entities` tool via knowledge_graph/temporal.py.
 
 Config: `args/docmod/docmod_config.yaml` (thresholds, cadence, offline flag) +
-`args/docmod/packs/*.yaml` (all four launch packs enabled) +
-`args/docmod/{rulebook_crypto,rulebook_policy,eol_products}.yaml`.
-Tests: `tests/docmod/test_core_engine.py`, `tests/docmod/test_domain_packs.py`.
+`args/docmod/packs/*.yaml` (the four launch packs enabled; `sop_workflows`
+ships disabled) +
+`args/docmod/{rulebook_crypto,rulebook_policy,rulebook_sop_workflows,eol_products}.yaml`.
+Tests: `tests/docmod/test_core_engine.py`, `tests/docmod/test_domain_packs.py`,
+`tests/docmod/test_sop_workflows_pack.py`.
