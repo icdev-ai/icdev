@@ -2,6 +2,15 @@
 # Standards supersession map — deterministic evidence for the policy_refs pack.
 # pattern matches the SUPERSEDED reference; superseded_by is the recommended
 # successor (never LLM-generated). Rule ids are cited as [source: rule:<id>].
+#
+# Optional temporal-validity fields (doc_modernization/temporal.py) let the pack
+# flag a citation PROACTIVELY as its sunset approaches, independent of the
+# supersession map. All are OPTIONAL ISO-8601 dates; a rule without them is
+# unchanged. Only real, published dates — never invented:
+#   effective_date  standard's publication / in-force date
+#   sunset_date     withdrawal / no-longer-valid date (WARN within
+#                   sunset_warning_window_days, HIGH on/after)
+#   review_by       internal cadence to re-check the citation (optional)
 rules:
   - id: policy-nist-80053r4
     pattern: '(?i)NIST\s?SP\s?800-53\s?Rev(?:ision|\.)?\s?4\b'
@@ -9,6 +18,10 @@ rules:
     severity: high
     rationale: "NIST SP 800-53 Rev 4 was withdrawn 2021-09-23."
     superseded_by: "NIST SP 800-53 Rev 5"
+    # Rev 4 published 2013-04-30; withdrawn 2021-09-23 (one year after Rev 5).
+    # Source: NIST CSRC publication history for SP 800-53.
+    effective_date: "2013-04-30"
+    sunset_date: "2021-09-23"
   - id: policy-nist-800171r2
     pattern: '(?i)NIST\s?SP\s?800-171\s?Rev(?:ision|\.)?\s?2\b'
     verdict: retired
@@ -33,9 +46,17 @@ rules:
     severity: high
     rationale: "RFC 2246 (TLS 1.0) is deprecated by RFC 8996."
     superseded_by: "RFC 8446 (TLS 1.3); see RFC 8996"
+    # RFC 2246 (TLS 1.0) published 1999-01; TLS 1.0 formally deprecated by
+    # RFC 8996 published 2021-03. Source: IETF RFC 2246 / RFC 8996.
+    effective_date: "1999-01-01"
+    sunset_date: "2021-03-01"
   - id: policy-fips-1402
     pattern: '(?i)\bFIPS\s?140-2\b'
     verdict: retired
     severity: medium
     rationale: "FIPS 140-2 validation sunset 2026-09-22; FIPS 140-3 is the active standard."
     superseded_by: "FIPS 140-3"
+    # FIPS 140-2 issued 2001-05-25; CMVP moves FIPS 140-2 modules to the
+    # historical list 2026-09-22. Source: NIST FIPS 140-2 / CMVP transition.
+    effective_date: "2001-05-25"
+    sunset_date: "2026-09-22"
