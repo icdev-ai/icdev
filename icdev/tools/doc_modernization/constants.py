@@ -67,6 +67,7 @@ KG_ENTITY_TYPES: list[str] = [
     "system_reference",      # a system/CI a document makes claims about
     "evidence_anchor",       # a citation link, not a thing named in the prose
     "tool_reference",        # a tool/command/platform an SOP tells the reader to run
+    "architecture_pattern",  # a named structural pattern/technology a design doc prescribes
 ]
 
 # Tables that must never be UPDATEd/DELETEd (registered in
