@@ -343,32 +343,6 @@ projects:
   - key: sched
     title: SCHED
     priority: medium
-- key: nmce
-  name: Nmce Project
-  description: Auto-registered project for tasks with prefix 'nmce-'. Update name
-    and description to reflect the project purpose.
-  task_prefix: nmce-
-  default_open: true
-  briefs: []
-  epics:
-  - key: api
-    title: API
-    priority: medium
-  - key: db
-    title: DB
-    priority: medium
-  - key: fn
-    title: FN
-    priority: medium
-  - key: tpl
-    title: TPL
-    priority: medium
-  - key: vv
-    title: VV
-    priority: medium
-  - key: wiz
-    title: WIZ
-    priority: medium
 - key: nova
   name: NOVA — Autonomous Self-Learning Digital Coworker
   description: 'Synthesizes Hermes GEPA skill evolution, OpenClaw SOUL identity, and
@@ -518,151 +492,6 @@ projects:
   - key: d
     title: D
     priority: medium
-- key: acf
-  name: Acf Project
-  description: Auto-registered project for tasks with prefix 'acf-'. Update name and
-    description to reflect the project purpose.
-  task_prefix: acf-
-  default_open: true
-  briefs: []
-  epics:
-  - key: dash
-    title: DASH
-    priority: medium
-  - key: db
-    title: DB
-    priority: medium
-  - key: deliberate
-    title: DELIBERATE
-    priority: medium
-  - key: design
-    title: DESIGN
-    priority: medium
-  - key: doc
-    title: DOC
-    priority: medium
-  - key: engine
-    title: ENGINE
-    priority: medium
-  - key: harvest
-    title: HARVEST
-    priority: medium
-  - key: learn
-    title: LEARN
-    priority: medium
-  - key: mcp
-    title: MCP
-    priority: medium
-  - key: reflex
-    title: REFLEX
-    priority: medium
-  - key: synth
-    title: SYNTH
-    priority: medium
-  - key: vv
-    title: VV
-    priority: medium
-- key: plh
-  name: Plh Project
-  description: Auto-registered project for tasks with prefix 'plh-'. Update name and
-    description to reflect the project purpose.
-  task_prefix: plh-
-  default_open: true
-  briefs: []
-  epics:
-  - key: scout
-    title: SCOUT
-    priority: medium
-  - key: testcov
-    title: TESTCOV
-    priority: medium
-- key: loe
-  name: Loe Project
-  description: Auto-registered project for tasks with prefix 'loe-'. Update name and
-    description to reflect the project purpose.
-  task_prefix: loe-
-  default_open: true
-  briefs: []
-  epics:
-  - key: aiify
-    title: AIIFY
-    priority: medium
-  - key: dic
-    title: DIC
-    priority: medium
-  - key: slides
-    title: SLIDES
-    priority: medium
-- key: gco
-  name: Gco Project
-  description: Auto-registered project for tasks with prefix 'gco-'. Update name and
-    description to reflect the project purpose.
-  task_prefix: gco-
-  default_open: true
-  briefs: []
-  epics:
-  - key: db
-    title: DB
-    priority: medium
-  - key: engine
-    title: ENGINE
-    priority: medium
-  - key: iqe
-    title: IQE
-    priority: medium
-  - key: ui
-    title: UI
-    priority: medium
-  - key: vv
-    title: VV
-    priority: medium
-- key: sipa
-  name: Sipa Project
-  description: Auto-registered project for tasks with prefix 'sipa-'. Update name
-    and description to reflect the project purpose.
-  task_prefix: sipa-
-  default_open: true
-  briefs: []
-  epics:
-  - key: cap
-    title: CAP
-    priority: medium
-  - key: dash
-    title: DASH
-    priority: medium
-  - key: db
-    title: DB
-    priority: medium
-  - key: doc
-    title: DOC
-    priority: medium
-  - key: engine
-    title: ENGINE
-    priority: medium
-  - key: ingest
-    title: INGEST
-    priority: medium
-  - key: intent
-    title: INTENT
-    priority: medium
-  - key: mcp
-    title: MCP
-    priority: medium
-  - key: prov
-    title: PROV
-    priority: medium
-  - key: reflex
-    title: REFLEX
-    priority: medium
-  - key: scan
-    title: SCAN
-    priority: medium
-  - key: score
-    title: SCORE
-    priority: medium
-  - key: vv
-    title: VV
-    priority: medium
 - key: ace
   name: ANVIL Co-Worker Engine (ACE)
   description: 'Dynamic agentic co-worker teams assembled from declarative YAML role
@@ -721,226 +550,6 @@ projects:
   - key: eval
     title: Agent Evaluation System -- CoT/CoD metrics + suggestions + rerun + trends
     priority: high
-- key: portal
-  name: Portal Project
-  description: Auto-registered project for tasks with prefix 'portal-'. Update name
-    and description to reflect the project purpose.
-  task_prefix: portal-
-  default_open: true
-  briefs: []
-  epics:
-  - key: nav
-    title: NAV
-    priority: medium
-- key: aiify_rm_ff651
-  name: Aiify Rm Ff651 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-ff651-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-ff651-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_e4a58
-  name: Aiify Rm E4A58 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-e4a58-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-e4a58-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_d0aca
-  name: Aiify Rm D0Aca Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-d0aca-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-d0aca-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_c6c94
-  name: Aiify Rm C6C94 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-c6c94-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-c6c94-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_c5c56
-  name: Aiify Rm C5C56 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-c5c56-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-c5c56-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_843f2
-  name: Aiify Rm 843F2 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-843f2-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-843f2-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_6efad
-  name: Aiify Rm 6Efad Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-6efad-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-6efad-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_62600
-  name: Aiify Rm 62600 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-62600-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-62600-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_5636b
-  name: Aiify Rm 5636B Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-5636b-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-5636b-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_55fc0
-  name: Aiify Rm 55Fc0 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-55fc0-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-55fc0-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_55b58
-  name: Aiify Rm 55B58 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-55b58-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-55b58-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_4f188
-  name: Aiify Rm 4F188 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-4f188-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-4f188-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_4e5ea
-  name: Aiify Rm 4E5Ea Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-4e5ea-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-4e5ea-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_39869
-  name: Aiify Rm 39869 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-39869-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-39869-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_2d1a1
-  name: Aiify Rm 2D1A1 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-2d1a1-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-2d1a1-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_2b005
-  name: Aiify Rm 2B005 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-2b005-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-2b005-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_1d233
-  name: Aiify Rm 1D233 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-1d233-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-1d233-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_1b2eb
-  name: Aiify Rm 1B2Eb Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-1b2eb-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-1b2eb-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
-- key: aiify_rm_15851
-  name: Aiify Rm 15851 Project
-  description: Auto-registered project for tasks with prefix 'aiify-rm-15851-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: aiify-rm-15851-
-  default_open: true
-  briefs: []
-  epics:
-  - key: phase
-    title: PHASE
-    priority: medium
 - key: aiify_2
   name: Aiify Project
   description: Auto-registered project for tasks with prefix 'aiify-'. Update name
@@ -951,32 +560,6 @@ projects:
   epics:
   - key: opp
     title: OPP
-    priority: medium
-- key: cie
-  name: Cie Project
-  description: Auto-registered project for tasks with prefix 'cie-'. Update name and
-    description to reflect the project purpose.
-  task_prefix: cie-
-  default_open: true
-  briefs: []
-  epics:
-  - key: ctx
-    title: CTX
-    priority: medium
-  - key: ref
-    title: REF
-    priority: medium
-  - key: skl
-    title: SKL
-    priority: medium
-  - key: orc
-    title: ORC
-    priority: medium
-  - key: ric
-    title: RIC
-    priority: medium
-  - key: doc
-    title: DOC
     priority: medium
 - key: chyg
   name: Connection-Hygiene Sweep — eliminate leaked PostgreSQL connections
@@ -1171,44 +754,6 @@ projects:
   - key: vv
     title: VV
     priority: medium
-- key: fix_dispatcher
-  name: Fix Dispatcher Project
-  description: Auto-registered project for tasks with prefix 'fix-dispatcher-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: fix-dispatcher-
-  default_open: true
-  briefs: []
-  epics:
-  - key: import
-    title: IMPORT
-    priority: medium
-  - key: agd
-    title: AGD
-    priority: medium
-  - key: cfg
-    title: CFG
-    priority: medium
-  - key: chl
-    title: CHL
-    priority: medium
-  - key: cvs
-    title: CVS
-    priority: medium
-  - key: db
-    title: DB
-    priority: medium
-  - key: eco
-    title: ECO
-    priority: medium
-  - key: fan
-    title: FAN
-    priority: medium
-  - key: fnd
-    title: FND
-    priority: medium
-  - key: tst
-    title: TST
-    priority: medium
 - key: sec
   name: Sec Project
   description: Auto-registered project for tasks with prefix 'sec-'. Update name and
@@ -1246,150 +791,6 @@ projects:
     priority: medium
   - key: dom
     title: DOM
-    priority: medium
-- key: onto
-  name: Onto Project
-  description: Auto-registered project for tasks with prefix 'onto-'. Update name
-    and description to reflect the project purpose.
-  task_prefix: onto-
-  default_open: true
-  briefs: []
-  epics:
-  - key: agd
-    title: AGD
-    priority: medium
-  - key: cfg
-    title: CFG
-    priority: medium
-  - key: cvs
-    title: CVS
-    priority: medium
-  - key: dom
-    title: DOM
-    priority: medium
-  - key: eco
-    title: ECO
-    priority: medium
-  - key: fan
-    title: FAN
-    priority: medium
-  - key: fnd
-    title: FND
-    priority: medium
-  - key: tst
-    title: TST
-    priority: medium
-  - key: acad
-    title: ACAD
-    priority: medium
-  - key: anvil
-    title: ANVIL
-    priority: medium
-  - key: canvas
-    title: CANVAS
-    priority: medium
-  - key: forge
-    title: FORGE
-    priority: medium
-  - key: game
-    title: GAME
-    priority: medium
-  - key: reg
-    title: REG
-    priority: medium
-  - key: rt
-    title: RT
-    priority: medium
-  - key: test
-    title: TEST
-    priority: medium
-  - key: twin
-    title: TWIN
-    priority: medium
-  - key: vv
-    title: VV
-    priority: medium
-  - key: wf
-    title: WF
-    priority: medium
-- key: cot
-  name: Cot Project
-  description: Auto-registered project for tasks with prefix 'cot-'. Update name and
-    description to reflect the project purpose.
-  task_prefix: cot-
-  default_open: true
-  briefs: []
-  epics:
-  - key: acad
-    title: ACAD
-    priority: medium
-  - key: anvil
-    title: ANVIL
-    priority: medium
-  - key: canvas
-    title: CANVAS
-    priority: medium
-  - key: eco
-    title: ECO
-    priority: medium
-  - key: fnd
-    title: FND
-    priority: medium
-  - key: forge
-    title: FORGE
-    priority: medium
-  - key: game
-    title: GAME
-    priority: medium
-  - key: reg
-    title: REG
-    priority: medium
-  - key: rt
-    title: RT
-    priority: medium
-  - key: test
-    title: TEST
-    priority: medium
-  - key: twin
-    title: TWIN
-    priority: medium
-  - key: vv
-    title: VV
-    priority: medium
-  - key: wf
-    title: WF
-    priority: medium
-- key: cache
-  name: Cache Project
-  description: Auto-registered project for tasks with prefix 'cache-'. Update name
-    and description to reflect the project purpose.
-  task_prefix: cache-
-  default_open: true
-  briefs: []
-  epics:
-  - key: anvil
-    title: ANVIL
-    priority: medium
-  - key: fnd
-    title: FND
-    priority: medium
-  - key: forge
-    title: FORGE
-    priority: medium
-  - key: prov
-    title: PROV
-    priority: medium
-  - key: reg
-    title: REG
-    priority: medium
-  - key: rt
-    title: RT
-    priority: medium
-  - key: test
-    title: TEST
-    priority: medium
-  - key: vv
-    title: VV
     priority: medium
 - key: cam
   name: Cloud App Migration — Analytics Platform K8s→AWS + AI Modernization (Cross-Canvas)
@@ -1722,83 +1123,6 @@ projects:
   - key: socmint
     title: SOCMINT
     priority: medium
-- key: add_a_cmmi
-  name: Add A Cmmi Project
-  description: Auto-registered project for tasks with prefix 'add-a-cmmi-'. Update
-    name and description to reflect the project purpose.
-  task_prefix: add-a-cmmi-
-  default_open: true
-  briefs: []
-  epics:
-  - key: l
-    title: L
-    priority: medium
-  - key: a1
-    title: A1
-    priority: medium
-  - key: a2
-    title: A2
-    priority: medium
-  - key: a3
-    title: A3
-    priority: medium
-  - key: b1
-    title: B1
-    priority: medium
-  - key: b2
-    title: B2
-    priority: medium
-  - key: b3
-    title: B3
-    priority: medium
-  - key: c1
-    title: C1
-    priority: medium
-  - key: c2
-    title: C2
-    priority: medium
-  - key: c3
-    title: C3
-    priority: medium
-  - key: d1
-    title: D1
-    priority: medium
-  - key: d2
-    title: D2
-    priority: medium
-  - key: d3
-    title: D3
-    priority: medium
-  - key: vv
-    title: VV
-    priority: medium
-  - key: bte
-    title: BTE
-    priority: medium
-  - key: decaudit
-    title: DECAUDIT
-    priority: medium
-  - key: defi
-    title: DEFI
-    priority: medium
-  - key: factor
-    title: FACTOR
-    priority: medium
-  - key: intltick
-    title: INTLTICK
-    priority: medium
-  - key: llmfac
-    title: LLMFAC
-    priority: medium
-  - key: magent
-    title: MAGENT
-    priority: medium
-  - key: newssig
-    title: NEWSSIG
-    priority: medium
-  - key: qfix
-    title: QFIX
-    priority: medium
 - key: aisg
   name: AI Skills Gap — Zero-to-AI Enablement Platform
   description: 'Strategic initiative to close the AI skills gap for government agencies
@@ -1981,41 +1305,6 @@ projects:
   - key: fix
     title: FIX
     priority: medium
-- key: sgx
-  name: Sgx Project
-  description: Auto-registered project for tasks with prefix 'sgx-'. Update name and
-    description to reflect the project purpose.
-  task_prefix: sgx-
-  default_open: true
-  briefs: []
-  epics:
-  - key: ais
-    title: AIS
-    priority: medium
-  - key: bbot
-    title: BBOT
-    priority: medium
-  - key: cve
-    title: CVE
-    priority: medium
-  - key: dw
-    title: DW
-    priority: medium
-  - key: octi
-    title: OCTI
-    priority: medium
-  - key: geoint
-    title: GEOINT
-    priority: medium
-  - key: sigint
-    title: SIGINT
-    priority: medium
-  - key: socmint
-    title: SOCMINT
-    priority: medium
-  - key: fix
-    title: FIX
-    priority: medium
 - key: canvas-csp-integration
   name: Canvas CSP Integration & Academy Uplift
   description: 'Multi-cloud AIMC expansion (Azure/GCP/OCI/IBM/HuggingFace AI/ML models
@@ -2071,38 +1360,6 @@ projects:
     priority: medium
   - key: fix
     title: FIX
-    priority: medium
-- key: oracle
-  name: Oracle Project
-  description: Auto-registered project for tasks with prefix 'oracle-'. Update name
-    and description to reflect the project purpose.
-  task_prefix: oracle-
-  default_open: true
-  briefs: []
-  epics:
-  - key: fix
-    title: FIX
-    priority: medium
-  - key: dedup
-    title: DEDUP
-    priority: medium
-  - key: matchfn
-    title: MATCHFN
-    priority: medium
-  - key: parallel
-    title: PARALLEL
-    priority: medium
-  - key: relgraph
-    title: RELGRAPH
-    priority: medium
-  - key: vv
-    title: VV
-    priority: medium
-  - key: wiki
-    title: WIKI
-    priority: medium
-  - key: viz
-    title: VIZ
     priority: medium
 - key: ob1
   name: OB1 Memory Enhancements
@@ -2460,7 +1717,7 @@ projects:
     title: Digital Twin Integration — Ghost Track + I&W + War Game + Cross-Canvas
       Bus
     priority: high
-  - key: cyber-ext
+  - key: cyberext
     title: Cyber Extension — NVD/KEV/ATT&CK Ingest + Shodan + Dynamic Heatmap
     priority: high
   - key: infra
@@ -3094,97 +2351,6 @@ projects:
     priority: critical
   - key: guard
     title: GUARD
-    priority: medium
-- key: task_kb
-  name: Task Kb Project
-  description: Auto-registered project for tasks with prefix 'task-kb-'. Update name
-    and description to reflect the project purpose.
-  task_prefix: task-kb-
-  default_open: true
-  briefs: []
-  epics:
-  - key: guard
-    title: GUARD
-    priority: medium
-  - key: test
-    title: TEST
-    priority: medium
-  - key: twin
-    title: TWIN
-    priority: medium
-  - key: l0
-    title: L0 — Foundation
-    priority: medium
-  - key: l1
-    title: L1 — Parsers / Ingestion
-    priority: medium
-  - key: l2
-    title: L2 — Router / Dispatch
-    priority: medium
-  - key: l3
-    title: L3 — Core Agent / Engine
-    priority: medium
-  - key: l4
-    title: L4 — Artifacts / Output
-    priority: medium
-  - key: l5
-    title: L5 — Dashboard UI
-    priority: medium
-  - key: l6
-    title: L6 — Integrations
-    priority: medium
-  - key: l7
-    title: L7 — Validation / Gate
-    priority: medium
-- key: plan_dtwin_pdc_pipeline
-  name: Plan Dtwin Pdc Pipeline Project
-  description: Auto-registered project for tasks with prefix 'plan-dtwin-pdc-pipeline-'.
-    Update name and description to reflect the project purpose.
-  task_prefix: plan-dtwin-pdc-pipeline-
-  default_open: true
-  briefs: []
-  epics:
-  - key: twin
-    title: TWIN
-    priority: medium
-  - key: l0
-    title: L0 — Foundation
-    priority: medium
-  - key: l1
-    title: L1 — Parsers / Ingestion
-    priority: medium
-  - key: l2
-    title: L2 — Router / Dispatch
-    priority: medium
-  - key: l3
-    title: L3 — Core Agent / Engine
-    priority: medium
-  - key: l4
-    title: L4 — Artifacts / Output
-    priority: medium
-  - key: l5
-    title: L5 — Dashboard UI
-    priority: medium
-  - key: l6
-    title: L6 — Integrations
-    priority: medium
-  - key: l7
-    title: L7 — Validation / Gate
-    priority: medium
-  - key: bdc
-    title: BDC
-    priority: medium
-  - key: ce
-    title: CE
-    priority: medium
-  - key: iqe
-    title: IQE
-    priority: medium
-  - key: ndc
-    title: NDC
-    priority: medium
-  - key: tfw
-    title: TFW
     priority: medium
 - key: sim-chat
   name: TFW Simulation Chat Workbench
@@ -4538,7 +3704,7 @@ projects:
     Commander Dashboard + War Endurance widget. Phase 2: IPB Canvas + I&W Board +
     F3EAD Targeting + BDA Module. Phase 3: OPORD Generator + Red Cell + METT-TC. Phase
     4: Sync Matrix + ISR Planner + Confidence Decay.'
-  task_prefix: sg-
+  task_prefix: sgr-
   default_open: true
   briefs:
   - 'Phase 1: CCIR trigger + INTSUM + Commander Dashboard + endurance — sg-s1-01..10'
@@ -4558,66 +3724,6 @@ projects:
   - key: s4
     title: Phase 4 — Sync Matrix + ISR Planner + Confidence Decay
     priority: low
-  - key: agent
-    title: AGENT
-    priority: medium
-  - key: analyst
-    title: ANALYST
-    priority: medium
-  - key: cyber
-    title: CYBER
-    priority: medium
-  - key: ew
-    title: EW
-    priority: medium
-  - key: foundation
-    title: FOUNDATION
-    priority: medium
-  - key: game
-    title: GAME
-    priority: medium
-  - key: ghost
-    title: GHOST
-    priority: medium
-  - key: import
-    title: IMPORT
-    priority: medium
-  - key: info
-    title: INFO
-    priority: medium
-  - key: iw
-    title: IW
-    priority: medium
-  - key: land
-    title: LAND
-    priority: medium
-  - key: oracle
-    title: ORACLE
-    priority: medium
-  - key: pacific
-    title: PACIFIC
-    priority: medium
-  - key: rag
-    title: RAG
-    priority: medium
-  - key: reflex
-    title: REFLEX
-    priority: medium
-  - key: sc
-    title: SC
-    priority: medium
-  - key: sea
-    title: SEA
-    priority: medium
-  - key: space
-    title: SPACE
-    priority: medium
-  - key: twin
-    title: TWIN
-    priority: medium
-  - key: viz
-    title: VIZ
-    priority: medium
 - key: aadc
   name: Agentic AI Design Canvas
   description: 'Purpose-built visual design canvas (the 10th ICDEV canvas) for architecting,
@@ -4783,6 +3889,7 @@ projects:
     priority: medium
 - key: sysgraph
   name: Unified System Graph — Sigma.js Federated Graph Platform
+  task_prefix: sysg-
   description: 'Replace fragmented graph systems (JointJS /components-map, /knowledge-graph,
     canvas KGs, kanban DAG) with a single /system-graph page powered by Sigma.js 3.0.2
     WebGL rendering + Graphology. Federates kg_nodes, canvas_kg_nodes, kanban_task_deps,
@@ -4791,7 +3898,6 @@ projects:
     by GitNexus''s unified AST graph architecture.
 
     '
-  task_prefix: sg-
   default_open: true
   briefs:
   - 'sg-v: Vendor Sigma.js 3.0.2 + Graphology 0.26.0 + ForceAtlas2 as static files
@@ -4822,68 +3928,8 @@ projects:
   - key: vv
     title: V&V Gate — E2E + Companion + Coherence
     priority: high
-  - key: agent
-    title: AGENT
-    priority: medium
-  - key: analyst
-    title: ANALYST
-    priority: medium
-  - key: cyber
-    title: CYBER
-    priority: medium
-  - key: ew
-    title: EW
-    priority: medium
-  - key: foundation
-    title: FOUNDATION
-    priority: medium
-  - key: game
-    title: GAME
-    priority: medium
-  - key: ghost
-    title: GHOST
-    priority: medium
-  - key: import
-    title: IMPORT
-    priority: medium
-  - key: info
-    title: INFO
-    priority: medium
-  - key: iw
-    title: IW
-    priority: medium
-  - key: land
-    title: LAND
-    priority: medium
-  - key: oracle
-    title: ORACLE
-    priority: medium
-  - key: pacific
-    title: PACIFIC
-    priority: medium
-  - key: rag
-    title: RAG
-    priority: medium
-  - key: reflex
-    title: REFLEX
-    priority: medium
-  - key: sc
-    title: SC
-    priority: medium
-  - key: sea
-    title: SEA
-    priority: medium
-  - key: space
-    title: SPACE
-    priority: medium
   - key: t2
     title: T2
-    priority: medium
-  - key: twin
-    title: TWIN
-    priority: medium
-  - key: viz
-    title: VIZ
     priority: medium
   - key: cg
     title: CG
@@ -6382,6 +5428,7 @@ projects:
     priority: medium
 - key: dcpr
   name: Data Canvas Production Readiness
+  task_prefix: dcpr-
   description: 'Production-hardening of the Data Design Canvas (/data) and its Data
     Mesh ecosystem. Four independent reviews found: a bypassable regex-blocklist SQL
     sandbox (stacked-statements/COPY/pg_read_file RCE surface), 11 unauthenticated
@@ -6555,4 +5602,365 @@ projects:
     priority: medium
   - key: qa
     title: Verification & Gates
+    priority: high
+- key: rce
+  name: 'RCE — RAG Context Engineering'
+  description: 'Evolve the existing RAG stack instead of swapping backends, per the
+    C:\AI\searches\rag_alt.md analysis (July 2026). Adopt: (1) Anthropic-style contextual
+    retrieval — LLM-generated 50-100 token context prefix per chunk at ingestion;
+    (2) RAPTOR summary hierarchy above flat chunks; (3) SQLite-fallback vector
+    quantization (float16 + optional binary/Hamming pre-filter) — pure Python, air-gap
+    safe; (4) eval-first — baseline retrieval-quality harness before/after each change.
+    Explicitly SKIPPED: TurboQuant (no pgvector integration), Turbopuffer (cloud-only,
+    breaks air-gap SQLite fallback), Qdrant (deferred — Rust dep vs pure-Python
+    fallback philosophy). Embedding fine-tune is a SPIKE only: the doc''s premise
+    (nomic-embed-text via Ollama) is stale — embeddings go through the provider
+    abstraction (get_embeddings), so a local sentence-transformers fine-tune needs a
+    feasibility go/no-go first. TRUST: contextual prefixes are LLM-generated content
+    entering the index — record provenance and keep raw chunk text alongside.'
+  task_prefix: rce-
+  default_open: true
+  briefs:
+  - 'eval: Eval-first — golden query set + baseline metrics via tools/rag/evaluator.py
+    and crag_evaluator.py; embedding fine-tune feasibility spike (rce-eval-01..02)'
+  - 'ctx: Contextual retrieval — context-prefix generation in ingestion_manager.py
+    via LLMRouter, config toggle in args/rag_config.yaml, re-index CLI, measure vs
+    baseline (rce-ctx-01..02)'
+  - 'raptor: RAPTOR hierarchy — rag_chunk_summaries table (PG-primary DDL + conftest
+    schema), summary-tree builder, multi-level retrieval with dedup in retriever.py
+    (rce-raptor-01..02)'
+  - 'quant: SQLite fallback quantization — float16 packing with float32 back-compat,
+    optional binary quantization + Hamming pre-filter with full-precision re-rank
+    (rce-quant-01..02)'
+  - 'xcut: Docs + manifest shard + coherence registration + record the skip decisions
+    (rce-xcut-01)'
+  epics:
+  - key: eval
+    title: Eval-First — baseline harness + embedding fine-tune spike
+    priority: high
+  - key: ctx
+    title: Contextual Retrieval — chunk context prefixes at ingestion
+    priority: high
+  - key: raptor
+    title: RAPTOR Hierarchy — summary tree over flat chunks
+    priority: medium
+  - key: quant
+    title: SQLite Fallback Quantization — float16 + binary
+    priority: medium
+  - key: xcut
+    title: Cross-Cutting — docs, manifest, decisions record
+    priority: low
+- key: sag
+  name: 'SAG — Standalone Agent (Hermes-Class) Runtime'
+  description: 'Recompose existing ICDEV primitives into a standalone conversational
+    agent (`icdev chat`) per C:\AI\searches\icdev-standalone-agent-transformation-roadmap.md
+    and icdev-standalone-agent-findings.md — CORRECTED against the codebase. The docs''
+    core insight holds: agent_loop.py (run_agent_loop, canonical icdev/tools/llm/),
+    agent_loop_session.py, chat_manager.py, cortex/, router.py, storage.py are
+    production-ready but no process ties them into an interactive agent. HOWEVER the
+    docs'' #1 CRITICAL claim is FALSE: tools/gateway/ fully exists (Remote Command
+    Gateway Phase 28 — user_binder, event_envelope, command_router, security_chain,
+    response_filter, gateway_agent + 10 adapters incl. telegram/slack/teams/mattermost/
+    skype/github/gitlab); the analyst checked a stale icdev/ mirror path. Real gateway
+    gap is only conversational agent-mode routing + Discord/Email adapters. Other
+    corrections: skills self-creation partially exists (tools/nova/skill_generator.py +
+    reflexion_loop + nova_* MCP tools, gated ICDEV_HARNESS_COLEARN) — wire it, don''t
+    rebuild; safety gates exist headlessly (.claude/hooks/pre_tool_use.py +
+    tools/airgap/hook_compat.run_pre_tool_check) — add approval UX on top; cron
+    foundation exists (tools/daemon/base.py reflex infra + genesis reflex registry) —
+    add thin user-facing wrapper; user memory should integrate Second Brain / ACE SOUL,
+    not a parallel store. Genuinely missing: icdev chat runtime process, auto
+    tool-discovery with OpenAI schemas, filesystem checkpoints /rollback, directory
+    profile isolation, process-isolated subagent delegation. EXTENDED 2026-07-23 to
+    also absorb the earlier iterations of the same analysis
+    (C:\AI\searches\archive\icdev-hermes-agent-gap-analysis.md and
+    icdev-hermes-gap-02-databridge-correction.md) — additional corrections: their
+    proposed hermes_bridge_server.py is unnecessary (tools/mcp/unified_server.py
+    already exposes 600+ tools over stdio MCP to any client incl. Hermes — remaining
+    work is curated toolsets + setup doc + CUI egress review, sag-mcp-01); FTS session
+    search already exists (tools/memory/session_indexer.py, adapt-hermes-02 — wiring
+    only, sag-rt-04); skill hub already exists (Federated FORGE Marketplace with
+    install_manager + 7-gate pipeline — CLI wiring only, sag-skl-02); streaming
+    already exists (LLMRouter.invoke_streaming); DataBridge stays ETL — the
+    conversational gateway is tools/gateway (Phase 28), NOT an evolved DataBridge.'
+  task_prefix: sag-
+  default_open: true
+  briefs:
+  - 'rt: Agent runtime — tools/agent_runtime/ process wrapping run_agent_loop +
+    chat_manager + agent_loop_session; slash commands; icdev chat CLI; session search
+    wiring over existing FTS indexer (sag-rt-01..04)'
+  - 'mcp: External-agent MCP consumption — curated toolsets + Hermes setup doc + CUI
+    egress review over the existing unified_server (sag-mcp-01)'
+  - 'reg: Tool registry — auto-discovery + OpenAI schema generation over the existing
+    MCP registry patterns; toolset bundles; handler dispatch (sag-reg-01..02)'
+  - 'gw: Gateway agent-mode — route existing tools/gateway adapters into the agent
+    runtime (conversational sessions per chat), optional Discord/Email adapters
+    (sag-gw-01..02)'
+  - 'skl: Skills lifecycle — wire NOVA skill_generator into runtime + curator with
+    HITL promotion; icdev skills install/search CLI over the existing marketplace
+    (sag-skl-01..02)'
+  - 'mem: User profile memory — integrate Second Brain/ACE SOUL + memory/ into
+    session start injection (sag-mem-01)'
+  - 'safe: Approval gates over hook_compat + filesystem checkpoints /rollback
+    (sag-safe-01..02)'
+  - 'cron: User-facing cron wrapper over daemon/reflex infra (sag-cron-01)'
+  - 'del: Process-isolated subagent delegation composing ACE/agent_toolkit
+    (sag-del-01)'
+  - 'prof: Directory-based profile isolation (sag-prof-01)'
+  - 'xcut: Docs, manifest shards, coherence, corrections ADR (sag-xcut-01)'
+  epics:
+  - key: rt
+    title: Agent Runtime — icdev chat interactive process
+    priority: high
+  - key: reg
+    title: Tool Registry — auto-discovery + OpenAI schemas
+    priority: high
+  - key: mcp
+    title: External-Agent MCP Consumption — curated toolsets over unified_server
+    priority: medium
+  - key: gw
+    title: Gateway Agent-Mode — conversational routing over Phase 28 gateway
+    priority: high
+  - key: skl
+    title: Skills Lifecycle — NOVA wiring + curator
+    priority: medium
+  - key: mem
+    title: User Profile Memory — Second Brain integration
+    priority: medium
+  - key: safe
+    title: Safety — approval gates + filesystem checkpoints
+    priority: medium
+  - key: cron
+    title: User-Facing Cron — wrapper over daemon infra
+    priority: medium
+  - key: del
+    title: Subagent Delegation — isolated child agents
+    priority: low
+  - key: prof
+    title: Profile Isolation — per-profile state dirs
+    priority: low
+  - key: xcut
+    title: Cross-Cutting — docs, manifest, corrections record
+    priority: low
+- key: twx
+  name: 'TWX — Twin Core Unification & Federal Emulation Patterns'
+  description: 'Unify the per-canvas digital twins into a system-level twin and adopt
+    federal cloud-emulation patterns, per C:\AI\searches\icdev-digital-twin-analysis.md
+    and icdev-digital-twin-sequoia-shift-research.md (2026-07-19) — CORRECTED against
+    the codebase. STALE claims: (1) the docs'' "P0.2 biggest architectural hole — IDC
+    has no twin" is FALSE: IDC IaC Twin Phase 1-4 is fully shipped
+    (tools/infra_canvas/twin/ + snapshot_writer, terraform/pulumi/aws importers, IQE
+    adapter infra.*, preapply_gate, compliance_gate, 6h reflex, cross_csp migration
+    simulation, dashboard API, 4 tables — see tools/manifest/idc-twin.md); (2)
+    "auto-refresh limited to cATO only" is stale — idc twin reflex + ndc_topology_drift,
+    pdc_pipeline_stale, qdc_gate_breach, sdc_control_expiry, mdc_cutover_countdown,
+    idc_cloud_drift reflexes exist; (3) multi-CSP switching partially exists
+    (cross_csp.py + validate_region/csp_monitor in the cloud-agnostic layer). CONFIRMED
+    real gaps: no tools/twin_core (registry/shared schema), NO twin publishes or
+    subscribes canvas event_bus events (verified zero references), no twin observatory
+    page, and QDC/AADC/AIML/AISG/OHC/CCC/DSOC/PMC have no twin modules. Prior
+    digital-twin (dt-) card delivered the existing twins; TWX is the unification layer
+    on top. Approach: twin_core is ADDITIVE (registry + canonical violation/verdict
+    schema + event bridge + observer) — existing working twins register via thin
+    adapters, NO rewrite of NDC/PDC/BDC/SDC/DDC/ODC twins. Heavy external deps
+    (LocalStack post-2026 licensing, Batfish) are spike-gated, not committed.'
+  task_prefix: twx-
+  default_open: true
+  briefs:
+  - 'core: Additive twin_core — TwinRegistry + canonical violation/verdict schema +
+    observer API; thin adapters for the 8 existing twins, no rewrites (twx-core-01..02)'
+  - 'bus: Event-bus wiring — twins publish snapshot/simulation events, cross-canvas
+    subscriptions (pipeline_deployed -> SDC refresh, sdc change -> BDC drift)
+    (twx-bus-01)'
+  - 'obs: Twin Observatory dashboard page with full 8-component page gate + IQE
+    (twx-obs-01)'
+  - 'cov: Coverage gap-fill — minimal twins for QDC/AADC/OHC via registry pattern +
+    audit of remaining canvases and reflex gaps (twx-cov-01..02)'
+  - 'fed: Federal emulation patterns — air-gap validation mode, service/region parity
+    over the cloud-agnostic layer, high-side compatibility report + ATO acceleration
+    wiring BDC x IDC (twx-fed-01..03)'
+  - 'spk: Spikes — LocalStack (licensing/air-gap fit) and Batfish (dep weight) go/no-go
+    (twx-spk-01..02)'
+  - 'xcut: Docs, manifest, ADR recording corrections + skip decisions (twx-xcut-01)'
+  epics:
+  - key: core
+    title: Twin Core — additive registry, schema, observer
+    priority: high
+  - key: bus
+    title: Event Bus Wiring — twins publish and subscribe
+    priority: high
+  - key: obs
+    title: Twin Observatory — unified dashboard page
+    priority: high
+  - key: cov
+    title: Coverage Gap-Fill — QDC/AADC/OHC twins
+    priority: medium
+  - key: fed
+    title: Federal Emulation — air-gap mode, parity, compatibility report
+    priority: medium
+  - key: spk
+    title: Spikes — LocalStack, Batfish
+    priority: low
+  - key: xcut
+    title: Cross-Cutting — docs, ADR, corrections
+    priority: low
+- key: dmx
+  name: 'DMX — DocMod/DocDrift Coverage & Feedback-Loop Extension'
+  description: 'Extend the completed DOCMOD system (32 docmod- tasks done; 6 active
+    packs + rulebook framework + drift bridge + regen orchestrator + 2 Genesis
+    reflexes) per C:\AI\searches\icdev_doc_drift_modernization_analysis.md (2026-07-19).
+    The doc''s verdict matches the codebase: architecture is production-grade,
+    remaining work is domain coverage + tighter feedback loops — NOT redesign.
+    VERIFIED against the tree: Gap #2 (SOP pack) is ALREADY IN FLIGHT uncommitted in
+    the shared checkout (args/docmod/packs/sop_workflows.yaml +
+    rulebook_sop_workflows.yaml + tests/docmod/test_sop_workflows_pack.py +
+    tool_reference KG entity type in constants.py, both namespaces) — land it, don''t
+    rebuild. Confirmed real gaps: no architecture_patterns pack, no
+    effective_date/sunset_date temporal validity, no dic_cross_references, no
+    freshness notifications (but tools/notifications/gateway.py exists to reuse), no
+    link-rot pack, no claim-level tracking. Partial: regen QA (orchestrator docstring
+    references grounding machinery — audit what''s wired); external feeds (nightly
+    eol_products_sync polling exists; CVE tooling exists in showcase/osint_engine +
+    watch_passive_cve — wire, don''t rebuild). Preserve the five invariants the doc
+    names: deterministic-first pack verdicts, append-only dic_versions/dic_edit_history,
+    HITL pending_review gating, tenant_id+classification RLS on all new tables,
+    air-gap rulebook fallbacks.'
+  task_prefix: dmx-
+  default_open: true
+  briefs:
+  - 'packs: Land in-flight SOP pack; architecture_patterns rulebook pack; temporal
+    validity fields for policy_refs (dmx-packs-01..03)'
+  - 'loop: Proactive freshness notifications via notifications gateway; external feed
+    wiring (NIST RSS, CVE) into docmod evidence (dmx-loop-01..02)'
+  - 'ref: Inter-document cross-reference tracking + cascade flagging; URL link-rot
+    pack with egress-safe checker (dmx-ref-01..02)'
+  - 'qa: Regeneration quality gate — verifier + citation re-validation before
+    pending_review (dmx-qa-01)'
+  - 'claims: Semantic claim tracking — design spike then phased build
+    (dmx-claims-01..02)'
+  - 'live: Living-document mode spike — redline accumulation vs Tech Writer workspace
+    (dmx-live-01)'
+  - 'xcut: Docs, manifest, ADR, coherence (dmx-xcut-01)'
+  epics:
+  - key: packs
+    title: Domain Packs — SOP landing, architecture patterns, temporal validity
+    priority: high
+  - key: loop
+    title: Feedback Loop — notifications + external feeds
+    priority: high
+  - key: ref
+    title: References — cross-doc tracking + link rot
+    priority: medium
+  - key: qa
+    title: Regen QA Gate — verify before pending_review
+    priority: medium
+  - key: claims
+    title: Semantic Claim Tracking — spike + phased build
+    priority: medium
+  - key: live
+    title: Living Document Mode — spike
+    priority: low
+  - key: xcut
+    title: Cross-Cutting — docs, ADR, coherence
+    priority: low
+- key: crx
+  name: 'CRX — Component Review Remediation'
+  description: 'Distilled remediation card from the 20 Hermes component reviews in
+    C:\AI\searches\icdev_component_reviews\ (2026-07-19, 160 recommendations). Heavily
+    triaged against the codebase: the LLM-router and KG reviews are almost entirely
+    stale (fallback chains, prompt injection guards, prompt_registry_*, token/cost
+    dashboards, kg_temporal_diff, kg_stale_entities, kg_compliance_*, system_graph viz
+    all EXIST); NDC/security/data-canvas reviews largely superseded by the completed
+    NDC/SHX/DCPR/PENTA/NAV hardening sweeps; RAG review superseded by the RCE card;
+    DIC/DocMod/DocDrift reviews superseded by the DMX card; standalone-agent themes by
+    SAG. What survives is carded here: Genesis reflex hardening (shared-connection
+    isolation is REAL — daemon.py uses one get_connection across reflexes, matching
+    past PG lock-storm incidents), DB observability/retention, notification
+    routing/escalation (extends the existing tools/notification_service/ alert/handler
+    services — the doc understated what exists), kanban SLA/metrics (no
+    due_date/sla fields — verified), performance + a11y testing (verified absent),
+    security UBA + SOAR-lite (compose runbook_execute/incident_create), GovCon past-
+    performance + clause risk, KG blast-radius freshness signal, migration validation/
+    rollback. Every task is audit-first; crx-xcut-01 records the full 160-item
+    disposition matrix so dropped items are documented, not lost.'
+  task_prefix: crx-
+  default_open: true
+  briefs:
+  - 'gen: Genesis reflex hardening — connection isolation, failure alerting, deps +
+    resource limits (crx-gen-01..03)'
+  - 'db: Storage hardening — PG native RLS spike, slow-query/pool observability,
+    retention framework (crx-db-01..03)'
+  - 'not: Notification routing rules + escalation + per-user preferences over the
+    existing notification_service (crx-not-01)'
+  - 'kan: Kanban SLA/deadline fields + cycle-time metrics (crx-kan-01)'
+  - 'test: Performance baseline harness, a11y checks, parallelization/coverage spike
+    (crx-test-01..03)'
+  - 'sec: UBA insider-risk lite + SOAR-lite HITL playbooks (crx-sec-01..02)'
+  - 'gov: Past-performance auto-suggest + clause risk engine (crx-gov-01..02)'
+  - 'kg: KG blast-radius freshness signal into DIC (crx-kg-01)'
+  - 'mig: Post-migration validation + rollback sections in wave plans (crx-mig-01)'
+  - 'xcut: Disposition matrix ADR + docs/coherence (crx-xcut-01)'
+  epics:
+  - key: gen
+    title: Genesis Reflex Hardening
+    priority: high
+  - key: db
+    title: Storage Hardening & Observability
+    priority: high
+  - key: not
+    title: Notification Routing & Escalation
+    priority: medium
+  - key: kan
+    title: Kanban SLA & Flow Metrics
+    priority: medium
+  - key: test
+    title: Testing — Performance, A11y, Speed
+    priority: medium
+  - key: sec
+    title: Security — UBA + SOAR-lite
+    priority: medium
+  - key: gov
+    title: GovCon — Past Performance + Clause Risk
+    priority: medium
+  - key: kg
+    title: KG Blast-Radius Freshness Signal
+    priority: low
+  - key: mig
+    title: Migration Validation & Rollback
+    priority: low
+  - key: xcut
+    title: Cross-Cutting — Disposition ADR
+    priority: low
+- key: opx
+  name: 'OPX — Open Diagnosed Issues Remediation'
+  description: 'Land the two diagnosed-but-unfixed issues from C:\AI\searches\open\
+    (both verified still present 2026-07-23). (1) tests/kanban/test_auto_close_parent.py
+    has no schema fixture — it inserts/deletes rows in the REAL data/icdev.db via
+    get_connection(), so it passes only in populated checkouts (fails in fresh
+    worktrees/CI) and can leave synthetic task-test-* rows on the live board if
+    teardown is skipped; conftest already ships the icdev_db fixture +
+    MINIMAL_ICDEV_SCHEMA (incl. kanban_tasks) — the file just does not use it.
+    (2) SIPA integrity_monitor._rel_path() basename fallback fires for ~99% of
+    findings (paths stored relative, no /<assessment_id>/ marker), making remediation
+    cards ambiguous (bare posture.py among 6+ candidates — already caused a wrong
+    "premise fabricated" triage) and creating a latent signature-collision false-
+    negative; the naive fix re-signatures ~131k baselined findings and would flood
+    the board on the next 6h reflex run, so the path fix MUST land together with a
+    deliberate baseline transition (option 2: silent re-baseline pass). A safe
+    standalone card-body improvement (print raw file_path) carries none of that risk
+    and ships first.'
+  task_prefix: opx-
+  default_open: true
+  briefs:
+  - 'kan: Test isolation — port test_auto_close_parent.py to the icdev_db fixture;
+    sweep live board for leftover synthetic rows; audit sibling tests for the same
+    ambient-DB pattern (opx-kan-01..02)'
+  - 'sipa: SIPA card clarity + _rel_path fix with gated baseline transition
+    (opx-sipa-01..02)'
+  epics:
+  - key: kan
+    title: Kanban Test Ambient-DB Isolation
+    priority: high
+  - key: sipa
+    title: SIPA _rel_path Fix + Baseline Transition
     priority: high
