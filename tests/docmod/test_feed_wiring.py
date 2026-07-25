@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
@@ -78,14 +79,18 @@ def _conn():
     return get_connection()
 
 
-def _seed_nist_pub(pub_id, revision_num, source="seed"):
+def _seed_nist_pub(pub_id, revision_num, source="seed", synced_at=None):
+    # Default to "now" so the cadence-gate test stays within the window
+    # regardless of wall-clock date; a fixed literal here is a time-bomb that
+    # silently ages past nist_pubs_cadence_hours (24h).
+    synced_at = synced_at or datetime.now(timezone.utc).isoformat()
     conn = _conn()
     conn.execute("DELETE FROM docmod_nist_pubs WHERE pub_id=%s", (pub_id,))
     conn.execute(
         "INSERT INTO docmod_nist_pubs (id, pub_id, latest_revision, revision_num, "
         "source, synced_at) VALUES (%s,%s,%s,%s,%s,%s)",
         (f"np-{uuid.uuid4().hex[:8]}", pub_id, f"Rev {revision_num}",
-         revision_num, source, "2026-07-24T00:00:00+00:00"),
+         revision_num, source, synced_at),
     )
     conn.commit()
     conn.close()
