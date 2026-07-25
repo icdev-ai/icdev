@@ -235,3 +235,176 @@ class ChainPrompts:
             "Return the consensus answer with brief justification. End with [CONSENSUS]."
         )
         return sys, usr
+
+    # ------------------------------------------------------------------
+    # Council -- fixed-perspective panel + anonymized peer review + chairman
+    # synthesis. Distinct from CoD: debaters argue a generated FOR/AGAINST
+    # stance across multiple rounds toward a judge picking a winner; council
+    # advisors each give ONE independent pass from a FIXED cognitive lens
+    # (contrarian, first-principles, ...), then anonymously peer-review each
+    # other before a chairman synthesizes agreement/clash/blind-spots/
+    # recommendation. Built for decision-quality analysis, not debate-to-a-
+    # winner. Adapted from the community "LLM Council" skill (methodology by
+    # Andrej Karpathy).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def council_advisor(
+        user_prompt: str,
+        advisor_name: str,
+        advisor_style: str,
+        *,
+        system_prompt: str = "",
+        output_schema: Optional[Dict] = None,
+    ) -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) for one council advisor's
+        independent pass. No prior arguments are shown -- unlike a debater,
+        each advisor analyzes the question cold, from their fixed lens."""
+        sys = _CUI_BANNER + (
+            f"You are {advisor_name} on an LLM Council.\n\n"
+            f"Your thinking style: {advisor_style}\n\n"
+            "Respond independently. Do not hedge or try to be balanced. Lean fully "
+            "into your assigned angle. The other advisors will cover the angles "
+            "you're not covering.\n"
+        )
+        if system_prompt:
+            sys += f"\n[ORIGINAL SYSTEM CONTEXT]\n{system_prompt}\n"
+        sys += _schema_hint(output_schema)
+
+        usr = (
+            f"[QUESTION BROUGHT TO THE COUNCIL]\n{user_prompt}\n\n"
+            "[INSTRUCTION] Respond from your perspective. Be direct and specific. "
+            "Keep your response between 150-300 words. No preamble -- go straight "
+            "into your analysis."
+        )
+        return sys, usr
+
+    @staticmethod
+    def divergence_branch(
+        user_prompt: str,
+        frame_name: str,
+        frame_instruction: str,
+        *,
+        system_prompt: str = "",
+        output_schema: Optional[Dict] = None,
+    ) -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) for one divergence branch.
+
+        The GENERATIVE counterpart to council_advisor(): each branch receives the
+        problem plus ONE generative frame and is instructed to WIDEN the option
+        space -- produce candidate ideas and explicitly NOT evaluate, rank, or
+        self-critique. Unlike debater(), no prior_arguments are ever threaded in:
+        branches run in strict isolation (one round, no cross-reading), because
+        serializing or cross-feeding them collapses divergence into a single
+        wider thought. Scoring/clustering/deepening is a SEPARATE invocation
+        (dvg-critic-*) with an opposing critic system prompt -- the
+        generator/critic split is intentionally mechanical, never one unified
+        response.
+        """
+        sys = _CUI_BANNER + (
+            f"You are a divergent idea generator working under the '{frame_name}' frame.\n\n"
+            f"Frame: {frame_instruction}\n\n"
+            "Your ONLY job is to GENERATE candidate ideas under this frame. Widen "
+            "the option space. Do NOT evaluate, rank, score, self-critique, hedge, "
+            "or pick a 'best' -- a separate critic pass does all of that. Lean fully "
+            "into your frame; other branches cover the angles you don't.\n"
+        )
+        if system_prompt:
+            sys += f"\n[ORIGINAL SYSTEM CONTEXT]\n{system_prompt}\n"
+        sys += _schema_hint(output_schema)
+
+        usr = (
+            f"[PROBLEM]\n{user_prompt}\n\n"
+            "[INSTRUCTION] Generate 3-6 DISTINCT candidate ideas under your frame. "
+            "For each, give a short title then 1-2 sentences on the core approach. "
+            "Number them. No evaluation, no ranking, no 'recommended' -- just the raw "
+            "options. End with [IDEAS]."
+        )
+        return sys, usr
+
+    @staticmethod
+    def council_peer_review(
+        user_prompt: str,
+        anonymized_responses: List[Dict[str, str]],
+        *,
+        system_prompt: str = "",
+    ) -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) for a council peer-review pass.
+
+        Args:
+            anonymized_responses: [{"label": "A", "response": "..."}, ...] --
+                shuffled so the reviewer judges the argument on merit instead
+                of deferring to a persona.
+        """
+        sys = _CUI_BANNER + (
+            "You are reviewing the outputs of an LLM Council. Several advisors "
+            "independently answered the question below. Their responses are "
+            "anonymized -- evaluate on merit, not on who you think said what.\n"
+        )
+        if system_prompt:
+            sys += f"\n[ORIGINAL SYSTEM CONTEXT]\n{system_prompt}\n"
+
+        usr = f"[QUESTION BROUGHT TO THE COUNCIL]\n{user_prompt}\n\n"
+        for entry in anonymized_responses:
+            usr += f"[RESPONSE {entry['label']}]\n{entry['response']}\n\n"
+        usr += (
+            "[INSTRUCTION] Answer these three questions. Be specific. Reference "
+            "responses by letter.\n"
+            "1. Which response is the strongest? Why?\n"
+            "2. Which response has the biggest blind spot? What is it missing?\n"
+            "3. What did ALL responses miss that the council should consider?\n"
+            "Keep your review under 200 words. Be direct. End with [PEER REVIEW]."
+        )
+        return sys, usr
+
+    @staticmethod
+    def council_chairman(
+        user_prompt: str,
+        advisor_responses: List[Dict[str, str]],
+        peer_reviews: List[str],
+        *,
+        system_prompt: str = "",
+        output_schema: Optional[Dict] = None,
+    ) -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) for the council chairman
+        synthesis.
+
+        Args:
+            advisor_responses: [{"name": "The Contrarian", "response": "..."}, ...]
+                -- de-anonymized (the chairman sees who said what).
+            peer_reviews: Raw peer-review text blocks (already anonymized
+                internally; the chairman doesn't need the anonymization map).
+        """
+        sys = _CUI_BANNER + (
+            "You are the Chairman of an LLM Council. Your job is to synthesize "
+            "the work of the council's advisors and their peer reviews into a "
+            "final verdict. Be direct. Don't hedge. The whole point of the "
+            "council is to give clarity that a single perspective couldn't "
+            "provide.\n"
+        )
+        if system_prompt:
+            sys += f"\n[ORIGINAL SYSTEM CONTEXT]\n{system_prompt}\n"
+        sys += _schema_hint(output_schema)
+
+        usr = f"[QUESTION BROUGHT TO THE COUNCIL]\n{user_prompt}\n\n[ADVISOR RESPONSES]\n\n"
+        for entry in advisor_responses:
+            usr += f"**{entry['name']}:**\n{entry['response']}\n\n"
+        usr += "[PEER REVIEWS]\n\n"
+        for i, review in enumerate(peer_reviews, 1):
+            usr += f"Reviewer {i}:\n{review}\n\n"
+        usr += (
+            "[INSTRUCTION] Produce the council verdict using this exact structure:\n\n"
+            "## Where the Council Agrees\n"
+            "[Points multiple advisors converged on independently. High-confidence signals.]\n\n"
+            "## Where the Council Clashes\n"
+            "[Genuine disagreements. Present both sides. Explain why reasonable advisors disagree.]\n\n"
+            "## Blind Spots the Council Caught\n"
+            "[Things that only emerged through peer review -- things individual "
+            "advisors missed that others flagged.]\n\n"
+            "## The Recommendation\n"
+            "[A clear, direct recommendation. Not \"it depends.\" A real answer with reasoning.]\n\n"
+            "## The One Thing to Do First\n"
+            "[A single concrete next step. Not a list. One thing.]\n\n"
+            "End with [COUNCIL VERDICT]."
+        )
+        return sys, usr
