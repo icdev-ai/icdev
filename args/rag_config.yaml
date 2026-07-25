@@ -95,6 +95,21 @@ rag:
     chunk_size_tokens: 2000
     overlap_pct: 0.1
     short_threshold_tokens: 500
+  # Contextual retrieval (rce-ctx-01) — Anthropic "contextual retrieval" pattern.
+  # Before embedding, prepend a ~50-100 token context prefix that situates each
+  # chunk within its source document; the EMBEDDING is computed on the
+  # contextualized text while the stored/cited content stays original.
+  # OPT-IN — default OFF, so the default pipeline and existing tests are
+  # unchanged. Air-gap safe: LLM prefix routes through the cheap-tier function
+  # (never a hardcoded model); if the provider is unavailable it degrades to the
+  # deterministic heuristic (or "") without blocking ingestion.
+  contextual_retrieval:
+    enabled: false            # master toggle (default OFF)
+    function: rag_evaluate    # LLM router function (cheap tier) — no hardcoded model
+    max_tokens: 120           # LLM generation budget for the prefix
+    token_budget: 100         # cap the stored prefix to ~this many tokens
+    fallback_heuristic: true  # use a deterministic source_type/metadata prefix when no LLM
+    prompt_version: ctx-v1    # bump when the prompt template changes (provenance)
   critique_integration:
     enabled: true
     max_critique_context_chars: 3000
