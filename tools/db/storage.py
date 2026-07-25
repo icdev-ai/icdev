@@ -51,6 +51,7 @@ from tools.logging.icdev_logger import get_logger
 import os
 import re
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 #: Tables whose column-masking failure has already been reported (warn once each).
@@ -1119,6 +1120,72 @@ def _strip_sql_line_comments(sql: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Reflex connection scope — thread-local leak reclamation (crx-gen-01)
+# ---------------------------------------------------------------------------
+# A crashing Genesis reflex that opens get_connection() but raises before
+# close() leaks a checked-out pool connection (and, pre-idle-timeout, an
+# idle-in-transaction session holding ACCESS SHARE locks — the historical
+# kanban_tasks lock-storm). idle_in_transaction_session_timeout rolls the
+# transaction back server-side, but the connection stays checked OUT of the
+# 20-slot pool, so repeated leaks still exhaust it.
+#
+# reflex_connection_scope() wraps a single reflex execution. Every connection
+# opened on the SAME thread while the scope is active is registered; on scope
+# exit any that were never closed are rolled back and returned to the pool.
+# It is thread-local by construction, so it never touches connections held by
+# other threads/processes (the dashboard, a cached compass connection, etc.).
+import threading as _threading  # noqa: E402
+
+_conn_scope = _threading.local()
+
+
+def _register_scoped_connection(conn) -> None:
+    """Register a freshly-opened connection with the active thread scope, if any."""
+    stack = getattr(_conn_scope, "stack", None)
+    if stack:
+        # Only the innermost active scope tracks the connection.
+        stack[-1].append(conn)
+
+
+@contextmanager
+def reflex_connection_scope():
+    """Isolate one unit of work so leaked connections are reclaimed on exit.
+
+    Guarantees that any StorageConnection opened within the ``with`` block on
+    this thread and left open (e.g. because the body raised before calling
+    ``close()``) is rolled back and returned to the pool. Connections the body
+    closed itself are left untouched — reclamation is skipped when ``_closed``
+    is already set, so a pooled connection is never returned to the pool twice.
+
+    Reflexes that intentionally keep a shared/cached connection alive are
+    unaffected as long as that connection is not opened via get_connection()
+    inside the scope (cached helpers hand back the same object without
+    re-registering, and are never force-closed here).
+    """
+    stack = getattr(_conn_scope, "stack", None)
+    if stack is None:
+        stack = []
+        _conn_scope.stack = stack
+    tracked: list = []
+    stack.append(tracked)
+    try:
+        yield
+    finally:
+        stack.pop()
+        for conn in tracked:
+            if getattr(conn, "_closed", True):
+                continue  # already closed by the reflex — do not double-close
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
 # Connection wrapper — the main abstraction
 # ---------------------------------------------------------------------------
 class StorageConnection:
@@ -1131,6 +1198,10 @@ class StorageConnection:
     def __init__(self, conn, backend: str):
         self._conn = conn
         self._backend = backend
+        self._closed = False
+        # If a reflex_connection_scope is active on this thread, register self so
+        # a leaked (never-closed) connection is reclaimed when the scope exits.
+        _register_scoped_connection(self)
 
     def execute(self, sql: str, params=None):
         """Execute SQL with automatic translation."""
@@ -1172,6 +1243,7 @@ class StorageConnection:
         self._conn.rollback()
 
     def close(self):
+        self._closed = True
         self._conn.close()
 
     def cursor(self):
@@ -1311,11 +1383,19 @@ class _PooledPgConnection:
         self._conn = raw_conn
         self._pool = pool
         self.autocommit = False
+        self._closed = False
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
 
     def close(self):
+        if self._closed:
+            # Idempotent: never putconn() a connection twice — a second putconn
+            # of a raw conn the pool may have already re-issued to another caller
+            # would corrupt that caller's session (the classic cached/shared-conn
+            # poisoning hazard).
+            return
+        self._closed = True
         try:
             if not self._conn.closed:
                 self._conn.rollback()  # return in clean state
