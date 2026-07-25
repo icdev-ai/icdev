@@ -49,6 +49,13 @@ DEFAULT_TIMEOUT_SECONDS = 120
 # any question: the differentiation mechanism is the lens, not the model or
 # a generated stance. (name, thinking-style description) pairs, in the order
 # advisor slots are assigned.
+#
+# As of dvg-frames-02 these live in args/ideation_frames.yaml (frame set
+# `council_default`, mode `evaluative`) and invoke_council reads them through
+# _load_council_advisors(). This constant is retained VERBATIM as the code-level
+# fallback: invoke_council is reachable from the cross-repo council_query MCP
+# tool (idea_lab) and must not start failing if the config file is missing.
+# Keep this list and the YAML set byte-identical (guarded by a regression test).
 _COUNCIL_ADVISORS: list[tuple[str, str]] = [
     (
         "The Contrarian",
@@ -260,34 +267,45 @@ class ChainOrchestrator:
         return function in excluded
 
     def _load_divergence_frames(self, frame_set: str = "generative") -> List[Tuple[str, str]]:
-        """Resolve a named generative frame set to a list of (name, instruction).
+        """Resolve a named GENERATIVE frame set to a list of (name, prompt_fragment).
 
-        Prefers the versioned library at args/ideation_frames.yaml (dvg-frames-01);
-        falls back to the inline _DIVERGENCE_FRAMES default when the file is absent,
-        empty, or the requested set is missing. Never raises -- an unreadable frame
-        file degrades to the built-in default so a divergence run still proceeds.
+        Reads the versioned library at args/ideation_frames.yaml through the single
+        config loader (tools.config.ideation_frames, dvg-frames-01/02) -- the one
+        source of truth for perspective sets. Falls back to the inline
+        _DIVERGENCE_FRAMES default when the file is absent, empty, or the requested
+        set has no generative frames. Never raises -- an unreadable frame file
+        degrades to the built-in default so a divergence run still proceeds.
         """
         try:
-            import yaml
+            from tools.config.ideation_frames import get_frame_pairs
 
-            frames_path = BASE_DIR / "args" / "ideation_frames.yaml"
-            if frames_path.exists():
-                data = yaml.safe_load(frames_path.read_text(encoding="utf-8")) or {}
-                sets = data.get("frame_sets", {})
-                entries = sets.get(frame_set)
-                if entries:
-                    resolved: List[Tuple[str, str]] = []
-                    for e in entries:
-                        if isinstance(e, dict):
-                            name = str(e.get("name", "")).strip()
-                            instr = str(e.get("instruction", e.get("description", ""))).strip()
-                            if name and instr:
-                                resolved.append((name, instr))
-                    if resolved:
-                        return resolved
+            pairs = get_frame_pairs(frame_set, mode="generative")
+            if pairs:
+                return pairs
         except Exception as exc:  # noqa: BLE001 — frame file is advisory, never load-bearing
             logger.debug("ideation frame load failed for set '%s': %s — using inline default", frame_set, exc)
         return list(_DIVERGENCE_FRAMES)
+
+    def _load_council_advisors(self) -> List[Tuple[str, str]]:
+        """Resolve the council's fixed cognitive lenses to (name, style) pairs.
+
+        Reads the EVALUATIVE `council_default` set from the shared frame library
+        (dvg-frames-02) so there is one source of truth for perspective sets.
+        Behavior is identical to the historical hardcoded list -- same advisors,
+        same order, same text. Falls back to the module-level _COUNCIL_ADVISORS
+        constant if the YAML is missing, fails to load, or is short: invoke_council
+        is reachable from the cross-repo council_query MCP tool (idea_lab) and must
+        never start failing because a config file moved.
+        """
+        try:
+            from tools.config.ideation_frames import get_frame_pairs
+
+            pairs = get_frame_pairs("council_default", mode="evaluative")
+            if pairs:
+                return pairs
+        except Exception as exc:  # noqa: BLE001 — never take council offline over a config read
+            logger.debug("council frame load failed: %s — using hardcoded fallback", exc)
+        return list(_COUNCIL_ADVISORS)
 
     def _compute_cost(self, model_id: str, input_tokens: int, output_tokens: int) -> float:
         """Compute USD cost for a model invocation."""
@@ -1024,7 +1042,11 @@ class ChainOrchestrator:
 
         self._check_module_budget(function, estimated_cost=cfg.get("cost_cap_usd", 0.0))
 
-        num_advisors = min(cfg["num_advisors"], len(_COUNCIL_ADVISORS))
+        # Fixed cognitive lenses read from the shared frame library (dvg-frames-02),
+        # with a code-level fallback to the _COUNCIL_ADVISORS constant. Behavior is
+        # identical to the historical hardcoded path.
+        council_advisors = self._load_council_advisors()
+        num_advisors = min(cfg["num_advisors"], len(council_advisors))
         timeout = cfg["timeout_seconds"]
         deadline = time.time() + timeout
 
@@ -1044,7 +1066,7 @@ class ChainOrchestrator:
         if request.messages and isinstance(request.messages[0], dict):
             user_prompt = str(request.messages[0].get("content", ""))
 
-        advisors = _COUNCIL_ADVISORS[:num_advisors]
+        advisors = council_advisors[:num_advisors]
         rounds: List[Dict[str, Any]] = []
         models_used: set = set()
         total_cost = 0.0
