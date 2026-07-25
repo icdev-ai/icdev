@@ -120,7 +120,7 @@ rag:
   # (never a hardcoded model); if the provider is unavailable it degrades to the
   # deterministic heuristic (or "") without blocking ingestion.
   contextual_retrieval:
-    enabled: false            # master toggle (default OFF)
+    enabled: true             # master toggle (default OFF)
     function: rag_evaluate    # LLM router function (cheap tier) — no hardcoded model
     max_tokens: 120           # LLM generation budget for the prefix
     token_budget: 100         # cap the stored prefix to ~this many tokens

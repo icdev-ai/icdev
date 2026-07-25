@@ -206,6 +206,93 @@ class TestWindowedReindex:
         assert [w.chunk_id for w in writes] == ["c0", "c1", "c2", "c3", "c4"]
 
 
+# ---------------------------------------------------------------------------
+# update_chunk must refresh the column search actually ranks on (rce-eval-04-d3)
+# ---------------------------------------------------------------------------
+class FakeConn:
+    def __init__(self, backend: str) -> None:
+        self._backend = backend
+        self.statements = []
+        self.committed = False
+        self.closed = False
+
+    def execute(self, sql, params=None):
+        self.statements.append((sql, params))
+        return self
+
+    def commit(self) -> None:
+        self.committed = True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class TestUpdateChunkVectorColumn:
+    """pg_vector_store ranks on ``embedding_vec``; the blob alone is invisible."""
+
+    def _run(self, monkeypatch, backend):
+        import importlib
+
+        storage = importlib.import_module("tools.db.storage")
+        conn = FakeConn(backend)
+        monkeypatch.setattr(storage, "get_connection", lambda *a, **k: conn)
+        monkeypatch.setattr(storage, "is_pg", lambda c=None: backend == "postgresql")
+        chunk = _chunk("c1", "body", meta={"context_prefix": "CTX"})
+        chunk.embedding = [0.5, 0.25, 0.125]
+        LiveChunkStore().update_chunk(chunk)
+        assert conn.committed and conn.closed
+        return conn.statements[0]
+
+    def test_postgres_update_writes_embedding_vec(self, monkeypatch) -> None:
+        sql, params = self._run(monkeypatch, "postgresql")
+        assert "embedding_vec = %s::vector" in sql
+        assert params[1] == "[0.500000,0.250000,0.125000]"
+
+    def test_sqlite_update_leaves_vector_column_alone(self, monkeypatch) -> None:
+        sql, _ = self._run(monkeypatch, "sqlite")
+        assert "embedding_vec" not in sql
+
+
+class TestIterChunksDecodesBlob:
+    """psycopg returns BYTEA as memoryview; sqlite3 returns bytes."""
+
+    def _rows(self, blob):
+        return [{
+            "id": "c1", "content": "body", "content_hash": "h", "embedding": blob,
+            "source_type": "compliance_reference", "source_id": "nist53:ac-2",
+            "source_table": "", "chunk_index": 0, "total_chunks": 1,
+            "metadata": "{}", "tier": "hot", "tenant_id": "", "project_id": "",
+            "classification": "CUI",
+        }]
+
+    def _iter(self, monkeypatch, blob):
+        import importlib
+
+        storage = importlib.import_module("tools.db.storage")
+        rows = self._rows(blob)
+
+        class Conn:
+            def execute(self, sql, params=None):
+                return self
+
+            def fetchall(self):
+                return rows
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(storage, "get_connection", lambda *a, **k: Conn())
+        return LiveChunkStore().iter_chunks(source_type="compliance_reference")
+
+    @pytest.mark.parametrize("wrap", [bytes, memoryview])
+    def test_blob_decoded_to_float_list(self, monkeypatch, wrap) -> None:
+        from tools.rag.sqlite_vector_store import _embedding_to_blob
+
+        blob = wrap(_embedding_to_blob([0.5, 0.25, 0.125]))
+        chunks = self._iter(monkeypatch, blob)
+        assert chunks[0].embedding == pytest.approx([0.5, 0.25, 0.125])
+
+
 class TestAnnotateWindow:
     def test_full_window_reports_more_and_next_offset(self) -> None:
         stats = annotate_window({}, limit=10, offset=20, loaded=10)
