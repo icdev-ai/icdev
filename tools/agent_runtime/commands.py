@@ -92,20 +92,55 @@ def _cmd_skills(_runtime: Any, _arg: str) -> "tuple[str, bool]":
 
 
 def _cmd_memory(runtime: Any, arg: str) -> "tuple[str, bool]":
-    # Full profile-memory integration lands in sag-mem-01. Until then, degrade
-    # to a useful view of the current session's recent transcript.
-    sub = arg.strip().lower()
-    if sub.startswith("forget"):
-        return "Memory not enabled yet (arrives with sag-mem-01).", False
-    msgs = runtime.session.messages(limit=10)
-    if not msgs:
+    """Show durable profile facts, remember a new one, or forget one (sag-mem-01).
+
+    Usage: /memory | /memory forget <N|text> | /memory remember <fact text>
+    """
+    from tools.agent_runtime.profile_memory import (
+        forget_fact,
+        list_facts,
+        remember_facts,
+    )
+
+    user_id = getattr(runtime, "user_id", "default")
+    tenant_id = getattr(runtime, "tenant_id", "")
+    parts = arg.strip().split(maxsplit=1)
+    sub = parts[0].lower() if parts else ""
+    rest = parts[1].strip() if len(parts) > 1 else ""
+
+    if sub == "forget":
+        if not rest:
+            return "Usage: /memory forget <N|text>", False
+        removed = forget_fact(rest, user_id=user_id, tenant_id=tenant_id)
+        if removed is None:
+            return f"No fact matched {rest!r}.", False
+        # Re-inject the (now-updated) profile on the next turn.
+        if hasattr(runtime, "_profile_preamble"):
+            runtime._profile_preamble = None
+        return f"Forgot: {removed}", False
+
+    if sub == "remember":
+        if not rest:
+            return "Usage: /memory remember <fact text>", False
+        n = remember_facts([{"text": rest, "confidence": 0.9, "source": "manual"}],
+                           user_id=user_id, tenant_id=tenant_id)
+        if hasattr(runtime, "_profile_preamble"):
+            runtime._profile_preamble = None
+        return ("Remembered." if n else "Already known."), False
+
+    facts = list_facts(user_id=user_id, tenant_id=tenant_id)
+    if not facts:
         return (
-            "No remembered facts yet. Persistent user-profile memory arrives "
-            "with sag-mem-01; showing session transcript only.",
+            "No remembered facts yet. Use '/memory remember <fact>' to add one, "
+            "or they are captured automatically from your sessions.",
             False,
         )
-    lines = [f"  [{m.get('role')}] {str(m.get('content', ''))[:120]}" for m in msgs]
-    return "Recent session transcript (profile memory arrives in sag-mem-01):\n" + "\n".join(lines), False
+    lines = [f"Remembered facts ({len(facts)}):"]
+    for i, f in enumerate(facts[:20], start=1):
+        conf = f.get("confidence", 0)
+        lines.append(f"  {i}. {f.get('text', '')}  (confidence {conf:.2f}, {f.get('source', '?')})")
+    lines.append("Use '/memory forget <N>' to remove one.")
+    return "\n".join(lines), False
 
 
 def _cmd_usage(runtime: Any, _arg: str) -> "tuple[str, bool]":
@@ -220,7 +255,7 @@ REGISTRY: dict[str, Command] = {
     "/title": Command(_cmd_title, "Show or set the session title. Usage: /title [name]"),
     "/tools": Command(_cmd_tools, "List the currently discovered tools."),
     "/skills": Command(_cmd_skills, "List available icdev-* skills."),
-    "/memory": Command(_cmd_memory, "Show remembered facts (full support in sag-mem-01)."),
+    "/memory": Command(_cmd_memory, "Show/remember/forget durable facts. Usage: /memory [forget <N>|remember <fact>]"),
     "/usage": Command(_cmd_usage, "Show token/cost stats for this session."),
     "/snapshot": Command(_cmd_snapshot, "Checkpoint paths now. Usage: /snapshot <path> [more...]"),
     "/rollback": Command(_cmd_rollback, "Preview/apply a rollback. Usage: /rollback [N|id] [--yes]"),

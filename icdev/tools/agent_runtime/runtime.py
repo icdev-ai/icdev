@@ -74,6 +74,8 @@ class AgentRuntime:
         max_total_tokens: int | None = None,
         max_cost_usd: float | None = None,
         command_handler: CommandHandler | None = None,
+        user_id: str = "default",
+        tenant_id: str = "",
     ) -> None:
         self._router = router
         self.system_prompt = system_prompt
@@ -82,9 +84,12 @@ class AgentRuntime:
         self.max_total_tokens = max_total_tokens
         self.max_cost_usd = max_cost_usd
         self.command_handler = command_handler
+        self.user_id = user_id
+        self.tenant_id = tenant_id
         self.tools, self.tool_handlers = build_builtin_toolset()
         self.session: RuntimeSession = RuntimeSession.create(title="Untitled session")
         self._stop = threading.Event()
+        self._profile_preamble: str | None = None
 
     # -- router ------------------------------------------------------------
 
@@ -104,6 +109,8 @@ class AgentRuntime:
         self.session = RuntimeSession.create(
             title=title, manager=self.session.manager
         )
+        # Re-inject the operator profile at the next turn of the new session.
+        self._profile_preamble = None
         return self.session
 
     def use_toolset(
@@ -145,6 +152,30 @@ class AgentRuntime:
                 names.append(name)
         return sorted(names)
 
+    # -- profile memory (sag-mem-01) ---------------------------------------
+
+    def _effective_system_prompt(self, user_input: str) -> str:
+        """System prompt with the operator profile + memory preamble injected once.
+
+        Built at session start (first turn) from ``profile_memory`` — durable
+        facts/preferences plus the top hybrid-memory hits keyed to the first
+        prompt — and cached so subsequent turns reuse the same preamble.
+        """
+        if getattr(self, "_profile_preamble", None) is None:
+            preamble = ""
+            try:
+                from tools.agent_runtime.profile_memory import build_profile_context
+
+                preamble = build_profile_context(
+                    self.user_id, self.tenant_id, query=user_input
+                )
+            except Exception as exc:  # noqa: BLE001 — memory is best-effort
+                logger.debug("agent_runtime: profile injection skipped: %s", exc)
+            self._profile_preamble = preamble
+        if self._profile_preamble:
+            return f"{self._profile_preamble}\n\n{self.system_prompt}"
+        return self.system_prompt
+
     # -- turn execution ----------------------------------------------------
 
     def run_turn(self, user_input: str) -> Any:
@@ -159,7 +190,7 @@ class AgentRuntime:
         self.session.record_user(user_input)
         result = run_agent_loop(
             self.router,
-            system_prompt=self.system_prompt,
+            system_prompt=self._effective_system_prompt(user_input),
             user_prompt=user_input,
             tools=self.tools,
             tool_handlers=self.tool_handlers,
