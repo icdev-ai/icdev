@@ -131,6 +131,10 @@ REGISTRY: List[ReflexEntry] = [
                 "PMA: nightly credential expiry scan and SPOF dependency detection"),
     ReflexEntry("pma_int_gap_monitor",       DOMAIN, 168.0,
                 "PMA: weekly INT gap persistence scan; seeds collection requirements and compliance risks"),
+    # twx-cov-02 — cross-canvas twin freshness
+    ReflexEntry("twin_freshness_sweep",      SUPPORT, 6.0,
+                "Twin Core: observer-driven cross-canvas twin freshness sweep; publishes "
+                "twin.snapshot.stale for twins with stale/absent snapshots (fills AADC/Mission/residual gap)"),
 ]
 
 # Quick lookup: name → entry

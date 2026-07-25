@@ -1104,6 +1104,22 @@ reflexes:
       threshold: 0
       operator: gte          # Informational — 0 pipelines is healthy; >0 checked is normal operation
 
+  # ── Cross-Canvas Twin Freshness Sweep (twx-cov-02) ───────────────────────────
+
+  twin_freshness_sweep:
+    timeout_seconds: 120     # observer runs a cheap count/MAX(created_at) per canvas twin table
+    enabled: true
+    risk_tier: green         # read-only: observes twin snapshot tables; writes only append-only canvas events
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 60
+    description: "Cross-canvas twin freshness: run the twin_core observer and publish twin.snapshot.stale for any registered twin whose newest snapshot is stale/absent (fills the AADC/Mission/residual refresh gap generically — future twins covered automatically). Delegates to tools.genesis.reflexes.twin_freshness_sweep.run."
+    dry_run: false           # when true, detects stale twins without publishing events
+    success_metric:
+      name: twins_checked
+      threshold: 0
+      operator: gte          # Informational — number of registered twins observed
+
   # ── DIC Integration (Canvas Synergy — dsyn-reflex-02) ────────────────────────
 
   dic_integration:

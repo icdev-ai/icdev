@@ -153,6 +153,34 @@ CREATE TABLE IF NOT EXISTS aiml_audit (
     classification  TEXT DEFAULT 'CUI // SP-CTI',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- AIML digital twin (twx-cov-02, wave-2). PDC dedup/retention (NOT append-only).
+-- No tenant_id/classification RLS columns: canvas tables, via AIML's
+-- get_canvas_connection()-backed get_connection().
+CREATE TABLE IF NOT EXISTS aiml_twin_snapshots (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    label       TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count  INTEGER DEFAULT 0,
+    edge_count  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_aiml_twin_snapshots_design ON aiml_twin_snapshots(design_id);
+
+CREATE TABLE IF NOT EXISTS aiml_simulations (
+    id                TEXT PRIMARY KEY,
+    design_id         TEXT NOT NULL,
+    baseline_snap_id  TEXT,
+    delta_graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict           TEXT NOT NULL DEFAULT 'unknown',
+    findings_json     TEXT DEFAULT '[]',
+    diff_json         TEXT DEFAULT '{}',
+    created_by        TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_aiml_simulations_design ON aiml_simulations(design_id);
 """
 
 # ── Seed Templates ────────────────────────────────────────────────────────────
