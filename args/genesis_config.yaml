@@ -18,11 +18,25 @@ classification: "CUI // SP-CTI"
 # layer adapt them over time without code changes.
 
 defaults:
-  # Watchdog timeout for any reflex that doesn't set its own timeout_seconds.
+  # Watchdog timeout for any reflex that doesn't set its own cap.
+  # Per-reflex override (crx-gen-03): set `reflexes.<name>.max_execution_seconds`
+  # (preferred) or the legacy alias `timeout_seconds`. The watchdog in
+  # daemon.run_reflex_impl hard-enforces it (thread join-with-timeout); a breach
+  # is recorded as a genesis_audit failure row and counts toward the circuit breaker.
   reflex_timeout_seconds: 300
   # Lines-of-code heuristics for stub detection in _classify_reflex_impl.
   stub_loc_min: 10
   stub_loc_full: 15
+
+# ── Intra-cycle reflex ordering (crx-gen-03) ─────────────────────────────────
+# A reflex may declare `depends_on: [other_reflex, ...]` under its `reflexes.<name>`
+# entry so it runs AFTER those reflexes within the same scheduler cycle (when they
+# are also due). This is best-effort intra-cycle ordering — a dependency that is
+# not due this cycle is ignored — NOT a cross-cycle blocking DAG. Example:
+#   reflexes:
+#     doc_modernization_sweep:
+#       depends_on: [dep_health_reflex]   # run after the dependency, if both due
+#       max_execution_seconds: 900        # hard per-reflex execution cap
 
 # ── A2A Fan-Out ──────────────────────────────────────────────────────────────
 # When enabled, reflexes tagged `a2a_eligible: true` are dispatched to an

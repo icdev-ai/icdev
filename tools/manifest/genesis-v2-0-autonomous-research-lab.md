@@ -8,7 +8,7 @@
 
 | Tool | Path | Purpose |
 |------|------|---------|
-| daemon | `tools/genesis/daemon.py` | Always-on daemon: 14 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase |
+| daemon | `tools/genesis/daemon.py` | Always-on daemon: 14 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase. Per-reflex config surface (crx-gen-03): `reflexes.<name>.depends_on: [names]` orders a reflex after its dependencies within a cycle (best-effort intra-cycle topo-sort in `DaemonBase.run_due_reflexes` via `topological_reflex_order`; not-due deps ignored; cycle-safe); `reflexes.<name>.max_execution_seconds` (alias: `timeout_seconds`; default `defaults.reflex_timeout_seconds`) is the hard watchdog cap enforced in `run_reflex_impl` — a breach becomes a `genesis_audit` failure row and counts toward the circuit breaker |
 | promoter | `tools/genesis/promoter.py` | Knowledge Bridge: GKP export/import, dedup, auto-promote, human review gateway (D-GEN-4) |
 | feedback_collector | `tools/genesis/feedback_collector.py` | Pull v1.x telemetry (failures, quality, coverage, heals) for v2.0 consumption (D-GEN-11) |
 | reporter | `tools/genesis/reporter.py` | Weekly autonomous markdown report: reflex activity, promotions, circuit breakers (D-GEN-12) |

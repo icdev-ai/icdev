@@ -196,6 +196,30 @@ def _resolve_sqlite_dtype(config: "dict | None" = None) -> str:
     return dtype if dtype in _DTYPE_TO_CHAR else _DEFAULT_SQLITE_DTYPE
 
 
+def _resolve_binary_prefilter(config: "dict | None" = None) -> dict:
+    """Resolve the ``rag.quantization.binary_prefilter`` settings (rce-quant-02).
+
+    Returns ``{enabled, candidate_multiplier, min_corpus_size}`` with safe
+    defaults.  Default is DISABLED, so search behaviour is unchanged unless
+    explicitly turned on.
+    """
+    q = _load_quantization_config(config)
+    bp = q.get("binary_prefilter", {}) or {}
+    try:
+        mult = int(bp.get("candidate_multiplier", _DEFAULT_BINARY_CANDIDATE_MULTIPLIER))
+    except (TypeError, ValueError):
+        mult = _DEFAULT_BINARY_CANDIDATE_MULTIPLIER
+    try:
+        min_corpus = int(bp.get("min_corpus_size", _DEFAULT_BINARY_MIN_CORPUS))
+    except (TypeError, ValueError):
+        min_corpus = _DEFAULT_BINARY_MIN_CORPUS
+    return {
+        "enabled": bool(bp.get("enabled", False)),
+        "candidate_multiplier": max(1, mult),
+        "min_corpus_size": max(1, min_corpus),
+    }
+
+
 def _embedding_to_blob(embedding: List[float], dtype: str = "float16") -> bytes:
     """Pack a float list to a self-describing BLOB (rce-quant-01).
 
@@ -234,6 +258,38 @@ def _blob_to_embedding(blob: bytes) -> List[float]:
     return list(struct.unpack(f"{n}f", blob))
 
 
+# ---------------------------------------------------------------------------
+# Binary quantization + Hamming pre-filter (rce-quant-02)
+# ---------------------------------------------------------------------------
+# Optional second tier for large air-gap corpora: store 1 sign bit per
+# dimension (packed MSB-first into bytes) alongside the float embedding.  At
+# search time — when enabled and the corpus is large enough — a cheap Hamming
+# distance on the packed sign bits pre-selects top-(k * multiplier) candidates,
+# which are then re-ranked with full-precision cosine.  This shrinks the
+# expensive float-cosine set while keeping recall.  Pure Python, zero deps.
+_DEFAULT_BINARY_CANDIDATE_MULTIPLIER = 4
+_DEFAULT_BINARY_MIN_CORPUS = 512  # below this, brute-force cosine wins
+
+
+def _embedding_to_sign_bits(embedding: List[float]) -> bytes:
+    """Pack per-dimension sign bits (>=0 -> 1) MSB-first into bytes."""
+    n = len(embedding)
+    out = bytearray((n + 7) // 8)
+    for i, v in enumerate(embedding):
+        if v >= 0.0:
+            out[i >> 3] |= 0x80 >> (i & 7)
+    return bytes(out)
+
+
+def _hamming_distance(a: bytes, b: bytes) -> int:
+    """Hamming distance between two equal-length packed sign-bit vectors."""
+    x = int.from_bytes(a, "big") ^ int.from_bytes(b, "big")
+    try:
+        return x.bit_count()  # Python 3.10+
+    except AttributeError:  # pragma: no cover - portability fallback
+        return bin(x).count("1")
+
+
 class SQLiteVectorStore(VectorStoreProvider):
     """SQLite BLOB vector store implementation.
 
@@ -258,6 +314,8 @@ class SQLiteVectorStore(VectorStoreProvider):
         self._busy_timeout = int(cfg.get("busy_timeout_ms", _BUSY_TIMEOUT_MS))
         # Write-time storage precision (rce-quant-01); reads stay back-compat.
         self._sqlite_dtype = _resolve_sqlite_dtype(cfg)
+        # Binary-quantization Hamming pre-filter (rce-quant-02); default OFF.
+        self._binary_prefilter = _resolve_binary_prefilter(cfg)
         if tenant_id:
             tenant_dir = BASE_DIR / "data" / "tenants"
             tenant_dir.mkdir(parents=True, exist_ok=True)
@@ -317,10 +375,16 @@ class SQLiteVectorStore(VectorStoreProvider):
                 tenant_id TEXT DEFAULT '',
                 project_id TEXT DEFAULT '',
                 classification TEXT NOT NULL DEFAULT 'CUI',
+                sign_bits BLOB,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Back-compat: add sign_bits column to pre-existing tables (rce-quant-02).
+        # Nullable; legacy rows keep NULL and fall back to on-the-fly sign bits.
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(rag_chunks)").fetchall()}
+        if "sign_bits" not in cols:
+            conn.execute("ALTER TABLE rag_chunks ADD COLUMN sign_bits BLOB")
         # Indexes for common queries
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_rag_chunks_content_hash
@@ -364,13 +428,14 @@ class SQLiteVectorStore(VectorStoreProvider):
             if chunk.embedding is None:
                 continue  # No embedding, skip
             blob = _embedding_to_blob(chunk.embedding, dtype=self._sqlite_dtype)
+            sign_bits = _embedding_to_sign_bits(chunk.embedding)  # rce-quant-02
             meta_json = json.dumps(chunk.metadata) if chunk.metadata else "{}"
             conn.execute(
                 """INSERT INTO rag_chunks
                    (id, content, content_hash, embedding, source_type, source_id,
                     source_table, chunk_index, total_chunks, metadata, tier,
-                    tenant_id, project_id, classification)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    tenant_id, project_id, classification, sign_bits)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     chunk.chunk_id,
                     chunk.content,
@@ -386,6 +451,7 @@ class SQLiteVectorStore(VectorStoreProvider):
                     chunk.tenant_id or self._tenant_id,
                     chunk.project_id,
                     chunk.classification,
+                    sign_bits,
                 ),
             )
             inserted += 1
@@ -399,10 +465,19 @@ class SQLiteVectorStore(VectorStoreProvider):
         top_k: int = _DEFAULT_TOP_K,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
-        """Brute-force cosine similarity search on all chunks."""
+        """Cosine similarity search.
+
+        Brute-force by default. When ``rag.quantization.binary_prefilter`` is
+        enabled and the (post-filter) corpus is large enough, a cheap Hamming
+        distance on packed sign bits pre-selects top-(k * multiplier)
+        candidates which are then re-ranked with full-precision cosine
+        (rce-quant-02). Legacy rows lacking stored sign bits derive them
+        on the fly, so the path degrades gracefully.
+        """
         conn = self._get_conn()
         sql = """SELECT id, content, source_type, source_id, source_table,
-                        chunk_index, embedding, metadata, tier, classification
+                        chunk_index, embedding, metadata, tier, classification,
+                        sign_bits
                  FROM rag_chunks WHERE embedding IS NOT NULL"""
         params: list = []
         if filters:
@@ -425,8 +500,10 @@ class SQLiteVectorStore(VectorStoreProvider):
         rows = conn.execute(sql, params).fetchall()
         conn.close()
 
+        candidate_rows = self._binary_prefilter_rows(query_embedding, rows, top_k)
+
         results: list[SearchResult] = []
-        for row in rows:
+        for row in candidate_rows:
             (
                 cid,
                 content,
@@ -438,6 +515,7 @@ class SQLiteVectorStore(VectorStoreProvider):
                 meta_str,
                 tier,
                 cls,
+                _sign,
             ) = row
             stored_emb = _blob_to_embedding(emb_blob)
             score = _cosine_similarity(query_embedding, stored_emb)
@@ -465,6 +543,44 @@ class SQLiteVectorStore(VectorStoreProvider):
 
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
+
+    def _binary_prefilter_rows(
+        self, query_embedding: List[float], rows: list, top_k: int
+    ) -> list:
+        """Return the row subset to re-rank with cosine (rce-quant-02).
+
+        When the binary pre-filter is disabled, or the corpus is smaller than
+        the configured threshold, returns ``rows`` unchanged (full cosine
+        scan). Otherwise ranks rows by Hamming distance on packed sign bits
+        (column index 10; derived on the fly for legacy NULL rows) and keeps
+        the ``top_k * candidate_multiplier`` nearest. Ties and unusable rows
+        are retained so recall is never silently reduced below the candidate
+        budget.
+        """
+        cfg = self._binary_prefilter
+        if not cfg.get("enabled"):
+            return rows
+        min_corpus = cfg.get("min_corpus_size", _DEFAULT_BINARY_MIN_CORPUS)
+        if len(rows) < min_corpus:
+            return rows
+        n_candidates = max(1, top_k) * cfg.get("candidate_multiplier", 1)
+        if n_candidates >= len(rows):
+            return rows
+
+        query_sign = _embedding_to_sign_bits(query_embedding)
+        scored: list = []
+        for row in rows:
+            emb_blob = row[6]
+            row_sign = row[10]
+            if not row_sign:  # legacy row — derive on the fly
+                row_sign = _embedding_to_sign_bits(_blob_to_embedding(emb_blob))
+            if len(row_sign) == len(query_sign):
+                dist = _hamming_distance(query_sign, row_sign)
+            else:
+                dist = -1  # dim mismatch — force-keep as candidate
+            scored.append((dist, row))
+        scored.sort(key=lambda t: t[0])
+        return [row for _dist, row in scored[:n_candidates]]
 
     def delete(self, chunk_ids: List[str]) -> int:
         if not chunk_ids:
