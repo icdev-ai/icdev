@@ -214,6 +214,16 @@ rag:
     # float16 halves storage/IO at ~2e-3 per-element error (retrieval order
     # preserved). Set to float32 for exact storage.
     sqlite_dtype: float16
+    # Binary-quantization Hamming pre-filter (rce-quant-02). Optional second
+    # tier for large air-gap corpora: a cheap Hamming distance on 1-bit/dim
+    # sign vectors pre-selects top-(final_top_k * candidate_multiplier)
+    # candidates, which are then re-ranked with full-precision cosine. Default
+    # OFF, so search behaviour is unchanged. Only worth enabling above the
+    # min_corpus_size threshold (below it, brute-force cosine is faster).
+    binary_prefilter:
+      enabled: false
+      candidate_multiplier: 4
+      min_corpus_size: 512
   rerank:
     bge_model: bge-reranker-v2-m3
     enabled: false
