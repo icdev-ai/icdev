@@ -12,6 +12,7 @@ Public surface:
 
 Reference adapters (twx-core-01): ``ndc``, ``pdc``.
 """
+from tools.twin_core.observer import observe
 from tools.twin_core.registry import (
     TwinAdapter,
     TwinRegistry,
@@ -40,6 +41,7 @@ __all__ = [
     "TwinRegistry",
     "register_twin",
     "known_canvas_keys",
+    "observe",
     "VERDICTS",
     "UNKNOWN_VERDICT",
     "SEVERITIES",

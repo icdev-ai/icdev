@@ -22,6 +22,16 @@ class PDCTwinAdapter(TwinAdapter):
     method = "static-analysis"
     supports_snapshots = True
     supports_simulation = True
+    snapshot_table = "pdc_snapshots"
+    snapshot_time_col = "created_at"
+    simulation_table = "pdc_simulations"
+    simulation_time_col = "created_at"
+    simulation_verdict_col = "verdict"
+
+    def _fleet_conn(self):
+        from tools.pipeline.twin import _get_connection
+
+        return _get_connection()
 
     def take_snapshot(self, target_id: str, label: str | None = None, **kwargs) -> dict:
         from tools.pipeline import twin as pdc_twin
