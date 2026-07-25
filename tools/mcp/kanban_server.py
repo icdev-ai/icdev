@@ -106,12 +106,32 @@ def handle_kanban_delete_task(params: dict) -> dict:
         if not task_id:
             return {"error": "task_id is required"}
         from tools.db.storage import get_connection
+        from tools.kanban.gates import is_manual_gate
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("UPDATE kanban_tasks SET status = 'archived' WHERE id = %s", (task_id,))
+        # Mirror the dashboard's canonical delete (tools/dashboard/api/kanban.py::
+        # delete_task): a real hard DELETE. The previous UPDATE ... SET
+        # status = 'archived' wrote a status the kanban_tasks CHECK constraint
+        # forbids (valid: backlog, scheduled, in_progress, done, token_exhausted,
+        # suggested, decomposed, validating, needs_decomposition, pr_opened,
+        # ci_failed, merge_conflict, changes_requested, failed), so on PostgreSQL
+        # it raised CheckViolation and no delete ever occurred.
+        cur.execute("SELECT id, title FROM kanban_tasks WHERE id = %s", (task_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return {"error": f"Task {task_id} not found"}
+        title = row[1]
+        # A manual-mode gate is a sentinel: deleting it would permanently strand
+        # its dependents (a task whose parent row is missing never satisfies its
+        # dependency and can never be promoted again). Refuse, as the dashboard does.
+        if is_manual_gate(task_id, title):
+            conn.close()
+            return {"error": "Manual-mode gate cannot be deleted from the board"}
+        cur.execute("DELETE FROM kanban_tasks WHERE id = %s", (task_id,))
         conn.commit()
         conn.close()
-        return {"archived": task_id}
+        return {"deleted": task_id}
     except Exception as exc:
         return {"error": str(exc)}
 
