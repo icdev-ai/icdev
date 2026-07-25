@@ -6401,6 +6401,15 @@ def _verify_task_completed(task_id, claude_output):
     _write_verification_log(task_id, verified, reason)
     if metrics:
         _update_verification_metrics(task_id, metrics)
+    # PEV (agx-verify-03): record a three-valued step verdict alongside the
+    # boolean done-gate. Opt-in (ICDEV_KANBAN_PEV, default off) and ADDITIVE —
+    # it never changes `verified`, so the terminal merge-verify done-gate is
+    # unweakened. Wrapped so a trail-write issue can never break the runner.
+    try:
+        from tools.kanban.pev import record_completion_pev
+        record_completion_pev(task_id, verified=verified, reason=reason, metrics=metrics)
+    except Exception:  # noqa: BLE001 — PEV is best-effort telemetry
+        pass
     return verified, reason
 
 
