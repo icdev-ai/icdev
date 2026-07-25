@@ -281,6 +281,17 @@ reflexes:
       threshold: 0
       operator: gte  # Informational — 0 affected means nothing was old enough (or dry_run)
 
+  agent_cron_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 1m"
+    interval: 60  # seconds (1 min) — near-minute cron resolution
+    description: "User-facing cron (sag-cron-01): drains every due job in the durable agent_cron_jobs store. Two exec modes — agent (single-shot SAG runtime turn) and script (allowlisted python tools/... command). Retry with exponential backoff; delivery via log / email (SMTP or on-file outbox) / gateway best-effort. Every run recorded to the append-only agent_cron_runs log."
+    success_metric:
+      name: ran
+      threshold: 0
+      operator: gte  # Informational — 0 means nothing was due this tick
+
   bgp_hijack_monitor:
     enabled: true
     risk_tier: green
