@@ -106,6 +106,7 @@ def _ensure_builtin_adapters_registered() -> None:
     (adapters import from this module).
     """
     from tools.llm.architectures import adapters  # noqa: F401  (registers on import)
+    from tools.llm.architectures import baseline  # noqa: F401  (registers baseline reference)
     from tools.llm.architectures import cove  # noqa: F401  (registers chain_of_verification)
     from tools.llm.architectures import self_discover  # noqa: F401  (registers self_discover)
     from tools.llm.architectures import tree_of_thoughts  # noqa: F401  (registers tree_of_thoughts)
