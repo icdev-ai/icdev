@@ -63,6 +63,16 @@ def _build_visual_prompt(title: str, bullets: list[str], visual_context: str, th
     else:
         base = f"{title}, {style_hint}"
 
+    # Air-gap / native-only mode: never make an external LLM call for prompt
+    # expansion. In this mode cloud providers are filtered out and only the
+    # native SVG/matplotlib/SDXL providers run — the SVG and matplotlib
+    # renderers ignore ``req.prompt`` entirely, so the deterministic ``base``
+    # prompt is sufficient and keeps the pipeline fully offline.
+    from tools.viz.asset_generator import is_air_gap_media_mode
+
+    if is_air_gap_media_mode():
+        return base
+
     user_msg = (
         f"Slide title: {title}\n"
         f"Bullets: {'; '.join(bullets[:3])}\n"
