@@ -115,12 +115,14 @@ rag:
   # Before embedding, prepend a ~50-100 token context prefix that situates each
   # chunk within its source document; the EMBEDDING is computed on the
   # contextualized text while the stored/cited content stays original.
-  # OPT-IN — default OFF, so the default pipeline and existing tests are
-  # unchanged. Air-gap safe: LLM prefix routes through the cheap-tier function
-  # (never a hardcoded model); if the provider is unavailable it degrades to the
-  # deterministic heuristic (or "") without blocking ingestion.
+  # Shipped ON as of rce-eval-04 — KEEP decision backed by a measured
+  # +0.0151 recall@5 / +0.0202 MRR against data/rag/rce_baseline_compliance.json
+  # (see docs/features/phase-rce-rag-context-engineering.md). Air-gap safe: LLM
+  # prefix routes through the cheap-tier function (never a hardcoded model); if
+  # the provider is unavailable it degrades to the deterministic heuristic
+  # (or "") without blocking ingestion.
   contextual_retrieval:
-    enabled: true             # master toggle (default OFF)
+    enabled: true             # master toggle — ON, measured (rce-eval-04)
     function: rag_evaluate    # LLM router function (cheap tier) — no hardcoded model
     max_tokens: 120           # LLM generation budget for the prefix
     token_budget: 100         # cap the stored prefix to ~this many tokens
