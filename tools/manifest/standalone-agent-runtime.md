@@ -17,6 +17,7 @@
 | `tools/agent_runtime/dispatch.py` | Turns discovery `ToolSpec` `module`/`handler` coordinates into agent-loop `handler(input, stop) -> str` handlers (sag-reg-02). Source-aware invocation (MCP `handle_x(args)`, decorated named-kwargs, built-in passthrough), injects `stop_event`/`task_id` where the signature accepts them, normalises results to strings, and never raises. **Safety hook point**: every mutating tool is routed through a `SafetyGate`; `default_safety_gate` fails closed (mutations refused unless `ICDEV_SAG_ALLOW_MUTATION=1`) until sag-safe-01 injects the real approval UX. |
 | `tools/agent_runtime/mutating_tools.py` | The state-mutating built-ins (sag-reg-02): `write_file` (repo-confined, `..` rejected) and `run_command` (reuses the `tools/skills/invoke.py` allowlist — only `python tools/ \| python -m tools \| python -c`). `@tool(read_only=False)`, so discovery picks them up and dispatch safety-gates them. **Intentionally NOT MCP-registered** — the local file-write/terminal surface must not be exposed to external agents over MCP. |
 | `tools/cli/tools_list.py` | `icdev tools list [--json]` (all discovered tools + schemas) and `icdev tools bundles [--json]` (the YAML bundles). Wired into `tools/cli/__main__.py`. |
+| `tools/agent_runtime/safety.py` | Command-approval safety layer (sag-safe-01) — the real `SafetyGate` for the reg-02 dispatch seam. Composes the existing `tools.airgap.hook_compat.run_pre_tool_check` (destructive-git + append-only-table hard blocks) with an approval flow: modes `manual` (always prompt), `smart` (cheap-tier LLM risk judgment, heuristic fallback; auto-approve low risk), `off` (`--yolo`, still audited). `ICDEV_SAG_APPROVAL_MODE` sets the default mode. Approver is injectable (`console_approver` default; gateway agent-mode injects a messaging-adapter approver). Every approve/deny is appended to the existing append-only `hook_events` trail via `store_event` (no new table). `build_safety_gate(mode=…, approver=…, router=…)`. `toolsets.build_toolset()` uses it by default; `AgentRuntime.use_toolset(bundles, approval_mode=…, approver=…)` swaps the runtime onto a gated bundle. |
 
 ## Extension seams
 
@@ -33,7 +34,12 @@
   `discovery.ToolSpec` `module`/`handler` coordinates via `dispatch.build_handlers()`
   to build agent-loop `handler(input, stop) -> str` callables; bundles defined as
   YAML data in `args/agent_toolsets.yaml`.
-- **Safety layer (sag-safe-01):** inject a `SafetyGate` into
-  `dispatch.build_handlers()` / `toolsets.build_toolset(safety_gate=…)` to replace
-  the fail-closed default with the real command-approval UX. The hook point is
-  already load-bearing — mutating tools cannot execute without passing the gate.
+- **Safety layer (sag-safe-01):** `safety.build_safety_gate()` is the real gate;
+  `toolsets.build_toolset()` installs it by default (fail-closed only if it cannot
+  be built). Mutating tools cannot execute without passing `run_pre_tool_check`
+  and, per mode, operator approval.
+- **Checkpoints (sag-safe-02):** the approval flow is the trigger point — before an
+  approved destructive command runs, snapshot affected paths (wires the `/rollback`
+  stub in `commands.py`).
+- **Gateway agent-mode (sag-gw-01):** inject a messaging-adapter `approver` into
+  `build_safety_gate()` so approvals happen via confirmation replies.
