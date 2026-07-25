@@ -193,6 +193,17 @@ rag:
   provenance:
     enabled: true
     record_query_content: false
+  raptor:
+    # RCE (RAG Capability Evolution): RAPTOR summary hierarchy above rag_chunks.
+    # Default OFF — when off, retrieval + existing tests are byte-for-byte the
+    # flat-leaf path. Summaries are LLM-generated (graceful no-op when the LLM
+    # is unavailable) and MUST NOT be surfaced as citation sources.
+    enabled: false
+    group_size: 5           # sibling leaves summarized into one level-1 parent
+    llm_function: rag_evaluate  # LLMRouter function for cheap-LLM summarization
+    max_levels: 2           # 1 = parent summaries; 2 = + root/document summary
+    summary_max_tokens: 512
+    summary_top_k: 10       # summaries fetched and merged into the leaf pool
   rerank:
     bge_model: bge-reranker-v2-m3
     enabled: false

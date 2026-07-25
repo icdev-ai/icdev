@@ -15,5 +15,6 @@
 | Query Classifier | tools/rag/query_classifier.py | 4-label taxonomy classifier for RAG queries (D-RAG-24) | --classify --query, --classify-batch --input, --json | Label + confidence |
 | Quality Feedback Loop | tools/rag/quality_feedback_loop.py | Closed-loop RAG quality → retrain pipeline (D-KARL-9) | --run, --dry-run, --status, --json | Cycle results |
 | Statement Extractor | tools/finetune/statement_extractor.py | Grounded Q&A pair generation via statement extraction (D-FT-23) | --extract, --extract-from-rag, --stats, --json | Pairs + taxonomy labels |
+| RAPTOR Builder (RCE) | tools/rag/raptor.py | RAPTOR summary hierarchy above rag_chunks leaves; cheap-LLM summaries, graceful no-op, default-OFF (D-RAG-RCE-1) | --build, --source, --dry-run, --json | rag_chunk_summaries tree |
 | RAG Benchmark | tools/rag/rag_benchmark.py | Retrieval-quality baseline harness — golden query set (compliance/NIST) scored for recall@k, MRR, citation-hit-rate; reuses evaluator.mrr/ndcg (rce-eval-01) | --golden-set, --top-k, --baseline-out, --compare, --json | Aggregate + per-query metrics |
 
