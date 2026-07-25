@@ -11,6 +11,7 @@
 | Backup Manager | tools/db/backup_manager.py | Database backup/restore with WAL-safe sqlite3.backup() API (D152) | (library) | BackupManager class |
 | Backup CLI | tools/db/backup.py | CLI wrapper for backup manager | --backup, --restore, --verify, --list, --prune, --all, --tenants | Backup metadata / results |
 | Storage | tools/db/storage.py | Dual-backend storage abstraction (PostgreSQL primary, SQLite fallback) with transparent SQL translation | (library) | get_connection() |
+| Query Health | tools/db/query_health.py | Read-only DB observability (crx-db-02): top-N slow queries via pg_stat_statements, sequential-scan-heavy tables with index-review suggestions, and connection-pool health (active/idle/idle-in-transaction/waiting + oldest idle-in-txn age from pg_stat_activity — guards the lock-storm failure mode). PG-native; graceful no-op on SQLite; never crashes if pg_stat_statements is absent. Emits an `alerts` list (soft-couple hook for crx-not-01) past the idle-in-txn threshold. Also surfaced on health_check.py --json as the `db_observability` section. | --json, --top-n | {slow_queries, seq_scan_tables, pool_health, alerts} |
 
 
 ## Database (Additional)
