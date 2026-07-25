@@ -124,3 +124,20 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 - `BenchmarkRunner.run_benchmark(name, limit, data_path)` → list[BenchmarkResult]
 - `BenchmarkRunner.score(results)` → accuracy dict
 - CLI: `python -m icdev.tools.llm.benchmark_runner --benchmark gsm8k --limit 50 --json`
+
+---
+
+### AGX Architecture Registry (`tools/llm/architectures/`)
+
+> Registry of named reasoning architectures behind ONE uniform envelope, so a canvas or router function can swap reasoning strategy by config, not code. Enabler for the `agx-` card (agentic-architecture extension). Adapted from github.com/FareedKhan-dev/all-agentic-architectures (MIT, © 2025 Fareed Khan) — pattern only, no upstream code vendored. Mirrored to `icdev/tools/llm/architectures/`.
+
+| Symbol | Description |
+|--------|-------------|
+| `ArchitectureResult` (`envelope.py`) | Uniform result envelope: `output`, `steps[]`, `model_ids_used[]`, token/cost usage, `method` provenance, `degraded` flag, `stop_reason`, `schema_version`. Honesty invariant (mirrors `tools/twin_core/`): a `degraded=True` envelope never presents a fabricated verdict. |
+| `ArchitectureStep`, `ArchitectureBudget` | Per-step provenance; caller budget ceiling (`max_cost_usd`/`max_tokens`/`max_seconds`) honored via the existing `BudgetExceededError` path. |
+| `register(name, fn, *, overwrite=False)` / `get` / `list_architectures` / `run` / `unregister` (`registry.py`) | Registry API. Every architecture is `run(task, *, router=None, budget=None, function=..., **kw) -> ArchitectureResult`; `task` may be `str` or `LLMRequest`. |
+| Built-in adapters (`adapters.py`) | Wrap existing implementations — nothing rebuilt: `chain_of_thought`, `chain_of_debate`, `council` (from `ChainOrchestrator`), `react` (from `agent_loop.run_agent_loop`). agx-verify-*/rag-*/search-*/bench-* register further architectures here. |
+
+**LLM-agnostic by construction:** no inference in this package; all adapters route through `LLMRouter`. Zero vendor-SDK imports, zero hardcoded model IDs. Enforced by `tests/llm/test_architecture_agnosticism.py` (agx-core-02).
+
+**Tests:** `tests/llm/test_architecture_registry.py`.
