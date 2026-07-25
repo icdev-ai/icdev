@@ -722,6 +722,23 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 - **D-RDT-11:** Performance: singleton sanitizer (30min TTL), module-level Ollama cache (60s TTL), pre-compiled regex, cached YAML configs
 - **D-RDT-12:** Child apps inherit redaction automatically (tools/redaction/ not in PARENT_ONLY_DIRS)
 
+### Phase 75 — CRX Component Review Remediation (D-CRX)
+
+Distilled from 20 Hermes component reviews (2026-07-19, 160 recommendations). Full
+160-finding disposition matrix: [phase-crx-xcut-01-disposition-matrix.md](../features/phase-crx-xcut-01-disposition-matrix.md).
+
+- **D-CRX-1:** Every one of the 160 review findings gets a recorded disposition (BUILT / COVERED / SUPERSEDED / DEFERRED / REJECTED) — dropped items are documented, not lost. Disposition of a "missing" finding is verified against the live tree before recording, because the reviews repeatedly flagged existing capabilities as absent.
+- **D-CRX-2:** Triage outcome: 26 BUILT this cycle, 84 COVERED (pre-existing, spot-verified), 8 SUPERSEDED (RCE/DMX cards), 30 DEFERRED, 12 REJECTED. ~74% were already handled or superseded — the 17 build tasks addressed only genuine gaps.
+- **D-CRX-3:** Genesis reflex hardening is real (not stale): shared `get_connection` across reflexes matched prior PG lock-storm incidents. Fixed via per-reflex connection scope (crx-gen-01 #657), failure-health alerting + genesis_audit indexes (crx-gen-02 #668, migration 284), and `depends_on` topo-order + resource caps (crx-gen-03 #673).
+- **D-CRX-4:** DB observability/retention built on the existing storage layer: query/pool health metrics (crx-db-02 #681), config-driven retention/archival (crx-db-03 #700, `retention_sweep` reflex). PostgreSQL-native RLS shipped as a go/no-go **spike only** (crx-db-01 #693), sanitized for the public repo (#702) — the app-level predicate remains the authoritative boundary.
+- **D-CRX-5:** Kanban SLA/deadline fields (`due_date`, `sla_hours`, migration 285) + cycle-time/velocity metrics (crx-kan-01 #677). Notification routing/escalation/per-user-prefs extend the existing `notification_service` (crx-not-01 #684); PagerDuty/Opsgenie on-call integration REJECTED (external-SaaS, no demand).
+- **D-CRX-6:** Testing gaps closed where absent: Locust perf harness (crx-test-01 #691), Section 508 a11y sweep (crx-test-02 #682), pytest-xdist parallelization spike → conditional GO (crx-test-03 #696). Chaos/visual-regression/coverage-trending DEFERRED.
+- **D-CRX-7:** Security additions compose existing primitives: UBA insider-risk-lite (crx-sec-01 #686) and SOAR-lite HITL playbooks over `runbook_execute`/`incident_create` (crx-sec-02 #697). Purple-team (ATT&CK), CSPM, and supply-chain vendor risk were already COVERED (`atlas_red_team.py`, `csp_monitor.py`, `scrm_assessor.py`).
+- **D-CRX-8:** GovCon additions: past-performance auto-suggest (crx-gov-01 #698) and FAR/DFARS clause-risk engine (crx-gov-02 #687). KG blast-radius freshness dimension folded into DIC `freshness_engine` (crx-kg-01 #683). Post-migration validation + rollback in wave plans (crx-mig-01 #694).
+- **D-CRX-9:** REJECTED on standing principles: React/Vue SPA + Vite + npm component libraries (no-npm; server-rendered Flask for compliance-constrained surfaces); Redis distributed LLM cache (air-gap, process-local LRU by design); ESG and SAP/Oracle/Coupa procurement sync (no demand).
+- **D-CRX-10:** SUPERSEDED-by-card findings are owned elsewhere, not re-solved here: RAG scale/RAPTOR/contextual/query-rewrite → RCE card; DocMod/DIC pack-interference and semantic-claim tracking → DMX card. NDC/security/data-canvas reviews were largely closed by the completed NDC/SHX/DCPR/PENTA/NAV hardening sweeps.
+- **D-CRX-11:** `crx-gate-00` stays HELD (pipeline-exempt): CRX tasks are card-lead-dispatched, never promoted by the backlog runner.
+
 ### Phase 72 — ICDEV™ Studio (Low-Code/No-Code Platform)
 - **D361:** Build own visual workflow engine — no n8n embedding (fair-code license incompatible with gov redistribution)
 - **D362:** Canvas rendering via vanilla JS + SVG — no React/npm deps, air-gap safe, consistent with existing dashboard
