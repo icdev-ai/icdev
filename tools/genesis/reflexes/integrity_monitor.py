@@ -39,6 +39,7 @@ from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +48,29 @@ from typing import Any, Dict, List, Optional
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _env_flag(name: str) -> bool:
+    """Read a boolean env flag (default OFF)."""
+    return os.environ.get(name, "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+# opx-sipa-02 flags — BOTH default OFF so merging changes NOTHING on the live 6h
+# reflex. The operator enables them for one transition run, then drops the
+# transition flag (see the reflex docstring / PR go-live note).
+#
+#   ICDEV_SIPA_RELPATH_DIRS       — when on, _rel_path's marker-absent fallback
+#     keeps the normalized relative posix path (directories preserved) instead
+#     of collapsing to the basename. Resolves basename ambiguity (posture.py x6,
+#     iac_generator.py x24) so distinct files get distinct, still-stable
+#     signatures. Measured 0 collisions between distinct files (the only
+#     dir-path merges are the same file stored with '/' vs '\').
+#   ICDEV_SIPA_RELPATH_TRANSITION — when on, run() treats the pass as a silent
+#     baseline-establishing run (no cards) even when prior assessments exist, so
+#     the FIRST run under the new rel-path scheme re-baselines every finding
+#     WITHOUT opening cards. Belt-and-suspenders against a re-signaturing flood.
+_RELPATH_DIRS_ENV = "ICDEV_SIPA_RELPATH_DIRS"
+_RELPATH_TRANSITION_ENV = "ICDEV_SIPA_RELPATH_TRANSITION"
 
 # Reflex cadence (hours). Mirrored in args/genesis_config.yaml + reflex_registry.
 CADENCE_HOURS = 6
@@ -97,8 +121,18 @@ def _rel_path(file_path: Optional[str], assessment_id: int) -> str:
     so a finding's ``file_path`` carries a per-run quarantine prefix that differs
     every cycle. Stripping everything up to and including the ``/<assessment_id>/``
     segment recovers the tree-relative path (e.g. ``net.py`` / ``sub/x.py``) which
-    is stable across assessments — the basis for baseline diffing. Falls back to the
-    basename if the marker is absent.
+    is stable across assessments — the basis for baseline diffing.
+
+    Marker-absent fallback (opx-sipa-02): in practice findings are stored with
+    tree-relative paths and the ``/<assessment_id>/`` marker is essentially never
+    present, so this fallback drives ~all signatures. The LEGACY behaviour returns
+    just the basename, which is ambiguous — 6+ files share ``posture.py`` and 24
+    share ``iac_generator.py``, collapsing to ONE signature and causing wrong
+    triage. When ``ICDEV_SIPA_RELPATH_DIRS`` is enabled the fallback keeps the
+    normalized relative posix path (directories preserved), which is still stable
+    across runs (mixed ``/``\\``\\`` separators normalize identically) and unique
+    per file. The flag defaults OFF so merging does not change live reflex output
+    until the operator runs the one-time baseline transition.
     """
     if not file_path:
         return ""
@@ -107,6 +141,10 @@ def _rel_path(file_path: Optional[str], assessment_id: int) -> str:
     idx = posix.find(marker)
     if idx >= 0:
         return posix[idx + len(marker):]
+    if _env_flag(_RELPATH_DIRS_ENV):
+        # Directory-preserving, normalized, and relative (strip any leading
+        # slash so an absolute stray path can't destabilize the signature).
+        return posix.lstrip("/")
     return Path(file_path).name
 
 
@@ -401,6 +439,7 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
             "cards": [],
             "deduped": 0,
             "baseline_established": False,
+            "baseline_transition": False,
             "errors": [],
         },
     }
@@ -440,12 +479,23 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
         result["scanned"] = len(current)
         prior_ids = _prior_assessment_ids(db, source_ref, assessment_id)
 
-        if not prior_ids:
-            # First assessment of this source — establish the baseline silently so
-            # the initial sweep of a large tree never floods the board.
+        # opx-sipa-02 baseline transition: when the operator flips
+        # ICDEV_SIPA_RELPATH_DIRS on, every finding is re-signatured under the
+        # new dir-preserving rel path. This transition flag forces the FIRST such
+        # run to re-establish the baseline SILENTLY (no cards) even though prior
+        # assessments exist, so re-signatured findings never flood the board.
+        # The operator drops the flag after one run; subsequent runs diff
+        # normally against the re-baselined (dir-path) signatures.
+        transition = _env_flag(_RELPATH_TRANSITION_ENV)
+
+        if not prior_ids or transition:
+            # First assessment of this source (or a forced transition pass) —
+            # establish the baseline silently so the sweep never floods the board.
             details["baseline_established"] = True
+            details["baseline_transition"] = bool(transition and prior_ids)
             logger.info(
-                "integrity_monitor: baseline established for %s (%d high-risk capability(ies)) — no cards",
+                "integrity_monitor: baseline %s for %s (%d high-risk capability(ies)) — no cards",
+                "transition (re-signatured, forced)" if (transition and prior_ids) else "established",
                 source_ref, len(current),
             )
             result["success"] = True

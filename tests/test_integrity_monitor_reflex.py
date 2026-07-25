@@ -248,3 +248,73 @@ def test_card_description_raw_path_survives_basename_fallback():
     )
     assert raw in body
     assert "tools/ai_augmentation/db" in body
+
+
+# --------------------------------------------------------------------------- #
+# opx-sipa-02: dir-preserving rel-path fallback (flag-gated) + baseline transition
+# --------------------------------------------------------------------------- #
+def test_rel_path_dirs_flag_preserves_directories(monkeypatch):
+    """With ICDEV_SIPA_RELPATH_DIRS on, the marker-absent fallback keeps the
+    normalized relative posix path (directory preserved) instead of the bare
+    basename — resolving the posture.py x6 / iac_generator.py x24 ambiguity."""
+    # Default (flag OFF): legacy basename fallback — unchanged live behaviour.
+    assert integrity_monitor._rel_path("tools/sipa/canvas_compliance/posture.py", 5) == "posture.py"
+    assert integrity_monitor._rel_path("infra\\k8s_generator.py", 5) == "k8s_generator.py"
+
+    monkeypatch.setenv("ICDEV_SIPA_RELPATH_DIRS", "1")
+    # Marker absent -> directory preserved, separators normalized to posix.
+    assert integrity_monitor._rel_path("tools/sipa/canvas_compliance/posture.py", 5) \
+        == "tools/sipa/canvas_compliance/posture.py"
+    assert integrity_monitor._rel_path("infra\\k8s_generator.py", 5) == "infra/k8s_generator.py"
+    # Mixed-separator variants of the SAME file collapse to ONE signature (the
+    # only 'collisions' the measurement found — a correct merge, not ambiguity).
+    assert integrity_monitor._rel_path("agent\\topology.py", 5) \
+        == integrity_monitor._rel_path("agent/topology.py", 5) == "agent/topology.py"
+    # A stray absolute path is still made relative (stable signature).
+    assert integrity_monitor._rel_path("/abs/tools/x.py", 5) == "abs/tools/x.py"
+    # Marker STILL wins when present (unchanged), and empty stays empty.
+    assert integrity_monitor._rel_path("/q/dir/7/sub/x.py", 7) == "sub/x.py"
+    assert integrity_monitor._rel_path("", 1) == ""
+
+
+def test_transition_run_opens_zero_cards(conn, deterministic_scanners, tmp_path, monkeypatch):
+    """A forced baseline-transition pass re-baselines silently: even with a
+    brand-new capability AND a prior baseline present, ZERO cards open."""
+    src = tmp_path / "selfcode"
+
+    # Establish a real prior baseline (first run over a clean tree).
+    _write(src, "ok.py", _CLEAN_PY)
+    integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)
+    assert _count_cards(conn) == 0
+
+    # New capability appears, but the transition flag forces a silent re-baseline.
+    _write(src, "evil.py", _NET_PY)
+    monkeypatch.setenv("ICDEV_SIPA_RELPATH_DIRS", "1")
+    monkeypatch.setenv("ICDEV_SIPA_RELPATH_TRANSITION", "1")
+    r = integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)
+    assert r["success"] is True
+    assert r["details"]["baseline_established"] is True
+    assert r["details"]["baseline_transition"] is True   # prior existed -> transition, not first-run
+    assert r["flagged"] == 0
+    assert _count_cards(conn) == 0
+
+
+def test_post_transition_opens_cards_for_new_findings(conn, deterministic_scanners, tmp_path, monkeypatch):
+    """After the transition (flag dropped, DIRS kept), a genuinely-new capability
+    opens a card as normal."""
+    monkeypatch.setenv("ICDEV_SIPA_RELPATH_DIRS", "1")
+    src = tmp_path / "selfcode"
+
+    # First run establishes the baseline (prior_ids empty) — silent, no cards.
+    _write(src, "ok.py", _CLEAN_PY)
+    r1 = integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)
+    assert r1["details"]["baseline_established"] is True
+    assert _count_cards(conn) == 0
+
+    # Transition flag is NOT set now -> a new capability opens exactly one card.
+    _write(src, "evil.py", _NET_PY)
+    r2 = integrity_monitor.run({"target": str(src), "mode": "aware"}, conn)
+    assert r2["details"]["baseline_established"] is False
+    assert r2["details"]["baseline_transition"] is False
+    assert r2["flagged"] == 1, r2["details"]
+    assert _count_cards(conn) == 1
