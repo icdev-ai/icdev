@@ -4618,6 +4618,125 @@ def check_component_registry(changed_files: Optional[List[Path]] = None) -> Cohe
     )
 
 
+def check_component_cli_reachability(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Every registry component must be reachable from all THREE surfaces.
+
+    pkg-reg-01 closed a 21-flag `enable`/`disable` gap; this is the durable
+    guard that stops the 22nd. A component declared in
+    ``args/component_registry.yaml`` is only truly usable if an operator can
+    turn it on/off from each surface a fresh install offers:
+
+      1. ``icdev enable``/``disable`` — its env flag is covered by a registry
+         CLI toggle (``registry.get_cli_toggles()``).
+      2. the ``icdev setup`` TUI — it appears as a row (``setup.build_rows``).
+      3. the generated ``.env`` — its flag is emitted by
+         ``env_generator.render_component_section``.
+
+    Fails naming the specific component keys + env flags that are missing from
+    each surface (never a bare count — an unnamed coherence failure costs more
+    time than it saves). No safe --fix: a gap means wiring/registry work.
+    """
+    expected = [
+        "every component reachable from icdev enable/disable",
+        "every component reachable from the icdev setup TUI",
+        "every component present in the generated .env",
+    ]
+
+    try:
+        from tools.cli.env_generator import render_component_section
+        from tools.cli.setup import KIND_ORDER as _SETUP_KIND_ORDER
+        from tools.cli.setup import build_rows
+        from tools.config.component_registry import get_registry
+
+        registry = get_registry()
+        components = [c for c in registry.list_all() if c.env_flag]
+
+        # Surface 1: icdev enable/disable — union of all CLI toggle flags.
+        toggle_flags: Set[str] = set()
+        for flags in registry.get_cli_toggles().values():
+            toggle_flags.update(flags)
+
+        # Surface 2: icdev setup TUI — the rows it renders (env-independent).
+        tui_keys = {
+            r.key for r in build_rows(registry, Path("__does_not_exist__.env"))
+        }
+
+        # Surface 3: generated .env — the emitted component section.
+        env_section = render_component_section(registry)
+    except Exception as exc:  # pragma: no cover - import/loader failure
+        return CoherenceCheck(
+            check_id="component_cli_reachability",
+            check_name="Component CLI/TUI/.env Reachability",
+            status="fail",
+            expected=expected,
+            actual=[f"reachability probe failed to run: {exc}"],
+            missing=[str(exc)],
+            extra=[],
+            message=f"Could not evaluate component reachability: {exc}",
+        )
+
+    missing_enable: List[str] = []
+    missing_tui: List[str] = []
+    missing_env: List[str] = []
+    for c in components:
+        if c.env_flag not in toggle_flags:
+            missing_enable.append(f"{c.key} ({c.env_flag})")
+        if c.key not in tui_keys:
+            reason = ("kind not in setup KIND_ORDER"
+                      if c.kind not in _SETUP_KIND_ORDER else "no TUI row")
+            missing_tui.append(f"{c.key} ({c.env_flag}) — {reason}")
+        if f"{c.env_flag}=" not in env_section:
+            missing_env.append(f"{c.key} ({c.env_flag})")
+
+    total_missing = len(missing_enable) + len(missing_tui) + len(missing_env)
+    if total_missing:
+        detail: List[str] = []
+        if missing_enable:
+            detail += [f"enable/disable: {m}" for m in sorted(missing_enable)]
+        if missing_tui:
+            detail += [f"setup TUI: {m}" for m in sorted(missing_tui)]
+        if missing_env:
+            detail += [f".env: {m}" for m in sorted(missing_env)]
+        return CoherenceCheck(
+            check_id="component_cli_reachability",
+            check_name="Component CLI/TUI/.env Reachability",
+            status="fail",
+            expected=expected,
+            actual=[
+                f"{len(missing_enable)} unreachable via enable/disable",
+                f"{len(missing_tui)} unreachable via setup TUI",
+                f"{len(missing_env)} missing from generated .env",
+            ],
+            missing=detail,
+            extra=[],
+            message=(
+                f"{total_missing} component-surface reachability gap(s): "
+                f"{len(missing_enable)} enable, {len(missing_tui)} TUI, "
+                f"{len(missing_env)} .env — see missing[] for the exact "
+                "component keys and env flags"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="component_cli_reachability",
+        check_name="Component CLI/TUI/.env Reachability",
+        status="pass",
+        expected=expected,
+        actual=[
+            f"all {len(components)} components reachable via enable/disable, "
+            "the setup TUI, and the generated .env"
+        ],
+        missing=[],
+        extra=[],
+        message=(
+            f"All {len(components)} registry components are reachable from "
+            "icdev enable/disable, the icdev setup TUI, and the generated .env"
+        ),
+    )
+
+
 def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Run the 8-point completeness gate against every registered canvas."""
     missing_issues: List[str] = []
@@ -5882,6 +6001,7 @@ CHECK_REGISTRY = {
     "skill_security": check_skill_security,
     "spec_discipline": check_spec_discipline,
     "component_registry": check_component_registry,
+    "component_cli_reachability": check_component_cli_reachability,
     "canvas_completeness": check_canvas_completeness,
     "nav_sync": check_nav_sync,
     "iqe_map_sync": check_iqe_map_sync,
@@ -5926,6 +6046,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "runtime_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment
     "component_registry": "skip",  # registry schema issues require human editing
+    "component_cli_reachability": "skip",  # a surface gap needs CLI/TUI/.env wiring, not a mechanical fix
     "canvas_completeness": "skip",  # missing canvas components must be created by hand
     "nav_sync": "skip",  # template changes require human review
     "iqe_map_sync": "skip",  # adapter wiring requires human review
