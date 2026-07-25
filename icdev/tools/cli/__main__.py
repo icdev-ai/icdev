@@ -32,6 +32,8 @@ Subcommands:
   enable <name> [...]      Enable canvas(es) / subsystem(s) by flipping the
                            right .env flags (e.g. boundary, security, rag).
   disable <name> [...]     Disable — flip flags to false.
+  setup [--plain|--json]   Interactive stdlib-only TUI to toggle every
+                           registry component on/off and write .env.
   status [--json]          Report which toggles are currently on/off.
   list [--json]            List supported toggle names + descriptions.
   tools list [--json]      List all tools discovered by the agent runtime.
@@ -75,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub in ("enable", "disable", "status", "list"):
         from icdev.tools.cli.enable import main as enable_main
         return enable_main([sub] + rest)
+
+    if sub == "setup":
+        from icdev.tools.cli.setup import main as setup_main
+        return setup_main(rest)
 
     if sub == "scaffold":
         from icdev.tools.cli.scaffold import main as scaffold_main
