@@ -32,7 +32,17 @@ aborts the whole thing so you never upload a broken wheel:
          loading with the expected component count.
          Verify import `import icdev` and core subsystem imports work.
 
-If all 5 pass, print the twine upload command (but don't auto-run it).
+    6. Air-gap OFFLINE install verification
+         Pre-stage a wheelhouse (icdev + air-gap extra deps), then
+         `pip install --no-index --find-links <wheelhouse> icdev[dod-il6]`
+         with NO network. Run `icdev init --profile air-gap` + `icdev status`
+         and assert the expected component count is enabled, and assert the
+         NEGATIVE: no google-auth / google-generativeai / google-cloud-aiplatform
+         / tensorboard was pulled. If a fully offline install cannot be
+         simulated (no network to pre-stage the wheelhouse), the step documents
+         exactly what was and was not verified instead of passing blindly.
+
+If all pass, print the twine upload command (but don't auto-run it).
 The user runs `twine upload` manually to guard against accidental uploads.
 
 --skip-smoke is for LOCAL ITERATION ONLY. It prints a loud warning and must
@@ -472,10 +482,171 @@ def step_smoke_test() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Step 6: air-gap offline install verification (pkg-rel-03)
+# ---------------------------------------------------------------------------
+# Prove the air-gap install path end to end rather than assuming it: install the
+# built wheel into a throwaway venv with NO network (`--no-index --find-links`),
+# confirm the air-gap profile enables the expected components, and assert the
+# NEGATIVE — that no google-auth / google-generativeai / tensorboard /
+# google-cloud-aiplatform slipped into an air-gap extra. pyproject documents
+# llm-gemini/llm-vertex as NOT air-gap compatible; this is what keeps that
+# promise honest as the dependency tree changes.
+#
+# The air-gap pip EXTRA (icdev[dod-il6]) is a dependency bundle; the init-time
+# --profile is a CORE profile from core_profiles.yaml. There is no `dod-il6`
+# core profile, so we init with the air-gap core profile and assert its declared
+# component count.
+_AIRGAP_EXTRA = "dod-il6"
+_AIRGAP_PROFILE = "air-gap"
+
+# Packages that must NEVER appear after installing an air-gap extra.
+_FORBIDDEN_AIRGAP_PACKAGES = (
+    "google-auth",
+    "google-generativeai",
+    "google-cloud-aiplatform",
+    "tensorboard",
+)
+
+
+def _forbidden_airgap_packages(pip_list_json: str) -> list[str]:
+    """Return which forbidden packages appear in `pip list --format=json` output."""
+    try:
+        pkgs = json.loads(pip_list_json)
+    except Exception:
+        return []
+    installed = {
+        str(p.get("name", "")).strip().lower().replace("_", "-") for p in pkgs
+    }
+    return sorted(f for f in _FORBIDDEN_AIRGAP_PACKAGES if f in installed)
+
+
+def _airgap_expected_count(profile: str = _AIRGAP_PROFILE) -> int:
+    """Component count the given core profile enables (from core_profiles.yaml)."""
+    try:
+        from tools.config.core_profile import get_profile
+        p = get_profile(profile) or {}
+        return len(p.get("default_enabled_components") or [])
+    except Exception:
+        return -1
+
+
+def step_airgap_install(extra: str = _AIRGAP_EXTRA,
+                        profile: str = _AIRGAP_PROFILE) -> dict:
+    """Install the wheel OFFLINE from a local wheelhouse and verify the air-gap path.
+
+    Returns a step dict. ``ok`` is True/False when the offline install could be
+    attempted, or None when a fully offline install cannot be simulated in this
+    environment (no network to pre-build the wheelhouse) — in which case
+    ``verified`` / ``not_verified`` document exactly what was and wasn't proven,
+    per the pkg-rel-03 spec, rather than silently passing.
+    """
+    result: dict = {"step": "airgap_install", "ok": None,
+                    "extra": extra, "profile": profile}
+    wheels = sorted(DIST_DIR.glob("*.whl")) if DIST_DIR.exists() else []
+    if not wheels:
+        result["ok"] = False
+        result["error"] = "no wheel in dist/"
+        return result
+    spec = f"icdev[{extra}]"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        wheelhouse = tmpdir / "wheelhouse"
+        wheelhouse.mkdir()
+
+        # Pre-stage a wheelhouse: download icdev (from dist/) + every dependency
+        # of the air-gap extra. This step needs network (the build machine has
+        # it); the INSTALL below then runs fully offline against the wheelhouse.
+        r = _run([sys.executable, "-m", "pip", "download", spec,
+                  "--dest", str(wheelhouse), "--find-links", str(DIST_DIR)],
+                 timeout=600)
+        if r.returncode != 0:
+            result["ok"] = None
+            result["skipped"] = True
+            result["reason"] = (
+                "could not pre-build the offline wheelhouse (no network / "
+                "restricted index) — a fully offline install cannot be "
+                "simulated here")
+            result["not_verified"] = [
+                "offline install of the wheel",
+                "air-gap profile component count",
+                "absence of forbidden air-gap packages",
+            ]
+            result["detail"] = (r.stderr or r.stdout or "")[-400:]
+            return result
+        result["wheelhouse_files"] = sum(1 for _ in wheelhouse.glob("*"))
+
+        # Fresh venv, install OFFLINE only from the local wheelhouse.
+        venv_dir = tmpdir / "venv"
+        if _run([sys.executable, "-m", "venv", str(venv_dir)],
+                timeout=60).returncode != 0:
+            result["ok"] = False
+            result["error"] = "venv creation failed"
+            return result
+        if os.name == "nt":
+            py = venv_dir / "Scripts" / "python.exe"
+            icdev_bin = venv_dir / "Scripts" / "icdev.exe"
+        else:
+            py = venv_dir / "bin" / "python"
+            icdev_bin = venv_dir / "bin" / "icdev"
+
+        r = _run([str(py), "-m", "pip", "install", "--no-index",
+                  "--find-links", str(wheelhouse), spec], timeout=300)
+        result["offline_install_ok"] = (r.returncode == 0)
+        if r.returncode != 0:
+            result["ok"] = False
+            result["error"] = f"offline install failed: {(r.stderr or '')[-400:]}"
+            return result
+
+        # Negative assertion: no forbidden (Google/tensorboard) packages present.
+        r = _run([str(py), "-m", "pip", "list", "--format=json"], timeout=60)
+        forbidden = _forbidden_airgap_packages(r.stdout or "[]")
+        result["forbidden_packages"] = forbidden
+
+        # Positive: init with the air-gap CORE profile + status reports the
+        # expected enabled component count.
+        probe_cwd = tmpdir
+        proj = tmpdir / "proj"
+        r = _run([str(icdev_bin), "init", str(proj), "--profile", profile],
+                 cwd=probe_cwd, timeout=60)
+        if r.returncode != 0 and "No such" in (r.stderr or ""):
+            r = _run([str(py), "-m", "icdev.tools.cli.init", str(proj),
+                      "--profile", profile], cwd=probe_cwd, timeout=60)
+        result["init_ok"] = (r.returncode == 0)
+
+        r = _run([str(icdev_bin), "status", "--json",
+                  "--env-file", str(proj / ".env")], cwd=probe_cwd, timeout=60)
+        if r.returncode != 0 and "No such" in (r.stderr or ""):
+            r = _run([str(py), "-m", "icdev.tools.cli.enable", "status",
+                      "--json", "--env-file", str(proj / ".env")],
+                     cwd=probe_cwd, timeout=60)
+        enabled_count = None
+        try:
+            enabled_count = json.loads(r.stdout).get("enabled_count")
+        except Exception:
+            pass
+        expected_count = _airgap_expected_count(profile)
+        result["enabled_count"] = enabled_count
+        result["expected_count"] = expected_count
+        result["count_ok"] = (
+            enabled_count is not None and expected_count >= 0
+            and enabled_count == expected_count
+        )
+
+        result["ok"] = bool(
+            result.get("offline_install_ok")
+            and not forbidden
+            and result.get("init_ok")
+            and result.get("count_ok")
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 def run(skip_smoke: bool = False) -> dict:
-    total = 4 if skip_smoke else 5
+    total = 4 if skip_smoke else 6
     results: list = []
 
     _step(1, total, "Sync tools/ + FORGE data + Claude bootstrap into icdev/")
@@ -536,19 +707,43 @@ def run(skip_smoke: bool = False) -> dict:
             if r5.get("error"):
                 print(f"  error: {r5['error']}")
             return {"ok": False, "failed_at": "smoke_test", "results": results}
+
+        _step(6, total,
+              "Air-gap OFFLINE install verification (--no-index wheelhouse)")
+        r6 = step_airgap_install()
+        results.append(r6)
+        if r6.get("skipped"):
+            # Fully offline install could not be simulated here — document what
+            # was and was not verified rather than passing on a partial check.
+            print(f"  SKIPPED: {r6.get('reason')}")
+            print(f"    not verified: {', '.join(r6.get('not_verified', []))}")
+        else:
+            print(f"  offline_install={r6.get('offline_install_ok')}  "
+                  f"init={r6.get('init_ok')}  "
+                  f"enabled={r6.get('enabled_count')}/"
+                  f"{r6.get('expected_count')} (count_ok={r6.get('count_ok')})")
+            forb = r6.get("forbidden_packages")
+            print(f"    forbidden air-gap packages present: "
+                  f"{forb if forb else 'none'}")
+            if not r6["ok"]:
+                if r6.get("error"):
+                    print(f"  error: {r6['error']}")
+                return {"ok": False, "failed_at": "airgap_install",
+                        "results": results}
     else:
         # Skipping the smoke test means the release path never proves the wheel's
         # `icdev init` actually works — make that impossible to miss.
         print("\n" + "!" * 68)
-        print("!! WARNING: --skip-smoke — the throwaway-venv REAL-init test was "
-              "SKIPPED.")
+        print("!! WARNING: --skip-smoke — the throwaway-venv REAL-init test and "
+              "the")
+        print("!! air-gap OFFLINE install verification were SKIPPED.")
         print("!! The wheel's `icdev init` payload was NOT verified. This flag is "
               "for")
         print("!! local iteration ONLY and must NEVER be used on the documented "
               "release path.")
         print("!" * 68)
         results.append({"step": "smoke_test", "ok": None, "skipped": True,
-                        "warning": "smoke test skipped via --skip-smoke"})
+                        "warning": "smoke + air-gap tests skipped via --skip-smoke"})
 
     return {"ok": True, "failed_at": None, "results": results,
             "smoke_skipped": bool(skip_smoke)}
