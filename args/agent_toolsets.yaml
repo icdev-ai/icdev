@@ -1,0 +1,109 @@
+# CUI // SP-CTI
+# Agent toolset bundles for the standalone agent runtime (SAG sag-reg-02).
+#
+# Each bundle names a bounded set of tools the agent runtime can load, so a small
+# local model is never handed the full 440+ tool surface. Tool names resolve
+# against the unified discovery registry (tools/agent_runtime/discovery.py), which
+# derives schemas FROM the MCP TOOL_REGISTRY plus built-in and @tool-decorated
+# tools. Names not present in the registry are dropped with a warning (a registry
+# rename never crashes the runtime).
+#
+# `mutating: true` marks a bundle whose tools change state (file writes, terminal
+# execution). Those handlers are routed through the safety gate at dispatch time
+# (tools/agent_runtime/dispatch.py); until sag-safe-01 wires the approval UX, the
+# default gate fails closed unless ICDEV_SAG_ALLOW_MUTATION=1.
+#
+# This is DATA, not code — add or retune a bundle here without touching Python.
+
+version: 1
+
+bundles:
+  file:
+    description: >-
+      Repo-scoped file access: read and search (read-only) plus a safety-gated
+      write. Confined to the repository root.
+    tools:
+      - read_file
+      - search_files
+      - write_file        # mutating — safety-gated
+    mutating: true
+
+  terminal:
+    description: >-
+      Allowlisted command execution (python tools/ | python -m tools | python -c),
+      reusing the tools/skills/invoke.py allowlist. Safety-gated.
+    tools:
+      - run_command       # mutating — safety-gated
+    mutating: true
+
+  compliance:
+    description: >-
+      NIST / FedRAMP / CMMC / STIG compliance artifact generation and lookups.
+    tools:
+      - nist_lookup
+      - control_map
+      - crosswalk_query
+      - classification_check
+      - cui_mark
+      - stig_check
+      - ssp_generate
+      - poam_generate
+      - sbom_generate
+      - rtm_generate
+      - fedramp_assess
+      - cmmc_assess
+      - oscal_generate
+    mutating: false
+
+  security:
+    description: >-
+      Security scanning, sandboxed execution, ZTA posture, and AI-agent guards.
+    tools:
+      - scan_code_patterns
+      - sandbox_execute
+      - confabulation_check
+      - validate_agent_output
+      - check_mcp_authorization
+      - guard_result
+      - generate_ai_bom
+      - zta_assess
+      - zta_posture_check
+    mutating: false
+
+  canvas:
+    description: >-
+      Design-canvas project lifecycle, compliance rollups, and readiness scoring.
+    tools:
+      - canvas_create_project
+      - canvas_list_projects
+      - canvas_link_design
+      - canvas_unlink_design
+      - canvas_compliance_summary
+      - canvas_compute_readiness
+      - canvas_compliance_gate
+    mutating: false
+
+  govcon:
+    description: >-
+      Government-contracting capture: RFI demand scanning and requirements
+      decomposition/readiness.
+    tools:
+      - rfi_demand_scan
+      - decompose_requirements
+      - detect_gaps
+      - score_readiness
+      - generate_bdd
+    mutating: false
+
+  kanban:
+    description: >-
+      Kanban task-board operations (list/get/create/update/move + board summary).
+    tools:
+      - kanban_list_tasks
+      - kanban_get_task
+      - kanban_board_summary
+      - kanban_create_task
+      - kanban_update_task
+      - kanban_move_task
+      - kanban_queue_plan
+    mutating: false

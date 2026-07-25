@@ -34,6 +34,8 @@ Subcommands:
   disable <name> [...]     Disable — flip flags to false.
   status [--json]          Report which toggles are currently on/off.
   list [--json]            List supported toggle names + descriptions.
+  tools list [--json]      List all tools discovered by the agent runtime.
+  tools bundles [--json]   List agent toolset bundles (args/agent_toolsets.yaml).
   audit export             Export SOC 2 (and future framework) evidence reports.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
@@ -75,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "profile":
         from icdev.tools.cli.profile import main as profile_main
         return profile_main(rest)
+
+    if sub == "tools":
+        from tools.cli.tools_list import main as tools_main
+        return tools_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main
