@@ -139,3 +139,10 @@ cachetools>=5.3              # TTLCache for vault_resolver 5-min secret cache
 
 # cortex.extract JSON-Schema conformance validation (analysis item 4)
 jsonschema>=4.0
+
+# === Performance load harness (crx-test-01) — OPTIONAL ===
+# Pure-Python load generator for tools/testing/perf_benchmark.py --load and
+# tools/testing/perf/locustfile.py. The import is guarded: the built-in latency
+# benchmark (p50/p95/p99 via urllib) needs no third-party deps, and --load
+# degrades to a "install locust" message when absent. Not required for CI.
+# locust>=2.20
