@@ -665,6 +665,13 @@ routing:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
+  # Security Canvas (tools/security_canvas) — agent reasoning + NL query.
+  # Local-first utility chain routed through the governed LLMRouter (shx-llm-01);
+  # replaces the canvas's hardcoded direct-to-Ollama calls.
+  security_canvas:
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    effort: medium
+
   # INTaaS / FathomDesk intelligence functions (Phase INT-COT)
   news_reasoning:
     chain: [qwen3-local, claude-sonnet, gpt-4o]
@@ -1001,6 +1008,27 @@ routing:
     chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
     effort: high
 
+  # -----------------------------------------------------------------------
+  # Divergence role chains (single isolated generative fan-out that produces a
+  # raw idea pool -- see tools.llm.chain_orchestrator.invoke_divergence).
+  # divergence_branch_pool: same diverse-model-pool idea as council_advisor_pool,
+  #   but each slot is paired with a GENERATIVE frame (First-Principles Rebuild,
+  #   Analogical Transfer, ...) and told to produce candidates, not critique.
+  # divergence_critic: reserved for the SEPARATE dvg-critic-* scoring pass
+  #   (categorical scorer), never used inside the generative fan-out itself --
+  #   the generator/critic split is deliberately mechanical.
+  # NOTE: a LOCAL-ONLY function inherits its own routing constraints unchanged;
+  #   divergence opens no new egress path. When a function is pinned local, its
+  #   per-function routing keeps every branch on local models.
+  # -----------------------------------------------------------------------
+  divergence_branch_pool:
+    chain: [qwen3-local, llama-local, deepseek-local, claude-haiku, claude-sonnet, gpt-4o, gpt-4o-mini, gemini-2.5-flash, kimi-cloud]
+    effort: medium
+
+  divergence_critic:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
+    effort: high
+
   # Slide Deck Generator functions
   slides_outline_planning:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
@@ -1109,6 +1137,19 @@ routing:
 
   dic_anomaly_severity:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  # KG entity + relationship extraction from chunk text (rag_to_kg_ingester).
+  # Extracts entities and infers edges among them; structured JSON output. Chain
+  # leads with kimi-cloud (the configured primary) so it actually runs.
+  kg_relationship_extraction:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
+    effort: low
+
+  # GraphRAG community summarisation (community_engine). Writes a theme summary
+  # for one KG community from its entities + relationships.
+  kg_community_summary:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
     effort: low
 
   harness_anomaly_detection:
@@ -1597,6 +1638,62 @@ chain_orchestration:
       # default 5-advisor panel + medium cost cap is appropriate as-is.
       idealab_council_query:
         num_advisors: 5
+  # -----------------------------------------------------------------------
+  # Divergence: a single isolated generative fan-out that yields a raw idea pool
+  # (tools.llm.chain_orchestrator.invoke_divergence). OPT-IN ONLY.
+  #
+  # Cost is the headline risk: upstream reports ~10 agent calls and 5-10x the
+  # spend of a direct answer, and its guidance is to reserve the method for
+  # decision points where being wrong has real consequences. Therefore:
+  #   * enabled DEFAULT FALSE at the mode level -- divergence never runs unless a
+  #     caller opts a function in via per_function.<fn>.enabled: true.
+  #   * cost_cap_usd / token_cap / timeout_seconds inherit the outer
+  #     chain_orchestration backstops; the generative_intelligence module budget
+  #     (_check_module_budget) trips BEFORE any branch model call.
+  #   * excluded_functions is honored by _is_excluded -- a hard block that wins
+  #     even over a per_function enable.
+  #
+  # CUI: a divergence run over CUI-bearing input inherits the function's existing
+  # LOCAL-ONLY routing and redaction obligations unchanged. The generative frame
+  # prompts add no content that could defeat routing, and LOCAL-ONLY functions
+  # stay on local models across every branch (each branch flows through the same
+  # router pipeline as any other call). Divergence opens no new egress path.
+  # -----------------------------------------------------------------------
+  divergence:
+    enabled: false            # OPT-IN: never a default generation path
+    num_branches: 6           # capped by the frame-set size at runtime
+    frame_set: generative     # resolves via args/ideation_frames.yaml (dvg-frames-01)
+    branch_pool_role: divergence_branch_pool  # get_diverse_models() picks N distinct models
+    critic_role: divergence_critic            # reserved for the SEPARATE dvg-critic-* pass
+    # Legacy direct model names — fallback when the pool role resolves to nothing
+    branch_models:
+      - qwen3-local
+      - claude-sonnet
+      - gpt-4o
+    excluded_functions: []
+    per_function: {}          # callers opt a function in here with `enabled: true`
+
+# -----------------------------------------------------------------------
+# AGX architecture selection (agx-core-03)
+# Config-driven choice of reasoning architecture from the agx-core-01 registry
+# (tools/llm/architectures/), so a canvas or router function can change
+# reasoning strategy by config rather than code. Kept in THIS file (not a
+# sibling args/architectures.yaml) to respect the single-source rule of
+# resolve_llm_config_path() — one file every component already reads.
+#
+# Resolution precedence (tools/llm/architectures/selection.py):
+#   explicit call arg > functions.<fn> > roles.<role> > default
+# A value of null (the shipped default everywhere) means "no architecture
+# indirection" — the caller keeps its current behavior unchanged. Enabling a
+# named architecture is therefore always an explicit opt-in; omitting the key
+# changes nothing. Names must be registered (registry.list_architectures()):
+# chain_of_thought, chain_of_debate, council, react (+ agx-verify/rag/search).
+# -----------------------------------------------------------------------
+architectures:
+  default: null            # null = current behavior; do not set globally without bench evidence (agx-bench-02)
+  functions: {}            # e.g. {code_review: chain_of_debate}
+  roles: {}                # e.g. {cot_reasoner: chain_of_thought}
+  log_selections: true     # structured logging of which architecture served each request (agx-bench-01 consumes)
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
