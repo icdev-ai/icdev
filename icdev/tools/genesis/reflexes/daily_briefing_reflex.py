@@ -2,7 +2,6 @@
 """Genesis reflex — generates and delivers daily briefings for all due users."""
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 
 from tools.logging.icdev_logger import get_logger
