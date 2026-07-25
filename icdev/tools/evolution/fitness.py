@@ -32,6 +32,11 @@ class FitnessScore:
     conciseness: float = 0.0
     length_penalty: float = 0.0
     feedback: str = ""
+    # Provenance: which categorical vocabulary produced this score. Empty for
+    # heuristic (score_fast) results, which do not use the LLM enum path.
+    # A change to this constant is a GATED baseline transition — see
+    # docs/audits/agx-pick-02-baseline-transition.md.
+    vocabulary_version: str = ""
 
     @property
     def composite(self) -> float:
@@ -125,19 +130,30 @@ def score_full(
     try:
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
+        from tools.quality.categorical_scoring import compose_fitness
 
+        # Deterministic-picker (agx-pick-02): the LLM commits only to a 3-value
+        # enum per dimension; Python (compose_fitness) composes the float and the
+        # composite. A 3-token vocabulary is small enough for a 7B local model to
+        # hit reliably and yields the same token across model families — the
+        # portability property the LLM-agnostic contract (agx-core-02) requires.
         prompt = (
-            "You are a strict AI output evaluator. Score the following agent output.\n\n"
+            "You are a strict AI output evaluator. Judge the following agent output.\n\n"
             f"TASK INPUT:\n{task_input[:600]}\n\n"
             f"EXPECTED BEHAVIOR (rubric):\n{expected_behavior[:400]}\n\n"
             f"SKILL INSTRUCTIONS (excerpt):\n{skill_text[:600]}\n\n"
             f"ACTUAL OUTPUT:\n{actual_output[:800]}\n\n"
-            "Score each dimension from 0.0 to 1.0:\n"
-            "  correctness: Did the output correctly address the task?\n"
-            "  procedure_following: Did the agent follow the skill instructions?\n"
-            "  conciseness: Was the output appropriately brief (not too long, not too short)?\n\n"
-            "Also provide one sentence of feedback explaining the main shortcoming (or 'none' if perfect).\n\n"
-            "Respond as JSON: {\"correctness\": 0.X, \"procedure_following\": 0.X, \"conciseness\": 0.X, \"feedback\": \"...\"}"
+            "For each dimension choose EXACTLY ONE label:\n"
+            "  correctness: did the output correctly address the task?\n"
+            "    -> one of: correct | partially_correct | incorrect\n"
+            "  procedure_following: did the agent follow the skill instructions?\n"
+            "    -> one of: followed | partial | violated\n"
+            "  conciseness: was the output appropriately brief (not padded, not truncated)?\n"
+            "    -> one of: concise | acceptable | verbose\n\n"
+            "Also give one sentence of feedback on the main shortcoming (or 'none').\n\n"
+            "Respond as JSON with ONLY the labels: "
+            "{\"correctness\": \"...\", \"procedure_following\": \"...\", "
+            "\"conciseness\": \"...\", \"feedback\": \"...\"}"
         )
         router = LLMRouter()
         req = LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=200, temperature=0.2)
@@ -151,12 +167,21 @@ def score_full(
                 data = json.loads(match.group())
                 length_ratio = len(actual_output) / 4000
                 length_penalty = max(0.0, (length_ratio - 0.9) * 0.3) if length_ratio > 0.9 else 0.0
+                # Python composes every number from the enums; unknown/malformed
+                # tokens degrade to the neutral midpoint inside compose_fitness.
+                composed = compose_fitness(
+                    data.get("correctness", ""),
+                    data.get("procedure_following", ""),
+                    data.get("conciseness", ""),
+                    length_penalty=length_penalty,
+                )
                 return FitnessScore(
-                    correctness=float(data.get("correctness", 0.5)),
-                    procedure_following=float(data.get("procedure_following", 0.5)),
-                    conciseness=float(data.get("conciseness", 0.5)),
-                    length_penalty=round(length_penalty, 3),
+                    correctness=composed["correctness"],
+                    procedure_following=composed["procedure_following"],
+                    conciseness=composed["conciseness"],
+                    length_penalty=composed["length_penalty"],
                     feedback=data.get("feedback", ""),
+                    vocabulary_version=composed["vocabulary_version"],
                 )
     except Exception as exc:
         logger.warning("[fitness] LLM judge failed, falling back to heuristic: %s", exc)

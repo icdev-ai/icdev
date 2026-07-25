@@ -279,18 +279,33 @@ def _ground_content_llm(
 
     ``llm_invoke`` is a caller-provided ``(prompt) -> str`` closure over the
     platform ``LLMRouter`` routing chains — this module never names a model.
-    The prompt asks the model to return strict JSON; anything unparseable makes
-    the caller fall back to the deterministic heuristic.
+
+    Deterministic-picker (agx-pick-02): the LLM no longer emits a free-form
+    grounding score. It labels EACH answer claim with one of a 3-value enum
+    (grounded | partial | ungrounded) and Python composes the support ratio
+    (:func:`compose_grounding`). A 3-token vocabulary is portable across model
+    families, and an unknown/malformed token is treated as UNGROUNDED (fail
+    closed) rather than silently upgrading an unsupported claim. Anything
+    unparseable returns None so the caller falls back to the heuristic floor.
     """
     import json
 
+    from tools.quality.categorical_scoring import GROUNDING_VOCAB, compose_grounding
+
+    claims = _sentences(output_text)
+    if not claims:
+        return None
     context_block = "\n\n".join(f"[{i + 1}] {s}" for i, s in enumerate(snippets))
+    claim_block = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(claims))
     prompt = (
-        "You are a grounding judge. Decide how well the ANSWER is supported by "
-        "the CONTEXT. Respond with STRICT JSON only, no prose:\n"
-        '{"score": <float 0-1>, "ungrounded_claims": [<verbatim unsupported '
-        'sentences>]}\n\n'
-        f"CONTEXT:\n{context_block}\n\nANSWER:\n{output_text}\n"
+        "You are a grounding judge. For EACH numbered CLAIM decide whether the "
+        "CONTEXT supports it. Choose exactly one label per claim:\n"
+        "  grounded   = fully supported by the context\n"
+        "  partial    = partially supported / needs an unstated leap\n"
+        "  ungrounded = not supported by the context\n\n"
+        "Respond with STRICT JSON only, no prose — a list of labels in claim "
+        'order:\n{"labels": ["grounded"|"partial"|"ungrounded", ...]}\n\n'
+        f"CONTEXT:\n{context_block}\n\nCLAIMS:\n{claim_block}\n"
     )
     try:
         raw = llm_invoke(prompt)
@@ -298,14 +313,26 @@ def _ground_content_llm(
             return None
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         data = json.loads(match.group(0) if match else raw)
-        score = float(data.get("score"))
-        score = min(1.0, max(0.0, score))
-        claims = [str(c) for c in (data.get("ungrounded_claims") or [])]
+        labels = data.get("labels")
+        if not isinstance(labels, list) or not labels:
+            return None
+        # Align labels to claims: pad short lists with "ungrounded" (fail closed),
+        # truncate long ones. compose_grounding maps unknown tokens to ungrounded.
+        labels = [str(x) for x in labels][: len(claims)]
+        if len(labels) < len(claims):
+            labels += ["ungrounded"] * (len(claims) - len(labels))
+        composed = compose_grounding(labels)
+        ungrounded = [
+            claims[i]
+            for i, lab in enumerate(labels)
+            if GROUNDING_VOCAB.get(str(lab).strip().lower(), 0.0) < floor
+        ]
         return {
-            "score": round(score, 4),
-            "ungrounded_claims": claims,
+            "score": composed["score"],
+            "ungrounded_claims": ungrounded,
             "method": "llm",
-            "sentence_count": len(_sentences(output_text)),
+            "sentence_count": composed["claim_count"],
+            "vocabulary_version": composed["vocabulary_version"],
         }
     except Exception:  # noqa: BLE001 — LLM path is best-effort; heuristic is the floor
         return None

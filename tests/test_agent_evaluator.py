@@ -564,10 +564,14 @@ class TestGradePromptUpgrade:
         assert "senior AI systems evaluator" in _JUDGE_PROMPT
         assert "10,000+" in _JUDGE_PROMPT
 
-    def test_judge_prompt_contains_confidence_labels(self):
+    def test_judge_prompt_uses_categorical_vocabulary(self):
+        """Deterministic-picker (agx-pick-02): the judge emits a 3-value enum per
+        dimension, not a free-form float. Python composes the numeric grade."""
         from icdev.tools.ace.evaluator import _JUDGE_PROMPT
-        for label in ("HIGH", "MEDIUM", "LOW", "UNKNOWN"):
+        for label in ("supported", "partial", "unsupported"):
             assert label in _JUDGE_PROMPT
+        # No longer asks the model for numeric scores.
+        assert "Do NOT emit numeric scores" in _JUDGE_PROMPT
 
     def test_judge_prompt_contains_rules_block(self):
         from icdev.tools.ace.evaluator import _JUDGE_PROMPT

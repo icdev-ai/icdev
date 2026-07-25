@@ -148,13 +148,28 @@ class TestGroundContent:
         assert r["method"] == "heuristic"
 
     def test_llm_method_uses_injected_invoke(self):
+        # Deterministic-picker (agx-pick-02): the judge labels each CLAIM with a
+        # 3-value enum; Python composes the support ratio. Two claims both
+        # grounded -> score 1.0.
         def fake_invoke(prompt):
-            assert "CONTEXT" in prompt and "ANSWER" in prompt
-            return '{"score": 0.91, "ungrounded_claims": []}'
+            assert "CONTEXT" in prompt and "CLAIMS" in prompt
+            return '{"labels": ["grounded", "grounded"]}'
 
-        r = ground_content("Some answer.", SNIPPETS, method="llm", llm_invoke=fake_invoke)
+        r = ground_content("First claim. Second claim.", SNIPPETS,
+                           method="llm", llm_invoke=fake_invoke)
         assert r["method"] == "llm"
-        assert r["score"] == 0.91
+        assert r["score"] == 1.0
+        assert r["vocabulary_version"]
+
+    def test_llm_method_composes_partial_support(self):
+        def fake_invoke(prompt):
+            return '{"labels": ["grounded", "ungrounded"]}'
+
+        r = ground_content("First claim. Second claim.", SNIPPETS,
+                           method="llm", llm_invoke=fake_invoke)
+        assert r["method"] == "llm"
+        assert r["score"] == 0.5
+        assert len(r["ungrounded_claims"]) == 1
 
     def test_llm_bad_json_degrades_to_heuristic(self):
         def bad_invoke(prompt):
