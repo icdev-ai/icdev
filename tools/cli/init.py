@@ -30,7 +30,14 @@ Usage:
     icdev init --force                # overwrite existing files
     icdev init --minimal              # CLAUDE.md + .claude/ only (skip FORGE data)
     icdev init --list                 # just show what would be copied
+    icdev init --profile local-dev    # non-interactive: apply an install profile
+    icdev init --profile none         # skip the profile prompt (registry defaults)
     icdev init --json                 # JSON output
+
+Install profiles come from args/core_profiles.yaml. With no --profile and a
+real TTY, `icdev init` prompts for one (showing each profile's component
+count); without a TTY (CI, piped installs) it falls back to a sensible default
+(air-gap in an air-gap context, else local-dev) rather than blocking.
 """
 
 from __future__ import annotations
@@ -110,6 +117,147 @@ FORGE_MAP: list[tuple[str, str]] = [
     ("data/context", "context"),
 ]
 
+# Install-profile defaults. Profiles themselves are read dynamically from
+# args/core_profiles.yaml (never hard-coded here) so this list never drifts.
+# `_NONE_PROFILE` is the escape hatch for CI/scripts that want the registry's
+# own default enablement with no profile applied.
+_DEFAULT_PROFILE = "local-dev"
+_AIRGAP_DEFAULT_PROFILE = "air-gap"
+_NONE_PROFILE = "none"
+
+
+def _available_profiles() -> "dict[str, dict]":
+    """Load install profiles from args/core_profiles.yaml (dynamic, never hard-coded)."""
+    try:
+        from tools.config.core_profile import load_profiles
+
+        return load_profiles()
+    except Exception:
+        return {}
+
+
+def _profile_component_keys(profile: dict) -> set[str]:
+    """The set of component keys a profile enables (default_enabled_components)."""
+    comps = profile.get("default_enabled_components") or []
+    return {str(k) for k in comps}
+
+
+def _profile_env_overrides(profile: dict) -> dict[str, str]:
+    """Non-component env defaults a profile implies (storage/LLM/air-gap).
+
+    Delegates to core_profile.profile_env_overrides but strips the env-var-wins
+    guard: at `icdev init` time we are authoring a fresh .env file, so we want
+    the profile's declared defaults written even if they happen to be set in
+    the current shell.
+    """
+    try:
+        import os
+
+        from tools.config.core_profile import profile_env_overrides
+
+        # profile_env_overrides only emits keys not already in os.environ; for
+        # authoring a file we want them all, so compute against a clean env.
+        saved = dict(os.environ)
+        try:
+            for k in list(os.environ):
+                if k.startswith("ICDEV_"):
+                    del os.environ[k]
+            return profile_env_overrides(profile)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+    except Exception:
+        return {}
+
+
+def _default_profile_name(profiles: dict) -> str:
+    """Pick the non-interactive default: air-gap in an air-gap context, else local-dev."""
+    airgap = False
+    try:
+        from tools.airgap import is_airgap
+
+        airgap = bool(is_airgap())
+    except Exception:
+        airgap = False
+    preferred = _AIRGAP_DEFAULT_PROFILE if airgap else _DEFAULT_PROFILE
+    if preferred in profiles:
+        return preferred
+    # Fall back to any profile that exists so we never return a bogus name.
+    return next(iter(profiles), _NONE_PROFILE)
+
+
+def _prompt_for_profile(profiles: dict) -> str:
+    """Interactively choose an install profile. Returns a profile name or 'none'."""
+    names = list(profiles)
+    print("\nChoose an install profile (which canvases/features to enable):\n")
+    for i, name in enumerate(names, start=1):
+        p = profiles[name]
+        n = len(_profile_component_keys(p))
+        desc = (p.get("description") or "").strip()
+        print(f"  {i}. {name}  ({n} components)")
+        if desc:
+            print(f"       {desc}")
+    print(f"  {len(names) + 1}. none  (registry defaults — nothing profile-forced)\n")
+
+    default = _default_profile_name(profiles)
+    try:
+        raw = input(f"Profile [{default}]: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return default
+    if not raw:
+        return default
+    if raw.isdigit():
+        idx = int(raw)
+        if idx == len(names) + 1:
+            return _NONE_PROFILE
+        if 1 <= idx <= len(names):
+            return names[idx - 1]
+        print(f"  (out of range — using default '{default}')")
+        return default
+    if raw == _NONE_PROFILE or raw in profiles:
+        return raw
+    print(f"  (unknown profile '{raw}' — using default '{default}')")
+    return default
+
+
+def resolve_profile(
+    requested: str | None,
+    interactive: bool | None = None,
+) -> tuple[str | None, str]:
+    """Resolve which install profile to apply.
+
+    Returns ``(profile_name_or_None, source)`` where source is one of
+    ``requested`` / ``prompt`` / ``non_tty_default`` / ``none``.
+    A returned name of None means "no profile — use registry defaults".
+    """
+    profiles = _available_profiles()
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+
+    # Explicit --profile wins and stays non-interactive.
+    if requested is not None:
+        if requested == _NONE_PROFILE:
+            return None, "requested"
+        if requested in profiles:
+            return requested, "requested"
+        valid = ", ".join([*profiles, _NONE_PROFILE]) or _NONE_PROFILE
+        raise ValueError(
+            f"unknown profile '{requested}'. Valid profiles: {valid}"
+        )
+
+    if not profiles:
+        return None, "none"
+
+    # No TTY (CI, piped installs): fall back to the default rather than block.
+    if not interactive:
+        return _default_profile_name(profiles), "non_tty_default"
+
+    chosen = _prompt_for_profile(profiles)
+    if chosen == _NONE_PROFILE:
+        return None, "prompt"
+    return chosen, "prompt"
+
 
 def _copy_one(src: Path, dst: Path, force: bool = False) -> tuple[bool, str]:
     """Copy one file or directory. Returns (copied, message)."""
@@ -140,6 +288,7 @@ def init_project(
     force: bool = False,
     minimal: bool = False,
     list_only: bool = False,
+    profile: str | None = None,
 ) -> dict:
     """Scaffold a new ICDEV project.
 
@@ -148,6 +297,9 @@ def init_project(
         force: Overwrite existing files.
         minimal: Only copy CLAUDE.md + .claude/ (skip FORGE data).
         list_only: Don't copy — just report what would happen.
+        profile: Install-profile name (from args/core_profiles.yaml) whose
+            ``default_enabled_components`` and env defaults shape the generated
+            .env. None ⇒ registry-default enablement (no profile applied).
 
     Returns a dict with success/failure per item.
     """
@@ -182,6 +334,7 @@ def init_project(
     # Write a complete .env: template's non-component keys + a generated
     # section covering EVERY component env flag from the registry, so no
     # canvas/feature is ever silently undiscoverable (the reported bug).
+    profile_applied: str | None = None
     if not list_only:
         env_template = target_dir / ".env.template"
         env_file = target_dir / ".env"
@@ -191,10 +344,28 @@ def init_project(
                 from tools.cli.env_generator import compose_env
                 from tools.config.component_registry import get_registry
 
+                enabled_keys: set[str] | None = None
+                env_overrides: dict[str, str] | None = None
+                if profile:
+                    prof = _available_profiles().get(profile)
+                    if prof is not None:
+                        enabled_keys = _profile_component_keys(prof)
+                        env_overrides = _profile_env_overrides(prof)
+                        env_overrides["ICDEV_CORE_PROFILE"] = profile
+                        profile_applied = profile
+
                 template_text = env_template.read_text(encoding="utf-8")
-                composed = compose_env(template_text, get_registry())
+                composed = compose_env(
+                    template_text, get_registry(),
+                    enabled_keys=enabled_keys, env_overrides=env_overrides,
+                )
                 env_file.write_text(composed, encoding="utf-8")
-                msg = "created .env from template + registry component flags"
+                if profile_applied:
+                    n = len(enabled_keys or set())
+                    msg = (f"created .env from template + '{profile_applied}' "
+                           f"profile ({n} components enabled)")
+                else:
+                    msg = "created .env from template + registry component flags"
             except Exception as exc:
                 # Never let registry generation block init — fall back to the
                 # static template so `icdev init` always produces a usable .env.
@@ -208,6 +379,7 @@ def init_project(
         "minimal": minimal,
         "force": force,
         "list_only": list_only,
+        "profile": profile_applied,
         "actions": actions,
         "copied": sum(1 for a in actions if a["status"] == "copied"),
         "skipped": sum(1 for a in actions if a["status"] == "skipped"),
@@ -246,21 +418,47 @@ def main() -> int:
                         help="Only scaffold CLAUDE.md + .claude/ (skip FORGE data)")
     parser.add_argument("--list", dest="list_only", action="store_true",
                         help="Show what would be copied without copying")
+    parser.add_argument(
+        "--profile", metavar="NAME", default=None,
+        help="Install profile from args/core_profiles.yaml (e.g. local-dev, "
+             "air-gap, government). 'none' applies no profile (registry "
+             "defaults). Omit for an interactive prompt; auto-falls back to a "
+             "default when stdin is not a TTY.",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
     target = Path(args.target).resolve()
+
+    # Resolve the install profile. A prompt only fires on a real TTY and never
+    # for --list (dry-run) or --json (machine) invocations.
+    interactive = None
+    if args.list_only or args.json:
+        interactive = False
+    try:
+        profile_name, profile_source = resolve_profile(
+            args.profile, interactive=interactive
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     result = init_project(
         target,
         force=args.force,
         minimal=args.minimal,
         list_only=args.list_only,
+        profile=profile_name,
     )
+    result["profile_source"] = profile_source
 
     if args.json:
         print(json.dumps(result, indent=2))
     else:
         print(f"Target: {result['target']}")
+        if not args.list_only:
+            shown = result.get("profile") or "none (registry defaults)"
+            print(f"Profile: {shown}  [{profile_source}]")
         for a in result["actions"]:
             icon = {"copied": "[+]", "skipped": "[=]",
                     "source_missing": "[!]",
