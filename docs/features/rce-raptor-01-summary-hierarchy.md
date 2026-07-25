@@ -69,5 +69,3 @@ table creation; level-1/level-2 counts; parent/child edges
 (`parent_chunk_id`/`child_ids`, root has no parent, level-1 children are leaf
 ids); idempotent rebuild; summaries searchable + tagged; graceful no-op when the
 LLM returns `""`; dry-run writes nothing.
-
-<!-- ci-retrigger -->
