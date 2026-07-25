@@ -3228,6 +3228,31 @@ CREATE TABLE IF NOT EXISTS ttx_inject_templates (
     ai_tools_json TEXT DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- LPX (LLM proxy) virtual-key storage (lpx-keys-01). Only a SHA-256 hash of the
+-- issued key is stored, never plaintext. tenant_id + classification present so it
+-- works with the global RLS predicate via get_connection().
+CREATE TABLE IF NOT EXISTS llm_proxy_keys (
+    key_id          TEXT PRIMARY KEY,
+    key_hash        TEXT NOT NULL UNIQUE,
+    key_prefix      TEXT NOT NULL,
+    alias           TEXT,
+    scope_type      TEXT NOT NULL DEFAULT 'tenant',
+    scope_ref       TEXT,
+    session_id      TEXT,
+    max_budget_usd  REAL,
+    budget_window   TEXT NOT NULL DEFAULT 'none',
+    rpm_limit       INTEGER,
+    tpm_limit       INTEGER,
+    status          TEXT NOT NULL DEFAULT 'active',
+    expires_at      TEXT,
+    litellm_synced  INTEGER NOT NULL DEFAULT 0,
+    rotated_from    TEXT,
+    tenant_id       TEXT,
+    classification  TEXT,
+    created_by      TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT
+);
 -- AIMC (AI/ML Canvas) — model inventory + deployment-readiness check state.
 -- Tenant-less canvas tables (classification, no tenant_id); read via
 -- get_canvas_connection (RLS disabled). Mirrors tools/aimc/db/init_db.py.

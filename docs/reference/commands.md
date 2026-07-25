@@ -2289,6 +2289,12 @@ python tools/llm/architectures/benchmark.py --run --architectures chain_of_thoug
 python tools/llm/architectures/leaderboard.py --markdown                                # Render leaderboard + routing recommendations from latest report
 python tools/llm/architectures/leaderboard.py --recommend --json                        # Evidence-based routing recommendations only (RECOMMEND — never writes config)
 
+# LLM Proxy Keys (lpx-keys-01) — virtual keys for /gameday & /academy cohorts
+python tools/llm/proxy_keys.py issue --scope-type team --scope-ref 7 --session-id 42 --budget 10 --budget-window exercise --json  # Issue a budgeted team key (shown once)
+python tools/llm/proxy_keys.py list --session-id 42 --json                              # List keys (metadata only, never the key/hash)
+python tools/llm/proxy_keys.py show <key_id> --json                                     # Show one key by id
+# Master/admin key from ICDEV_LLM_PROXY_MASTER_KEY (never logged/returned); LiteLLM sync is best-effort and OFF unless ICDEV_LLM_PROXY_ENABLED=true
+
 # LLM Gateway
 python tools/llm/gateway.py --stats --json                                             # Gateway usage statistics
 python tools/llm/gateway.py --audit --json --limit 50                                  # Audit log (last N requests)

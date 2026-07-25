@@ -2869,3 +2869,61 @@ def handle_pdc_export(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_pdc_export: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# LLM proxy virtual keys (lpx-keys-01)
+# ---------------------------------------------------------------------------
+
+def handle_proxy_key_issue(args: dict) -> dict:
+    """Issue an LLM-proxy virtual key. Key returned once; only a hash is stored."""
+    try:
+        from tools.llm.proxy_keys import issue_key
+
+        return issue_key(
+            alias=args.get("alias"),
+            scope_type=args.get("scope_type", "tenant"),
+            scope_ref=args.get("scope_ref"),
+            session_id=args.get("session_id"),
+            max_budget_usd=args.get("max_budget_usd"),
+            budget_window=args.get("budget_window", "none"),
+            rpm_limit=args.get("rpm_limit"),
+            tpm_limit=args.get("tpm_limit"),
+            expires_at=args.get("expires_at"),
+            tenant_id=args.get("tenant_id"),
+            classification=args.get("classification"),
+            created_by=args.get("created_by"),
+        )
+    except Exception as exc:
+        logger.warning("handle_proxy_key_issue: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_proxy_key_list(args: dict) -> dict:
+    """List issued LLM-proxy virtual keys (metadata only)."""
+    try:
+        from tools.llm.proxy_keys import list_keys
+
+        return {
+            "keys": list_keys(
+                scope_type=args.get("scope_type"),
+                scope_ref=args.get("scope_ref"),
+                session_id=args.get("session_id"),
+                status=args.get("status"),
+            )
+        }
+    except Exception as exc:
+        logger.warning("handle_proxy_key_list: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_proxy_key_show(args: dict) -> dict:
+    """Show one LLM-proxy virtual key by id (metadata only)."""
+    try:
+        from tools.llm.proxy_keys import show_key
+
+        row = show_key(args.get("key_id"))
+        return row if row else {"error": "not found", "key_id": args.get("key_id")}
+    except Exception as exc:
+        logger.warning("handle_proxy_key_show: %s", exc)
+        return {"error": str(exc)}
