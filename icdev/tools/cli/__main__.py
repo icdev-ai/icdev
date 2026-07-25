@@ -100,6 +100,10 @@ def main(argv: list[str] | None = None) -> int:
         from tools.cli.skills import main as skills_main
         return skills_main(rest)
 
+    if sub == "cron":
+        from tools.agent_runtime.cron import cron_main
+        return cron_main(rest)
+
     if sub == "audit":
         from tools.cli.audit import main as audit_main
         return audit_main(rest)
