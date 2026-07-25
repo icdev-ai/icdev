@@ -38,7 +38,8 @@ Subcommands:
   tools bundles [--json]   List agent toolset bundles (args/agent_toolsets.yaml).
   chat [-q "query"]        Start an interactive standalone agent session
                            (--resume <ctx-id> to continue a conversation).
-  sessions list|export     List conversations / export a transcript as JSONL.
+  sessions list|export|search
+                           List / export (JSONL) / full-text search conversations.
   audit export             Export SOC 2 (and future framework) evidence reports.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and

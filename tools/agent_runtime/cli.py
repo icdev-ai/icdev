@@ -59,6 +59,11 @@ def chat_main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Suppress the interactive banner.",
     )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Stream tokens as they arrive (tool-free conversational turns).",
+    )
     args = parser.parse_args(argv)
 
     from tools.agent_runtime.sessions import ensure_chat_tables
@@ -84,6 +89,15 @@ def chat_main(argv: list[str] | None = None) -> int:
             return 2
 
     if args.query:
+        if args.stream and not args.json:
+            def _emit(delta: str) -> None:
+                sys.stdout.write(delta)
+                sys.stdout.flush()
+
+            text = runtime.stream_turn(args.query, on_delta=_emit)
+            if not text.endswith("\n"):
+                print()
+            return 0
         result = runtime.run_turn(args.query)
         text = getattr(result, "final_content", "") or ""
         if args.json:
@@ -101,7 +115,7 @@ def chat_main(argv: list[str] | None = None) -> int:
             print(text or "(no response)")
         return 0
 
-    runtime.loop(banner=not args.no_banner)
+    runtime.loop(banner=not args.no_banner, stream=args.stream)
     return 0
 
 
@@ -169,6 +183,29 @@ def _sessions_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sessions_search(args: argparse.Namespace) -> int:
+    from tools.agent_runtime.sessions import search_sessions
+
+    query = " ".join(args.query).strip()
+    if not query:
+        print("icdev sessions search: a query is required", file=sys.stderr)
+        return 2
+    results = search_sessions(query, limit=args.limit)
+    if args.json:
+        print(json.dumps({"count": len(results), "results": results}, indent=2, default=str))
+        return 0
+    if not results:
+        print(f"No matches for {query!r}.")
+        return 0
+    print(f"{len(results)} match(es) for {query!r}:")
+    for i, r in enumerate(results, start=1):
+        ctx = r.get("context_id") or "?"
+        snippet = " ".join((r.get("content") or "").split())[:90]
+        print(f"  {i}. [{r.get('type', '')}] {snippet}")
+        print(f"       resume: icdev chat --resume {ctx}")
+    return 0
+
+
 def sessions_main(argv: list[str] | None = None) -> int:
     """Handle ``icdev sessions <cmd> [...]``."""
     parser = argparse.ArgumentParser(prog="icdev sessions")
@@ -193,12 +230,21 @@ def sessions_main(argv: list[str] | None = None) -> int:
         "-o", "--output", default=None, help="Write JSONL here (default: stdout)."
     )
 
+    search_p = subs.add_parser(
+        "search", help="Full-text search past session turns (with resume ids)."
+    )
+    search_p.add_argument("query", nargs="+", help="Search terms.")
+    search_p.add_argument("--limit", type=int, default=20)
+    search_p.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "list":
         return _sessions_list(args)
     if args.cmd == "export":
         return _sessions_export(args)
+    if args.cmd == "search":
+        return _sessions_search(args)
 
     parser.print_help()
     return 1

@@ -228,6 +228,67 @@ class AgentRuntime:
         self.session.persist(result, system_prompt=self.system_prompt)
         return result
 
+    def stream_turn(
+        self,
+        user_input: str,
+        *,
+        on_delta: "Callable[[str], None] | None" = None,
+    ) -> str:
+        """Stream a conversational turn's tokens via ``LLMRouter.invoke_streaming``.
+
+        A lightweight, **tool-free** turn for the interactive REPL: tokens are
+        surfaced through ``on_delta`` as they arrive (sag-rt-04) instead of
+        blocking until the full answer is ready. The turn is still recorded to the
+        transcript and indexed, and usage is rolled forward, but it does not run
+        the tool loop — use :meth:`run_turn` when the model needs tools.
+
+        Returns the full accumulated assistant text. Falls back gracefully: on any
+        streaming error it returns an error string (the REPL stays alive).
+        """
+        from tools.llm.provider import LLMRequest
+
+        self.session.record_user(user_input)
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_input}],
+            system_prompt=self._effective_system_prompt(user_input),
+            agent_id="agent_runtime",
+            project_id="agent_runtime",
+        )
+        chunks: list[str] = []
+        in_tok = out_tok = 0
+        try:
+            for chunk in self.router.invoke_streaming(self.llm_function, request):
+                ctype = chunk.get("type") if isinstance(chunk, dict) else None
+                if ctype == "text":
+                    delta = chunk.get("text", "") or ""
+                    if delta:
+                        chunks.append(delta)
+                        if on_delta is not None:
+                            on_delta(delta)
+                elif ctype == "message_stop":
+                    usage = chunk.get("usage") or {}
+                    in_tok = int(usage.get("input_tokens", 0) or 0)
+                    out_tok = int(usage.get("output_tokens", 0) or 0)
+                elif ctype == "error":
+                    err = chunk.get("error", "unknown streaming error")
+                    logger.warning("agent_runtime: streaming error: %s", err)
+                    text = "".join(chunks)
+                    self.session.record_assistant(text)
+                    return text or f"error: {err}"
+        except Exception as exc:  # noqa: BLE001 — keep the REPL alive
+            logger.warning("agent_runtime: stream_turn failed: %s", exc)
+            text = "".join(chunks)
+            self.session.record_assistant(text)
+            return text or f"error: {exc}"
+
+        text = "".join(chunks)
+        self.session.record_assistant(text)
+        # Roll usage forward (no agent-loop session id in the streaming path).
+        self.session.turn_count += 1
+        self.session.total_input_tokens += in_tok
+        self.session.total_output_tokens += out_tok
+        return text
+
     # -- slash commands (minimal built-in; full registry in sag-rt-02) -----
 
     def dispatch_command(self, raw: str) -> "tuple[bool, str, bool]":
@@ -269,15 +330,20 @@ class AgentRuntime:
         input_fn: Callable[[str], str] = input,
         output_fn: Callable[[str], None] = print,
         banner: bool = True,
+        stream: bool = False,
     ) -> None:
         """Run the interactive read-eval-print loop until ``/exit`` or EOF.
 
         ``input_fn`` / ``output_fn`` are injectable for testing. A leading ``/``
-        routes to :meth:`dispatch_command`; anything else is an agent turn.
+        routes to :meth:`dispatch_command`; anything else is an agent turn. When
+        ``stream`` is set, conversational turns render token-by-token via
+        :meth:`stream_turn` (tool-free); otherwise the full tool-capable
+        :meth:`run_turn` is used.
         """
         if banner:
+            mode = " (streaming)" if stream else ""
             output_fn(
-                "ICDEV standalone agent runtime. Type /help for commands, "
+                f"ICDEV standalone agent runtime{mode}. Type /help for commands, "
                 "/exit to quit."
             )
         while True:
@@ -299,8 +365,19 @@ class AgentRuntime:
                     return
                 continue
             try:
-                result = self.run_turn(text)
-                output_fn(getattr(result, "final_content", "") or "(no response)")
+                if stream:
+                    import sys as _sys
+
+                    def _emit(delta: str) -> None:
+                        _sys.stdout.write(delta)
+                        _sys.stdout.flush()
+
+                    reply = self.stream_turn(text, on_delta=_emit)
+                    if not reply.endswith("\n"):
+                        output_fn("")  # terminate the streamed line
+                else:
+                    result = self.run_turn(text)
+                    output_fn(getattr(result, "final_content", "") or "(no response)")
             except Exception as exc:  # noqa: BLE001 — keep the REPL alive
                 logger.exception("agent_runtime: turn failed")
                 output_fn(f"error: {exc}")

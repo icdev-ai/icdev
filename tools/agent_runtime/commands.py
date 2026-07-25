@@ -153,6 +153,29 @@ def _cmd_usage(runtime: Any, _arg: str) -> "tuple[str, bool]":
     )
 
 
+def _cmd_search(_runtime: Any, arg: str) -> "tuple[str, bool]":
+    """Full-text search past session turns. Usage: /search <query> (sag-rt-04).
+
+    Surfaces indexed turns with the context id so a match can be resumed via
+    ``icdev chat --resume <ctx-id>``.
+    """
+    query = arg.strip()
+    if not query:
+        return "Usage: /search <query>", False
+    from tools.agent_runtime.sessions import search_sessions
+
+    results = search_sessions(query, limit=10)
+    if not results:
+        return f"No matches for {query!r}.", False
+    lines = [f"{len(results)} match(es) for {query!r}:"]
+    for i, r in enumerate(results, start=1):
+        ctx = r.get("context_id") or "?"
+        snippet = " ".join((r.get("content") or "").split())[:80]
+        lines.append(f"  {i}. [{r.get('type', '')}] {snippet}  (resume: {ctx})")
+    lines.append("Resume with: icdev chat --resume <ctx-id>")
+    return "\n".join(lines), False
+
+
 def _cmd_snapshot(_runtime: Any, arg: str) -> "tuple[str, bool]":
     """Manual checkpoint of one or more repo-relative paths. Usage: /snapshot <path> [path...]"""
     from tools.agent_runtime.checkpoints import create_checkpoint
@@ -257,6 +280,7 @@ REGISTRY: dict[str, Command] = {
     "/skills": Command(_cmd_skills, "List available icdev-* skills."),
     "/memory": Command(_cmd_memory, "Show/remember/forget durable facts. Usage: /memory [forget <N>|remember <fact>]"),
     "/usage": Command(_cmd_usage, "Show token/cost stats for this session."),
+    "/search": Command(_cmd_search, "Search past session turns. Usage: /search <query>"),
     "/snapshot": Command(_cmd_snapshot, "Checkpoint paths now. Usage: /snapshot <path> [more...]"),
     "/rollback": Command(_cmd_rollback, "Preview/apply a rollback. Usage: /rollback [N|id] [--yes]"),
     "/help": _help_cmd,

@@ -83,6 +83,35 @@ def ensure_chat_tables() -> bool:
         return False
 
 
+def search_sessions(query: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Full-text search over indexed session turns, enriched with the ctx id.
+
+    Wraps :func:`tools.memory.session_indexer.search_history` (FTS5 on SQLite, PG
+    ILIKE fallback) and parses the ``ctx:<id>`` tag each SAG turn is indexed with,
+    so callers can offer ``icdev chat --resume <ctx-id>`` on a hit. Returns
+    ``search_history`` rows with an added ``context_id`` key; empty on any error.
+    """
+    try:
+        from tools.memory.session_indexer import search_history
+
+        rows = search_history(query, limit=limit)
+    except Exception as exc:  # noqa: BLE001 — search is best-effort
+        logger.debug("agent_runtime: session search failed: %s", exc)
+        return []
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        ctx = ""
+        for tag in str(r.get("tags") or "").split(","):
+            tag = tag.strip()
+            if tag.startswith("ctx:"):
+                ctx = tag[4:]
+                break
+        d = dict(r)
+        d["context_id"] = ctx
+        out.append(d)
+    return out
+
+
 @dataclass
 class RuntimeSession:
     """A single standalone-agent conversation.
@@ -193,6 +222,7 @@ class RuntimeSession:
             self.manager.add_message(self.context_id, role="user", content=text)
         except Exception as exc:  # noqa: BLE001 — transcript is best-effort
             logger.warning("agent_runtime: failed to record user message: %s", exc)
+        self._index_turn("user", text)
 
     def record_assistant(self, text: str) -> None:
         """Append the assistant's turn to the human-readable transcript."""
@@ -202,6 +232,31 @@ class RuntimeSession:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("agent_runtime: failed to record assistant message: %s", exc)
+        self._index_turn("assistant", text or "")
+
+    def _index_turn(self, role: str, content: str) -> None:
+        """Index this turn into the shared session FTS store (sag-rt-04).
+
+        Reuses ``tools.memory.session_indexer`` (adapt-hermes-02): the turn lands in
+        ``memory_entries`` + the ``memory_fts`` FTS5 index (SQLite) with a documented
+        PG ILIKE fallback — no new storage. The ``ctx:<id>`` tag lets
+        ``icdev sessions search`` recover the context id for ``--resume``. Fully
+        best-effort: indexing never blocks or breaks a turn.
+        """
+        if not content:
+            return
+        try:
+            from tools.memory.session_indexer import index_session_turn
+
+            index_session_turn(
+                self.context_id,
+                role,
+                content,
+                tags=f"sag,ctx:{self.context_id}",
+                classification="CUI",
+            )
+        except Exception as exc:  # noqa: BLE001 — indexing is best-effort
+            logger.debug("agent_runtime: session indexing skipped: %s", exc)
 
     def messages(self, limit: int = 50) -> list[dict[str, Any]]:
         """Return recent human-readable transcript messages (for ``/memory``)."""
