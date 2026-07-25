@@ -596,6 +596,17 @@ class LLMRouter:
             logger.warning("Provider '%s' not found in config", provider_name)
             return None
 
+        # LPX (lpx-proxy-03): when the opt-in LLM proxy gateway is enabled,
+        # redirect cloud providers' base_url to the proxy and swap in a virtual
+        # key. No-op (default) when ICDEV_LLM_PROXY_ENABLED is unset, and never
+        # touches ollama/bedrock. Distinct from proxy_resolver's HTTPS_PROXY.
+        try:
+            from tools.llm.proxy_gateway import apply_gateway_to_provider_cfg
+
+            provider_cfg = apply_gateway_to_provider_cfg(provider_name, provider_cfg)
+        except Exception as exc:  # pragma: no cover - defensive import guard
+            logger.debug("LLM proxy gateway resolution skipped: %s", exc)
+
         ptype = provider_cfg.get("type", "")
         instance = None
 
