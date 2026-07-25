@@ -1500,6 +1500,12 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
+  # Registry-declared prerequisite (pkg-setup-02): the SDC demo runner and its
+  # route are served by the Security Design Canvas blueprint
+  # (tools/security_canvas/blueprint.py) — it cannot function unless `sdc` is on.
+  # Consumed by the `icdev setup` TUI to warn/offer when a prerequisite is off.
+  depends_on:
+  - sdc
   iqe:
     adapter_module: tools.iqe.adapters.sdc_demo
     collections:

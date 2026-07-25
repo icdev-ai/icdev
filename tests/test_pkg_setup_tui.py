@@ -162,8 +162,12 @@ def test_write_noop_when_no_changes(tmp_path):
 
 def test_plain_mode_toggle_write_quit(tmp_path):
     reg = get_registry()
-    comp = next(c for c in reg.list_all() if c.env_flag and not c.extra_env_flags)
-    st = _state(tmp_path, f"{comp.env_flag}=false\n")
+    comp = next(c for c in reg.list_all()
+                if c.env_flag and not c.extra_env_flags
+                and not (isinstance(c.raw, dict) and c.raw.get("depends_on")))
+    # Run at IL6 so no component is min_il-restricted — this test targets the
+    # plain toggle→write→quit path, not the pkg-setup-02 confirm advisories.
+    st = _state(tmp_path, f"ICDEV_IMPACT_LEVEL=IL6\n{comp.env_flag}=false\n")
     idx = next(i for i, r in enumerate(st.rows) if r.key == comp.key)
     out = io.StringIO()
     inp = io.StringIO(f"{idx + 1}\nw\nq\n")

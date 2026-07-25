@@ -13,6 +13,13 @@ indented under their parent (DIC → /techwriter, /docdrift, …) so the
 "I can't find the page" confusion that triggered this card is structurally
 impossible: if a page is missing it is simply its component being off.
 
+Advisories (pkg-setup-02, derived entirely from the registry — never blocking):
+    - A component whose declared ``min_il`` exceeds the install's configured
+      impact level (``ICDEV_IMPACT_LEVEL``, default IL2) is marked ``(!)`` and
+      needs an explicit confirm to enable.
+    - When enabling a component whose registry-declared ``depends_on``
+      prerequisite is off, the TUI warns and offers to enable it too.
+
 Controls (raw mode):
     ↑ / ↓ (or k / j)   move cursor
     SPACE               toggle the highlighted component
@@ -74,6 +81,17 @@ def _actor() -> str:
     return os.environ.get("USER") or os.environ.get("USERNAME") or "cli"
 
 
+# Impact-level ordering (matches classification_manager.VALID_IMPACT_LEVELS).
+# Defined locally to keep the TUI stdlib-light and air-gap safe (no DB import).
+_IL_ORDER: tuple[str, ...] = ("IL2", "IL4", "IL5", "IL6")
+
+
+def _il_rank(il: str) -> int:
+    """Rank an impact level; unknown/blank sorts lowest (most permissive)."""
+    il = (il or "").strip().upper()
+    return _IL_ORDER.index(il) if il in _IL_ORDER else 0
+
+
 # ---------------------------------------------------------------------------
 # State model (pure, testable — no I/O beyond the initial .env read)
 # ---------------------------------------------------------------------------
@@ -90,6 +108,7 @@ class Row:
     min_il: str
     sub_pages: list[tuple[str, str]]  # (label, href)
     enabled: bool
+    depends_on: list[str] = field(default_factory=list)
     original: bool = field(default=False)
 
     @property
@@ -143,6 +162,10 @@ def build_rows(registry, env_file: Path) -> list[Row]:
         for c in comps:
             flags = [c.env_flag, *list(c.extra_env_flags)]
             on = _is_on(flags)
+            # depends_on is a registry-declared list of prerequisite component
+            # keys (schema extension) — read from the raw entry so the TUI never
+            # hardcodes component pairs. Absent ⇒ no declared dependencies.
+            deps = c.raw.get("depends_on") if isinstance(c.raw, dict) else None
             rows.append(Row(
                 key=c.key,
                 kind=c.kind,
@@ -153,9 +176,26 @@ def build_rows(registry, env_file: Path) -> list[Row]:
                 min_il=c.min_il or "",
                 sub_pages=_sub_pages(c),
                 enabled=on,
+                depends_on=[str(k) for k in deps] if deps else [],
                 original=on,
             ))
     return rows
+
+
+def _configured_impact_level(env_file: Path) -> str:
+    """Resolve the install's impact level: .env file → os.environ → IL2 default.
+
+    IL2 is the permissive default: if no level is declared, only components that
+    explicitly require IL4+ are flagged, and even then only advisory.
+    """
+    text = _load_env_file(env_file)
+    for flag, (_idx, val) in _parse_env(text).items():
+        if flag == "ICDEV_IMPACT_LEVEL":
+            v = val.strip().strip('"').strip("'").upper()
+            if v:
+                return v
+    env_v = (os.environ.get("ICDEV_IMPACT_LEVEL") or "").strip().upper()
+    return env_v or "IL2"
 
 
 class SetupState:
@@ -165,6 +205,7 @@ class SetupState:
         self.registry = registry
         self.env_file = env_file
         self.rows: list[Row] = build_rows(registry, env_file)
+        self.impact_level: str = _configured_impact_level(env_file)
         self.cursor = 0
 
     # ---- queries -------------------------------------------------------
@@ -185,12 +226,74 @@ class SetupState:
     def _row_by_key(self, key: str) -> Row | None:
         return next((r for r in self.rows if r.key == key), None)
 
+    # ---- advisories (min_il + dependencies; derived from the registry) --
+    def is_restricted(self, row: Row) -> bool:
+        """True if the row's declared min_il exceeds the configured impact level."""
+        return _il_rank(row.min_il) > _il_rank(self.impact_level)
+
+    def unmet_dependencies(self, row: Row) -> list[Row]:
+        """Registry-declared prerequisites of ``row`` that are currently off."""
+        out: list[Row] = []
+        for dep_key in row.depends_on:
+            dep = self._row_by_key(dep_key)
+            if dep is not None and not dep.enabled:
+                out.append(dep)
+        return out
+
     # ---- mutations -----------------------------------------------------
     def toggle(self, idx: int) -> Row | None:
         if 0 <= idx < len(self.rows):
             self.rows[idx].enabled = not self.rows[idx].enabled
             return self.rows[idx]
         return None
+
+    def toggle_with_advisories(
+        self, idx: int, confirm_restricted=None, confirm_deps=None
+    ) -> dict:
+        """Toggle a row, surfacing min_il + dependency advisories on enable.
+
+        Advisory, never blocking: the operator's callbacks decide. Disabling is
+        always immediate. On enable:
+          - if the row's min_il exceeds the configured impact level, call
+            ``confirm_restricted(row)`` — falsey ⇒ leave it off.
+          - after enabling, any registry-declared prerequisite that is off is
+            collected; ``confirm_deps(row, deps)`` truthy ⇒ enable them too.
+
+        Callbacks default to auto-confirm (True) so non-interactive callers get
+        the advisory data in the result without a prompt.
+        """
+        if not (0 <= idx < len(self.rows)):
+            return {"ok": False, "error": "index out of range"}
+        row = self.rows[idx]
+
+        if row.enabled:
+            row.enabled = False
+            return {"ok": True, "action": "disabled", "key": row.key}
+
+        # Enabling — min_il gate first.
+        if self.is_restricted(row):
+            ask = confirm_restricted or (lambda r: True)
+            if not ask(row):
+                return {"ok": True, "action": "skipped_restricted",
+                        "key": row.key, "min_il": row.min_il,
+                        "impact_level": self.impact_level}
+
+        row.enabled = True
+        deps = self.unmet_dependencies(row)
+        enabled_deps: list[str] = []
+        if deps:
+            ask_deps = confirm_deps or (lambda r, d: True)
+            if ask_deps(row, deps):
+                for d in deps:
+                    d.enabled = True
+                    enabled_deps.append(d.key)
+        return {
+            "ok": True,
+            "action": "enabled",
+            "key": row.key,
+            "unmet_deps": [d.key for d in deps],
+            "enabled_deps": enabled_deps,
+        }
 
     def apply_profile(self, name: str) -> dict:
         """Set enablement to a profile's default_enabled_components.
@@ -344,6 +447,8 @@ def render(state: SetupState, cursor: int, message: str = "") -> str:
     total_on = sum(1 for r in state.rows if r.enabled)
     dirty = "  *unsaved changes*" if state.dirty else ""
     lines.append(f"ICDEV setup — {state.env_file}   ({total_on}/{len(state.rows)} on){dirty}")
+    lines.append(f"impact level: {state.impact_level}   "
+                 "(!) = min_il exceeds it — confirm to enable")
     lines.append("[↑/↓ move] [SPACE toggle] [p profile] [w write] [q quit]")
     lines.append("")
 
@@ -358,9 +463,12 @@ def render(state: SetupState, cursor: int, message: str = "") -> str:
         for r in kind_rows:
             pointer = ">" if idx == cursor else " "
             box = "[x]" if r.enabled else "[ ]"
-            il = f"  min_il:{r.min_il}" if r.min_il else ""
+            restricted = "(!)" if state.is_restricted(r) else ""
+            il = f"  min_il:{r.min_il}{restricted}" if r.min_il else ""
             url = f"  {r.url_prefix}" if r.url_prefix else ""
-            lines.append(f"{pointer} {box} {r.display_name}  ({r.env_flag}){url}{il}")
+            needs = f"  needs:{','.join(r.depends_on)}" if r.depends_on else ""
+            lines.append(
+                f"{pointer} {box} {r.display_name}  ({r.env_flag}){url}{il}{needs}")
             for label, href in r.sub_pages:
                 lines.append(f"        ↳ {label}  {href}")
             idx += 1
@@ -415,9 +523,37 @@ def run_interactive(state: SetupState) -> int:
         elif key in (_Key.DOWN, "j"):
             cursor = (cursor + 1) % len(state.rows)
         elif key == _Key.SPACE:
-            r = state.toggle(cursor)
-            if r:
-                message = f"{'enabled' if r.enabled else 'disabled'}: {r.key}"
+            def _confirm_restricted(row: Row) -> bool:
+                sys.stdout.write(
+                    f"\n{row.key}: min_il {row.min_il} exceeds configured "
+                    f"{state.impact_level}. Enable anyway? [y/N] ")
+                sys.stdout.flush()
+                try:
+                    return input().strip().lower() in ("y", "yes")
+                except (EOFError, KeyboardInterrupt):
+                    return False
+
+            def _confirm_deps(row: Row, deps: list[Row]) -> bool:
+                names = ", ".join(d.key for d in deps)
+                sys.stdout.write(
+                    f"\n{row.key} needs {names} (currently off). "
+                    "Enable prerequisite(s) too? [Y/n] ")
+                sys.stdout.flush()
+                try:
+                    return input().strip().lower() not in ("n", "no")
+                except (EOFError, KeyboardInterrupt):
+                    return False
+
+            res = state.toggle_with_advisories(
+                cursor, _confirm_restricted, _confirm_deps)
+            if res.get("action") == "skipped_restricted":
+                message = f"left off (min_il {res['min_il']}): {res['key']}"
+            elif res.get("action") == "disabled":
+                message = f"disabled: {res['key']}"
+            elif res.get("action") == "enabled":
+                extra = (f"  (+deps: {', '.join(res['enabled_deps'])})"
+                         if res.get("enabled_deps") else "")
+                message = f"enabled: {res['key']}{extra}"
         elif key == "p":
             name = _prompt_profile_name()
             if name:
@@ -487,8 +623,27 @@ def run_plain(state: SetupState, in_stream=None, out_stream=None) -> int:
             continue
         if cmd.isdigit():
             idx = int(cmd) - 1
-            r = state.toggle(idx)
-            out.write(f"\n{'toggled ' + r.key if r else 'out of range'}\n")
+
+            def _confirm_restricted(row: Row) -> bool:
+                out.write(
+                    f"\n{row.key}: min_il {row.min_il} exceeds configured "
+                    f"{state.impact_level}. Enable anyway? [y/N] ")
+                out.flush()
+                ans = inp.readline()
+                return bool(ans) and ans.strip().lower() in ("y", "yes")
+
+            def _confirm_deps(row: Row, deps: list[Row]) -> bool:
+                names = ", ".join(d.key for d in deps)
+                out.write(
+                    f"\n{row.key} needs {names} (off). Enable too? [Y/n] ")
+                out.flush()
+                ans = inp.readline()
+                # default yes; only an explicit no declines
+                return not (ans and ans.strip().lower() in ("n", "no"))
+
+            res = state.toggle_with_advisories(
+                idx, _confirm_restricted, _confirm_deps)
+            out.write(f"\n{res}\n")
             continue
         out.write(f"\nunrecognized: {cmd}\n")
 
@@ -515,12 +670,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         payload = {
             "env_file": str(env_file),
+            "impact_level": state.impact_level,
             "counts": {k: {"enabled": e, "total": t}
                        for k, (e, t) in state.counts_by_kind().items()},
             "components": [
                 {"key": r.key, "kind": r.kind, "env_flag": r.env_flag,
                  "enabled": r.enabled, "url_prefix": r.url_prefix,
                  "min_il": r.min_il,
+                 "restricted": state.is_restricted(r),
+                 "depends_on": r.depends_on,
                  "sub_pages": [{"label": lbl, "href": h} for lbl, h in r.sub_pages]}
                 for r in state.rows
             ],
