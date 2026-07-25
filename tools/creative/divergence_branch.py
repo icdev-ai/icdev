@@ -1,0 +1,232 @@
+# CUI // SP-CTI
+"""Opt-in divergence branch for the Creative Engine (dvg-wire-01).
+
+The creative pipeline (discover -> scan -> extract -> score -> rank -> generate)
+only ever INGESTS ideas from competitor repos and scraped pain points, and
+``spec_generator`` is explicitly template-driven ("No LLM required -- all
+generation is deterministic"). There is no point where the engine generates
+candidate solution *directions* of its own.
+
+This module adds exactly that generative branch -- OFF BY DEFAULT -- for a
+top-ranked pain point:
+
+    invoke_divergence  (generate a raw idea pool, strictly isolated fan-out)
+        -> score_idea_pool     (the separate critic pass: novelty/viability/fit + traps)
+        -> cluster_and_deepen  (collapse restatements, deepen the top-K survivors)
+
+The surviving clusters + a recoverable ``trace_id`` are handed back to
+``stage_generate`` so they can be carried into spec generation instead of going
+straight to one template-filled spec.
+
+It NEVER replaces the deterministic template path. When the outer creative
+toggle is off it is not called at all; when it is called but the divergence
+chain is disabled / excluded / the LLM is unavailable, it returns
+``ran=False`` with a reason and the caller falls straight through to the
+existing template spec. Deterministic-first: all scoring/ordering is composed in
+Python by the critic module, never requested from a model.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Any, Optional
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.creative.divergence_branch")
+
+# Routing function name for the creative-engine divergence branch. Divergence is
+# gated per-function in llm_config chain_orchestration.divergence; this name is
+# what a function must be opted into there for the branch to actually fan out.
+DEFAULT_FUNCTION = "creative_ideation"
+
+
+def is_enabled(config: dict) -> bool:
+    """Outer opt-in gate: the creative-engine ``divergence.enabled`` toggle.
+
+    Default False. This is deliberately separate from the chain-level
+    ``chain_orchestration.divergence.enabled`` gate in llm_config -- both must be
+    on for the branch to fan out, so a stray creative toggle can never spend
+    tokens on its own.
+    """
+    return bool((config or {}).get("divergence", {}).get("enabled", False))
+
+
+def branch_function(config: dict) -> str:
+    """Routing function name the branch invokes divergence under (config-driven)."""
+    return str((config or {}).get("divergence", {}).get("function") or DEFAULT_FUNCTION)
+
+
+def select_top_pain_point(db_path: Optional[str] = None, get_db=None) -> Optional[dict]:
+    """Return the single highest-scoring pain point, or None.
+
+    The branch is deliberately scoped to ONE top-ranked pain point per cycle --
+    divergence is the expensive step, so we widen thinking on the most valuable
+    signal only, not the whole backlog.
+    """
+    if get_db is None:
+        from tools.creative.creative_engine import _get_db as get_db  # lazy: avoid cycle at import
+
+    conn = get_db(db_path)
+    try:
+        row = conn.execute(
+            """SELECT * FROM creative_pain_points
+               WHERE composite_score IS NOT NULL
+               ORDER BY composite_score DESC
+               LIMIT 1"""
+        ).fetchone()
+        return dict(row) if row else None
+    except Exception as exc:  # noqa: BLE001 -- missing table / empty DB is not an error here
+        logger.debug("select_top_pain_point: no pain points available (%s)", exc)
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _build_problem(pain_point: dict) -> str:
+    """Compose the generative problem statement fed to the divergence branches."""
+    title = (pain_point.get("title") or "Unnamed pain point").strip()
+    desc = (pain_point.get("description") or "").strip()
+    category = (pain_point.get("category") or "other").strip()
+    parts = [
+        f"Customer pain point: {title}",
+        f"Category: {category}",
+    ]
+    if desc and desc.lower() != title.lower():
+        parts.append(f"Detail: {desc}")
+    parts.append(
+        "Propose candidate SOLUTION DIRECTIONS a product could take to address "
+        "this pain point. Directions only -- distinct approaches, not one refined answer."
+    )
+    return "\n".join(parts)
+
+
+def _render_section(trace_id: str, clusters: list[dict]) -> str:
+    """Render surviving clusters as a Markdown section appended to the spec.
+
+    Trap-flagged clusters are visibly marked so a reviewer sees the seductive-
+    but-broken directions rather than only the winner.
+    """
+    lines = [
+        "## Candidate Solution Directions (Divergence)",
+        "",
+        f"_Generated by isolated divergent ideation (trace `{trace_id}`). "
+        "Advisory input to the template spec above -- clusters are ordered by "
+        "critic composite; trap-flagged directions are marked._",
+        "",
+    ]
+    for i, c in enumerate(clusters, 1):
+        trap = "  **[TRAP-FLAGGED]**" if c.get("has_trap") else ""
+        label = c.get("label") or "unlabeled"
+        best = c.get("best_composite", 0.0)
+        lines.append(f"### {i}. {label} (composite {best:.3f}){trap}")
+        if c.get("sketch"):
+            lines.append(c["sketch"])
+        members = c.get("members") or []
+        if members:
+            lines.append("")
+            lines.append("Ideas in this cluster:")
+            for m in members[:5]:
+                flag = " [trap]" if m.get("is_trap") else ""
+                lines.append(f"- {m.get('idea', '')[:300]}{flag}")
+        if c.get("risks"):
+            lines.append("")
+            lines.append("Risks: " + "; ".join(str(r) for r in c["risks"][:5]))
+        if c.get("next_steps"):
+            lines.append("Next steps: " + "; ".join(str(s) for s in c["next_steps"][:5]))
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def run_divergence_branch(
+    pain_point: dict,
+    *,
+    function: str = DEFAULT_FUNCTION,
+    orchestrator: Any = None,
+    router: Any = None,
+    persist: bool = True,
+) -> dict:
+    """Run the generate -> critique -> cluster branch for one pain point.
+
+    Returns a context dict consumed by ``generate_all_eligible`` /
+    ``generate_spec``::
+
+        {ran, trace_id, reason, pain_point_id, clusters, section_markdown, trap_count}
+
+    Never raises. A disabled/excluded chain, an unavailable LLM, an empty pool,
+    or an unparseable critic response all yield ``ran=False`` with a ``reason``
+    -- the caller then falls through to the deterministic template path.
+    """
+    result: dict[str, Any] = {
+        "ran": False,
+        "trace_id": None,
+        "reason": "",
+        "pain_point_id": (pain_point or {}).get("id"),
+        "clusters": [],
+        "section_markdown": "",
+        "trap_count": 0,
+    }
+    if not pain_point:
+        result["reason"] = "no_pain_point"
+        return result
+
+    # --- Generate: strictly isolated fan-out over the generative frame set. ---
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+
+        if orchestrator is None:
+            orchestrator = ChainOrchestrator(router=router) if router is not None else ChainOrchestrator()
+        request = LLMRequest(messages=[{"role": "user", "content": _build_problem(pain_point)}])
+        chain = orchestrator.invoke_divergence(function, request)
+    except RuntimeError as exc:
+        # Chain disabled / function excluded -- expected opt-out, not an error.
+        result["reason"] = f"divergence_unavailable: {exc}"
+        return result
+    except Exception as exc:  # noqa: BLE001 -- degrade cleanly like any unavailable-LLM path
+        logger.warning("Divergence branch generate step failed for '%s': %s", function, exc)
+        result["reason"] = f"generate_failed: {exc}"
+        return result
+
+    if not getattr(chain, "content", ""):
+        result["reason"] = f"empty_pool: {getattr(chain, 'stop_reason', 'unknown')}"
+        result["trace_id"] = getattr(chain, "trace_id", None)
+        return result
+
+    trace_id = getattr(chain, "trace_id", None)
+    result["trace_id"] = trace_id
+
+    # --- Critique: separate opposing pass; scores composed in Python. ---
+    try:
+        from tools.quality.divergence_critic import cluster_and_deepen, score_idea_pool
+
+        scored = score_idea_pool(
+            chain.content, function=function, trace_id=trace_id, router=router, persist=persist
+        )
+        if not scored.ordered:
+            result["reason"] = f"critic_no_scores: {scored.stop_reason}"
+            return result
+        deepened = cluster_and_deepen(scored, function=function, router=router)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Divergence branch critic/cluster step failed: %s", exc)
+        result["reason"] = f"critic_failed: {exc}"
+        return result
+
+    clusters = deepened.get("clusters", [])
+    if not clusters:
+        result["reason"] = "no_clusters"
+        return result
+
+    result["ran"] = True
+    result["reason"] = "completed"
+    result["clusters"] = clusters
+    result["trap_count"] = sum(1 for c in clusters if c.get("has_trap"))
+    result["section_markdown"] = _render_section(trace_id or "", clusters)
+    return result
