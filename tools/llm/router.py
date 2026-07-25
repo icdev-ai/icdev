@@ -607,6 +607,16 @@ class LLMRouter:
         except Exception as exc:  # pragma: no cover - defensive import guard
             logger.debug("LLM proxy gateway resolution skipped: %s", exc)
 
+        # LPX (lpx-keys-04): a per-person LOCAL CANVAS COPY must fail CLOSED with a
+        # clear message when it has no virtual key — never silently fall back to a
+        # real provider key. This runs OUTSIDE the try/except above on purpose so
+        # LocalCopyEgressError is NOT swallowed. apply_gateway_to_provider_cfg has
+        # already forced api_key_env to the virtual key, so even a swallowed raise
+        # cannot leak a real key. No-op unless ICDEV_LLM_LOCAL_COPY is truthy.
+        from tools.llm.proxy_gateway import enforce_local_copy_egress
+
+        enforce_local_copy_egress(provider_cfg)
+
         ptype = provider_cfg.get("type", "")
         instance = None
 
