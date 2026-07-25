@@ -175,11 +175,32 @@ def _seed_review_card(skill_name: str, skill_file: str) -> None:
         logger.warning("gepa_optimizer: failed to seed review card for %s: %s", skill_name, exc)
 
 
+def _gepa_frozen() -> bool:
+    """True when GEPA promotion is frozen for a scoring baseline transition.
+
+    Set ``ICDEV_GEPA_FROZEN=1`` during an agx-pick-02 fitness-vocabulary cutover
+    so a shifted composite distribution cannot mass-accept or mass-reject skill
+    candidates on the next reflex run — the SIPA re-signature failure mode
+    (kanban-manual-gate-integrity). The freeze is an EXPLICIT gate a human flips,
+    never a side effect. See docs/audits/agx-pick-02-baseline-transition.md.
+    """
+    import os
+    return str(os.environ.get("ICDEV_GEPA_FROZEN", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def run(dry_run: bool = False) -> dict:
     """Run one GEPA optimization cycle. Returns summary dict."""
     from tools.db.storage import get_connection
 
     summary = {"applied": [], "skipped": [], "errors": []}
+
+    if _gepa_frozen() and not dry_run:
+        logger.warning(
+            "gepa_optimizer: promotion FROZEN (ICDEV_GEPA_FROZEN) — fitness "
+            "baseline transition in progress; skipping this cycle"
+        )
+        summary["skipped"].append({"reason": "gepa_frozen_baseline_transition"})
+        return summary
 
     try:
         conn = get_connection()
