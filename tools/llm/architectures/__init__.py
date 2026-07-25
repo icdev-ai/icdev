@@ -33,6 +33,11 @@ from tools.llm.architectures.registry import (
     run,
     unregister,
 )
+from tools.llm.architectures.selection import (
+    log_selection,
+    resolve_and_log,
+    resolve_architecture,
+)
 
 __all__ = [
     "ENVELOPE_SCHEMA_VERSION",
@@ -46,4 +51,7 @@ __all__ = [
     "register",
     "run",
     "unregister",
+    "resolve_architecture",
+    "resolve_and_log",
+    "log_selection",
 ]
