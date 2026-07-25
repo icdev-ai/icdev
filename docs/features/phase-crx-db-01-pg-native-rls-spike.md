@@ -10,9 +10,13 @@
 Feasibility study for enforcing tenant/classification row-level security at the
 PostgreSQL layer (`ENABLE ROW LEVEL SECURITY` + `CREATE POLICY`) as defense-in-depth
 behind the existing application-level predicate injection. The app-level control
-(`StorageCursor._inject_rls` in `tools/db/storage.py`) is bypassed by any connection
-that does not flow through the wrapper (psql, BI tools, raw `psycopg2`), leaving the
-database itself with no isolation.
+(`StorageCursor._inject_rls` in `tools/db/storage.py`) is the authoritative isolation
+boundary today and is tied to access flowing through the ICDEV connection wrapper; the
+database engine does not itself impose per-row isolation. Adding a native engine-level
+boundary would make isolation hold independently of the connection path.
+
+> **Scope note (public repo):** this is a forward-looking hardening plan; detailed
+> threat analysis of the present state is tracked internally, not in this public doc.
 
 ## Outcome: GO (phased, flag-gated, non-load-bearing first)
 
@@ -41,9 +45,10 @@ The expensive plumbing already exists in the tree:
   session-scoped GUCs (`set_config(..., false)`), which persist when a pooled
   connection returns to the pool. Must switch to transaction scope (`SET LOCAL`) or
   reset-on-return so native policies never read a stale tenant.
-- **Least-privilege runtime role is the biggest new work:** native RLS is a no-op
-  while the app connects as superuser/`BYPASSRLS` (the current dev/CI reality). A
-  dedicated `NOBYPASSRLS` role is the prerequisite for the layer to actually bite.
+- **Least-privilege runtime role is the biggest new work:** native RLS only takes
+  effect when the connecting role is not superuser/`BYPASSRLS`. Provisioning a
+  dedicated `NOBYPASSRLS` runtime role is the prerequisite for the engine-level layer
+  to be effective.
 - **Migrate at scale via one idempotent, information_schema-driven migration** that
   loops qualifying tables and skips the exempt allowlist — never 391 hand-written
   policies.
