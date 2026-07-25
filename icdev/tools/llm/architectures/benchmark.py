@@ -45,14 +45,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-try:  # logging is best-effort; the bench must run in a bare worktree.
-    from tools.logging.icdev_logger import get_logger
+from tools.logging.icdev_logger import get_logger
 
-    logger = get_logger(__name__)
-except Exception:  # pragma: no cover - logging optional
-    import logging
-
-    logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Minimum measured cells for an architecture (on a given family) to be ranked
 # rather than reported as "unmeasured". Kept low (1) because live model access is

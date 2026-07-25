@@ -2273,6 +2273,13 @@ python tools/databridge/connectors/clawhub_connector.py --health --json
 ## LLM Tools — Gateway, Prompt Registry, Cost Intelligence, Model Monitor
 
 ```bash
+# AGX reasoning-architecture benchmark + leaderboard (agx-bench-01/02)
+python tools/llm/architectures/benchmark.py --dry-run --json                            # List task suite + registered architectures (no model calls)
+python tools/llm/architectures/benchmark.py --run --json                                # Run the bench (live models if reachable) -> data/agx/benchmark_latest.json
+python tools/llm/architectures/benchmark.py --run --architectures chain_of_thought,baseline --min-samples 3  # Subset / threshold
+python tools/llm/architectures/leaderboard.py --markdown                                # Render leaderboard + routing recommendations from latest report
+python tools/llm/architectures/leaderboard.py --recommend --json                        # Evidence-based routing recommendations only (RECOMMEND — never writes config)
+
 # LLM Gateway
 python tools/llm/gateway.py --stats --json                                             # Gateway usage statistics
 python tools/llm/gateway.py --audit --json --limit 50                                  # Audit log (last N requests)
