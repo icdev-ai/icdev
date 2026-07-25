@@ -344,6 +344,22 @@ CREATE TABLE IF NOT EXISTS component_audit_log (
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_event ON component_audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_component ON component_audit_log(component_key);
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_recorded_at ON component_audit_log(recorded_at);
+CREATE TABLE IF NOT EXISTS constitutional_audit_log (
+    id TEXT PRIMARY KEY,
+    artifact_type TEXT DEFAULT '',
+    rule_id TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'warn',
+    verdict TEXT NOT NULL,
+    offending_span TEXT DEFAULT '',
+    rationale TEXT DEFAULT '',
+    revised INTEGER DEFAULT 0,
+    vocabulary_version TEXT DEFAULT 'const-1.0',
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_constitutional_audit_rule ON constitutional_audit_log(rule_id, verdict);
+CREATE INDEX IF NOT EXISTS idx_constitutional_audit_recorded_at ON constitutional_audit_log(recorded_at);
 CREATE TABLE IF NOT EXISTS abac_decisions (
     id TEXT PRIMARY KEY,
     user_id TEXT,
