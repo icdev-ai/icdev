@@ -3241,6 +3241,18 @@ CREATE TABLE IF NOT EXISTS sag_user_profiles (
     updated_at       TEXT,
     PRIMARY KEY (user_id, tenant_id)
 );
+
+CREATE TABLE IF NOT EXISTS remote_agent_sessions (
+    id               TEXT PRIMARY KEY,
+    channel          TEXT NOT NULL,
+    chat_id          TEXT NOT NULL,
+    icdev_user_id    TEXT,
+    tenant_id        TEXT DEFAULT '',
+    context_id       TEXT NOT NULL,
+    created_at       TEXT,
+    last_activity_at TEXT,
+    UNIQUE (channel, chat_id)
+);
 """
 
 

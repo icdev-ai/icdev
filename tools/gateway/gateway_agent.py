@@ -259,8 +259,18 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             )
             return jsonify({"status": "binding_initiated"}), 200
 
+        # 4b. Agent-mode (sag-gw-01): a bound user's free-text (not a structured
+        # allowlisted command) routes to the SAG agent runtime. This does NOT
+        # bypass any gate — it rewrites the envelope to a synthetic 'agent'
+        # command with its own allowlist entry so the full 8-gate chain below
+        # runs unchanged.
+        from tools.gateway.agent_mode import prepare_agent_envelope
+        effective_allowlist, is_agent = prepare_agent_envelope(
+            envelope, channel_name, config, allowlist
+        )
+
         # 5. Check allowlist
-        allowed, entry = is_command_allowed(envelope.command, channel_name, allowlist)
+        allowed, entry = is_command_allowed(envelope.command, channel_name, effective_allowlist)
         if not allowed:
             adapter.send_message(
                 envelope.channel_user_id,
@@ -269,9 +279,9 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             )
             return jsonify({"status": "not_allowed"}), 200
 
-        # 6. Run security chain
+        # 6. Run security chain (same 8 gates for structured and agent commands)
         channel_config = config.get("channels", {}).get(channel_name, {})
-        passed, gate_results = run_security_chain(envelope, adapter, config, channel_config, allowlist)
+        passed, gate_results = run_security_chain(envelope, adapter, config, channel_config, effective_allowlist)
 
         if not passed:
             failed = next((r for r in gate_results if not r.passed), None)
@@ -284,13 +294,18 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             return jsonify({"status": "rejected", "gate": failed.gate_name if failed else "unknown"}), 200
 
         # 7. Check confirmation requirement
-        if requires_confirmation(envelope.command, allowlist):
+        if requires_confirmation(envelope.command, effective_allowlist):
             # For now, execute directly — confirmation flow can be added
             # with interactive buttons in future iterations
             pass
 
-        # 8. Execute command
-        result = execute_command(envelope, channel_config, config)
+        # 8. Execute command (or run an agent turn — IL response filtering applies
+        # to both; agent-mode never bypasses the response filter).
+        if is_agent:
+            from tools.gateway.agent_mode import handle_agent_message
+            result = handle_agent_message(envelope, channel_config, config)
+        else:
+            result = execute_command(envelope, channel_config, config)
 
         # 9. Send response
         adapter.send_message(
