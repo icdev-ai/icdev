@@ -2625,6 +2625,165 @@ def check_direct_anthropic_import() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: AGX architecture LLM-agnosticism (agx-core-02)
+# ---------------------------------------------------------------------------
+
+# Vendor SDK / orchestration-framework module roots that architecture code must
+# never import directly — inference flows through LLMRouter, never a raw SDK.
+_AGX_VENDOR_SDK_ROOTS = frozenset({
+    "anthropic", "openai", "langchain", "langgraph", "langchain_core",
+    "langchain_community", "langchain_openai", "cohere", "mistralai", "groq",
+    "together", "fireworks", "ollama", "nebius", "tavily", "boto3", "botocore",
+    "google.generativeai", "vertexai", "azure",
+})
+
+# String literals shaped like a concrete provider model ID. Architecture code
+# must resolve models from args/llm_config.yaml, never hardcode an ID.
+_AGX_MODEL_ID_RE = re.compile(
+    r"\b("
+    r"claude-(?:3|4|opus|sonnet|haiku|instant)"
+    r"|gpt-4|gpt-3\.5|gpt-4o|o1-|o3-"
+    r"|gemini-(?:\d|pro|flash)"
+    r"|llama-?[23]|mixtral-|mistral-(?:large|small|medium)"
+    r"|qwen[\d-]|command-r|deepseek-|grok-\d"
+    r")",
+    re.IGNORECASE,
+)
+
+# Provider modules that bypass the router. `tools.llm.provider` (LLMRequest /
+# LLMResponse dataclasses) is allowed; concrete *_provider modules are not.
+_AGX_ALLOWED_LLM_MODULE_SUFFIXES = frozenset({"provider", "router", "config_path"})
+
+
+def _agx_docstring_node_ids(tree: ast.AST) -> set:
+    """Return id()s of string-constant nodes that are docstrings (module / class /
+    function), so a model-ID scan does not flag prose."""
+    ids: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, "body", None) or []
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                ids.add(id(body[0].value))
+    return ids
+
+
+def scan_architecture_agnosticism(source: str, rel: str) -> List[str]:
+    """AST-scan one architecture source file for LLM-agnosticism violations.
+
+    Returns a list of ``rel:lineno: reason`` violation strings. Detects:
+      1. vendor-SDK / langchain_* imports,
+      2. concrete-model-ID-shaped string literals (excluding docstrings),
+      3. direct provider instantiation / provider-module imports that bypass LLMRouter.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    violations: List[str] = []
+    doc_ids = _agx_docstring_node_ids(tree)
+
+    def _root(mod: str) -> str:
+        return mod.split(".")[0]
+
+    for node in ast.walk(tree):
+        # (1) + (3) imports
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.name
+                if _root(name) in _AGX_VENDOR_SDK_ROOTS or name in _AGX_VENDOR_SDK_ROOTS:
+                    violations.append(f"{rel}:{node.lineno}: vendor-SDK import `{name}`")
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            if _root(mod) in _AGX_VENDOR_SDK_ROOTS or mod in _AGX_VENDOR_SDK_ROOTS:
+                violations.append(f"{rel}:{node.lineno}: vendor-SDK import from `{mod}`")
+            # provider-module bypass: tools.llm.<x>_provider (x not in allowed)
+            elif mod.replace("icdev.", "").startswith("tools.llm."):
+                last = mod.rsplit(".", 1)[-1]
+                if last.endswith("_provider"):
+                    violations.append(
+                        f"{rel}:{node.lineno}: direct provider-module import `{mod}` bypasses LLMRouter"
+                    )
+        # (2) model-ID literals
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in doc_ids:
+                continue
+            m = _AGX_MODEL_ID_RE.search(node.value)
+            if m:
+                violations.append(
+                    f"{rel}:{node.lineno}: model-ID-shaped literal `{m.group(0)}` — resolve from llm_config.yaml"
+                )
+        # (3) direct provider instantiation: SomethingProvider(...)
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            fn_name = None
+            if isinstance(fn, ast.Name):
+                fn_name = fn.id
+            elif isinstance(fn, ast.Attribute):
+                fn_name = fn.attr
+            if fn_name and fn_name.endswith("Provider") and fn_name not in {"EmbeddingProvider"}:
+                violations.append(
+                    f"{rel}:{node.lineno}: direct provider instantiation `{fn_name}(...)` bypasses LLMRouter"
+                )
+    return violations
+
+
+def check_architecture_agnosticism() -> CoherenceCheck:
+    """agx-core-02 — enforce the LLM-agnostic contract on tools/llm/architectures/.
+
+    AGX reasoning architectures must resolve all inference through LLMRouter with
+    no vendor-SDK imports, no hardcoded model IDs, and no direct provider
+    instantiation. This is a hard, hard-won ICDEV property (9 providers, air-gap
+    Ollama routing, CUI egress) that must not drift as later AGX tasks add
+    architectures. Categorical outputs (agx-pick-*) are what MAKE portability
+    achievable, so this gate protects the whole card.
+    """
+    roots = [
+        Path("tools") / "llm" / "architectures",
+        Path("icdev") / "tools" / "llm" / "architectures",
+    ]
+    violations: List[str] = []
+    scanned = 0
+    for root in roots:
+        abs_root = PROJECT_ROOT / root
+        if not abs_root.exists():
+            continue
+        for py_file in sorted(abs_root.rglob("*.py")):
+            try:
+                rel = str(py_file.relative_to(PROJECT_ROOT))
+            except ValueError:
+                rel = str(py_file)
+            scanned += 1
+            violations.extend(scan_architecture_agnosticism(_read_text(py_file), rel))
+
+    if violations:
+        return CoherenceCheck(
+            check_id="architecture_agnosticism",
+            check_name="AGX Architecture LLM-Agnosticism (agx-core-02)",
+            status="fail",
+            expected=["tools/llm/architectures/ resolves all inference via LLMRouter; no vendor SDK / model IDs"],
+            actual=violations,
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} LLM-agnosticism violation(s) in AGX architecture code — "
+                "route through LLMRouter and resolve models from args/llm_config.yaml"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="architecture_agnosticism",
+        check_name="AGX Architecture LLM-Agnosticism (agx-core-02)",
+        status="pass",
+        expected=["tools/llm/architectures/ resolves all inference via LLMRouter; no vendor SDK / model IDs"],
+        actual=[f"{scanned} architecture file(s) scanned, 0 violations"],
+        missing=[],
+        extra=[],
+        message="AGX architecture code is LLM-agnostic (no vendor SDK / model IDs / provider bypass)",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check: Dead LLMRouter API — .complete()/.chat() (nav-llm-02)
 # ---------------------------------------------------------------------------
 
@@ -5476,6 +5635,7 @@ CHECK_REGISTRY = {
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
     "direct_anthropic_import": check_direct_anthropic_import,
+    "architecture_agnosticism": check_architecture_agnosticism,
     "llm_router_api": check_llm_router_api,
     "karpathy_sync": check_karpathy_sync,
     "openapi_parity": check_openapi_parity,
