@@ -73,7 +73,12 @@ def chat_main(argv: list[str] | None = None) -> int:
     from tools.agent_runtime.commands import dispatch as _command_dispatch
     from tools.agent_runtime.runtime import AgentRuntime
 
-    kwargs: dict[str, Any] = {"command_handler": _command_dispatch}
+    # icdev chat is a short-lived process, so it is safe to apply the active
+    # profile's dotenv overlay into this process (sag-prof-01).
+    kwargs: dict[str, Any] = {
+        "command_handler": _command_dispatch,
+        "apply_profile_env": True,
+    }
     if args.user:
         kwargs["user_id"] = args.user
     if args.tenant is not None:

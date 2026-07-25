@@ -43,10 +43,23 @@ CREATE TABLE IF NOT EXISTS {_TABLE} (
     classification   TEXT DEFAULT 'CUI',
     preferences_json TEXT DEFAULT '{{}}',
     facts_json       TEXT DEFAULT '[]',
+    profile          TEXT DEFAULT '',
     updated_at       TEXT,
     PRIMARY KEY (user_id, tenant_id)
 )
 """
+
+# Marker the SAG runtime uses to namespace a profile's tenant (see
+# tools/agent_runtime/profiles.py::scoped_tenant). We derive the profile-tag
+# column from it on write so no public API in this module changes (sag-prof-01).
+_PROFILE_SEP = "::prof:"
+
+
+def _profile_from_tenant(tenant_id: str) -> str:
+    """Extract the profile name a namespaced tenant encodes ('' for default)."""
+    if tenant_id and _PROFILE_SEP in tenant_id:
+        return tenant_id.split(_PROFILE_SEP, 1)[1]
+    return ""
 
 
 def _utcnow() -> str:
@@ -109,6 +122,7 @@ def _save_profile(
         now = _utcnow()
         pj = json.dumps(preferences or {})
         fj = json.dumps(facts or [])
+        prof = _profile_from_tenant(tenant_id)
         # upsert (portable: check-then-write, mirrors notifications/preferences.py)
         cur = conn.execute(
             f"SELECT 1 FROM {_TABLE} WHERE user_id = %s AND tenant_id = %s",
@@ -117,15 +131,15 @@ def _save_profile(
         if cur.fetchone():
             conn.execute(
                 f"UPDATE {_TABLE} SET preferences_json = %s, facts_json = %s, "
-                f"updated_at = %s WHERE user_id = %s AND tenant_id = %s",
-                (pj, fj, now, user_id, tenant_id),
+                f"profile = %s, updated_at = %s WHERE user_id = %s AND tenant_id = %s",
+                (pj, fj, prof, now, user_id, tenant_id),
             )
         else:
             conn.execute(
                 f"INSERT INTO {_TABLE} "
-                f"(user_id, tenant_id, classification, preferences_json, facts_json, updated_at) "
-                f"VALUES (%s, %s, %s, %s, %s, %s)",
-                (user_id, tenant_id, classification, pj, fj, now),
+                f"(user_id, tenant_id, classification, preferences_json, facts_json, profile, updated_at) "
+                f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (user_id, tenant_id, classification, pj, fj, prof, now),
             )
         conn.commit()
         return True

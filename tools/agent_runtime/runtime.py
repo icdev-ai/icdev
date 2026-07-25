@@ -76,6 +76,8 @@ class AgentRuntime:
         command_handler: CommandHandler | None = None,
         user_id: str = "default",
         tenant_id: str = "",
+        profile: str | None = None,
+        apply_profile_env: bool = False,
     ) -> None:
         self._router = router
         self.system_prompt = system_prompt
@@ -85,7 +87,25 @@ class AgentRuntime:
         self.max_cost_usd = max_cost_usd
         self.command_handler = command_handler
         self.user_id = user_id
-        self.tenant_id = tenant_id
+        # -- profile isolation (sag-prof-01) -------------------------------
+        # Resolve the sticky active profile at startup (unless one is passed).
+        # A named profile namespaces the tenant so sessions + profile memory are
+        # partitioned without per-profile .db files; the default profile is a
+        # strict no-op (tenant unchanged), preserving existing behaviour exactly.
+        self.profile = ""
+        try:
+            from tools.agent_runtime import profiles as _profiles
+
+            self.profile = (
+                _profiles.active_profile() if profile is None
+                else ("" if _profiles.is_default(profile) else profile)
+            )
+            if self.profile and apply_profile_env:
+                _profiles.apply_overlay(self.profile)
+            self.tenant_id = _profiles.scoped_tenant(tenant_id, self.profile)
+        except Exception as exc:  # noqa: BLE001 — isolation is best-effort
+            logger.debug("agent_runtime: profile resolution skipped: %s", exc)
+            self.tenant_id = tenant_id
         self.tools, self.tool_handlers = build_builtin_toolset()
         self.session: RuntimeSession = RuntimeSession.create(
             title="Untitled session",
