@@ -5,7 +5,7 @@ CUI // SP-CTI
 > **Source:** [github.com/FareedKhan-dev/all-agentic-architectures](https://github.com/FareedKhan-dev/all-agentic-architectures)
 > **License:** MIT — Copyright (c) 2025 Fareed Khan. Patterns are freely adaptable with attribution.
 > **Date:** 2026-07-25
-> **Status:** ANALYSIS — no implementation. Card `agx-` seeded behind `agx-gate-00` (held).
+> **Status:** SUPERSEDED by ADR **D391** (`docs/reference/adrs.md`, Phase 77 — AGX), which formalizes the final disposition of all 35 upstream architectures (ALREADY-COVERED / ADOPTED / REJECTED). This spike is retained for the original analysis; the ADR is authoritative. The `agx-` card is COMPLETE; `agx-gate-00` remains held.
 
 ---
 

@@ -880,3 +880,13 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - **Default off** — the `email` channel ships `enabled: false`; no mailbox is polled until an operator configures IMAP/SMTP and enables it.
   - **Regression test** — `tests/gateway/test_email_adapter.py` asserts command parsing from subject/body, the non-ICDEV drop, bot-header detection, threading via In-Reply-To, and that SMTP/IMAP are mocked (no network).
 - **Revisit if:** the adapter is ever made to parse/execute attachments or `text/html`, to auto-bind senders without the identity gate, or to act on mail before DKIM/SPF verification is added — any of which would warrant sandboxing the parse and hardening sender authentication.
+
+### Gap 35 — AGX benchmark suite (`tools/llm/architectures/benchmark.py`, `leaderboard.py`, `baseline.py`)
+
+**Modules:** `tools/llm/architectures/benchmark.py`, `leaderboard.py`, `baseline.py` (AGX agx-bench-01/02).
+
+**Ingress path:** The benchmark reads a first-party, checked-in task suite (`args/agx/benchmark_tasks.yaml`); the leaderboard reads the tool's own machine-generated report (`data/agx/benchmark_latest.json`); the `baseline` architecture issues a single `LLMRouter.invoke` on a benchmark task prompt. No end-user, attacker, or externally-sourced content enters any of these modules.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** All inputs are repo-authored data or the tool's own output. The modules perform no `exec()`/`eval()`/`subprocess`; they call the LLMRouter and the deterministic fitness judge and aggregate results in pure Python. There is no user-provided-content ingress to sandbox. CUI safety is preserved by routing all inference through `LLMRouter` (the api_key_env local-vs-cloud distinction keeps CUI local); the harness itself moves no CUI.
+- **Revisit if:** the benchmark is ever pointed at a user-supplied or externally-fetched task corpus (rather than the first-party `args/agx/` suite), or the leaderboard is made to ingest reports from an untrusted source — either of which would introduce untrusted-content ingress and warrant re-scoping.
