@@ -106,6 +106,7 @@ def _ensure_builtin_adapters_registered() -> None:
     (adapters import from this module).
     """
     from tools.llm.architectures import adapters  # noqa: F401  (registers on import)
+    from tools.llm.architectures import cove  # noqa: F401  (registers chain_of_verification)
 
 
 # Register the built-in wrapped architectures on first import of this module.
