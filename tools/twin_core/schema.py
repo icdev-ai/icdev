@@ -81,6 +81,7 @@ _VERDICT_ALIASES = {
 
 _SEVERITY_ALIASES = {
     "blocker": "blocker", "block": "blocker",
+    "deployment_blocker": "blocker", "deployment-blocker": "blocker",  # twx-fed-01 air-gap blockers
     "critical": "critical", "crit": "critical", "cat1": "critical", "cat_1": "critical",
     "high": "high", "cat2": "high", "cat_2": "high",
     "medium": "medium", "moderate": "medium", "med": "medium",

@@ -73,9 +73,10 @@ class IDCTwinAdapter(TwinAdapter):
             }
             for v in native.get("violations", [])
         ]
+        violations, verdict = self._airgap_augment(delta or {}, violations, native.get("gate"), kwargs)
         return self._wrap(
             target_id,
-            native.get("gate"),
+            verdict,
             violations,
             extra={"delta": native.get("delta")},
         )

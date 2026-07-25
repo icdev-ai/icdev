@@ -194,6 +194,26 @@ class TwinAdapter:
 
     # -- helper for subclasses -------------------------------------------------
 
+    def _airgap_augment(self, target: Any, violations: list, verdict: Any, kwargs: dict):
+        """Append air-gap deployment-blocker violations when targeting an air-gapped
+        environment (twx-fed-01). Enabled by ``airgap=True`` kwarg, or auto when the
+        runtime is detected air-gapped. Any blocker escalates the verdict to ``fail``.
+        Returns ``(violations, verdict)``.
+        """
+        active = kwargs.get("airgap")
+        if active is None:
+            from tools.twin_core.airgap_rules import is_airgap_environment
+
+            active = is_airgap_environment()
+        if not active:
+            return violations, verdict
+        from tools.twin_core.airgap_rules import evaluate_airgap
+
+        extra = evaluate_airgap(target, source_canvas=self.canvas_key, active=True)
+        if extra:
+            return list(violations) + extra, "fail"
+        return violations, verdict
+
     def _wrap(self, target_id: str, verdict: Any, violations: list[dict] | None = None, **kw) -> dict:
         """Wrap a native simulate result in the canonical envelope (schema.twin_verdict)."""
         return twin_verdict(self.canvas_key, target_id, verdict, violations, method=self.method, **kw)
