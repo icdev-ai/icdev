@@ -118,11 +118,14 @@ class TestSearchResult:
 
 class TestEmbeddingHelpers:
     def test_roundtrip_embedding(self):
+        # Default write dtype is float16 (rce-quant-01): ~50% storage win at
+        # ~2e-3 per-element error. Legacy exact float32 read is covered
+        # separately in tests/test_rag_quantization.py.
         emb = [0.1, 0.2, 0.3, 0.4, 0.5]
         blob = _embedding_to_blob(emb)
         restored = _blob_to_embedding(blob)
         for a, b in zip(emb, restored):
-            assert abs(a - b) < 1e-6
+            assert abs(a - b) < 2e-3
 
     def test_cosine_identical_vectors(self):
         v = [1.0, 0.0, 0.0]

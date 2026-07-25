@@ -193,6 +193,12 @@ rag:
   provenance:
     enabled: true
     record_query_content: false
+  quantization:
+    # SQLite vector-store write precision (rce-quant-01). Reads are always
+    # back-compat: float16, float32, and legacy headerless float32 all decode.
+    # float16 halves storage/IO at ~2e-3 per-element error (retrieval order
+    # preserved). Set to float32 for exact storage.
+    sqlite_dtype: float16
   rerank:
     bge_model: bge-reranker-v2-m3
     enabled: false

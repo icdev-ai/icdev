@@ -1,9 +1,11 @@
 # [TEMPLATE: CUI // SP-CTI]
 """SQLite BLOB vector store — default backend (D-RAG-1).
 
-Stores embeddings as packed float32 BLOBs in SQLite. Computes cosine
-similarity in Python with numpy fast path + pure-python fallback.
-Reuses struct.pack/unpack pattern from tools/memory/embed_memory.py.
+Stores embeddings as packed BLOBs in SQLite using a self-describing,
+versioned header (rce-quant-01): magic + dtype byte + payload, so float16
+(default, ~50% smaller) and float32 coexist and legacy headerless float32
+rows keep reading. Computes cosine similarity in Python with numpy fast path
++ pure-python fallback. Reuses struct.pack/unpack from tools/memory/embed_memory.py.
 
 Always available — no optional dependencies. Air-gap safe.
 """
@@ -145,13 +147,89 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
         return dot / (norm_a * norm_b) if norm_a > 0 and norm_b > 0 else 0.0
 
 
-def _embedding_to_blob(embedding: List[float]) -> bytes:
-    """Pack float list to binary BLOB."""
-    return struct.pack(f"{len(embedding)}f", *embedding)
+# ---------------------------------------------------------------------------
+# Quantized blob format (rce-quant-01)
+# ---------------------------------------------------------------------------
+# Self-describing header: magic b'RVQ1' + 1 dtype byte ('f'=float32,
+# 'e'=float16) + packed payload.  Blobs WITHOUT the magic are treated as
+# LEGACY raw float32 (len//4 values) so every previously stored embedding keeps
+# reading correctly — no forced re-index.  Half-precision ('e') is native to
+# struct since Python 3.6, so float16 packing needs no numpy (air-gap safe).
+_BLOB_MAGIC = b"RVQ1"
+_DTYPE_TO_CHAR = {"float32": "f", "float16": "e"}
+_CHAR_TO_DTYPE = {"f": "float32", "e": "float16"}
+_DEFAULT_SQLITE_DTYPE = "float16"  # ~50% storage/IO win; ~2e-3 element error
+
+
+def _load_quantization_config(config: "dict | None" = None) -> dict:
+    """Load the ``rag.quantization`` block from config or args/rag_config.yaml.
+
+    A caller-supplied ``config`` may carry the block directly under a
+    ``quantization`` key or nested under ``rag.quantization``; otherwise fall
+    back to ``rag.quantization`` in args/rag_config.yaml.  Empty dict when
+    nothing is configured.
+    """
+    cfg = config or {}
+    if isinstance(cfg, dict):
+        if "quantization" in cfg:
+            return cfg["quantization"] or {}
+        rag = cfg.get("rag")
+        if isinstance(rag, dict) and "quantization" in rag:
+            return rag["quantization"] or {}
+    config_path = BASE_DIR / "args" / "rag_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh) or {}
+        return raw.get("rag", {}).get("quantization", {}) or {}
+    except Exception:
+        return {}
+
+
+def _resolve_sqlite_dtype(config: "dict | None" = None) -> str:
+    """Resolve the configured write dtype ('float16' | 'float32')."""
+    q = _load_quantization_config(config)
+    dtype = str(q.get("sqlite_dtype", _DEFAULT_SQLITE_DTYPE)).lower()
+    return dtype if dtype in _DTYPE_TO_CHAR else _DEFAULT_SQLITE_DTYPE
+
+
+def _embedding_to_blob(embedding: List[float], dtype: str = "float16") -> bytes:
+    """Pack a float list to a self-describing BLOB (rce-quant-01).
+
+    Writes ``magic + dtype-byte + payload``.  ``dtype`` selects storage
+    precision: ``float16`` (default) halves storage/IO at ~2e-3 per-element
+    error; ``float32`` is exact.  Reads via :func:`_blob_to_embedding` are
+    back-compat for both dtypes and for legacy headerless float32 blobs.
+    """
+    char = _DTYPE_TO_CHAR.get(str(dtype).lower(), _DTYPE_TO_CHAR[_DEFAULT_SQLITE_DTYPE])
+    payload = struct.pack(f"{len(embedding)}{char}", *embedding)
+    return _BLOB_MAGIC + char.encode("ascii") + payload
 
 
 def _blob_to_embedding(blob: bytes) -> List[float]:
-    """Unpack binary BLOB to float list."""
+    """Unpack a BLOB to a float list (rce-quant-01).
+
+    If ``blob`` carries the ``RVQ1`` magic header, its dtype byte selects the
+    unpack format (float16/float32).  Otherwise the whole blob is read as
+    LEGACY raw float32 (``len // 4`` values), preserving back-compat with every
+    row written before this format existed.
+
+    Magic-collision risk is negligible: a legacy float32 embedding would only
+    be misread if its first four little-endian bytes spelled ``b'RVQ1'``, i.e.
+    element[0] equalled a value on the order of 1e-9 — normalized embeddings
+    never produce it.
+    """
+    if len(blob) >= 5 and blob[:4] == _BLOB_MAGIC:
+        char = chr(blob[4])
+        if char in _CHAR_TO_DTYPE:
+            payload = blob[5:]
+            itemsize = struct.calcsize(char)
+            n = len(payload) // itemsize
+            return list(struct.unpack(f"{n}{char}", payload))
+    # Legacy headerless float32
     n = len(blob) // 4
     return list(struct.unpack(f"{n}f", blob))
 
@@ -178,6 +256,8 @@ class SQLiteVectorStore(VectorStoreProvider):
         self._db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self._tenant_id = tenant_id
         self._busy_timeout = int(cfg.get("busy_timeout_ms", _BUSY_TIMEOUT_MS))
+        # Write-time storage precision (rce-quant-01); reads stay back-compat.
+        self._sqlite_dtype = _resolve_sqlite_dtype(cfg)
         if tenant_id:
             tenant_dir = BASE_DIR / "data" / "tenants"
             tenant_dir.mkdir(parents=True, exist_ok=True)
@@ -283,7 +363,7 @@ class SQLiteVectorStore(VectorStoreProvider):
                 continue  # Skip duplicate
             if chunk.embedding is None:
                 continue  # No embedding, skip
-            blob = _embedding_to_blob(chunk.embedding)
+            blob = _embedding_to_blob(chunk.embedding, dtype=self._sqlite_dtype)
             meta_json = json.dumps(chunk.metadata) if chunk.metadata else "{}"
             conn.execute(
                 """INSERT INTO rag_chunks
@@ -479,17 +559,14 @@ class SQLiteVectorStore(VectorStoreProvider):
         migrated = 0
         for cid in chunk_ids:
             if target_tier == "warm":
-                # Compress float32 → float16
+                # Compress to float16 via the self-describing header format so
+                # the blob round-trips correctly on read (rce-quant-01). The
+                # former raw np.float16.tobytes() wrote a headerless payload
+                # that _blob_to_embedding then MIS-read as float32.
                 row = conn.execute("SELECT embedding FROM rag_chunks WHERE id = %s", (cid,)).fetchone()
                 if row and row[0]:
                     emb = _blob_to_embedding(row[0])
-                    try:
-                        import numpy as np
-
-                        f16 = np.array(emb, dtype=np.float16)
-                        compressed = f16.tobytes()
-                    except ImportError:
-                        compressed = row[0]  # Keep float32 without numpy
+                    compressed = _embedding_to_blob(emb, dtype="float16")
                     conn.execute(
                         """UPDATE rag_chunks
                            SET tier = %s, embedding = %s, updated_at = CURRENT_TIMESTAMP
