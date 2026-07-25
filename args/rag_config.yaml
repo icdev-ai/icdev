@@ -247,6 +247,8 @@ rag:
     # Default OFF — when off, retrieval + existing tests are byte-for-byte the
     # flat-leaf path. Summaries are LLM-generated (graceful no-op when the LLM
     # is unavailable) and MUST NOT be surfaced as citation sources.
+    # rce-eval-05-d4/d5: measured DROP — raptor ON added 0.0 recall@5 / 0.0 MRR
+    # and −0.0005 ndcg@5 vs OFF on the compliance golden set; kept OFF.
     enabled: false
     group_size: 5           # sibling leaves summarized into one level-1 parent
     llm_function: rag_evaluate  # LLMRouter function for cheap-LLM summarization
