@@ -58,26 +58,118 @@ rag:
 
 ## Benchmark deltas
 
+### The original baseline measured the wrong corpus (rce-eval-01)
+
 Baseline (`data/rag/rce_baseline.json`), generated through the full retriever
-against the live 1397-chunk corpus: **recall@5 = 0.12, MRR = 0.20,
+against the then-live 1397-chunk corpus: **recall@5 = 0.12, MRR = 0.20,
 citation_hit_rate = 0.24**.
 
-The absolute numbers are a deliberate **low-water-mark**: the live corpus is
-research/innovation-heavy and holds ~0 NIST/compliance chunks, while the golden
-set targets the compliance product. Per-change retrieval deltas require a
-populated compliance corpus + LLM and are **not** reproducible in a fresh
-worktree/CI (empty `rag_chunks`). Each change therefore ships with the exact
-reproduction command:
+Those numbers were a deliberate **low-water-mark**: that corpus was
+research/innovation-heavy and held ~0 NIST/compliance chunks, while the golden
+set targets the compliance product. The corpus and the query set were measuring
+different things, so no per-change delta taken against it was meaningful.
 
-```bash
-# Ingest compliance corpus, then for a given change:
-python tools/rag/reindex_contextual.py --reindex --execute   # or: python tools/rag/raptor.py --build
-# enable the toggle in args/rag_config.yaml, then:
-python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline.json --json
-```
+### Re-baselined on a matched compliance corpus (rce-eval-03)
+
+A compliance corpus was ingested into `rag_chunks` and the harness re-run
+unchanged. New baseline: **`data/rag/rce_baseline_compliance.json`**.
+`rce_baseline.json` is deliberately kept so the corpus-mismatch story stays
+legible.
+
+| Metric | `rce_baseline.json` (mismatched corpus) | `rce_baseline_compliance.json` (matched corpus) | Δ |
+|---|---|---|---|
+| recall@5 | 0.1212 | **0.9394** | +0.8182 |
+| MRR | 0.2045 | **0.9343** | +0.7298 |
+| ndcg@5 | 0.1999 | **0.9429** | +0.7430 |
+| citation_hit_rate | 0.2424 | **0.9697** | +0.7273 |
+
+Same 33 golden queries, same `top_k=5`, same retriever, same metric code
+(`tools/rag/evaluator.py` `mrr` / `ndcg_at_k`). The only variable changed is the
+corpus. **The RCE retrieval stack was never underperforming — it was being
+scored against documents that did not contain the answers.**
+
+#### Corpus composition (`source_type = 'compliance_reference'`, 3552 chunks)
+
+Live PG (`ICDEV_STORAGE_BACKEND=postgresql`), ingested 2026-07-25, all 3552
+chunks embedded (`embedding` and `embedding_vec` both populated):
+
+| Regime | Source document | Sources | Chunks |
+|---|---|---|---|
+| NIST_800_53 | Electronic (OSCAL) Version of NIST SP 800-53 Rev 5.2.0 Controls + SP 800-53A Rev 5.2.0 Assessment Procedures | 1196 | 2523 |
+| FEDRAMP | FedRAMP High Baseline Controls | 336 | 368 |
+| CMMC | CMMC Model v2.0 — Practice Catalog | 150 | 205 |
+| NIST_800_171 | NIST SP 800-171 Rev 2 — CUI Protection Requirements | 110 | 204 |
+| FIPS | NIST SP 800-60 Vol 2 Rev 1 Information Type Catalog | 131 | 132 |
+| STIG | Web Application Security STIG | 15 | 45 |
+| FEDRAMP | FedRAMP 20x Key Security Indicators (KSIs) | 43 | 43 |
+| FIPS | FIPS 200 Minimum Security Requirements | 17 | 20 |
+| DOD_IL | DoD Impact Level Profiles | 4 | 6 |
+| CUI | ICDEV CUI marking templates (32 CFR Part 2002 / DoDI 5200.48) | 3 | 6 |
+| **Total** | | **2005** | **3552** |
+
+Total `rag_chunks` at benchmark time: **4111** (3552 compliance_reference +
+559 pre-existing `dic_document`).
+
+#### Headroom is now the binding constraint
+
+Per-query breakdown of the new baseline: **30 of 33 queries score a perfect
+recall@5 = 1.0**. Only 4 of 66 individual targets are missed:
+
+- `q-stig-hardening` — full miss (0/2 targets); the STIG slice is the thinnest
+  in the corpus (45 chunks, one STIG document).
+- `q-sc13-cryptographic-protection` — 1/2 targets.
+- `q-fedramp-authorization-boundary` — 1/2 targets.
+
+Maximum remaining gain for *any* retrieval change is therefore **+0.0606
+recall@5 and +0.0303 citation_hit_rate**. This ceiling is the dominant fact for
+the two dark toggles below.
 
 Storage delta (rce-quant-01, measured): 768-dim × 2000 vectors → SQLite DB
 **8.50 MB → 4.39 MB (−48%)**, query latency within noise.
+
+### Toggle decisions: `contextual_retrieval` and `raptor`
+
+**Status: NOT YET MEASURED against the new baseline. Both remain default-OFF.**
+
+This is a deliberate, recorded gap rather than an ambiguous one. Sizing done in
+this task, against the real 3552-chunk corpus:
+
+| Toggle | Build command | Measured cost to enable |
+|---|---|---|
+| `contextual_retrieval` | `python tools/rag/reindex_contextual.py --reindex --execute` | **3552 chunks × (1 LLM prefix call + 1 re-embed)** — `--dry-run` reports `total_chunks: 3552, documents: 2005`. Neither the CLI nor the reindexer exposes a `--limit`; `--source` only narrows to a `source_type`, and all 3552 share one. |
+| `raptor` | `python tools/rag/raptor.py --build` | **Exceeds 240 s in `--dry-run` alone** (plan-only, no writes) over this corpus, so the live clustering + summary pass is substantially longer. |
+
+Each build exceeds a single autonomous dispatch budget, and a *partial* reindex
+is worse than none: it leaves the store with a mix of contextualized and
+non-contextualized embeddings, which makes any before/after delta
+uninterpretable.
+
+**Interim decision for both: stay OFF, and do not treat them as shippable.**
+The cost/benefit is now bounded by a number rather than by a guess — each toggle
+requires a multi-thousand-call LLM pass over the corpus to chase **at most
++6.1 pp recall@5**, against a retriever already at 0.94/0.97. That is a poor
+trade unless the measurement shows the gain lands specifically on the three
+under-served queries above.
+
+**To close this out** (the remaining work, deliberately split because each needs
+its own long-running dispatch against the live environment):
+
+```bash
+# 1. contextual_retrieval
+python tools/rag/reindex_contextual.py --reindex --execute
+#    then set rag.contextual_retrieval.enabled: true in args/rag_config.yaml
+python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline_compliance.json --json
+
+# 2. raptor
+python tools/rag/raptor.py --build
+#    then set rag.raptor.enabled: true in args/rag_config.yaml
+python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline_compliance.json --json
+```
+
+Record the LLM provider actually used for the build — both toggles depend on
+generation quality at ingestion/build time, and a small local model may
+under-perform in a way that is a property of the model, not of the technique.
+Neither default may be flipped to ON without a number in this document.
 
 ## Evaluated and SKIPPED (see ADRs D-RCE-*)
 
