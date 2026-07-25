@@ -6039,3 +6039,78 @@ projects:
   - key: xcut
     title: Cross-Cutting — Disposition ADR & Close-Out
     priority: low
+- key: oss_adaptation
+  name: OSS Adaptation — RAGFlow / Crawl4AI / browser-use / STRIX
+  description: Adapt four upstream OSS projects into ICDEV as patterns, not dependencies.
+    Reject all four runtimes (Docker, Playwright/Chromium, Elasticsearch, downloaded
+    model weights); take one load-bearing idea from each. Analysis and per-item
+    rationale in docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md.
+  task_prefix: oss-
+  default_open: true
+  briefs:
+  - 'gate: Manual gate held in_progress — nothing dispatches until a human releases
+    it (oss-gate-00)'
+  - 'meas: Benchmark the five retrieval toggles that are already built but ship OFF
+    (rerank, reflective_rerank, adaptive_routing, binary_prefilter, auto_indexer)
+    before building anything new (oss-meas-01)'
+  - 'filter: Crawl4AI fit_markdown — density-pruning + BM25 content filter replacing
+    regex tag-strip and positional truncation; route every retrofitted fetch through
+    the central HTTP client and the existing egress_guard (oss-filter-01..03)'
+  - 'cite: Make a fetched web page citeable under the TRUST invariants — web citation
+    type plus real fetch provenance (oss-cite-01)'
+  - 'chunk: RAGFlow template chunking driven by the dead source_registry chunking key,
+    plus page/section/doc_id columns on rag_chunks and section-expansion at retrieval
+    (oss-chunk-01..03)'
+  - 'table: Real table extraction via pdfplumber — DeepDoc''s goal without DeepDoc''s
+    torch/Paddle stack; table-aware chunking (oss-table-01..02)'
+  - 'browse: browser-use indexed-element page representation as an agent primitive on
+    the existing vendored-driver Selenium stack, with default-deny domain scope, and
+    agent-driven page-completeness V&V as its first consumer (oss-browse-01..04)'
+  - 'poc: STRIX reproduce-or-drop discipline — a finding without a stored replayable
+    reproduction is unconfirmed, never a gate block (oss-poc-01)'
+  - 'hitl: RAGFlow chunk visibility — DIC chunk inspect/repair reusing the existing
+    section-review HITL machinery (oss-hitl-01)'
+  - 'redteam: STRIX-style dynamic self-test against our own dashboard, scope-locked to
+    owned targets, feeding the now fail-closed DAST gate (oss-redteam-01..02)'
+  - 'fix: Remaining defects surfaced by the review — missing sandbox_execute handler,
+    documented-but-absent showcase validator, stale capability claims (oss-fix-01..03)'
+  - 'xcut: Attribution registry entries for all four upstreams, sandbox-coverage
+    decision for the new HTML extractor, manifest/companion/coherence close-out
+    (oss-xcut-01)'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: high
+  - key: meas
+    title: Measure Existing Toggles First
+    priority: high
+  - key: filter
+    title: Content Filter — fit_markdown + Egress Discipline
+    priority: high
+  - key: cite
+    title: Web-Page Citability
+    priority: high
+  - key: chunk
+    title: Template Chunking & Positional Grounding
+    priority: high
+  - key: table
+    title: Table Extraction Fidelity
+    priority: medium
+  - key: browse
+    title: Agent Browser Primitive
+    priority: medium
+  - key: poc
+    title: Reproduce-or-Drop Findings
+    priority: medium
+  - key: hitl
+    title: DIC Chunk Inspect & Repair
+    priority: medium
+  - key: redteam
+    title: App Red Team (Own Targets Only)
+    priority: low
+  - key: fix
+    title: Defect Cleanup
+    priority: medium
+  - key: xcut
+    title: Cross-Cutting — Attribution & Close-Out
+    priority: low
