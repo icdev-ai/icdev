@@ -285,8 +285,12 @@ def api_modernization_bulk():
                 results.append({"doc_id": d, **draft_open_redlines(doc_id=d)})
         else:  # queue_regen
             from tools.doc_modernization.regen_orchestrator import regenerate_document
+            # force lets an authorized reviewer promote a quality-gate-blocked
+            # regeneration to pending_review anyway (audited as a review note).
+            force = bool(body.get("force"))
+            reviewer = (body.get("reviewer") or "").strip()
             for d in doc_ids:
-                results.append(regenerate_document(d))
+                results.append(regenerate_document(d, force=force, reviewer=reviewer))
         return jsonify({"action": action, "results": results})
     except Exception as exc:
         logger.warning("dic modernization bulk %s failed: %s", action, exc)

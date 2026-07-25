@@ -117,6 +117,7 @@ class GenerateResult:
     origin: str = "ai_generated"
     status: str = "pending_review"
     error: str = ""
+    quality_gate: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -142,6 +143,7 @@ class GenerateResult:
             "origin": self.origin,
             "status": self.status,
             "error": self.error,
+            "quality_gate": self.quality_gate,
         }
 
 
@@ -473,8 +475,16 @@ def generate_document(
     supplemental_text: str = "",
     kg_chunks: list[dict] | None = None,
     target_doc_id: str | None = None,
+    quality_gate=None,
 ) -> "GenerateResult":
     """Generate a document draft grounded in DIC search results.
+
+    ``quality_gate`` (optional): a callable invoked right before persistence with
+    ``(sections, allowed_source_ids, full_text)`` that returns the status string
+    the version should be persisted with. Lets a caller (e.g. the modernization
+    regeneration gate) withhold ``pending_review`` from a defective draft without
+    the gate itself mutating dic_versions. Default None preserves the historical
+    unconditional ``pending_review`` behavior for every other caller.
 
     Steps:
       1. Retrieve top chunks via DICSearchEngine (full-KB when collection_id=None;
@@ -714,6 +724,23 @@ def generate_document(
         )
         sha = hashlib.sha256(full_text.encode()).hexdigest()
 
+        # Pre-persist quality gate (optional): a caller may withhold the
+        # pending_review status from a defective draft. The gate decides the
+        # INITIAL persisted status (an append, not a dic_versions mutation);
+        # default None keeps the historical unconditional pending_review.
+        persist_status = "pending_review"
+        if quality_gate is not None:
+            try:
+                allowed_source_ids = {
+                    str(getattr(r, "chunk_id", "")) for r in search_results
+                    if getattr(r, "chunk_id", None) is not None
+                }
+                gate_status = quality_gate(generated_sections, allowed_source_ids, full_text)
+                if gate_status:
+                    persist_status = gate_status
+            except Exception as exc:
+                logger.warning("doc_generator: quality_gate hook error: %s", exc)
+
         conn = get_connection()
         try:
             version_no = 1
@@ -741,7 +768,7 @@ def generate_document(
                 "(version_id, doc_id, version_no, origin, status, assigned_to, review_notes, content_sha256, "
                 "created_at, created_by, tenant_id, classification) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (version_id, doc_id, version_no, "ai_generated", "pending_review", None, None, sha,
+                (version_id, doc_id, version_no, "ai_generated", persist_status, None, None, sha,
                  _now_utc(), created_by, tenant_id, classification),
             )
             for idx, sec in enumerate(generated_sections, start=1):
@@ -752,7 +779,7 @@ def generate_document(
                     "created_at, created_by, tenant_id, classification) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (section_id, version_id, doc_id, sec.heading, sec.content,
-                     json.dumps(sec.citations), "pending_review", "ai_generated",
+                     json.dumps(sec.citations), persist_status, "ai_generated",
                      _now_utc(), created_by, tenant_id, classification),
                 )
             conn.commit()
@@ -761,6 +788,7 @@ def generate_document(
 
         result.doc_id = doc_id
         result.version_id = version_id
+        result.status = persist_status
     except Exception as exc:
         logger.warning("doc_generator: DB write failed: %s", exc)
         result.error = str(exc)
