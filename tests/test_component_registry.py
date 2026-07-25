@@ -252,6 +252,43 @@ def test_registry_cli_descriptions_present(registry):
         assert descriptions[name]
 
 
+def test_every_registry_env_flag_is_cli_reachable(registry):
+    """Drift guard (pkg-reg-01): every env flag declared in the registry —
+    primary ``env_flag`` and any ``extra_env_flags`` — must be reachable from
+    `icdev enable/disable` via get_cli_toggles().
+
+    This is the test that stops the 21-flag gap (core_extension / child_app
+    env flags with no CLI path) from returning. It names the offending flags,
+    not a bare count, so a failure points straight at the component.
+    """
+    all_flags: set[str] = set()
+    for c in registry.list_all():
+        if c.env_flag:
+            all_flags.add(c.env_flag)
+        all_flags.update(c.extra_env_flags)
+
+    reachable: set[str] = set()
+    for flags in registry.get_cli_toggles().values():
+        reachable.update(flags)
+
+    unreachable = sorted(all_flags - reachable)
+    assert not unreachable, (
+        "registry env flags with NO CLI path (add them to the CLI surface "
+        f"or give them an env_flag-less kind): {unreachable}"
+    )
+
+
+def test_cli_enable_toggles_are_registry_derived():
+    """tools/cli/enable.py must derive TOGGLES from the registry, not a literal
+    dict — the anti-drift guarantee CLAUDE.md requires."""
+    from tools.cli import enable as enable_mod
+
+    assert enable_mod.TOGGLES == enable_mod._REGISTRY.get_cli_toggles()
+    # Every toggle the CLI exposes resolves to a non-empty flag list.
+    for name, flags in enable_mod.TOGGLES.items():
+        assert flags, f"toggle {name} has no env flags"
+
+
 # ---------------------------------------------------------------------------
 # Loader behavior tests
 # ---------------------------------------------------------------------------

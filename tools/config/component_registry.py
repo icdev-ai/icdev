@@ -562,16 +562,23 @@ class ComponentRegistry:
         return toggles
 
     def get_cli_toggles(self) -> dict[str, list[str]]:
-        """Return user-facing CLI toggles (canvas + feature kinds only).
+        """Return user-facing CLI toggles — every component with an env_flag.
 
-        Core extensions and child apps are registered separately in the
-        dashboard and are not exposed through `icdev enable/disable` in
-        Phase 0.
+        This is the single source of truth for `icdev enable/disable`. It
+        covers **all** toggleable kinds (canvas, feature, core_extension,
+        child_app), so any component that declares an ``env_flag`` in
+        ``component_registry.yaml`` is reachable from the CLI. The value is the
+        primary ``env_flag`` plus any ``extra_env_flags`` (legacy aliases that
+        flip together, e.g. ICDEV_NDC_ENABLED + ICDEV_NETWORK_ENABLED).
+
+        Historically this filtered to canvas + feature only, which left 21
+        core-extension / child-app env flags (STRATEGOS, CPMP, INNOVATION, the
+        *_IQE_* flags, …) with no CLI path at all — the exact registry/CLI
+        drift CLAUDE.md forbids. Broadening the filter closes that gap; the
+        drift-guard test in tests/test_component_registry.py keeps it closed.
         """
         toggles: dict[str, list[str]] = {}
         for c in self._components:
-            if c.kind not in ("canvas", "feature"):
-                continue
             if not c.env_flag:
                 continue
             name = c.cli_name or c.key
@@ -584,11 +591,15 @@ class ComponentRegistry:
         return {(c.cli_name or c.key): c.display_name for c in self._components}
 
     def get_cli_descriptions(self) -> dict[str, str]:
-        """Return user-facing CLI toggle descriptions (canvas + feature only)."""
+        """Return CLI toggle descriptions for every component with an env_flag.
+
+        Mirrors the coverage of ``get_cli_toggles()`` so every reachable toggle
+        has a display name in `icdev list` / `icdev status`.
+        """
         return {
             (c.cli_name or c.key): c.display_name
             for c in self._components
-            if c.kind in ("canvas", "feature") and c.env_flag
+            if c.env_flag
         }
 
     def get_iqe_mapping(self) -> dict[str, tuple[str, list[str]]]:
