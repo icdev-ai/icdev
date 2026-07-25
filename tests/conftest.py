@@ -3253,6 +3253,18 @@ CREATE TABLE IF NOT EXISTS llm_proxy_keys (
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT
 );
+-- LPX key lifecycle audit (lpx-keys-03, NIST AU). APPEND-ONLY — see
+-- APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py. Never UPDATE/DELETE.
+CREATE TABLE IF NOT EXISTS llm_proxy_key_audit (
+    audit_id       TEXT PRIMARY KEY,
+    key_id         TEXT NOT NULL,
+    action         TEXT NOT NULL,
+    actor          TEXT,
+    detail         TEXT,
+    tenant_id      TEXT,
+    classification TEXT,
+    recorded_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- LPX per-key spend ledger (lpx-keys-02). Budgets wire onto existing grouping
 -- units via the key's scope; deny is scoped to a single key/window.
 CREATE TABLE IF NOT EXISTS llm_proxy_spend (
