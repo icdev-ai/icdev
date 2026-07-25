@@ -34,6 +34,18 @@ logger = get_logger("icdev.twin_core.registry")
 _ADAPTERS_PACKAGE = "tools.twin_core.adapters"
 
 
+def _row_to_dict(row, keys: tuple[str, ...]) -> dict:
+    """Normalize a DB row (Mapping-like or positional tuple) to a dict of ``keys``."""
+    if row is None:
+        return {}
+    if isinstance(row, (list, tuple)):
+        return {k: row[i] if i < len(row) else None for i, k in enumerate(keys)}
+    try:
+        return {k: row[k] for k in keys}
+    except (KeyError, TypeError, IndexError):
+        return dict(row) if hasattr(row, "keys") else {}
+
+
 class TwinAdapter:
     """Base class for a thin per-canvas twin adapter.
 
@@ -52,6 +64,27 @@ class TwinAdapter:
     #: Capability flags surfaced to the observer / dashboard.
     supports_snapshots: bool = True
     supports_simulation: bool = True
+
+    # -- fleet-health declaration (for the cross-canvas observer) ---------------
+    # Adapters that persist snapshots/simulations/violations declare their table
+    # + timestamp column here; the base :meth:`fleet_health` runs generic
+    # count / latest-age / 24h-verdict queries over them. Names are class-level
+    # constants (never user input), so the interpolated SQL is safe.
+    snapshot_table: str | None = None
+    snapshot_time_col: str = "created_at"
+    simulation_table: str | None = None
+    simulation_time_col: str = "created_at"
+    simulation_verdict_col: str = "verdict"
+    violation_table: str | None = None
+    violation_severity_col: str = "severity"
+
+    def _fleet_conn(self):
+        """Return a connection to this canvas's DB for fleet-wide health queries.
+
+        Override in adapters that declare a ``snapshot_table``/``simulation_table``.
+        Default ``None`` = fleet health unavailable (honest, not fabricated).
+        """
+        return None
 
     # -- capability surface (override as needed) -------------------------------
 
@@ -81,6 +114,83 @@ class TwinAdapter:
             "latest_snapshot": snaps[0] if snaps else None,
             "method": self.method,
         }
+
+    def fleet_health(self, window_hours: int = 24) -> dict:
+        """Canvas-wide twin health (all entities), for the cross-canvas observer.
+
+        Runs generic queries over the adapter's declared tables:
+        snapshot count + latest-snapshot timestamp, a ``window_hours`` verdict
+        distribution (only where a simulation table persists verdicts), and
+        violation counts by severity (only where persisted). Every query is
+        best-effort — a missing table or empty canvas DB degrades to ``None`` /
+        ``{}`` rather than raising, so a fresh checkout with no canvas data still
+        reports honestly.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        from tools.twin_core.schema import normalize_severity, normalize_verdict
+
+        out = {
+            "available": False,
+            "snapshot_count": None,
+            "latest_snapshot_at": None,
+            "verdicts": {},
+            "violation_counts": {},
+        }
+        try:
+            conn = self._fleet_conn()
+        except Exception:  # noqa: BLE001
+            conn = None
+        if conn is None:
+            return out
+        out["available"] = True
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
+        try:
+            if self.snapshot_table:
+                row = conn.execute(  # nosec B608 — table/col are class constants
+                    f"SELECT COUNT(*) AS c, MAX({self.snapshot_time_col}) AS m "
+                    f"FROM {self.snapshot_table}"
+                ).fetchone()
+                d = _row_to_dict(row, ("c", "m"))
+                out["snapshot_count"] = d.get("c")
+                out["latest_snapshot_at"] = d.get("m")
+        except Exception:  # noqa: BLE001 — table may not exist yet
+            pass
+        try:
+            if self.simulation_table:
+                rows = conn.execute(  # nosec B608 — table/col are class constants
+                    f"SELECT {self.simulation_verdict_col} AS v, COUNT(*) AS c "
+                    f"FROM {self.simulation_table} WHERE {self.simulation_time_col} >= %s "
+                    f"GROUP BY {self.simulation_verdict_col}",
+                    (cutoff,),
+                ).fetchall()
+                dist: dict = {}
+                for r in rows:
+                    d = _row_to_dict(r, ("v", "c"))
+                    dist[normalize_verdict(d.get("v"))] = dist.get(normalize_verdict(d.get("v")), 0) + (d.get("c") or 0)
+                out["verdicts"] = dist
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if self.violation_table:
+                rows = conn.execute(  # nosec B608 — table/col are class constants
+                    f"SELECT {self.violation_severity_col} AS s, COUNT(*) AS c "
+                    f"FROM {self.violation_table} GROUP BY {self.violation_severity_col}"
+                ).fetchall()
+                counts: dict = {}
+                for r in rows:
+                    d = _row_to_dict(r, ("s", "c"))
+                    sev = normalize_severity(d.get("s"))
+                    counts[sev] = counts.get(sev, 0) + (d.get("c") or 0)
+                out["violation_counts"] = counts
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+        return out
 
     # -- helper for subclasses -------------------------------------------------
 

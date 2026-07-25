@@ -3225,3 +3225,18 @@ python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
 # Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
 # MCP tools: docmod_scan, docmod_findings, docmod_redline
 ```
+
+## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
+
+```bash
+# Cross-canvas twin health report (snapshot freshness, verdict distribution,
+# violation counts by severity, refresh-schedule adherence vs genesis reflexes)
+python -m tools.twin_core.observer --json
+python -m tools.twin_core.observer --window-hours 24 --stale-after-hours 48 --json
+
+# Library API
+python -c "from tools.twin_core import observe; import json; print(json.dumps(observe(), default=str)[:400])"
+python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"  # registered twins
+# Config/registry: adapters self-register from tools/twin_core/adapters/*.py
+# Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
+```

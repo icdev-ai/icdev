@@ -22,6 +22,15 @@ class NDCTwinAdapter(TwinAdapter):
     method = "heuristic"
     supports_snapshots = True
     supports_simulation = True
+    snapshot_table = "network_twin_snapshots"
+    snapshot_time_col = "created_at"
+
+    def _fleet_conn(self):
+        from tools.network.twin import _ensure_snapshots_table, _nc_conn
+
+        conn = _nc_conn()
+        _ensure_snapshots_table(conn)
+        return conn
 
     def take_snapshot(self, target_id: str, label: str | None = None, **kwargs) -> dict:
         from tools.network import twin as ndc_twin
