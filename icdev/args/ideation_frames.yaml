@@ -1,0 +1,132 @@
+# CUI // SP-CTI
+# =============================================================================
+# Ideation frame library — the single config-driven source of perspective sets
+# for multi-branch LLM reasoning modes (Divergence, Council).
+#
+# Before this file, the only frame set in the codebase was _COUNCIL_ADVISORS, a
+# hardcoded module-level list in tools/llm/chain_orchestrator.py — it could not
+# be extended, versioned, or selected per-function without editing Python, which
+# violates the FORGE args/tools separation. This file restores that separation:
+# perspective sets are DATA, loaded by tools/config/ideation_frames.py.
+#
+# Schema
+# ------
+#   version:      library version string; stamped into chain telemetry so a
+#                 frame-set change is traceable to the runs it affected.
+#   frame_sets:   mapping of set-name -> { description, mode?, frames: [ ... ] }
+#     each frame is: { key, name, stance, prompt_fragment, mode }
+#       key            stable machine id, unique within the set
+#       name           human label (the branch persona / lens)
+#       stance         one-line summary of the angle
+#       prompt_fragment the frame-specific instruction injected into the branch
+#       mode           'generative'  -> produce NEW candidate ideas; the branch
+#                                        system prompt FORBIDS evaluation/ranking
+#                      'evaluative'  -> critique a proposal already on the table
+#
+# Design rule: frames within a set must be ORTHOGONAL. Two frames that produce
+# the same idea are a wasted branch and wasted spend (each branch is a full
+# model call). The generative set below is DoD/air-gap/accreditation shaped on
+# purpose — not a copy of upstream's consumer-software list (10-year-old,
+# speedrunner, game designer, ...), which would not surface the failure modes
+# that matter for regulated, mission, and sustainment contexts.
+# =============================================================================
+version: ideation-frames-1.0
+
+frame_sets:
+  # ---------------------------------------------------------------------------
+  # GENERATIVE — the default frame set for Divergence (dvg-core-*). Each frame
+  # pushes a branch to WIDEN the option space from a distinct angle. No frame
+  # evaluates; scoring/clustering/deepening is the separate dvg-critic-* pass.
+  # ---------------------------------------------------------------------------
+  generative:
+    mode: generative
+    description: >-
+      Orthogonal generative lenses for divergent ideation over ICDEV problems.
+      Skewed toward adversarial, regulatory, sustainment, and air-gap concerns
+      that a naive single-shot answer routinely misses.
+    frames:
+      - key: adversary_redteam
+        name: The Adversary
+        stance: Generate approaches by first imagining how a determined attacker would exploit or defeat the obvious solution.
+        prompt_fragment: >-
+          Think like a red-team adversary. For each candidate, start from a way
+          the naive solution could be exploited, abused, or defeated, then
+          propose an approach designed around denying that. Generate options
+          that assume a hostile operating environment, not a cooperative one.
+        mode: generative
+
+      - key: accreditor_ato
+        name: The Accreditor
+        stance: Generate approaches an ATO / authorizing official would find defensible — auditable, control-mapped, evidence-producing.
+        prompt_fragment: >-
+          Think like an accreditor signing an Authorization to Operate. Generate
+          candidate approaches whose control story, audit trail, and evidence
+          artifacts are strong by construction — options that make the security
+          package easier to defend, not harder. Favor designs that produce their
+          own compliance evidence.
+        mode: generative
+
+      - key: sustainment_tail
+        name: The Sustainment Owner
+        stance: Generate approaches optimized for the decade of ownership after go-live, not the demo.
+        prompt_fragment: >-
+          Think like the team that must operate and patch this for ten years
+          after the original builders are gone. Generate candidates that
+          minimize the sustainment tail — total cost of ownership, upgrade pain,
+          tribal-knowledge dependence, and the number of ways a 3am page can
+          happen. Boring-but-maintainable is a feature here.
+        mode: generative
+
+      - key: airgap_operator
+        name: The Air-Gap Operator
+        stance: Generate approaches that must work with no internet, no cloud callouts, and manual media transfer.
+        prompt_fragment: >-
+          Assume a fully disconnected, classified enclave: no internet, no SaaS,
+          no external model endpoints, updates arrive by hand-carried media.
+          Generate candidate approaches that remain fully functional under those
+          constraints, and options that degrade gracefully rather than failing
+          closed when a connected assumption is removed.
+        mode: generative
+
+      - key: adjacent_transplant
+        name: The Transplant
+        stance: Generate approaches by borrowing a proven mechanism from an unrelated industry and adapting it.
+        prompt_fragment: >-
+          Borrow a mechanism that is standard practice in a DIFFERENT industry
+          (aviation safety, hospital triage, financial clearing, supply-chain
+          logistics, industrial control) and transplant it into this problem.
+          Generate candidates that are obvious there but non-obvious here. Name
+          the source domain for each.
+        mode: generative
+
+      - key: inversion
+        name: The Inverter
+        stance: Generate approaches by solving the opposite problem or by enumerating guaranteed-failure paths and inverting them.
+        prompt_fragment: >-
+          Invert the problem. Either solve the exact opposite of what is asked,
+          or list what would GUARANTEE failure and then invert each into a
+          candidate approach. Generate options that only become visible when the
+          goal is flipped.
+        mode: generative
+
+      - key: extreme_budget
+        name: The Shoestring
+        stance: Generate approaches under a near-zero budget of money, time, headcount, or compute.
+        prompt_fragment: >-
+          Assume an extreme scarcity constraint: almost no budget, one engineer,
+          a week, or a tiny compute envelope. Generate the smallest, cheapest,
+          most boring candidate approaches that could still plausibly work.
+          Aggressively strip scope; a crude thing that ships beats an elegant
+          thing that does not.
+        mode: generative
+
+      - key: analogy_nature
+        name: The Naturalist
+        stance: Generate approaches by analogy to how biological or natural systems solve the same class of problem.
+        prompt_fragment: >-
+          Reason by analogy to nature. How do biological or ecological systems —
+          immune response, ant-colony routing, mycelial networks, evolutionary
+          selection, homeostasis — solve this class of problem? Generate
+          candidate approaches that transplant that natural mechanism into the
+          engineering problem at hand.
+        mode: generative
