@@ -2311,6 +2311,11 @@ python tools/llm/proxy_keys.py audit --key-id <key_id> --json                   
 # Default expiry: ICDEV_LLM_PROXY_KEY_TTL_DAYS (default 30; 0 disables) so a cohort key cannot outlive the cohort
 # Master/admin key from ICDEV_LLM_PROXY_MASTER_KEY (never logged/returned); LiteLLM sync is best-effort and OFF unless ICDEV_LLM_PROXY_ENABLED=true
 
+# Local canvas copy (lpx-keys-04) — per-person virtual key, fail-closed, no real key on a laptop
+#   Use .env.local-copy.template (gateway URL + virtual-key slot, NO real-provider-key slot). Set ICDEV_LLM_LOCAL_COPY=true.
+python -c "import json;from tools.llm.proxy_gateway import local_copy_preflight;print(json.dumps(local_copy_preflight()))"  # onboarding/health preflight
+# A local copy with no gateway reachable / no virtual key fails CLOSED with a clear message; it never falls back to a real provider key.
+
 # LLM Proxy Budgets (lpx-keys-02) — per-key spend budgets scoped to team/guild/user
 python tools/llm/proxy_budgets.py check <key_id> --projected 0.05 --json          # allow|warn|block for a key's budget
 python tools/llm/proxy_budgets.py spend <key_id> --json                            # spend summary for current window
