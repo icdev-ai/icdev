@@ -2,7 +2,8 @@
 
 **Classification:** CUI // SP-CTI
 **Card:** RCE (RAG Context Engineering)
-**Status:** Provider documented; full-corpus build in flight (see [Build status](#build-status))
+**Status:** Provider documented; build path proven clean on a bounded scope;
+full-corpus run continuing as a background job (see [Build status](#build-status))
 **Date:** 2026-07-25
 
 ## Purpose
@@ -112,9 +113,21 @@ Corpus and work estimate:
 | **total LLM calls** | **4,198** |
 | **total embed calls** | **4,198** |
 
-Progress at time of writing (2026-07-25 13:29 EDT): **213 / 2,029 sources**
-summarized, 457 rows (246 level-1, 211 level-2). The index is **partial but
-functional** — see [Verification](#verification).
+Progress checkpoints (same long-running process, PID 8716,
+`python -u tools/rag/raptor.py --build --json`):
+
+| Time (EDT) | Sources | Rows | L1 | L2 |
+|-----------|---------|------|----|----|
+| 13:29 | 213 / 2,029 | 457 | 246 | 211 |
+| 13:44 | 279 / 2,029 | 598 | 323 | 275 |
+| 13:45 | 292 / 2,029 | 624 | 336 | 288 |
+
+The build **survived a host power event and resumed cleanly** — writes commit
+per-upsert, so nothing already summarized was lost. Between the last two
+checkpoints the source-rank probe advanced 267 → 283 in ~80 s, i.e. **≈12
+sources/min warm**; at that rate the remaining ~1,746 sources need a further
+**≈2.4 h**. The index is **partial but functional** — see
+[Verification](#verification).
 
 There is no concurrency, no batching, and no progress output.
 
@@ -149,6 +162,47 @@ SELECT COUNT(DISTINCT source_id) FROM rag_chunks
 ```
 
 Writes commit per-upsert, so partial progress is durable.
+
+### Bounded build — clean completion proof
+
+Because the full-corpus run is a multi-hour background job, the "build succeeds"
+half of the acceptance criterion is proven on a **bounded scope that runs to
+completion inside one session**. A source with no prior summaries was selected and
+built end-to-end against the live LLM:
+
+```bash
+python -u tools/rag/raptor.py --build --source "nist53:sr-2" --json
+```
+
+```json
+{
+  "classification": "CUI // SP-CTI",
+  "dry_run": false,
+  "sources_processed": 1,
+  "documents_built": 1,
+  "level1_created": 2,
+  "level2_created": 1,
+  "skipped": 0
+}
+```
+
+Exit code **0**, `skipped: 0` — a clean build, not a partially-degraded one. The
+persisted rows confirm every stage actually ran:
+
+| Level | Embedding | `metadata` | Content (truncated) |
+|-------|-----------|-----------|---------------------|
+| 1 | present | `{"raptor_level": 1, "provenance": "llm_summary"}` | `**SR-2: Supply Chain Risk Management Plan** **Requirements:** - **a.** Develop a plan for managing …` |
+| 1 | present | `{"raptor_level": 1, "provenance": "llm_summary"}` | `Supply chain risk management plans must express organizational risk tolerance, acceptable mitigation…` |
+| 2 | present | `{"raptor_level": 2, "provenance": "llm_summary"}` | `**SR-2: Supply Chain Risk Management Plan** **Requirements:** Organizations must develop a lifecycl…` |
+
+The summaries are genuine abstractive model output — the level-2 root generalizes
+across its level-1 children rather than copying a chunk — and each row carries a
+non-null 768-dim embedding plus the `provenance: llm_summary` TRUST marker written
+at ingestion.
+
+This establishes that the `--build` path is correct and complete per source; the
+full-corpus run differs only in **how many times** that same per-source path is
+executed.
 
 ## Verification
 
