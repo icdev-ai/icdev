@@ -895,6 +895,53 @@ CREATE TABLE IF NOT EXISTS mc_server_dependencies (
 );
 CREATE INDEX IF NOT EXISTS idx_mc_deps_session ON mc_server_dependencies(session_id);
 
+-- crx-mig-01 gap #2: per-wave backout/recovery plan (template-driven, HITL-approved)
+CREATE TABLE IF NOT EXISTS mc_wave_backout (
+    id                     TEXT PRIMARY KEY,
+    session_id             TEXT NOT NULL,
+    wave_id                TEXT NOT NULL,
+    snapshot_prerequisites TEXT DEFAULT '[]',
+    decision_points        TEXT DEFAULT '[]',
+    go_no_go_criteria      TEXT DEFAULT '[]',
+    recovery_steps         TEXT DEFAULT '[]',
+    approved               INTEGER DEFAULT 0,
+    approved_by            TEXT,
+    approved_at            TEXT,
+    created_at             TEXT NOT NULL,
+    updated_at             TEXT NOT NULL,
+    classification         TEXT DEFAULT 'CUI'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_wave_backout_wave ON mc_wave_backout(session_id, wave_id);
+
+-- crx-mig-01 gap #3: per-workload post-migration validation checklist (composed engines)
+CREATE TABLE IF NOT EXISTS mc_workload_validations (
+    id             TEXT PRIMARY KEY,
+    session_id     TEXT NOT NULL,
+    wave_id        TEXT NOT NULL,
+    workload_id    TEXT NOT NULL,
+    workload_name  TEXT,
+    check_type     TEXT NOT NULL,
+    status         TEXT NOT NULL CHECK(status IN ('pass','fail','skip','error','pending')),
+    detail         TEXT,
+    run_at         TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_wlval_unique ON mc_workload_validations(session_id, wave_id, workload_id, check_type);
+CREATE INDEX IF NOT EXISTS idx_mc_wlval_wave ON mc_workload_validations(session_id, wave_id);
+
+-- crx-mig-01 gap #3: append-only HITL override audit for forced wave close (NIST AU)
+CREATE TABLE IF NOT EXISTS mc_wave_close_overrides (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    wave_id         TEXT NOT NULL,
+    override_user   TEXT NOT NULL,
+    reason          TEXT NOT NULL,
+    failing_json    TEXT DEFAULT '[]',
+    created_at      TEXT NOT NULL,
+    classification  TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_mc_wave_close_ovr_wave ON mc_wave_close_overrides(session_id, wave_id);
+
 CREATE TABLE IF NOT EXISTS mc_compliance_checks (
     id              TEXT PRIMARY KEY,
     session_id      TEXT,

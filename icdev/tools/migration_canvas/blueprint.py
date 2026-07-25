@@ -2948,6 +2948,102 @@ def create_migration_blueprint():
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # ── Wave Backout / Recovery Section (crx-mig-01 gap #2) ───────────────────
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/backout", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_wave_backout_get(sid, wid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            section = _wp.get_backout_section(sid, wid)
+            if section is None:
+                # Return the template default (not yet persisted) for editing.
+                waves = {w["id"]: w for w in _wp.get_waves(sid)}
+                section = _wp.generate_backout_section(waves.get(wid, {"id": wid}))
+                section["approved"] = False
+                section["persisted"] = False
+            else:
+                section["persisted"] = True
+            return jsonify(section)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/backout", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_wave_backout_post(sid, wid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            section = _wp.upsert_backout_section(sid, wid, body or None)
+            return jsonify({"ok": True, "backout": section})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/backout/approve", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_wave_backout_approve(sid, wid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            body = request.get_json(silent=True) or {}
+            section = _wp.approve_backout_section(sid, wid, body.get("user", ""))
+            if section is None:
+                return jsonify({"error": "No backout section to approve"}), 404
+            return jsonify({"ok": True, "backout": section})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Post-Migration Workload Validation + Wave Close Gate (crx-mig-01 gap #3) ─
+
+    try:
+        from tools.migration_canvas import workload_validator as _wv
+    except Exception as _wv_exc:  # noqa: BLE001
+        logger.warning("workload_validator import failed: %s", _wv_exc)
+        _wv = None  # type: ignore
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/validate", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_wave_validate(sid, wid):
+        if _wv is None:
+            return jsonify({"error": "workload_validator module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            workload = body.get("workload", body)
+            result = _wv.run_workload_validation(sid, wid, workload)
+            return jsonify({"ok": True, "validation": result})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/validation-status", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_wave_validation_status(sid, wid):
+        if _wv is None:
+            return jsonify({"error": "workload_validator module unavailable"}), 503
+        try:
+            return jsonify(_wv.wave_validation_status(sid, wid))
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/close", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_wave_close(sid, wid):
+        if _wv is None:
+            return jsonify({"error": "workload_validator module unavailable"}), 503
+        try:
+            body = request.get_json(silent=True) or {}
+            result = _wv.close_wave(
+                sid, wid,
+                user=body.get("user", ""),
+                force=bool(body.get("force", False)),
+                override_reason=body.get("override_reason", ""),
+            )
+            code = 200 if result.get("ok") else 409
+            return jsonify(result), code
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     # ── Hypervisor Live Import ────────────────────────────────────────────────
 
     @bp.route("/api/srv/<session_id>/hypervisor-pull", methods=["POST"])
