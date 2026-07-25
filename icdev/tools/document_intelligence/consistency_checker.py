@@ -7,6 +7,7 @@ enabling propagation of review flags when source content is updated.
 Public API:
   extract_changed_concepts(before, after) -> list[str]
   find_related_docs(doc_id, changed_concepts, tenant_id="", limit=20) -> list[dict]
+  find_docs_citing_changed_entities(changed_entities, min_overlap=1, ...) -> list[dict]
   check_numeric_claims(sections) -> list[dict]
   check_version_consistency(version_id) -> dict
 """
@@ -93,50 +94,63 @@ def find_related_docs(
         return []
 
 
-def _find_related(conn, doc_id: str, changed_concepts: list[str],
-                  tenant_id: str, limit: int) -> list[dict]:
-    # Step 1: Find graph_ids for the source doc
-    source_graphs: set[str] = set()
-    try:
-        rows = conn.execute(
-            "SELECT id FROM kg_graphs WHERE source_doc_id = %s",
-            (doc_id,),
-        ).fetchall()
-        source_graphs = {_r(r, "id", 0) for r in rows}
-    except Exception:
-        pass
+def _docs_by_concept_overlap(
+    conn,
+    concepts: list[str],
+    exclude_doc_id: str = "",
+) -> dict[str, list[str]]:
+    """Core KG concept-overlap traversal — shared by find_related_docs and
+    find_docs_citing_changed_entities so both use ONE implementation.
 
-    # Step 2: Find graph_ids that contain nodes matching any concept
-    # Python-side matching to avoid SQL JSON / LIKE combinatorics at scale
-    matching_graph_map: dict[str, list[str]] = {}  # graph_id → matched concepts
+    Matches ``kg_nodes`` labels against ``concepts`` (case-insensitive, substring
+    either direction), groups matches by graph, resolves ``graph_id`` ->
+    ``source_doc_id`` via ``kg_graphs``, and returns
+    ``{doc_id: [matched concepts, de-duped]}``. Graphs belonging to
+    ``exclude_doc_id`` are skipped so a source document never matches itself.
+    All matching is Python-side to avoid SQL JSON / LIKE dialect issues.
+    """
+    if not concepts:
+        return {}
+
+    # Step 1: graphs owned by the excluded (source) doc, if any.
+    exclude_graphs: set[str] = set()
+    if exclude_doc_id:
+        try:
+            rows = conn.execute(
+                "SELECT id FROM kg_graphs WHERE source_doc_id = %s",
+                (exclude_doc_id,),
+            ).fetchall()
+            exclude_graphs = {_r(r, "id", 0) for r in rows}
+        except Exception:
+            pass
+
+    # Step 2: scan nodes, group graph_id -> matched concepts.
+    matching_graph_map: dict[str, list[str]] = {}
     try:
-        concept_lower = [c.lower() for c in changed_concepts]
-        # Fetch all nodes (paginate for large KGs; capped at 5000 for performance)
+        concept_lower = [c.lower() for c in concepts if c]
         node_rows = conn.execute(
             "SELECT id, label, graph_id FROM kg_nodes LIMIT 5000"
         ).fetchall()
         for nr in node_rows:
             label = (_r(nr, "label", 1) or "").lower()
             graph_id = _r(nr, "graph_id", 2) or ""
-            if graph_id in source_graphs:
+            if not label or graph_id in exclude_graphs:
                 continue
             matched = [c for c in concept_lower if c in label or label in c]
             if matched:
-                if graph_id not in matching_graph_map:
-                    matching_graph_map[graph_id] = []
-                matching_graph_map[graph_id].extend(matched)
+                matching_graph_map.setdefault(graph_id, []).extend(matched)
     except Exception as exc:
         logger.debug("consistency_checker: node scan error: %s", exc)
-        return []
+        return {}
 
     if not matching_graph_map:
-        return []
+        return {}
 
-    # Step 3: Resolve graph_id → source_doc_id
+    # Step 3: resolve graph_id -> source_doc_id, aggregating matches per doc
+    # (a doc may own multiple graphs).
     graph_ids = list(matching_graph_map.keys())
-    doc_ids_from_kg: dict[str, str] = {}  # doc_id → graph_id
+    docs_matched: dict[str, list[str]] = {}
     try:
-        # Batch in chunks to avoid oversized IN lists
         chunk_size = 50
         for i in range(0, len(graph_ids), chunk_size):
             chunk = graph_ids[i: i + chunk_size]
@@ -148,20 +162,28 @@ def _find_related(conn, doc_id: str, changed_concepts: list[str],
             for r in rows:
                 gid = _r(r, "id", 0)
                 sdid = _r(r, "source_doc_id", 1) or ""
-                if sdid and sdid != doc_id:
-                    doc_ids_from_kg[sdid] = gid
+                if sdid and sdid != exclude_doc_id:
+                    docs_matched.setdefault(sdid, []).extend(
+                        matching_graph_map.get(gid, [])
+                    )
     except Exception as exc:
         logger.debug("consistency_checker: graph resolve error: %s", exc)
+        return {}
+
+    # De-duplicate matched concepts per doc, preserving order.
+    return {d: list(dict.fromkeys(m)) for d, m in docs_matched.items()}
+
+
+def _find_related(conn, doc_id: str, changed_concepts: list[str],
+                  tenant_id: str, limit: int) -> list[dict]:
+    docs_matched = _docs_by_concept_overlap(conn, changed_concepts, exclude_doc_id=doc_id)
+    if not docs_matched:
         return []
 
-    if not doc_ids_from_kg:
-        return []
-
-    # Step 4: Enrich with dic_documents metadata
+    # Enrich with dic_documents metadata.
     related: list[dict] = []
-    for rdoc_id, graph_id in list(doc_ids_from_kg.items())[:limit]:
+    for rdoc_id, matched_concepts in list(docs_matched.items())[:limit]:
         meta = _get_doc_meta(conn, rdoc_id)
-        matched_concepts = list(dict.fromkeys(matching_graph_map.get(graph_id, [])))
         related.append({
             "doc_id": rdoc_id,
             "doc_title": meta.get("title", rdoc_id),
@@ -171,6 +193,66 @@ def _find_related(conn, doc_id: str, changed_concepts: list[str],
         })
 
     return related[:limit]
+
+
+# ── Blast radius: docs citing N+ changed entities (kg-blast-radius) ────────────
+
+def find_docs_citing_changed_entities(
+    changed_entities: list[str],
+    *,
+    min_overlap: int = 1,
+    tenant_id: str = "",
+    limit: int = 200,
+) -> list[dict]:
+    """Return documents whose cited KG entities overlap the changed-entity set
+    by at least ``min_overlap`` — the *semantic blast radius* of an entity change.
+
+    When tracked entities change (docmod evidence updates, ``kg_temporal_diff``
+    output), this answers "which documents cite N-or-more of the entities that
+    just changed?". It extends the same concept-overlap KG traversal used by
+    :func:`find_related_docs` (shared :func:`_docs_by_concept_overlap`) — it does
+    NOT fork a parallel matcher.
+
+    Args:
+        changed_entities: labels/aliases of the entities that changed.
+        min_overlap: minimum number of distinct changed entities a doc must cite
+            to be flagged (the "N" in "cites N+ changed entities").
+        tenant_id: reserved for RLS (KG reads already go through get_connection()).
+        limit: max flagged docs to return.
+
+    Returns:
+        ``[{doc_id, doc_title, collection_id, last_updated, matched_entities,
+        overlap_count}]`` sorted by overlap_count descending. Empty on no match
+        or on any KG read error (fail-soft — a freshness scan must never crash).
+    """
+    if not changed_entities or min_overlap < 1:
+        return []
+
+    try:
+        with get_connection() as conn:
+            docs_matched = _docs_by_concept_overlap(conn, changed_entities)
+            if not docs_matched:
+                return []
+
+            flagged: list[dict] = []
+            for rdoc_id, matched in docs_matched.items():
+                if len(matched) < min_overlap:
+                    continue
+                meta = _get_doc_meta(conn, rdoc_id)
+                flagged.append({
+                    "doc_id": rdoc_id,
+                    "doc_title": meta.get("title", rdoc_id),
+                    "collection_id": meta.get("collection_id", ""),
+                    "last_updated": meta.get("updated_at") or meta.get("created_at", ""),
+                    "matched_entities": matched[:20],
+                    "overlap_count": len(matched),
+                })
+    except Exception as exc:
+        logger.warning("consistency_checker.find_docs_citing_changed_entities error: %s", exc)
+        return []
+
+    flagged.sort(key=lambda d: d["overlap_count"], reverse=True)
+    return flagged[:limit]
 
 
 # ── Cross-section numeric / placeholder consistency (ground-dic-05) ───────────
