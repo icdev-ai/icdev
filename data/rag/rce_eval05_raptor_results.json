@@ -1,0 +1,117 @@
+{
+  "classification": "CUI // SP-CTI",
+  "task": "rce-eval-05-d4",
+  "generated_at": "2026-07-25T20:45:39.097840+00:00",
+  "summary": "RAPTOR summary-tier retrieval measured ON vs OFF on the compliance golden query set (33 queries) in the live PG+LLM environment. Same corpus, same embedder, back-to-back runs.",
+  "environment": {
+    "rag_chunks": 4111,
+    "rag_chunk_summaries": 3830,
+    "raptor_levels": 2,
+    "summarizer_provider": "ollama_cloud (kimi-k2.6:cloud)",
+    "embedder": "per get_embedding_provider() (local ollama nomic)",
+    "top_k": 5
+  },
+  "raptor_off": {
+    "recall_at_5": 0.9545,
+    "mrr": 0.9545,
+    "ndcg_at_5": 0.9534,
+    "citation_hit_rate": 0.9697
+  },
+  "raptor_on": {
+    "recall_at_5": 0.9545,
+    "mrr": 0.9545,
+    "ndcg_at_5": 0.9529,
+    "citation_hit_rate": 0.9697
+  },
+  "delta_on_minus_off": {
+    "recall_at_5": 0.0,
+    "mrr": 0.0,
+    "ndcg_at_5": -0.0005,
+    "citation_hit_rate": 0.0
+  },
+  "committed_baseline_compliance": {
+    "recall_at_5": 0.9394,
+    "mrr": 0.9343,
+    "ndcg_at_5": 0.9429,
+    "citation_hit_rate": 0.9697,
+    "note": "earlier corpus snapshot; the +0.015 recall vs this is corpus growth (OFF-now already 0.9545), NOT raptor."
+  },
+  "target_queries": {
+    "q-stig-hardening": {
+      "off": {
+        "recall_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "on": {
+        "recall_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      }
+    },
+    "q-sc13-cryptographic-protection": {
+      "off": {
+        "recall_at_k": 1.0,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.7328
+      },
+      "on": {
+        "recall_at_k": 1.0,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.7328
+      }
+    },
+    "q-fedramp-authorization-boundary": {
+      "off": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0
+      },
+      "on": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0
+      }
+    }
+  },
+  "queries_changed_by_raptor": {
+    "q-ac2-account-mgmt": {
+      "off": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.9829
+      },
+      "on": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.9558
+      }
+    },
+    "q-ra3-risk-assessment": {
+      "off": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0
+      },
+      "on": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.9829
+      }
+    },
+    "q-ca5-poam": {
+      "off": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.9558
+      },
+      "on": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.9829
+      }
+    }
+  },
+  "decision": "DROP / keep OFF",
+  "rationale": "Raptor ON produced 0.0 recall@5, 0.0 MRR, and -0.0005 ndcg@5 vs OFF. On all three intended target queries (q-stig-hardening, q-sc13-cryptographic-protection, q-fedramp-authorization-boundary) the metrics were byte-identical ON vs OFF; q-stig-hardening stayed at 0.0 recall (raptor did not rescue the one failing target). Only 3 of 33 queries changed at all, ndcg-only, net roughly neutral. Against this near-zero marginal benefit stands a full LLM-built summary tier (3830 summaries, ~hours build + storage) and per-query summary-search overhead. Keep-OFF is the correct call."
+}

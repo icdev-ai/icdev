@@ -36,7 +36,8 @@ persisted).
 | rce-eval-04-d3 | #762 | Contextual re-index of all 3552 chunks (+ `embedding_vec` write fix); flipped `contextual_retrieval.enabled → true`. |
 | rce-eval-04-d4 | #764 | Benchmark comparison vs the compliance baseline — `data/rag/rce_contextual_compliance.json`. |
 | rce-eval-04-d5 | (this) | **KEEP decision** for `contextual_retrieval`, backed by the measured delta + per-query analysis below. |
-| rce-eval-05 | #760 | RAPTOR live tree build (retrieval toggle still OFF, unmeasured). |
+| rce-eval-05 | #760 | RAPTOR live tree build (rce-eval-05-d3). |
+| rce-eval-05-d4/d5 | (this) | **DROP decision** for `raptor` — measured 0.0 recall / 0.0 MRR / −0.0005 nDCG vs OFF; toggle stays OFF. |
 
 ## Toggles
 
@@ -63,8 +64,8 @@ rag:
   and headered float16, so no re-index is forced.
 - **binary_prefilter** is OFF pending per-corpus recall validation (random
   Gaussian embeddings are its documented worst case).
-- **raptor** needs an LLM at build time; the tree has been built but the
-  retrieval toggle stays OFF, unmeasured.
+- **raptor** was built and then measured (rce-eval-05-d4): the retrieval toggle
+  stays OFF permanently — **DROP**, 0.0 recall/MRR gain vs OFF (see below).
 
 ## Benchmark deltas
 
@@ -140,9 +141,9 @@ Storage delta (rce-quant-01, measured): 768-dim × 2000 vectors → SQLite DB
 ### Toggle decisions: `contextual_retrieval` and `raptor`
 
 **Status: `contextual_retrieval` is MEASURED, decided **KEEP**, and is ON
-(measured rce-eval-04-d4, decided rce-eval-04-d5). `raptor` has been built
-(rce-eval-05) but its retrieval toggle remains OFF and unmeasured — no
-keep/drop decision is available for it yet.**
+(measured rce-eval-04-d4, decided rce-eval-04-d5). `raptor` is now also
+MEASURED (rce-eval-05-d4) and decided **DROP / keep-OFF** — the retrieval
+toggle stays `false`.**
 
 The sizing below was done before either build, against the real 3552-chunk
 corpus, and is kept because it is what set the cost expectation:
@@ -255,22 +256,48 @@ the model id, and `ollama_cloud` is a cloud egress path — fine for this public
 reference corpus, but a CUI corpus must pin the local provider before
 re-indexing.
 
-#### `raptor`: built, retrieval toggle still OFF
+#### `raptor`: MEASURED → **DROP / keep-OFF** (rce-eval-05-d4/d5)
 
-`python tools/rag/raptor.py --build` has been run
-([rce-eval-05-raptor-live-build.md](rce-eval-05-raptor-live-build.md)), but
-`rag.raptor.enabled` remains `false` and no before/after has been taken. To
-close it out:
+> **Decision: DROP.** `rag.raptor.enabled` stays `false` in
+> `args/rag_config.yaml`. Enabling the RAPTOR summary tier produced
+> **+0.0 recall@5 / +0.0 MRR / −0.0005 nDCG@5** vs OFF on the compliance
+> golden set — i.e. no retrieval benefit and a fractional ranking regression —
+> against a real per-build cost (a 3830-row LLM-summarized tier plus per-query
+> summary search). An always-OFF, always-cost toggle is dead weight; it is
+> dropped rather than left ambiguous.
 
-```bash
-#    set rag.raptor.enabled: true in args/rag_config.yaml
-python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline_compliance.json --json
-```
+The tree was built live (rce-eval-05-d3) — 4111 `rag_chunks`, 3830
+`rag_chunk_summaries`, `max_levels: 2`; summarization served by **Ollama Cloud
+(`kimi-k2.6:cloud`)**, embeddings by the local Ollama provider
+([rce-eval-05-raptor-live-build.md](rce-eval-05-raptor-live-build.md)). The
+d4 measurement ran the golden set through `RAGRetriever` back-to-back, same
+corpus and embedder, toggling only `rag.raptor.enabled`:
 
-Record the LLM provider actually used for the build — both toggles depend on
-generation quality at ingestion/build time, and a small local model may
-under-perform in a way that is a property of the model, not of the technique.
-No remaining default may be flipped to ON without a number in this document.
+| Metric | raptor OFF | raptor ON | Δ (ON−OFF) |
+|---|---|---|---|
+| recall@5 | 0.9545 | 0.9545 | **+0.0000** |
+| MRR | 0.9545 | 0.9545 | **+0.0000** |
+| nDCG@5 | 0.9534 | 0.9529 | **−0.0005** |
+| citation_hit_rate | 0.9697 | 0.9697 | +0.0000 |
+
+Target queries the summary tier was expected to help were **byte-identical**
+ON vs OFF: `q-stig-hardening` stayed at **0.0 recall** (raptor did not rescue
+the one failing target), `q-sc13-cryptographic-protection` and
+`q-fedramp-authorization-boundary` were unchanged. Only 3 of 33 queries moved
+at all, nDCG-only, and net roughly neutral. Full numbers:
+[`data/rag/rce_eval05_raptor_results.json`](../../data/rag/rce_eval05_raptor_results.json).
+
+The +0.015 recall the ON run shows *versus the committed
+`rce_baseline_compliance.json` (0.9394)* is **corpus growth, not raptor** — the
+OFF-now run already reads 0.9545 on the grown corpus. Attributing that delta to
+raptor would be the corpus-mismatch error this phase was created to avoid.
+
+Interpretation: the flat-leaf baseline is already near-perfect on this golden
+set (30/33 queries at perfect recall), so there is almost no headroom a
+summary-abstraction tier can capture; `contextual_retrieval` already took the
+one recoverable slice. RAPTOR's value shows up on multi-hop / thematic
+questions over long narrative corpora, which this compliance-clause corpus is
+not. No default is flipped; the toggle remains `false`.
 
 ## Evaluated and SKIPPED (see ADRs D-RCE-*)
 
