@@ -562,7 +562,28 @@ def _source_ref_of(conn: Any, assessment_id: int, fallback: str) -> str:
     return fallback
 
 
+def _load_env() -> None:
+    """Load THIS repo's ``.env`` for a direct-CLI run so config matches the daemon.
+
+    ``python tools/genesis/reflexes/integrity_monitor.py`` does NOT place the repo
+    root on ``sys.path``; ``import tools.*`` can then resolve to a *different*
+    pip-installed ICDEV checkout whose ``storage.py`` already loaded *its* ``.env``
+    into ``os.environ`` at import time — so a direct CLI run would connect to the
+    wrong board (``current transaction is aborted`` / wrong PG config). We load the
+    repo-root ``.env`` (resolved from ``__file__``, never cwd) with ``override=True``
+    so the local board/PG config wins, mirroring how ``GenesisDaemon`` loads ``.env``
+    at startup. No-op if python-dotenv or the file is absent.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv(BASE_DIR / ".env", override=True)
+
+
 if __name__ == "__main__":
+    _load_env()
+
     import argparse
 
     parser = argparse.ArgumentParser(
