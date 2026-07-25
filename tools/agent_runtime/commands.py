@@ -248,6 +248,56 @@ def _cmd_rollback(_runtime: Any, arg: str) -> "tuple[str, bool]":
     return f"Rollback failed: {result.get('reason')}", False
 
 
+def _cmd_skill(runtime: Any, arg: str) -> "tuple[str, bool]":
+    """Propose / review / promote auto-generated skills (sag-skl-01, HITL).
+
+    Usage:
+      /skill propose <pattern>   Draft + queue a skill proposal (quarantined)
+      /skill list [status]       List proposals (default: pending)
+      /skill approve <id>        Promote an approved proposal to .agents/skills/
+      /skill reject <id> [why]   Reject a quarantined proposal
+    """
+    from tools.agent_runtime import skills_lifecycle as sl
+
+    parts = arg.split(maxsplit=1)
+    sub = (parts[0].lower() if parts else "list")
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    try:
+        if sub == "propose":
+            if not rest:
+                return "Usage: /skill propose <pattern>", False
+            sid = getattr(runtime.session, "context_id", "")
+            res = sl.propose_skill(rest, session_id=sid, model=getattr(runtime, "llm_function", ""))
+            if res.get("proposed"):
+                return f"Proposed '{res.get('skill_name')}' (id {res.get('skill_id')}) — quarantined pending review.", False
+            return f"Not proposed: {res.get('reason') or res.get('error') or 'unknown'}.", False
+        if sub == "list":
+            props = sl.list_proposals(rest or "pending")
+            if not props:
+                return "No proposals.", False
+            lines = [f"{len(props)} proposal(s):"]
+            for p in props:
+                lines.append(f"  {p['artifact_id']}  [{p['status']}]  {p['skill_name']}")
+            return "\n".join(lines), False
+        if sub == "approve":
+            if not rest:
+                return "Usage: /skill approve <artifact_id>", False
+            res = sl.approve_proposal(rest.split()[0], approver="sag-operator")
+            if res.get("approved"):
+                return f"Promoted {res['name']} → {res['skill_dir']}", False
+            return f"Approve failed: {res.get('error')}", False
+        if sub == "reject":
+            if not rest:
+                return "Usage: /skill reject <artifact_id> [reason]", False
+            bits = rest.split(maxsplit=1)
+            ok = sl.reject_proposal(bits[0], approver="sag-operator", reason=(bits[1] if len(bits) > 1 else ""))
+            return ("Rejected." if ok else "No such proposal."), False
+        return "Usage: /skill propose|list|approve|reject ...", False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("commands: /skill failed: %s", exc)
+        return f"error: {exc}", False
+
+
 def _cmd_exit(_runtime: Any, _arg: str) -> "tuple[str, bool]":
     return "Session saved. Goodbye.", True
 
@@ -278,6 +328,7 @@ REGISTRY: dict[str, Command] = {
     "/title": Command(_cmd_title, "Show or set the session title. Usage: /title [name]"),
     "/tools": Command(_cmd_tools, "List the currently discovered tools."),
     "/skills": Command(_cmd_skills, "List available icdev-* skills."),
+    "/skill": Command(_cmd_skill, "Propose/review/promote auto-skills (HITL). Usage: /skill propose|list|approve|reject ..."),
     "/memory": Command(_cmd_memory, "Show/remember/forget durable facts. Usage: /memory [forget <N>|remember <fact>]"),
     "/usage": Command(_cmd_usage, "Show token/cost stats for this session."),
     "/search": Command(_cmd_search, "Search past session turns. Usage: /search <query>"),

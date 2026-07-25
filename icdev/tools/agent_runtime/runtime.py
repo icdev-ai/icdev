@@ -109,7 +109,13 @@ class AgentRuntime:
     # -- session control ---------------------------------------------------
 
     def new_session(self, title: str = "Untitled session") -> RuntimeSession:
-        """Start a fresh session, replacing the current one."""
+        """Start a fresh session, replacing the current one.
+
+        Before swapping, run the best-effort post-session skill-proposal hook on
+        the closing session (sag-skl-01) — env-gated (``ICDEV_SAG_SKILL_PROPOSALS``)
+        so it is silent by default and never blocks the swap.
+        """
+        self._post_session_hook()
         self.session = RuntimeSession.create(
             title=title,
             manager=self.session.manager,
@@ -119,6 +125,15 @@ class AgentRuntime:
         # Re-inject the operator profile at the next turn of the new session.
         self._profile_preamble = None
         return self.session
+
+    def _post_session_hook(self) -> None:
+        """Best-effort skill proposal on session close (sag-skl-01). Never raises."""
+        try:
+            from tools.agent_runtime.skills_lifecycle import maybe_propose_from_session
+
+            maybe_propose_from_session(self)
+        except Exception as exc:  # noqa: BLE001 — hook is best-effort
+            logger.debug("agent_runtime: post-session hook skipped: %s", exc)
 
     def resume_session(self, context_id: str) -> RuntimeSession:
         """Rehydrate an existing conversation (``icdev chat --resume <ctx-id>``).
