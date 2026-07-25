@@ -1,0 +1,177 @@
+# CUI // SP-CTI
+# RAG retrieval-quality golden query set (rce-eval-01).
+#
+# Repeatable benchmark ground-truth for the RCE (RAG Context Engineering) card.
+# Every later RCE change (contextual prefixes, RAPTOR hierarchy, quantization)
+# is measured against these queries via tools/rag/rag_benchmark.py.
+#
+# The corpus is compliance/NIST-heavy (NIST SP 800-53 Rev 5, FedRAMP, CMMC,
+# STIG). Expected hits are expressed by CONTENT SUBSTRINGS (and optionally exact
+# chunk_ids / source_ids) rather than only chunk IDs, because re-indexing
+# reassigns chunk IDs — substring targets survive re-ingestion so a run before
+# and after a change stays comparable.
+#
+# Schema per query:
+#   id        : stable identifier for the query (never reused / renumbered)
+#   query     : natural-language question sent to the retriever
+#   expect:
+#     substrings   : [list] — a retrieved chunk hits if its content contains the
+#                    substring (case-insensitive). Primary, re-index-safe target.
+#     chunk_ids    : [list] — optional exact chunk-id targets (fragile; omit
+#                    unless a specific chunk must be pinned).
+#     source_ids   : [list] — optional exact source-id targets.
+#     source_types : [list] — optional soft signal; reported but NOT counted in
+#                    recall (kept for diagnostics / future weighting).
+#
+# A "target" for recall/MRR is each substring + chunk_id + source_id. A query
+# with no targets is skipped by the harness.
+version: 1
+description: >-
+  Compliance/NIST-heavy golden query set for RCE retrieval-quality baselining.
+top_k: 5
+queries:
+  # --- NIST SP 800-53 access control (AC) family ---
+  - id: q-ac2-account-mgmt
+    query: "What does NIST 800-53 AC-2 require for account management?"
+    expect:
+      substrings: ["account management", "AC-2"]
+      source_types: ["compliance_artifacts"]
+  - id: q-ac3-access-enforcement
+    query: "How is access enforcement defined under AC-3?"
+    expect:
+      substrings: ["access enforcement", "AC-3"]
+  - id: q-ac6-least-privilege
+    query: "Explain the least privilege principle in AC-6."
+    expect:
+      substrings: ["least privilege", "AC-6"]
+  - id: q-ac17-remote-access
+    query: "What are the remote access controls in AC-17?"
+    expect:
+      substrings: ["remote access", "AC-17"]
+  # --- Audit and accountability (AU) family ---
+  - id: q-au2-event-logging
+    query: "Which events must be logged per AU-2 event logging?"
+    expect:
+      substrings: ["event logging", "AU-2"]
+  - id: q-au3-audit-content
+    query: "What content must audit records contain under AU-3?"
+    expect:
+      substrings: ["audit record", "AU-3"]
+  - id: q-au9-protection-audit
+    query: "How does AU-9 protect audit information from tampering?"
+    expect:
+      substrings: ["protection of audit", "AU-9"]
+  # --- Identification and authentication (IA) family ---
+  - id: q-ia2-mfa
+    query: "Does IA-2 require multi-factor authentication?"
+    expect:
+      substrings: ["multi-factor", "IA-2"]
+  - id: q-ia5-authenticator-mgmt
+    query: "What are the authenticator management rules in IA-5?"
+    expect:
+      substrings: ["authenticator management", "IA-5"]
+  # --- System and communications protection (SC) family ---
+  - id: q-sc7-boundary-protection
+    query: "How is boundary protection implemented under SC-7?"
+    expect:
+      substrings: ["boundary protection", "SC-7"]
+  - id: q-sc8-transmission-confidentiality
+    query: "What does SC-8 require for transmission confidentiality?"
+    expect:
+      substrings: ["transmission confidentiality", "SC-8"]
+  - id: q-sc13-cryptographic-protection
+    query: "Which cryptographic protections are mandated by SC-13?"
+    expect:
+      substrings: ["cryptographic protection", "SC-13"]
+  - id: q-sc28-data-at-rest
+    query: "How is protection of information at rest handled in SC-28?"
+    expect:
+      substrings: ["information at rest", "SC-28"]
+  # --- Configuration management (CM) family ---
+  - id: q-cm2-baseline-config
+    query: "What is a baseline configuration under CM-2?"
+    expect:
+      substrings: ["baseline configuration", "CM-2"]
+  - id: q-cm6-config-settings
+    query: "How are configuration settings enforced per CM-6?"
+    expect:
+      substrings: ["configuration settings", "CM-6"]
+  - id: q-cm7-least-functionality
+    query: "Explain least functionality as required by CM-7."
+    expect:
+      substrings: ["least functionality", "CM-7"]
+  # --- Risk assessment (RA) family ---
+  - id: q-ra5-vuln-scanning
+    query: "What are the vulnerability scanning requirements in RA-5?"
+    expect:
+      substrings: ["vulnerability scanning", "RA-5"]
+  - id: q-ra3-risk-assessment
+    query: "How often must a risk assessment be performed per RA-3?"
+    expect:
+      substrings: ["risk assessment", "RA-3"]
+  # --- Contingency planning (CP) / Incident response (IR) ---
+  - id: q-cp9-system-backup
+    query: "What does CP-9 require for system backup?"
+    expect:
+      substrings: ["system backup", "CP-9"]
+  - id: q-ir4-incident-handling
+    query: "Describe incident handling obligations under IR-4."
+    expect:
+      substrings: ["incident handling", "IR-4"]
+  - id: q-ir6-incident-reporting
+    query: "What are the incident reporting timelines in IR-6?"
+    expect:
+      substrings: ["incident reporting", "IR-6"]
+  # --- Security assessment / authorization (CA) ---
+  - id: q-ca2-control-assessments
+    query: "What is required for control assessments under CA-2?"
+    expect:
+      substrings: ["control assessment", "CA-2"]
+  - id: q-ca5-poam
+    query: "How is a plan of action and milestones defined in CA-5?"
+    expect:
+      substrings: ["plan of action", "CA-5"]
+  - id: q-ca7-continuous-monitoring
+    query: "What does continuous monitoring require under CA-7?"
+    expect:
+      substrings: ["continuous monitoring", "CA-7"]
+  # --- FedRAMP ---
+  - id: q-fedramp-impact-levels
+    query: "What are the FedRAMP impact levels for cloud authorization?"
+    expect:
+      substrings: ["FedRAMP", "impact level"]
+  - id: q-fedramp-authorization-boundary
+    query: "How is the FedRAMP authorization boundary scoped?"
+    expect:
+      substrings: ["authorization boundary", "FedRAMP"]
+  - id: q-fedramp-continuous-monitoring
+    query: "What continuous monitoring does FedRAMP require post-authorization?"
+    expect:
+      substrings: ["continuous monitoring", "FedRAMP"]
+  # --- CMMC ---
+  - id: q-cmmc-levels
+    query: "What are the CMMC maturity levels?"
+    expect:
+      substrings: ["CMMC", "level"]
+  - id: q-cmmc-cui-protection
+    query: "How does CMMC protect controlled unclassified information?"
+    expect:
+      substrings: ["controlled unclassified information", "CMMC"]
+  # --- STIG / DISA ---
+  - id: q-stig-cat1
+    query: "What is a CAT I severity finding in a DISA STIG?"
+    expect:
+      substrings: ["CAT I", "STIG"]
+  - id: q-stig-hardening
+    query: "How do STIGs drive operating system hardening?"
+    expect:
+      substrings: ["STIG", "hardening"]
+  # --- General FIPS / classification ---
+  - id: q-fips199-categorization
+    query: "How does FIPS 199 categorize information systems?"
+    expect:
+      substrings: ["FIPS 199", "categoriz"]
+  - id: q-cui-marking
+    query: "How must CUI be marked on artifacts?"
+    expect:
+      substrings: ["CUI", "marking"]
