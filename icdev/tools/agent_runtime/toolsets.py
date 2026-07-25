@@ -129,13 +129,30 @@ def build_toolset(
     *,
     safety_gate: Optional[SafetyGate] = None,
     task_id: Optional[str] = None,
+    approval_mode: Optional[str] = None,
+    router: Any = None,
+    approver: Any = None,
 ) -> "tuple[list[dict[str, Any]], dict[str, Any]]":
     """Assemble ``(tools, handlers)`` for the given bundle names.
 
     ``tools`` is the OpenAI function-schema list for ``run_agent_loop(tools=...)``;
     ``handlers`` is ``{name: handler(input, stop) -> str}`` with mutating tools
-    routed through ``safety_gate`` (defaults to the fail-closed gate).
+    routed through the safety gate.
+
+    When no ``safety_gate`` is supplied, the real command-approval gate
+    (:func:`tools.agent_runtime.safety.build_safety_gate`, sag-safe-01) is built
+    from ``approval_mode`` / ``router`` / ``approver`` — so bundle-based toolsets
+    are gated by the approval flow, not the fail-closed placeholder.
     """
+    if safety_gate is None:
+        try:
+            from tools.agent_runtime.safety import build_safety_gate
+
+            safety_gate = build_safety_gate(
+                mode=approval_mode, approver=approver, router=router
+            )
+        except Exception as exc:  # noqa: BLE001 — fall back to dispatch's fail-closed
+            logger.warning("toolsets: safety gate unavailable (%s); failing closed", exc)
     registry = build_registry_for_bundles(names)
     tools = discovery.to_openai_tools(registry)
     handlers = build_handlers(registry, safety_gate=safety_gate, task_id=task_id)

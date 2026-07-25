@@ -106,6 +106,35 @@ class AgentRuntime:
         )
         return self.session
 
+    def use_toolset(
+        self,
+        bundle_names: list[str],
+        *,
+        approval_mode: str | None = None,
+        approver: Any = None,
+    ) -> list[str]:
+        """Swap the runtime's tools to a bundle-based, safety-gated toolset.
+
+        Replaces the small read-only starter toolset with the tools named by the
+        given bundles (``args/agent_toolsets.yaml``), assembled through the
+        sag-reg-02 dispatch layer with the sag-safe-01 command-approval gate. Any
+        mutating tool (file write, terminal execution) therefore passes through
+        ``run_pre_tool_check`` and the approval flow before executing.
+
+        Returns the sorted names of the now-active tools.
+        """
+        from tools.agent_runtime.toolsets import build_toolset
+
+        tools, handlers = build_toolset(
+            bundle_names,
+            approval_mode=approval_mode,
+            router=self._router,  # may be None; smart mode degrades to heuristic
+            approver=approver,
+        )
+        self.tools = tools
+        self.tool_handlers = handlers
+        return self.tool_names()
+
     def tool_names(self) -> list[str]:
         """Names of the currently registered tools (for ``/tools``)."""
         names = []
