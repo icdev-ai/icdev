@@ -8657,6 +8657,10 @@ CREATE TABLE IF NOT EXISTS genesis_audit (
 CREATE INDEX IF NOT EXISTS idx_genesis_audit_type ON genesis_audit(event_type);
 CREATE INDEX IF NOT EXISTS idx_genesis_audit_reflex ON genesis_audit(reflex_name);
 CREATE INDEX IF NOT EXISTS idx_genesis_audit_created ON genesis_audit(created_at);
+-- crx-gen-02: reflex health-trend queries filter by reflex + time window and by
+-- event_type + time window; composite indexes keep the 7/30-day rollups cheap.
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_reflex_created ON genesis_audit(reflex_name, created_at);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_type_created ON genesis_audit(event_type, created_at);
 
 CREATE TABLE IF NOT EXISTS genesis_reflex_state (
     reflex_name         TEXT PRIMARY KEY,

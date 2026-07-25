@@ -1487,6 +1487,26 @@ reflexes:
       threshold: 0
       operator: gte
 
+# ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
+# Turns critical-reflex failures into operator alerts on the /monitoring page
+# (via the shared `alerts` table) and backs the reflex health-trend queries in
+# tools/genesis/reflex_health.py. Wires the previously-inert
+# circuit_breaker.notify_on_trip intent.
+reflex_health:
+  enabled: true
+  default_severity: critical          # alerts severity for bare critical_reflexes entries
+  cooldown_minutes: 60                 # min window; a flapping reflex alerts once per window
+  failure_threshold: 3                 # failures within the window before an alert fires
+  # Reflexes worth paging on. Bare name → default_severity; {name: severity} to override.
+  # Per-reflex `reflexes.<name>.alert_severity` also promotes a reflex to critical.
+  critical_reflexes:
+    - heal                             # self-healing loop — silent failure is high-impact
+    - comply                           # compliance drift must not go unnoticed
+    - integrity_monitor
+    - cato_monitor
+    - kanban                           # delivery pipeline dispatch
+    - redaction_scan_reflex: warning   # PII sweep — warn rather than page
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:
