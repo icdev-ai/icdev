@@ -111,8 +111,23 @@ def ai_decisions_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
         return []
 
 
+def twin_snapshots_adapter(conn: Any) -> list[dict]:
+    """Return AIML twin snapshots (aiml_twin_snapshots) — the digital-twin surface."""
+    c, owned = _aimc_conn(conn)
+    try:
+        return _safe_fetch(
+            c,
+            "SELECT id, design_id, label, node_count, edge_count, created_by, created_at "
+            "FROM aiml_twin_snapshots ORDER BY created_at DESC",
+        )
+    finally:
+        if owned:
+            c.close()
+
+
 register_collection("aimc.designs", designs_adapter)
 register_collection("aimc.nodes", nodes_adapter)
 register_collection("aimc.assessments", assessments_adapter)
 register_collection("aimc.artifacts", artifacts_adapter)
 register_collection("aimc.ai_decisions", ai_decisions_adapter)
+register_collection("aimc.twin_snapshots", twin_snapshots_adapter)

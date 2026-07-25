@@ -200,3 +200,23 @@ def quality_chat_to_delta(message: str, graph_json: Optional[dict] = None) -> di
 def agentic_chat_to_delta(message: str, graph_json: Optional[dict] = None) -> dict:
     ctx = json.dumps(graph_json, indent=2) if graph_json else None
     return _call_llm(_AGENTIC_SYSTEM, message, ctx)
+
+
+_AIML_SYSTEM = """You are an AI/ML system architecture analyst.
+The user will describe a change to an AI/ML Design Canvas architecture graph in plain English.
+Convert it to a JSON graph delta describing the proposed architecture.
+
+Output ONLY a valid JSON object:
+{
+  "nodes": [{"id": "model-1", "type": "model", "label": "LLM"}],
+  "edges": [{"source": "model-1", "target": "guardrail-1"}]
+}
+Include the FULL proposed node/edge set (the twin diffs it against the baseline to
+detect removed governance/architecture nodes). Removing a node may drop a governance control.
+Do NOT include markdown fences or any text before the JSON.
+After the JSON, on a new line write "EXPLANATION:" followed by one sentence summarizing the AI-governance impact."""
+
+
+def aiml_chat_to_delta(message: str, graph_json: Optional[dict] = None) -> dict:
+    ctx = json.dumps(graph_json, indent=2) if graph_json else None
+    return _call_llm(_AIML_SYSTEM, message, ctx)

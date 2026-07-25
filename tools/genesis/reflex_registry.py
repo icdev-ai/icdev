@@ -140,6 +140,10 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("odc_coverage_refresh",      SUPPORT, 6.0,
                 "ODC coverage refresh: scheduled MITRE ATT&CK coverage recompute per design; "
                 "flag >15pt coverage drops as od_audit drift events + suggested kanban cards"),
+    # twx-cov-02 — cross-canvas twin freshness
+    ReflexEntry("twin_freshness_sweep",      SUPPORT, 6.0,
+                "Twin Core: observer-driven cross-canvas twin freshness sweep; publishes "
+                "twin.snapshot.stale for twins with stale/absent snapshots (fills AADC/Mission/residual gap)"),
 ]
 
 # Quick lookup: name → entry
