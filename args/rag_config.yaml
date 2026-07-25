@@ -68,6 +68,15 @@ enabled_sources:
 - icdev_db_tables
 - icdev_tool_categories
 rag:
+  # Adaptive complexity pre-routing (agx-rag-01). Route retrieval strategy by
+  # assessed query complexity BEFORE retrieving. Default DISABLED = current
+  # behavior (always single-pass); enabling is an explicit opt-in.
+  # SAFETY: the 'none'/skip route is enforced-unavailable in code for any
+  # surface that requires citations — do not rely on config to make it safe.
+  adaptive_routing:
+    enabled: false
+    use_llm_classifier: true      # false = heuristic-only (fully offline)
+    complex_top_k: 10             # widened single-pass fallback when no decompose_fn injected
   auto_indexer:
     cui_boundary_enforcement: true
     enabled: false
