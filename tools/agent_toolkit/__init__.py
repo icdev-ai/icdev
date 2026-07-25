@@ -44,7 +44,11 @@ from tools.agent_toolkit._fs import (
 )
 from tools.agent_toolkit._shell import execute_shell
 from tools.agent_toolkit._planning import write_todos, update_todo
-from tools.agent_toolkit._subagent import spawn_subagent
+from tools.agent_toolkit._subagent import (
+    delegate_batch,
+    delegate_task,
+    spawn_subagent,
+)
 from tools.agent_toolkit._composer import (
     Agent,
     AgentResult,
@@ -67,6 +71,8 @@ __all__ = [
     "update_todo",
     # Subagent
     "spawn_subagent",
+    "delegate_task",
+    "delegate_batch",
     # Composer
     "Agent",
     "AgentResult",
