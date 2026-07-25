@@ -1,0 +1,148 @@
+# AGX cross-architecture benchmark task suite (agx-bench-01)
+#
+# Real-ICDEV-representative tasks used to grade registry reasoning architectures
+# against one another. Each task carries a rubric (`expected_behavior`) that the
+# categorical judge (tools/evolution/fitness.py :: score_full) scores the
+# architecture's output against, plus the router `function` the architecture
+# should run under so cost/latency are attributed to a realistic role.
+#
+# This file is DATA, not code: edit tasks here without touching the runner.
+# Golden expectations are kept short and outcome-focused so a small local
+# (7B Ollama) judge can score them reliably — the LLM-agnostic constraint.
+#
+# families covered: compliance drafting, requirement decomposition, CVE triage,
+# code review, retrieval QA, migration planning.
+version: "1.0"
+tasks:
+  - id: comply-ssp-ac2
+    family: compliance_drafting
+    function: narrative_generation
+    prompt: >-
+      Draft the NIST 800-53 AC-2 (Account Management) control implementation
+      narrative for a FedRAMP Moderate SaaS that uses Keycloak for identity,
+      role-based access, and 90-day inactivity disablement. Two short paragraphs.
+    expected_behavior: >-
+      Correctly describes account provisioning, role-based authorization, and
+      automated 90-day inactivity disablement; references AC-2 responsibilities;
+      is concise (two paragraphs) and free of placeholders.
+
+  - id: comply-poam-risk
+    family: compliance_drafting
+    function: narrative_generation
+    prompt: >-
+      Write a POA&M remediation summary for an open finding: TLS 1.0 still
+      enabled on an internal service endpoint. Include risk, remediation, and a
+      realistic milestone.
+    expected_behavior: >-
+      States the confidentiality/integrity risk of legacy TLS, gives a concrete
+      remediation (disable TLS 1.0/1.1, enforce TLS 1.2+), and a dated milestone.
+      No fabricated CVE numbers.
+
+  - id: reqs-decompose-mfa
+    family: requirement_decomposition
+    function: requirements_generation
+    prompt: >-
+      Decompose this epic into 3-5 atomic, testable requirements: "The system
+      shall enforce multi-factor authentication for all privileged users."
+    expected_behavior: >-
+      Produces 3-5 atomic requirements each independently testable, covering
+      enrollment, enforcement at login, privileged-role scoping, and failure/
+      lockout handling. No vague or compound requirements.
+
+  - id: reqs-decompose-audit
+    family: requirement_decomposition
+    function: requirements_generation
+    prompt: >-
+      Decompose into atomic testable requirements: "The system shall maintain an
+      immutable audit trail of all security-relevant events."
+    expected_behavior: >-
+      Yields atomic requirements covering event capture, append-only/immutability,
+      retention, and tamper-evidence; each is verifiable. Avoids compound shalls.
+
+  - id: cve-triage-log4j
+    family: cve_triage
+    function: recommendation
+    prompt: >-
+      Triage: a dependency scan flags CVE-2021-44228 (Log4Shell) in a Java
+      service that logs user-controlled request headers. Give severity, exposure
+      rationale, and the immediate action.
+    expected_behavior: >-
+      Rates it critical/high, explains the JNDI lookup remote-code-execution
+      exposure given user-controlled logged input, and recommends upgrading
+      log4j to a fixed version (or mitigation) as the immediate action.
+
+  - id: cve-triage-falsepos
+    family: cve_triage
+    function: recommendation
+    prompt: >-
+      Triage: a scanner flags a high CVE in a library, but the vulnerable code
+      path is a serializer the service never calls. How should this be dispositioned?
+    expected_behavior: >-
+      Recognizes a likely not-affected/false-positive disposition contingent on
+      confirming the vulnerable function is unreachable, recommends documenting
+      the justification, and still advises tracking for future upgrade.
+
+  - id: review-sql-injection
+    family: code_review
+    function: code_review
+    prompt: >-
+      Review this Python for defects: "def get_user(uid):\n    q = \"SELECT * FROM
+      users WHERE id = '\" + uid + \"'\"\n    return db.execute(q).fetchone()".
+      List the top issue and the fix.
+    expected_behavior: >-
+      Identifies SQL injection from string-concatenated user input as the top
+      issue and recommends a parameterized/prepared query as the fix.
+
+  - id: review-resource-leak
+    family: code_review
+    function: code_review
+    prompt: >-
+      Review for defects: "def read_config(path):\n    f = open(path)\n    data =
+      f.read()\n    return json.loads(data)". Name the main issue and the fix.
+    expected_behavior: >-
+      Identifies the unclosed file handle (resource leak) and recommends a
+      context manager (with open(...) as f) and encoding handling as the fix.
+
+  - id: rag-qa-classification
+    family: retrieval_qa
+    function: chat_response
+    prompt: >-
+      Given this context: "ICDEV marks CUI artifacts for IL4/IL5 and SECRET for
+      IL6. classification_manager.py applies markings." Question: what marking is
+      applied for an IL6 artifact and which tool applies it?
+    expected_behavior: >-
+      Answers SECRET marking for IL6 and names classification_manager.py as the
+      tool, grounded strictly in the provided context without invention.
+
+  - id: rag-qa-storage
+    family: retrieval_qa
+    function: chat_response
+    prompt: >-
+      Given this context: "ICDEV defaults to SQLite at data/icdev.db; set
+      ICDEV_STORAGE_BACKEND=postgresql to use PostgreSQL which needs
+      psycopg2-binary." Question: how do you switch ICDEV to PostgreSQL?
+    expected_behavior: >-
+      States setting ICDEV_STORAGE_BACKEND=postgresql (and installing
+      psycopg2-binary), grounded in the provided context; does not invent steps.
+
+  - id: migrate-plan-monolith
+    family: migration_planning
+    function: recommendation
+    prompt: >-
+      A legacy on-prem Java monolith with an Oracle DB must move to AWS GovCloud.
+      Recommend a migration strategy (from the 7 Rs) and the first two steps.
+    expected_behavior: >-
+      Recommends a defensible 7-Rs strategy (e.g. replatform/refactor) with brief
+      justification and two concrete first steps such as dependency/assessment
+      inventory and a landing-zone/pilot. Realistic, not hand-wavy.
+
+  - id: migrate-plan-wave
+    family: migration_planning
+    function: recommendation
+    prompt: >-
+      Given 40 interdependent applications to migrate, outline how to sequence
+      them into waves and the single most important sequencing criterion.
+    expected_behavior: >-
+      Describes grouping by dependency/coupling into waves (low-risk/low-coupling
+      first) and identifies dependency ordering (or business criticality) as the
+      key sequencing criterion.

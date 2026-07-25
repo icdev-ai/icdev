@@ -12,6 +12,7 @@ Multi-LLM orchestration engine.
 |--------|-------------|
 | `ChainOrchestrator.invoke_chain_of_thought(function, request)` | Run CoT: reasoner → critic → synthesizer (up to `max_rounds`). Returns `ChainResult`. |
 | `ChainOrchestrator.invoke_chain_of_debate(function, request)` | Run CoD: N parallel debaters → neutral judge synthesis. Returns `ChainResult`. |
+| `ChainOrchestrator.invoke_council(question, context)` | Run the LLM Council (adapted from Karpathy's methodology): 5 fixed-perspective advisors (Contrarian, First Principles Thinker, Expansionist, Outsider, Executor) respond independently and in parallel, anonymously peer-review each other, then a chairman synthesizes a structured verdict (agreement, clashes, blind spots, recommendation, next step). Distinct from CoD — no debate-to-a-winner, independent single-pass analysis from fixed cognitive lenses. Routing: `council_advisor_pool` / `council_chairman` in `args/llm_config.yaml`, plus `chain_orchestration.council.per_function.idealab_council_query`. Exposed as the `council_query` MCP tool (`gap_handlers.py::handle_council_query`); primary caller is cross-repo (e.g. idea_lab pressure-testing a validated idea before committing to it). |
 
 **Config:** `args/llm_config.yaml` → `chain_orchestration` section (cost cap, token cap, timeout, per-function overrides, model assignments, role keys).
 
@@ -99,7 +100,7 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 | **Kanban** | `cot_enabled` flag + `cot_trace_id` in `TransitionResult` |
 | **Loop Engine** | `cot_config` in acceptance criteria |
 | **Auto-Remediate** | CoT reasoning stored in remediation decisions |
-| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py` |
+| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`. `council_query` tool likewise (`gap_handlers.py::handle_council_query`), primary caller cross-repo (idea_lab). |
 | **Knowledge Graph** | `reasoning_step` node type indexed by `kg_builder.py` with step_name, model_id, chain_mode, trace_id, round_num |
 | **Event Bus** | `cot_reasoning_completed` published after every chain invocation |
 | **Cost Intelligence** | `enable_cot` / `enable_cod` recommendation types for high-cost functions |
@@ -123,3 +124,26 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 - `BenchmarkRunner.run_benchmark(name, limit, data_path)` → list[BenchmarkResult]
 - `BenchmarkRunner.score(results)` → accuracy dict
 - CLI: `python -m icdev.tools.llm.benchmark_runner --benchmark gsm8k --limit 50 --json`
+
+---
+
+### AGX Architecture Registry (`tools/llm/architectures/`)
+
+> Registry of named reasoning architectures behind ONE uniform envelope, so a canvas or router function can swap reasoning strategy by config, not code. Enabler for the `agx-` card (agentic-architecture extension). Adapted from github.com/FareedKhan-dev/all-agentic-architectures (MIT, © 2025 Fareed Khan) — pattern only, no upstream code vendored. Mirrored to `icdev/tools/llm/architectures/`.
+
+| Symbol | Description |
+|--------|-------------|
+| `ArchitectureResult` (`envelope.py`) | Uniform result envelope: `output`, `steps[]`, `model_ids_used[]`, token/cost usage, `method` provenance, `degraded` flag, `stop_reason`, `schema_version`. Honesty invariant (mirrors `tools/twin_core/`): a `degraded=True` envelope never presents a fabricated verdict. |
+| `ArchitectureStep`, `ArchitectureBudget` | Per-step provenance; caller budget ceiling (`max_cost_usd`/`max_tokens`/`max_seconds`) honored via the existing `BudgetExceededError` path. |
+| `register(name, fn, *, overwrite=False)` / `get` / `list_architectures` / `run` / `unregister` (`registry.py`) | Registry API. Every architecture is `run(task, *, router=None, budget=None, function=..., **kw) -> ArchitectureResult`; `task` may be `str` or `LLMRequest`. |
+| Built-in adapters (`adapters.py`) | Wrap existing implementations — nothing rebuilt: `chain_of_thought`, `chain_of_debate`, `council` (from `ChainOrchestrator`), `react` (from `agent_loop.run_agent_loop`). agx-verify-*/rag-*/search-*/bench-* register further architectures here. |
+| `resolve_architecture` / `resolve_and_log` / `log_selection` (`selection.py`, agx-core-03) | Config-driven selection from the `architectures:` section of `args/llm_config.yaml` (single-source). Precedence: explicit arg > `functions.<fn>` > `roles.<role>` > `default`. Shipped config is all-null = current behavior (opt-in). Emits structured `agx_architecture_selected` logs for the bench (agx-bench-01) to attribute results. |
+| `chain_of_verification` (`cove.py`, agx-verify-01) | Chain-of-Verification: baseline → derive verification questions → answer each INDEPENDENTLY of the baseline → Python composes a pass/revise decision from per-question enum verdicts `{supported/partial/contradicted/unsupported}` (`compose_verification`, `cove-1.0`) → revise on any contradiction. The enforcement half of the TRUST invariant. Opt-in, budget-capped, cheap-tier-routed verifier (`cove_verify`). Independence is asserted in tests (verifier prompt excludes baseline). |
+| `cove_guard` (`tools/quality/cove_guard.py`, agx-verify-01) | Optional pre-promote/pre-export gate mirroring `citation_gate`/placeholder guards: reuses `citation_grounding.parse_citations` to resolve the sources a draft cites, hands them to CoVe as evidence, returns a blocking/overridable finding (`blocked`, `needs_revision`, `revised_text`, `contradicted_claims`) with a HITL `force_override` (caller audits the override). Fails closed. |
+| `self_discover` (`self_discover.py`, agx-search-01) | Self-Discover: SELECT → ADAPT → IMPLEMENT → SOLVE. The LLM names reasoning modules from a DATA bank (`context/reasoning_modules/architect_modules.yaml`, seeded with the Karpathy pre-design heuristics); Python (`select_modules`) validates the names against the bank and (`compose_structure`) assembles a task-specific reasoning structure — deterministic-picker. Optional/registry-swappable for the ANVIL Architect phase; does NOT change default Architect behavior (agx-bench-02 decides that with measurements). Unknown ids drop; empty selection falls back to the Karpathy core. |
+| `tree_of_thoughts` (`tree_of_thoughts.py`, agx-search-02) | Budget-capped beam search over reasoning paths for genuinely branchy problems (COA generation, migration wave planning). HARD ceiling (`max_llm_calls` always-on + optional token/cost/time `ArchitectureBudget`): exceeding it returns best-so-far with `degraded=True`, `stop_reason="budget_exceeded"` — never a silently-truncated result presented as complete. Per-branch evaluation is a 3-value enum `{promising/maybe/dead_end}` (`tot-1.0`) composed into the beam ordering in Python. OPT-IN per call site, NEVER a default (LATS/MCTS rejected on cost). Honest per-invocation cost report in the envelope. |
+| `benchmark` (`benchmark.py`, agx-bench-01) | Cross-architecture benchmark suite: grades registered architectures against each other on ICDEV-representative tasks (`args/agx/benchmark_tasks.yaml` — compliance drafting, requirement decomposition, CVE triage, code review, retrieval QA, migration planning). Reuses `tools/evolution/fitness.py::score_full` as the categorical judge (no new scoring stack). Runs every architecture on ≥2 model families (incl. local Ollama when reachable) via `router.get_diverse_models`; per-family cost/latency reported alongside quality. Injectable runner/judge seams → NEVER needs live models to build/test; unreachable providers/air-gap yield `status="unmeasured"` ("run live to populate"), never an exception. No silent caps (a `dropped[]` list records everything skipped); architectures with < `min_samples` measured cells marked `unmeasured`. Deterministic Python aggregation; results persisted to `data/agx/benchmark_latest.json` for agx-bench-02. CLI: `python tools/llm/architectures/benchmark.py --run --json` / `--dry-run`. |
+
+**LLM-agnostic by construction:** no inference in this package; all adapters route through `LLMRouter`. Zero vendor-SDK imports, zero hardcoded model IDs. Enforced by `tests/llm/test_architecture_agnosticism.py` (agx-core-02).
+
+**Tests:** `tests/llm/test_architecture_registry.py`.
