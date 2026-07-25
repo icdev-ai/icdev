@@ -79,6 +79,18 @@ def mock_router():
                 "excluded_functions": ["pulse_generation"],
                 "per_function": {},
             },
+            "divergence": {
+                # enabled TRUE here only so the mode is exercisable in tests; the
+                # SHIPPED default in args/llm_config.yaml is FALSE (opt-in).
+                "enabled": True,
+                "num_branches": 6,
+                "frame_set": "generative",
+                "branch_pool_role": "divergence_branch_pool",
+                "critic_role": "divergence_critic",
+                "branch_models": ["qwen3-local", "claude-sonnet", "gpt-4o"],
+                "excluded_functions": ["pulse_generation"],
+                "per_function": {},
+            },
         },
         # routing: dict enables _invoke_model to detect role keys vs direct model names
         "routing": {
@@ -111,8 +123,9 @@ def mock_router():
         pool = ["qwen3-local", "claude-haiku", "llama-local", "deepseek-local"]
         return pool[:min(count, len(pool))]
 
-    # _invoke_model_direct: legacy path for per_function direct model name overrides
-    def mock_invoke_direct(model_name, request):
+    # _invoke_model_direct: legacy path for per_function direct model name overrides.
+    # Accepts the function kwarg the real _invoke_model passes (function=function).
+    def mock_invoke_direct(model_name, request, function=None):
         return LLMResponse(
             content=f"response from {model_name}",
             model_id=model_name,
@@ -390,7 +403,7 @@ class TestCouncil:
         single fixed chairman role key)."""
         captured_review_prompts = []
 
-        def capturing_invoke_direct(model_name, request):
+        def capturing_invoke_direct(model_name, request, function=None):
             content = (request.messages[0]["content"] if request.messages else "")
             if "[RESPONSE" in content:
                 captured_review_prompts.append(content)
@@ -410,6 +423,138 @@ class TestCouncil:
             assert "The Contrarian" not in prompt
             assert "The Executor" not in prompt
             assert "[RESPONSE A]" in prompt or "[RESPONSE B]" in prompt
+
+
+class TestDivergence:
+    def test_divergence_returns_idea_pool(self, mock_router, tmp_db):
+        """Divergence returns a labeled raw idea pool from a single isolated
+        generative fan-out (one round, no peer review, no synthesis)."""
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "How should we reduce latency?"}])
+            result = orch.invoke_divergence("some_decision_function", req)
+
+        assert isinstance(result, ChainResult)
+        assert result.chain_mode == "divergence"
+        assert result.content != ""
+        assert result.stop_reason == "completed"
+        assert result.total_input_tokens > 0
+        assert result.total_output_tokens > 0
+
+        # Every step is a branch — there must be NO peer-review, chairman, or judge
+        # step. Strict isolation = one generative round only.
+        branch_steps = [r for r in result.rounds if str(r["step"]).startswith("branch:")]
+        assert len(branch_steps) == 6  # 6 default generative frames
+        assert not any(r["step"] in ("peer_review", "chairman", "judge") for r in result.rounds)
+
+        # Content is the raw pool, labeled by frame so a critic pass can attribute.
+        assert "Divergent Idea Pool" in result.content
+        assert "## Frame:" in result.content
+        # Divergence does not self-score; confidence is owned by the critic pass.
+        assert result.confidence == 0.0
+
+    def test_divergence_disabled_by_default_raises(self, mock_router, tmp_db):
+        """The SHIPPED default is opt-in (enabled: false). With enabled false,
+        invoke_divergence must refuse rather than silently run a 5-10x-cost path."""
+        mock_router._config["chain_orchestration"]["divergence"]["enabled"] = False
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test"}])
+            with pytest.raises(RuntimeError, match="disabled"):
+                orch.invoke_divergence("some_decision_function", req)
+
+    def test_divergence_excluded_function_raises(self, mock_router, tmp_db):
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test"}])
+            with pytest.raises(RuntimeError, match="excluded from Divergence"):
+                orch.invoke_divergence("pulse_generation", req)
+
+    def test_divergence_module_budget_aborts_before_spending(self, mock_router, tmp_db):
+        """The module-budget gate must trip and abort BEFORE any branch model
+        call — the headline cost risk of the mode. We assert the run raises and
+        that no model was ever invoked."""
+        from tools.budget.module_budget_tracker import ModuleBudgetExceededError
+
+        called = {"n": 0}
+
+        def counting_invoke_direct(model_name, request, function=None):
+            called["n"] += 1
+            return LLMResponse(content="x", model_id=model_name, input_tokens=1,
+                               output_tokens=1, provider="mock")
+
+        mock_router._invoke_model_direct = counting_invoke_direct
+
+        # Re-enable the real budget check for THIS test only (autouse fixture
+        # normally no-ops it) and force it to block.
+        with patch("tools.llm.chain_orchestrator.ChainOrchestrator._check_module_budget",
+                   side_effect=ModuleBudgetExceededError("generative_intelligence", {"action": "block"})):
+            with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+                orch = ChainOrchestrator(router=mock_router)
+                req = LLMRequest(messages=[{"role": "user", "content": "test"}])
+                with pytest.raises(ModuleBudgetExceededError):
+                    orch.invoke_divergence("some_decision_function", req)
+
+        assert called["n"] == 0, "budget gate must abort before any branch model call"
+
+    def test_divergence_branches_run_in_strict_isolation(self, mock_router, tmp_db):
+        """Regression: no branch prompt may contain another branch's output or a
+        'prior argument' section — cross-feeding collapses divergence into a
+        single wider thought. Each branch prompt must reference only the problem
+        and its own frame."""
+        captured_prompts = []
+
+        def capturing_invoke_direct(model_name, request, function=None):
+            content = request.messages[0]["content"] if request.messages else ""
+            captured_prompts.append(content)
+            return LLMResponse(
+                content="1. Idea A\n2. Idea B [IDEAS]", model_id=model_name,
+                input_tokens=100, output_tokens=50, provider="mock",
+            )
+
+        mock_router._invoke_model_direct = capturing_invoke_direct
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "unique-problem-token"}])
+            orch.invoke_divergence("some_decision_function", req)
+
+        assert captured_prompts, "expected branch prompts to be captured"
+        for prompt in captured_prompts:
+            assert "unique-problem-token" in prompt        # each branch sees the problem
+            assert "[PRIOR ARGUMENT" not in prompt          # never threaded (unlike CoD)
+            assert "[RESPONSE A]" not in prompt             # never cross-read (unlike council review)
+
+    def test_divergence_degrades_cleanly_when_all_branches_fail(self, mock_router, tmp_db):
+        """If every branch call raises, invoke_divergence must return an empty-
+        content ChainResult (stop_reason=all_branches_failed) rather than raise."""
+        def always_fail(model_name, request, function=None):
+            raise RuntimeError("simulated provider outage")
+
+        mock_router._invoke_model_direct = always_fail
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test"}])
+            result = orch.invoke_divergence("some_decision_function", req)
+
+        assert result.content == ""
+        assert result.stop_reason == "all_branches_failed"
+
+    def test_divergence_emits_telemetry(self, mock_router, tmp_db):
+        """Divergence must route its result through _write_chain_telemetry (the
+        shared telemetry + module-budget-recording path) exactly like the other
+        modes. We spy on the emit rather than read the DB back: the raw-sqlite
+        test patch does not translate the %s placeholders the writer uses, so a
+        DB read-back would be an infra artifact, not a behavior check."""
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))), \
+             patch("tools.llm.chain_orchestrator.ChainOrchestrator._write_chain_telemetry") as spy:
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test"}])
+            result = orch.invoke_divergence("some_decision_function", req)
+
+        assert spy.called
+        emitted_result = spy.call_args[0][0]
+        assert emitted_result.chain_mode == "divergence"
+        assert result.rounds  # in-memory per-branch telemetry populated
 
 
 # ---------------------------------------------------------------------------

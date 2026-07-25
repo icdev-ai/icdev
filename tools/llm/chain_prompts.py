@@ -280,6 +280,49 @@ class ChainPrompts:
         return sys, usr
 
     @staticmethod
+    def divergence_branch(
+        user_prompt: str,
+        frame_name: str,
+        frame_instruction: str,
+        *,
+        system_prompt: str = "",
+        output_schema: Optional[Dict] = None,
+    ) -> tuple[str, str]:
+        """Return (system_prompt, user_prompt) for one divergence branch.
+
+        The GENERATIVE counterpart to council_advisor(): each branch receives the
+        problem plus ONE generative frame and is instructed to WIDEN the option
+        space -- produce candidate ideas and explicitly NOT evaluate, rank, or
+        self-critique. Unlike debater(), no prior_arguments are ever threaded in:
+        branches run in strict isolation (one round, no cross-reading), because
+        serializing or cross-feeding them collapses divergence into a single
+        wider thought. Scoring/clustering/deepening is a SEPARATE invocation
+        (dvg-critic-*) with an opposing critic system prompt -- the
+        generator/critic split is intentionally mechanical, never one unified
+        response.
+        """
+        sys = _CUI_BANNER + (
+            f"You are a divergent idea generator working under the '{frame_name}' frame.\n\n"
+            f"Frame: {frame_instruction}\n\n"
+            "Your ONLY job is to GENERATE candidate ideas under this frame. Widen "
+            "the option space. Do NOT evaluate, rank, score, self-critique, hedge, "
+            "or pick a 'best' -- a separate critic pass does all of that. Lean fully "
+            "into your frame; other branches cover the angles you don't.\n"
+        )
+        if system_prompt:
+            sys += f"\n[ORIGINAL SYSTEM CONTEXT]\n{system_prompt}\n"
+        sys += _schema_hint(output_schema)
+
+        usr = (
+            f"[PROBLEM]\n{user_prompt}\n\n"
+            "[INSTRUCTION] Generate 3-6 DISTINCT candidate ideas under your frame. "
+            "For each, give a short title then 1-2 sentences on the core approach. "
+            "Number them. No evaluation, no ranking, no 'recommended' -- just the raw "
+            "options. End with [IDEAS]."
+        )
+        return sys, usr
+
+    @staticmethod
     def council_peer_review(
         user_prompt: str,
         anonymized_responses: List[Dict[str, str]],
