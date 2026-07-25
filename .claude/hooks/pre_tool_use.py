@@ -193,6 +193,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "prov_relations",
         "shap_attributions",
         "xai_assessments",
+        # crx-db-03 — Retention framework action log (append-only NIST AU record of every prune/archive)
+        "retention_action_log",
         # Phase 47 — Production Readiness Audit (D292)
         "production_audits",
         # Phase 47 — Production Remediation (D296-D300)
