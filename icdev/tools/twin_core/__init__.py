@@ -12,6 +12,14 @@ Public surface:
 
 Reference adapters (twx-core-01): ``ndc``, ``pdc``.
 """
+from tools.twin_core.event_bridge import (
+    TWIN_SIMULATION_COMPLETED,
+    TWIN_SNAPSHOT_TAKEN,
+    recent_twin_events,
+    register_subscriptions,
+    simulate,
+    snapshot,
+)
 from tools.twin_core.observer import observe
 from tools.twin_core.registry import (
     TwinAdapter,
@@ -42,6 +50,12 @@ __all__ = [
     "register_twin",
     "known_canvas_keys",
     "observe",
+    "simulate",
+    "snapshot",
+    "register_subscriptions",
+    "recent_twin_events",
+    "TWIN_SNAPSHOT_TAKEN",
+    "TWIN_SIMULATION_COMPLETED",
     "VERDICTS",
     "UNKNOWN_VERDICT",
     "SEVERITIES",
