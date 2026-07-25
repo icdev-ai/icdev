@@ -5,6 +5,12 @@ defense-in-depth behind the existing application-level RLS predicate. See
 [CLAUDE.md](../../CLAUDE.md) for behavioral instructions and
 [compliance-security.md](compliance-security.md) for the security-gate context.
 
+> **Scope note (public repo).** ICDEV is a public repository. This document is a
+> forward-looking hardening plan and deliberately describes the *target* design and
+> the engineering work required to reach it, not an adversarial analysis of the
+> current control. Detailed threat/exploitation analysis of the present state is
+> tracked internally, not here.
+
 - **Card:** `crx-db-01` (CRX — Component Review Remediation)
 - **Source gap:** Database & Storage component review, Gap #8 — *"RLS predicate can
   be bypassed. The RLS predicate relies on `get_connection()` being called through
@@ -18,14 +24,14 @@ defense-in-depth behind the existing application-level RLS predicate. See
 
 ## 1. Problem statement
 
-Today, tenant/classification isolation is enforced **only in application code**: the
+Today, tenant/classification isolation is enforced in application code: the
 `StorageCursor` rewrites each query's `WHERE` clause to append a tenant +
-classification predicate. Any connection that does **not** flow through that wrapper
-— a `psql` shell, a BI tool, a raw `psycopg2` connect, or a bug that forgets to
-attach a security context — sees **all tenants' rows**. The database itself imposes
-no isolation. Native PostgreSQL RLS (`ENABLE ROW LEVEL SECURITY` + `CREATE POLICY`)
-would move the boundary into the engine, so isolation holds regardless of how the
-connection was opened.
+classification predicate, and this application-layer control is the authoritative
+isolation boundary. Enforcement is therefore tied to access flowing through the
+ICDEV connection wrapper; the database engine does not itself impose per-row
+tenant/classification isolation. Native PostgreSQL RLS (`ENABLE ROW LEVEL SECURITY`
++ `CREATE POLICY`) would add a second boundary inside the engine as defense-in-depth,
+so isolation holds independently of the connection path — the goal of this spike.
 
 This is a high-blast-radius change (a wrong policy can hide legitimate rows or
 break writes across 300+ tables), which is why it is scoped as a spike.
@@ -38,10 +44,10 @@ Traced through the live code, the app-level control has four moving parts:
 
 | Concern | File · function | Notes |
 |---|---|---|
-| **Predicate injection point** | `tools/db/storage.py` · `StorageCursor._inject_rls()` (~L1010) | Reads the attached `SecurityContext`, computes the classification read-down set, calls `inject_row_predicate()`, and splices the extra params into the correct positions. **Wrapped in `try/except` that returns the SQL unmodified on any error (fail-open).** |
-| **Predicate builder** | `tools/security/row_security.py` · `inject_row_predicate()` (L184) | Appends `tenant_id = ? AND (classification IS NULL OR … IN (…))` (+ optional LAC/COI). **Not column-aware** — it emits `tenant_id = ?` whenever a tenant is present, so it is only safe on tables that actually have the column. |
+| **Predicate injection point** | `tools/db/storage.py` · `StorageCursor._inject_rls()` (~L1010) | Reads the attached `SecurityContext`, computes the classification read-down set, calls `inject_row_predicate()`, and splices the extra params into the correct positions. Its error-handling posture is a hardening item — see §7 (fail-closed follow-on). |
+| **Predicate builder** | `tools/security/row_security.py` · `inject_row_predicate()` (L184) | Appends `tenant_id = ? AND (classification IS NULL OR … IN (…))` (+ optional LAC/COI). Column-awareness is a rollout requirement — a native policy must be emitted only for tables that actually have the referenced column (see §3). |
 | **Read-down set** | `tools/security/security_context.py` · `classifications_dominated_by()` (L53), `_CLASSIFICATION_LABELS` (L50) | Bell-LaPadula read-down: `classification IN (<all labels the caller's clearance dominates>)`. Order: `PUBLIC < UNCLASSIFIED < CUI < ECI < SECRET < TOP SECRET < TOP SECRET//SCI`. |
-| **Context attach** | `tools/db/storage.py` · `get_connection()` (L1448) → `_attach_flask_security_context()` | Inside a Flask request, derives tenant/classification from the authenticated user and calls `set_security_context()`. Outside a request context, **no predicate is attached at all.** |
+| **Context attach** | `tools/db/storage.py` · `get_connection()` (L1448) → `_attach_flask_security_context()` | Inside a Flask request, derives tenant/classification from the authenticated user and calls `set_security_context()`. The request-context dependency is precisely why an engine-level boundary is desirable as defense-in-depth. |
 
 ### The GUC plumbing already exists (key finding)
 
@@ -78,10 +84,11 @@ CREATE POLICY rls_probe_tenant ON <probe>
     WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 ```
 
-Its own docstring flags the load-bearing caveat: **when the app DB role holds
-`BYPASSRLS`/superuser (common in ICDEV dev/CI databases), native policies are
-bypassed entirely**, so today the *application* predicate is the real control. That
-caveat is the crux of turning native RLS into a genuine second layer.
+Its own docstring flags the load-bearing caveat that native policies only take
+effect when the connecting DB role is **not** `BYPASSRLS`/superuser. Provisioning a
+dedicated least-privilege runtime role (§5) is therefore the crux of turning native
+RLS into a genuine second layer; until that role is in place the application-level
+predicate remains the authoritative control.
 
 There is also a DDL generator ready to reuse: `generate_rls_policy()`
 (`row_security.py` L341) emits `CREATE POLICY … USING (<expr>)`, and
@@ -112,9 +119,11 @@ The ~117 "neither" tables cluster by canvas/subsystem prefix — e.g. `aac_*`, `
 `dic_*`, `mission_*`, `aiify_*`, `govlift_*`, `slides_*`, `zig_*`, `zta_*`, `sdc_*`,
 `sc_*`, `pc_*`, `dm_*`, `dd_*`, `th_*`, `sg_*`, plus scattered ops tables. These are
 reached through `get_canvas_connection()` (`tools/db/storage.py` L1576), which
-deliberately calls `conn.set_security_context(None)` so **no predicate and no GUC**
-are applied. The canonical canvas init pattern (`tools/ai_augmentation/db/init_db.py`)
-uses this helper for precisely this reason.
+deliberately runs without the tenant/classification predicate because these tables
+have no such columns (isolation for canvas data is handled at the application/route
+layer, not per-row). The canonical canvas init pattern
+(`tools/ai_augmentation/db/init_db.py`) uses this helper for precisely this reason.
+These tables must be an explicit exempt set for any native-RLS rollout.
 
 **Design consequence:** a native-RLS rollout must be **column-driven and
 allowlist-guarded**. Only tables that physically have `tenant_id` and/or
@@ -130,14 +139,15 @@ exempt set that the migration skips and a coherence check asserts is never enabl
 factory invokes on checkout. So the GUCs track the caller for the life of the
 attached context.
 
-### The correctness bug to fix before this is load-bearing
-`set_config(..., false)` sets the GUC at **session** scope (`is_local = false`), **not**
-transaction scope. ICDEV pools/reuses PG connections within a request context
-(and the review notes "reuses connections within request context"). A session-scoped
-GUC **persists when the connection returns to the pool** — the next borrower inherits
-the previous caller's `app.tenant_id` until it is overwritten. With app-level
-predicates that is masked (the predicate is recomputed per query); with **native
-policies it becomes the enforcement input**, so a stale GUC = cross-tenant read.
+### The correctness requirement to satisfy before this is load-bearing
+`set_config(..., false)` sets the GUC at **session** scope (`is_local = false`), not
+transaction scope. Because ICDEV pools/reuses PG connections, a session-scoped GUC
+would persist when a connection returns to the pool rather than being scoped to a
+single unit of work. Under the current app-level predicate this has no effect (the
+predicate is recomputed per query from the live context), but a native policy would
+consume the GUC as its enforcement input — so GUC lifetime **must** be tightened to
+transaction scope (or reset on release) as a prerequisite before native policies are
+made authoritative. This is a design requirement of the rollout, addressed in Phase 0.
 
 Two acceptable fixes (choose per rollout phase):
 
@@ -227,9 +237,10 @@ Therefore:
 
 - The app-level predicate is **permanent** — native RLS is additive defense-in-depth
   on PG only, never a replacement.
-- The fail-open `try/except` in `_inject_rls()` is more concerning on SQLite (no DB
-  backstop). A follow-on (outside this spike) should consider fail-closed behavior or
-  at least an audited alarm when injection raises.
+- Because SQLite has no engine-level backstop, the error-handling posture of
+  `_inject_rls()` matters most there. A follow-on (outside this spike) should move it
+  to fail-closed behavior, or at minimum raise an audited alarm if predicate
+  injection ever cannot be applied.
 
 ---
 
