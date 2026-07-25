@@ -197,3 +197,62 @@ def compose_grounding(claim_enums: Iterable[str]) -> dict:
         "ungrounded": counts["ungrounded"],
         "vocabulary_version": VOCABULARY_VERSION,
     }
+
+
+# ---------------------------------------------------------------------------
+# Surface #4 — Divergence critic (tools/quality/divergence_critic.py, dvg-critic-01)
+# ---------------------------------------------------------------------------
+# The Focus half of divergent ideation. The generator (invoke_divergence) is a
+# SEPARATE, opposing LLM call; this critic scores each candidate idea on three
+# orthogonal dimensions. The model emits ONE 3-value enum per dimension; Python
+# composes the composite AND the run ordering (the deterministic-picker rule:
+# never ask a 70B and a 7B for a free-form 0-1 number and compare them, and
+# never ask the model for a ranked list -- rank here, in code, off the enums).
+#
+# Weights: fit highest (an idea that does not fit the problem is worthless
+# however novel), then viability, then novelty (novelty without viability is a
+# TRAP -- scored separately in dvg-critic-02, not rewarded here). This addition
+# is purely ADDITIVE -- it introduces a new independent vocabulary and changes
+# no existing surface's composition, so stored baselines for surfaces #1-#3
+# remain valid and VOCABULARY_VERSION is unchanged.
+DIVERGENCE_VOCAB: dict[str, dict[str, float]] = {
+    "novelty": {"breakthrough": _HI, "incremental": _MID, "derivative": _LO},
+    "viability": {"viable": _HI, "risky": _MID, "unviable": _LO},
+    "fit": {"on_target": _HI, "adjacent": _MID, "off_target": _LO},
+}
+_DIVERGENCE_WEIGHTS = {"fit": 0.40, "viability": 0.35, "novelty": 0.25}
+DIVERGENCE_DIMENSIONS = ("novelty", "viability", "fit")
+
+
+def map_divergence_enum(dimension: str, value: str) -> float:
+    """Map one divergence-critic dimension enum to its float; unknown → 0.5.
+
+    A local model returning an out-of-vocabulary token degrades to the neutral
+    midpoint rather than crashing — the LLM-agnostic fallback contract.
+    """
+    table = DIVERGENCE_VOCAB.get(dimension, {})
+    return table.get(str(value).strip().lower(), _MID)
+
+
+def compose_divergence(novelty: str, viability: str, fit: str) -> dict:
+    """Compose one idea's three dimension enums into floats + a composite.
+
+    Pure function — no I/O. Returns the three per-dimension floats, the weighted
+    ``composite`` in [0, 1], and ``vocabulary_version``. Callers order the pool
+    by ``composite`` in Python; the model is never asked for a ranking.
+    """
+    n = map_divergence_enum("novelty", novelty)
+    v = map_divergence_enum("viability", viability)
+    f = map_divergence_enum("fit", fit)
+    composite = _clamp01(
+        _DIVERGENCE_WEIGHTS["novelty"] * n
+        + _DIVERGENCE_WEIGHTS["viability"] * v
+        + _DIVERGENCE_WEIGHTS["fit"] * f
+    )
+    return {
+        "novelty": n,
+        "viability": v,
+        "fit": f,
+        "composite": composite,
+        "vocabulary_version": VOCABULARY_VERSION,
+    }
