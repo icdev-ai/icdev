@@ -1619,6 +1619,28 @@ chain_orchestration:
         num_advisors: 5
 
 # -----------------------------------------------------------------------
+# AGX architecture selection (agx-core-03)
+# Config-driven choice of reasoning architecture from the agx-core-01 registry
+# (tools/llm/architectures/), so a canvas or router function can change
+# reasoning strategy by config rather than code. Kept in THIS file (not a
+# sibling args/architectures.yaml) to respect the single-source rule of
+# resolve_llm_config_path() — one file every component already reads.
+#
+# Resolution precedence (tools/llm/architectures/selection.py):
+#   explicit call arg > functions.<fn> > roles.<role> > default
+# A value of null (the shipped default everywhere) means "no architecture
+# indirection" — the caller keeps its current behavior unchanged. Enabling a
+# named architecture is therefore always an explicit opt-in; omitting the key
+# changes nothing. Names must be registered (registry.list_architectures()):
+# chain_of_thought, chain_of_debate, council, react (+ agx-verify/rag/search).
+# -----------------------------------------------------------------------
+architectures:
+  default: null            # null = current behavior; do not set globally without bench evidence (agx-bench-02)
+  functions: {}            # e.g. {code_review: chain_of_debate}
+  roles: {}                # e.g. {cot_reasoner: chain_of_thought}
+  log_selections: true     # structured logging of which architecture served each request (agx-bench-01 consumes)
+
+# -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
 # Two-level: response_cache = deterministic KV store for full responses
 # (PostgreSQL-native with SQLite fallback); context_cache = provider-level

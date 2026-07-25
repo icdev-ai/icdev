@@ -137,6 +137,7 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 | `ArchitectureStep`, `ArchitectureBudget` | Per-step provenance; caller budget ceiling (`max_cost_usd`/`max_tokens`/`max_seconds`) honored via the existing `BudgetExceededError` path. |
 | `register(name, fn, *, overwrite=False)` / `get` / `list_architectures` / `run` / `unregister` (`registry.py`) | Registry API. Every architecture is `run(task, *, router=None, budget=None, function=..., **kw) -> ArchitectureResult`; `task` may be `str` or `LLMRequest`. |
 | Built-in adapters (`adapters.py`) | Wrap existing implementations — nothing rebuilt: `chain_of_thought`, `chain_of_debate`, `council` (from `ChainOrchestrator`), `react` (from `agent_loop.run_agent_loop`). agx-verify-*/rag-*/search-*/bench-* register further architectures here. |
+| `resolve_architecture` / `resolve_and_log` / `log_selection` (`selection.py`, agx-core-03) | Config-driven selection from the `architectures:` section of `args/llm_config.yaml` (single-source). Precedence: explicit arg > `functions.<fn>` > `roles.<role>` > `default`. Shipped config is all-null = current behavior (opt-in). Emits structured `agx_architecture_selected` logs for the bench (agx-bench-01) to attribute results. |
 
 **LLM-agnostic by construction:** no inference in this package; all adapters route through `LLMRouter`. Zero vendor-SDK imports, zero hardcoded model IDs. Enforced by `tests/llm/test_architecture_agnosticism.py` (agx-core-02).
 
