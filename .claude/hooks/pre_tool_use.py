@@ -140,6 +140,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "docmod_findings",
         "docmod_scan_runs",
         "docmod_catalog_audit",
+        # Document Modernization — semantic claim tracking (dmx-claims-02, migration
+        # 283). Claim status transitions are superseding rows (supersedes_id chain);
+        # a state change is a NEW row, never a mutation. HITL + deterministic-first.
+        "dic_claims",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
