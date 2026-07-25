@@ -49,7 +49,7 @@ from tools.daemon.base import (  # noqa: E402
     utcnow_iso,
     sha256_hex,
 )
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, reflex_connection_scope  # noqa: E402
 from tools.genesis.constants import TRUST_MODES  # noqa: E402
 
 try:
@@ -524,7 +524,13 @@ class GenesisDaemon(DaemonBase):
             if hasattr(module, "run"):
                 # [DISPATCH POINT] Centralized reflex invocation via importlib.
                 # All 22 reflexes in REFLEX_NAMES are dispatched here.
-                result = self._observe(name, module.run, config, trust)
+                # crx-gen-01: run inside a per-reflex connection scope so a reflex
+                # that raises mid-transaction (or otherwise leaks a get_connection()
+                # handle) has that pooled connection rolled back and returned to the
+                # pool on scope exit — preventing pool exhaustion / idle-in-txn lock
+                # storms from one bad reflex cascading onto every reflex behind it.
+                with reflex_connection_scope():
+                    result = self._observe(name, module.run, config, trust)
                 success = result.get("success", False)
                 if success:
                     try:
