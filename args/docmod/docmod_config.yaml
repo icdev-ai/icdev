@@ -46,6 +46,19 @@ freshness_notifications:
     aging: warning
     stale: error
 
+# Semantic claim tracking (dmx-claims-02). Extracts typed (subject, predicate,
+# object) claims anchored to a VERBATIM char span in an approved version, so a
+# rulebook/evidence change can flag the exact sentence rather than the whole
+# document. DEFAULT OFF — with enabled: false the extraction entry point is a
+# complete no-op (zero LLM calls, zero rows) and DocMod behaves exactly as today.
+# Deterministic-first (TRUST rule 1): the LLM only PROPOSES claim structure; it
+# never evaluates validity. Claims land status='pending_review' (HITL). Air-gap:
+# extraction degrades to the rulebook-anchored no-LLM path ($0 LLM).
+# See docs/design/dmx-claims-tracking-spike.md (human-approved).
+claims:
+  enabled: false                       # master toggle — DEFAULT OFF (never remove)
+  pack_domains: [crypto_protocols]      # domains claim extraction is scoped to (Phase B: crypto only)
+
 # URL link-rot detection (tools/doc_modernization/link_check.py). This is a
 # NETWORK feature and is OFF by default — enable only where the sweep host has
 # controlled outbound egress. Outbound checks are guarded: https-only, the

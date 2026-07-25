@@ -2619,6 +2619,38 @@ CREATE TABLE IF NOT EXISTS docmod_catalog_audit (
     tenant_id       TEXT,
     classification  TEXT DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS dic_claims (
+    claim_id        TEXT PRIMARY KEY,
+    doc_id          TEXT NOT NULL,
+    version_id      TEXT NOT NULL,
+    section         TEXT,
+    chunk_link_id   TEXT,
+    page            INTEGER,
+    claim_text      TEXT NOT NULL,
+    anchor_start    INTEGER NOT NULL,
+    anchor_end      INTEGER NOT NULL,
+    subject_label   TEXT NOT NULL,
+    subject_type    TEXT,
+    predicate       TEXT NOT NULL,
+    object_label    TEXT,
+    object_type     TEXT,
+    pack_domain     TEXT,
+    linked_evidence_ids TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending_review'
+                    CHECK (status IN ('pending_review','active','invalidated','superseded')),
+    supersedes_id   TEXT,
+    dedupe_key      TEXT,
+    prov_model      TEXT,
+    prov_prompt_version TEXT,
+    extracted_at    TEXT NOT NULL,
+    confidence      REAL DEFAULT 1.0,
+    tenant_id       TEXT DEFAULT 'default',
+    classification  TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_claims_tenant   ON dic_claims(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dic_claims_doc      ON dic_claims(doc_id, version_id);
+CREATE INDEX IF NOT EXISTS idx_dic_claims_subject  ON dic_claims(subject_label);
+CREATE INDEX IF NOT EXISTS idx_dic_claims_dedupe   ON dic_claims(dedupe_key);
 CREATE TABLE IF NOT EXISTS cortex_sessions (
     id              TEXT PRIMARY KEY,
     tenant_id       TEXT NOT NULL DEFAULT 'default',
