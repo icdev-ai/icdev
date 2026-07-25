@@ -183,3 +183,138 @@ class TestGracefulAndDryRun:
         assert result["level1_created"] == 4  # planned counts still reported
         store = SummaryStore(db_path=rag_db)
         assert store.count() == 0  # but nothing written
+
+
+# ===========================================================================
+# raptor-02: multi-level retrieval + dedup in RAGRetriever.search
+# ===========================================================================
+
+from unittest.mock import patch  # noqa: E402
+
+from tools.rag.retriever import RAGRetriever, _merge_raptor_results  # noqa: E402
+from tools.rag.vector_store_provider import SearchResult  # noqa: E402
+
+
+def _leaf(chunk_id, score, source_type="compliance_artifacts"):
+    return SearchResult(
+        chunk_id=chunk_id, content=f"leaf {chunk_id}", source_type=source_type,
+        source_id="doc-A", score=score, final_score=score,
+    )
+
+
+def _summary(chunk_id, score, level, child_ids):
+    return SearchResult(
+        chunk_id=chunk_id, content=f"summary {chunk_id}", source_type="compliance_artifacts",
+        source_id="doc-A", score=score, final_score=score,
+        metadata={"is_summary": True, "level": level, "child_ids": child_ids},
+    )
+
+
+class TestMergeRaptorResults:
+    def test_empty_summaries_is_identity(self):
+        leaves = [_leaf("l1", 0.9), _leaf("l2", 0.8)]
+        assert _merge_raptor_results(leaves, []) == leaves
+
+    def test_parent_dropped_when_child_leaf_present(self):
+        leaves = [_leaf("l1", 0.9), _leaf("l2", 0.8)]
+        # summary whose child l1 is already retrieved → dropped (prefer leaf)
+        summaries = [_summary("s1", 0.95, level=1, child_ids=["l1", "lX"])]
+        merged = _merge_raptor_results(leaves, summaries)
+        ids = [r.chunk_id for r in merged]
+        assert ids == ["l1", "l2"]  # summary dropped, leaves preferred
+
+    def test_summary_kept_when_children_absent(self):
+        leaves = [_leaf("l1", 0.9)]
+        # children l7/l8 not in leaf pool → summary survives as fallback context
+        summaries = [_summary("s1", 0.7, level=1, child_ids=["l7", "l8"])]
+        merged = _merge_raptor_results(leaves, summaries)
+        ids = [r.chunk_id for r in merged]
+        assert "s1" in ids and "l1" in ids
+
+    def test_prefers_finer_level1_over_level2_parent(self):
+        leaves = []  # weak leaf retrieval
+        l1 = _summary("s1", 0.6, level=1, child_ids=["l7", "l8"])
+        root = _summary("s_root", 0.9, level=2, child_ids=["s1"])
+        merged = _merge_raptor_results(leaves, [root, l1])
+        ids = [r.chunk_id for r in merged]
+        # level-1 processed first (survives); its parent root is then dropped
+        assert "s1" in ids
+        assert "s_root" not in ids
+
+    def test_summaries_tagged_for_citation_exclusion(self):
+        leaves = [_leaf("l1", 0.9)]
+        summaries = [_summary("s1", 0.7, level=1, child_ids=["l7"])]
+        merged = _merge_raptor_results(leaves, summaries)
+        summ = [r for r in merged if r.chunk_id == "s1"][0]
+        assert summ.metadata.get("is_summary") is True
+
+
+def _retriever(enabled: bool):
+    cfg = {
+        "rag": {
+            "raptor": {"enabled": enabled, "summary_top_k": 10},
+            "retrieval": {"final_top_k": 10, "vector_top_k": 50,
+                          "fusion_method": "rrf", "time_decay_enabled": False},
+            "rerank": {"enabled": False},
+            "provenance": {"enabled": False},
+        }
+    }
+    return RAGRetriever(config=cfg)
+
+
+class _FakeProvider:
+    def embed(self, text):
+        return [0.1] * 8
+
+
+class _FakeStore:
+    def __init__(self, leaves):
+        self._leaves = leaves
+
+    def search(self, query_embedding, top_k=50, filters=None):
+        return list(self._leaves)
+
+
+class TestRetrieverRaptorIntegration:
+    def test_disabled_is_old_path(self):
+        r = _retriever(enabled=False)
+        leaves = [_leaf("l1", 0.9), _leaf("l2", 0.8)]
+        with patch("tools.rag.retriever._get_embedding_provider", return_value=_FakeProvider()), \
+             patch("tools.rag.retriever.VectorStoreFactory.create", return_value=_FakeStore(leaves)), \
+             patch.object(RAGRetriever, "_search_summaries") as mock_sum:
+            out = r.search("q", top_k=10)
+        # summary tier is never consulted when disabled → byte-for-byte old path
+        mock_sum.assert_not_called()
+        assert {x.chunk_id for x in out} == {"l1", "l2"}
+
+    def test_enabled_merges_summary_fallback(self):
+        r = _retriever(enabled=True)
+        leaves = [_leaf("l1", 0.9)]
+        summ = [_summary("s1", 0.7, level=1, child_ids=["l7", "l8"])]
+        with patch("tools.rag.retriever._get_embedding_provider", return_value=_FakeProvider()), \
+             patch("tools.rag.retriever.VectorStoreFactory.create", return_value=_FakeStore(leaves)), \
+             patch.object(RAGRetriever, "_search_summaries", return_value=summ):
+            out = r.search("q", top_k=10)
+        ids = {x.chunk_id for x in out}
+        assert "l1" in ids and "s1" in ids  # summary rescues weak leaf retrieval
+
+    def test_enabled_dedups_parent_when_leaf_present(self):
+        r = _retriever(enabled=True)
+        leaves = [_leaf("l1", 0.9)]
+        summ = [_summary("s1", 0.95, level=1, child_ids=["l1"])]  # child == retrieved leaf
+        with patch("tools.rag.retriever._get_embedding_provider", return_value=_FakeProvider()), \
+             patch("tools.rag.retriever.VectorStoreFactory.create", return_value=_FakeStore(leaves)), \
+             patch.object(RAGRetriever, "_search_summaries", return_value=summ):
+            out = r.search("q", top_k=10)
+        ids = {x.chunk_id for x in out}
+        assert "l1" in ids and "s1" not in ids  # parent summary deduped away
+
+    def test_enabled_summary_search_failure_is_safe(self):
+        """A missing summary table must not break retrieval (best-effort [])."""
+        r = _retriever(enabled=True)
+        leaves = [_leaf("l1", 0.9)]
+        # real _search_summaries runs against an (absent) summary table → []
+        with patch("tools.rag.retriever._get_embedding_provider", return_value=_FakeProvider()), \
+             patch("tools.rag.retriever.VectorStoreFactory.create", return_value=_FakeStore(leaves)):
+            out = r.search("q", top_k=10)
+        assert {x.chunk_id for x in out} == {"l1"}
