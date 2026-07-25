@@ -582,17 +582,25 @@ flowchart LR
 ### Option 1: Install from PyPI (recommended)
 
 ```bash
-# Base install (lightweight — 5 deps)
+# 1. Install (base is lightweight — 5 deps)
 pip install icdev
+# 2. Scaffold your project — REQUIRED. This creates CLAUDE.md, .claude/
+#    (commands, hooks, skills) and a complete .env. `pip install` alone does
+#    NOT set up a project — always follow it with `icdev init`.
+icdev init my-project && cd my-project
+```
 
-# Interactive setup wizard — choose DB, canvases, LLM, features
-icdev-setup
-
+```bash
 # Canvases (Tech Writer, Notebook, BI Dashboard, etc.) are opt-in and
-# disabled by default if you skip the wizard — check/enable them anytime:
+# disabled by default — discover and toggle them anytime:
+icdev setup               # interactive TUI: browse every component, toggle, write .env
 icdev status              # show what's currently on
-icdev enable --list       # list every available canvas/subsystem toggle
+icdev list                # list every available canvas/subsystem toggle
 icdev enable dic          # e.g. turn on the Document Intelligence Canvas
+icdev profile apply air-gap   # or apply a whole preset from core_profiles.yaml
+
+# Missing a page/canvas from the menu? It's just default-OFF — `icdev setup`
+# shows every component (and its sub-pages) with the env flag to flip.
 
 # Or skip the wizard with a mission profile:
 pip install 'icdev[developer]'       # local LLM + dev tools
