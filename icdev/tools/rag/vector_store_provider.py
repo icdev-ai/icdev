@@ -31,11 +31,31 @@ class VectorChunk:
     tenant_id: str = ""
     project_id: str = ""
     classification: str = "CUI"
+    # Contextual retrieval (rce-ctx-01): optional LLM/heuristic context prefix
+    # that situates this chunk within its source document. The EMBEDDING is
+    # computed on ``embed_text`` (prefix + content) while ``content`` — the
+    # stored/cited text — stays original, preserving citation integrity.
+    # Both default to their "unset" values so existing behavior is unchanged.
+    context_prefix: str = ""
+    embed_text: Optional[str] = None
 
     def compute_content_hash(self) -> str:
-        """Compute SHA-256 hash of content for dedup (D-RAG-5)."""
+        """Compute SHA-256 hash of content for dedup (D-RAG-5).
+
+        Hash is always computed over the ORIGINAL ``content`` (never the
+        contextualized ``embed_text``) so dedup stays stable whether or not
+        contextual prefixing is enabled.
+        """
         self.content_hash = hashlib.sha256(self.content.encode("utf-8")).hexdigest()
         return self.content_hash
+
+    def text_for_embedding(self) -> str:
+        """Return the text that should be embedded.
+
+        Returns ``embed_text`` when set (contextual retrieval enabled),
+        otherwise the original ``content`` — identical to prior behavior.
+        """
+        return self.embed_text if self.embed_text else self.content
 
 
 @dataclass
