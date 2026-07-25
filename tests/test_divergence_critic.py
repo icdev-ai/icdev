@@ -249,3 +249,91 @@ class TestTrapDetection:
         pool = self._score_with_traps(entries)
         assert all(w["severity"] == "warning" for w in pool.trap_warnings())
         assert len(pool.trap_warnings()) == 3
+
+
+class TestClusterAndDeepen:
+    def _scored(self, entries):
+        return score_idea_pool(POOL, function="test_fn", router=_mock_router(entries), persist=False)
+
+    def test_cluster_pool_collapses_restatements(self):
+        from tools.quality.divergence_critic import cluster_pool
+        entries = [
+            {"index": 0, "novelty": "breakthrough", "viability": "viable", "fit": "on_target",
+             "rationale": "a", "cluster": "assume breach"},
+            {"index": 1, "novelty": "incremental", "viability": "viable", "fit": "on_target",
+             "rationale": "b", "cluster": "Assume Breach"},   # same approach, different casing
+            {"index": 2, "novelty": "derivative", "viability": "risky", "fit": "adjacent",
+             "rationale": "c", "cluster": "flat file"},
+        ]
+        pool = self._scored(entries)
+        clusters = cluster_pool(pool)
+        # 3 ideas but only 2 underlying approaches
+        assert len(clusters) == 2
+        # most-promising cluster first (best member composite)
+        assert clusters[0].best_composite >= clusters[1].best_composite
+        breach = [c for c in clusters if c.label.lower() == "assume breach"][0]
+        assert len(breach.member_indices) == 2
+
+    def test_cluster_falls_back_to_frame_without_label(self):
+        from tools.quality.divergence_critic import cluster_pool
+        entries = [
+            {"index": i, "novelty": "viable", "viability": "viable", "fit": "on_target", "rationale": "x"}
+            for i in range(3)
+        ]  # no cluster labels
+        pool = self._scored(entries)
+        clusters = cluster_pool(pool)
+        # POOL has 2 frames (The Adversary x2, The Shoestring x1) -> 2 clusters
+        assert len(clusters) == 2
+
+    def test_deepen_top_k_expands_only_survivors(self):
+        from tools.quality.divergence_critic import cluster_and_deepen
+        entries = [
+            {"index": 0, "novelty": "breakthrough", "viability": "viable", "fit": "on_target",
+             "rationale": "a", "cluster": "A"},
+            {"index": 1, "novelty": "incremental", "viability": "risky", "fit": "adjacent",
+             "rationale": "b", "cluster": "B"},
+            {"index": 2, "novelty": "derivative", "viability": "unviable", "fit": "off_target",
+             "rationale": "c", "cluster": "C"},
+        ]
+        pool = self._scored(entries)
+
+        deepen_router = MagicMock()
+        resp = MagicMock()
+        resp.content = json.dumps({"clusters": [
+            {"index": 0, "sketch": "do A", "risks": ["r1"], "next_steps": ["s1", "s2"]},
+            {"index": 1, "sketch": "do B", "risks": [], "next_steps": ["s3"]},
+        ]})
+        deepen_router.invoke.return_value = resp
+
+        out = cluster_and_deepen(pool, function="test_fn", router=deepen_router, k=2)
+        assert out["k"] == 2
+        assert out["cluster_count"] == 3
+        clusters = out["clusters"]
+        # top-2 deepened, 3rd not
+        assert clusters[0]["deepened"] is True and clusters[0]["sketch"] == "do A"
+        assert clusters[0]["risks"] == ["r1"] and clusters[0]["next_steps"] == ["s1", "s2"]
+        assert clusters[2]["deepened"] is False and clusters[2]["sketch"] == ""
+
+    def test_deepen_degrades_cleanly_without_llm(self):
+        from tools.quality.divergence_critic import cluster_and_deepen
+        entries = [
+            {"index": i, "novelty": "viable", "viability": "viable", "fit": "on_target",
+             "rationale": "x", "cluster": f"C{i}"}
+            for i in range(3)
+        ]
+        pool = self._scored(entries)
+        router = MagicMock()
+        router.invoke.side_effect = RuntimeError("no provider")
+        out = cluster_and_deepen(pool, function="test_fn", router=router, k=3)
+        # clusters still returned; simply not deepened
+        assert out["cluster_count"] == 3
+        assert all(c["deepened"] is False for c in out["clusters"])
+
+    def test_k_resolved_from_config_default(self):
+        from tools.quality.divergence_critic import _resolve_deepen_k, DEFAULT_DEEPEN_TOP_K
+        assert _resolve_deepen_k(None, None) == DEFAULT_DEEPEN_TOP_K
+        router = MagicMock()
+        router._config = {"chain_orchestration": {"divergence": {"deepen_top_k": 5}}}
+        assert _resolve_deepen_k(router, None) == 5
+        # explicit k wins over config
+        assert _resolve_deepen_k(router, 2) == 2
