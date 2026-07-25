@@ -5964,3 +5964,78 @@ projects:
   - key: sipa
     title: SIPA _rel_path Fix + Baseline Transition
     priority: high
+- key: agx
+  name: 'AGX — Agentic Architecture Extension'
+  description: 'Adapt the transferable subset of FareedKhan-dev/all-agentic-architectures
+    (MIT, 35 patterns on LangGraph) into ICDEV without adopting its stack. ICDEV already
+    runs 22 of the 35 in production (CoT=Reflection, reflexion_agent, CoD=Debate,
+    invoke_council=Ensemble, agent_loop=ReAct/ToolUse, graph_rag=GraphRAG, NOVA
+    skill_generator=Voyager, sandbox_execute=SWE-Agent, SafetyGate=Dry-Run, ...), so
+    this card deliberately does NOT rebuild them. Scope is one discipline, one enabler,
+    five real gaps, and one honesty mechanism. (a) The deterministic-picker discipline
+    — the LLM may only commit to booleans/enums and Python composes every final score,
+    ranking, and gate verdict; this is FORGE applied one level deeper and it targets
+    ICDEV''s recurring free-form-confidence failure mode (see the per-rule-constant
+    confidence lesson and the phantom trust-event class). (b) A uniform
+    tools/llm/architectures/ registry with one result envelope so any canvas swaps
+    reasoning strategy by config, not code. (c) Real gaps: Chain-of-Verification over
+    TRUST citations, Constitutional AI per-rule critique/revise over security_gates,
+    Plan-Execute-Verify inside the kanban runner (the structural fix for tasks marked
+    done that shipped nothing), Adaptive RAG complexity pre-routing, Self-RAG
+    per-document reflection, Self-Discover for ANVIL Architect, budget-capped Tree of
+    Thoughts. (d) A cross-architecture benchmark leaderboard so llm_config routing
+    cites evidence instead of intuition. HARD CONSTRAINT — LLM-agnostic: upstream
+    defaults to Nebius via LangChain; every task here routes exclusively through
+    LLMRouter.invoke/invoke_for_role, takes models from args/llm_config.yaml via
+    resolve_llm_config_path(), gets multi-model diversity from get_diverse_models(),
+    uses get_embedding_provider() for embeddings, and MUST complete air-gapped against
+    local Ollama with no cloud fallback. Zero vendor SDK or langchain_* imports; no
+    LangGraph dependency. REJECTED and recorded in the disposition ADR: the
+    LangGraph/LangChain stack, Cellular Automata, LATS, Voyager subprocess execution
+    (non-starter at IL4+), and — as new work — Mental Loop and Blackboard. Analysis:
+    docs/spikes/agx-00-agentic-architectures-adaptation.md'
+  task_prefix: agx-
+  default_open: true
+  briefs:
+  - 'gate: Manual gate held in_progress — nothing dispatches until a human releases
+    it (agx-gate-00)'
+  - 'core: Architecture registry + uniform result envelope, LLM-agnostic conformance
+    contract with enforcement test, config-driven selection (agx-core-01..03)'
+  - 'pick: Deterministic-picker audit of existing LLM-as-scorer surfaces, then convert
+    the highest-risk ones to categorical-LLM + Python-composed signals
+    (agx-pick-01..02)'
+  - 'verify: Chain-of-Verification over TRUST citations, Constitutional AI per-rule
+    critique/revise, Plan-Execute-Verify inside the kanban runner (agx-verify-01..03)'
+  - 'rag: Adaptive RAG query-complexity pre-routing + Self-RAG per-document reflection
+    scoring (agx-rag-01..02)'
+  - 'search: Self-Discover reasoning-module composition for ANVIL Architect +
+    budget-capped Tree of Thoughts for branchy problems (agx-search-01..02)'
+  - 'bench: Cross-architecture benchmark suite + leaderboard driving evidence-based
+    routing (agx-bench-01..02)'
+  - 'xcut: Disposition ADR formalizing every rejection + manifest/docs/coherence
+    close-out (agx-xcut-01)'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: high
+  - key: core
+    title: Architecture Registry & LLM-Agnostic Contract
+    priority: high
+  - key: pick
+    title: Deterministic-Picker Discipline
+    priority: high
+  - key: verify
+    title: Verification — CoVe, Constitutional, PEV
+    priority: high
+  - key: rag
+    title: Retrieval Routing — Adaptive & Self-RAG
+    priority: medium
+  - key: search
+    title: Reasoning Search — Self-Discover & Bounded ToT
+    priority: medium
+  - key: bench
+    title: Architecture Benchmark & Leaderboard
+    priority: medium
+  - key: xcut
+    title: Cross-Cutting — Disposition ADR & Close-Out
+    priority: low

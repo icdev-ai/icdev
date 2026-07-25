@@ -9345,10 +9345,27 @@ def create_app(testing: bool = False) -> Flask:
 
     def _validate_projects(raw: list) -> list:
         """Validate + normalize project entries. Drops invalid ones with a
-        logged warning so the page keeps rendering the rest."""
+        logged warning so the page keeps rendering the rest.
+
+        Nested prefixes (`aadc-` alongside `aadc-enh-`) are a legitimate
+        parent/child namespace, not an error: the parent keeps rendering and
+        gets an `exclude_prefixes` list so its queries subtract every
+        registered child. Only an EXACT duplicate prefix is unresolvable and
+        skipped. Previously the later entry was dropped outright, which
+        silently hid whichever card happened to appear last in the YAML.
+        """
+        from tools.project.prefix_scope import child_prefixes
+
         out: list = []
         seen_prefixes: list = []
         seen_keys: set = set()
+        # Every valid prefix in the file, needed up-front so a parent entry can
+        # claim its children's exclusions regardless of YAML ordering.
+        all_prefixes = {
+            (p.get("task_prefix") or "").strip()
+            for p in raw
+            if isinstance(p, dict) and (p.get("task_prefix") or "").strip()
+        }
         for i, p in enumerate(raw):
             if not isinstance(p, dict):
                 _proj_log.warning("projects.yaml entry #%d is not a dict — skipping", i)
@@ -9364,18 +9381,16 @@ def create_app(testing: bool = False) -> Flask:
             if key in seen_keys:
                 _proj_log.warning("projects.yaml duplicate key '%s' — skipping", key)
                 continue
-            # Cross-project prefix-of collision
-            for seen in seen_prefixes:
-                if prefix.startswith(seen) or seen.startswith(prefix):
-                    _proj_log.warning(
-                        "projects.yaml '%s' prefix %r collides with earlier "
-                        "prefix %r — tasks would double-count. Skipping.",
-                        key, prefix, seen,
-                    )
-                    prefix = ""  # mark collision
-                    break
-            if not prefix:
+            # Exact duplicate prefix — genuinely ambiguous, no way to split rows.
+            if prefix in seen_prefixes:
+                _proj_log.warning(
+                    "projects.yaml '%s' prefix %r duplicates an earlier entry "
+                    "— tasks would double-count. Skipping.",
+                    key, prefix,
+                )
                 continue
+            # Nested child prefixes: this entry is their parent, so subtract them.
+            exclude_prefixes = child_prefixes(prefix, all_prefixes)
             # Within-project epic key prefix-of collision
             raw_epics = p.get("epics", []) or []
             clean_epics: list = []
@@ -9410,6 +9425,7 @@ def create_app(testing: bool = False) -> Flask:
                 clean_epics.append(ep)
             p2 = dict(p)
             p2["task_prefix"] = prefix
+            p2["exclude_prefixes"] = exclude_prefixes
             p2["epics"] = clean_epics
             out.append(p2)
             seen_keys.add(key)
@@ -9439,9 +9455,17 @@ def create_app(testing: bool = False) -> Flask:
         All LIKE patterns derived from YAML are escaped with `ESCAPE '\\'`
         so a malformed prefix or epic key can't leak across projects or
         match wildcards unintentionally.
+
+        `exclude_prefixes` (set by _validate_projects) subtracts every nested
+        child project, so a parent prefix like `aadc-` does not absorb
+        `aadc-enh-` / `aadc-sp-` rows.
         """
         prefix = project.get("task_prefix", "")
         prefix_esc = _escape_like(prefix)
+        excludes = project.get("exclude_prefixes") or []
+        # One `AND id NOT LIKE ... ESCAPE` clause per nested child prefix.
+        excl_sql = "".join(" AND id NOT LIKE %s ESCAPE '\\'" for _ in excludes)
+        excl_params = tuple(f"{_escape_like(x)}%" for x in excludes)
         epics_out: list = []
         total_all = 0
         done_all = 0
@@ -9450,8 +9474,8 @@ def create_app(testing: bool = False) -> Flask:
             pattern = f"{prefix_esc}{ek_esc}-%"
             rows = conn.execute(
                 "SELECT status, COUNT(*) AS n FROM kanban_tasks "
-                "WHERE id LIKE %s ESCAPE '\\' GROUP BY status",
-                (pattern,),
+                "WHERE id LIKE %s ESCAPE '\\'" + excl_sql + " GROUP BY status",
+                (pattern,) + excl_params,
             ).fetchall()
             counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
             total = sum(counts.values())
@@ -9474,18 +9498,18 @@ def create_app(testing: bool = False) -> Flask:
             })
         in_flight_rows = conn.execute(
             "SELECT id, title, status, priority, updated_at "
-            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' "
+            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' " + excl_sql +
             "  AND status IN ('in_progress','scheduled') "
             "ORDER BY updated_at DESC LIMIT 15",
-            (f"{prefix_esc}%",),
+            (f"{prefix_esc}%",) + excl_params,
         ).fetchall()
         fail_rows = conn.execute(
             "SELECT id, title, status, failure_count, "
             "       last_failure_reason, updated_at "
-            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' "
+            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' " + excl_sql +
             "  AND last_failure_reason IS NOT NULL "
             "ORDER BY updated_at DESC LIMIT 10",
-            (f"{prefix_esc}%",),
+            (f"{prefix_esc}%",) + excl_params,
         ).fetchall()
         return {
             "key": project.get("key"),
