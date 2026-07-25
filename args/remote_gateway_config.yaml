@@ -119,6 +119,21 @@ channels:
     env_vars: []
     description: "Internal /chat bridge — always available, all IL levels"
 
+  email:
+    enabled: false                 # default off — enable after configuring IMAP/SMTP
+    requires_internet: false       # works against a self-hosted mail server in an enclave
+    min_il: IL2
+    max_il: IL6
+    webhook_path: ""               # POLLED over IMAP (no inbound webhook / no HMAC)
+    signature_header: ""
+    env_vars:
+      - IMAP_HOST
+      - IMAP_USER
+      - IMAP_PASSWORD
+      - SMTP_HOST
+      - SMTP_FROM
+    description: "Email adapter (sag-gw-02) — stdlib imaplib poll + smtplib send, no new dep; on-prem/air-gap safe. Sender identity enforced by the identity-binding gate; full security chain applies."
+
 # ─── Security ────────────────────────────────────────────────────────
 security:
   # Binding ceremony
