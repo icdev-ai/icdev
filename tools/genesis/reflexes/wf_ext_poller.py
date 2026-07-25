@@ -1,7 +1,8 @@
 # CUI // SP-CTI
 """Genesis reflex: wf_ext_poller — 15-min reflex to poll external step status."""
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+
+IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 
 

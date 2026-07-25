@@ -6,9 +6,10 @@ Fires on a configurable cadence (default: daily at 08:00).
 - If tournament is active → refreshes the leaderboard + publishes OHC metrics
 - If tournament completed → queues a SUGGESTED kanban card with results summary
 """
+from __future__ import annotations
+
 IMPLEMENTATION_STATUS = "full"
 
-from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 from datetime import datetime, timezone
