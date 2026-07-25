@@ -51,9 +51,13 @@ logger = get_logger("mcp.unified")
 class UnifiedMCPServer(MCPServer):
     """Unified MCP server with lazy-loaded tool handlers from declarative registry."""
 
-    def __init__(self):
+    def __init__(self, toolset: str | None = None):
         super().__init__(name="icdev-unified", version="1.0.0")
         self._handler_cache: Dict[str, Callable] = {}
+        # Optional curated toolset profile (sag-mcp-01): restrict the exposed
+        # surface to a bounded set for small local models / external agents.
+        self._toolset = toolset or os.environ.get("ICDEV_MCP_TOOLSET") or None
+        self._allowed_tools: set[str] | None = None
         self._register_all()
 
     # ------------------------------------------------------------------
@@ -95,14 +99,42 @@ class UnifiedMCPServer(MCPServer):
     # ------------------------------------------------------------------
 
     def _register_all(self) -> None:
-        """Register all tools and resources from the declarative registry."""
+        """Register all tools and resources from the declarative registry.
+
+        When a curated toolset profile is active (``--toolset`` / the
+        ``ICDEV_MCP_TOOLSET`` env var), only the profile's tools are registered
+        so small local models / external agents see a bounded surface. The
+        profile's CUI-egress policy is enforced before any tool is exposed.
+        """
         from tools.mcp.tool_registry import TOOL_REGISTRY, RESOURCE_REGISTRY
 
-        # Register tools with lazy dispatch closures
-        for tool_name, entry in TOOL_REGISTRY.items():
-            self._register_lazy_tool(tool_name, entry)
+        if self._toolset:
+            from tools.mcp.toolset_profiles import (
+                enforce_cui_egress,
+                resolve_toolset,
+            )
 
-        logger.info("Registered %d tools from unified registry", len(TOOL_REGISTRY))
+            # Fail-closed CUI egress gate for local_only profiles on cloud LLMs.
+            enforce_cui_egress(self._toolset)
+            self._allowed_tools = resolve_toolset(
+                self._toolset, registry_names=set(TOOL_REGISTRY)
+            )
+            logger.info(
+                "toolset profile %r active: exposing %d of %d tools",
+                self._toolset,
+                len(self._allowed_tools),
+                len(TOOL_REGISTRY),
+            )
+
+        # Register tools with lazy dispatch closures
+        registered = 0
+        for tool_name, entry in TOOL_REGISTRY.items():
+            if self._allowed_tools is not None and tool_name not in self._allowed_tools:
+                continue
+            self._register_lazy_tool(tool_name, entry)
+            registered += 1
+
+        logger.info("Registered %d tools from unified registry", registered)
 
         # Register resources vs tool-overflow entries from RESOURCE_REGISTRY.
         # True resources have a "name" field; tool-like entries (with "input_schema")
@@ -114,6 +146,8 @@ class UnifiedMCPServer(MCPServer):
                 self._register_lazy_resource(uri, entry)
                 resource_count += 1
             elif "input_schema" in entry:
+                if self._allowed_tools is not None and uri not in self._allowed_tools:
+                    continue
                 self._register_lazy_tool(uri, entry)
                 tool_overflow_count += 1
 
@@ -164,9 +198,14 @@ class UnifiedMCPServer(MCPServer):
         )
 
 
-def create_server() -> UnifiedMCPServer:
-    """Factory function for the unified MCP gateway server."""
-    return UnifiedMCPServer()
+def create_server(toolset: str | None = None) -> UnifiedMCPServer:
+    """Factory function for the unified MCP gateway server.
+
+    Args:
+        toolset: Optional curated toolset profile name (sag-mcp-01). Falls back
+            to the ``ICDEV_MCP_TOOLSET`` env var when ``None``.
+    """
+    return UnifiedMCPServer(toolset=toolset)
 
 
 # ---------------------------------------------------------------------------
@@ -182,10 +221,27 @@ if __name__ == "__main__":
                         help="Show server status and exit")
     parser.add_argument("--json", action="store_true",
                         help="Emit JSON output")
+    parser.add_argument("--toolset", dest="toolset", metavar="<profile>",
+                        help="Expose only a curated toolset profile "
+                             "(see args/mcp_toolset_profiles.yaml)")
+    parser.add_argument("--list-toolsets", action="store_true",
+                        help="List available curated toolset profiles and exit")
     args = parser.parse_args()
 
     if args.db_path:
         os.environ["ICDEV_DB_PATH"] = args.db_path
+
+    if args.list_toolsets:
+        from tools.mcp.toolset_profiles import list_profiles
+
+        profiles = list_profiles()
+        if args.json:
+            print(json.dumps({"profiles": profiles}))
+        else:
+            for p in profiles:
+                print(f"{p['name']:<12} [{p['cui_egress']}] "
+                      f"{p['tool_count']} tools — {p['description']}")
+        sys.exit(0)
 
     if args.status:
         status = {"server": "icdev-unified", "version": "1.0.0", "status": "ready"}
@@ -195,5 +251,5 @@ if __name__ == "__main__":
             print("[OK] icdev-unified v1.0.0 — ready")
         sys.exit(0)
 
-    server = create_server()
+    server = create_server(toolset=args.toolset)
     server.run()
