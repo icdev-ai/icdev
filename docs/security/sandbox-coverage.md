@@ -846,3 +846,21 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - **No default behavior change** — with no `--toolset`, the server exposes the full surface exactly as before (Claude Code path unaffected).
   - **Regression test** — `tests/mcp/test_toolset_profiles.py` asserts every profile references only real `TOOL_REGISTRY` tools, the fail-closed gate blocks `local_only` on cloud and allows it on local / with override, and the server registers only the profile's tools.
 - **Revisit if:** a `cloud_safe` profile is expanded to include a tool that can emit CUI (re-audit its `cui_egress`), per-tool response redaction/classification filtering is added (tighten from profile-level to tool-level egress control), or the server ever accepts remote (non-stdio) transport without an auth layer.
+
+### Gap 34 — Email gateway channel adapter: inbound IMAP poll (`tools/gateway/adapters/email_channel.py`)
+
+**Module:** `tools/gateway/adapters/email_channel.py` (SAG sag-gw-02)
+
+**Ingress path:** A new Remote Command Gateway channel. `poll_once()` fetches `UNSEEN` messages over an authenticated IMAP session, parses them (stdlib `email`), and normalises each into a `CommandEnvelope`. This is externally-sourced, attacker-influenceable content (anyone can email the mailbox).
+
+- **Decision:** **bypass-documented** — the adapter parses and routes; it never executes, and every produced envelope flows through the unchanged 8-gate `run_security_chain` before any command runs.
+- **Rationale:** The adapter is a pure translator: raw RFC822 bytes → a `CommandEnvelope` of the same shape every other channel produces. It runs no attachment, no macro, no LLM — it only reads text/plain bodies and headers. A malicious email cannot execute anything by arriving; it must still pass identity-binding (the `From` address must map to a bound ICDEV user), authentication, classification, RBAC, rate-limit, and domain-authority gates — identical to Telegram/Slack. Command execution remains the gateway's existing allowlisted path, not this adapter.
+- **Guardrails:**
+  - **Authenticated mailbox + identity binding** — inbound is read only from an authenticated IMAP mailbox, and the sender `From` is the `channel_user_id` the identity-binding gate must resolve to a bound user; an unbound sender is rejected at gate 3.
+  - **Bot/loop protection** — RFC 3834 `Auto-Submitted` and `Precedence: bulk|list|auto_reply` mark `is_bot=True`, dropped by the bot-detection gate (prevents mail loops and auto-responder abuse).
+  - **Attachments ignored** — only `text/plain` parts are read; attachments and `text/html` are never decoded or executed.
+  - **Command filter** — only messages whose subject/first-body-line names an `icdev-*`/`bind` command are turned into envelopes; everything else is dropped.
+  - **Bounded poll** — `max_poll` caps messages processed per cycle.
+  - **Default off** — the `email` channel ships `enabled: false`; no mailbox is polled until an operator configures IMAP/SMTP and enables it.
+  - **Regression test** — `tests/gateway/test_email_adapter.py` asserts command parsing from subject/body, the non-ICDEV drop, bot-header detection, threading via In-Reply-To, and that SMTP/IMAP are mocked (no network).
+- **Revisit if:** the adapter is ever made to parse/execute attachments or `text/html`, to auto-bind senders without the identity gate, or to act on mail before DKIM/SPF verification is added — any of which would warrant sandboxing the parse and hardening sender authentication.
