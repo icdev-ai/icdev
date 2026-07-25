@@ -51,6 +51,7 @@ from tools.gateway.adapters.teams import TeamsAdapter  # noqa: E402
 from tools.gateway.adapters.github import GitHubAdapter  # noqa: E402
 from tools.gateway.adapters.gitlab import GitLabAdapter  # noqa: E402
 from tools.gateway.adapters.skype import SkypeAdapter  # noqa: E402
+from tools.gateway.adapters.email_channel import EmailAdapter  # noqa: E402
 
 logger = get_logger("icdev.gateway.agent")
 
@@ -87,6 +88,7 @@ def _load_adapters(config: Dict) -> Dict[str, Any]:
         "github": GitHubAdapter,
         "gitlab": GitLabAdapter,
         "skype": SkypeAdapter,
+        "email": EmailAdapter,
     }
 
     for channel_name, channel_config in channels.items():
