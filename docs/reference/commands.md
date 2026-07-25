@@ -2295,6 +2295,11 @@ python tools/llm/proxy_keys.py list --session-id 42 --json                      
 python tools/llm/proxy_keys.py show <key_id> --json                                     # Show one key by id
 # Master/admin key from ICDEV_LLM_PROXY_MASTER_KEY (never logged/returned); LiteLLM sync is best-effort and OFF unless ICDEV_LLM_PROXY_ENABLED=true
 
+# LLM Proxy Budgets (lpx-keys-02) — per-key spend budgets scoped to team/guild/user
+python tools/llm/proxy_budgets.py check <key_id> --projected 0.05 --json          # allow|warn|block for a key's budget
+python tools/llm/proxy_budgets.py spend <key_id> --json                            # spend summary for current window
+python tools/llm/proxy_budgets.py record <key_id> --cost 0.05 --input-tokens 1200 --output-tokens 400 --json  # record spend
+
 # LLM Gateway
 python tools/llm/gateway.py --stats --json                                             # Gateway usage statistics
 python tools/llm/gateway.py --audit --json --limit 50                                  # Audit log (last N requests)
