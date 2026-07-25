@@ -69,8 +69,30 @@ def _wrap_comment(text: str, width: int = 74) -> list[str]:
     return lines
 
 
-def render_component_section(registry: "ComponentRegistry") -> str:
-    """Return the grouped, commented component-flag block for a .env file."""
+def _component_enabled(c, enabled_keys: "set[str] | None") -> bool:
+    """Whether a component's flag should be written `true`.
+
+    When ``enabled_keys`` is provided (an install profile's
+    ``default_enabled_components`` set), enablement is driven purely by the
+    profile so the generated .env matches the chosen deployment shape. When it
+    is None, the registry's own ``default_enabled`` is authoritative (the
+    original, profile-less behavior).
+    """
+    if enabled_keys is None:
+        return bool(c.default_enabled)
+    return c.key in enabled_keys
+
+
+def render_component_section(
+    registry: "ComponentRegistry",
+    enabled_keys: "set[str] | None" = None,
+) -> str:
+    """Return the grouped, commented component-flag block for a .env file.
+
+    If ``enabled_keys`` is given, only those component keys are written `true`
+    (an install profile); otherwise the registry's ``default_enabled`` wins.
+    """
+    by_default = enabled_keys is None
     out: list[str] = [
         "# " + "=" * 74,
         f"# {_BANNER}",
@@ -90,11 +112,12 @@ def render_component_section(registry: "ComponentRegistry") -> str:
         )
         if not comps:
             continue
-        enabled = sum(1 for c in comps if c.default_enabled)
+        enabled = sum(1 for c in comps if _component_enabled(c, enabled_keys))
+        suffix = "by default" if by_default else "for this profile"
         out.append("")
         out.append("# " + "-" * 74)
         out.append(f"# {KIND_LABELS.get(kind, kind.upper())}"
-                   f"  ({enabled} enabled / {len(comps)} total by default)")
+                   f"  ({enabled} enabled / {len(comps)} total {suffix})")
         out.append("# " + "-" * 74)
         for c in comps:
             out.append("")
@@ -110,7 +133,7 @@ def render_component_section(registry: "ComponentRegistry") -> str:
             out.extend(_wrap_comment(c.description))
             if c.extra_env_flags:
                 out.append("#   (also flips: " + ", ".join(c.extra_env_flags) + ")")
-            val = "true" if c.default_enabled else "false"
+            val = "true" if _component_enabled(c, enabled_keys) else "false"
             out.append(f"{c.env_flag}={val}")
             for extra in c.extra_env_flags:
                 out.append(f"{extra}={val}")
@@ -118,13 +141,53 @@ def render_component_section(registry: "ComponentRegistry") -> str:
     return "\n".join(out)
 
 
-def compose_env(template_text: str, registry: "ComponentRegistry") -> str:
+def _apply_env_overrides(
+    kept: list[str], overrides: "dict[str, str] | None"
+) -> list[str]:
+    """Apply profile env overrides to the non-component lines.
+
+    Overrides that match an existing key are rewritten in place (preserving
+    position); the rest are appended under a clearly-marked profile block so
+    the origin of every value is obvious. Env vars still win at runtime — these
+    are just the .env defaults the chosen profile implies.
+    """
+    if not overrides:
+        return kept
+    remaining = dict(overrides)
+    out: list[str] = []
+    for line in kept:
+        m = _ENV_LINE.match(line.strip())
+        if m and m.group(1) in remaining:
+            key = m.group(1)
+            out.append(f"{key}={remaining.pop(key)}")
+        else:
+            out.append(line)
+    if remaining:
+        out.append("")
+        out.append("# --- install profile defaults (from core_profiles.yaml) ---")
+        for key in sorted(remaining):
+            out.append(f"{key}={remaining[key]}")
+    return out
+
+
+def compose_env(
+    template_text: str,
+    registry: "ComponentRegistry",
+    enabled_keys: "set[str] | None" = None,
+    env_overrides: "dict[str, str] | None" = None,
+) -> str:
     """Compose a complete .env: template's non-component keys + generated block.
 
     Component flag assignments already present in the template are dropped so
     the generated section is the single authority for them (no duplicate keys).
     Non-component keys (API keys, DB settings, ports, comments) are preserved
     verbatim.
+
+    ``enabled_keys`` — when an install profile is chosen, its
+    ``default_enabled_components`` drive which component flags are `true`.
+    ``env_overrides`` — non-component env defaults the profile implies
+    (storage backend, LLM provider, air-gap flags); merged into the preserved
+    section.
     """
     comp_flags = component_env_flags(registry)
     kept: list[str] = []
@@ -134,6 +197,7 @@ def compose_env(template_text: str, registry: "ComponentRegistry") -> str:
             continue  # generated section owns this flag
         kept.append(line)
 
+    kept = _apply_env_overrides(kept, env_overrides)
     body = "\n".join(kept).rstrip()
-    section = render_component_section(registry)
+    section = render_component_section(registry, enabled_keys=enabled_keys)
     return body + "\n\n" + section + "\n"
