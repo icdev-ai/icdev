@@ -179,14 +179,29 @@ def init_project(
         actions.append({"src": str(src), "dst": str(dst),
                         "status": "copied" if ok else "skipped", "message": msg})
 
-    # Write a minimal .env if the template copied successfully
+    # Write a complete .env: template's non-component keys + a generated
+    # section covering EVERY component env flag from the registry, so no
+    # canvas/feature is ever silently undiscoverable (the reported bug).
     if not list_only:
         env_template = target_dir / ".env.template"
         env_file = target_dir / ".env"
         if env_template.exists() and not env_file.exists():
-            shutil.copy2(env_template, env_file)
+            msg = "created .env from template"
+            try:
+                from tools.cli.env_generator import compose_env
+                from tools.config.component_registry import get_registry
+
+                template_text = env_template.read_text(encoding="utf-8")
+                composed = compose_env(template_text, get_registry())
+                env_file.write_text(composed, encoding="utf-8")
+                msg = "created .env from template + registry component flags"
+            except Exception as exc:
+                # Never let registry generation block init — fall back to the
+                # static template so `icdev init` always produces a usable .env.
+                shutil.copy2(env_template, env_file)
+                msg = f"created .env from template (registry augmentation skipped: {exc})"
             actions.append({"src": ".env.template", "dst": str(env_file),
-                            "status": "copied", "message": "created .env from template"})
+                            "status": "copied", "message": msg})
 
     summary = {
         "target": str(target_dir.resolve()),
