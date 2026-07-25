@@ -146,13 +146,24 @@ def test_seeded_unauthorized_capability_opens_exactly_one_card(
     assert _count_cards(conn) == 1
 
     card = conn.execute(
-        "SELECT title, status, task_type, dispatch_source FROM kanban_tasks"
+        "SELECT title, description, status, task_type, dispatch_source FROM kanban_tasks"
     ).fetchone()
     assert card["status"] == "suggested"
     assert card["task_type"] == "fix"
     assert card["dispatch_source"] == "integrity_monitor"
     assert "evil.py" in card["title"]
     assert "network_egress" in card["title"]
+
+    # opx-sipa-01: the persisted card body must carry BOTH the rel path and the
+    # raw finding path, plus the assessment-scoped triage SQL, so basename
+    # collisions can be disambiguated (the wrong-triage incident on
+    # task-d7e78493f3 was caused by a bare-basename rel path).
+    body = card["description"]
+    assert "File (rel):" in body
+    assert "File (raw):" in body
+    assert "evil.py" in body                      # raw path retains the real filename
+    assert "SELECT" in body and "integrity_findings" in body
+    assert "WHERE assessment_id =" in body
 
 
 def test_rerun_does_not_realert_same_capability(conn, deterministic_scanners, tmp_path):
@@ -187,3 +198,53 @@ def test_reflex_has_cadence_and_status_contract():
     # Follows the ndc_topology_drift contract: CADENCE_HOURS + run() -> status dict.
     assert isinstance(integrity_monitor.CADENCE_HOURS, int)
     assert integrity_monitor.IMPLEMENTATION_STATUS == "full"
+
+
+# --------------------------------------------------------------------------- #
+# opx-sipa-01: card body carries the raw path + assessment_id (unambiguous)
+# --------------------------------------------------------------------------- #
+def test_card_description_includes_raw_and_rel_paths():
+    """A remediation card must print BOTH the normalized rel path AND the raw
+    finding path + assessment-scoped triage SQL. rel_path is often a bare
+    basename (the _rel_path fallback) and 6+ files share names like posture.py,
+    so rel_path alone is not enough to identify the file."""
+    info = {
+        "finding_type": "unauthorized_capability",
+        "severity": "high",
+        "rel_path": "posture.py",  # ambiguous bare basename
+        "file_path": "/quarantine/4242/tools/sipa/canvas_compliance/posture.py",
+        "line": 87,
+        "capability_type": "network_egress",
+        "detail": {"reason": "connects to 10.0.0.1"},
+    }
+    body = integrity_monitor._card_description(
+        info, assessment_id=4242, source_ref="icdev-tools-rtm", verdict="review"
+    )
+    # Both the rel path and the unambiguous raw path appear.
+    assert "File (rel):" in body and "posture.py" in body
+    assert "File (raw):" in body
+    assert "/quarantine/4242/tools/sipa/canvas_compliance/posture.py" in body
+    # assessment_id appears in the header AND the triage SQL (never truncated).
+    assert "Assessment ID:   4242" in body
+    assert "WHERE assessment_id = 4242" in body
+    assert "SELECT" in body and "integrity_findings" in body
+
+
+def test_card_description_raw_path_survives_basename_fallback():
+    """When _rel_path collapsed the path to a basename, the raw path must still
+    preserve the directory so the card is not ambiguous."""
+    raw = "/quarantine/9/tools/ai_augmentation/db/init_db.py"
+    info = {
+        "finding_type": "unauthorized_capability",
+        "severity": "medium",
+        "rel_path": "init_db.py",
+        "file_path": raw,
+        "line": None,
+        "capability_type": "filesystem",
+        "detail": {},
+    }
+    body = integrity_monitor._card_description(
+        info, assessment_id=9, source_ref="icdev-tools-rtm", verdict="review"
+    )
+    assert raw in body
+    assert "tools/ai_augmentation/db" in body
