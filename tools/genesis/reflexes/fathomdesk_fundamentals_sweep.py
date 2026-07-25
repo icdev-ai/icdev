@@ -8,8 +8,9 @@ upserts fresh values. Powers the PE/NAV Mispricing Universe on /value.
 GREEN tier (read + upsert, no LLM). Air-gap safe when yfinance available.
 COOLDOWN_HOURS = 23  (daily cadence, guards against rapid re-fire).
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+
+IMPLEMENTATION_STATUS = "full"
 
 from pathlib import Path
 import sys

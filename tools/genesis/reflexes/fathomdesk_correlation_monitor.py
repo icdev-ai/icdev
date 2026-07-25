@@ -15,9 +15,9 @@ sensitivity based on current market volatility.
 Reflex tier: GREEN (auto-approved, no sandbox).
 Cooldown: configurable per catalyst (prevents alert fatigue).
 """
+from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
-from __future__ import annotations
 
 import json
 import sys
