@@ -3231,6 +3231,16 @@ CREATE TABLE IF NOT EXISTS aimc_deployment (
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     classification  TEXT NOT NULL DEFAULT 'CUI'
 );
+-- sag-mem-01: standalone-agent per-user profile memory (migration 287).
+CREATE TABLE IF NOT EXISTS sag_user_profiles (
+    user_id          TEXT NOT NULL,
+    tenant_id        TEXT DEFAULT '',
+    classification   TEXT DEFAULT 'CUI',
+    preferences_json TEXT DEFAULT '{}',
+    facts_json       TEXT DEFAULT '[]',
+    updated_at       TEXT,
+    PRIMARY KEY (user_id, tenant_id)
+);
 """
 
 

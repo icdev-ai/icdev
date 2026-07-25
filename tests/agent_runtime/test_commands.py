@@ -93,9 +93,16 @@ def test_usage_formats_stats():
     assert "140 tokens" in resp and "sess-9" in resp
 
 
-def test_memory_stub_mentions_sag_mem_01():
+def test_memory_lists_facts_or_reports_empty():
+    # sag-mem-01: /memory is implemented. With no stored facts it reports empty
+    # and points at the remember/auto-capture path.
     _h, resp, _e = dispatch(_FakeRuntime(), "/memory")
-    assert "sag-mem-01" in resp
+    assert "remembered facts" in resp.lower()
+
+
+def test_memory_forget_requires_argument():
+    _h, resp, _e = dispatch(_FakeRuntime(), "/memory forget")
+    assert "Usage:" in resp
 
 
 def test_rollback_reports_no_checkpoints_when_empty(monkeypatch):
