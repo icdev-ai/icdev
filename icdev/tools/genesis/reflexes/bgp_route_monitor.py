@@ -7,8 +7,10 @@ down or idle, and clears alarms for sessions that have recovered.
 
 Air-gap safe: no LLM calls — pure heuristics + NMS API queries.
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+
+IMPLEMENTATION_STATUS = "full"
+
 from tools.logging.icdev_logger import get_logger
 
 import json
