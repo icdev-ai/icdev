@@ -186,10 +186,18 @@ class ChainOrchestrator:
         mode_cfg = self._config.get(mode, {})
         per_fn = mode_cfg.get("per_function", {}).get(function, {})
 
+        # Budget/timeout backstops resolve outer -> mode -> per_function (widest to
+        # narrowest). The mode rung matters for fan-out modes: a divergence run is
+        # ~N parallel branches, so reusing the single-call outer cap as its
+        # pre-flight estimate would under-reserve the module budget by ~Nx and let
+        # a run start that cannot afford to finish. Modes that omit these keys
+        # (cot/cod/council today) are unaffected and keep the outer values.
         defaults = {
-            "cost_cap_usd": self._config.get("cost_cap_usd", DEFAULT_COST_CAP_USD),
-            "token_cap": self._config.get("token_cap", DEFAULT_TOKEN_CAP),
-            "timeout_seconds": self._config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
+            "cost_cap_usd": mode_cfg.get("cost_cap_usd", self._config.get("cost_cap_usd", DEFAULT_COST_CAP_USD)),
+            "token_cap": mode_cfg.get("token_cap", self._config.get("token_cap", DEFAULT_TOKEN_CAP)),
+            "timeout_seconds": mode_cfg.get(
+                "timeout_seconds", self._config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
+            ),
         }
 
         if mode == "cot":

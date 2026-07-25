@@ -49,6 +49,52 @@ class TestDivergenceShippedConfig:
         for m in routing[div["branch_pool_role"]]["chain"]:
             assert m in models, f"branch pool references unregistered model '{m}'"
 
+    def test_divergence_declares_its_own_caps(self):
+        """cost_cap_usd / timeout_seconds are declared at the MODE level, not
+        inherited. Inheriting the outer single-call backstop would hand
+        _check_module_budget a pre-flight estimate ~num_branches too small."""
+        div = _cfg()["chain_orchestration"]["divergence"]
+        assert "cost_cap_usd" in div, "divergence must declare a fan-out-aware cost cap"
+        assert "timeout_seconds" in div, "divergence must declare its own timeout"
+
+    def test_cost_cap_covers_the_full_fan_out(self):
+        """The invariant that makes the cap honest: the mode's cap must cover
+        num_branches worth of single-call spend. Raising num_branches without
+        raising cost_cap_usd fails here — which is the point."""
+        chain = _cfg()["chain_orchestration"]
+        div = chain["divergence"]
+        outer_cap = chain["cost_cap_usd"]
+        assert div["cost_cap_usd"] >= div["num_branches"] * outer_cap, (
+            f"cost_cap_usd {div['cost_cap_usd']} under-reserves a "
+            f"{div['num_branches']}-branch fan-out at {outer_cap}/call"
+        )
+        assert div["timeout_seconds"] >= chain["timeout_seconds"]
+
+    def test_mode_level_caps_actually_resolve(self):
+        """Guard the MECHANISM: _get_function_config must read the mode rung.
+        Before dvg-core-02 it only read the outer config, so these keys would
+        have been silently ignored — present in YAML, dead at runtime."""
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.router import LLMRouter
+
+        orch = ChainOrchestrator(router=LLMRouter())
+        orch._config = {
+            "cost_cap_usd": 0.50,
+            "timeout_seconds": 120,
+            "divergence": {"cost_cap_usd": 3.00, "timeout_seconds": 180, "per_function": {}},
+        }
+        cfg = orch._get_function_config("some_fn", "divergence")
+        assert cfg["cost_cap_usd"] == 3.00
+        assert cfg["timeout_seconds"] == 180
+
+        # per_function still wins over the mode rung (narrowest scope).
+        orch._config["divergence"]["per_function"] = {"some_fn": {"cost_cap_usd": 0.10}}
+        assert orch._get_function_config("some_fn", "divergence")["cost_cap_usd"] == 0.10
+
+        # Modes that omit the keys keep inheriting the outer backstop unchanged.
+        orch._config["cot"] = {"per_function": {}}
+        assert orch._get_function_config("some_fn", "cot")["cost_cap_usd"] == 0.50
+
     def test_exclusions_honored_by_is_excluded(self):
         """A configured divergence exclusion is a hard block enforced by
         _is_excluded, and it must win even if a function is otherwise enabled."""

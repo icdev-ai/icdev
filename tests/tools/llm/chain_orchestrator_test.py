@@ -12,6 +12,10 @@ import pytest
 from tools.llm.chain_orchestrator import ChainOrchestrator, ChainResult, BudgetExceededError
 from tools.llm.provider import LLMRequest, LLMResponse
 
+# Captured at import time — BEFORE the autouse fixture patches the method — so a
+# test can opt back into the REAL budget-gate body instead of the no-op stub.
+_REAL_CHECK_MODULE_BUDGET = ChainOrchestrator._check_module_budget
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -87,6 +91,10 @@ def mock_router():
                 "frame_set": "generative",
                 "branch_pool_role": "divergence_branch_pool",
                 "critic_role": "divergence_critic",
+                # Mode-level fan-out caps, mirroring the shipped config shape:
+                # 6 branches x the 0.50 outer per-call cap (dvg-core-02).
+                "cost_cap_usd": 3.00,
+                "timeout_seconds": 180,
                 "branch_models": ["qwen3-local", "claude-sonnet", "gpt-4o"],
                 "excluded_functions": ["pulse_generation"],
                 "per_function": {},
@@ -496,6 +504,102 @@ class TestDivergence:
                     orch.invoke_divergence("some_decision_function", req)
 
         assert called["n"] == 0, "budget gate must abort before any branch model call"
+
+    def test_divergence_real_budget_gate_trips_and_aborts(self, mock_router, tmp_db):
+        """dvg-core-02: the test above proves invoke_divergence aborts when the gate
+        raises, but it patches _check_module_budget itself — so it never proves the
+        gate TRIPS for this mode. Here we run the REAL _check_module_budget body and
+        only stub the underlying tracker, asserting a 'block' verdict on the
+        generative_intelligence module aborts the run before any branch spend."""
+        from tools.budget.module_budget_tracker import ModuleBudgetExceededError
+
+        called = {"n": 0}
+        seen = {}
+
+        def counting_invoke_direct(model_name, request, function=None):
+            called["n"] += 1
+            return LLMResponse(content="x", model_id=model_name, input_tokens=1,
+                               output_tokens=1, provider="mock")
+
+        def blocking_check(module_name, function="", estimated_cost_usd=0.0,
+                           estimated_tokens=0, estimated_operations=0, project_id=""):
+            seen["module"] = module_name
+            seen["estimated_cost_usd"] = estimated_cost_usd
+            return {"action": "block", "message": "over budget", "utilization": 1.4}
+
+        mock_router._invoke_model_direct = counting_invoke_direct
+
+        # Restore the REAL gate body (the autouse fixture no-ops it module-wide).
+        with patch.object(ChainOrchestrator, "_check_module_budget", _REAL_CHECK_MODULE_BUDGET), \
+             patch("tools.budget.module_budget_tracker.check_module_budget", blocking_check), \
+             patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test"}])
+            with pytest.raises(ModuleBudgetExceededError):
+                orch.invoke_divergence("some_decision_function", req)
+
+        assert called["n"] == 0, "real budget gate must abort before any branch model call"
+        assert seen["module"] == "generative_intelligence"
+        # The pre-flight reservation must be the mode's fan-out-aware cap, not the
+        # single-call outer backstop — otherwise the gate under-reserves by ~Nx.
+        assert seen["estimated_cost_usd"] == 3.00
+
+    def test_divergence_every_branch_carries_the_function_name(self, mock_router, tmp_db):
+        """CUI: divergence must open NO new egress path. Routing/redaction policy
+        (including the force_local rung) keys off the FUNCTION NAME, so every branch
+        call must carry it — a branch that arrived anonymous would escape the
+        per-function LOCAL-ONLY pin. Asserted for all 6 branches, including the
+        cloud-named models in the legacy fallback list."""
+        seen_functions = []
+
+        def recording_invoke_direct(model_name, request, function=None):
+            seen_functions.append(function)
+            return LLMResponse(content="idea", model_id=model_name, input_tokens=1,
+                               output_tokens=1, provider="mock")
+
+        mock_router._invoke_model_direct = recording_invoke_direct
+
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "test"}])
+            orch.invoke_divergence("cui_bearing_function", req)
+
+        assert len(seen_functions) == 6
+        assert all(f == "cui_bearing_function" for f in seen_functions), (
+            f"every branch must carry the function name for routing policy; got {seen_functions}"
+        )
+
+    def test_divergence_local_only_violation_never_falls_back_to_cloud(self, mock_router, tmp_db):
+        """CUI: when the egress policy refuses a cloud branch for a LOCAL-ONLY
+        function, divergence must NOT retry that branch on another model. It drops
+        the branch. A fan-out that walked its model list looking for one allowed to
+        send would be exactly the new egress path this mode must not create."""
+        from tools.llm.router import ForceLocalViolation
+
+        attempted = []
+
+        def policy_enforcing_invoke_direct(model_name, request, function=None):
+            attempted.append(model_name)
+            if not model_name.endswith("-local"):  # stand-in for the egress policy
+                raise ForceLocalViolation(f"{function} is pinned local; {model_name} is cloud")
+            return LLMResponse(content="local idea", model_id=model_name, input_tokens=1,
+                               output_tokens=1, provider="ollama")
+
+        mock_router._invoke_model_direct = policy_enforcing_invoke_direct
+
+        with patch("tools.llm.chain_orchestrator.get_connection", lambda: sqlite3.connect(str(tmp_db))):
+            orch = ChainOrchestrator(router=mock_router)
+            req = LLMRequest(messages=[{"role": "user", "content": "sensitive"}])
+            result = orch.invoke_divergence("local_only_function", req)
+
+        # The 6 branches cycle the 4-model diverse pool, so the one cloud model in
+        # it (claude-haiku) is assigned twice and refused twice.
+        assert attempted.count("claude-haiku") == 2, "refused branch must not be retried"
+        # Nothing that isn't local ever produced content — no cloud egress, and no
+        # walking the model list looking for one allowed to send.
+        assert result.models_used == ["deepseek-local", "llama-local", "qwen3-local"]
+        assert all(m.endswith("-local") for m in result.models_used)
+        assert "## Frame:" in result.content
 
     def test_divergence_branches_run_in_strict_isolation(self, mock_router, tmp_db):
         """Regression: no branch prompt may contain another branch's output or a
