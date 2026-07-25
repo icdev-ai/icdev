@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | MCP Base Server | tools/mcp/base_server.py | Base MCP server class (JSON-RPC 2.0 stdio) | — | — |
+| MCP Toolset Profiles | tools/mcp/toolset_profiles.py | Curated MCP toolset profiles for external-agent consumption (sag-mcp-01). Loads `args/mcp_toolset_profiles.yaml`, resolves a profile to a bounded validated tool set, and fail-closed CUI-egress gate (`local_only` profiles refused on cloud LLMs). Used by `unified_server.py --toolset`. | profile name | tool-name set |
 | MCP Core Server | tools/mcp/core_server.py | Project management MCP server | stdio | JSON-RPC responses |
 | MCP Compliance Server | tools/mcp/compliance_server.py | Compliance artifact MCP server | stdio | JSON-RPC responses |
 | MCP Builder Server | tools/mcp/builder_server.py | Code generation MCP server | stdio | JSON-RPC responses |

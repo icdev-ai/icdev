@@ -1,0 +1,99 @@
+# CUI // SP-CTI
+# Curated MCP toolset profiles for external-agent consumption (SAG sag-mcp-01).
+#
+# tools/mcp/unified_server.py exposes 447+ ICDEV tools over stdio MCP. That full
+# surface overwhelms small local models (kimi/ollama) with limited context
+# windows. These named profiles let an external agent request a BOUNDED tool
+# list, e.g.:
+#
+#     python tools/mcp/unified_server.py --toolset compliance      # ~12 tools
+#     ICDEV_MCP_TOOLSET=security python tools/mcp/unified_server.py
+#
+# Each profile lists concrete tool names that MUST exist in
+# tools/mcp/tool_registry.py::TOOL_REGISTRY (validated by
+# tools/mcp/toolset_profiles.py and tests). Unknown names are ignored with a
+# warning so a registry rename never breaks server startup.
+#
+# CUI EGRESS (sag-mcp-01 security review, mirrors the CLI-bridge rules):
+#   cui_egress: local_only  -> the profile MAY surface tools whose output can
+#       contain CUI / classification-bearing artifacts. Only expose it to an
+#       external agent bound to a LOCAL LLM (api_key_env resolves to ollama, not
+#       a cloud provider). The server refuses a local_only profile when
+#       ICDEV_MCP_ALLOW_CLOUD_CUI is unset AND a cloud provider is detected.
+#   cui_egress: cloud_safe  -> curated to exclude tools that emit CUI; safe for
+#       an external agent on a cloud LLM.
+# See docs/security/sandbox-coverage.md and
+# docs/integrations/external-agent-mcp.md for the full decision.
+
+version: 1
+
+profiles:
+
+  minimal:
+    description: >-
+      Smallest safe starter set — status and health only. Ideal first probe for
+      a generic (non-Claude) MCP client verifying the protocol handshake.
+    cui_egress: cloud_safe
+    tools:
+      - health_check
+      - get_status
+
+  research:
+    description: >-
+      Read-only knowledge retrieval over RAG + knowledge graph. No artifact
+      generation, no compliance data.
+    cui_egress: cloud_safe
+    tools:
+      - rag_search
+      - kg_search
+      - search_knowledge
+      - news_aggregate
+      - health_check
+
+  security:
+    description: >-
+      Dependency / code / SBOM scanning and CVE triage. Findings are technical,
+      not CUI-marked, so this profile is cloud-safe.
+    cui_egress: cloud_safe
+    tools:
+      - scan_dependencies
+      - scan_code_patterns
+      - code_analyze
+      - sbom_generate
+      - triage_cve
+      - vex_generate
+      - health_check
+
+  compliance:
+    description: >-
+      NIST / FedRAMP / CMMC / STIG assessment and ATO artifact generation. These
+      tools can emit CUI-marked artifacts and read classification-bearing data,
+      so this profile is LOCAL-ONLY for CUI egress.
+    cui_egress: local_only
+    tools:
+      - fedramp_assess
+      - cmmc_assess
+      - stig_check
+      - control_map
+      - crosswalk_query
+      - nist_lookup
+      - poam_generate
+      - ssp_generate
+      - oscal_generate
+      - classification_check
+      - cui_mark
+      - health_check
+
+  kanban:
+    description: >-
+      Task-board read/write for an external agent driving ICDEV delivery work.
+      Board contents may reference internal projects — local-only.
+    cui_egress: local_only
+    tools:
+      - kanban_board_summary
+      - kanban_list_tasks
+      - kanban_get_task
+      - kanban_create_task
+      - kanban_update_task
+      - kanban_move_task
+      - health_check
