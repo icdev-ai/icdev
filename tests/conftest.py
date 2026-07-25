@@ -128,7 +128,9 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     files_changed         INTEGER DEFAULT 0,
     lines_added           INTEGER DEFAULT 0,
     lines_removed         INTEGER DEFAULT 0,
-    completed_via_bypass  INTEGER DEFAULT 0
+    completed_via_bypass  INTEGER DEFAULT 0,
+    due_date              TEXT,
+    sla_hours             INTEGER
 );
 CREATE TABLE IF NOT EXISTS kanban_task_deps (
     task_id         TEXT NOT NULL,
