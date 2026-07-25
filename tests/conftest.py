@@ -2832,6 +2832,50 @@ CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
     payload_json    TEXT NOT NULL DEFAULT '{}',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- QDC + AADC digital twins (twx-cov-01). Snapshots use PDC dedup/retention
+-- (NOT append-only); simulations persist the pass/warn/fail verdict.
+CREATE TABLE IF NOT EXISTS qdc_twin_snapshots (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    label       TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count  INTEGER DEFAULT 0,
+    edge_count  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS qdc_simulations (
+    id                TEXT PRIMARY KEY,
+    design_id         TEXT NOT NULL,
+    baseline_snap_id  TEXT,
+    delta_graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict           TEXT NOT NULL DEFAULT 'unknown',
+    findings_json     TEXT DEFAULT '[]',
+    diff_json         TEXT DEFAULT '{}',
+    created_by        TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS aadc_twin_snapshots (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    label       TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count  INTEGER DEFAULT 0,
+    edge_count  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS aadc_simulations (
+    id                TEXT PRIMARY KEY,
+    design_id         TEXT NOT NULL,
+    baseline_snap_id  TEXT,
+    delta_graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict           TEXT NOT NULL DEFAULT 'unknown',
+    findings_json     TEXT DEFAULT '[]',
+    diff_json         TEXT DEFAULT '{}',
+    created_by        TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
 -- Observability trace / provenance / XAI tables (obx-trc-05 retention target).
 -- Columns mirror tools/db/schema/pg_consolidated.sql. All five are append-only
 -- by design/NIST AU; the observability_retention reflex archives-then-prunes.

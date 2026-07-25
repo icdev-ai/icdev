@@ -976,6 +976,35 @@ CREATE TABLE IF NOT EXISTS aadc_aimc_model_refs (
 );
 CREATE INDEX IF NOT EXISTS idx_aadc_aimc_refs_design ON aadc_aimc_model_refs(aadc_design_id);
 CREATE INDEX IF NOT EXISTS idx_aadc_aimc_refs_model  ON aadc_aimc_model_refs(aimc_model_id);
+
+-- AADC digital twin (twx-cov-01). Snapshots follow the PDC retention pattern
+-- (sha256 dedup + bounded auto-snapshot retention) — NOT append-only. No
+-- tenant_id/classification columns: canvas tables, accessed via AADC's
+-- get_canvas_connection()-backed get_connection().
+CREATE TABLE IF NOT EXISTS aadc_twin_snapshots (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    label       TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count  INTEGER DEFAULT 0,
+    edge_count  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_aadc_twin_snapshots_design ON aadc_twin_snapshots(design_id);
+
+CREATE TABLE IF NOT EXISTS aadc_simulations (
+    id                TEXT PRIMARY KEY,
+    design_id         TEXT NOT NULL,
+    baseline_snap_id  TEXT,
+    delta_graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict           TEXT NOT NULL DEFAULT 'unknown',
+    findings_json     TEXT DEFAULT '[]',
+    diff_json         TEXT DEFAULT '{}',
+    created_by        TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_aadc_simulations_design ON aadc_simulations(design_id);
 """
 
 

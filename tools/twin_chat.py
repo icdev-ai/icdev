@@ -159,3 +159,44 @@ def data_chat_to_delta(message: str, graph_json: Optional[dict] = None) -> dict:
 def observability_chat_to_delta(message: str, graph_json: Optional[dict] = None) -> dict:
     ctx = json.dumps(graph_json, indent=2) if graph_json else None
     return _call_llm(_OBSERVABILITY_SYSTEM, message, ctx)
+
+
+_QUALITY_SYSTEM = """You are a software-quality gate topology analyst.
+The user will describe a change to a Quality Design Canvas gate/coverage graph in plain English.
+Convert it to a JSON graph delta describing the proposed topology.
+
+Output ONLY a valid JSON object:
+{
+  "nodes": [{"id": "gate-1", "type": "quality-gate", "label": "Coverage Gate"}],
+  "edges": [{"source": "gate-1", "target": "deploy"}]
+}
+Include the FULL proposed node/edge set (the twin diffs it against the baseline to
+detect removed quality gates). Removing a quality-gate node lowers assurance.
+Do NOT include markdown fences or any text before the JSON.
+After the JSON, on a new line write "EXPLANATION:" followed by one sentence summarizing the quality impact."""
+
+
+_AGENTIC_SYSTEM = """You are an agentic-AI reliability analyst.
+The user will describe an agent-failure scenario over an Agentic AI Canvas topology in plain English.
+Convert it to a JSON delta naming the failing agents.
+
+Output ONLY a valid JSON object:
+{
+  "fail_nodes": ["agent-1"],
+  "remove_nodes": []
+}
+Use node ids from the provided topology context when available. The twin propagates
+the failure downstream along the agent dependency edges and weights the verdict by
+safety/rights-impacting flags.
+Do NOT include markdown fences or any text before the JSON.
+After the JSON, on a new line write "EXPLANATION:" followed by one sentence summarizing the cascade impact."""
+
+
+def quality_chat_to_delta(message: str, graph_json: Optional[dict] = None) -> dict:
+    ctx = json.dumps(graph_json, indent=2) if graph_json else None
+    return _call_llm(_QUALITY_SYSTEM, message, ctx)
+
+
+def agentic_chat_to_delta(message: str, graph_json: Optional[dict] = None) -> dict:
+    ctx = json.dumps(graph_json, indent=2) if graph_json else None
+    return _call_llm(_AGENTIC_SYSTEM, message, ctx)
