@@ -46,7 +46,7 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from tools.db.storage import get_connection
@@ -73,6 +73,16 @@ _KEY_PREFIX = "sk-icdev-"
 
 ENV_MASTER_KEY = "ICDEV_LLM_PROXY_MASTER_KEY"
 
+# Default key lifetime (lpx-keys-03). A cohort key must not outlive the cohort,
+# so issuance applies a default expiry when the caller gives none. Operators tune
+# it via env; 0/negative disables the default (an explicit expiry always wins).
+ENV_DEFAULT_TTL_DAYS = "ICDEV_LLM_PROXY_KEY_TTL_DAYS"
+_DEFAULT_TTL_DAYS = 30
+
+# Audit actions (lpx-keys-03, NIST AU). The audit table is APPEND-ONLY — see
+# APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py. Rows are never UPDATE/DELETE.
+AUDIT_ACTIONS = ("issued", "rotated", "revoked", "expired")
+
 _DDL = """
 CREATE TABLE IF NOT EXISTS llm_proxy_keys (
     key_id          TEXT PRIMARY KEY,
@@ -98,10 +108,25 @@ CREATE TABLE IF NOT EXISTS llm_proxy_keys (
 );
 """
 
+# Append-only key lifecycle audit (lpx-keys-03, NIST AU). Never UPDATE/DELETE.
+_AUDIT_DDL = """
+CREATE TABLE IF NOT EXISTS llm_proxy_key_audit (
+    audit_id       TEXT PRIMARY KEY,
+    key_id         TEXT NOT NULL,
+    action         TEXT NOT NULL,
+    actor          TEXT,
+    detail         TEXT,
+    tenant_id      TEXT,
+    classification TEXT,
+    recorded_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_llm_proxy_keys_scope ON llm_proxy_keys(scope_type, scope_ref)",
     "CREATE INDEX IF NOT EXISTS idx_llm_proxy_keys_session ON llm_proxy_keys(session_id)",
     "CREATE INDEX IF NOT EXISTS idx_llm_proxy_keys_status ON llm_proxy_keys(status)",
+    "CREATE INDEX IF NOT EXISTS idx_llm_proxy_key_audit_key ON llm_proxy_key_audit(key_id)",
 )
 
 _migrated = False
@@ -118,6 +143,7 @@ def ensure_schema(conn=None) -> None:
     c = conn or get_connection()
     try:
         c.execute(_DDL.strip())
+        c.execute(_AUDIT_DDL.strip())
         for stmt in _INDEXES:
             try:
                 c.execute(stmt)
@@ -214,6 +240,75 @@ def _register_with_litellm(
         return False
 
 
+# --- Audit (append-only, NIST AU) ------------------------------------------
+
+def _default_ttl_days() -> int:
+    raw = os.environ.get(ENV_DEFAULT_TTL_DAYS, "").strip()
+    if not raw:
+        return _DEFAULT_TTL_DAYS
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_TTL_DAYS
+
+
+def _default_expiry(now: Optional[datetime] = None) -> Optional[str]:
+    """Default expiry so a cohort key cannot outlive the cohort. None when the
+    operator disables the default (TTL <= 0)."""
+    days = _default_ttl_days()
+    if days <= 0:
+        return None
+    now = now or datetime.now(timezone.utc)
+    return (now + timedelta(days=days)).isoformat()
+
+
+def _write_audit(
+    conn,
+    key_id: str,
+    action: str,
+    *,
+    actor: Optional[str] = None,
+    detail: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    classification: Optional[str] = None,
+) -> None:
+    """Append one immutable audit row. Never mutates or deletes existing rows."""
+    conn.execute(
+        """
+        INSERT INTO llm_proxy_key_audit (
+            audit_id, key_id, action, actor, detail, tenant_id, classification, recorded_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (uuid.uuid4().hex, key_id, action, actor, detail, tenant_id, classification, _now()),
+    )
+
+
+def audit_trail(key_id: Optional[str] = None, conn=None) -> List[Dict[str, Any]]:
+    """Return the append-only audit trail (all, or for one key), newest first."""
+    own = conn is None
+    c = conn or get_connection()
+    ensure_schema(c)
+    if key_id:
+        rows = c.execute(
+            "SELECT audit_id, key_id, action, actor, detail, tenant_id, "
+            "classification, recorded_at FROM llm_proxy_key_audit "
+            "WHERE key_id = %s ORDER BY recorded_at DESC",
+            (key_id,),
+        ).fetchall()
+    else:
+        rows = c.execute(
+            "SELECT audit_id, key_id, action, actor, detail, tenant_id, "
+            "classification, recorded_at FROM llm_proxy_key_audit "
+            "ORDER BY recorded_at DESC"
+        ).fetchall()
+    if own:
+        try:
+            c.close()
+        except Exception:
+            pass
+    return [dict(r) for r in rows]
+
+
 # --- Public API -------------------------------------------------------------
 
 def _validate_choice(name: str, value: str, allowed: tuple) -> None:
@@ -232,6 +327,7 @@ def issue_key(
     rpm_limit: Optional[int] = None,
     tpm_limit: Optional[int] = None,
     expires_at: Optional[str] = None,
+    expires_in_days: Optional[int] = None,
     tenant_id: Optional[str] = None,
     classification: Optional[str] = None,
     created_by: Optional[str] = None,
@@ -242,6 +338,11 @@ def issue_key(
     The returned dict contains ``virtual_key`` — the ONLY time it is ever
     available. Only its SHA-256 hash is stored. The master/admin key is never
     read into the return value.
+
+    Expiry (lpx-keys-03): an explicit ``expires_at`` wins; else ``expires_in_days``
+    is applied; else a default TTL (``ICDEV_LLM_PROXY_KEY_TTL_DAYS``, default 30)
+    so a cohort key cannot outlive the cohort. Set the env to 0 to disable the
+    default. Issuance appends an immutable ``issued`` audit row (NIST AU).
     """
     _validate_choice("scope_type", scope_type, SCOPE_TYPES)
     _validate_choice("budget_window", budget_window, BUDGET_WINDOWS)
@@ -249,6 +350,12 @@ def issue_key(
     own = conn is None
     c = conn or get_connection()
     ensure_schema(c)
+
+    if expires_at is None:
+        if expires_in_days is not None and expires_in_days > 0:
+            expires_at = (datetime.now(timezone.utc) + timedelta(days=int(expires_in_days))).isoformat()
+        else:
+            expires_at = _default_expiry()
 
     virtual_key = _generate_virtual_key()
     key_hash = _hash_key(virtual_key)
@@ -280,6 +387,13 @@ def issue_key(
             "active", expires_at, 1 if synced else 0, None, tenant_id,
             classification, created_by, now, now,
         ),
+    )
+    _write_audit(
+        c, key_id, "issued",
+        actor=created_by,
+        detail=f"scope={scope_type}:{scope_ref} window={budget_window} expires_at={expires_at}",
+        tenant_id=tenant_id,
+        classification=classification,
     )
     c.commit()
     if own:
@@ -405,6 +519,182 @@ def lookup_by_key(virtual_key: str, conn=None) -> Optional[Dict[str, Any]]:
     return _row_to_dict(row) if row else None
 
 
+# --- Rotation / revocation / expiry (lpx-keys-03) --------------------------
+
+def _get_key_row(conn, key_id: str):
+    return conn.execute(
+        "SELECT key_id, key_hash, key_prefix, alias, scope_type, scope_ref, "
+        "session_id, max_budget_usd, budget_window, rpm_limit, tpm_limit, "
+        "status, expires_at, litellm_synced, rotated_from, tenant_id, "
+        "classification, created_by, created_at, updated_at "
+        "FROM llm_proxy_keys WHERE key_id = %s",
+        (key_id,),
+    ).fetchone()
+
+
+def is_expired(key: Dict[str, Any], now: Optional[datetime] = None) -> bool:
+    """True if the key has an expiry in the past."""
+    exp = key.get("expires_at")
+    if not exp:
+        return False
+    now = now or datetime.now(timezone.utc)
+    try:
+        return datetime.fromisoformat(exp) < now
+    except (TypeError, ValueError):
+        return False
+
+
+def revoke_key(
+    key_id: str,
+    *,
+    actor: Optional[str] = None,
+    reason: Optional[str] = None,
+    _status: str = "revoked",
+    conn=None,
+) -> Dict[str, Any]:
+    """Revoke a key: flip status and append an immutable audit row.
+
+    Revocation is per-key and takes effect immediately for every enforcement path
+    (lookup/check see the flipped status) without touching any other key — the
+    per-person guarantee lpx-keys-04 relies on. Idempotent: revoking an already
+    inactive key is a no-op that still audits the attempt.
+    """
+    own = conn is None
+    c = conn or get_connection()
+    ensure_schema(c)
+    row = _get_key_row(c, key_id)
+    if row is None:
+        if own:
+            try:
+                c.close()
+            except Exception:
+                pass
+        raise ValueError(f"unknown key_id: {key_id}")
+    key = _row_to_dict(row)
+
+    c.execute(
+        "UPDATE llm_proxy_keys SET status = %s, updated_at = %s WHERE key_id = %s",
+        (_status, _now(), key_id),
+    )
+    action = "rotated" if _status == "rotated" else "revoked"
+    _write_audit(
+        c, key_id, action,
+        actor=actor,
+        detail=reason or f"status -> {_status}",
+        tenant_id=key.get("tenant_id"),
+        classification=key.get("classification"),
+    )
+    c.commit()
+    result = show_key(key_id, conn=c)
+    if own:
+        try:
+            c.close()
+        except Exception:
+            pass
+    return result
+
+
+def rotate_key(key_id: str, *, actor: Optional[str] = None, conn=None) -> Dict[str, Any]:
+    """Rotate a key: revoke the old one and issue a fresh key with the SAME scope,
+    budget, limits and remaining lifetime. Returns the NEW key (virtual_key shown
+    once). ``rotated_from`` links the new key to its predecessor; both keys get an
+    immutable audit row. Rotating one person's key never affects anyone else's."""
+    own = conn is None
+    c = conn or get_connection()
+    ensure_schema(c)
+    row = _get_key_row(c, key_id)
+    if row is None:
+        if own:
+            try:
+                c.close()
+            except Exception:
+                pass
+        raise ValueError(f"unknown key_id: {key_id}")
+    old = _row_to_dict(row)
+
+    # Mark the old key rotated (audited as 'rotated').
+    revoke_key(key_id, actor=actor, reason="rotated -> new key", _status="rotated", conn=c)
+
+    # Issue the successor carrying the old key's parameters + remaining expiry.
+    new = issue_key(
+        alias=old.get("alias"),
+        scope_type=old.get("scope_type") or "tenant",
+        scope_ref=old.get("scope_ref"),
+        session_id=old.get("session_id"),
+        max_budget_usd=old.get("max_budget_usd"),
+        budget_window=old.get("budget_window") or "none",
+        rpm_limit=old.get("rpm_limit"),
+        tpm_limit=old.get("tpm_limit"),
+        expires_at=old.get("expires_at"),
+        tenant_id=old.get("tenant_id"),
+        classification=old.get("classification"),
+        created_by=actor or old.get("created_by"),
+        conn=c,
+    )
+    # Record the lineage link + a rotation audit row on the new key.
+    c.execute(
+        "UPDATE llm_proxy_keys SET rotated_from = %s WHERE key_id = %s",
+        (key_id, new["key_id"]),
+    )
+    _write_audit(
+        c, new["key_id"], "rotated",
+        actor=actor,
+        detail=f"rotated_from={key_id}",
+        tenant_id=old.get("tenant_id"),
+        classification=old.get("classification"),
+    )
+    c.commit()
+    new["rotated_from"] = key_id
+    if own:
+        try:
+            c.close()
+        except Exception:
+            pass
+    return new
+
+
+def expire_keys(now: Optional[datetime] = None, *, conn=None) -> Dict[str, Any]:
+    """Sweep: flip any active key past its expiry to ``expired`` (audited).
+
+    Idempotent and safe to run on a schedule. Returns the ids expired this run.
+    """
+    own = conn is None
+    c = conn or get_connection()
+    ensure_schema(c)
+    now = now or datetime.now(timezone.utc)
+    rows = c.execute(
+        "SELECT key_id, expires_at, tenant_id, classification FROM llm_proxy_keys "
+        "WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at != ''"
+    ).fetchall()
+    expired: List[str] = []
+    for r in rows:
+        d = dict(r)
+        try:
+            past = datetime.fromisoformat(d["expires_at"]) < now
+        except (TypeError, ValueError):
+            past = False
+        if not past:
+            continue
+        c.execute(
+            "UPDATE llm_proxy_keys SET status = 'expired', updated_at = %s WHERE key_id = %s",
+            (_now(), d["key_id"]),
+        )
+        _write_audit(
+            c, d["key_id"], "expired",
+            detail=f"expires_at={d['expires_at']}",
+            tenant_id=d.get("tenant_id"),
+            classification=d.get("classification"),
+        )
+        expired.append(d["key_id"])
+    c.commit()
+    if own:
+        try:
+            c.close()
+        except Exception:
+            pass
+    return {"expired": expired, "count": len(expired)}
+
+
 # --- CLI --------------------------------------------------------------------
 
 def _print(obj: Any, as_json: bool) -> None:
@@ -432,6 +722,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_issue.add_argument("--rpm", type=int, dest="rpm_limit")
     p_issue.add_argument("--tpm", type=int, dest="tpm_limit")
     p_issue.add_argument("--expires-at")
+    p_issue.add_argument("--expires-in-days", type=int)
     p_issue.add_argument("--tenant-id")
     p_issue.add_argument("--classification")
     p_issue.add_argument("--created-by")
@@ -444,6 +735,20 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p_show = sub.add_parser("show", help="Show one key by id", parents=[common])
     p_show.add_argument("key_id")
+
+    p_revoke = sub.add_parser("revoke", help="Revoke a key", parents=[common])
+    p_revoke.add_argument("key_id")
+    p_revoke.add_argument("--actor")
+    p_revoke.add_argument("--reason")
+
+    p_rotate = sub.add_parser("rotate", help="Rotate a key (revoke old, issue new)", parents=[common])
+    p_rotate.add_argument("key_id")
+    p_rotate.add_argument("--actor")
+
+    sub.add_parser("expire", help="Sweep expired keys", parents=[common])
+
+    p_audit = sub.add_parser("audit", help="Show append-only key audit trail", parents=[common])
+    p_audit.add_argument("--key-id")
 
     args = parser.parse_args(argv)
 
@@ -458,6 +763,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             rpm_limit=args.rpm_limit,
             tpm_limit=args.tpm_limit,
             expires_at=args.expires_at,
+            expires_in_days=args.expires_in_days,
             tenant_id=args.tenant_id,
             classification=args.classification,
             created_by=args.created_by,
@@ -490,6 +796,35 @@ def main(argv: Optional[List[str]] = None) -> int:
             _print({"error": "not found", "key_id": args.key_id}, args.json)
             return 1
         _print(row, args.json)
+        return 0
+
+    if args.cmd == "revoke":
+        try:
+            _print(revoke_key(args.key_id, actor=args.actor, reason=args.reason), args.json)
+        except ValueError as exc:
+            _print({"error": str(exc)}, args.json)
+            return 1
+        return 0
+
+    if args.cmd == "rotate":
+        try:
+            result = rotate_key(args.key_id, actor=args.actor)
+        except ValueError as exc:
+            _print({"error": str(exc)}, args.json)
+            return 1
+        if args.json:
+            _print(result, True)
+        else:
+            print(f"Rotated {args.key_id} -> {result['key_id']}")
+            print(f"NEW VIRTUAL KEY (shown once, store it now): {result['virtual_key']}")
+        return 0
+
+    if args.cmd == "expire":
+        _print(expire_keys(), args.json)
+        return 0
+
+    if args.cmd == "audit":
+        _print(audit_trail(args.key_id), args.json)
         return 0
 
     return 2

@@ -629,6 +629,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # immutability triggers (sc_audit_no_update/no_delete); non-repudiation trail
         # for ZIG capability/activity/evidence/assessment writes (cnr-zig-03)
         "sc_audit",
+        # LPX LLM-proxy virtual-key lifecycle (lpx-keys-03, NIST AU) — issuance,
+        # rotation, revocation, and expiry are immutable evidence; rows never
+        # UPDATE/DELETE.
+        "llm_proxy_key_audit",
     ]
 
     if tool_name == "Bash":

@@ -2304,6 +2304,11 @@ python tools/llm/architectures/leaderboard.py --recommend --json                
 python tools/llm/proxy_keys.py issue --scope-type team --scope-ref 7 --session-id 42 --budget 10 --budget-window exercise --json  # Issue a budgeted team key (shown once)
 python tools/llm/proxy_keys.py list --session-id 42 --json                              # List keys (metadata only, never the key/hash)
 python tools/llm/proxy_keys.py show <key_id> --json                                     # Show one key by id
+python tools/llm/proxy_keys.py revoke <key_id> --actor admin --reason "left cohort" --json  # Revoke (per-key, immediate)
+python tools/llm/proxy_keys.py rotate <key_id> --actor admin --json                     # Rotate: revoke old, issue linked successor (new key shown once)
+python tools/llm/proxy_keys.py expire --json                                            # Sweep keys past expiry -> status expired
+python tools/llm/proxy_keys.py audit --key-id <key_id> --json                           # Append-only lifecycle audit trail (NIST AU)
+# Default expiry: ICDEV_LLM_PROXY_KEY_TTL_DAYS (default 30; 0 disables) so a cohort key cannot outlive the cohort
 # Master/admin key from ICDEV_LLM_PROXY_MASTER_KEY (never logged/returned); LiteLLM sync is best-effort and OFF unless ICDEV_LLM_PROXY_ENABLED=true
 
 # LLM Proxy Budgets (lpx-keys-02) — per-key spend budgets scoped to team/guild/user
