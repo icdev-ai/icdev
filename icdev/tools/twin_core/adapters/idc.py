@@ -73,7 +73,13 @@ class IDCTwinAdapter(TwinAdapter):
             }
             for v in native.get("violations", [])
         ]
-        violations, verdict = self._airgap_augment(delta or {}, violations, native.get("gate"), kwargs)
+        verdict = native.get("gate")
+        # A target preset (twx-fed-02) bundles service-availability + air-gap; use
+        # it when supplied, else fall back to standalone air-gap checks (fed-01).
+        if kwargs.get("target_preset"):
+            violations, verdict = self._target_augment(delta or {}, violations, verdict, kwargs)
+        else:
+            violations, verdict = self._airgap_augment(delta or {}, violations, verdict, kwargs)
         return self._wrap(
             target_id,
             verdict,

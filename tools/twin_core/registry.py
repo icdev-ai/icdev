@@ -214,6 +214,28 @@ class TwinAdapter:
             return list(violations) + extra, "fail"
         return violations, verdict
 
+    def _target_augment(self, target: Any, violations: list, verdict: Any, kwargs: dict):
+        """Augment with target-environment (preset) violations when ``target_preset``
+        is supplied (twx-fed-02): service-not-available (service_parity) + air-gap
+        blockers + staleness. Any blocker/critical escalates the verdict to ``fail``;
+        otherwise a non-empty result at least warns. Returns ``(violations, verdict)``.
+        """
+        preset = kwargs.get("target_preset")
+        if not preset:
+            return violations, verdict
+        from tools.twin_core.schema import normalize_severity
+        from tools.twin_core.target_presets import evaluate_target
+
+        extra = evaluate_target(target, preset, source_canvas=self.canvas_key)
+        if not extra:
+            return violations, verdict
+        merged = list(violations) + extra
+        if any(normalize_severity(v.get("severity")) in ("blocker", "critical") for v in extra):
+            return merged, "fail"
+        if verdict in (None, "pass", "unknown"):
+            return merged, "warn"
+        return merged, verdict
+
     def _wrap(self, target_id: str, verdict: Any, violations: list[dict] | None = None, **kw) -> dict:
         """Wrap a native simulate result in the canonical envelope (schema.twin_verdict)."""
         return twin_verdict(self.canvas_key, target_id, verdict, violations, method=self.method, **kw)
