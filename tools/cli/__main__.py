@@ -40,6 +40,8 @@ Subcommands:
                            (--resume <ctx-id> to continue a conversation).
   sessions list|export|search
                            List / export (JSONL) / full-text search conversations.
+  skills list|search|install|update
+                           Manage skills via the local registry + marketplace.
   audit export             Export SOC 2 (and future framework) evidence reports.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
@@ -93,6 +95,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "sessions":
         from tools.agent_runtime.cli import sessions_main
         return sessions_main(rest)
+
+    if sub == "skills":
+        from tools.cli.skills import main as skills_main
+        return skills_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main
