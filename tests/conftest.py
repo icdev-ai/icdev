@@ -3265,6 +3265,27 @@ CREATE TABLE IF NOT EXISTS llm_proxy_key_audit (
     classification TEXT,
     recorded_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- LPX per-team RPM/TPM rate ceilings + rolling usage (lpx-teams-01). Sibling of
+-- ttx_api_log: gameday-scoped, no tenant_id/classification (get_connection with
+-- no security context). Minute-bucket windows.
+CREATE TABLE IF NOT EXISTS llm_proxy_team_limits (
+    session_id   INTEGER NOT NULL,
+    team_id      INTEGER NOT NULL,
+    rpm_limit    INTEGER NOT NULL,
+    tpm_limit    INTEGER NOT NULL,
+    team_count   INTEGER,
+    burst_factor REAL,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (session_id, team_id)
+);
+CREATE TABLE IF NOT EXISTS llm_proxy_team_usage (
+    session_id     INTEGER NOT NULL,
+    team_id        INTEGER NOT NULL,
+    window_minute  INTEGER NOT NULL,
+    request_count  INTEGER NOT NULL DEFAULT 0,
+    token_count    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (session_id, team_id, window_minute)
+);
 -- LPX per-key spend ledger (lpx-keys-02). Budgets wire onto existing grouping
 -- units via the key's scope; deny is scoped to a single key/window.
 CREATE TABLE IF NOT EXISTS llm_proxy_spend (
