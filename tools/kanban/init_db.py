@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     acceptance_criteria   TEXT,
     triage_prompt         TEXT,
     loop_type             TEXT DEFAULT 'deterministic',
-    adversarial_enabled   INTEGER DEFAULT 0
+    adversarial_enabled   INTEGER DEFAULT 0,
+    due_date              TEXT,
+    sla_hours             INTEGER
 )
 """
 
@@ -175,6 +177,9 @@ _KANBAN_TASKS_EXTRA_COLUMNS = [
     # every child and silently decomposed batches into zero children.
     ("trace_id",            "ALTER TABLE kanban_tasks ADD COLUMN trace_id             TEXT"),
     ("span_id",             "ALTER TABLE kanban_tasks ADD COLUMN span_id              TEXT"),
+    # crx-kan-01 — SLA / due-date tracking (nullable; opt-in per task).
+    ("due_date",            "ALTER TABLE kanban_tasks ADD COLUMN due_date             TEXT"),
+    ("sla_hours",           "ALTER TABLE kanban_tasks ADD COLUMN sla_hours            INTEGER"),
 ]
 
 # Same conditional-ALTER contract as _KANBAN_TASKS_EXTRA_COLUMNS.
