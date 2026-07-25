@@ -39,9 +39,31 @@ from tools.genesis.reflexes.kanban import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _isolated_db(tmp_path, monkeypatch):
+    """Redirect the main SQLite DB to a per-test temp file so this module never
+    writes ``test-kbh-*`` rows into the live data/icdev.db (opx-kan-02).
+
+    ``get_connection()`` reads ``ICDEV_DB_PATH`` at call time, so this single
+    env redirect isolates the ``db_conn`` fixture, the inline ``_mk_task``
+    inserts, AND every internal ``get_connection()`` reached by the scheduler
+    guards under test. autouse so tests that touch the board *without* taking
+    ``db_conn`` are covered too. The kanban schema is seeded into the temp DB
+    via the production initializer."""
+    db = tmp_path / "icdev.db"
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(db))
+    try:
+        from tools.kanban.init_db import init_kanban_tables
+        init_kanban_tables()
+    except Exception:  # pragma: no cover — table seeding is best-effort
+        pass
+    return db
+
+
 @pytest.fixture
 def db_conn():
-    """Fresh DB connection per test."""
+    """Fresh DB connection per test (on the isolated temp DB)."""
     conn = get_connection()
     yield conn
     conn.close()
