@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS ttx_api_log (
     endpoint TEXT,
     call_id TEXT NOT NULL UNIQUE,
     result_hash TEXT,
+    token_count INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
     called_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -144,6 +146,11 @@ CREATE INDEX IF NOT EXISTS idx_ttx_leaderboard_session ON ttx_leaderboard(sessio
 _ADD_COLUMNS = [
     ("ttx_sessions", "ontology_tags_json", "TEXT DEFAULT '{}'"),
     ("ttx_injects", "ontology_tags_json", "TEXT DEFAULT '{}'"),
+    # lpx-teams-03: per-team spend attribution. ttx_api_log was a CALL log with
+    # no cost columns; add token/cost so a facilitator can answer "what did each
+    # team spend this exercise" from a single-store query (no cross-store join).
+    ("ttx_api_log", "token_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("ttx_api_log", "cost_usd", "REAL NOT NULL DEFAULT 0.0"),
 ]
 
 _migrated = False

@@ -2316,6 +2316,10 @@ python tools/llm/proxy_keys.py audit --key-id <key_id> --json                   
 python -c "import json;from tools.llm.proxy_gateway import local_copy_preflight;print(json.dumps(local_copy_preflight()))"  # onboarding/health preflight
 # A local copy with no gateway reachable / no virtual key fails CLOSED with a clear message; it never falls back to a real provider key.
 
+# Per-team spend attribution (lpx-teams-03) — "what did each team spend this exercise?"
+python tools/ttx/team_spend.py <session_id> --json                                  # Per-team calls/tokens/cost from ttx_api_log
+python tools/ttx/team_spend.py <session_id> --total --json                           # + exercise roll-up
+
 # LLM Proxy Team Budgets (lpx-teams-02) — per-team gameday spend (a team's budget is its key's budget)
 python tools/llm/proxy_team_budgets.py provision <session_id> <team_id> --budget 40 --json  # Provision/update exercise budget
 python tools/llm/proxy_team_budgets.py check <session_id> <team_id> --projected 0.05 --json  # allow/warn/block + facilitator_message
