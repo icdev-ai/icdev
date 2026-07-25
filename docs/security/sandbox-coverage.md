@@ -846,3 +846,19 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - **No default behavior change** — with no `--toolset`, the server exposes the full surface exactly as before (Claude Code path unaffected).
   - **Regression test** — `tests/mcp/test_toolset_profiles.py` asserts every profile references only real `TOOL_REGISTRY` tools, the fail-closed gate blocks `local_only` on cloud and allows it on local / with override, and the server registers only the profile's tools.
 - **Revisit if:** a `cloud_safe` profile is expanded to include a tool that can emit CUI (re-audit its `cui_egress`), per-tool response redaction/classification filtering is added (tighten from profile-level to tool-level egress control), or the server ever accepts remote (non-stdio) transport without an auth layer.
+
+### Gap 33 — SAG auto-skill lifecycle: LLM-generated skill promotion (`tools/agent_runtime/skills_lifecycle.py`)
+
+**Module:** `tools/agent_runtime/skills_lifecycle.py` (SAG sag-skl-01)
+
+**Ingress path:** The standalone agent proposes new skills via NOVA's generator when a session solved a novel task. The generated markdown spec (an LLM output — untrusted content) is queued in `agent_improvement_artifacts` and, on approval, written to `.agents/skills/icdev-auto-<slug>/SKILL.md`, where it becomes parseable by `tools/skills/registry.py` and thus discoverable/invokable as a skill.
+
+- **Decision:** **bypass-documented** — the write is gated by mandatory human-in-the-loop approval; no auto-execution and no auto-promotion.
+- **Rationale:** The novel content (an LLM-drafted skill spec) is never executed by this module and never lands on disk without an explicit human `approve` action (`/skill approve <id>` or the headless CLI). Quarantine is the `pending` status in the NOVA queue; nothing reaches `.agents/skills` until a person reviews and approves it. The spec is markdown documentation, not code that this module runs — a skill's *commands* are only ever executed later through the existing allowlisted `tools/skills/invoke.py` path (Gap-covered), which restricts execution to `python tools/…` prefixes. Every promoted skill carries a provenance frontmatter block (`source-session`, `source-model`, `generated-at`, `approved-by`, `trust: unverified-llm-generated`) so the LLM origin is always visible — a TRUST record, not a laundered first-party skill.
+- **Guardrails:**
+  - **HITL is the gate** — `approve_proposal()` is the sole writer to `.agents/skills`, and only on explicit human approval; the automatic post-session proposal hook (`maybe_propose_from_session`) only ever *queues* a `pending` proposal and is itself env-gated (`ICDEV_SAG_SKILL_PROPOSALS`, default off).
+  - **Provenance frontmatter** — every promoted `SKILL.md` is stamped `trust: unverified-llm-generated` with its source session/model, so downstream consumers know it is machine-drafted.
+  - **Namespaced, not laundered** — auto-skills live under the reserved `icdev-auto-` prefix, distinct from hand-authored `icdev-*` skills.
+  - **Curator archives, never deletes** — the `sag_skill_curator` reflex only moves idle, unpinned skills to `.agents/skills/_archive/` (dry-run default); it never executes or deletes them.
+  - **Execution stays allowlisted** — a promoted skill's commands run only via `tools/skills/invoke.py`'s `python tools/…` allowlist, never by this module.
+- **Revisit if:** promotion is ever made automatic (removing the human approval step), the post-session hook is switched on by default, or auto-skill commands are ever dispatched outside the `invoke.py` allowlist — any of which would require sandboxing skill execution and re-scoping this decision.
