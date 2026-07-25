@@ -129,10 +129,12 @@ Storage delta (rce-quant-01, measured): 768-dim × 2000 vectors → SQLite DB
 
 ### Toggle decisions: `contextual_retrieval` and `raptor`
 
-**Status: NOT YET MEASURED against the new baseline. Both remain default-OFF.**
+**Status: `contextual_retrieval` is MEASURED and now ON (rce-eval-04-d4).
+`raptor` has been built (rce-eval-05) but its retrieval toggle remains OFF and
+unmeasured.**
 
-This is a deliberate, recorded gap rather than an ambiguous one. Sizing done in
-this task, against the real 3552-chunk corpus:
+The sizing below was done before either build, against the real 3552-chunk
+corpus, and is kept because it is what set the cost expectation:
 
 | Toggle | Build command | Measured cost to enable |
 |---|---|---|
@@ -144,32 +146,59 @@ is worse than none: it leaves the store with a mix of contextualized and
 non-contextualized embeddings, which makes any before/after delta
 uninterpretable.
 
-**Interim decision for both: stay OFF, and do not treat them as shippable.**
-The cost/benefit is now bounded by a number rather than by a guess — each toggle
-requires a multi-thousand-call LLM pass over the corpus to chase **at most
-+6.1 pp recall@5**, against a retriever already at 0.94/0.97. That is a poor
-trade unless the measurement shows the gain lands specifically on the three
-under-served queries above.
+The interim decision was to keep both OFF until each had a number. That number
+now exists for `contextual_retrieval`.
 
-**To close this out** (the remaining work, deliberately split because each needs
-its own long-running dispatch against the live environment):
+#### `contextual_retrieval`: MEASURED → ON
+
+Full record: [rce-eval-04-contextual-benchmark.md](rce-eval-04-contextual-benchmark.md).
+Re-index run record: [rce-eval-04-contextual-reindex-run.md](rce-eval-04-contextual-reindex-run.md).
+After-run artifact: `data/rag/rce_contextual_compliance.json`.
+
+| Metric | `rce_baseline_compliance.json` | contextual | Δ |
+|--------|-------------------------------:|-----------:|---:|
+| `recall_at_5` | 0.9394 | **0.9545** | +0.0151 |
+| `mrr` | 0.9343 | **0.9545** | +0.0202 |
+| `ndcg_at_5` | 0.9429 | **0.9534** | +0.0105 |
+| `citation_hit_rate` | 0.9697 | 0.9697 | 0.0000 |
+
+The gain landed where the headroom analysis said it had to: two of the three
+under-served queries recovered to full recall (`q-sc13-cryptographic-protection`
+1/2 → 2/2, `q-fedramp-authorization-boundary` 1/2 → 2/2), and `q-ac2-account-mgmt`
+went MRR 0.5 → 1.0. `q-stig-hardening` is unchanged at 0/2 and is now understood
+to be a **golden-set defect** — zero chunks in the corpus contain both `STIG` and
+`hardening`, and `score_query` matches substrings against `content` only, never
+the prefix or `source_id`. One regression: `q-cmmc-cui-protection` recall
+1.0 → 0.5, prefix homogenisation crowding out the single chunk that spells out
+"controlled unclassified information".
+
++1.5 pp recall@5 against a bounded ceiling of +6.1 pp is a real but modest
+return on a 3552-call LLM pass. It is kept ON because the pass is already paid
+for and the delta is positive; it would not justify a second such pass on a
+similar corpus.
+
+**Prefix-generation provider** (recorded per the rule below): router function
+`rag_evaluate` → `ollama_cloud` / **`kimi-k2.6:cloud`**, prompt `ctx-v1`;
+3148 chunks LLM-generated, 404 heuristic fallback. Retrieval embeddings on both
+sides of the comparison: `nomic-embed-text` (768-dim) via
+`OllamaEmbeddingProvider`.
+
+#### `raptor`: built, retrieval toggle still OFF
+
+`python tools/rag/raptor.py --build` has been run
+([rce-eval-05-raptor-live-build.md](rce-eval-05-raptor-live-build.md)), but
+`rag.raptor.enabled` remains `false` and no before/after has been taken. To
+close it out:
 
 ```bash
-# 1. contextual_retrieval
-python tools/rag/reindex_contextual.py --reindex --execute
-#    then set rag.contextual_retrieval.enabled: true in args/rag_config.yaml
-python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline_compliance.json --json
-
-# 2. raptor
-python tools/rag/raptor.py --build
-#    then set rag.raptor.enabled: true in args/rag_config.yaml
+#    set rag.raptor.enabled: true in args/rag_config.yaml
 python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline_compliance.json --json
 ```
 
 Record the LLM provider actually used for the build — both toggles depend on
 generation quality at ingestion/build time, and a small local model may
 under-perform in a way that is a property of the model, not of the technique.
-Neither default may be flipped to ON without a number in this document.
+No remaining default may be flipped to ON without a number in this document.
 
 ## Evaluated and SKIPPED (see ADRs D-RCE-*)
 
