@@ -54,7 +54,33 @@ _DDL = [
         owner_id TEXT DEFAULT '', retention_days INTEGER DEFAULT 90,
         classification TEXT DEFAULT 'CUI', tenant_id TEXT DEFAULT 'default',
         created_at TEXT DEFAULT (datetime('now')))""",
-    # docmod_findings is provided by the docmod migration (full canonical schema).
+    # docmod_scan_runs + docmod_findings: created here so the fixture is
+    # self-sufficient on a COLD data/icdev.db. Relying on "the docmod migration
+    # provides them" made the end-to-end tests pass only when a warm DB already
+    # had the tables — and, worse, the missing-table error inside
+    # regenerate_document leaked an open write-lock that deadlocked a later
+    # test file's DELETE-FROM cleanup. Canonical shape mirrors conftest
+    # MINIMAL_ICDEV_SCHEMA.
+    """CREATE TABLE IF NOT EXISTS docmod_scan_runs (
+        run_id TEXT PRIMARY KEY, scope_type TEXT NOT NULL DEFAULT 'all',
+        scope_id TEXT, pack_ids TEXT DEFAULT '[]', evidence_hash TEXT,
+        docs_scanned INTEGER NOT NULL DEFAULT 0, findings_new INTEGER NOT NULL DEFAULT 0,
+        findings_resolved INTEGER NOT NULL DEFAULT 0,
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, finished_at TIMESTAMP,
+        triggered_by TEXT NOT NULL DEFAULT 'manual', tenant_id TEXT,
+        classification TEXT DEFAULT 'CUI')""",
+    """CREATE TABLE IF NOT EXISTS docmod_findings (
+        finding_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, doc_id TEXT NOT NULL,
+        version_id TEXT, chunk_link_id TEXT, section_heading TEXT, page INTEGER,
+        pack_id TEXT NOT NULL, entity_label TEXT NOT NULL, entity_type TEXT NOT NULL,
+        finding_type TEXT NOT NULL, currency_verdict TEXT NOT NULL DEFAULT 'unknown',
+        severity TEXT NOT NULL DEFAULT 'medium', rationale TEXT,
+        evidence_json TEXT DEFAULT '[]', recommended_replacement TEXT,
+        replacement_evidence_json TEXT DEFAULT '[]', confidence REAL NOT NULL DEFAULT 0.0,
+        state TEXT NOT NULL DEFAULT 'open', redline_suggestion_id TEXT,
+        prediction_id TEXT, dedupe_key TEXT NOT NULL, supersedes_id TEXT,
+        tenant_id TEXT, classification TEXT DEFAULT 'CUI',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""",
 ]
 
 
