@@ -378,9 +378,11 @@ as a mere *warning*.
 
 This should be treated as a defect independent of anything in this document: a gate
 that returns `pass` when no scan ran is worse than no gate, because it produces
-compliance evidence for work that did not happen. The fix is fail-closed semantics
-(no scan artifact → `unknown`, never `pass`) — and it is also the natural home for
-adaptation A6, since the findings-recording and gate-scoring shell already exists.
+compliance evidence for work that did not happen. **Fixed in PR #790** — fail-closed
+semantics: no observation → `unknown`, never `pass`; `zig_dast_scans` records only
+observed checks; p2-21 reports `in_progress` while no scanner is wired; and the cATO
+signal gives no credit for an evidence-free gate. The shell that remains — findings
+tables plus gate scorer — is the natural landing place for adaptation A6.
 
 Meanwhile the recurring real defects in this codebase are precisely the dynamic
 kind: an authz endpoint failing open to admin, an ABAC deny-case that matched
@@ -676,7 +678,7 @@ are worth their own cards.
 
 | # | Defect | Location | Severity |
 |---|---|---|---|
-| D1 | **DAST gate certifies itself.** `run_dast_scan` ignores `target_url`; all checks default pass; `deploy_dast_gates()` scores 100% with no scan and marks a ZIG activity complete. Produces compliance evidence for work that never ran. | `tools/security_canvas/dast_runtime_gates.py` | **High** — assurance integrity |
+| ~~D1~~ | ~~**DAST gate certifies itself.**~~ `run_dast_scan` ignored `target_url`; all checks defaulted to pass; `deploy_dast_gates()` scored 100% with no scan and marked ZIG activity p2-21 complete — and `continuous_authorization._resolve_dast_signal` fed that fabricated 1.0 into the **cATO ongoing-authorization posture**. **FIXED — PR #790**: per-check pass/fail/unknown, observed checks only written to `zig_dast_scans`, `gate_status="unknown"` (never `pass`) on any evidence gap, activity marked `in_progress` while no scanner is wired, and `unknown`/NULL scores earn no cATO credit. 17 regression tests, verified to fail against the pre-fix code. | `tools/security_canvas/dast_runtime_gates.py` | ~~**High**~~ — resolved |
 | D2 | **`sandbox_execute` MCP tool has no handler** → silently served as an error stub, while advertised in the `security` agent bundle. | `tools/mcp/tool_registry.py:5061`, `args/agent_toolsets.yaml:65` | Medium |
 | D3 | **The one good egress gate is unused.** `egress_guard` (HTTPS-only, allow/denylist, resolve-then-reject private/metadata IPs, per-hop redirect revalidation) is called by exactly one feature and defaults off; ~104 modules fetch external URLs with none of it. | `tools/doc_modernization/link_check.py:206` | Medium |
 | D4 | **Fetched third-party bytes mostly skip injection scanning**, and the NLP link extractor explicitly passes raw HTML to an LLM with `skip_injection_scan=True`. | `tools/genesis/reflexes/research.py` | Medium |
