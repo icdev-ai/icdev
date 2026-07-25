@@ -1,11 +1,14 @@
 # CUI // SP-CTI
 """DIC Freshness Engine — staleness scoring + autonomous reflex trigger.
 
-Scoring dimensions:
+Scoring dimensions (weights config-driven — args/dic_freshness_config.yaml):
   • Document age vs retention tier (default 90 days)
   • Time since last approved version
   • Number of drift events affecting the collection since last update
   • Section count pending review (more pending = less fresh)
+  • KG blast radius — how many recently-changed entities the doc cites
+    (5th dimension, DEFAULT WEIGHT 0 so existing scores are unchanged until
+    an operator tunes it; extends consistency_checker concept-overlap)
 
 Outputs:
   • per-doc dic_doc_freshness row (state, reason, source_event)
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 
 from tools.logging.icdev_logger import get_logger
 
@@ -23,6 +27,78 @@ logger = get_logger(__name__)
 
 _FRESHNESS_STATES = ["fresh", "aging", "stale", "unknown"]
 _DEFAULT_RETENTION_DAYS = 90
+
+# Built-in scoring weights — the fallback when the config file is absent/malformed.
+# These MATCH the historical hard-coded weights so scores are unchanged, and
+# blast_radius defaults to 0.0 (5th dimension is inert until an operator tunes it).
+_DEFAULT_WEIGHTS: dict[str, float] = {
+    "age": 0.25,
+    "approval": 0.35,
+    "drift": 0.25,
+    "pending": 0.15,
+    "blast_radius": 0.0,
+}
+_DEFAULT_BLAST_MIN_OVERLAP = 3
+_DEFAULT_BLAST_SCORE_PER_ENTITY = 0.2
+
+_CONFIG_PATH = Path(__file__).resolve().parents[2] / "args" / "dic_freshness_config.yaml"
+_config_cache: dict | None = None
+
+
+def _load_config() -> dict:
+    """Load freshness scoring config (weights + blast-radius params).
+
+    Cached. Fail-soft: any read/parse error yields the built-in defaults so a
+    bad config file can never change or crash scoring.
+    """
+    global _config_cache
+    if _config_cache is not None:
+        return _config_cache
+    cfg: dict = {}
+    try:
+        import yaml
+
+        if _CONFIG_PATH.exists():
+            with open(_CONFIG_PATH, encoding="utf-8") as fh:
+                cfg = yaml.safe_load(fh) or {}
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("freshness: config load failed, using defaults: %s", exc)
+        cfg = {}
+    _config_cache = cfg
+    return cfg
+
+
+def get_weights() -> dict[str, float]:
+    """Effective scoring weights: defaults overlaid with config `weights:`.
+
+    Unknown keys in config are ignored; missing keys keep their default. The
+    blast_radius weight stays 0.0 unless explicitly set, guaranteeing existing
+    scores are unchanged out of the box.
+    """
+    weights = dict(_DEFAULT_WEIGHTS)
+    raw = (_load_config().get("weights") or {})
+    for key in weights:
+        if key in raw:
+            try:
+                weights[key] = float(raw[key])
+            except (TypeError, ValueError):
+                pass
+    return weights
+
+
+def _blast_params() -> tuple[int, float, bool]:
+    """(min_overlap, score_per_entity, emit_drift) from config, with defaults."""
+    br = (_load_config().get("blast_radius") or {})
+    try:
+        min_overlap = int(br.get("min_overlap", _DEFAULT_BLAST_MIN_OVERLAP))
+    except (TypeError, ValueError):
+        min_overlap = _DEFAULT_BLAST_MIN_OVERLAP
+    try:
+        per_entity = float(br.get("score_per_entity", _DEFAULT_BLAST_SCORE_PER_ENTITY))
+    except (TypeError, ValueError):
+        per_entity = _DEFAULT_BLAST_SCORE_PER_ENTITY
+    emit_drift = bool(br.get("emit_drift", True))
+    return max(min_overlap, 1), per_entity, emit_drift
 
 
 @dataclass
@@ -75,8 +151,19 @@ def _score_doc(
     pending_section_count: int,
     tenant_id: str,
     classification: str,
+    *,
+    blast_count: int = 0,
+    weights: dict[str, float] | None = None,
+    blast_score_per_entity: float = _DEFAULT_BLAST_SCORE_PER_ENTITY,
 ) -> FreshnessResult:
-    """Compute freshness score (0=fresh → 1=stale) and state."""
+    """Compute freshness score (0=fresh → 1=stale) and state.
+
+    ``blast_count`` is the number of recently-changed KG entities this document
+    cites (the 5th, blast-radius dimension). Its weight defaults to 0.0, so when
+    callers omit ``blast_count``/``weights`` the score is IDENTICAL to the
+    historical 4-dimension formula.
+    """
+    w = weights or _DEFAULT_WEIGHTS
     age_days = _days_since(created_at)
     since_approved_days = _days_since(latest_approved_at) if latest_approved_at else age_days
 
@@ -92,12 +179,17 @@ def _score_doc(
     # Pending sections: each pending adds 0.05, capped at 0.3.
     pending_score = min(pending_section_count * 0.05, 0.3)
 
+    # Blast radius: each recently-changed cited entity adds score_per_entity,
+    # capped at 1.0. Inert when weights["blast_radius"] == 0 (default).
+    blast_score = min(max(blast_count, 0) * blast_score_per_entity, 1.0)
+
     # Combined score (weighted).
     score = (
-        age_score * 0.25
-        + approval_score * 0.35
-        + drift_score * 0.25
-        + pending_score * 0.15
+        age_score * w.get("age", 0.25)
+        + approval_score * w.get("approval", 0.35)
+        + drift_score * w.get("drift", 0.25)
+        + pending_score * w.get("pending", 0.15)
+        + blast_score * w.get("blast_radius", 0.0)
     )
     score = round(min(max(score, 0.0), 1.0), 3)
 
@@ -117,6 +209,8 @@ def _score_doc(
         reasons.append(f"{drift_count_since_update} drift events")
     if pending_score > 0:
         reasons.append(f"{pending_section_count} pending sections")
+    if blast_score > 0 and w.get("blast_radius", 0.0) > 0:
+        reasons.append(f"blast radius {blast_count} changed entities")
 
     return FreshnessResult(
         doc_id=doc_id,
@@ -131,17 +225,85 @@ def _score_doc(
     )
 
 
+def _recent_changed_entities(cur, tenant_id: str, limit: int = 200) -> list[str]:
+    """Best-effort: distinct entities from recent drift events for the tenant.
+
+    Drift events are the persisted trace of "something changed" (docmod evidence
+    updates flow here via the docmod drift_bridge -> acoic). Used as the default
+    changed-entity source when a caller does not pass ``changed_entities``.
+    Fail-soft: returns [] on any error.
+    """
+    try:
+        cur.execute(
+            "SELECT DISTINCT entity FROM dic_drift_events "
+            "WHERE tenant_id = %s AND entity IS NOT NULL "
+            "ORDER BY detected_at DESC LIMIT %s",
+            (tenant_id, limit),
+        )
+        return [
+            (r[0] if hasattr(r, "__getitem__") else r["entity"])
+            for r in cur.fetchall()
+            if (r[0] if hasattr(r, "__getitem__") else r["entity"])
+        ]
+    except Exception:
+        return []
+
+
+def _route_blast_drift(flagged: list[dict], tenant_id: str, classification: str) -> None:
+    """Route blast-radius findings through the SAME drift sink the docmod
+    drift_bridge uses (acoic.handle_drift), so semantic blast-radius findings
+    reach the existing HITL regen/compliance response instead of a new pipeline.
+
+    Idempotent per (doc, entity-set) via a stable dedup_key. Fail-soft — a
+    routing error must never fail the freshness scan.
+    """
+    try:
+        from tools.document_intelligence import acoic
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("freshness: acoic unavailable for blast drift routing: %s", exc)
+        return
+    for f in flagged:
+        doc_id = f.get("doc_id")
+        if not doc_id:
+            continue
+        matched = f.get("matched_entities") or []
+        dedup = f"kg_blast:{doc_id}:{','.join(sorted(matched))}"
+        try:
+            acoic.handle_drift({
+                "source": "kg_blast_radius",
+                "entity": ", ".join(matched[:5]),
+                "severity": "medium",
+                "document_id": doc_id,
+                "dedup_key": dedup,
+                "tenant_id": tenant_id,
+                "classification": classification,
+                "rationale": (
+                    f"cites {f.get('overlap_count', 0)} recently-changed KG "
+                    f"entities (blast radius)"
+                ),
+            })
+        except Exception as exc:
+            logger.warning("freshness: blast drift routing failed for %s: %s", doc_id, exc)
+
+
 def scan_collection(
     collection_id: str,
     *,
     tenant_id: str = "default",
     classification: str = "CUI",
     retention_days: int | None = None,
+    changed_entities: list[str] | None = None,
 ) -> ScanResult:
     """Scan all documents in a collection and score freshness.
 
     Returns ScanResult with per-doc FreshnessResult list and aggregate counts.
     Persists results to dic_doc_freshness and dic_freshness_scans.
+
+    The 5th (blast-radius) dimension only does work when its config weight is
+    > 0 (default 0). ``changed_entities`` lets a caller pass the exact changed
+    entity set (e.g. kg_temporal_diff output); when omitted the engine derives
+    it from recent drift events. When the weight is 0 no blast query runs and
+    scores are unchanged.
     """
     from tools.db.storage import get_connection
 
@@ -202,6 +364,34 @@ def scan_collection(
         except Exception:
             drift_count = 0
 
+        # ── Blast radius (5th dimension) — only when its weight is tuned up. ──
+        weights = get_weights()
+        blast_counts: dict[str, int] = {}
+        blast_flagged: list[dict] = []
+        blast_per_entity = _DEFAULT_BLAST_SCORE_PER_ENTITY
+        if weights.get("blast_radius", 0.0) > 0:
+            min_overlap, blast_per_entity, emit_drift = _blast_params()
+            entities = changed_entities
+            if entities is None:
+                entities = _recent_changed_entities(cur, tenant_id)
+            if entities:
+                try:
+                    from tools.document_intelligence.consistency_checker import (
+                        find_docs_citing_changed_entities,
+                    )
+
+                    blast_flagged = find_docs_citing_changed_entities(
+                        entities, min_overlap=min_overlap, tenant_id=tenant_id,
+                    )
+                    blast_counts = {
+                        f["doc_id"]: int(f.get("overlap_count", 0))
+                        for f in blast_flagged
+                    }
+                except Exception as exc:
+                    logger.warning("freshness: blast-radius compute failed: %s", exc)
+            if blast_flagged and emit_drift:
+                _route_blast_drift(blast_flagged, tenant_id, classification)
+
         # Snapshot prior freshness states + last-notified times BEFORE the
         # upsert loop overwrites them, so the notifier can detect crossings.
         # Degrades to an empty snapshot on any error (e.g. a pre-migration DB
@@ -250,6 +440,9 @@ def scan_collection(
             fres = _score_doc(
                 did, title, collection_id, created_at, latest_at, approved_at,
                 retention_days, drift_count, pending_sections, tenant_id, doc_cls,
+                blast_count=blast_counts.get(did, 0),
+                weights=weights,
+                blast_score_per_entity=blast_per_entity,
             )
             results.append(fres)
             if fres.state == "stale":
