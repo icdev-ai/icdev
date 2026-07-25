@@ -36,6 +36,9 @@ Subcommands:
   list [--json]            List supported toggle names + descriptions.
   tools list [--json]      List all tools discovered by the agent runtime.
   tools bundles [--json]   List agent toolset bundles (args/agent_toolsets.yaml).
+  chat [-q "query"]        Start an interactive standalone agent session
+                           (--resume <ctx-id> to continue a conversation).
+  sessions list|export     List conversations / export a transcript as JSONL.
   audit export             Export SOC 2 (and future framework) evidence reports.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
@@ -81,6 +84,14 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "tools":
         from tools.cli.tools_list import main as tools_main
         return tools_main(rest)
+
+    if sub == "chat":
+        from tools.agent_runtime.cli import chat_main
+        return chat_main(rest)
+
+    if sub == "sessions":
+        from tools.agent_runtime.cli import sessions_main
+        return sessions_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main

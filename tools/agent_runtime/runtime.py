@@ -87,7 +87,11 @@ class AgentRuntime:
         self.user_id = user_id
         self.tenant_id = tenant_id
         self.tools, self.tool_handlers = build_builtin_toolset()
-        self.session: RuntimeSession = RuntimeSession.create(title="Untitled session")
+        self.session: RuntimeSession = RuntimeSession.create(
+            title="Untitled session",
+            user_id=self.user_id,
+            tenant_id=self.tenant_id,
+        )
         self._stop = threading.Event()
         self._profile_preamble: str | None = None
 
@@ -107,9 +111,28 @@ class AgentRuntime:
     def new_session(self, title: str = "Untitled session") -> RuntimeSession:
         """Start a fresh session, replacing the current one."""
         self.session = RuntimeSession.create(
-            title=title, manager=self.session.manager
+            title=title,
+            manager=self.session.manager,
+            user_id=self.user_id,
+            tenant_id=self.tenant_id,
         )
         # Re-inject the operator profile at the next turn of the new session.
+        self._profile_preamble = None
+        return self.session
+
+    def resume_session(self, context_id: str) -> RuntimeSession:
+        """Rehydrate an existing conversation (``icdev chat --resume <ctx-id>``).
+
+        Replaces the current session with one bound to ``context_id`` so new
+        turns append to that transcript and tool-use history continues from where
+        it left off.
+        """
+        self.session = RuntimeSession.load(
+            context_id,
+            manager=self.session.manager,
+            user_id=self.user_id,
+            tenant_id=self.tenant_id,
+        )
         self._profile_preamble = None
         return self.session
 
