@@ -133,6 +133,16 @@ def create_security_blueprint():
     except Exception as exc:
         logger.warning("Security Canvas bus subscriber registration failed: %s", exc)
 
+    # Register twin_core cross-canvas twin subscriptions (twx-bus-01). SDC is the
+    # hub for both wired subs (PDC pipeline_deployed -> SDC refresh; SDC
+    # threat-model-changed -> BDC crosswalk drift), so register them here.
+    try:
+        from tools.twin_core.event_bridge import register_subscriptions as _register_twin_bus
+
+        _register_twin_bus()
+    except Exception as exc:
+        logger.warning("twin_core bus subscription registration failed: %s", exc)
+
     # Seed SOPs
     try:
         seed_sops()
