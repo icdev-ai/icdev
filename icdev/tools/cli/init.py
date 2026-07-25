@@ -90,7 +90,17 @@ BOOTSTRAP_MAP: list[tuple[str, str]] = [
     ("data/claude_bootstrap/claude/hooks", ".claude/hooks"),
     ("data/claude_bootstrap/claude/settings.json.template", ".claude/settings.json"),
     ("data/claude_bootstrap/claude/skills", ".claude/skills"),
+    ("data/claude_bootstrap/claude/agents", ".claude/agents"),
 ]
+
+# Bootstrap sources that may legitimately be absent from the package (e.g.
+# `.claude/agents` ships zero files today but will the day agents are added).
+# A missing OPTIONAL source is reported as "optional_missing" and does NOT
+# count toward the `missing` total or flip the process exit code — a mapped
+# entry with no source is a benign no-op, never an init failure.
+OPTIONAL_SOURCES: set[str] = {
+    "data/claude_bootstrap/claude/agents",
+}
 
 # FORGE data (editable project config, copied from package defaults)
 FORGE_MAP: list[tuple[str, str]] = [
@@ -153,8 +163,10 @@ def init_project(
         dst = target_dir / proj_rel
 
         if src is None:
+            status = ("optional_missing" if pkg_rel in OPTIONAL_SOURCES
+                      else "source_missing")
             actions.append({"src": pkg_rel, "dst": str(proj_rel),
-                            "status": "source_missing"})
+                            "status": status})
             continue
 
         if list_only:
@@ -185,6 +197,9 @@ def init_project(
         "copied": sum(1 for a in actions if a["status"] == "copied"),
         "skipped": sum(1 for a in actions if a["status"] == "skipped"),
         "missing": sum(1 for a in actions if a["status"] == "source_missing"),
+        "optional_missing": sum(
+            1 for a in actions if a["status"] == "optional_missing"
+        ),
     }
     return summary
 
@@ -234,6 +249,7 @@ def main() -> int:
         for a in result["actions"]:
             icon = {"copied": "[+]", "skipped": "[=]",
                     "source_missing": "[!]",
+                    "optional_missing": "[~]",
                     "would_copy": "[?]"}.get(a["status"], "[?]")
             print(f"  {icon} {a['dst']}  ({a.get('message', a['status'])})")
         print(f"\nCopied: {result['copied']}   Skipped: {result['skipped']}   "
