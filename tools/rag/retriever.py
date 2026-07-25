@@ -199,6 +199,41 @@ def _time_decay_adjust(results: List[SearchResult]) -> List[SearchResult]:
 
 
 # ---------------------------------------------------------------------------
+# RAPTOR multi-level merge + dedup (RCE, rce-raptor-02)
+# ---------------------------------------------------------------------------
+
+
+def _merge_raptor_results(
+    leaf_results: List[SearchResult],
+    summary_results: List[SearchResult],
+) -> List[SearchResult]:
+    """Merge summary-tier hits into the leaf candidate pool, dedup by lineage.
+
+    Precision + TRUST: when a summary and one of its children (a leaf, or a
+    lower-level summary) both hit, prefer the finer-grained result — drop the
+    parent summary. Summaries whose children are absent survive as *fallback
+    context* (rescues weak leaf retrieval). Leaves are always kept and always
+    preferred for citation (summaries carry ``metadata.is_summary = True`` and
+    must never be surfaced as a citation source).
+
+    Summaries are processed lowest-level-first so that when a level-1 summary
+    survives, its level-2 parent (whose ``child_ids`` include that level-1 id)
+    is dropped in favor of the finer level-1 summary.
+    """
+    if not summary_results:
+        return leaf_results
+    covered = {r.chunk_id for r in leaf_results}
+    kept: List[SearchResult] = []
+    for s in sorted(summary_results, key=lambda r: r.metadata.get("level", 1)):
+        child_ids = s.metadata.get("child_ids", []) or []
+        if any(cid in covered for cid in child_ids):
+            continue  # a finer-grained child already present → drop this parent
+        kept.append(s)
+        covered.add(s.chunk_id)
+    return leaf_results + kept
+
+
+# ---------------------------------------------------------------------------
 # Citation validation (D-RAG-21)
 # ---------------------------------------------------------------------------
 
@@ -241,6 +276,9 @@ class RAGRetriever:
         self._rag_cfg = self._config.get("rag", {})
         self._retrieval_cfg = self._rag_cfg.get("retrieval", {})
         self._rerank_cfg = self._rag_cfg.get("rerank", {})
+        # RCE (rce-raptor-02): RAPTOR multi-level retrieval. Default OFF — when
+        # disabled the pipeline is byte-for-byte the flat-leaf path.
+        self._raptor_cfg = self._rag_cfg.get("raptor", {})
 
         # SEC: Warn when tenant_id is empty in multi-tenant environment
         if not tenant_id:
@@ -332,6 +370,12 @@ class RAGRetriever:
                 filters["tenant_id"] = self._tenant_id
             results = store.search(query_embedding, top_k=vector_top_k, filters=filters)
 
+        # RCE (rce-raptor-02): also search the RAPTOR summary tier and merge it
+        # into the leaf pool (dedup by lineage). Default OFF → exact old path.
+        if self._raptor_cfg.get("enabled", False):
+            summary_results = self._search_summaries(query_embedding, vector_top_k, project_id)
+            results = _merge_raptor_results(results, summary_results)
+
         if not results:
             self._log_retrieval(query, 0, 0.0, start_ms, "vector", project_id)
             return []
@@ -397,6 +441,31 @@ class RAGRetriever:
             self._record_provenance(query, results, project_id)
 
         return results
+
+    def _search_summaries(
+        self,
+        query_embedding: List[float],
+        top_k: int,
+        project_id: str = "",
+    ) -> List[SearchResult]:
+        """Search the RAPTOR summary tier (rag_chunk_summaries).
+
+        Best-effort: returns [] when the summary store / table is unavailable
+        (e.g. no hierarchy built yet), so enabling raptor never breaks retrieval.
+        """
+        try:
+            from tools.rag.raptor import SummaryStore
+
+            store = SummaryStore(tenant_id=self._tenant_id)
+            filters: Dict[str, Any] = {}
+            if project_id:
+                filters["project_id"] = project_id
+            if self._tenant_id:
+                filters["tenant_id"] = self._tenant_id
+            summary_top_k = self._raptor_cfg.get("summary_top_k", top_k)
+            return store.search(query_embedding, top_k=summary_top_k, filters=filters)
+        except Exception:
+            return []
 
     def _log_retrieval(
         self,
