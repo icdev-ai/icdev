@@ -330,6 +330,34 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/qdc/
+- key: twin_observatory
+  kind: canvas
+  cli_name: twin-observatory
+  display_name: Twin Observatory
+  description: Cross-canvas digital-twin health grid + drift event stream (twx-obs-01).
+  env_flag: ICDEV_TWIN_OBSERVATORY_ENABLED
+  default_enabled: false
+  module: tools.twin_observatory.blueprint
+  blueprint_attr: twin_observatory_bp
+  url_prefix: /twin-observatory
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Twin Observatory
+  iqe:
+    adapter_module: tools.iqe.adapters.twin_observatory
+    collections:
+    - twin_observatory.twins
+    - twin_observatory.events
+  completeness:
+    template: tools/dashboard/templates/twin_observatory/index.html
+    blueprint: true
+    constants: tools/twin_observatory/constants.py
+    db_migration: null
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/twin_observatory/
 - key: mdc
   kind: canvas
   cli_name: migration
@@ -1930,6 +1958,9 @@ components:
 # Canvases with a url_prefix + IQE adapter are auto-appended by the accessor,
 # so most new canvases need NO edit here.
 iqe_path_canvas:
+# twx-obs-01: explicit entry ABOVE the ndc "^/twin" regex — first-match-wins, so
+# without this /twin-observatory would incorrectly resolve to the ndc canvas.
+- {path: /twin-observatory, canvas: twin_observatory}
 - {regex: "^/network|^/twin", canvas: ndc}
 - {path: /zta, canvas: zta}
 - {path: /security, canvas: sdc}
