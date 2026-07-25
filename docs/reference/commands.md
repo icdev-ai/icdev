@@ -78,6 +78,17 @@ python tools/testing/e2e_runner.py --run-all           # Execute all E2E tests
 
 ## Enterprise-Configurable Platform Commands
 ```bash
+# Project scaffolding — ALWAYS run `icdev init` after `pip install icdev`
+icdev init [target]               # Scaffold a project (CLAUDE.md + FORGE data + .claude/ + .env)
+icdev init my-project --profile air-gap   # Non-interactive: apply a core profile
+icdev init my-project --profile none      # Registry defaults, skip the profile prompt
+icdev init --list                 # Dry-run: show what would be copied
+
+# Interactive feature-toggle TUI (stdlib-only; primary browser-free on/off surface)
+icdev setup                       # Browse every component + sub-pages, toggle, write .env
+icdev setup --plain               # Force the plain numbered-menu mode (non-TTY)
+icdev setup --json                # Dump current component state as JSON
+
 # Component registry — single source of truth for canvases, child apps, features, core extensions
 python -c "from tools.config.component_registry import get_registry; r=get_registry(); print([c.key for c in r.iter_canvases()])"
 python -c "from tools.config.component_registry import get_registry; r=get_registry(); print(r.get_nav_context())"

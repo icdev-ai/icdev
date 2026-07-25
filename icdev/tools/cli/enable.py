@@ -164,6 +164,31 @@ def set_toggles(env_file: Path, names: list[str], value: bool) -> dict:
     }
 
 
+def _looks_uninitialized(env_file: Path) -> bool:
+    """True if the project has not been scaffolded (no .env or no .claude/).
+
+    A fresh `pip install icdev` user who runs `icdev status` before
+    `icdev init` sees an all-off table that looks like a broken install. This
+    lets `status` detect that state and point them at the one command they
+    missed instead.
+    """
+    return not env_file.exists() or not (env_file.parent / ".claude").is_dir()
+
+
+def _init_hint(env_file: Path) -> str:
+    """The exact command a fresh user must run, targeting the .env's directory."""
+    target = env_file.parent
+    where = "." if target == Path.cwd() else str(target)
+    return (
+        "This project is not initialized yet (no .env / .claude found).\n"
+        f"Run:  icdev init {where}\n"
+        "  → scaffolds CLAUDE.md, .claude/ (commands, hooks, skills), and a\n"
+        "    complete .env listing every canvas/feature flag. Then re-run "
+        "`icdev status`.\n"
+        "  See docs/ops/airgap-pip-install.md for the full pip-only walkthrough."
+    )
+
+
 def get_status(env_file: Path) -> dict:
     """Return the current on/off state of every known toggle."""
     text = _load_env_file(env_file)
@@ -274,8 +299,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.action == "status":
         result = get_status(env_file)
+        uninitialized = _looks_uninitialized(env_file)
+        result["initialized"] = not uninitialized
+        if uninitialized:
+            result["init_hint"] = _init_hint(env_file)
         if args.json:
             print(json.dumps(result, indent=2))
+        elif uninitialized:
+            # Fresh install: point at `icdev init` instead of a bare all-off table.
+            print(_init_hint(env_file))
         else:
             _print_status(result)
         return 0
