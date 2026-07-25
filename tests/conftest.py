@@ -3241,6 +3241,20 @@ CREATE TABLE IF NOT EXISTS sag_user_profiles (
     updated_at       TEXT,
     PRIMARY KEY (user_id, tenant_id)
 );
+-- twx-fed-03: high-side compatibility report snapshots (migration 288).
+CREATE TABLE IF NOT EXISTS twin_compat_reports (
+    id             TEXT PRIMARY KEY,
+    target_id      TEXT NOT NULL,
+    source_canvas  TEXT,
+    target_preset  TEXT,
+    verdict        TEXT,
+    blocker_count  INTEGER NOT NULL DEFAULT 0,
+    content_hash   TEXT NOT NULL,
+    report_json    TEXT NOT NULL,
+    tenant_id      TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
