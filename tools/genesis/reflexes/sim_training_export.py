@@ -17,8 +17,6 @@ Cadence: every 6h (configurable via genesis_config.yaml).
 from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
-IMPLEMENTATION_STATUS = "full"
-
 import json
 import sys
 from datetime import datetime, timezone
