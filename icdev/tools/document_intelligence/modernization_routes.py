@@ -192,6 +192,84 @@ def _all_findings_states(doc_id: str) -> list[dict]:
         return []
 
 
+# ── dmx-claims-02 Phase C+E: semantic claims panel + HITL promotion ──────────────
+
+
+@dic_bp.route("/api/modernization/doc/<doc_id>/claims", methods=["GET"])
+def api_modernization_doc_claims(doc_id: str):
+    """Latest-state semantic claims for a document — the Phase-E claims panel feed.
+
+    Each claim carries its anchored sentence (``claim_text`` + span), typed
+    subject/predicate/object, provenance and, for ``invalidated`` claims, the
+    linked finding id(s). Degrades to ``[]`` when the claims engine/table is
+    absent (toggle never enabled) so the panel simply stays hidden.
+    """
+    status = (request.args.get("status") or "").strip() or None
+    try:
+        from tools.doc_modernization.claim_lifecycle import list_claims
+        conn = _conn()
+        try:
+            claims = list_claims(conn, doc_id, status=status)
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.debug("dic modernization: claims engine unavailable: %s", exc)
+        return jsonify([])
+
+    out = []
+    for c in claims:
+        out.append({
+            "claim_id": c.get("claim_id"),
+            "status": c.get("status"),
+            "claim_text": c.get("claim_text"),
+            "anchor_start": c.get("anchor_start"),
+            "anchor_end": c.get("anchor_end"),
+            "section": c.get("section"),
+            "page": c.get("page"),
+            "subject_label": c.get("subject_label"),
+            "subject_type": c.get("subject_type"),
+            "predicate": c.get("predicate"),
+            "object_label": c.get("object_label"),
+            "object_type": c.get("object_type"),
+            "pack_domain": c.get("pack_domain"),
+            "prov_model": c.get("prov_model"),
+            "confidence": c.get("confidence"),
+            "linked_evidence_ids": c.get("linked_evidence_ids") or [],
+        })
+    return jsonify(out)
+
+
+@dic_bp.route("/api/modernization/claims/<claim_id>/promote", methods=["POST"])
+def api_modernization_claim_promote(claim_id: str):
+    """HITL: promote a ``pending_review`` claim to ``active`` (append-only)."""
+    return _claim_transition(claim_id, "promote")
+
+
+@dic_bp.route("/api/modernization/claims/<claim_id>/reject", methods=["POST"])
+def api_modernization_claim_reject(claim_id: str):
+    """HITL: reject a ``pending_review`` claim (append-only ``superseded`` row)."""
+    return _claim_transition(claim_id, "reject")
+
+
+def _claim_transition(claim_id: str, action: str):
+    try:
+        from tools.doc_modernization.claim_lifecycle import promote_claim, reject_claim
+        fn = promote_claim if action == "promote" else reject_claim
+        conn = _conn()
+        try:
+            result = fn(conn, claim_id)
+            if not result.get("error"):
+                conn.commit()
+        finally:
+            conn.close()
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("dic modernization claim %s failed: %s", action, exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 @dic_bp.route("/api/modernization/scan", methods=["POST"])
 def api_modernization_scan():
     """One-click modernization scan — the missing link after upload.

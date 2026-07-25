@@ -71,6 +71,17 @@
   </div>
 </div>
 
+<!-- dmx-claims-02 Phase E: Semantic Claims panel -->
+<div id="claims-panel" style="display:none;margin-bottom:18px;">
+  <div style="background:#0a1424;border:1px solid #2a4a6e;border-radius:8px;padding:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:#7ab3f0;font-size:13px;">🔖 Semantic Claims <span id="claims-count" style="font-weight:400;color:#7a8cb0;"></span></h3>
+      <span style="color:#5a7aa0;font-size:10px;">Verbatim-anchored · deterministic invalidation · promotion is HITL</span>
+    </div>
+    <div id="claims-list"></div>
+  </div>
+</div>
+
 <!-- dsyn-patch-03: AI Suggestions panel -->
 <div id="ai-suggestions-panel" style="margin-bottom:18px;display:none;">
   <div style="background:#1a1a0a;border:1px solid #5a3a1a;border-radius:8px;padding:14px;">
@@ -1252,6 +1263,63 @@ function resolveFinding(findingId, disposition) {
     body: JSON.stringify({disposition: disposition})
   }).then(function(r){ return r.json(); }).then(function(d) {
     if (d.error) { alert('Resolve failed: ' + d.error); return; }
+    location.reload();
+  });
+}
+
+// ── dmx-claims-02 Phase E: semantic claims panel ─────────────────────────────
+var CLAIM_STATUS_COLORS = {pending_review:'#fbbf24', active:'#4ade80',
+                           invalidated:'#f87171', superseded:'#7a8cb0'};
+var CLAIM_STATUS_LABELS = {pending_review:'⏳ pending review', active:'✓ active',
+                           invalidated:'⚠ invalidated', superseded:'— superseded'};
+
+function esc(s){ var d=document.createElement('div'); d.textContent = (s==null?'':String(s)); return d.innerHTML; }
+
+fetch('/document-intelligence/api/modernization/doc/{{ doc.doc_id }}/claims')
+  .then(function(r){ return r.json(); })
+  .then(function(claims) {
+    if (!claims || !claims.length) return;
+    var panel = document.getElementById('claims-panel');
+    var list = document.getElementById('claims-list');
+    document.getElementById('claims-count').textContent = '(' + claims.length + ')';
+    list.innerHTML = claims.map(function(c) {
+      var color = CLAIM_STATUS_COLORS[c.status] || '#7ab3f0';
+      var triple = esc(c.subject_label) + ' <span style="color:#7a8cb0;">' + esc(c.predicate) + '</span>'
+        + (c.object_label ? ' ' + esc(c.object_label) : '');
+      // The anchored sentence — verbatim slice of the approved version.
+      var sentence = '<div style="color:#c8d8ec;font-size:12px;margin-top:3px;font-style:italic;border-left:2px solid ' + color + ';padding-left:8px;">“' + esc(c.claim_text) + '”</div>';
+      var linked = '';
+      if (c.status === 'invalidated' && c.linked_evidence_ids && c.linked_evidence_ids.length) {
+        linked = '<div style="color:#f87171;font-size:11px;margin-top:3px;">⚠ invalidated by finding(s): ' + esc(c.linked_evidence_ids.join(', ')) + '</div>';
+      }
+      var prov = '<span style="color:#5a7aa0;font-size:10px;">' + esc(c.section || 'document')
+        + ' · ' + esc(c.pack_domain || '') + ' · ' + esc(c.prov_model || '') + '</span>';
+      var actions = '';
+      if (c.status === 'pending_review') {
+        actions = '<div style="white-space:nowrap;">'
+          + '<button data-cid="' + esc(c.claim_id) + '" data-act="promote" class="claim-act-btn" style="background:#052e16;color:#4ade80;border:1px solid #14532d;border-radius:4px;font-size:10px;cursor:pointer;padding:3px 8px;margin-right:4px;">✓ Promote</button>'
+          + '<button data-cid="' + esc(c.claim_id) + '" data-act="reject" class="claim-act-btn" style="background:#2e0505;color:#f87171;border:1px solid #7f1d1d;border-radius:4px;font-size:10px;cursor:pointer;padding:3px 8px;">✕ Reject</button>'
+          + '</div>';
+      }
+      return '<div style="border-bottom:1px solid #16283f;padding:8px 0;display:flex;justify-content:space-between;gap:10px;align-items:start;">'
+        + '<div style="flex:1;"><span style="color:' + color + ';font-size:11px;font-weight:700;">' + (CLAIM_STATUS_LABELS[c.status] || esc(c.status)) + '</span> '
+        + '<span style="color:#eaeaea;font-size:12px;">' + triple + '</span>'
+        + sentence + linked
+        + '<div style="margin-top:3px;">' + prov + '</div></div>'
+        + actions + '</div>';
+    }).join('');
+    list.querySelectorAll('.claim-act-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() { claimAction(btn.dataset.cid, btn.dataset.act); });
+    });
+    panel.style.display = 'block';
+  })
+  .catch(function(err){ console.warn('claims panel skipped:', err); });
+
+function claimAction(claimId, action) {
+  fetch('/document-intelligence/api/modernization/claims/' + encodeURIComponent(claimId) + '/' + action, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.error) { alert('Claim ' + action + ' failed: ' + d.error); return; }
     location.reload();
   });
 }
