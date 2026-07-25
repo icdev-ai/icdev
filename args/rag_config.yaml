@@ -77,6 +77,13 @@ rag:
     enabled: false
     use_llm_classifier: true      # false = heuristic-only (fully offline)
     complex_top_k: 10             # widened single-pass fallback when no decompose_fn injected
+  # Self-RAG per-document reflective reranking (agx-rag-02). Scores each
+  # candidate along separate RELEVANT/SUPPORTS/USEFUL enum axes and composes the
+  # ordering in Python, instead of one blended rerank score. Default DISABLED =
+  # current behavior. Bounded to the post-vector candidate set + cheap-tier.
+  reflective_rerank:
+    enabled: false
+    max_candidates: 20            # bound per-document LLM calls (cost control)
   auto_indexer:
     cui_boundary_enforcement: true
     enabled: false
