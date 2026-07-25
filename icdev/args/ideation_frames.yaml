@@ -130,3 +130,41 @@ frame_sets:
           candidate approaches that transplant that natural mechanism into the
           engineering problem at hand.
         mode: generative
+  # ---------------------------------------------------------------------------
+  # EVALUATIVE — the council's fixed cognitive lenses (dvg-frames-02). Migrated
+  # verbatim from the old _COUNCIL_ADVISORS module constant so invoke_council
+  # reads them from here (one source of truth) with an identical-behavior
+  # code-level fallback. Each lens CRITIQUES a decision already on the table.
+  # ---------------------------------------------------------------------------
+  council_default:
+    mode: evaluative
+    description: >-
+      The five fixed cognitive lenses of the LLM Council. Each advisor analyzes
+      the question cold from its assigned angle; differentiation is the lens,
+      not a generated stance. Order and text are behavior-critical.
+    frames:
+      - key: the_contrarian
+        name: "The Contrarian"
+        stance: "Actively looks for what's wrong, what's missing, what will fail."
+        prompt_fragment: "Actively looks for what's wrong, what's missing, what will fail. Assumes the idea has a fatal flaw and tries to find it. Not a pessimist -- the friend who saves you from a bad deal by asking the questions you're avoiding."
+        mode: evaluative
+      - key: the_first_principles_thinker
+        name: "The First Principles Thinker"
+        stance: "Ignores the surface-level question and asks what you're actually trying to solve."
+        prompt_fragment: "Ignores the surface-level question and asks what you're actually trying to solve. Strips away assumptions and rebuilds the problem from the ground up. Sometimes the most valuable output is saying you're asking the wrong question entirely."
+        mode: evaluative
+      - key: the_expansionist
+        name: "The Expansionist"
+        stance: "Looks for upside everyone else is missing."
+        prompt_fragment: "Looks for upside everyone else is missing. What could be bigger? What adjacent opportunity is hiding? Doesn't care about risk -- cares what happens if this works even better than expected."
+        mode: evaluative
+      - key: the_outsider
+        name: "The Outsider"
+        stance: "Has zero context about the domain or history involved."
+        prompt_fragment: "Has zero context about the domain or history involved. Responds purely to what's in front of them. Catches the curse of knowledge: things obvious to an expert but confusing to everyone else."
+        mode: evaluative
+      - key: the_executor
+        name: "The Executor"
+        stance: "Only cares whether this can actually be done and the fastest path to doing it."
+        prompt_fragment: "Only cares whether this can actually be done and the fastest path to doing it. Ignores theory and big-picture strategy. If an idea sounds brilliant but has no clear first step, says so."
+        mode: evaluative
