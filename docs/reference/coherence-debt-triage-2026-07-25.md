@@ -9,6 +9,11 @@ This document is the primary deliverable of the `chore/coherence-debt-triage` PR
 mechanically-safe subset was fixed in the same PR (see **FIXED-here**); everything else is
 dispositioned below with a reason.
 
+> **Scope note (public repo).** This is a public repository. Security-relevant findings here are
+> summarized by **count and category only**. Exact call-site locations for RLS-bypass /
+> `security_context` items are tracked internally and are deliberately **not** enumerated in this
+> doc, per the standing no-unpatched-vuln-detail-in-public policy.
+
 Legend:
 - **FIXED-here** — corrected in this PR (safe, mechanical, in-scope).
 - **SAFE-TO-FIX-later** — mechanical and low-risk, but out of scope for a small PR (batch churn).
@@ -82,12 +87,11 @@ edited anyway and is confirmed idempotent.
 ## STRUCTURAL-defer (do not auto-fix)
 
 ### canvas_placeholder_style (FAIL, 47) — STRUCTURAL
-Despite the check name, these are **not** the Jinja2 `'%%.0f'|format(value)` template rule. Every
-finding is a Python `execute()` call using a bare `?` placeholder where psycopg2 wants `%s`
-(`? raises ProgrammingError on PostgreSQL`). They cluster in canvas `db/init_db.py` and engine files:
-`tools/data_canvas/*` (twin.py, quality_engine.py, pii_scanner.py, anomaly_detector.py, mcp_scanner.py,
-db/init_db.py), `tools/network/db/init_db.py`, `tools/observability_canvas/observability_engine.py`,
-`tools/infra_canvas/db/init_db.py`, `tools/ace/eval_runner.py`.
+Despite the check name, these are **not** the Jinja2 `'%%.0f'|format(value)` template rule, and they
+are **not injectable** — every finding is a parameterized Python `execute()` call using a bare `?`
+placeholder where psycopg2 wants `%s` (`? raises ProgrammingError on PostgreSQL`; this is a
+SQLite-vs-psycopg2 dialect bug, not a SQL-injection risk). They cluster across several canvas
+`db/init_db.py` and engine paths.
 
 Deferred because: (a) many sites are **init/seed paths** where `translate_sql` is the SQLite
 init-fallback and a blanket `?`→`%s` rewrite can break the SQLite path; each site needs individual
@@ -109,13 +113,10 @@ whether to add the column or drop it from the INSERT. Not a safe blind edit.
 to the shared conftest schema — cf. MEMORY "standardize tests on shared conftest schema").
 
 ### security_context (FAIL, 10) — STRUCTURAL
-10 `set_security_context(None)` RLS bypasses lack the required `# rls-bypass: <reason>` annotation,
-in canvas `db/init_db.py` files (`agentic_ai_canvas`, `aiify`, `dsoc_canvas`, `migration_intelligence`,
-`pipeline`), two genesis reflexes (`observability_retention.py`, `odc_coverage_refresh.py`),
-`retention_sweep.py`, and `tools/dashboard/api/traces.py`. Each needs a human to confirm the bypass is
-legitimate and write an accurate justification (and a task ID) per CLAUDE.md. Annotating without
-verifying the intent would defeat the check. Deferred — and several are init_db/dashboard files other
-sessions may hold.
+10 `set_security_context(None)` call sites lack the required `# rls-bypass: <reason>` annotation.
+Each needs a human to confirm the bypass is legitimate and write an accurate justification (and a
+task ID) per CLAUDE.md. Annotating without verifying the intent would defeat the check. Specific
+locations are tracked internally, not enumerated here (public-repo policy). Deferred.
 
 ### new_page_completeness (FAIL, 2) — STRUCTURAL
 - `tools/dashboard/templates/strategos/page.html`: no `strategos/blueprint.py`.
