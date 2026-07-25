@@ -12,6 +12,7 @@ Public surface:
 
 Reference adapters (twx-core-01): ``ndc``, ``pdc``.
 """
+from tools.twin_core.airgap_rules import evaluate_airgap, is_airgap_environment, load_rules
 from tools.twin_core.event_bridge import (
     TWIN_SIMULATION_COMPLETED,
     TWIN_SNAPSHOT_TAKEN,
@@ -54,6 +55,9 @@ __all__ = [
     "snapshot",
     "register_subscriptions",
     "recent_twin_events",
+    "evaluate_airgap",
+    "is_airgap_environment",
+    "load_rules",
     "TWIN_SNAPSHOT_TAKEN",
     "TWIN_SIMULATION_COMPLETED",
     "VERDICTS",

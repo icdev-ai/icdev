@@ -80,9 +80,10 @@ class PDCTwinAdapter(TwinAdapter):
                     "rule_id": rule.get("id"),
                     "auto_fixable": False,
                 })
+        violations, verdict = self._airgap_augment(delta or {}, violations, native.get("verdict"), kwargs)
         return self._wrap(
             target_id,
-            native.get("verdict"),
+            verdict,
             violations,
             simulation_id=native.get("id"),
             snapshot_id=native.get("baseline_snap_id"),

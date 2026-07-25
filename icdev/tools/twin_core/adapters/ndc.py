@@ -83,9 +83,10 @@ class NDCTwinAdapter(TwinAdapter):
             }
             for f in native.get("compliance_findings", [])
         ]
+        violations, verdict = self._airgap_augment(delta or {}, violations, native.get("verdict"), kwargs)
         return self._wrap(
             target_id,
-            native.get("verdict"),
+            verdict,
             violations,
             simulation_id=native.get("id"),
             extra={"intent_results": native.get("intent_results", [])},
