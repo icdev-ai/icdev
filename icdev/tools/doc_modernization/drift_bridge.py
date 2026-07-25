@@ -45,6 +45,23 @@ def _connect():
     return get_connection()
 
 
+def _claim_for_finding(conn, finding: dict) -> dict | None:
+    """The invalidated semantic claim this finding flagged, or None (Phase D).
+
+    Thin, defensive wrapper over ``claim_lifecycle.claim_for_finding`` — a corpus
+    with claims disabled (no ``dic_claims`` rows) or an older schema returns None
+    and the drift payload is unchanged. Never fatal: a claim-lookup error must not
+    stop a finding from becoming compliance drift.
+    """
+    try:
+        from tools.doc_modernization.claim_lifecycle import claim_for_finding
+        return claim_for_finding(conn, finding)
+    except Exception as exc:  # noqa: BLE001 — additive precision, never load-bearing
+        logger.debug("drift_bridge: claim lookup skipped for %s: %s",
+                     finding.get("finding_id"), exc)
+        return None
+
+
 def _pack_controls(pack_id: str) -> list[str]:
     """NIST controls a pack's findings implicate, declared in its YAML.
 
@@ -113,6 +130,11 @@ def emit_drift(conn=None) -> dict:
             finding_id = f.get("finding_id")
             doc_id = f.get("doc_id")
             pack_id = f.get("pack_id") or "unknown"
+            # dmx-claims-02 Phase D: if this finding invalidated a semantic claim,
+            # carry the claim_id + verbatim anchor span so ACOIC/redline surfaces
+            # the exact SENTENCE, not just the section. Best-effort and additive:
+            # a doc with no claims (toggle off) contributes nothing here.
+            claim = _claim_for_finding(conn, f)
             try:
                 out = acoic.handle_drift({
                     "source": f"{_SOURCE_PREFIX}.{pack_id}",
@@ -133,6 +155,11 @@ def emit_drift(conn=None) -> dict:
                     "page": f.get("page"),
                     "chunk_link_id": f.get("chunk_link_id"),
                     "rationale": f.get("rationale"),
+                    # Sentence-level precision (dmx-claims-02): None when no claim.
+                    "claim_id": claim.get("claim_id") if claim else None,
+                    "anchor_start": claim.get("anchor_start") if claim else None,
+                    "anchor_end": claim.get("anchor_end") if claim else None,
+                    "claim_text": claim.get("claim_text") if claim else None,
                 })
             except Exception as exc:
                 result["errors"].append(f"{finding_id}: {exc}")
