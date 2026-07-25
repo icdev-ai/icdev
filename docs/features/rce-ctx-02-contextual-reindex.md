@@ -27,7 +27,7 @@ quality **before/after** against the saved baseline.
   - `run_benchmark_compare(...)` — runs the golden-set benchmark
     (`tools/rag/rag_benchmark.py`) and attaches per-metric deltas vs a baseline.
 - Mirrored verbatim to `icdev/tools/`; manifest row added.
-- Tests `tests/test_rag_reindex_contextual.py` (9, fixture-driven): grouping,
+- Tests `tests/test_rag_reindex_contextual.py` (20, fixture-driven): grouping,
   dry-run plans-without-writing, live update uses contextualized embed text,
   idempotent skip, `--force`, cold-tier skip, no-provider error path, and
   benchmark-compare delta wiring — all with injected fakes, no live corpus/DB.
@@ -70,3 +70,44 @@ delta in the benchmark JSON artifact.
 > **Default-recommendation note:** if the measured gain is `<5%` recall@k on a
 > real corpus, flag `rag.contextual_retrieval` as not-recommended-default in the
 > `args/rag_config.yaml` comment (the toggle already ships **OFF** by default).
+
+## Windowed / resumable runs (`--limit` / `--offset`, rce-eval-04)
+
+A full re-index re-embeds every chunk, so on a large corpus it is long enough to
+be worth splitting across runs. `--limit N` bounds a run to N chunks and
+`--offset M` sets the resume point; both are applied in SQL
+(`LiveChunkStore.build_chunk_query`) so only the window is ever loaded.
+
+The window is taken from a **stably ordered** chunk set —
+`ORDER BY source_type, source_id, chunk_index, id`. Without that order
+PostgreSQL may return rows in any order and successive windows could overlap or
+skip chunks; with it, windows are disjoint and contiguous. The ordering also
+keeps a document's chunks adjacent, so a window cuts at most one document.
+
+Every windowed response carries a resume cursor:
+
+```json
+{ "total_chunks": 10, "limit": 10, "offset": 0, "next_offset": 10, "has_more": true }
+```
+
+`has_more` is a full-window heuristic (no extra `COUNT(*)`): keep advancing
+`--offset` to `next_offset` until a short window comes back.
+
+```bash
+# one window at a time (dry-run first, then --execute)
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference \
+    --limit 500 --offset 0 --dry-run --json
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference \
+    --limit 500 --offset 0 --execute --json
+```
+
+**Caveat (documented, not fixed):** document text is reconstructed from the
+chunks the run loaded, so the single document a window may cut is contextualized
+against its partial text. Use windows that are large relative to a single
+document when that matters.
+
+Validated against the live `compliance_reference` corpus (3552 chunks): windows
+at offsets 0/10 are disjoint and their concatenation equals `--limit 20`,
+repeated runs return identical IDs, `--offset 3550` returns the 2-chunk tail,
+past-the-end returns 0, and the unwindowed read still returns all 3552.
+`--limit 0` / negative `--offset` are rejected by argparse (exit 2).

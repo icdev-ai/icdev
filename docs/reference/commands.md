@@ -1799,6 +1799,9 @@ python tools/rag/ingestion_manager.py --daemon --json                           
 python tools/rag/retriever.py --query "FedRAMP AC-2" --json                          # Search across all knowledge
 python tools/rag/retention_manager.py --migrate --json                               # Hot/warm/cold tier migration
 python tools/rag/retention_manager.py --status --json                                # Retention tier status
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference --dry-run --json          # Plan a contextual re-index
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference --limit 500 --offset 0 --execute --json  # Resumable window (next_offset/has_more)
+python tools/rag/reindex_contextual.py --benchmark --baseline data/rag/rce_baseline.json --json          # Measure retrieval vs baseline
 
 # Fine-Tuning (Phase 64 Extension)
 python tools/finetune/dataset_manager.py --create --name "my-dataset" --purpose general --json   # Create dataset
