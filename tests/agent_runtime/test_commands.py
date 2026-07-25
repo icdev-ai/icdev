@@ -98,9 +98,20 @@ def test_memory_stub_mentions_sag_mem_01():
     assert "sag-mem-01" in resp
 
 
-def test_rollback_stub_mentions_sag_safe_02():
+def test_rollback_reports_no_checkpoints_when_empty(monkeypatch):
+    # sag-safe-02: /rollback is now implemented. With no checkpoints it says so.
+    import tools.agent_runtime.commands as cmds_mod
+    import tools.agent_runtime.checkpoints as cp_mod
+
+    monkeypatch.setattr(cp_mod, "list_checkpoints", lambda: [])
     _h, resp, _e = dispatch(_FakeRuntime(), "/rollback")
-    assert "sag-safe-02" in resp
+    assert "No checkpoints" in resp
+    assert cmds_mod  # module import used
+
+
+def test_snapshot_requires_a_path():
+    _h, resp, _e = dispatch(_FakeRuntime(), "/snapshot")
+    assert "Usage:" in resp
 
 
 def test_exit_signals_shutdown():
