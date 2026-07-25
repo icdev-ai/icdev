@@ -1,0 +1,222 @@
+# [TEMPLATE: CUI // SP-CTI]
+#
+# LLM Proxy (LiteLLM) — OPT-IN, OMITTABLE (lpx-proxy-04)
+# =====================================================
+# Kubernetes manifests for the opt-in LiteLLM proxy selected in the ADR
+# docs/features/lpx-proxy-01-adr-llm-proxy-selection.md.
+#
+# This file is NOT part of the base install. Apply it explicitly only when a
+# program deliberately enables the proxy:
+#     kubectl apply -f k8s/litellm-proxy.yaml
+# The base install (every other manifest in k8s/) remains valid without it.
+#
+# Cloud-egress only. NEVER deploy this in the air-gapped/SIPR (k8s/ste) baseline;
+# CUI/classified traffic stays on the in-tree Bedrock path (lpx-egress-02).
+#
+# Secrets: ANTHROPIC_API_KEY, LITELLM_MASTER_KEY and the DB URL come from the
+# existing icdev-secrets Secret — no keys are ever written into this manifest.
+# Supply chain: pin `image:` by digest (@sha256:...) and record it in the SBOM
+# before enabling in a real cluster.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: icdev-litellm-config
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: litellm-proxy
+    app.kubernetes.io/component: llm-proxy
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+data:
+  config.yaml: |
+    # Real provider keys are injected from the environment (os.environ/*), which
+    # is populated from the icdev-secrets Secret — never stored here.
+    model_list:
+      - model_name: claude-sonnet
+        litellm_params:
+          model: anthropic/claude-sonnet-4-20250514
+          api_key: os.environ/ANTHROPIC_API_KEY
+      - model_name: claude-haiku
+        litellm_params:
+          model: anthropic/claude-haiku-4-20250514
+          api_key: os.environ/ANTHROPIC_API_KEY
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+      database_url: os.environ/LITELLM_DATABASE_URL
+      proxy_batch_write_at: 10
+    litellm_settings:
+      drop_params: true
+      turn_off_message_logging: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-litellm-proxy
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: litellm-proxy
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: icdev-litellm-proxy
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: litellm-proxy
+    app.kubernetes.io/component: llm-proxy
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm-proxy
+        app.kubernetes.io/component: llm-proxy
+        app.kubernetes.io/part-of: icdev
+        classification: CUI
+    spec:
+      serviceAccountName: icdev-litellm-proxy
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: litellm-proxy
+          # Supply chain: pin by digest and record in SBOM before enabling.
+          image: ghcr.io/berriai/litellm-non_root:main-stable
+          args: ["--config", "/app/config.yaml", "--port", "4000"]
+          ports:
+            - containerPort: 4000
+              protocol: TCP
+          env:
+            # Real credentials + DB URL from the existing Secret. No keys in-manifest.
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: icdev-secrets
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: icdev-secrets
+                  key: LITELLM_MASTER_KEY
+            - name: LITELLM_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: icdev-secrets
+                  key: LITELLM_DATABASE_URL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: icdev-litellm-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: icdev-litellm-proxy
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: litellm-proxy
+    app.kubernetes.io/component: llm-proxy
+    classification: CUI
+spec:
+  selector:
+    app.kubernetes.io/name: litellm-proxy
+  ports:
+    - port: 4000
+      targetPort: 4000
+      protocol: TCP
+  type: ClusterIP
+---
+# Restrict who may reach the proxy (ingress) and where it may egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: icdev-litellm-proxy
+  namespace: icdev
+  labels:
+    app.kubernetes.io/component: llm-proxy
+    classification: CUI
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-proxy
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only in-cluster ICDEV pods may call the proxy on 4000.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: icdev
+      ports:
+        - protocol: TCP
+          port: 4000
+  egress:
+    # DNS resolution.
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL (proxy metadata) within the namespace.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: icdev
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Outbound HTTPS to the upstream provider(s). This egress is the reason the
+    # proxy must never run in the air-gapped/SIPR baseline.
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
