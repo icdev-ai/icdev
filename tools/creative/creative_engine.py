@@ -344,10 +344,43 @@ def stage_generate(db_path=None):
     """
     result = {"stage": "generate", "started_at": now_iso()}
 
+    # Opt-in divergence branch (dvg-wire-01): OFF by default. When enabled, fan
+    # out over the generative frame set for the top-ranked pain point, run the
+    # critic pass, and carry the surviving clusters into spec generation. The
+    # deterministic template path below stays the default and is untouched when
+    # divergence is disabled or degrades (this is a branch, not a replacement).
+    divergence_ctx = None
+    div_cfg = _load_config().get("divergence", {})
+    if div_cfg.get("enabled", False):
+        try:
+            from tools.creative.divergence_branch import (
+                branch_function,
+                run_divergence_branch,
+                select_top_pain_point,
+            )
+
+            top_pp = select_top_pain_point(db_path, get_db=_get_db)
+            if top_pp:
+                divergence_ctx = run_divergence_branch(
+                    top_pp, function=branch_function(_load_config())
+                )
+                result["divergence"] = {
+                    "ran": divergence_ctx.get("ran"),
+                    "reason": divergence_ctx.get("reason"),
+                    "trace_id": divergence_ctx.get("trace_id"),
+                    "cluster_count": len(divergence_ctx.get("clusters", [])),
+                    "trap_count": divergence_ctx.get("trap_count", 0),
+                }
+            else:
+                result["divergence"] = {"ran": False, "reason": "no_top_pain_point"}
+        except Exception as e:
+            result["divergence"] = {"ran": False, "reason": f"branch_error: {e}"}
+            divergence_ctx = None
+
     generate_all = _try_import("tools.creative.spec_generator", "generate_all_eligible")
     if generate_all:
         try:
-            result["generation"] = generate_all(db_path=db_path)
+            result["generation"] = generate_all(db_path=db_path, divergence=divergence_ctx)
         except Exception as e:
             result["generation"] = {"error": str(e)}
     else:
