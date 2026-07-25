@@ -3022,6 +3022,26 @@ full async ACE team session:
 # tools/manifest/writeguard-writing-quality-analysis.md for full details.
 ```
 
+### Divergent Ideation (Divergence)
+Generative counterpart to the Council: widen the option space, then score. OPT-IN
+per function (`chain_orchestration.divergence.enabled` default false).
+
+```bash
+# Generate a raw idea pool (single isolated generative fan-out)
+python tools/llm/chain_orchestrator.py --divergence --function <fn> --prompt "<problem>" --json
+
+# Score + trap-flag the pool (the separate critic; novelty/viability/fit + advisory traps)
+python tools/quality/divergence_critic.py --function <fn> --pool-file <pool.md> --json
+
+# Headless skill (both halves, documented steps)
+python tools/skills/invoke.py --exec icdev-divergence -- --function <fn> --prompt "<problem>"
+
+# MCP tool: divergence_invoke  params: function, prompt, system_prompt?, score?(bool)
+#   Returns: {content, chain_mode, models_used, total_cost_usd, trace_id, stop_reason,
+#             rounds, scored?, trap_warnings?}  — advisory traps, never a blocker.
+# Registered in tools/mcp/tool_registry.py; handler tools/mcp/gap_handlers.py::handle_divergence_invoke
+```
+
 ### Cross-Repo Compass Bridge (MCP tools, optional)
 Two MCP tools let ICDEV's CPMP/GovCon modules query a separate, standalone
 Compass app (`C:\AI\standalone\compass` — LCAT/staffing/rate-card automation)
