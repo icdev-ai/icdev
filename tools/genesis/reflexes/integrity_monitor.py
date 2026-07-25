@@ -147,6 +147,12 @@ def _high_risk_signatures(conn: Any, assessment_id: int) -> Dict[str, Dict[str, 
             "finding_type": r["finding_type"],
             "severity": r["severity"],
             "rel_path": rel,
+            # Raw, un-normalized finding path. rel_path is often a bare basename
+            # (the _rel_path fallback) and 6+ files share names like posture.py,
+            # so the card MUST also carry the raw path + assessment_id to be
+            # unambiguous during triage (opx-sipa-01). Do NOT rely on rel_path
+            # alone for file identification.
+            "file_path": r["file_path"],
             "line": r["line"],
             "capability_type": cap,
             "detail": detail,
@@ -255,8 +261,18 @@ def _card_description(info: Dict[str, Any], assessment_id: int, source_ref: str,
         f"Finding type:    {info['finding_type']}",
         f"Severity:        {info['severity']}",
         f"Capability:      {cap}",
-        f"File:            {rel_path}"
-        + (f":{info['line']}" if info.get("line") else ""),
+        f"File (rel):      {rel_path}"
+        + (f":{info['line']}" if info.get("line") else "")
+        + "   <- may be a bare basename; disambiguate via the raw path below",
+        f"File (raw):      {info.get('file_path') or ''}",
+        "",
+        "Triage — resolve the file unambiguously (rel path above can collide; 6+ "
+        "files share names like posture.py). Query the raw findings for THIS "
+        "assessment; output is authoritative and must NOT be truncated:",
+        "  SELECT finding_type, file_path, line, detail",
+        "  FROM integrity_findings",
+        f"  WHERE assessment_id = {assessment_id}",
+        "  ORDER BY file_path, line;",
     ]
     reason = detail.get("reason")
     if reason:
