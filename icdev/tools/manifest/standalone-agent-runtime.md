@@ -10,6 +10,7 @@
 | `tools/agent_runtime/runtime.py` | `AgentRuntime` engine. `run_turn()` wraps `icdev.tools.llm.agent_loop.run_agent_loop` (native tool-use, budget caps, context compression, memory injection, session resume). Interactive `loop()` REPL with injectable I/O. LLM calls flow through `LLMRouter` (no hardcoded model IDs). CLI: `python -m tools.agent_runtime.runtime`. |
 | `tools/agent_runtime/sessions.py` | `RuntimeSession` couples `chat_manager` (human-readable transcript in `chat_contexts`/`chat_messages`) with `agent_loop_session` (`save_session`/`load_session` in `agent_loop_sessions`, keyed by `AgentLoopResult.session_id`). Rolls token/cost usage forward across turns; `resume_session_id` restores tool-use history. No new persistence. |
 | `tools/agent_runtime/builtin_tools.py` | `build_builtin_toolset()` — the small hardcoded starter toolset (read-only `read_file`, `search_files`, `health_check`), all confined to the repo root (`..` escapes rejected). Dynamic tool auto-discovery lands in sag-reg-01. |
+| `tools/agent_runtime/commands.py` | Data-driven slash-command registry (sag-rt-02): `/new`, `/clear`, `/title`, `/tools`, `/skills`, `/memory` (stub → sag-mem-01), `/usage`, `/rollback` (stub → sag-safe-02), `/help`, `/exit`. Handled deterministically **without re-prompting the LLM**. `dispatch(runtime, raw)` matches `AgentRuntime.command_handler`; reused by gateway agent-mode (sag-gw-01). `build_runtime()` wires the registry into a runtime. |
 
 ## Extension seams
 

@@ -18,7 +18,14 @@ Public surface:
 from __future__ import annotations
 
 from tools.agent_runtime.builtin_tools import build_builtin_toolset
+from tools.agent_runtime.commands import REGISTRY, dispatch
 from tools.agent_runtime.runtime import AgentRuntime
 from tools.agent_runtime.sessions import RuntimeSession
 
-__all__ = ["AgentRuntime", "RuntimeSession", "build_builtin_toolset"]
+__all__ = [
+    "REGISTRY",
+    "AgentRuntime",
+    "RuntimeSession",
+    "build_builtin_toolset",
+    "dispatch",
+]
