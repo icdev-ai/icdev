@@ -12,8 +12,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import pytest  # noqa: E402
+
 from tools.rag.reindex_contextual import (  # noqa: E402
     ContextualReindexer,
+    LiveChunkStore,
+    annotate_window,
     run_benchmark_compare,
 )
 from tools.rag.vector_store_provider import SearchResult, VectorChunk  # noqa: E402
@@ -148,6 +152,75 @@ class TestReindexExecute:
         stats = rx.reindex([_chunk("c1", "body")], store_update=writes.append)
         assert stats["reindexed"] == 0
         assert any("no embedding provider" in e for e in stats["errors"])
+
+
+# ---------------------------------------------------------------------------
+# --limit / --offset windowing (rce-eval-04)
+# ---------------------------------------------------------------------------
+class TestChunkQueryWindow:
+    def test_unwindowed_query_has_stable_order_and_no_limit(self) -> None:
+        sql, params = LiveChunkStore.build_chunk_query()
+        assert "ORDER BY source_type, source_id, chunk_index, id" in sql
+        assert "LIMIT" not in sql and "OFFSET" not in sql
+        assert params == []
+
+    def test_limit_and_offset_are_parameterized_after_order_by(self) -> None:
+        sql, params = LiveChunkStore.build_chunk_query(
+            source_type="compliance_reference", limit=10, offset=20
+        )
+        assert sql.index("ORDER BY") < sql.index("LIMIT") < sql.index("OFFSET")
+        assert sql.endswith("LIMIT %s OFFSET %s")
+        assert params == ["compliance_reference", 10, 20]
+
+    def test_zero_offset_omits_offset_clause(self) -> None:
+        sql, params = LiveChunkStore.build_chunk_query(limit=10, offset=0)
+        assert "OFFSET" not in sql
+        assert params == [10]
+
+    @pytest.mark.parametrize("limit,offset", [(0, 0), (-1, 0), (5, -1)])
+    def test_invalid_window_rejected(self, limit, offset) -> None:
+        with pytest.raises(ValueError):
+            LiveChunkStore.build_chunk_query(limit=limit, offset=offset)
+
+
+class TestWindowedReindex:
+    def _rx(self):
+        return ContextualReindexer(
+            provider=FakeProvider(), config=_ENABLED_CFG, contextualizer=_fake_ctx
+        )
+
+    def test_window_reindexes_only_its_slice(self) -> None:
+        # Simulates what iter_chunks(limit=2, offset=1) hands back.
+        corpus = [_chunk(f"c{i}", f"body {i}", sid=str(i)) for i in range(5)]
+        writes = []
+        stats = self._rx().reindex(corpus[1:3], store_update=writes.append)
+        assert stats["total_chunks"] == 2
+        assert stats["reindexed"] == 2
+        assert [w.chunk_id for w in writes] == ["c1", "c2"]
+
+    def test_successive_windows_cover_the_corpus_exactly_once(self) -> None:
+        corpus = [_chunk(f"c{i}", f"body {i}", sid=str(i)) for i in range(5)]
+        writes = []
+        for offset in (0, 2, 4):
+            self._rx().reindex(corpus[offset:offset + 2], store_update=writes.append)
+        assert [w.chunk_id for w in writes] == ["c0", "c1", "c2", "c3", "c4"]
+
+
+class TestAnnotateWindow:
+    def test_full_window_reports_more_and_next_offset(self) -> None:
+        stats = annotate_window({}, limit=10, offset=20, loaded=10)
+        assert stats["has_more"] is True
+        assert stats["next_offset"] == 30
+
+    def test_short_window_is_end_of_corpus(self) -> None:
+        stats = annotate_window({}, limit=10, offset=20, loaded=4)
+        assert stats["has_more"] is False
+        assert stats["next_offset"] == 24
+
+    def test_no_limit_never_reports_more(self) -> None:
+        stats = annotate_window({}, limit=None, offset=0, loaded=99)
+        assert stats["has_more"] is False
+        assert stats["limit"] is None
 
 
 # ---------------------------------------------------------------------------
