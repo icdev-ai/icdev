@@ -3283,6 +3283,23 @@ CREATE TABLE IF NOT EXISTS twin_compat_reports (
     classification TEXT DEFAULT 'CUI',
     created_at     TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS divergence_idea_scores (
+    id                 TEXT PRIMARY KEY,
+    trace_id           TEXT NOT NULL,
+    function           TEXT NOT NULL,
+    idea_index         INTEGER NOT NULL,
+    frame              TEXT DEFAULT '',
+    idea_text          TEXT NOT NULL,
+    novelty            TEXT DEFAULT 'unknown',
+    viability          TEXT DEFAULT 'unknown',
+    fit                TEXT DEFAULT 'unknown',
+    composite          REAL DEFAULT 0.0,
+    rationale          TEXT DEFAULT '',
+    vocabulary_version TEXT DEFAULT '',
+    tenant_id          TEXT NOT NULL DEFAULT 'default',
+    classification     TEXT NOT NULL DEFAULT 'CUI',
+    created_at         TEXT
+);
 """
 
 
