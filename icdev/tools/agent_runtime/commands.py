@@ -118,8 +118,76 @@ def _cmd_usage(runtime: Any, _arg: str) -> "tuple[str, bool]":
     )
 
 
-def _cmd_rollback(_runtime: Any, _arg: str) -> "tuple[str, bool]":
-    return "Checkpoints not enabled (arrives with sag-safe-02).", False
+def _cmd_snapshot(_runtime: Any, arg: str) -> "tuple[str, bool]":
+    """Manual checkpoint of one or more repo-relative paths. Usage: /snapshot <path> [path...]"""
+    from tools.agent_runtime.checkpoints import create_checkpoint
+
+    paths = [p for p in arg.split() if p.strip()]
+    if not paths:
+        return "Usage: /snapshot <path> [more paths...]", False
+    cp = create_checkpoint(paths, label="manual /snapshot")
+    return f"Checkpoint {cp.id} created ({len(cp.files)} path(s)).", False
+
+
+def _cmd_rollback(_runtime: Any, arg: str) -> "tuple[str, bool]":
+    """Roll back to a checkpoint. Usage: /rollback [N|<id>] (N=1 is newest)."""
+    from tools.agent_runtime.checkpoints import (
+        list_checkpoints,
+        describe_changes,
+        rollback,
+    )
+
+    tokens = arg.split()
+    confirmed = "--yes" in tokens or "-y" in tokens
+    positional = [t for t in tokens if not t.startswith("-")]
+    sub = positional[0] if positional else ""
+
+    cps = list_checkpoints()
+    if not cps:
+        return "No checkpoints available.", False
+
+    # list mode
+    if sub in ("", "list", "ls"):
+        lines = ["Checkpoints (newest first):"]
+        for i, cp in enumerate(cps[:10], start=1):
+            lines.append(f"  {i}. {cp.id}  {cp.label}  ({len(cp.files)} path(s))")
+        lines.append("Use /rollback <N> to preview, /rollback <N> --yes to apply.")
+        return "\n".join(lines), False
+
+    # resolve target (N is 1-based newest-first, or an explicit id)
+    target = None
+    if sub.isdigit():
+        idx = int(sub) - 1
+        if 0 <= idx < len(cps):
+            target = cps[idx]
+    else:
+        target = next((c for c in cps if c.id == sub), None)
+    if target is None:
+        return f"No checkpoint matches {sub!r}. Try /rollback list.", False
+
+    changes = describe_changes(target)
+    if not changes:
+        return f"Checkpoint {target.id}: nothing to restore.", False
+
+    preview = "\n".join(f"  - {c}" for c in changes)
+    if not confirmed:
+        # Show what will change and require explicit confirmation (no mutation yet).
+        return (
+            f"Rollback of {target.id} ({target.label}) would make these changes:\n"
+            f"{preview}\n\nRe-run '/rollback {sub} --yes' to apply.",
+            False,
+        )
+
+    result = rollback(target.id, confirm=lambda _c: True)
+    if result.get("ok"):
+        undo = result.get("undo_checkpoint")
+        return (
+            f"Rolled back to {target.id}. Applied "
+            f"{len(result.get('applied', []))} change(s):\n{preview}\n"
+            f"(undo with /rollback {undo} --yes)",
+            False,
+        )
+    return f"Rollback failed: {result.get('reason')}", False
 
 
 def _cmd_exit(_runtime: Any, _arg: str) -> "tuple[str, bool]":
@@ -154,7 +222,8 @@ REGISTRY: dict[str, Command] = {
     "/skills": Command(_cmd_skills, "List available icdev-* skills."),
     "/memory": Command(_cmd_memory, "Show remembered facts (full support in sag-mem-01)."),
     "/usage": Command(_cmd_usage, "Show token/cost stats for this session."),
-    "/rollback": Command(_cmd_rollback, "Roll back to a checkpoint (sag-safe-02)."),
+    "/snapshot": Command(_cmd_snapshot, "Checkpoint paths now. Usage: /snapshot <path> [more...]"),
+    "/rollback": Command(_cmd_rollback, "Preview/apply a rollback. Usage: /rollback [N|id] [--yes]"),
     "/help": _help_cmd,
     "/?": _help_cmd,
     "/exit": _exit_cmd,

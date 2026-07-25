@@ -219,10 +219,13 @@ def build_safety_gate(
     mode: Optional[str] = None,
     approver: Optional[Approver] = None,
     router: Any = None,
+    checkpoint: bool = True,
 ):
     """Build the real :data:`~tools.agent_runtime.dispatch.SafetyGate`.
 
     Args:
+        checkpoint: When True (default), an approved mutating call is snapshotted
+            (sag-safe-02) before it is allowed to run, so it can be ``/rollback``\\ ed.
         mode: ``manual`` | ``smart`` | ``off`` (defaults to ``ICDEV_SAG_APPROVAL_MODE``
             then ``manual``).
         approver: Callable that grants/denies a risky mutation. Defaults to the
@@ -235,6 +238,22 @@ def build_safety_gate(
     """
     resolved_mode = resolve_mode(mode)
     approve = approver or console_approver
+
+    def _grant(tool_name: str, tool_input: dict[str, Any]) -> "tuple[bool, str]":
+        """Common approved-path tail: snapshot the affected paths, then allow.
+
+        The sag-safe-01 approval flow is the sag-safe-02 checkpoint trigger — an
+        approved *mutating* command is snapshotted (best-effort) before it runs so
+        the operator can ``/rollback``.
+        """
+        if checkpoint:
+            try:
+                from tools.agent_runtime.checkpoints import snapshot_for_tool
+
+                snapshot_for_tool(tool_name, tool_input)
+            except Exception as exc:  # noqa: BLE001 — snapshot must not block execution
+                logger.warning("safety: checkpoint snapshot failed: %s", exc)
+        return True, ""
 
     def gate(
         tool_name: str, tool_input: dict[str, Any], read_only: bool
@@ -263,7 +282,7 @@ def build_safety_gate(
         if resolved_mode == MODE_OFF:
             _audit("approved", tool_name, tool_input, "yolo mode (off)", resolved_mode)
             logger.warning("safety: --yolo auto-approved %s", tool_name)
-            return True, ""
+            return _grant(tool_name, tool_input)
 
         risk = "high"
         if resolved_mode == MODE_SMART:
@@ -273,7 +292,7 @@ def build_safety_gate(
                     "approved", tool_name, tool_input,
                     "smart auto-approve (low risk)", resolved_mode, risk,
                 )
-                return True, ""
+                return _grant(tool_name, tool_input)
         else:  # manual — still surface a heuristic risk label in the prompt
             risk = _heuristic_risk(tool_name, tool_input)
 
@@ -291,7 +310,7 @@ def build_safety_gate(
             allowed = False
         if allowed:
             _audit("approved", tool_name, tool_input, "operator approved", resolved_mode, risk)
-            return True, ""
+            return _grant(tool_name, tool_input)
         _audit("denied", tool_name, tool_input, "operator denied", resolved_mode, risk)
         return False, "operator denied approval"
 
