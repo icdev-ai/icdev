@@ -2119,6 +2119,65 @@ def handle_cod_invoke(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_divergence_invoke(args: dict) -> dict:
+    """Invoke Divergence via ChainOrchestrator: a single isolated generative
+    fan-out that returns a raw pool of candidate ideas, optionally scored by the
+    separate critic (novelty/viability/fit + advisory trap flags).
+
+    Divergence is OPT-IN per function (enabled default false); if the function is
+    not enabled, the orchestrator raises and this handler returns {'error': ...}
+    like any other unavailable path rather than raising. Cross-repo callers
+    (e.g. idea_lab) reach this the same way they reach council_query. CUI:
+    divergence inherits the function's existing LOCAL-ONLY routing — this tool
+    opens no new egress path.
+    """
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+
+        function = args.get("function", "default")
+        orchestrator = ChainOrchestrator()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": args.get("prompt", "")}],
+            system_prompt=args.get("system_prompt", ""),
+        )
+        result = orchestrator.invoke_divergence(function, request)
+
+        payload = {
+            "content": result.content,
+            "chain_mode": result.chain_mode,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_input_tokens": result.total_input_tokens,
+            "total_output_tokens": result.total_output_tokens,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "trace_id": result.trace_id,
+            "rounds": result.rounds,
+        }
+
+        # Optional Focus half: run the separate critic to score + trap-flag the
+        # pool. Best-effort — a critic failure never fails the generate call.
+        if args.get("score") and result.content:
+            try:
+                from tools.quality.divergence_critic import score_idea_pool
+
+                scored = score_idea_pool(
+                    result.content, function=function, trace_id=result.trace_id, persist=False
+                )
+                payload["scored"] = scored.as_dict()
+                # trap_warnings() exists once dvg-critic-02 lands; defensive here.
+                trap_fn = getattr(scored, "trap_warnings", None)
+                payload["trap_warnings"] = trap_fn() if callable(trap_fn) else []
+            except Exception as exc:  # noqa: BLE001 — scoring is optional
+                payload["score_error"] = str(exc)
+
+        return payload
+    except Exception as exc:
+        logger.warning("handle_divergence_invoke: %s", exc)
+        return {"error": str(exc)}
+
+
 # ---------------------------------------------------------------------------
 # SIPA — Software Integrity & Provenance Assessor (sipa-mcp-01)
 # ---------------------------------------------------------------------------

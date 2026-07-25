@@ -7582,6 +7582,26 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    "divergence_invoke": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_divergence_invoke",
+        "description": (
+            "Invoke Divergence: a single isolated generative fan-out that returns a raw "
+            "pool of candidate ideas, optionally scored by the separate critic "
+            "(novelty/viability/fit + advisory trap flags). OPT-IN per function."
+        ),
+        "input_schema": {
+            "type": "object",
+            "required": ["function", "prompt"],
+            "properties": {
+                "function": {"type": "string", "description": "ICDEV function name (must be opted-in to divergence)"},
+                "prompt": {"type": "string", "description": "The problem to widen the option space on"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt / context"},
+                "score": {"type": "boolean", "default": False, "description": "Also run the critic to score + trap-flag the pool"},
+            },
+        },
+    },
     "reasoned_codegen_advise": {
         "category": "llmops",
         "module": "tools.mcp.gap_handlers",
