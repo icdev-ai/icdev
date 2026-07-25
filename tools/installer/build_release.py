@@ -25,15 +25,23 @@ aborts the whole thing so you never upload a broken wheel:
 
     5. Smoke test in a throwaway venv
          pip install dist/*.whl into a temp venv.
-         Verify `icdev init --list` runs cleanly.
-         Verify import `import icdev` works.
+         Run a REAL `icdev init` and assert the payload landed: CLAUDE.md,
+         .mcp.json, .claude/settings.json, .claude/{commands,hooks,skills}
+         populated to at least the wheel's recorded counts, a non-empty .env
+         carrying every packaged registry env flag, and the packaged registry
+         loading with the expected component count.
+         Verify import `import icdev` and core subsystem imports work.
 
 If all 5 pass, print the twine upload command (but don't auto-run it).
 The user runs `twine upload` manually to guard against accidental uploads.
 
+--skip-smoke is for LOCAL ITERATION ONLY. It prints a loud warning and must
+never be used on the documented release path — skipping it means the wheel's
+`icdev init` is never proven to work.
+
 Usage:
     python tools/installer/build_release.py              # full pipeline
-    python tools/installer/build_release.py --skip-smoke # skip venv test
+    python tools/installer/build_release.py --skip-smoke # LOCAL ONLY (loud warn)
     python tools/installer/build_release.py --json       # machine output
 """
 
@@ -199,6 +207,123 @@ def step_inspect_wheel() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Real-init verification helpers (pkg-rel-01)
+# ---------------------------------------------------------------------------
+# The old smoke test ran `icdev init <dir> --list`, which only REPORTS what it
+# would copy — a wheel whose `icdev init` copies zero files passed. These helpers
+# drive a REAL init and assert the payload actually landed, keyed off the counts
+# and env flags recorded in the wheel itself.
+
+_BOOTSTRAP_CLAUDE = "icdev/data/claude_bootstrap/claude"
+_WHEEL_REGISTRY = "icdev/data/args/component_registry.yaml"
+
+
+def _wheel_payload(wheel: Path) -> dict:
+    """Extract the payload contract from the built wheel.
+
+    Returns the file counts the init MUST reproduce and the env flags + component
+    count the packaged registry declares. Reading it from the wheel (not the
+    source tree) is the point: the assertions are against what actually shipped.
+    """
+    import yaml  # available in the build environment
+
+    with zipfile.ZipFile(wheel) as z:
+        names = z.namelist()
+        registry_text = ""
+        if _WHEEL_REGISTRY in names:
+            registry_text = z.read(_WHEEL_REGISTRY).decode("utf-8", "replace")
+
+    def _count(subdir: str) -> int:
+        prefix = f"{_BOOTSTRAP_CLAUDE}/{subdir}/"
+        return sum(1 for n in names if n.startswith(prefix) and not n.endswith("/"))
+
+    env_flags: set[str] = set()
+    component_count = 0
+    if registry_text:
+        data = yaml.safe_load(registry_text) or {}
+        for comp in (data.get("components") or []):
+            if not isinstance(comp, dict):
+                continue
+            flag = comp.get("env_flag")
+            if flag:
+                env_flags.add(flag)
+                component_count += 1
+            for extra in (comp.get("extra_env_flags") or []):
+                env_flags.add(extra)
+
+    return {
+        "commands": _count("commands"),
+        "hooks": _count("hooks"),
+        "skills": _count("skills"),
+        "env_flags": env_flags,
+        "component_count": component_count,
+    }
+
+
+def _count_files(root: Path) -> int:
+    return sum(1 for p in root.rglob("*") if p.is_file()) if root.is_dir() else 0
+
+
+def _verify_init(proj_dir: Path, expected: dict) -> list[str]:
+    """Assert a REAL `icdev init` produced a complete, usable project.
+
+    Returns a list of failure strings (empty ⇒ all assertions passed).
+    """
+    fails: list[str] = []
+
+    # Required top-level files.
+    if not (proj_dir / "CLAUDE.md").is_file():
+        fails.append("CLAUDE.md missing")
+    if not (proj_dir / ".mcp.json").is_file():
+        fails.append(".mcp.json missing")
+    if not (proj_dir / ".claude" / "settings.json").is_file():
+        fails.append(".claude/settings.json missing")
+
+    # .claude subtrees exist and are at least as populated as the wheel payload.
+    for sub in ("commands", "hooks", "skills"):
+        d = proj_dir / ".claude" / sub
+        if not d.is_dir():
+            fails.append(f".claude/{sub} missing")
+            continue
+        got = _count_files(d)
+        want = int(expected.get(sub, 0))
+        if got < want:
+            fails.append(f".claude/{sub} has {got} files, expected >= {want}")
+
+    # .env exists, is non-empty, and carries every packaged env flag.
+    env_file = proj_dir / ".env"
+    if not env_file.is_file():
+        fails.append(".env missing")
+    else:
+        env_text = env_file.read_text(encoding="utf-8")
+        if not env_text.strip():
+            fails.append(".env is empty")
+        missing_flags = sorted(
+            f for f in expected.get("env_flags", set())
+            if f"{f}=" not in env_text
+        )
+        if missing_flags:
+            shown = ", ".join(missing_flags[:15])
+            more = "" if len(missing_flags) <= 15 else f" (+{len(missing_flags) - 15} more)"
+            fails.append(
+                f".env missing {len(missing_flags)} registry env flag(s): {shown}{more}")
+
+    return fails
+
+
+_REGISTRY_COUNT_PROBE = (
+    "import sys\n"
+    "from icdev.tools.config.component_registry import get_registry\n"
+    "n = len([c for c in get_registry().list_all() if c.env_flag])\n"
+    "print('REGISTRY_COMPONENTS=%d' % n)\n"
+    "expected = {expected}\n"
+    "if n != expected:\n"
+    "    print('FAILED: registry loaded %d flag-components, expected %d' % (n, expected))\n"
+    "    sys.exit(1)\n"
+)
+
+
+# ---------------------------------------------------------------------------
 # Step 5: smoke test install in throwaway venv
 # ---------------------------------------------------------------------------
 #: Subsystems that must import from the *installed* package. Each previously
@@ -282,17 +407,42 @@ def step_smoke_test() -> dict:
         result["import_ok"] = (r.returncode == 0)
         result["version"] = r.stdout.strip()
 
-        # Test: icdev init --list in a fresh project dir
+        # Test: a REAL `icdev init` into a fresh project dir, then assert the
+        # payload actually landed. (The old test ran `--list`, which only
+        # reports what it *would* copy — a wheel that copies nothing passed.)
+        # `--profile none` keeps it non-interactive and applies registry
+        # defaults; every env flag is still emitted (enabled or commented).
+        expected = _wheel_payload(wheel)
+        result["expected_payload"] = {
+            k: (v if k != "env_flags" else len(v)) for k, v in expected.items()
+        }
         proj_dir = tmpdir / "proj"
-        proj_dir.mkdir()
-        r = _run([str(icdev_bin), "init", str(proj_dir), "--list"],
-                 cwd=probe_cwd, timeout=30)
+        r = _run([str(icdev_bin), "init", str(proj_dir), "--profile", "none"],
+                 cwd=probe_cwd, timeout=60)
         # Fallback: invoke via python -m if entry-point shim not found
         if r.returncode != 0 and "No such" in (r.stderr or ""):
             r = _run([str(py), "-m", "icdev.tools.cli.init",
-                      str(proj_dir), "--list"], cwd=probe_cwd, timeout=30)
-        result["init_list_ok"] = (r.returncode == 0)
-        result["init_list_output"] = (r.stdout or "")[-500:]
+                      str(proj_dir), "--profile", "none"],
+                     cwd=probe_cwd, timeout=60)
+        init_ran = (r.returncode == 0)
+        result["init_output"] = (r.stdout or r.stderr or "")[-500:]
+
+        init_fails = ([] if init_ran
+                      else [f"icdev init exited {r.returncode}: "
+                            f"{(r.stderr or r.stdout or '')[-200:]}"])
+        if init_ran:
+            init_fails = _verify_init(proj_dir, expected)
+        result["init_ok"] = init_ran and not init_fails
+        result["init_failures"] = init_fails
+        # Back-compat key retained for existing readers of this result dict.
+        result["init_list_ok"] = result["init_ok"]
+
+        # Test: the packaged registry loads with the expected component count
+        # (probing path resolution inside the installed wheel, not the source).
+        probe = _REGISTRY_COUNT_PROBE.format(expected=expected["component_count"])
+        r = _run([str(py), "-c", probe], cwd=probe_cwd, timeout=60)
+        result["registry_load_ok"] = (r.returncode == 0)
+        result["registry_load_info"] = (r.stdout or r.stderr or "").strip()[-300:]
 
         # Test: core icdev.tools.* subsystems actually import in the installed
         # package. ~1,900 packaged modules import their siblings through the
@@ -314,7 +464,8 @@ def step_smoke_test() -> dict:
 
         result["ok"] = all((result.get("install_ok"),
                             result.get("import_ok"),
-                            result.get("init_list_ok"),
+                            result.get("init_ok"),
+                            result.get("registry_load_ok"),
                             result.get("subsystem_imports_ok"),
                             result.get("column_policies_ok")))
     return result
@@ -363,13 +514,20 @@ def run(skip_smoke: bool = False) -> dict:
         return {"ok": False, "failed_at": "inspect_wheel", "results": results}
 
     if not skip_smoke:
-        _step(5, total, "Smoke test install in throwaway venv")
+        _step(5, total, "Smoke test install in throwaway venv (REAL icdev init)")
         r5 = step_smoke_test()
         results.append(r5)
         print(f"  install={r5.get('install_ok')}  import={r5.get('import_ok')} "
-              f"(v{r5.get('version')})  init_list={r5.get('init_list_ok')}")
+              f"(v{r5.get('version')})  init={r5.get('init_ok')}  "
+              f"registry_load={r5.get('registry_load_ok')}")
         print(f"  subsystem_imports={r5.get('subsystem_imports_ok')}  "
               f"column_policies={r5.get('column_policies_ok')}")
+        if r5.get("expected_payload"):
+            print(f"    payload contract: {r5['expected_payload']}")
+        for f in r5.get("init_failures", []):
+            print(f"    INIT FAIL: {f}")
+        if r5.get("registry_load_info"):
+            print(f"    {r5['registry_load_info']}")
         if r5.get("column_policies_info"):
             print(f"    {r5['column_policies_info']}")
         if r5.get("subsystem_imports_error"):
@@ -378,14 +536,30 @@ def run(skip_smoke: bool = False) -> dict:
             if r5.get("error"):
                 print(f"  error: {r5['error']}")
             return {"ok": False, "failed_at": "smoke_test", "results": results}
+    else:
+        # Skipping the smoke test means the release path never proves the wheel's
+        # `icdev init` actually works — make that impossible to miss.
+        print("\n" + "!" * 68)
+        print("!! WARNING: --skip-smoke — the throwaway-venv REAL-init test was "
+              "SKIPPED.")
+        print("!! The wheel's `icdev init` payload was NOT verified. This flag is "
+              "for")
+        print("!! local iteration ONLY and must NEVER be used on the documented "
+              "release path.")
+        print("!" * 68)
+        results.append({"step": "smoke_test", "ok": None, "skipped": True,
+                        "warning": "smoke test skipped via --skip-smoke"})
 
-    return {"ok": True, "failed_at": None, "results": results}
+    return {"ok": True, "failed_at": None, "results": results,
+            "smoke_skipped": bool(skip_smoke)}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--skip-smoke", action="store_true",
-                        help="Skip the throwaway-venv install test (faster, less safe)")
+                        help="LOCAL ITERATION ONLY: skip the throwaway-venv "
+                             "REAL-init test. Prints a loud warning; never use "
+                             "on the documented release path.")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -398,8 +572,13 @@ def main() -> int:
     print()
     print("=" * 68)
     if result["ok"]:
-        print("  RELEASE READY")
+        print("  RELEASE READY" + ("  (SMOKE TEST SKIPPED — NOT release-safe)"
+                                    if result.get("smoke_skipped") else ""))
         print("=" * 68)
+        if result.get("smoke_skipped"):
+            print("  NOTE: --skip-smoke was used; the wheel's `icdev init` was "
+                  "NOT verified.\n        Re-run without --skip-smoke before "
+                  "publishing.")
         wheels = sorted(DIST_DIR.glob("*.whl")) if DIST_DIR.exists() else []
         sdists = sorted(DIST_DIR.glob("*.tar.gz")) if DIST_DIR.exists() else []
         print()
