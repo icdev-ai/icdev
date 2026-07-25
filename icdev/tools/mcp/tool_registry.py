@@ -36,7 +36,7 @@ Categories:
     testing (6)
     installer (4)
     misc (8)
-    llmops (10)
+    llmops (13)
     agent_topology (3)
     sre (8)
     canvas (8)
@@ -5654,6 +5654,55 @@ TOOL_REGISTRY = {
                 "significance": {"type": "number", "description": "P-value threshold", "default": 0.05},
             },
             "required": ["model"],
+        },
+    },
+    "proxy_key_issue": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_proxy_key_issue",
+        "description": "Issue an LLM-proxy virtual key (lpx-keys-01). Returns the key exactly once; only a SHA-256 hash is stored. The master/admin key is never logged or returned.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "alias": {"type": "string", "description": "Human-readable label"},
+                "scope_type": {"type": "string", "enum": ["tenant", "team", "guild", "user"], "default": "tenant"},
+                "scope_ref": {"type": "string", "description": "Id within the scope (team_id, guild_id, user)"},
+                "session_id": {"type": "string", "description": "gameday ttx session id for team keys"},
+                "max_budget_usd": {"type": "number", "description": "Spend cap in USD"},
+                "budget_window": {"type": "string", "enum": ["exercise", "day", "month", "none"], "default": "none"},
+                "rpm_limit": {"type": "integer", "description": "Requests-per-minute ceiling"},
+                "tpm_limit": {"type": "integer", "description": "Tokens-per-minute ceiling"},
+                "expires_at": {"type": "string", "description": "ISO-8601 expiry"},
+                "tenant_id": {"type": "string"},
+                "classification": {"type": "string"},
+                "created_by": {"type": "string"},
+            },
+        },
+    },
+    "proxy_key_list": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_proxy_key_list",
+        "description": "List issued LLM-proxy virtual keys (metadata only — never the key or its hash).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "scope_type": {"type": "string", "enum": ["tenant", "team", "guild", "user"]},
+                "scope_ref": {"type": "string"},
+                "session_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["active", "revoked", "rotated", "expired"]},
+            },
+        },
+    },
+    "proxy_key_show": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_proxy_key_show",
+        "description": "Show one LLM-proxy virtual key by id (metadata only — never the key or its hash).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"key_id": {"type": "string", "description": "Key id"}},
+            "required": ["key_id"],
         },
     },
     # ============================================================
