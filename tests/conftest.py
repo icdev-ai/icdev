@@ -3253,6 +3253,22 @@ CREATE TABLE IF NOT EXISTS llm_proxy_keys (
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT
 );
+-- LPX per-key spend ledger (lpx-keys-02). Budgets wire onto existing grouping
+-- units via the key's scope; deny is scoped to a single key/window.
+CREATE TABLE IF NOT EXISTS llm_proxy_spend (
+    spend_id       TEXT PRIMARY KEY,
+    key_id         TEXT NOT NULL,
+    scope_type     TEXT NOT NULL DEFAULT 'tenant',
+    scope_ref      TEXT,
+    session_id     TEXT,
+    window_key     TEXT NOT NULL DEFAULT 'none',
+    input_tokens   INTEGER NOT NULL DEFAULT 0,
+    output_tokens  INTEGER NOT NULL DEFAULT 0,
+    cost_usd       REAL NOT NULL DEFAULT 0.0,
+    tenant_id      TEXT,
+    classification TEXT,
+    recorded_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- AIMC (AI/ML Canvas) — model inventory + deployment-readiness check state.
 -- Tenant-less canvas tables (classification, no tenant_id); read via
 -- get_canvas_connection (RLS disabled). Mirrors tools/aimc/db/init_db.py.
