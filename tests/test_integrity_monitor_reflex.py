@@ -318,3 +318,54 @@ def test_post_transition_opens_cards_for_new_findings(conn, deterministic_scanne
     assert r2["details"]["baseline_transition"] is False
     assert r2["flagged"] == 1, r2["details"]
     assert _count_cards(conn) == 1
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint config loading (fix/reflex-cli-dotenv)
+#
+# A direct ``python tools/genesis/reflexes/integrity_monitor.py`` run does NOT put
+# the repo root on ``sys.path``; ``import tools.*`` can then resolve to a different
+# pip-installed ICDEV checkout whose ``storage.py`` already loaded *its* ``.env``
+# at import time. ``_load_env()`` reloads THIS repo's ``.env`` with override=True so
+# the local board/PG config wins — mirroring the GenesisDaemon startup.
+# ---------------------------------------------------------------------------
+def test_load_env_helper_is_callable():
+    assert hasattr(integrity_monitor, "_load_env")
+    assert callable(integrity_monitor._load_env)
+
+
+def test_load_env_invokes_load_dotenv_with_override(monkeypatch):
+    import dotenv
+
+    calls = []
+
+    def _fake_load_dotenv(path=None, *args, **kwargs):
+        calls.append((path, kwargs))
+        return True
+
+    # _load_env does ``from dotenv import load_dotenv`` at call time, so patching
+    # the attribute on the dotenv module is picked up by the local import.
+    monkeypatch.setattr(dotenv, "load_dotenv", _fake_load_dotenv)
+    integrity_monitor._load_env()
+
+    assert calls, "_load_env did not invoke load_dotenv"
+    path, kwargs = calls[0]
+    assert kwargs.get("override") is True
+    # Resolved from __file__ (BASE_DIR), never cwd.
+    assert str(path) == str(integrity_monitor.BASE_DIR / ".env")
+
+
+def test_load_env_is_noop_when_dotenv_missing(monkeypatch):
+    """Missing python-dotenv must not raise — the CLI still starts."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _blocked_import(name, *args, **kwargs):
+        if name == "dotenv":
+            raise ImportError("simulated: python-dotenv not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked_import)
+    # Should return cleanly (no exception) even though dotenv is unavailable.
+    assert integrity_monitor._load_env() is None
