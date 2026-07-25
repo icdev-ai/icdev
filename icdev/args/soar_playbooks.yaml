@@ -1,0 +1,115 @@
+# CUI // SP-CTI
+# SOAR-lite response playbooks (card crx-sec-02).
+#
+# Composition layer over the existing runbook (tools/sre/runbook_executor.py) and
+# incident (tools/sre/incident_commander.py) layers plus the ZIG runbook catalog.
+# It maps a REAL alert/finding type to an ordered sequence of steps. Each step is
+# tagged `kind`:
+#   * enrichment  — READ-ONLY context gathering / tracking; auto-executes.
+#   * destructive — a state-changing containment action; BLOCKS on human-in-the-loop
+#                   (HITL) approval before execution (reuses the ACE co-worker HITL
+#                   gate pattern: pending -> approved/rejected audit rows).
+#
+# Only actions ICDEV can ACTUALLY perform are wired (revoke a broker-issued service
+# key, disable a user/service account, quarantine a kanban task source, block an
+# egress destination). Host-isolation / raw-network actions the platform cannot
+# perform are intentionally NOT modelled.
+#
+# DEFAULT OFF — auto-triggering is opt-in (privacy + blast-radius). The engine and
+# YAML always load; only the reflex/auto-trigger honours `enabled`.
+version: 1
+enabled: false
+default_classification: CUI
+default_tenant: platform
+
+playbooks:
+  # -------------------------------------------------------------------------
+  # 1) CVE triage SLA breach — a vulnerability in the triage queue blew its
+  #    remediation SLA (source: tools/security_canvas CVE triage / vuln pipeline).
+  # -------------------------------------------------------------------------
+  cve_triage_sla_breach:
+    title: CVE Triage SLA Breach Response
+    finding_type: cve_sla_breach
+    severity: high
+    nist_controls: [IR-4, IR-5, RA-5, SI-4]
+    description: >-
+      Fires when a CVE in the triage queue exceeds its remediation SLA. Enriches
+      the finding, opens a tracking incident, then (HITL) blocks egress to a
+      confirmed exploit/C2 destination associated with the CVE.
+    steps:
+      - id: enrich_cve
+        action: enrich_cve_context
+        kind: enrichment
+        description: Pull CVE severity, affected assets, and SLA age for context.
+      - id: open_incident
+        action: open_incident
+        kind: enrichment
+        description: Open a tracking incident (severity derived from CVE severity).
+      - id: block_c2_egress
+        action: block_egress_destination
+        kind: destructive
+        description: >-
+          Block egress to the exploit/C2 destination tied to the CVE. Requires
+          HITL approval (may disrupt legitimate traffic).
+
+  # -------------------------------------------------------------------------
+  # 2) Insider-risk UBA anomaly — a high-band score from crx-sec-01
+  #    (tools/security/insider_risk.py) e.g. off-hours bulk export.
+  # -------------------------------------------------------------------------
+  insider_risk_anomaly:
+    title: Insider-Risk UBA Anomaly Response
+    finding_type: insider_risk_anomaly
+    severity: high
+    nist_controls: [AU-6, AC-2(12), IR-4, SI-4]
+    description: >-
+      Fires on a high-band insider-risk score. Enriches with the account's latest
+      UBA finding, opens a tracking incident, then (HITL) disables the account and
+      revokes any broker-issued service keys it holds.
+    steps:
+      - id: enrich_uba
+        action: enrich_insider_risk
+        kind: enrichment
+        description: Attach the account's latest insider-risk score + fired rules.
+      - id: open_incident
+        action: open_incident
+        kind: enrichment
+        description: Open a tracking incident for the flagged account.
+      - id: disable_account
+        action: disable_user_account
+        kind: destructive
+        description: Disable the flagged user/service account. Requires HITL approval.
+      - id: revoke_keys
+        action: revoke_service_key
+        kind: destructive
+        description: Revoke broker-issued service credentials held by the account. Requires HITL approval.
+
+  # -------------------------------------------------------------------------
+  # 3) Secrets-detection hit — the secret detector found a live credential in a
+  #    scanned artifact (tools/security/secret_detector.py).
+  # -------------------------------------------------------------------------
+  secrets_detection_hit:
+    title: Secrets-Detection Hit Response
+    finding_type: secrets_detected
+    severity: critical
+    nist_controls: [IA-5, IR-4, SI-4, SC-28]
+    description: >-
+      Fires when a secret/credential is detected in a scanned source. Enriches with
+      the detector match, opens a tracking incident, then (HITL) revokes the leaked
+      service key and quarantines the kanban task source that introduced it.
+    steps:
+      - id: enrich_secret
+        action: enrich_secret_finding
+        kind: enrichment
+        description: Attach the detector match (rule, masked value, location).
+      - id: open_incident
+        action: open_incident
+        kind: enrichment
+        description: Open a tracking incident for the leaked secret.
+      - id: revoke_leaked_key
+        action: revoke_service_key
+        kind: destructive
+        description: Revoke the leaked broker-issued service credential. Requires HITL approval.
+      - id: quarantine_source
+        action: quarantine_kanban_task_source
+        kind: destructive
+        description: Quarantine the kanban task/source that introduced the secret. Requires HITL approval.

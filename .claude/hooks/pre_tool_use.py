@@ -337,6 +337,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "evolution_audit",
         # Outcome Verifier (D-EVO-6, self-healing feedback loop)
         "outcome_verification_log",
+        # SOAR-lite response playbooks (crx-sec-02) — append-only per-run event log (NIST AU)
+        "soar_playbook_audit",
         # NemoClaw-Adapted Agent Sandboxing (D-NC-1, D-NC-2, D-NC-3, D-NC-5)
         "credential_broker_log",
         "egress_policy_audit",
