@@ -2316,6 +2316,12 @@ python tools/llm/proxy_keys.py audit --key-id <key_id> --json                   
 python -c "import json;from tools.llm.proxy_gateway import local_copy_preflight;print(json.dumps(local_copy_preflight()))"  # onboarding/health preflight
 # A local copy with no gateway reachable / no virtual key fails CLOSED with a clear message; it never falls back to a real provider key.
 
+# LLM Proxy Team Rate Ceilings (lpx-teams-01) — competition fairness for /gameday
+python tools/llm/proxy_team_limits.py configure <session_id> --json                 # Compute+persist per-team RPM/TPM ceilings (sized off actual team count)
+python tools/llm/proxy_team_limits.py check <session_id> <team_id> --tokens 1200 --json  # allow/deny for one team (degrades only that team)
+python tools/llm/proxy_team_limits.py status <session_id> --json                    # Facilitator per-team usage vs ceiling (at_ceiling flag)
+# Org limits: ICDEV_LLM_ORG_RPM (60) / ICDEV_LLM_ORG_TPM (100000); burst ICDEV_LLM_TEAM_BURST_FACTOR (1.5)
+
 # LLM Proxy Budgets (lpx-keys-02) — per-key spend budgets scoped to team/guild/user
 python tools/llm/proxy_budgets.py check <key_id> --projected 0.05 --json          # allow|warn|block for a key's budget
 python tools/llm/proxy_budgets.py spend <key_id> --json                            # spend summary for current window
