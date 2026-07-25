@@ -2092,6 +2092,12 @@ python tools/creative/trend_tracker.py --report --json
 python tools/creative/spec_generator.py --generate-all --json
 python tools/creative/spec_generator.py --list --json
 
+# Divergent ideation benchmark (dvg-bench-01) — divergence vs single-shot on real
+# ICDEV functions; recommend-only (flips no default), air-gap => status "unmeasured"
+python tools/creative/divergence_benchmark.py --dry-run                 # list tasks, no model calls
+python tools/creative/divergence_benchmark.py --run --json              # measure + persist to data/divergence/
+python tools/creative/divergence_benchmark.py --run --tasks <path> --out <dir>
+
 # Daemon mode
 python tools/creative/creative_engine.py --daemon --json
 ```

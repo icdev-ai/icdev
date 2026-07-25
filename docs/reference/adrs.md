@@ -825,3 +825,35 @@ Adapt the *patterns* — not the stack — of [github.com/FareedKhan-dev/all-age
   | 19 | **Voyager — subprocess execution of LLM-written Python** | Non-starter at IL4+. ICDEV's HITL-gated skill promotion (`skills_lifecycle.approve_proposal` as sole writer, `trust: unverified-llm-generated` frontmatter, `invoke.py` allowlist) is the correct shape and stays. (The skill-*learning* pattern is ALREADY-COVERED above; only the execution *mechanism* is rejected.) |
   | 9 | **Mental Loop** (new-work eval) | "Simulate then deterministic-pick" is already the Digital Program Twin + `run_monte_carlo` + the twin-core canonical envelope. A second simulate-then-pick surface adds no capability. |
   | 28 | **Blackboard** (new-work eval) | ACE `coworker_thread` shared state + `tools/canvas/` bus already cover the shared-workspace need; a second concurrency model adds risk without capability. |
+
+### Phase 78 — DVG (Divergent Ideation)
+
+Adapt the *idea* — a deliberate generative "widen then judge" step — from the ADHD-agent divergent-ideation project (npm/adhd-agent CLI + TypeScript library), **not** its stack. The governing discipline is the same as the SAG and AGX phases — *compose existing primitives, don't rebuild*: **~70% of the orchestration was already present in `ChainOrchestrator.invoke_council`** (parallel multi-branch fan-out, per-branch model assignment via `get_diverse_models`, budget/timeout caps, telemetry, graceful degrade). DVG added only the two genuine deltas — strict branch isolation with generative (non-evaluative) prompts, and a separate opposing critic pass — plus config-driven frames, trap detection, clustering, opt-in engine branch points, and a measured benchmark. ICDEV vendors NO upstream code. Source analysis: `docs/spikes/dvg-00-adhd-divergent-ideation-adaptation.md`.
+
+- **D392:** **Disposition of the ADHD-agent divergent-ideation adaptation — ADOPTED (7) / REJECTED (7).** Recorded here so no future session re-analyzes the upstream project or re-proposes a rejected shape. The prize was the *method* (isolated generative fan-out + an opposing deterministic-first critic), which slots onto the existing chain-orchestration and categorical-scoring spines; the CLI/library/agent-swarm packaging was discarded. Divergence ships **OFF by default everywhere** — it is never a default generation path, and `chain_orchestration.divergence.enabled` plus every engine-level toggle default `false`.
+
+  **ADOPTED — built on the existing chain-orchestration + categorical-scoring spines:**
+
+  | Adopted pattern | DVG task | ICDEV module / surface |
+  |---|---|---|
+  | Config-driven generative frame library (frames are data, not code) | dvg-frames-01 | `args/ideation_frames.yaml` + `tools/config/ideation_frames.py` |
+  | Strictly-isolated generative divergence as a fourth chain mode (one round, no cross-reading, no self-critique) | dvg-core-01 | `ChainOrchestrator.invoke_divergence` (`chain_mode="divergence"`) |
+  | Separate critic pass — novelty/viability/fit, categorical enums, Python-composed ordering | dvg-critic-01 | `tools/quality/divergence_critic.py` `score_idea_pool` (reuses `categorical_scoring.compose_divergence`) |
+  | Explicit trap detection (seductive-but-broken flag + mandatory rationale) — ADVISORY | dvg-critic-02 | `compose_trap` / `IdeaScore.is_trap` / `ScoredPool.trap_warnings()` |
+  | Cluster + deepen top-K (collapse restatements; expand only the survivors) | dvg-critic-03 | `cluster_pool` / `cluster_and_deepen` → `DeepenedCluster` |
+  | Opt-in engine branch points (default-OFF; deterministic path stays the default) | dvg-wire-01/02 | creative `stage_generate` (`divergence_branch.py`); innovation `generate_solution_spec` (alternatives-before-blueprint) |
+  | MCP tool + skill + measured benchmark | dvg-wire-04 / dvg-bench-01 | `divergence_invoke` MCP tool; `icdev-divergence` skill; `tools/creative/divergence_benchmark.py` |
+
+  **REJECTED — with reasons:**
+
+  | Rejected | Reason |
+  |---|---|
+  | **The npm package** | Node/npm runtime — cannot run air-gapped from vendored wheels; `requirements.txt` is deliberately lean and pure-Python. Adopt the pattern, not the stack. |
+  | **The adhd-agent CLI** | A standalone external CLI duplicates orchestration ICDEV already owns (`ChainOrchestrator`); nothing to integrate, everything to maintain. |
+  | **The TypeScript library** | Wrong language/stack; would fork the LLM-invocation path away from `LLMRouter` and the categorical-scoring discipline. |
+  | **The 50+-agent install shims** | Unbounded install/agent surface conflicts with the lean-dependency + air-gap constraints and the 16-agent A2A topology; no capability the frame set + `get_diverse_models` does not already give. |
+  | **Replacing CoD or Council** | `invoke_chain_of_debate` (adversarial convergence) and `invoke_council` (consensus) already own the *evaluative* modes. Divergence is generative-only and STRICTLY isolated — it complements them; collapsing them into one mode would destroy the isolation that makes divergence work. |
+  | **Making divergence a default path** | Cost is the headline risk (~5–10× a direct answer: N branches + critic + deepen). It ships OFF by default; dvg-bench-01 measures breadth/novelty/trap at fixed model + token cost, and enabling any branch point stays a human decision informed by that evidence — never an auto-flip. |
+  | **Unbounded agent fan-out** | Branch count is hard-capped by the frame-set size (`num_branches = min(cfg, len(frames))`) and gated by the module budget/timeout caps that trip *before* any model call — no runaway swarm. |
+
+- **D393:** **Wiring is opt-in and measurement gates enablement; trap detection stays advisory.** The two engine branch points (dvg-wire-01 creative `stage_generate`, dvg-wire-02 innovation `generate_solution_spec`) are **additive branches, not replacements**: when their config toggle is off — the default — the deterministic template / single-blueprint path is byte-for-byte unchanged, and both degrade cleanly back to it when the chain is disabled or the LLM is unreachable. wire-01 persists the divergence `trace_id` on the generated spec (recoverable provenance) and carries surviving clusters into it; wire-02 records the **chosen + rejected** approaches in the existing `_audit` trail (the rejected alternatives are the review value) and visibly marks trap-flagged approaches. dvg-bench-01 (`tools/creative/divergence_benchmark.py`, tasks in `args/creative/divergence_benchmark_tasks.yaml`, results in `data/divergence/`) re-measures the comparison on real ICDEV functions holding the model fixed and reporting token cost — **adopting upstream's measurement method, not its unreproduced 1.9×/2.9×/5.2× figures**. It is RECOMMEND-ONLY: it flips no default, and promotion of trap detection from advisory to gating remains a separate human decision requiring a larger measured sample. Follows the agx-bench-01 harness pattern (honest `unmeasured` cells air-gapped; never requires live models to build/test/merge) so the two benchmarks are comparable.
