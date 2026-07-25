@@ -230,7 +230,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Usage: python -m tools.agent_runtime.runtime")
         print("Start an interactive ICDEV standalone agent session.")
         return 0
-    runtime = AgentRuntime()
+    # Wire the full slash-command registry (sag-rt-02) as the dispatcher.
+    from tools.agent_runtime.commands import dispatch as _command_dispatch
+
+    runtime = AgentRuntime(command_handler=_command_dispatch)
     runtime.loop()
     return 0
 
