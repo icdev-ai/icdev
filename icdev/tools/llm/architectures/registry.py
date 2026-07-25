@@ -108,6 +108,7 @@ def _ensure_builtin_adapters_registered() -> None:
     from tools.llm.architectures import adapters  # noqa: F401  (registers on import)
     from tools.llm.architectures import cove  # noqa: F401  (registers chain_of_verification)
     from tools.llm.architectures import self_discover  # noqa: F401  (registers self_discover)
+    from tools.llm.architectures import tree_of_thoughts  # noqa: F401  (registers tree_of_thoughts)
 
 
 # Register the built-in wrapped architectures on first import of this module.
