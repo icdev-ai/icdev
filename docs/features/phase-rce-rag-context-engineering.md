@@ -31,16 +31,22 @@ persisted).
 | rce-raptor-01 | #675 | RAPTOR summary hierarchy — `rag_chunk_summaries` table + `raptor.py` tree builder (cheap-LLM summaries, graceful no-op). |
 | rce-raptor-02 | #679 | Multi-level retrieval + lineage dedup in `RAGRetriever.search`. |
 | rce-eval-02 | #663 | SPIKE — domain-adapted embedding feasibility: **NO-GO / DEFER** + `embedding_feasibility.py` re-runnable probe. |
-| rce-xcut-01 | (this) | Cross-cutting docs, manifest, skip-decision ADRs, coherence/companion sync. |
+| rce-xcut-01 | #689 | Cross-cutting docs, manifest, skip-decision ADRs, coherence/companion sync. |
+| rce-eval-03 | #743 | Re-baseline on a matched 3552-chunk compliance corpus — `data/rag/rce_baseline_compliance.json`. |
+| rce-eval-04-d3 | #762 | Contextual re-index of all 3552 chunks (+ `embedding_vec` write fix); flipped `contextual_retrieval.enabled → true`. |
+| rce-eval-04-d4 | #764 | Benchmark comparison vs the compliance baseline — `data/rag/rce_contextual_compliance.json`. |
+| rce-eval-04-d5 | (this) | **KEEP decision** for `contextual_retrieval`, backed by the measured delta + per-query analysis below. |
+| rce-eval-05 | #760 | RAPTOR live tree build (retrieval toggle still OFF, unmeasured). |
 
-## Toggles (all default OFF except the float16 storage win)
+## Toggles
 
 `args/rag_config.yaml`:
 
 ```yaml
 rag:
   contextual_retrieval:
-    enabled: false        # rce-ctx: prepend LLM context prefix before embedding
+    enabled: true         # rce-ctx: prepend LLM context prefix before embedding
+                          #   ON since rce-eval-04 — KEEP, measured (see below)
   quantization:
     sqlite_dtype: float16 # rce-quant-01: 16-bit SQLite vectors (float32 back-compat)
     binary_prefilter:
@@ -49,12 +55,16 @@ rag:
     enabled: false        # rce-raptor: search summary tiers + dedup with leaves
 ```
 
-- **contextual_retrieval** and **raptor** need an LLM at ingestion/build time;
-  both no-op gracefully when the provider is unavailable (air-gap).
-- **sqlite_dtype: float16** is the one behavior change that ships ON — reads are
-  back-compat for legacy float32 and headered float16, so no re-index is forced.
+- **contextual_retrieval** shipped OFF, was measured in rce-eval-04, and is now
+  **ON** — the only toggle on this card to have earned a flip with a number
+  behind it. It still needs an LLM at ingestion time and no-ops gracefully when
+  the provider is unavailable (air-gap).
+- **sqlite_dtype: float16** ships ON — reads are back-compat for legacy float32
+  and headered float16, so no re-index is forced.
 - **binary_prefilter** is OFF pending per-corpus recall validation (random
   Gaussian embeddings are its documented worst case).
+- **raptor** needs an LLM at build time; the tree has been built but the
+  retrieval toggle stays OFF, unmeasured.
 
 ## Benchmark deltas
 
@@ -129,9 +139,10 @@ Storage delta (rce-quant-01, measured): 768-dim × 2000 vectors → SQLite DB
 
 ### Toggle decisions: `contextual_retrieval` and `raptor`
 
-**Status: `contextual_retrieval` is MEASURED and now ON (rce-eval-04-d4).
-`raptor` has been built (rce-eval-05) but its retrieval toggle remains OFF and
-unmeasured.**
+**Status: `contextual_retrieval` is MEASURED, decided **KEEP**, and is ON
+(measured rce-eval-04-d4, decided rce-eval-04-d5). `raptor` has been built
+(rce-eval-05) but its retrieval toggle remains OFF and unmeasured — no
+keep/drop decision is available for it yet.**
 
 The sizing below was done before either build, against the real 3552-chunk
 corpus, and is kept because it is what set the cost expectation:
@@ -149,39 +160,100 @@ uninterpretable.
 The interim decision was to keep both OFF until each had a number. That number
 now exists for `contextual_retrieval`.
 
-#### `contextual_retrieval`: MEASURED → ON
+#### `contextual_retrieval`: MEASURED → **KEEP** (rce-eval-04-d5)
+
+> **Decision: KEEP.** `rag.contextual_retrieval.enabled` stays `true` in
+> `args/rag_config.yaml`, backed by a measured **+0.0151 recall@5 / +0.0202 MRR
+> / +0.0105 nDCG@5** on the matched compliance corpus, with two of the three
+> recall-limited golden queries fully recovered and no aggregate regression.
+
+Config change commit: **[`1cdcf855c`](https://github.com/icdev-ai/icdev/commit/1cdcf855c4996ca10cf7d125bc6c70f73837c8fb)**
+— `fix(rce-eval-04-d3): write embedding_vec on re-index + enable contextual retrieval`,
+merged to `main` via **PR #762**. It flipped `args/rag_config.yaml:123`
+`enabled: false → true` (full SHA
+`1cdcf855c4996ca10cf7d125bc6c70f73837c8fb`). The flip therefore *preceded* the
+measurement — d3 enabled it so the re-index would produce contextual
+embeddings — and this record is what retroactively justifies it. rce-eval-04-d5
+corrected the then-stale `# master toggle (default OFF)` comment on that line
+(both `args/` and `icdev/data/args/` copies) and wrote this decision.
 
 Full record: [rce-eval-04-contextual-benchmark.md](rce-eval-04-contextual-benchmark.md).
 Re-index run record: [rce-eval-04-contextual-reindex-run.md](rce-eval-04-contextual-reindex-run.md).
 After-run artifact: `data/rag/rce_contextual_compliance.json`.
 
-| Metric | `rce_baseline_compliance.json` | contextual | Δ |
-|--------|-------------------------------:|-----------:|---:|
-| `recall_at_5` | 0.9394 | **0.9545** | +0.0151 |
-| `mrr` | 0.9343 | **0.9545** | +0.0202 |
-| `ndcg_at_5` | 0.9429 | **0.9534** | +0.0105 |
+##### Aggregate before/after (4 metrics)
+
+| Metric | Before — `rce_baseline_compliance.json` | After — `rce_contextual_compliance.json` | Δ |
+|--------|----------------------------------------:|-----------------------------------------:|---:|
+| `recall_at_5` | 0.9394 | **0.9545** | **+0.0151** |
+| `mrr` | 0.9343 | **0.9545** | **+0.0202** |
+| `ndcg_at_5` | 0.9429 | **0.9534** | **+0.0105** |
 | `citation_hit_rate` | 0.9697 | 0.9697 | 0.0000 |
 
-The gain landed where the headroom analysis said it had to: two of the three
-under-served queries recovered to full recall (`q-sc13-cryptographic-protection`
-1/2 → 2/2, `q-fedramp-authorization-boundary` 1/2 → 2/2), and `q-ac2-account-mgmt`
-went MRR 0.5 → 1.0. `q-stig-hardening` is unchanged at 0/2 and is now understood
-to be a **golden-set defect** — zero chunks in the corpus contain both `STIG` and
-`hardening`, and `score_query` matches substrings against `content` only, never
-the prefix or `source_id`. One regression: `q-cmmc-cui-protection` recall
-1.0 → 0.5, prefix homogenisation crowding out the single chunk that spells out
-"controlled unclassified information".
+Same 33 golden queries, same `top_k=5`, same embedding model on both sides
+(`nomic-embed-text`, 768-dim). Deltas are the harness's own
+`comparison.deltas` block, not recomputed by hand.
+
+##### Per-query delta — the 3 target queries
+
+The three queries the rce-eval-03 headroom analysis identified as the *only*
+places a retrieval change could gain anything (every other query was already at
+recall@5 = 1.0):
+
+| Target query | recall@5 | MRR | nDCG@5 | targets hit | Outcome |
+|---|---:|---:|---:|---:|---|
+| `q-sc13-cryptographic-protection` | 0.5 → **1.0** (+0.5) | 0.3333 → **0.5** (+0.1667) | 0.5706 → **0.7328** (+0.1622) | 1/2 → **2/2** | **Recovered** |
+| `q-fedramp-authorization-boundary` | 0.5 → **1.0** (+0.5) | 1.0 → 1.0 (0) | 1.0 → 1.0 (0) | 1/2 → **2/2** | **Recovered** |
+| `q-stig-hardening` | 0.0 → 0.0 (0) | 0.0 → 0.0 (0) | 0.0 → 0.0 (0) | 0/2 → 0/2 | Unwinnable — golden-set defect |
+
+`q-sc13`: `fedramp:FRM-H-SC-13` (the one chunk carrying both `SC-13` and
+`cryptographic protection`) enters at rank 4 on a *heuristic* family-tag prefix,
+so that win is the prefix's structure, not LLM prose. `q-fedramp`: `nist53:sc-7`
+enters at rank 5 with `authorization boundary` in-body; MRR/nDCG stay 1.0
+because rank 1 already matched. `q-stig-hardening`: **zero** of 3552 chunks
+contain both `STIG` and `hardening`, and `score_query` matches `substring`
+targets against `content` only — never the prefix or `source_id` — so no index
+change can satisfy it. Fixing the golden set, not the index, is the next step.
+
+Two off-target movements bound the decision honestly:
+
+- **Gain:** `q-ac2-account-mgmt` MRR 0.5 → **1.0**, nDCG 0.6934 → **0.9829**
+  (both targets already found; the LLM prefix promoted the match to rank 1) —
+  the run's largest single improvement.
+- **Regression:** `q-cmmc-cui-protection` recall 1.0 → **0.5**, targets 2/2 →
+  1/2. Prefix homogenisation ("This chunk presents the complete CMMC Level 2 …"
+  on every sibling) crowds out the single chunk spelling out "controlled
+  unclassified information". This is the one recall loss in the run and is the
+  same substring literalism that makes `q-stig-hardening` unwinnable.
+
+12 of 33 queries moved at least one metric — confirming the benchmark read the
+contextual index rather than a stale one, since a no-op would have produced
+exactly zero movement everywhere.
+
+##### Why KEEP and not DROP
 
 +1.5 pp recall@5 against a bounded ceiling of +6.1 pp is a real but modest
-return on a 3552-call LLM pass. It is kept ON because the pass is already paid
-for and the delta is positive; it would not justify a second such pass on a
-similar corpus.
+return on a 3552-call LLM pass. KEEP rests on three things: the aggregate delta
+is positive on 3 of 4 metrics and negative on none; 2 of the 3 addressable
+queries went to full recall; and the LLM pass is already paid for, so the
+marginal cost of leaving it ON is zero. The single recall regression
+(`q-cmmc-cui-protection`) is outweighed by the two recoveries and is a scoring
+artifact of literal-substring targets.
+
+The corollary is a cost caveat, not a reversal: **this result would not justify
+a second 3552-call pass on a comparable corpus.** Control text already carries a
+`control_id: … title: …` header supplying most of what a prefix adds, and 404
+chunks fell back to the heuristic anyway. Re-enabling on a *new* corpus should
+be re-measured, not assumed.
 
 **Prefix-generation provider** (recorded per the rule below): router function
 `rag_evaluate` → `ollama_cloud` / **`kimi-k2.6:cloud`**, prompt `ctx-v1`;
 3148 chunks LLM-generated, 404 heuristic fallback. Retrieval embeddings on both
 sides of the comparison: `nomic-embed-text` (768-dim) via
-`OllamaEmbeddingProvider`.
+`OllamaEmbeddingProvider`. Note that `context_provenance` does **not** persist
+the model id, and `ollama_cloud` is a cloud egress path — fine for this public
+reference corpus, but a CUI corpus must pin the local provider before
+re-indexing.
 
 #### `raptor`: built, retrieval toggle still OFF
 
