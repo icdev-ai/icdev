@@ -612,7 +612,17 @@ class GenesisDaemon(DaemonBase):
         }
 
     def on_reflex_completed(self, name: str, result: Dict[str, Any]) -> None:
-        """Post-reflex hook: run convergence gate and stagnation detector."""
+        """Post-reflex hook: critical-reflex alerting, convergence, stagnation."""
+        # crx-gen-02: turn recent critical-reflex failures into operator alerts on
+        # the /monitoring page (shared `alerts` table), with per-reflex cooldown.
+        # Guarded so a health-alerting hiccup can never break the reflex loop.
+        try:
+            if self.config.get("reflex_health", {}).get("enabled", True):
+                from tools.genesis.reflex_health import open_critical_reflex_alerts
+                open_critical_reflex_alerts(self.config)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("reflex_health alerting hook skipped: %s", exc)
+
         conv_config = self.config.get("convergence", {})
         stag_config = self.config.get("stagnation", {})
 
