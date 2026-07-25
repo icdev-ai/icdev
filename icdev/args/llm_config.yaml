@@ -1050,6 +1050,19 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
+  # Network Canvas AI routes (tools/network/routes/ai.py). Migrated off a
+  # hardcoded api.anthropic.com POST onto the router (lpx-router-01). Claude-first
+  # to preserve prior behaviour, with local fallback for air-gap.
+  network_topology:
+    chain: [claude-sonnet, kimi-cloud, qwen3-local, gpt-4o, llama-local]
+    effort: medium
+  network_qa:
+    chain: [claude-sonnet, kimi-cloud, qwen3-local, gpt-4o, llama-local]
+    effort: medium
+  network_chat_prep:
+    chain: [claude-sonnet, kimi-cloud, qwen3-local, gpt-4o, llama-local]
+    effort: low
+
   default:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
