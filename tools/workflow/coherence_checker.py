@@ -5615,6 +5615,233 @@ def check_mirror_drift(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 
 # ---------------------------------------------------------------------------
+# Check: LLM provider bypass outside tools/llm/ (lpx-router-03)
+# ---------------------------------------------------------------------------
+
+# Cloud provider API host substrings. A runtime module outside tools/llm/ that
+# embeds one of these is talking to a provider directly instead of through the
+# router — which defeats the opt-in proxy (LPX) and air-gap/CUI routing.
+_LPX_PROVIDER_URL_SUBSTRINGS = (
+    "api.anthropic.com",
+    "api.openai.com",
+    "api.cohere.ai",
+    "api.mistral.ai",
+    "api.groq.com",
+    "api.deepseek.com",
+    "api.together.xyz",
+    "api.fireworks.ai",
+    "api.x.ai",
+    "generativelanguage.googleapis.com",
+)
+
+# Provider API-key environment variables. Reading one of these outside tools/llm/
+# means a module resolves a real provider credential itself rather than letting
+# the provider layer do it. Virtual/proxy/master keys are intentionally absent.
+_LPX_PROVIDER_KEY_ENV_VARS = frozenset({
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "COHERE_API_KEY",
+    "MISTRAL_API_KEY",
+    "GROQ_API_KEY",
+    "TOGETHER_API_KEY",
+    "FIREWORKS_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "XAI_API_KEY",
+    "PERPLEXITY_API_KEY",
+})
+
+# Documented, legitimate exceptions (see lpx-router-02):
+#   - the FathomDesk BYOK credential tester intentionally probes the real endpoint
+#   - the air-gap OpenAI-compatible local endpoints point at vLLM / LM Studio /
+#     llama.cpp, not a cloud provider
+#   - this checker itself necessarily embeds provider host/key literals in order
+#     to DETECT them (meta tool, not a runtime inference path)
+_LPX_BYPASS_EXEMPT_FILES = frozenset({
+    Path("tools") / "trading" / "credentials" / "tester.py",
+    Path("tools") / "airgap" / "pdf_fallback.py",
+    Path("tools") / "document_intelligence" / "extractors.py",
+    Path("tools") / "workflow" / "coherence_checker.py",
+})
+
+# Grandfathered pre-existing sites (signature = "<relpath>::<host-or-envvar>").
+# lpx-router-03's mandate is to FAIL on NEW direct-to-provider access; these
+# already existed when the gate landed and are out of this card's scope. Many are
+# legitimate (air-gap detectors that list cloud URLs precisely to BLOCK egress;
+# embedding/provider-adjacent modules). The gate ratchets: no NEW signature may
+# appear. Shrinking this set is welcome follow-up tech debt; growing it is not.
+_LPX_BYPASS_BASELINE = frozenset({
+    "tools/ai_augmentation/agent_readiness/pillars/_base.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/append_only_audit.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/nist_controls.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/stig_compliance.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/append_only_audit.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/nist_controls.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/stig_compliance.py::ANTHROPIC_API_KEY",
+    "tools/airgap/detector.py::api.anthropic.com",
+    "tools/airgap/ste_validator.py::api.anthropic.com",
+    "tools/airgap/ste_validator.py::api.cohere.ai",
+    "tools/airgap/ste_validator.py::api.openai.com",
+    "tools/ci/workflows/icdev_plan.py::ANTHROPIC_API_KEY",
+    "tools/document_intelligence/blueprint.py::ANTHROPIC_API_KEY",
+    "tools/document_intelligence/blueprint.py::OPENAI_API_KEY",
+    "tools/document_intelligence/output_generators.py::ANTHROPIC_API_KEY",
+    "tools/document_intelligence/output_generators.py::OPENAI_API_KEY",
+    "tools/finetune/openai_provider.py::OPENAI_API_KEY",
+    "tools/govcon/reflex_sandbox.py::api.anthropic.com",
+    "tools/memory/embed_memory.py::OPENAI_API_KEY",
+    "tools/memory/hybrid_search.py::OPENAI_API_KEY",
+    "tools/memory/maintenance_cron.py::OPENAI_API_KEY",
+    "tools/memory/semantic_search.py::OPENAI_API_KEY",
+    "tools/pulse/config.py::OPENAI_API_KEY",
+    "tools/rag/pdf_provider.py::ANTHROPIC_API_KEY",
+    "tools/rag/pdf_provider.py::GOOGLE_API_KEY",
+    "tools/testing/e2e_runner.py::ANTHROPIC_API_KEY",
+    "tools/testing/health_check.py::ANTHROPIC_API_KEY",
+    "tools/testing/utils.py::ANTHROPIC_API_KEY",
+    "tools/viz/asset_generator.py::OPENAI_API_KEY",
+})
+
+
+def _lpx_scan_provider_bypass(source: str, rel: str) -> List[Tuple[int, str, str]]:
+    """AST-scan one runtime module for direct-to-provider access.
+
+    Returns ``(lineno, token, reason)`` tuples for (a) cloud provider base-URL
+    string literals (docstrings excluded) and (b) reads of a provider API-key env
+    var via os.environ[...] / os.environ.get(...) / os.getenv(...). ``token`` is
+    the host or env var — used to build a line-independent baseline signature.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    hits: List[Tuple[int, str, str]] = []
+    doc_ids = _agx_docstring_node_ids(tree)
+
+    for node in ast.walk(tree):
+        # (a) provider base-URL literals (skip docstrings)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in doc_ids:
+                continue
+            for host in _LPX_PROVIDER_URL_SUBSTRINGS:
+                if host in node.value:
+                    hits.append((node.lineno, host, f"cloud provider URL `{host}` — call via LLMRouter"))
+                    break
+        # (b) provider API-key env reads
+        elif isinstance(node, ast.Call):
+            key = _lpx_env_read_key(node)
+            if key and key in _LPX_PROVIDER_KEY_ENV_VARS:
+                hits.append((node.lineno, key, f"reads provider key env `{key}` — resolve credentials in tools/llm/"))
+        # os.environ["X"] subscript read
+        elif isinstance(node, ast.Subscript):
+            key = _lpx_environ_subscript_key(node)
+            if key and key in _LPX_PROVIDER_KEY_ENV_VARS:
+                hits.append((node.lineno, key, f"reads provider key env `{key}` — resolve credentials in tools/llm/"))
+    return hits
+
+
+def _lpx_const_str(node) -> Optional[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _lpx_env_read_key(call: ast.Call) -> Optional[str]:
+    """If ``call`` is os.getenv("X"...) or os.environ.get("X"...), return "X"."""
+    fn = call.func
+    if not isinstance(fn, ast.Attribute) or not call.args:
+        return None
+    first = _lpx_const_str(call.args[0])
+    if first is None:
+        return None
+    # os.getenv(...)
+    if fn.attr == "getenv":
+        return first
+    # os.environ.get(...)
+    if fn.attr == "get" and isinstance(fn.value, ast.Attribute) and fn.value.attr == "environ":
+        return first
+    return None
+
+
+def _lpx_environ_subscript_key(sub: ast.Subscript) -> Optional[str]:
+    """If ``sub`` is os.environ["X"], return "X"."""
+    val = sub.value
+    if isinstance(val, ast.Attribute) and val.attr == "environ":
+        return _lpx_const_str(sub.slice)
+    return None
+
+
+def check_provider_bypass() -> CoherenceCheck:
+    """lpx-router-03 — no direct-to-provider access outside tools/llm/.
+
+    Fails when a runtime module under ``tools/`` (excluding ``tools/llm/`` and the
+    documented BYOK / air-gap exceptions) either embeds a cloud provider base URL
+    literal or reads a provider API-key env var. All inference must flow through
+    ``LLMRouter`` so the opt-in proxy (LPX), air-gap, and CUI routing hold.
+    """
+    new_violations: List[str] = []
+    grandfathered = 0
+    tools_root = PROJECT_ROOT / "tools"
+    llm_dir = Path("tools") / "llm"
+    if tools_root.exists():
+        for py_file in sorted(tools_root.rglob("*.py")):
+            try:
+                rel_path = py_file.relative_to(PROJECT_ROOT)
+            except ValueError:
+                rel_path = py_file
+            # Skip the provider layer itself and documented exceptions.
+            if llm_dir in rel_path.parents or rel_path == llm_dir:
+                continue
+            if rel_path in _LPX_BYPASS_EXEMPT_FILES:
+                continue
+            # Skip test scaffolding that may reference provider vars intentionally.
+            if py_file.name.startswith("test_"):
+                continue
+            text = _read_text(py_file)
+            # Cheap prefilter before paying for an AST parse.
+            if "api." not in text and "generativelanguage" not in text and "_API_KEY" not in text:
+                continue
+            rel_str = str(rel_path).replace("\\", "/")
+            for lineno, token, reason in _lpx_scan_provider_bypass(text, rel_str):
+                signature = f"{rel_str}::{token}"
+                if signature in _LPX_BYPASS_BASELINE:
+                    grandfathered += 1
+                    continue
+                new_violations.append(f"{rel_str}:{lineno}: {reason}")
+
+    if new_violations:
+        return CoherenceCheck(
+            check_id="provider_bypass",
+            check_name="LLM Provider Bypass (lpx-router-03)",
+            status="fail",
+            expected=["no NEW cloud provider URL / API-key env read outside tools/llm/"],
+            actual=new_violations,
+            missing=[],
+            extra=new_violations,
+            message=(
+                f"{len(new_violations)} NEW direct-to-provider bypass(es) outside tools/llm/ "
+                f"({grandfathered} grandfathered) — route through LLMRouter; add a documented "
+                "exemption only for BYOK/air-gap"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="provider_bypass",
+        check_name="LLM Provider Bypass (lpx-router-03)",
+        status="pass",
+        expected=["no NEW cloud provider URL / API-key env read outside tools/llm/"],
+        actual=[f"0 new violations ({grandfathered} pre-existing sites grandfathered)"],
+        missing=[],
+        extra=[],
+        message=(
+            f"No NEW direct-to-provider bypass outside tools/llm/ "
+            f"({grandfathered} grandfathered legacy sites)"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -5635,6 +5862,7 @@ CHECK_REGISTRY = {
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
     "direct_anthropic_import": check_direct_anthropic_import,
+    "provider_bypass": check_provider_bypass,
     "architecture_agnosticism": check_architecture_agnosticism,
     "llm_router_api": check_llm_router_api,
     "karpathy_sync": check_karpathy_sync,
