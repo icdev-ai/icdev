@@ -415,7 +415,17 @@ class GenesisDaemon(DaemonBase):
         """
         import threading
 
-        timeout = float(config.get("timeout_seconds", self._default_reflex_timeout))
+        # crx-gen-03: per-reflex hard execution cap. `max_execution_seconds` is the
+        # documented config name; `timeout_seconds` is kept as a backward-compat
+        # alias. Falls back to defaults.reflex_timeout_seconds. Enforcement is the
+        # existing watchdog join-with-timeout below; a breach returns a failure
+        # tuple that base.run_reflex records as a genesis_audit failure row.
+        timeout = float(
+            config.get(
+                "max_execution_seconds",
+                config.get("timeout_seconds", self._default_reflex_timeout),
+            )
+        )
         box: Dict[str, Any] = {}
 
         def _target() -> None:

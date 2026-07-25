@@ -314,6 +314,49 @@ def evaluate_metric(metric_config: Dict[str, Any], value: float) -> bool:
     return True
 
 
+def topological_reflex_order(
+    due_reflexes: List[str], depends_on: Dict[str, List[str]]
+) -> List[str]:
+    """Order *due_reflexes* so a reflex runs after its dependencies (crx-gen-03).
+
+    ``depends_on`` maps reflex_name → list of reflex names it should run after.
+    Only edges to reflexes ALSO due this cycle are honored — a dependency that
+    is not due is ignored (best-effort intra-cycle ordering, NOT a cross-cycle
+    blocking DAG engine; YAGNI). The relative order of independent reflexes is
+    preserved (stable). A dependency cycle is broken deterministically by
+    falling back to the original position for the nodes still unresolved, so the
+    scheduler can never deadlock on a mis-configured graph.
+    """
+    due_set = set(due_reflexes)
+    # Restrict edges to nodes that are due; drop self-edges and unknowns.
+    deps: Dict[str, set] = {
+        name: {d for d in depends_on.get(name, []) if d in due_set and d != name}
+        for name in due_reflexes
+    }
+    if not any(deps.values()):
+        return list(due_reflexes)  # no applicable ordering constraints
+
+    index = {name: i for i, name in enumerate(due_reflexes)}
+    ordered: List[str] = []
+    placed: set = set()
+
+    # Kahn-style stable pass: repeatedly emit the earliest-indexed node whose
+    # dependencies are all already placed.
+    remaining = list(due_reflexes)
+    while remaining:
+        ready = [n for n in remaining if deps[n] <= placed]
+        if not ready:
+            # Cycle among the remaining nodes — break it by taking the
+            # earliest-indexed remaining node so progress is guaranteed.
+            ready = [min(remaining, key=lambda n: index[n])]
+        ready.sort(key=lambda n: index[n])
+        pick = ready[0]
+        ordered.append(pick)
+        placed.add(pick)
+        remaining.remove(pick)
+    return ordered
+
+
 # ---------------------------------------------------------------------------
 # Reflex State Base
 # ---------------------------------------------------------------------------
@@ -901,6 +944,17 @@ class DaemonBase(abc.ABC):
                 continue
             if is_due(schedule, state.get("last_run_at")):
                 due_reflexes.append(name)
+
+        # crx-gen-03: honor optional `reflexes.<name>.depends_on: [names]` so a
+        # reflex runs after its dependencies WITHIN this cycle (best-effort intra-
+        # cycle ordering; a dependency not due this cycle is simply ignored).
+        reflexes_cfg = self.config.get("reflexes", {})
+        depends_on = {
+            name: list(reflexes_cfg.get(name, {}).get("depends_on", []) or [])
+            for name in due_reflexes
+        }
+        if any(depends_on.values()):
+            due_reflexes = topological_reflex_order(due_reflexes, depends_on)
 
         total_due = len(due_reflexes)
 
