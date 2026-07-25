@@ -12,6 +12,11 @@
 | `tools/agent_runtime/builtin_tools.py` | `build_builtin_toolset()` — the small hardcoded starter toolset (read-only `read_file`, `search_files`, `health_check`), all confined to the repo root (`..` escapes rejected). Dynamic tool auto-discovery lands in sag-reg-01. |
 | `tools/agent_runtime/commands.py` | Data-driven slash-command registry (sag-rt-02): `/new`, `/clear`, `/title`, `/tools`, `/skills`, `/memory` (stub → sag-mem-01), `/usage`, `/rollback` (stub → sag-safe-02), `/help`, `/exit`. Handled deterministically **without re-prompting the LLM**. `dispatch(runtime, raw)` matches `AgentRuntime.command_handler`; reused by gateway agent-mode (sag-gw-01). `build_runtime()` wires the registry into a runtime. |
 | `tools/agent_runtime/discovery.py` | Tool auto-discovery + OpenAI schema generation (sag-reg-01). Derives agent-loop tool specs FROM the MCP `TOOL_REGISTRY` (one registration serves both surfaces) and the built-in toolset, so 440+ tools carry schemas for free. `schema_from_callable()` synthesises a schema from signature + type hints + Google-style docstring (stdlib only); the `@tool` decorator / `__tool_schema__` marker opts a new first-party function in. `ToolSpec.check` gates conditional availability; `build_registry()` layers sources (MCP → builtin → decorated → extra) and drops unavailable tools; `write_cache()`/`load_cache()` persist the serialisable half (schemas + `module`/`handler` dispatch coordinates, no live callables) to JSON for fast startup. Discovery only — handler dispatch/bundles land in sag-reg-02. CLI: `python -m tools.agent_runtime.discovery --json [--write-cache]`. |
+| `args/agent_toolsets.yaml` | Toolset **bundles as data** (sag-reg-02): `file`, `terminal`, `compliance`, `security`, `canvas`, `govcon`, `kanban`. Each names a bounded set of tool names (resolved against discovery) so a small local model never sees the full 440+ surface. `mutating: true` marks bundles routed through the safety gate. Retune bundles here without touching Python. |
+| `tools/agent_runtime/toolsets.py` | Loads `args/agent_toolsets.yaml`, resolves bundle names to tool sets, and assembles the `(tools, handlers)` pair for `run_agent_loop`. `build_toolset(names, safety_gate=…, task_id=…)`; `list_bundles()`; `resolve_bundles()`; `all_discovered_tools()` backs `icdev tools list`. |
+| `tools/agent_runtime/dispatch.py` | Turns discovery `ToolSpec` `module`/`handler` coordinates into agent-loop `handler(input, stop) -> str` handlers (sag-reg-02). Source-aware invocation (MCP `handle_x(args)`, decorated named-kwargs, built-in passthrough), injects `stop_event`/`task_id` where the signature accepts them, normalises results to strings, and never raises. **Safety hook point**: every mutating tool is routed through a `SafetyGate`; `default_safety_gate` fails closed (mutations refused unless `ICDEV_SAG_ALLOW_MUTATION=1`) until sag-safe-01 injects the real approval UX. |
+| `tools/agent_runtime/mutating_tools.py` | The state-mutating built-ins (sag-reg-02): `write_file` (repo-confined, `..` rejected) and `run_command` (reuses the `tools/skills/invoke.py` allowlist — only `python tools/ \| python -m tools \| python -c`). `@tool(read_only=False)`, so discovery picks them up and dispatch safety-gates them. **Intentionally NOT MCP-registered** — the local file-write/terminal surface must not be exposed to external agents over MCP. |
+| `tools/cli/tools_list.py` | `icdev tools list [--json]` (all discovered tools + schemas) and `icdev tools bundles [--json]` (the YAML bundles). Wired into `tools/cli/__main__.py`. |
 
 ## Extension seams
 
@@ -24,6 +29,11 @@
 - **Tool discovery (sag-reg-01):** `discovery.build_registry()` supersedes the
   hardcoded `build_builtin_toolset()` with a registry-driven toolset assembled
   from the MCP registry + built-ins + `@tool`-decorated functions.
-- **Toolset bundles + dispatch (sag-reg-02):** consumes `discovery.ToolSpec`
-  `module`/`handler` coordinates to build agent-loop `handler(input, stop) -> str`
-  callables; bundles defined as YAML data.
+- **Toolset bundles + dispatch (sag-reg-02):** `toolsets.build_toolset()` consumes
+  `discovery.ToolSpec` `module`/`handler` coordinates via `dispatch.build_handlers()`
+  to build agent-loop `handler(input, stop) -> str` callables; bundles defined as
+  YAML data in `args/agent_toolsets.yaml`.
+- **Safety layer (sag-safe-01):** inject a `SafetyGate` into
+  `dispatch.build_handlers()` / `toolsets.build_toolset(safety_gate=…)` to replace
+  the fail-closed default with the real command-approval UX. The hook point is
+  already load-bearing — mutating tools cannot execute without passing the gate.
