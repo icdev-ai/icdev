@@ -350,6 +350,48 @@ def create_security_blueprint():
         )
 
     # ====================================================================
+    # API ROUTES — Insider-Risk UBA (lite) — card crx-sec-01
+    # ====================================================================
+
+    @bp.route("/api/insider-risk", methods=["GET"])
+    @sc_login_required
+    def sc_api_insider_risk():
+        """Latest insider-risk (UBA) findings for the dashboard panel."""
+        try:
+            from tools.security import insider_risk
+
+            cfg = insider_risk.load_config()
+            summary = insider_risk.get_summary()
+            summary["enabled"] = bool(cfg.get("enabled"))
+            return jsonify(summary)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("insider-risk summary failed: %s", exc)
+            return jsonify({"enabled": False, "findings": [], "bands": {}, "count": 0})
+
+    @bp.route("/api/insider-risk/scan", methods=["POST"])
+    @sc_login_required
+    def sc_api_insider_risk_scan():
+        """Run a deterministic insider-risk scan over recent telemetry."""
+        try:
+            from tools.security import insider_risk
+
+            cfg = insider_risk.load_config()
+            if not cfg.get("enabled"):
+                return jsonify({
+                    "enabled": False,
+                    "skipped": "Insider-risk UBA is disabled. Enable it in "
+                               "args/insider_risk_config.yaml after a privacy review.",
+                }), 200
+            result = insider_risk.run_scan(cfg)
+            _audit("insider_risk_scan", "security", "uba",
+                   f"{result.get('finding_count', 0)} findings over "
+                   f"{result.get('actors_evaluated', 0)} accounts")
+            return jsonify(result)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("insider-risk scan failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    # ====================================================================
     # API ROUTES — Designs CRUD
     # ====================================================================
 
