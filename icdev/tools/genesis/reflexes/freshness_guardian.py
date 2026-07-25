@@ -6,7 +6,6 @@ quality rules across all data designs, writes results to dd_freshness_alerts
 and dd_quality_runs, and logs breaches to genesis_audit.
 """
 from __future__ import annotations
-
 IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 

@@ -12,7 +12,6 @@ or significant policy changes.
 Air-gap safe: uses stdlib urllib for PeeringDB and Cloudflare RPKI APIs.
 """
 from __future__ import annotations
-
 IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 

@@ -8,7 +8,6 @@ and live resources that have no corresponding design node.
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
 from __future__ import annotations
-
 IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 

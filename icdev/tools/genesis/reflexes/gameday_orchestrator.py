@@ -7,7 +7,6 @@ Fires on a configurable cadence (default: daily at 08:00).
 - If tournament completed → queues a SUGGESTED kanban card with results summary
 """
 from __future__ import annotations
-
 IMPLEMENTATION_STATUS = "full"
 
 from tools.logging.icdev_logger import get_logger
