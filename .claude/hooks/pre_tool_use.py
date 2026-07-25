@@ -633,6 +633,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # rotation, revocation, and expiry are immutable evidence; rows never
         # UPDATE/DELETE.
         "llm_proxy_key_audit",
+        # AI GameDay per-team API-call receipts (lpx-teams-03) — spend attribution
+        # for competition integrity; append-only in fact (only engine.log_api_receipt
+        # inserts, every other reference is a SELECT). Rows never UPDATE/DELETE.
+        "ttx_api_log",
     ]
 
     if tool_name == "Bash":

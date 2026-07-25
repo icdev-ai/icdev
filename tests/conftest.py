@@ -3196,6 +3196,8 @@ CREATE TABLE IF NOT EXISTS ttx_api_log (
     endpoint TEXT,
     call_id TEXT NOT NULL UNIQUE,
     result_hash TEXT,
+    token_count INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
     called_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS ttx_leaderboard (
