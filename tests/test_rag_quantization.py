@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for SQLite vector-store quantization (rce-quant-01).
+"""Tests for SQLite vector-store quantization (rce-quant-01, rce-quant-02).
 
 Covers the self-describing blob header (float16/float32), legacy headerless
 float32 back-compat, config-driven write dtype, migrate_tier warm round-trip,
-and cosine preservation under float16. Pure-Python / temp-DB driven.
+cosine preservation under float16, and the optional binary-quantization
+Hamming pre-filter. Pure-Python / temp-DB driven.
 """
 
 from __future__ import annotations
@@ -17,6 +18,9 @@ from tools.rag.sqlite_vector_store import (
     _blob_to_embedding,
     _cosine_similarity,
     _embedding_to_blob,
+    _embedding_to_sign_bits,
+    _hamming_distance,
+    _resolve_binary_prefilter,
     _resolve_sqlite_dtype,
 )
 from tools.rag.vector_store_provider import VectorChunk
@@ -224,3 +228,155 @@ class TestStoreRoundTrip:
         results = store.search([1.0, 0.0, 0.0], top_k=10)
         assert results[0].chunk_id == "legacy1"  # exact match to legacy vector
         assert len(results) == 2
+
+
+# ===========================================================================
+# rce-quant-02 — binary quantization + Hamming pre-filter
+# ===========================================================================
+
+
+def _db_row(cid, emb, sign="auto"):
+    """Build a rag_chunks SELECT-shaped row as search() consumes it.
+
+    Column order matches search():
+    (id, content, source_type, source_id, source_table, chunk_index,
+     embedding, metadata, tier, classification, sign_bits)
+    """
+    if sign == "auto":
+        sign = _embedding_to_sign_bits(emb)
+    return (
+        cid, "content", "test", "1", "test_table", 0,
+        _embedding_to_blob(emb), "{}", "hot", "CUI", sign,
+    )
+
+
+class TestBinaryHelpers:
+    def test_sign_bits_packing(self):
+        emb = [0.5, -0.5, 0.1, -0.2, 3.0, -1.0, 0.0, -0.9]  # >=0 -> 1
+        bits = _embedding_to_sign_bits(emb)
+        assert len(bits) == 1  # 8 dims -> 1 byte
+        # 1,0,1,0,1,0,1,0 MSB-first = 0b10101010 = 0xAA
+        assert bits[0] == 0xAA
+
+    def test_sign_bits_multibyte_length(self):
+        emb = [0.1] * 20  # ceil(20/8) = 3 bytes
+        assert len(_embedding_to_sign_bits(emb)) == 3
+
+    def test_hamming_distance_basic(self):
+        a = _embedding_to_sign_bits([1.0, 1.0, 1.0, 1.0])
+        b = _embedding_to_sign_bits([1.0, -1.0, 1.0, -1.0])
+        assert _hamming_distance(a, a) == 0
+        assert _hamming_distance(a, b) == 2
+
+    def test_resolve_binary_prefilter_default_off(self):
+        cfg = _resolve_binary_prefilter({})
+        assert cfg["enabled"] is False
+        assert cfg["candidate_multiplier"] >= 1
+        assert cfg["min_corpus_size"] >= 1
+
+    def test_resolve_binary_prefilter_from_config(self):
+        cfg = _resolve_binary_prefilter(
+            {"rag": {"quantization": {"binary_prefilter": {
+                "enabled": True, "candidate_multiplier": 8, "min_corpus_size": 100}}}}
+        )
+        assert cfg["enabled"] is True
+        assert cfg["candidate_multiplier"] == 8
+        assert cfg["min_corpus_size"] == 100
+
+
+class TestPrefilterRowSelection:
+    """Directly exercise _binary_prefilter_rows on synthetic DB-shaped rows."""
+
+    def _store(self, tmp_path, enabled, mult=4, min_corpus=10):
+        return SQLiteVectorStore(
+            db_path=tmp_path / "pf.db",
+            config={"rag": {"quantization": {"binary_prefilter": {
+                "enabled": enabled,
+                "candidate_multiplier": mult,
+                "min_corpus_size": min_corpus,
+            }}}},
+        )
+
+    def test_disabled_returns_all(self, tmp_path):
+        store = self._store(tmp_path, enabled=False)
+        rows = [_db_row(f"c{i}", [1.0, -1.0, 1.0]) for i in range(50)]
+        assert store._binary_prefilter_rows([1.0, -1.0, 1.0], rows, top_k=5) == rows
+
+    def test_below_threshold_returns_all(self, tmp_path):
+        store = self._store(tmp_path, enabled=True, min_corpus=200)
+        rows = [_db_row(f"c{i}", [1.0, -1.0, 1.0]) for i in range(50)]
+        out = store._binary_prefilter_rows([1.0, -1.0, 1.0], rows, top_k=5)
+        assert out == rows
+
+    def test_reduces_to_candidate_budget(self, tmp_path):
+        store = self._store(tmp_path, enabled=True, mult=4, min_corpus=10)
+        query = [1.0, 1.0, 1.0, 1.0]
+        # 8 "near" rows share the query sign pattern (Hamming 0); 92 "far" rows
+        # invert it (Hamming 4).
+        near = [_db_row(f"near{i}", [1.0, 1.0, 1.0, 1.0]) for i in range(8)]
+        far = [_db_row(f"far{i}", [-1.0, -1.0, -1.0, -1.0]) for i in range(92)]
+        out = store._binary_prefilter_rows(query, near + far, top_k=2)
+        assert len(out) == 8  # top_k(2) * mult(4)
+        # All 8 kept rows must be the near ones (lowest Hamming).
+        assert {r[0] for r in out} == {f"near{i}" for i in range(8)}
+
+    def test_legacy_null_sign_derived_on_the_fly(self, tmp_path):
+        store = self._store(tmp_path, enabled=True, mult=2, min_corpus=5)
+        query = [1.0, 1.0, 1.0, 1.0]
+        near = [_db_row(f"near{i}", [1.0, 1.0, 1.0, 1.0], sign=None) for i in range(4)]
+        far = [_db_row(f"far{i}", [-1.0, -1.0, -1.0, -1.0], sign=None) for i in range(20)]
+        out = store._binary_prefilter_rows(query, near + far, top_k=2)
+        assert len(out) == 4
+        assert {r[0] for r in out} == {f"near{i}" for i in range(4)}
+
+
+class TestPrefilterSearchParity:
+    """End-to-end: enabled pre-filter returns the same top-k as full cosine."""
+
+    def _build_corpus(self, tmp_path, cfg):
+        import random
+
+        random.seed(11)
+        store = SQLiteVectorStore(db_path=tmp_path / "corpus.db", config=cfg)
+        dim = 32
+        # Query sign pattern (fixed +/- per dim).
+        signs = [1.0 if random.random() > 0.5 else -1.0 for _ in range(dim)]
+        query = [s * 1.0 for s in signs]
+        chunks = []
+        # 12 "signal" vectors keep the query signs (magnitudes vary -> varying
+        # cosine) so they are both Hamming-nearest AND cosine-nearest.
+        for i in range(12):
+            emb = [s * (1.0 + random.random()) for s in signs]
+            chunks.append(_make_chunk(f"sig{i}", f"sig{i}", emb))
+        # 588 "noise" vectors with independent random signs (~half match).
+        for i in range(588):
+            emb = [random.uniform(-1.0, 1.0) for _ in range(dim)]
+            chunks.append(_make_chunk(f"noise{i}", f"noise{i}", emb))
+        store.upsert(chunks)
+        return store, query
+
+    def test_enabled_matches_disabled_top_k(self, tmp_path):
+        cfg = {"rag": {"quantization": {"binary_prefilter": {
+            "enabled": True, "candidate_multiplier": 4, "min_corpus_size": 50}}}}
+        store, query = self._build_corpus(tmp_path, cfg)
+
+        enabled = [r.chunk_id for r in store.search(query, top_k=5)]
+        # Flip prefilter off on the same store/data and re-query.
+        store._binary_prefilter["enabled"] = False
+        disabled = [r.chunk_id for r in store.search(query, top_k=5)]
+
+        assert enabled == disabled  # identical top-5 ordering
+        assert len(enabled) == 5
+
+    def test_default_store_prefilter_off(self, tmp_path):
+        # No config -> prefilter disabled -> plain brute force.
+        store = SQLiteVectorStore(db_path=tmp_path / "def.db")
+        assert store._binary_prefilter["enabled"] is False
+        store.upsert(
+            [
+                _make_chunk("a", "c1", [1.0, 0.0, 0.0]),
+                _make_chunk("b", "c2", [0.0, 1.0, 0.0]),
+            ]
+        )
+        results = store.search([1.0, 0.0, 0.0], top_k=2)
+        assert results[0].chunk_id == "c1"
