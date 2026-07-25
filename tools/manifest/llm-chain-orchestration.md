@@ -46,6 +46,30 @@ Jinja2 prompt templates for each role.
 | `ChainPrompts.debater(...)` | Parallel debate position |
 | `ChainPrompts.judge(...)` | Neutral synthesis of debate |
 | `ChainPrompts.self_consistency_voter(...)` | Majority-vote synthesis |
+| `ChainPrompts.divergence_branch(...)` | Generative divergence branch (produce candidate ideas, no evaluation) |
+
+---
+
+## Ideation Frame Library (`args/ideation_frames.yaml` + `tools/config/ideation_frames.py`)
+
+The single config-driven source of perspective sets for multi-branch LLM modes
+(Divergence, Council), replacing hardcoded module-level lists. Versioned; each
+frame is `{key, name, stance, prompt_fragment, mode}` where `mode` is
+`generative` (produce new candidate ideas — branch system prompt forbids
+evaluation) or `evaluative` (critique a proposal already on the table). Frames
+within a set must be orthogonal.
+
+| Function | Signature |
+|----------|-----------|
+| `get_frames(frame_set, *, mode=None, path=None)` | List of `Frame(key, name, stance, prompt_fragment, mode)`; unknown set → `[]`, malformed frames skipped (never raises) |
+| `get_frame_pairs(frame_set, *, mode=None, path=None)` | `[(name, prompt_fragment), ...]` — the shape the branch/advisor builders consume |
+| `get_version(path=None)` | Library version string (stamped into chain telemetry) |
+| `list_frame_sets(path=None)` | Names of all defined frame sets |
+| `validate_library(path=None)` | Fail-loud strict validation (tests / coherence); raises `IdeationFrameError` |
+
+Seeded set `generative` (DoD/air-gap/accreditation-shaped, orthogonal): Adversary,
+Accreditor, Sustainment Owner, Air-Gap Operator, Transplant, Inverter, Shoestring,
+Naturalist. Tests: `tests/test_ideation_frames.py`.
 
 ---
 
