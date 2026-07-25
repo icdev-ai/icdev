@@ -270,6 +270,17 @@ reflexes:
       threshold: 0
       operator: gte  # Informational — 0 archived means nothing was old enough yet
 
+  retention_sweep:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval: 86400  # seconds (24 h)
+    description: "Config-driven retention/archival (crx-db-03): applies args/retention_policies.yaml per-table policies. Non-append-only operational tables (agent_execution_traces, kanban_verifications, a2a_task_history) are pruned past keep_days under a per-run cap; append-only/audit tables are archive-to-cold ONLY (never pruned); RAG/observability/PDC self-managed retention excluded. dry_run defaults TRUE (flip in args/retention_policies.yaml after review); every action logged to append-only retention_action_log."
+    success_metric:
+      name: total_affected
+      threshold: 0
+      operator: gte  # Informational — 0 affected means nothing was old enough (or dry_run)
+
   bgp_hijack_monitor:
     enabled: true
     risk_tier: green

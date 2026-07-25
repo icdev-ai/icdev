@@ -154,6 +154,7 @@ REFLEX_NAMES = [
     "observability_retention",  # obx-trc-05: 24h archive-then-prune of otel_spans/prov_*/shap_attributions (append-only → cold twin)
     "bgp_hijack_monitor",  # cnr-dsoc-05: DSOC RTBH auto-expiry (always) + best-effort BGP hijack/route-leak sweep (pmacct feed)
     "odc_coverage_refresh",  # obx-cov-02: 6h scheduled ODC MITRE coverage recompute + >15% drift detection → od_audit + suggested cards
+    "retention_sweep",  # crx-db-03: 24h config-driven retention/archival (args/retention_policies.yaml); append-only tables archive-only, dry_run default
 ]
 
 # Backward-compat aliases for module-level access used by other code
