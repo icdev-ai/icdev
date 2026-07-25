@@ -43,7 +43,9 @@ from tools.logging.icdev_logger import get_logger
 from tools.quality.categorical_scoring import (
     DIVERGENCE_DIMENSIONS,
     DIVERGENCE_VOCAB,
+    TRAP_VOCAB,
     compose_divergence,
+    compose_trap,
 )
 
 logger = get_logger("icdev.quality.divergence_critic")
@@ -68,6 +70,11 @@ class IdeaScore:
     dimension_floats: dict[str, float]
     rationale: str
     vocabulary_version: str
+    # Trap detection (dvg-critic-02): seductive-but-broken flag + mandatory why.
+    trap_flag: str = "clear"
+    trap_level: float = 0.0
+    is_trap: bool = False
+    trap_rationale: str = ""
 
 
 @dataclass
@@ -101,10 +108,39 @@ class ScoredPool:
                     "fit": s.fit,
                     "composite": s.composite,
                     "rationale": s.rationale,
+                    "trap_flag": s.trap_flag,
+                    "is_trap": s.is_trap,
+                    "trap_rationale": s.trap_rationale,
                 }
                 for s in self.ordered
             ],
         }
+
+    def trap_warnings(self) -> list[dict[str, Any]]:
+        """Advisory trap warnings for the creative/innovation triage decision
+        point — ADVISORY input to existing gates, NOT an autonomous blocker
+        (until dvg-bench-01 has measured trap detection on our stack).
+
+        Only ACTIONABLE traps appear: a trap flag with a written rationale. An
+        unexplained flag is deliberately excluded (it cannot be reviewed). The
+        shape mirrors a triage warning so a gate can fold these into its existing
+        warnings list without blocking.
+        """
+        return [
+            {
+                "kind": "divergence_trap",
+                "severity": "warning",  # advisory only — never 'block'
+                "idea_index": s.index,
+                "frame": s.frame,
+                "idea": s.idea,
+                "trap_flag": s.trap_flag,
+                "rationale": s.trap_rationale,
+                "composite": s.composite,
+                "trace_id": self.trace_id,
+            }
+            for s in self.ordered
+            if s.is_trap
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +208,7 @@ def build_critic_prompt(ideas: list[dict[str, str]]) -> tuple[str, str]:
     novelty_opts = "/".join(DIVERGENCE_VOCAB["novelty"])
     viability_opts = "/".join(DIVERGENCE_VOCAB["viability"])
     fit_opts = "/".join(DIVERGENCE_VOCAB["fit"])
+    trap_opts = "/".join(TRAP_VOCAB)
 
     sys = _CUI_BANNER + (
         "You are a hard, fair critic scoring a pool of candidate ideas produced by "
@@ -183,8 +220,13 @@ def build_critic_prompt(ideas: list[dict[str, str]]) -> tuple[str, str]:
         f"  novelty:   {novelty_opts}\n"
         f"  viability: {viability_opts}\n"
         f"  fit:       {fit_opts}\n\n"
+        "Then judge whether the idea is a TRAP — seductive-but-broken: it looks "
+        "attractive but fails for a reason that is NOT obvious up front. Choose one "
+        f"trap token: {trap_opts}. If you flag 'trap' or 'suspected_trap' you MUST "
+        "give a specific trap_rationale naming the non-obvious failure. An "
+        "unexplained trap flag is worthless and will be discarded.\n\n"
         "For every idea also give a one-sentence rationale grounding the three "
-        "labels. Return STRICT JSON only."
+        "score labels. Return STRICT JSON only."
     )
 
     listing = "\n".join(
@@ -194,7 +236,8 @@ def build_critic_prompt(ideas: list[dict[str, str]]) -> tuple[str, str]:
         "[IDEA POOL]\n" + listing + "\n\n"
         "[OUTPUT] Return a JSON object of the form:\n"
         '{"scores": [{"index": <int>, "novelty": "<token>", "viability": "<token>", '
-        '"fit": "<token>", "rationale": "<one sentence>"}, ...]}\n'
+        '"fit": "<token>", "rationale": "<one sentence>", "trap": "<token>", '
+        '"trap_rationale": "<why it is a trap, or empty if clear>"}, ...]}\n'
         "One entry per idea, index matching the list above. JSON only — no prose."
     )
     return sys, usr
@@ -300,6 +343,10 @@ def score_idea_pool(
         viability = str(entry.get("viability", "")).strip().lower()
         fit = str(entry.get("fit", "")).strip().lower()
         composed = compose_divergence(novelty, viability, fit)
+        trap = compose_trap(
+            str(entry.get("trap", "")).strip().lower(),
+            str(entry.get("trap_rationale", "")).strip(),
+        )
         scored.append(
             IdeaScore(
                 index=i,
@@ -312,6 +359,10 @@ def score_idea_pool(
                 dimension_floats={k: composed[k] for k in DIVERGENCE_DIMENSIONS},
                 rationale=str(entry.get("rationale", "")).strip(),
                 vocabulary_version=composed["vocabulary_version"],
+                trap_flag=trap["trap_flag"],
+                trap_level=trap["trap_level"],
+                is_trap=trap["is_trap"],
+                trap_rationale=trap["rationale"],
             )
         )
 
@@ -338,8 +389,9 @@ def _persist_scores(pool: ScoredPool, *, tenant_id: str, classification: str) ->
                 INSERT INTO divergence_idea_scores
                     (id, trace_id, function, idea_index, frame, idea_text,
                      novelty, viability, fit, composite, rationale,
+                     trap_flag, trap_level, is_trap, trap_rationale,
                      vocabulary_version, tenant_id, classification, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     f"dis-{uuid.uuid4().hex[:12]}",
@@ -353,6 +405,10 @@ def _persist_scores(pool: ScoredPool, *, tenant_id: str, classification: str) ->
                     s.fit,
                     s.composite,
                     s.rationale[:2000],
+                    s.trap_flag,
+                    s.trap_level,
+                    1 if s.is_trap else 0,
+                    s.trap_rationale[:2000],
                     s.vocabulary_version,
                     tenant_id,
                     classification,

@@ -139,7 +139,9 @@ class TestPersistence:
             CREATE TABLE divergence_idea_scores (
                 id TEXT PRIMARY KEY, trace_id TEXT, function TEXT, idea_index INTEGER,
                 frame TEXT, idea_text TEXT, novelty TEXT, viability TEXT, fit TEXT,
-                composite REAL, rationale TEXT, vocabulary_version TEXT,
+                composite REAL, rationale TEXT,
+                trap_flag TEXT, trap_level REAL, is_trap INTEGER, trap_rationale TEXT,
+                vocabulary_version TEXT,
                 tenant_id TEXT, classification TEXT, created_at TEXT);
             """
         )
@@ -184,3 +186,66 @@ class TestPersistence:
                   for i in range(3)]
         pool = score_idea_pool(POOL, function="test_fn", router=_mock_router(scores), persist=True)
         assert pool.stop_reason == "completed"  # scoring still succeeds regardless of persistence
+
+
+class TestTrapDetection:
+    def _score_with_traps(self, trap_entries):
+        return score_idea_pool(POOL, function="test_fn", router=_mock_router(trap_entries), persist=False)
+
+    def test_actionable_trap_surfaces_with_rationale(self):
+        entries = [
+            {"index": 0, "novelty": "breakthrough", "viability": "viable", "fit": "on_target",
+             "rationale": "strong", "trap": "trap",
+             "trap_rationale": "Honeytokens leak the schema to the very adversary they target."},
+            {"index": 1, "novelty": "incremental", "viability": "risky", "fit": "adjacent",
+             "rationale": "ok", "trap": "clear", "trap_rationale": ""},
+            {"index": 2, "novelty": "derivative", "viability": "unviable", "fit": "off_target",
+             "rationale": "weak", "trap": "clear", "trap_rationale": ""},
+        ]
+        pool = self._score_with_traps(entries)
+        warnings = pool.trap_warnings()
+        assert len(warnings) == 1
+        w = warnings[0]
+        assert w["kind"] == "divergence_trap"
+        assert w["severity"] == "warning"  # advisory only, never 'block'
+        assert "Honeytokens" in w["rationale"]
+
+    def test_unexplained_trap_flag_is_discarded(self):
+        """The mandatory-explanation rule: a trap flag with NO rationale is not
+        actionable and must not surface — an unexplained flag cannot be reviewed."""
+        entries = [
+            {"index": 0, "novelty": "breakthrough", "viability": "viable", "fit": "on_target",
+             "rationale": "strong", "trap": "trap", "trap_rationale": ""},  # no why
+            {"index": 1, "novelty": "incremental", "viability": "risky", "fit": "adjacent",
+             "rationale": "ok", "trap": "clear", "trap_rationale": ""},
+            {"index": 2, "novelty": "derivative", "viability": "unviable", "fit": "off_target",
+             "rationale": "weak", "trap": "clear", "trap_rationale": ""},
+        ]
+        pool = self._score_with_traps(entries)
+        # The idea still exists and is scored; it just carries no actionable trap.
+        assert pool.trap_warnings() == []
+        top = [s for s in pool.ordered if s.index == 0][0]
+        assert top.trap_flag == "trap"
+        assert top.is_trap is False  # demoted for lack of rationale
+
+    def test_suspected_trap_with_rationale_is_actionable(self):
+        entries = [
+            {"index": 0, "novelty": "breakthrough", "viability": "viable", "fit": "on_target",
+             "rationale": "s", "trap": "suspected_trap", "trap_rationale": "may not scale past pilot"},
+            {"index": 1, "novelty": "incremental", "viability": "risky", "fit": "adjacent",
+             "rationale": "o", "trap": "clear", "trap_rationale": ""},
+            {"index": 2, "novelty": "derivative", "viability": "unviable", "fit": "off_target",
+             "rationale": "w", "trap": "clear", "trap_rationale": ""},
+        ]
+        pool = self._score_with_traps(entries)
+        assert len(pool.trap_warnings()) == 1
+
+    def test_traps_are_advisory_never_block(self):
+        entries = [
+            {"index": i, "novelty": "viable", "viability": "viable", "fit": "on_target",
+             "rationale": "x", "trap": "trap", "trap_rationale": "explained failure mode"}
+            for i in range(3)
+        ]
+        pool = self._score_with_traps(entries)
+        assert all(w["severity"] == "warning" for w in pool.trap_warnings())
+        assert len(pool.trap_warnings()) == 3

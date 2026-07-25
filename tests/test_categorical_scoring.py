@@ -143,3 +143,20 @@ def test_grounding_vocab_is_three_values():
 def test_every_eval_dimension_maps(dim):
     out = compose_eval_overall({d: "partial" for d in EVAL_DIMENSIONS})
     assert out[dim] == 0.5
+
+
+def test_compose_trap_requires_rationale_to_be_actionable():
+    from tools.quality.categorical_scoring import compose_trap
+    # trap flagged but no rationale -> demoted, not actionable
+    r = compose_trap("trap", "")
+    assert r["trap_level"] == 1.0
+    assert r["is_trap"] is False and r["actionable"] is False
+    # trap flagged WITH rationale -> actionable
+    r = compose_trap("trap", "leaks schema to adversary")
+    assert r["is_trap"] is True and r["actionable"] is True
+    # clear -> never a trap
+    assert compose_trap("clear", "whatever")["is_trap"] is False
+    # unknown token fails safe to clear
+    assert compose_trap("banana", "x")["trap_level"] == 0.0
+    # suspected_trap with rationale is actionable (>= mid threshold)
+    assert compose_trap("suspected_trap", "may not scale")["is_trap"] is True

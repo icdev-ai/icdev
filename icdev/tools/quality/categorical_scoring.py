@@ -256,3 +256,56 @@ def compose_divergence(novelty: str, viability: str, fit: str) -> dict:
         "composite": composite,
         "vocabulary_version": VOCABULARY_VERSION,
     }
+
+
+# ---------------------------------------------------------------------------
+# Surface #5 — Divergence trap detection (dvg-critic-02)
+# ---------------------------------------------------------------------------
+# The strongest result upstream reports for divergent ideation is surfacing
+# SEDUCTIVE-BUT-BROKEN ideas — ones that look attractive but fail for a reason
+# that is not obvious up front — before engineering effort is spent. The critic
+# emits one trap enum per idea; Python composes the flag. The hard rule
+# (composed here, not left to the model): an UNEXPLAINED trap flag is NOT
+# actionable and cannot be reviewed, so a trap enum with no written rationale is
+# demoted to non-actionable. This is purely additive — no existing surface's
+# composition changes, so VOCABULARY_VERSION is unchanged.
+TRAP_VOCAB: dict[str, float] = {"trap": _HI, "suspected_trap": _MID, "clear": _LO}
+# A trap is "actionable" (worth surfacing to a gate) at or above this severity,
+# AND only when accompanied by an explanation.
+_TRAP_ACTIONABLE_THRESHOLD = _MID
+
+
+def map_trap_enum(value: str) -> float:
+    """Map a trap enum to a severity float; unknown token → 0.0 (clear).
+
+    Fail-safe toward NOT crying wolf: an out-of-vocabulary token from a small
+    model is treated as ``clear`` rather than fabricating a trap warning that
+    would waste a reviewer's attention.
+    """
+    return TRAP_VOCAB.get(str(value).strip().lower(), _LO)
+
+
+def compose_trap(trap: str, rationale: str) -> dict:
+    """Compose one idea's trap enum + rationale into an advisory verdict.
+
+    Returns ``{trap_flag, trap_level, has_rationale, is_trap, actionable,
+    rationale, vocabulary_version}``. ``is_trap`` requires BOTH sufficient
+    severity AND a non-empty rationale — an unexplained trap flag is demoted,
+    because a flag a reviewer cannot evaluate is noise, not signal. Pure
+    function, no I/O.
+    """
+    level = map_trap_enum(trap)
+    has_rationale = bool(str(rationale or "").strip())
+    severe = level >= _TRAP_ACTIONABLE_THRESHOLD
+    is_trap = severe and has_rationale
+    return {
+        "trap_flag": str(trap or "clear").strip().lower() or "clear",
+        "trap_level": level,
+        "has_rationale": has_rationale,
+        "is_trap": is_trap,
+        # Actionable = surfaces to a gate as advisory input. Same condition as
+        # is_trap today, kept as a distinct field so callers read intent clearly.
+        "actionable": is_trap,
+        "rationale": str(rationale or "").strip(),
+        "vocabulary_version": VOCABULARY_VERSION,
+    }
