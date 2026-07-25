@@ -16,4 +16,5 @@
 | Quality Feedback Loop | tools/rag/quality_feedback_loop.py | Closed-loop RAG quality → retrain pipeline (D-KARL-9) | --run, --dry-run, --status, --json | Cycle results |
 | Statement Extractor | tools/finetune/statement_extractor.py | Grounded Q&A pair generation via statement extraction (D-FT-23) | --extract, --extract-from-rag, --stats, --json | Pairs + taxonomy labels |
 | RAG Benchmark | tools/rag/rag_benchmark.py | Retrieval-quality baseline harness — golden query set (compliance/NIST) scored for recall@k, MRR, citation-hit-rate; reuses evaluator.mrr/ndcg (rce-eval-01) | --golden-set, --top-k, --baseline-out, --compare, --json | Aggregate + per-query metrics |
+| Embedding Feasibility | tools/rag/embedding_feasibility.py | Domain-adapted embedding fine-tune feasibility probe — counts in-domain (compliance/NIST) vs research chunks in the vector store; re-runnable training-data-availability signal behind the rce-eval-02 go/no-go (dependency-free) | --db, --min-eligible, --baseline, --json | Corpus stats + TRAIN-DATA signal |
 
