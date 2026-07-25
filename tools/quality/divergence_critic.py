@@ -75,6 +75,9 @@ class IdeaScore:
     trap_level: float = 0.0
     is_trap: bool = False
     trap_rationale: str = ""
+    # Clustering (dvg-critic-03): short label naming the underlying approach, so
+    # restatements of one idea collapse into one cluster instead of N ideas.
+    cluster_label: str = ""
 
 
 @dataclass
@@ -111,6 +114,7 @@ class ScoredPool:
                     "trap_flag": s.trap_flag,
                     "is_trap": s.is_trap,
                     "trap_rationale": s.trap_rationale,
+                    "cluster_label": s.cluster_label,
                 }
                 for s in self.ordered
             ],
@@ -226,7 +230,10 @@ def build_critic_prompt(ideas: list[dict[str, str]]) -> tuple[str, str]:
         "give a specific trap_rationale naming the non-obvious failure. An "
         "unexplained trap flag is worthless and will be discarded.\n\n"
         "For every idea also give a one-sentence rationale grounding the three "
-        "score labels. Return STRICT JSON only."
+        "score labels, and a short 'cluster' label (2-4 words) naming the "
+        "UNDERLYING APPROACH — ideas that are restatements of the same approach "
+        "MUST share an identical cluster label so they collapse into one group. "
+        "Return STRICT JSON only."
     )
 
     listing = "\n".join(
@@ -237,7 +244,8 @@ def build_critic_prompt(ideas: list[dict[str, str]]) -> tuple[str, str]:
         "[OUTPUT] Return a JSON object of the form:\n"
         '{"scores": [{"index": <int>, "novelty": "<token>", "viability": "<token>", '
         '"fit": "<token>", "rationale": "<one sentence>", "trap": "<token>", '
-        '"trap_rationale": "<why it is a trap, or empty if clear>"}, ...]}\n'
+        '"trap_rationale": "<why it is a trap, or empty if clear>", '
+        '"cluster": "<2-4 word approach label>"}, ...]}\n'
         "One entry per idea, index matching the list above. JSON only — no prose."
     )
     return sys, usr
@@ -363,6 +371,7 @@ def score_idea_pool(
                 trap_level=trap["trap_level"],
                 is_trap=trap["is_trap"],
                 trap_rationale=trap["rationale"],
+                cluster_label=str(entry.get("cluster", "")).strip(),
             )
         )
 
@@ -421,6 +430,196 @@ def _persist_scores(pool: ScoredPool, *, tenant_id: str, classification: str) ->
     except Exception as exc:  # noqa: BLE001 — persistence is best-effort
         logger.debug("Divergence score persistence failed (non-blocking): %s", exc)
         return False
+
+
+# ---------------------------------------------------------------------------
+# Clustering + deepening (dvg-critic-03) — completes the Focus phase
+# ---------------------------------------------------------------------------
+DEFAULT_DEEPEN_TOP_K = 3  # deepening is the 2nd-most expensive step after fan-out
+
+
+@dataclass
+class DeepenedCluster:
+    """A group of ideas sharing an underlying approach. The top-K clusters are
+    expanded into an actionable sketch with risks + next steps; the rest carry
+    only their membership + scores. Structured so dvg-wire-* callers can act on
+    it without re-parsing free text."""
+
+    label: str
+    member_indices: list[int]
+    members: list[dict[str, Any]]
+    best_composite: float
+    has_trap: bool
+    deepened: bool = False
+    sketch: str = ""
+    risks: list[str] = field(default_factory=list)
+    next_steps: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "member_indices": self.member_indices,
+            "members": self.members,
+            "best_composite": self.best_composite,
+            "has_trap": self.has_trap,
+            "deepened": self.deepened,
+            "sketch": self.sketch,
+            "risks": self.risks,
+            "next_steps": self.next_steps,
+        }
+
+
+def cluster_pool(pool: ScoredPool) -> list[DeepenedCluster]:
+    """Group a scored pool by underlying approach, most-promising cluster first.
+
+    Grouping key is the critic-assigned ``cluster_label`` (normalized), falling
+    back to the generative frame when no label was returned — so ten restatements
+    of one approach collapse into one cluster instead of reading as ten ideas.
+    Pure function, no LLM/IO. A cluster's rank is its best member's composite.
+    """
+    groups: dict[str, list[IdeaScore]] = {}
+    for s in pool.ordered:
+        key = (s.cluster_label or s.frame or "unlabeled").strip().lower() or "unlabeled"
+        groups.setdefault(key, []).append(s)
+
+    clusters: list[DeepenedCluster] = []
+    for _key, members in groups.items():
+        members_sorted = sorted(members, key=lambda m: m.composite, reverse=True)
+        label = members_sorted[0].cluster_label or members_sorted[0].frame or "unlabeled"
+        clusters.append(
+            DeepenedCluster(
+                label=label,
+                member_indices=[m.index for m in members_sorted],
+                members=[
+                    {
+                        "index": m.index,
+                        "idea": m.idea,
+                        "frame": m.frame,
+                        "composite": m.composite,
+                        "trap_flag": m.trap_flag,
+                        "is_trap": m.is_trap,
+                    }
+                    for m in members_sorted
+                ],
+                best_composite=members_sorted[0].composite,
+                has_trap=any(m.is_trap for m in members_sorted),
+            )
+        )
+    clusters.sort(key=lambda c: c.best_composite, reverse=True)
+    return clusters
+
+
+def _resolve_deepen_k(router: Any, k: Optional[int]) -> int:
+    if isinstance(k, int) and k > 0:
+        return k
+    try:
+        cfg = getattr(router, "_config", {}) or {}
+        div = cfg.get("chain_orchestration", {}).get("divergence", {})
+        val = int(div.get("deepen_top_k", DEFAULT_DEEPEN_TOP_K))
+        return val if val > 0 else DEFAULT_DEEPEN_TOP_K
+    except Exception:  # noqa: BLE001
+        return DEFAULT_DEEPEN_TOP_K
+
+
+def build_deepen_prompt(clusters: list[DeepenedCluster]) -> tuple[str, str]:
+    """Return (system_prompt, user_prompt) to expand the top clusters into
+    actionable sketches. Separate call from scoring — deepening only the
+    survivors keeps the expensive step small."""
+    sys = _CUI_BANNER + (
+        "You are turning a small set of surviving candidate approaches into "
+        "ACTIONABLE sketches. For each cluster give: a concrete sketch of how to "
+        "pursue it, the top risks, and the first concrete next steps. Be specific "
+        "and terse. Return STRICT JSON only — no prose."
+    )
+    listing = []
+    for i, c in enumerate(clusters):
+        best_idea = c.members[0]["idea"] if c.members else ""
+        trap = " [TRAP-FLAGGED]" if c.has_trap else ""
+        listing.append(f'{i}. cluster "{c.label}"{trap} — best idea: {best_idea}')
+    usr = (
+        "[SURVIVING CLUSTERS]\n" + "\n".join(listing) + "\n\n"
+        "[OUTPUT] Return JSON:\n"
+        '{"clusters": [{"index": <int>, "sketch": "<how to pursue it>", '
+        '"risks": ["<risk>", ...], "next_steps": ["<step>", ...]}, ...]}\n'
+        "One entry per cluster, index matching the list. JSON only."
+    )
+    return sys, usr
+
+
+def cluster_and_deepen(
+    pool: ScoredPool,
+    *,
+    function: str,
+    router: Any = None,
+    k: Optional[int] = None,
+) -> dict[str, Any]:
+    """Complete the Focus phase: cluster the scored pool, then expand the top-K
+    survivors into actionable sketches (risks + next steps).
+
+    A SEPARATE LLM call deepens only the top-K clusters (K config-driven, small).
+    Degrades cleanly: with no router / an LLM failure / unparseable output, the
+    clusters are still returned, top-K simply left un-deepened (sketch empty).
+    Never raises.
+
+    Returns ``{trace_id, function, k, cluster_count, clusters: [DeepenedCluster
+    dicts...]}`` — top-K carry ``deepened=True`` with sketch/risks/next_steps;
+    the rest are membership + scores only. Structured for dvg-wire-* consumers.
+    """
+    clusters = cluster_pool(pool)
+    result_k = _resolve_deepen_k(router, k)
+    top = clusters[:result_k]
+
+    if top:
+        try:
+            from tools.llm.provider import LLMRequest
+
+            if router is None:
+                from tools.llm.router import LLMRouter
+
+                router = LLMRouter()
+            sys_prompt, usr_prompt = build_deepen_prompt(top)
+            request = LLMRequest(
+                messages=[{"role": "user", "content": usr_prompt}],
+                system_prompt=sys_prompt,
+            )
+            response = router.invoke(function, request)
+            deep = _parse_deepen_json(getattr(response, "content", "") or "")
+            by_index = {e["index"]: e for e in deep if isinstance(e.get("index"), int)}
+            for i, c in enumerate(top):
+                entry = by_index.get(i, {})
+                c.sketch = str(entry.get("sketch", "")).strip()
+                c.risks = [str(r).strip() for r in (entry.get("risks") or []) if str(r).strip()]
+                c.next_steps = [str(s).strip() for s in (entry.get("next_steps") or []) if str(s).strip()]
+                c.deepened = bool(c.sketch or c.risks or c.next_steps)
+        except Exception as exc:  # noqa: BLE001 — deepening is best-effort
+            logger.warning("Divergence cluster deepening failed for '%s': %s", function, exc)
+
+    return {
+        "trace_id": pool.trace_id,
+        "function": function,
+        "k": result_k,
+        "cluster_count": len(clusters),
+        "clusters": [c.as_dict() for c in clusters],
+    }
+
+
+def _parse_deepen_json(content: str) -> list[dict[str, Any]]:
+    raw = _parse_critic_json(content)  # tolerant of code fences / prose
+    if raw:
+        return raw
+    # _parse_critic_json returns [] for a bare {"clusters": [...]} without a
+    # "scores" key; retry explicitly for the clusters key.
+    try:
+        text = content.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+        m = _JSON_BLOCK.search(text)
+        obj = json.loads(m.group(0) if m else text)
+        if isinstance(obj, dict) and isinstance(obj.get("clusters"), list):
+            return obj["clusters"]
+    except (json.JSONDecodeError, ValueError, AttributeError):
+        pass
+    return []
 
 
 def _parse_args():

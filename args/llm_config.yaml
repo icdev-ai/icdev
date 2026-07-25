@@ -1663,6 +1663,7 @@ chain_orchestration:
     enabled: false            # OPT-IN: never a default generation path
     num_branches: 6           # capped by the frame-set size at runtime
     frame_set: generative     # resolves via args/ideation_frames.yaml (dvg-frames-01)
+    deepen_top_k: 3           # dvg-critic-03: only the top-K clusters are deepened (expensive)
     branch_pool_role: divergence_branch_pool  # get_diverse_models() picks N distinct models
     critic_role: divergence_critic            # reserved for the SEPARATE dvg-critic-* pass
     # Legacy direct model names — fallback when the pool role resolves to nothing
