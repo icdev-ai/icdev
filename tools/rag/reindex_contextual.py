@@ -274,8 +274,13 @@ class LiveChunkStore:
             except Exception:
                 meta = {}
             emb = d.get("embedding")
+            # psycopg hands back BYTEA as a memoryview, sqlite3 as bytes — decode
+            # both, or callers get an opaque buffer instead of a float list.
             try:
-                embedding = _blob_to_embedding(emb) if isinstance(emb, (bytes, bytearray)) else emb
+                if isinstance(emb, (bytes, bytearray, memoryview)):
+                    embedding = _blob_to_embedding(bytes(emb))
+                else:
+                    embedding = emb
             except Exception:
                 embedding = None
             chunks.append(VectorChunk(
@@ -297,16 +302,33 @@ class LiveChunkStore:
         return chunks
 
     def update_chunk(self, chunk: VectorChunk) -> None:
-        from tools.db.storage import get_connection
+        """Persist the re-embedded chunk.
+
+        On PostgreSQL the refreshed embedding MUST also land in ``embedding_vec``:
+        that pgvector column — not the legacy ``embedding`` BYTEA blob — is what
+        ``pg_vector_store`` ranks on (``ORDER BY embedding_vec <=> %s::vector``).
+        Writing only the blob leaves search on the pre-re-index vectors, so a
+        full re-index measures a delta of exactly zero (observed on rce-eval-04).
+        """
+        from tools.db.storage import get_connection, is_pg
         from tools.rag.sqlite_vector_store import _embedding_to_blob
 
         conn = get_connection()
         blob = _embedding_to_blob(chunk.embedding) if chunk.embedding is not None else None
         meta_json = json.dumps(chunk.metadata) if chunk.metadata else "{}"
-        conn.execute(
-            "UPDATE rag_chunks SET embedding = %s, metadata = %s WHERE id = %s",
-            (blob, meta_json, chunk.chunk_id),
-        )
+        if is_pg(conn) and chunk.embedding is not None:
+            from tools.rag.pg_vector_store import _embedding_to_pg_vector
+
+            conn.execute(
+                "UPDATE rag_chunks SET embedding = %s, embedding_vec = %s::vector, "
+                "metadata = %s WHERE id = %s",
+                (blob, _embedding_to_pg_vector(chunk.embedding), meta_json, chunk.chunk_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE rag_chunks SET embedding = %s, metadata = %s WHERE id = %s",
+                (blob, meta_json, chunk.chunk_id),
+            )
         conn.commit()
         conn.close()
 
