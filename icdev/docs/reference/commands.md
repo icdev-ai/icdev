@@ -2310,10 +2310,16 @@ python tools/data_canvas/sync/openmetadata_sync.py --all --gate --json
 
 ## Showcase Commands
 ```bash
-python tools/showcase/generate_app.py --slug <name> --category <cat>
-python tools/showcase/osint_engine.py --source cve --fetch --json
-python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
-python tools/showcase/validator.py --app <slug> --json
+# AI Canvas Demo Runner — 5-act DoD/IC demo across live canvas DBs
+python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json
+python tools/showcase/ai_canvas_demo_runner.py --scenario 5 --audience tech
+```
+
+`tools/showcase/synthetic_data_engine.py` is a **library, not a CLI** — import
+`SyntheticDataEngine` / `DOMAINS` from it:
+
+```python
+from icdev.tools.showcase.synthetic_data_engine import DOMAINS, SyntheticDataEngine
 ```
 
 

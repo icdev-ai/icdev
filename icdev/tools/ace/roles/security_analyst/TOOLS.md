@@ -20,4 +20,4 @@
 - `tools/security/` — STIG scanner, ZTA, cryptography checks
 - `tools/compliance/` — control mapping, crosswalk
 - `python -m bandit -r tools/ --severity-level medium`
-- `python tools/showcase/osint_engine.py --source cve --fetch --json`
+- `python tools/supply_chain/cve_passive_watcher.py --project-id <id> --scan --json`

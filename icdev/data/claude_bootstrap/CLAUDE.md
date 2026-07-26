@@ -65,11 +65,9 @@ python tools/dx/companion.py --sync --write --json
 # Coherence check
 python tools/workflow/coherence_checker.py --all --fix --gate
 
-# Showcase
-python tools/showcase/generate_app.py --slug <name> --category <cat>
-python tools/showcase/osint_engine.py --source cve --fetch --json
-python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
-python tools/showcase/validator.py --app <slug> --json
+# Showcase / Demo Runner
+python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json
+# synthetic_data_engine.py is a library (SyntheticDataEngine, DOMAINS) — import it, no CLI
 
 # Internal Awareness Engine (Phase 1-6, D-AWARE)
 python tools/awareness/component_indexer.py --scan --json        # Refresh kg-icdev-self-awareness nodes

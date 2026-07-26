@@ -419,8 +419,14 @@ adaptation and worth fixing on their own:
   returning `{"error": "Module not available"}` — and `sandbox_execute` is listed in
   the `security` bundle of `args/agent_toolsets.yaml:65`, so the standalone agent's
   advertised sandbox tool is non-functional.
-- **`tools/showcase/validator.py` does not exist** despite being documented in
-  `CLAUDE.md`'s Quick Reference (`python tools/showcase/validator.py --app <slug> --json`).
+- ~~**`tools/showcase/validator.py` does not exist** despite being documented in
+  `CLAUDE.md`'s Quick Reference (`python tools/showcase/validator.py --app <slug> --json`).~~
+  **FIXED — oss-fix-02.** The phantom showcase commands were removed from the docs
+  (the capability was never built, and `synthetic_data_engine.py` is a library with no
+  CLI), and the class of defect is now gated: `coherence_checker.py:check_doc_command_paths`
+  resolves every `python tools/...` invocation in `CLAUDE.md` and `docs/reference/commands.md`
+  against the filesystem. It found **55 more** broken references, enumerated in
+  `args/doc_command_gate.yaml` as a visible backlog; any NEW broken reference fails the gate.
 
 ---
 
@@ -682,7 +688,7 @@ are worth their own cards.
 | D2 | **`sandbox_execute` MCP tool has no handler** → silently served as an error stub, while advertised in the `security` agent bundle. | `tools/mcp/tool_registry.py:5061`, `args/agent_toolsets.yaml:65` | Medium |
 | D3 | **The one good egress gate is unused.** `egress_guard` (HTTPS-only, allow/denylist, resolve-then-reject private/metadata IPs, per-hop redirect revalidation) is called by exactly one feature and defaults off; ~104 modules fetch external URLs with none of it. | `tools/doc_modernization/link_check.py:206` | Medium |
 | D4 | **Fetched third-party bytes mostly skip injection scanning**, and the NLP link extractor explicitly passes raw HTML to an LLM with `skip_injection_scan=True`. | `tools/genesis/reflexes/research.py` | Medium |
-| D5 | **Documented tool does not exist:** `python tools/showcase/validator.py --app <slug> --json` is in `CLAUDE.md`'s Quick Reference. | `CLAUDE.md` | Low (docs) |
+| ~~D5~~ | ~~**Documented tool does not exist:** `python tools/showcase/validator.py --app <slug> --json` is in `CLAUDE.md`'s Quick Reference.~~ **FIXED — oss-fix-02**: phantom showcase commands removed from docs + manifest; new `doc_command_paths` coherence gate resolves all 560 documented `python tools/...` invocations against the filesystem and fails on any new breakage. Surfaced 55 further pre-existing broken references, grandfathered with reasons in `args/doc_command_gate.yaml`. | `CLAUDE.md` | ~~Low (docs)~~ — resolved |
 | D6 | **Dead config key:** `"chunking"` on 19 `source_registry` entries is read only by a listing filter; `ingestion_manager` never honors it. Implies per-source chunking that doesn't happen. | `tools/rag/source_registry.py:822` | Low |
 | D7 | **Stale docstring claims a capability that isn't imported** (trafilatura-based YouTube text fallback). | `tools/document_intelligence/extractors.py:1306` | Low (docs) |
 | D8 | **Silent optional-dependency cliff:** on a clean `pip install -r requirements.txt`, XLSX extraction, image OCR, and the two best PDF passes all degrade with no loud signal (pdfplumber, pymupdf, openpyxl, easyocr absent). | `requirements.txt` vs `extractors.py` | Medium |

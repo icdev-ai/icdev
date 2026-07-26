@@ -26,6 +26,7 @@ Checks:
  16. runtime_placeholder_style — bare ? in execute() SQL in ANY runtime tools/ file (use %s; translate_sql is not a fix)
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
  18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
+ 19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -5961,6 +5962,187 @@ def check_provider_bypass() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check 19: Documented Command Paths (oss-fix-02)
+# ---------------------------------------------------------------------------
+#
+# A documented command that does not exist is worse than an undocumented one:
+# an agent reading CLAUDE.md will confidently run it, get an opaque
+# "can't open file" error, and burn a cycle deciding whether the tree is
+# broken or the doc is. This check resolves every `python tools/...py` and
+# `python -m tools...` invocation in the doc set against the filesystem.
+#
+# Grandfathering mirrors the args/ruff_gate.yaml pattern: pre-existing broken
+# references are listed in args/doc_command_gate.yaml and downgraded to WARN
+# so the backlog is enumerated and visible, while any NEW broken reference
+# fails the gate.
+
+_DOC_COMMAND_CONFIG = PROJECT_ROOT / "args" / "doc_command_gate.yaml"
+
+# Default doc set — overridable via the `docs:` key in the config file.
+_DOC_COMMAND_DEFAULT_DOCS = ("CLAUDE.md", "docs/reference/commands.md")
+
+# `python tools/foo/bar.py` / `python icdev/tools/foo/bar.py`
+_DOC_SCRIPT_RE = re.compile(r"python[0-9.]*\s+((?:icdev/)?tools/[A-Za-z0-9_./-]+\.py)")
+# `python -m tools.foo.bar` / `python -m icdev.tools.foo.bar`
+_DOC_MODULE_RE = re.compile(r"python[0-9.]*\s+-m\s+((?:icdev\.)?tools(?:\.[A-Za-z0-9_]+)*)")
+
+
+def _load_doc_command_config() -> Tuple[List[str], Dict[str, str]]:
+    """Load the doc set and grandfathered-reference map from args/doc_command_gate.yaml.
+
+    Schema:
+        docs:
+          - CLAUDE.md
+          - docs/reference/commands.md
+        grandfathered:
+          tools/dochub/doc_generator.py: "DocHub subsystem never built (oss-fix-02)"
+
+    Returns ``(docs, grandfathered)``. A missing file, malformed YAML, or
+    missing pyyaml yields the default doc set and an EMPTY grandfather map
+    (fail-safe closed: if the allowlist can't be read, nothing is excused and
+    the gate is stricter, not looser).
+    """
+    docs = list(_DOC_COMMAND_DEFAULT_DOCS)
+    if not _DOC_COMMAND_CONFIG.exists() or not _HAS_YAML:
+        return docs, {}
+    try:
+        raw = yaml.safe_load(_DOC_COMMAND_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return docs, {}
+    if not isinstance(raw, dict):
+        return docs, {}
+
+    cfg_docs = raw.get("docs")
+    if isinstance(cfg_docs, list) and cfg_docs:
+        docs = [str(d).replace("\\", "/") for d in cfg_docs if isinstance(d, (str, Path))]
+
+    grandfathered: Dict[str, str] = {}
+    gf = raw.get("grandfathered") or {}
+    if isinstance(gf, dict):
+        for ref, reason in gf.items():
+            if isinstance(ref, str):
+                grandfathered[ref.replace("\\", "/").lstrip("./")] = str(reason or "")
+    elif isinstance(gf, list):  # tolerate a bare list of paths
+        for ref in gf:
+            if isinstance(ref, str):
+                grandfathered[ref.replace("\\", "/").lstrip("./")] = ""
+    return docs, grandfathered
+
+
+def _doc_reference_exists(ref: str) -> bool:
+    """Resolve a documented reference (script path or dotted module) to a file."""
+    if ref.endswith(".py"):
+        return (PROJECT_ROOT / ref).is_file()
+    # Dotted module: `tools.airgap` -> tools/airgap.py or tools/airgap/__init__.py
+    rel = Path(*ref.split("."))
+    return (PROJECT_ROOT / rel).with_suffix(".py").is_file() or (PROJECT_ROOT / rel / "__init__.py").is_file()
+
+
+def _scan_doc_commands(docs: List[str]) -> List[Tuple[str, int, str]]:
+    """Return ``(doc, lineno, reference)`` for every documented python invocation."""
+    found: List[Tuple[str, int, str]] = []
+    for doc in docs:
+        path = PROJECT_ROOT / doc
+        if not path.is_file():
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            for match in _DOC_SCRIPT_RE.finditer(line):
+                found.append((doc, lineno, match.group(1)))
+            for match in _DOC_MODULE_RE.finditer(line):
+                found.append((doc, lineno, match.group(1)))
+    return found
+
+
+def check_doc_command_paths(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Check 19: every documented `python tools/...` invocation resolves to a real file."""
+    check_id = "doc_command_paths"
+    check_name = "Documented Command Paths"
+
+    docs, grandfathered = _load_doc_command_config()
+    references = _scan_doc_commands(docs)
+
+    if not references:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=[f"documented commands in {', '.join(docs)}"],
+            actual=[],
+            missing=[],
+            extra=[],
+            message=f"No documented python invocations found in {len(docs)} doc file(s) — check doc set",
+        )
+
+    # Resolve each distinct reference once; docs repeat the same tool many times.
+    resolved: Dict[str, bool] = {}
+    new_broken: List[str] = []
+    excused: Set[str] = set()
+    for doc, lineno, ref in references:
+        if ref not in resolved:
+            resolved[ref] = _doc_reference_exists(ref)
+        if resolved[ref]:
+            continue
+        if ref in grandfathered:
+            excused.add(ref)
+        else:
+            new_broken.append(f"{doc}:{lineno}: {ref}")
+
+    # A grandfather entry whose target now exists (or is no longer cited) is
+    # stale — surface it so the allowlist shrinks instead of rotting.
+    cited = {ref for _, _, ref in references}
+    stale = sorted(
+        ref
+        for ref in grandfathered
+        if ref not in cited or _doc_reference_exists(ref)
+    )
+
+    total = len(resolved)
+    if new_broken:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=["every documented `python tools/...` command resolves to an existing file"],
+            actual=new_broken[:40],
+            missing=sorted({line.rsplit(": ", 1)[1] for line in new_broken}),
+            extra=stale,
+            message=(
+                f"{len(new_broken)} documented command(s) reference a file that does not exist "
+                f"({len(excused)} grandfathered). Create the tool, fix the path, or — only if the "
+                f"capability is genuinely deferred — add it to args/doc_command_gate.yaml with a reason."
+            ),
+        )
+
+    if excused or stale:
+        bits = []
+        if excused:
+            bits.append(f"{len(excused)} grandfathered broken reference(s) remain")
+        if stale:
+            bits.append(f"{len(stale)} stale allowlist entry(ies) can be removed")
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=["every documented `python tools/...` command resolves to an existing file"],
+            actual=[f"{total} distinct reference(s) checked; 0 new breakage"],
+            missing=sorted(excused),
+            extra=stale,
+            message="No NEW broken documented commands — " + "; ".join(bits),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=["every documented `python tools/...` command resolves to an existing file"],
+        actual=[f"{total} distinct reference(s) checked across {len(docs)} doc file(s)"],
+        missing=[],
+        extra=[],
+        message=f"All {total} documented command path(s) resolve",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -6010,6 +6192,7 @@ CHECK_REGISTRY = {
     "migration_numbering": check_migration_numbering,
     "icdev_mirror_parity": check_icdev_mirror_parity,
     "mirror_drift": check_mirror_drift,
+    "doc_command_paths": check_doc_command_paths,
 }
 
 
@@ -6052,6 +6235,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "iqe_map_sync": "skip",  # adapter wiring requires human review
     "profile_sync": "skip",  # profile YAML changes require human review
     "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
+    "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
 }
 
 
