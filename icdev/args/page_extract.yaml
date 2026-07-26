@@ -1,0 +1,194 @@
+# Page extraction thresholds — FORGE args layer.
+# tools/http/page_extract.py reads every threshold from here. No magic numbers
+# in the module; tune relevance/aggressiveness by editing this file only.
+
+# ── Pass 1: structural pruning ────────────────────────────────────────────────
+pruning:
+  # Composite score a block must reach to survive. 0.0 keeps everything,
+  # 1.0 keeps nothing.
+  threshold: 0.48
+
+  # "fixed"   — every block is compared against `threshold` as-is.
+  # "dynamic" — `threshold` is nudged per block by tag importance and text
+  #             length, so an <article> survives on a weaker score than a <div>.
+  threshold_type: dynamic
+
+  # Blocks with fewer words than this are dropped outright (0 disables).
+  min_word_threshold: 8
+
+  # Tags exempt from min_word_threshold — dense by nature, not chatty.
+  min_word_exempt_tags:
+    - table
+    - pre
+    - figure
+
+  # Composite score weights. Normalised by their own sum, so they need not
+  # add to 1.0.
+  weights:
+    text_density: 0.35    # characters of text per descendant tag
+    link_density: 0.15    # rewards prose, punishes link farms / nav blocks
+    tag_weight: 0.20      # semantic value of the container tag (see below)
+    class_weight: 0.20    # id/class name signals ("content" vs "sidebar")
+    text_ratio: 0.10      # this block's share of the page's total text
+
+  # Saturation point for text density normalisation (chars per tag). A block
+  # at or above this scores 1.0 on the density axis.
+  text_density_saturation: 35.0
+
+  # Semantic value per container tag, 0.0–1.0. Unlisted tags use `default`.
+  tag_weights:
+    default: 0.50
+    article: 1.00
+    main: 1.00
+    section: 0.80
+    div: 0.50
+    p: 0.80
+    blockquote: 0.70
+    pre: 0.70
+    table: 0.90
+    ul: 0.60
+    ol: 0.60
+    dl: 0.60
+    header: 0.30
+    footer: 0.15
+    nav: 0.05
+    aside: 0.20
+    form: 0.10
+
+  # Dynamic mode: threshold delta applied per block. Negative = easier to keep.
+  dynamic_adjust:
+    high_value_tag_bonus: -0.10   # applied when tag_weight >= high_value_cutoff
+                                  # AND the id/class signal is not negative, so a
+                                  # <section class="comments"> gets no free pass
+    high_value_cutoff: 0.75
+    negative_class_penalty: 0.25  # applied when id/class matches a negative hint
+    low_value_tag_penalty: 0.10   # applied when tag_weight <= low_value_cutoff
+    low_value_cutoff: 0.25
+    long_text_bonus: -0.05        # applied when word_count >= long_text_words
+    long_text_words: 120
+    short_text_penalty: 0.05      # applied when word_count <= short_text_words
+    short_text_words: 15
+
+  # Substrings matched case-insensitively against a block's id/class attributes.
+  positive_class_hints:
+    - article
+    - body
+    - content
+    - entry
+    - main
+    - markdown
+    - post
+    - prose
+    - story
+    - text
+  negative_class_hints:
+    - ad
+    - advert
+    - banner
+    - breadcrumb
+    - comment
+    - cookie
+    - disclaimer
+    - footer
+    - masthead
+    - menu
+    - modal
+    - nav
+    - newsletter
+    - popup
+    - promo
+    - related
+    - share
+    - sidebar
+    - social
+    - sponsor
+    - subscribe
+    - toolbar
+    - widget
+
+  # Tags whose subtree never contributes text.
+  drop_tags:
+    - script
+    - style
+    - noscript
+    - template
+    - svg
+    - canvas
+    - iframe
+    - form
+    - button
+    - select
+    - textarea
+
+# ── Pass 2: BM25 query relevance ──────────────────────────────────────────────
+bm25:
+  # Minimum BM25 score a surviving block must reach when a query is supplied.
+  threshold: 0.85
+  k1: 1.5
+  b: 0.75
+  # Never return more than this many blocks (0 = unlimited).
+  max_blocks: 0
+  # Always keep at least this many top-ranked blocks, even below threshold,
+  # so a poorly-matched query still returns something.
+  min_blocks: 3
+  # Headings immediately preceding a kept block are retained for context.
+  keep_headings: true
+  # When a heading itself matches the query, keep the blocks beneath it up to
+  # the next heading of the same or higher level. Sections answer questions;
+  # isolated paragraphs often do not.
+  section_propagation: true
+  max_section_blocks: 6
+  # Light deterministic suffix stripping so "reporting" matches "report".
+  # No stemmer dependency; rules are listed here, not in code.
+  stem_suffixes:
+    - ing
+    - ies
+    - ed
+    - es
+    - s
+  stem_min_stem_length: 4
+  # Tokens shorter than this are ignored during scoring.
+  min_token_length: 2
+  stopwords:
+    - a
+    - an
+    - and
+    - are
+    - as
+    - at
+    - be
+    - by
+    - for
+    - from
+    - how
+    - in
+    - is
+    - it
+    - of
+    - on
+    - or
+    - that
+    - the
+    - this
+    - to
+    - was
+    - what
+    - when
+    - where
+    - which
+    - who
+    - why
+    - with
+
+# ── Markdown rendering ────────────────────────────────────────────────────────
+markdown:
+  # Reference-style links keep raw URLs out of the LLM context window.
+  reference_links: true
+  reference_heading: "## References"
+  # Emit image references as well as anchors.
+  include_images: false
+  # Truncate a single block's rendered markdown at this many characters
+  # (0 = unlimited).
+  max_block_chars: 0
+  # Preview length recorded for each dropped block in the result payload.
+  dropped_preview_chars: 80
