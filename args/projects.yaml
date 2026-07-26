@@ -6166,3 +6166,44 @@ projects:
   - key: vv
     title: VV — Driverless Proof
     priority: high
+- key: oss2
+  name: OSS-02 Nine-Project Adaptation
+  description: 'Adopt/reject decision for anything-llm, DeepDoc, LocalAI, AutoGen, mem0, CrewAI,
+    agent-chief, watch-skill and rocketplaneIO. Result: six were already decided (NOTICE attributions,
+    ADRs D391/D67, spike oss-00) and the three obscure repos were the only ones never evaluated. Nine
+    projects yielded one narrow idea worth evaluating (agent-chief worthiness filter); mapping the rest
+    against the tree found more broken-in-place capability than missing capability - five of the seven
+    work tasks are defect fixes.'
+  task_prefix: oss2-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/oss-02-nine-project-adaptation.md'
+  - 'gate: held; records why 6 of 9 were already settled so nobody re-runs the analysis (oss2-gate-00)'
+  - 'fix: memory consolidation is DEAD CODE - bad import plus a column that does not exist; both
+    failures swallowed, so near-duplicate memories accumulate forever. Do this before oss2-meas-01
+    (oss2-fix-04)'
+  - 'fix: memory_read cannot render DB entries - selects 6 columns, unpacks 4; plus bare ? placeholders
+    on PostgreSQL. This is the Session Start Protocol command (oss2-fix-05)'
+  - 'fix: LocalAI unreachable by default - probe port conflicts with llama_cpp, no named provider entry
+    (oss2-fix-01)'
+  - 'fix: template chunking shipped but DIC ingest never passes template=, so every document gets the
+    general sliding window (oss2-fix-02)'
+  - 'fix: four skill cards describe AutoGen agents that nothing executes (oss2-fix-03)'
+  - 'meas: measure whether the memory tier earns its keep before building anything mem0-shaped;
+    blocked on oss2-fix-04 (oss2-meas-01)'
+  - 'triage: evaluate a worthiness stage in front of notification routing, adapted from agent-chief -
+    the one genuinely new idea (oss2-triage-01)'
+  - 'NOT in scope: DeepDoc table extraction - already live on the board as oss-table-01/02'
+  epics:
+  - key: gate
+    title: GATE — Held Pending Review
+    priority: high
+  - key: fix
+    title: FIX — Defects Found While Mapping
+    priority: high
+  - key: meas
+    title: MEAS — Measure Before Building
+    priority: medium
+  - key: triage
+    title: TRIAGE — Event Worthiness (agent-chief)
+    priority: medium
