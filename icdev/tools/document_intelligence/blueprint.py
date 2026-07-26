@@ -2549,6 +2549,45 @@ def api_review_approve(item_id):
                     "ai_section_count": citation_gate_report.get("ai_section_count", 0),
                     "item_id": item_id,
                 }), 409
+
+            # cove_guard (agx-verify-01) — third and last gate, opt-in because
+            # CoVe multiplies LLM calls per artifact. Runs only after the two
+            # cheap deterministic gates pass, so an expensive verification is
+            # never spent on a draft that was going to be rejected anyway.
+            cove_report: dict = {}
+            try:
+                from tools.document_intelligence.consistency_checker import (
+                    check_version_cove,
+                )
+                cove_report = check_version_cove(item_id, force=force)
+            except Exception as exc:
+                logger.warning("dic approve: cove gate error: %s", exc)
+            cove_hits = cove_report.get("findings") or []
+            if cove_report.get("blocked"):
+                return jsonify({
+                    "error": "cove_contradictions",
+                    "gate": "cove_guard",
+                    "message": (
+                        f"Chain-of-Verification flagged {len(cove_hits)} section(s) "
+                        "whose claims did not survive independent interrogation. "
+                        "Revise them, or resubmit with force=true to override "
+                        "(the override is audited)."
+                    ) if cove_hits else (
+                        "Chain-of-Verification could not run and this deployment "
+                        "is configured to fail closed "
+                        f"({cove_report.get('reason', '')}). Resubmit with "
+                        "force=true to override, or set "
+                        "ICDEV_DIC_COVE_ON_ERROR=warn."
+                    ),
+                    "cove_findings": cove_hits,
+                    "unrunnable": bool(cove_report.get("unrunnable")),
+                    "item_id": item_id,
+                }), 409
+            if cove_report.get("unrunnable"):
+                # Surfaced, never silent: a verification that did not run must
+                # not look like one that passed.
+                resp["cove_unrunnable"] = True
+                resp["cove_reason"] = cove_report.get("reason", "")
             conn.execute(
                 "UPDATE dic_versions SET status='approved' WHERE version_id=%s", (item_id,)
             )
@@ -2578,6 +2617,18 @@ def api_review_approve(item_id):
                 force_note = f"{force_note}. {cnote}" if force_note else cnote
                 _record_publish_override(item_id, "citation_guard",
                                          citation_hits, reviewer, tenant_id)
+            if cove_hits and force:
+                resp["forced"] = True
+                resp["cove_findings"] = cove_hits
+                vnote = (
+                    f"FORCE-APPROVED over cove_guard — {len(cove_hits)} section(s) "
+                    "failed Chain-of-Verification"
+                )
+                force_note = f"{force_note}. {vnote}" if force_note else vnote
+                # Recording this needs migration 300; before it, the INSERT
+                # raised CheckViolation at exactly this moment.
+                _record_publish_override(item_id, "cove_guard",
+                                         cove_hits, reviewer, tenant_id)
         else:
             # Try ACOIC approve helper first.
             try:
