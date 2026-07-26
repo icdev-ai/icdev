@@ -286,6 +286,8 @@ class RAGRetriever:
         # RCE (rce-raptor-02): RAPTOR multi-level retrieval. Default OFF — when
         # disabled the pipeline is byte-for-byte the flat-leaf path.
         self._raptor_cfg = self._rag_cfg.get("raptor", {})
+        # agx-rag-02, wired by oss-meas-01. Default OFF — see step 5b.
+        self._reflective_cfg = self._rag_cfg.get("reflective_rerank", {})
 
         # SEC: Warn when tenant_id is empty in multi-tenant environment
         if not tenant_id:
@@ -428,6 +430,37 @@ class RAGRetriever:
                 results = results[:final_top_k]
         else:
             results = results[:final_top_k]
+
+        # Step 5b: Self-RAG per-document reflective reranking (agx-rag-02).
+        # Default OFF → this branch is skipped entirely and the path above is
+        # byte-for-byte unchanged.
+        #
+        # Wired by oss-meas-01. It shipped with a config block, a test file and
+        # zero callers, so `rag.reflective_rerank.enabled` read as a live
+        # capability and did nothing — and a benchmark flipping it measured a
+        # 0.0 delta indistinguishable from "wired and useless".
+        #
+        # Runs AFTER the cross-encoder rather than instead of it: this scores
+        # each surviving candidate on separate RELEVANT/SUPPORTS/USEFUL axes and
+        # composes the ordering in Python, so it refines a shortlist rather than
+        # replacing the cheap ranker. `max_candidates` bounds the per-document
+        # LLM calls — the cost lives here, which is why it stays default OFF
+        # until measured (see docs/features/oss-meas-01-*.md).
+        if self._reflective_cfg.get("enabled", False) and results:
+            try:
+                from tools.rag.reflective_reranker import reflective_rerank
+
+                results = reflective_rerank(
+                    query,
+                    results,
+                    top_k=final_top_k,
+                    max_candidates=self._reflective_cfg.get("max_candidates"),
+                )
+                retrieval_mode = "reflective_reranked"
+            except Exception as exc:
+                # Same posture as the cross-encoder above: a reranker failure
+                # must degrade to the existing ordering, never drop results.
+                logger.debug("reflective rerank unavailable (%s); keeping order", exc)
 
         # Step 6: Log retrieval
         duration_ms = int(time.time() * 1000) - start_ms
