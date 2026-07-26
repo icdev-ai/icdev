@@ -1,0 +1,7 @@
+{
+  "id": "301_memory_embedding_768",
+  "description": "Retype memory_entries.embedding from vector(1536) to vector(768) to match the configured embedding provider (Ollama nomic-embed-text / gemini text-embedding-004), so backfilled embeddings stop failing with 'expected 1536 dimensions, not 768'",
+  "created": "2026-07-26",
+  "targets": ["icdev.db"],
+  "adrs": ["D179"]
+}
