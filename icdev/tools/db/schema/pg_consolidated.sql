@@ -11511,19 +11511,30 @@ CREATE TABLE public.dic_acoic_regen_queue (
 -- Name: dic_chat_memory; Type: TABLE; Schema: public; Owner: -
 --
 
+-- Turn-based schema, kept in sync with
+-- tools/document_intelligence/chat_memory.py::_TURN_TABLE_DDL.
+--
+-- This consolidation previously carried the legacy message-log shape from
+-- migration 191 (memory_id/role/content/token_count), which NO code consumes.
+-- chat_memory.record_turn() writes the turn shape below, so every write failed
+-- and was swallowed. Migration 264 fixed that for migrated databases but was
+-- never folded in here, so a FRESH bootstrap still produced the broken table.
 CREATE TABLE public.dic_chat_memory (
-    memory_id text NOT NULL,
+    turn_id text NOT NULL,
     session_id text NOT NULL,
-    collection_id text DEFAULT 'default'::text NOT NULL,
-    user_id text DEFAULT ''::text NOT NULL,
-    role text DEFAULT 'user'::text NOT NULL,
-    content text DEFAULT ''::text NOT NULL,
+    collection_id text DEFAULT ''::text NOT NULL,
+    turn_index integer DEFAULT 0 NOT NULL,
+    query text DEFAULT ''::text NOT NULL,
+    answer text DEFAULT ''::text NOT NULL,
+    subject text DEFAULT ''::text NOT NULL,
+    subject_doc_id text DEFAULT ''::text NOT NULL,
+    entities_json text DEFAULT '[]'::text NOT NULL,
+    doc_ids_json text DEFAULT '[]'::text NOT NULL,
     citations_json text DEFAULT '[]'::text NOT NULL,
-    token_count integer DEFAULT 0 NOT NULL,
+    mode text DEFAULT 'grounded'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     tenant_id text DEFAULT 'default'::text NOT NULL,
-    classification text DEFAULT 'CUI'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT dic_chat_memory_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text, 'system'::text])))
+    classification text DEFAULT 'CUI'::text NOT NULL
 );
 
 
@@ -21200,7 +21211,7 @@ CREATE TABLE public.noc_mops (
     classification text DEFAULT 'CUI'::text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT noc_mops_generated_by_check CHECK ((generated_by = ANY (ARRAY['manual'::text, 'ai'::text])))
+    CONSTRAINT noc_mops_generated_by_check CHECK ((generated_by = ANY (ARRAY['manual'::text, 'ai'::text, 'ai_template'::text])))
 );
 
 
@@ -29762,7 +29773,7 @@ CREATE TABLE public.source_citation_registry (
     project_id text,
     trust_score real DEFAULT 0.0,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text])))
+    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text])))
 );
 
 
@@ -39663,7 +39674,7 @@ ALTER TABLE ONLY public.dic_acoic_regen_queue
 --
 
 ALTER TABLE ONLY public.dic_chat_memory
-    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (memory_id);
+    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (turn_id);
 
 
 --
@@ -63210,142 +63221,6 @@ CREATE INDEX IF NOT EXISTS idx_pdc_simulations_pipeline ON public.pdc_simulation
 -- dd_freshness_alerts, dm_ports, dd_pii_scans) are NOT repeated here.
 -- ============================================================================
 
-
-
--- =====================================================================-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
--- ============================================================================
--- Intelligent Documentation Regeneration (IDR / DocGen) core schema — parity
--- with tools/db/migrations/211_idr_tables.sql + 212 + 214/217 + 257 + 277, and
--- 276_idr_publish_audit.sql. The IDR canvas routes to the SHARED icdev database,
--- so these must exist in the consolidated baseline: the pg_dump body predates the
--- canvas and contains NO idr_* tables, so a fresh PG bootstrap would otherwise
--- lack them entirely (migration 277 is marked-applied by bootstrap_pg and never
--- runs on a fresh install). (task cnr-doc-04)
---
--- PG-NATIVE dialect: applied RAW by tools/db/bootstrap_pg.py (no translate_sql)
--- under search_path=''. Schema-qualified public.; all statements idempotent.
--- upload_type CHECK derived from tools/docgen/constants.py::UPLOAD_TYPES.
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS public.idr_sessions (
-    id              TEXT PRIMARY KEY,
-    title           TEXT NOT NULL,
-    domain          TEXT NOT NULL DEFAULT 'network'
-                        CHECK (domain IN ('network','security','devops','developer','compliance','standard_guide')),
-    doc_type        TEXT NOT NULL DEFAULT 'runbook',
-    template_id     TEXT,
-    stage           INTEGER NOT NULL DEFAULT 0 CHECK (stage BETWEEN 0 AND 8),
-    status          TEXT NOT NULL DEFAULT 'setup'
-                        CHECK (status IN ('setup','ingesting','analyzing','conflicts','synthesizing',
-                                          'generating','writeguard','reviewing','publishing','published','failed')),
-    dic_collection_id TEXT,
-    ace_instance_id TEXT,
-    topology_id     TEXT,
-    wg_result_id    TEXT,
-    created_by      TEXT,
-    tenant_id       TEXT,
-    classification  TEXT DEFAULT 'CUI',
-    conflicts_resolved BOOLEAN DEFAULT FALSE,
-    suggested_classification TEXT,
-    suggested_classification_confidence REAL,
-    prior_docs_context TEXT,
-    last_source_hash TEXT,
-    source_hash_checked_at TIMESTAMP,
-    final_doc_text  TEXT,
-    dic_doc_id      TEXT,
-    source_dic_doc_id TEXT,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.idr_uploads (
-    id              TEXT PRIMARY KEY,
-    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
-    filename        TEXT NOT NULL,
-    upload_type     TEXT NOT NULL
-                        CHECK (upload_type IN ('diagram','doc','config','iac','supplement','email')),
-    file_path       TEXT,
-    file_hash       TEXT,
-    dic_doc_id      TEXT,
-    extracted_from_doc_id TEXT,
-    status          TEXT NOT NULL DEFAULT 'pending'
-                        CHECK (status IN ('pending','ingested','analyzed','error')),
-    error_msg       TEXT,
-    tenant_id       TEXT,
-    uploaded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.idr_analyses (
-    id              TEXT PRIMARY KEY,
-    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
-    upload_id       TEXT NOT NULL REFERENCES public.idr_uploads(id),
-    analysis_type   TEXT NOT NULL
-                        CHECK (analysis_type IN ('diagram_analysis','config_review',
-                                                 'firewall_review','iac_review','api_review')),
-    result_ref_id   TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'pending'
-                        CHECK (status IN ('pending','running','done','error')),
-    error_msg       TEXT,
-    tenant_id       TEXT,
-    result_json     TEXT,
-    confidence_score FLOAT,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.idr_conflicts (
-    id              TEXT PRIMARY KEY,
-    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
-    node_label      TEXT NOT NULL,
-    conflict_type   TEXT NOT NULL
-                        CHECK (conflict_type IN ('node_type','property','missing_in_source',
-                                                 'topology_discrepancy','boundary_discrepancy')),
-    source_a        TEXT NOT NULL,
-    source_a_value  TEXT,
-    source_b        TEXT NOT NULL,
-    source_b_value  TEXT,
-    resolved_by     TEXT,
-    resolution      TEXT CHECK (resolution IN ('a','b','manual')),
-    resolution_notes TEXT,
-    resolved_at     TIMESTAMP,
-    tenant_id       TEXT,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.idr_artifacts (
-    id              TEXT PRIMARY KEY,
-    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
-    dic_doc_id      TEXT,
-    dic_version_id  TEXT,
-    format          TEXT NOT NULL
-                        CHECK (format IN ('html','docx','pdf')),
-    file_path       TEXT,
-    wg_result_id    TEXT,
-    published_at    TIMESTAMP,
-    tenant_id       TEXT,
-    flagged_sections TEXT,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.idr_publish_audit (
-    id          TEXT PRIMARY KEY,
-    session_id  TEXT NOT NULL,
-    gate        TEXT NOT NULL
-                    CHECK (gate IN ('citation_guard','placeholder_guard')),
-    reviewer    TEXT,
-    findings    TEXT,
-    tenant_id   TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_idr_uploads_session      ON public.idr_uploads(session_id);
-CREATE INDEX IF NOT EXISTS idx_idr_analyses_session     ON public.idr_analyses(session_id);
-CREATE INDEX IF NOT EXISTS idx_idr_analyses_upload      ON public.idr_analyses(upload_id);
-CREATE INDEX IF NOT EXISTS idx_idr_conflicts_session    ON public.idr_conflicts(session_id);
-CREATE INDEX IF NOT EXISTS idx_idr_artifacts_session    ON public.idr_artifacts(session_id);
-CREATE INDEX IF NOT EXISTS idx_idr_publish_audit_session ON public.idr_publish_audit(session_id);
--- ============================================================================
--- END ICDEV ADDITIVE SECTION (IDR / DocGen core schema)
-=======
 -- ── Design core ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.data_designs (
     id              TEXT PRIMARY KEY,
@@ -63881,4 +63756,143 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_design ON public.dd_migration_j
 CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON public.dd_migration_jobs(status);
 -- ============================================================================
 -- END ICDEV ADDITIVE SECTION (Data Design Canvas core schema)
+-- ============================================================================
+
+
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Intelligent Documentation Regeneration (IDR / DocGen) core schema — parity
+-- with tools/db/migrations/211_idr_tables.sql + 212 + 214/217 + 257 + 277, and
+-- 276_idr_publish_audit.sql. The IDR canvas routes to the SHARED icdev database,
+-- so these must exist in the consolidated baseline: the pg_dump body predates the
+-- canvas and contains NO idr_* tables, so a fresh PG bootstrap would otherwise
+-- lack them entirely (migration 277 is marked-applied by bootstrap_pg and never
+-- runs on a fresh install). (task cnr-doc-04)
+--
+-- PG-NATIVE dialect: applied RAW by tools/db/bootstrap_pg.py (no translate_sql)
+-- under search_path=''. Schema-qualified public.; all statements idempotent.
+-- upload_type CHECK derived from tools/docgen/constants.py::UPLOAD_TYPES.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.idr_sessions (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    domain          TEXT NOT NULL DEFAULT 'network'
+                        CHECK (domain IN ('network','security','devops','developer','compliance','standard_guide')),
+    doc_type        TEXT NOT NULL DEFAULT 'runbook',
+    template_id     TEXT,
+    stage           INTEGER NOT NULL DEFAULT 0 CHECK (stage BETWEEN 0 AND 8),
+    status          TEXT NOT NULL DEFAULT 'setup'
+                        CHECK (status IN ('setup','ingesting','analyzing','conflicts','synthesizing',
+                                          'generating','writeguard','reviewing','publishing','published','failed')),
+    dic_collection_id TEXT,
+    ace_instance_id TEXT,
+    topology_id     TEXT,
+    wg_result_id    TEXT,
+    created_by      TEXT,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    conflicts_resolved BOOLEAN DEFAULT FALSE,
+    suggested_classification TEXT,
+    suggested_classification_confidence REAL,
+    prior_docs_context TEXT,
+    last_source_hash TEXT,
+    source_hash_checked_at TIMESTAMP,
+    final_doc_text  TEXT,
+    dic_doc_id      TEXT,
+    source_dic_doc_id TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_uploads (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
+    filename        TEXT NOT NULL,
+    upload_type     TEXT NOT NULL
+                        CHECK (upload_type IN ('diagram','doc','config','iac','supplement','email')),
+    file_path       TEXT,
+    file_hash       TEXT,
+    dic_doc_id      TEXT,
+    extracted_from_doc_id TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','ingested','analyzed','error')),
+    error_msg       TEXT,
+    tenant_id       TEXT,
+    uploaded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_analyses (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
+    upload_id       TEXT NOT NULL REFERENCES public.idr_uploads(id),
+    analysis_type   TEXT NOT NULL
+                        CHECK (analysis_type IN ('diagram_analysis','config_review',
+                                                 'firewall_review','iac_review','api_review')),
+    result_ref_id   TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','running','done','error')),
+    error_msg       TEXT,
+    tenant_id       TEXT,
+    result_json     TEXT,
+    confidence_score FLOAT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_conflicts (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
+    node_label      TEXT NOT NULL,
+    conflict_type   TEXT NOT NULL
+                        CHECK (conflict_type IN ('node_type','property','missing_in_source',
+                                                 'topology_discrepancy','boundary_discrepancy')),
+    source_a        TEXT NOT NULL,
+    source_a_value  TEXT,
+    source_b        TEXT NOT NULL,
+    source_b_value  TEXT,
+    resolved_by     TEXT,
+    resolution      TEXT CHECK (resolution IN ('a','b','manual')),
+    resolution_notes TEXT,
+    resolved_at     TIMESTAMP,
+    tenant_id       TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_artifacts (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
+    dic_doc_id      TEXT,
+    dic_version_id  TEXT,
+    format          TEXT NOT NULL
+                        CHECK (format IN ('html','docx','pdf')),
+    file_path       TEXT,
+    wg_result_id    TEXT,
+    published_at    TIMESTAMP,
+    tenant_id       TEXT,
+    flagged_sections TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_publish_audit (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    -- Values derived from tools.quality.citation_grounding.PUBLISH_GATES;
+    -- kept in sync by tests/test_publish_gates.py. Widened by migration 300.
+    gate        TEXT NOT NULL
+                    CHECK (gate IN ('citation_guard','cove_guard','placeholder_guard')),
+    reviewer    TEXT,
+    findings    TEXT,
+    tenant_id   TEXT,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_idr_uploads_session      ON public.idr_uploads(session_id);
+CREATE INDEX IF NOT EXISTS idx_idr_analyses_session     ON public.idr_analyses(session_id);
+CREATE INDEX IF NOT EXISTS idx_idr_analyses_upload      ON public.idr_analyses(upload_id);
+CREATE INDEX IF NOT EXISTS idx_idr_conflicts_session    ON public.idr_conflicts(session_id);
+CREATE INDEX IF NOT EXISTS idx_idr_artifacts_session    ON public.idr_artifacts(session_id);
+CREATE INDEX IF NOT EXISTS idx_idr_publish_audit_session ON public.idr_publish_audit(session_id);
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (IDR / DocGen core schema)
 -- ============================================================================
