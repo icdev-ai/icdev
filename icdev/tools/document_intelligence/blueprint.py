@@ -2130,6 +2130,10 @@ def api_chat():
         # ── Path 3: LLM synthesis if query warrants it ───────────────────────
         mode = "grounded"
         abstained = False
+        # Whether the verifier actually ran AND every cited claim held. The UI
+        # badge is driven from this — it must never assert verification that did
+        # not happen. The deterministic Path-2 answer is cited but unverified.
+        verified = False
 
         if _needs_synthesis(message):
             # Global/thematic questions get the GraphRAG community summaries fed in
@@ -2148,15 +2152,24 @@ def api_chat():
                     else:
                         answer = vr.verified_text or llm_answer
                         mode = "graphrag" if community_summaries else "ai_assisted"
-                except Exception:
-                    answer = llm_answer
-                    mode = "graphrag" if community_summaries else "ai_assisted"
+                    verified = vr.verified
+                except Exception as verr:
+                    # Never publish an unverified draft as if it had passed. A
+                    # verifier failure means we do not know whether the answer is
+                    # grounded, so fall back to the deterministic cited answer and
+                    # say so. A bare `except` that returned `llm_answer` here is
+                    # what kept this gate silently dead.
+                    logger.warning("dic: verifier failed, falling back to grounded: %s", verr)
+                    abstained = True
+                    answer = grounded["answer"]
+                    mode = "grounded"
 
         return jsonify(_mem({
             "answer": answer,
             "sources": sources,
             "citations": citations,
             "abstained": abstained,
+            "verified": verified,
             "mode": mode,
         }, answer=answer, record_results=scored_results))
     except Exception as exc:
@@ -2472,6 +2485,23 @@ def api_review_approve(item_id):
             _record_review_note(item_id, "version", force_note, reviewer)
         if note:
             _record_review_note(item_id, item_type, note, reviewer)
+        # Cross-reference cascade (dmx-ref-01, best-effort): a version just moved
+        # to approved — raise findings on documents whose inbound references point
+        # at a section that changed. HITL-preserving (findings only, no edits) and
+        # non-blocking (an approval must never fail because a cascade could not run).
+        if item_type == "version":
+            try:
+                from tools.document_intelligence.cross_reference_tracker import (
+                    cascade_on_version_approval,
+                )
+
+                casc = cascade_on_version_approval(item_id)
+                resp["cross_reference_cascade"] = {
+                    "cascaded": casc.get("cascaded", 0),
+                    "inbound": casc.get("inbound", 0),
+                }
+            except Exception as exc:
+                logger.warning("dic approve: cross-reference cascade error: %s", exc)
         return jsonify(resp)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
