@@ -199,6 +199,40 @@ def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT):
         return None, str(e)
 
 
+_INJECTION_BLOCKED_BODY = "[content dropped: prompt-injection scan reported a critical finding]"
+
+
+def _clean_feed_text(raw, source=""):
+    """Strip markup from a feed field and injection-scan what is left.
+
+    Feed text reaches signal triage, dossier synthesis and the research LLM
+    prompts verbatim, so it is model-facing content from an untrusted origin.
+    Tag-stripping uses the shared ``page_extract`` parser rather than a regex, and
+    a critical finding replaces the field instead of propagating it.
+
+    Returns the cleaned string, or ``_INJECTION_BLOCKED_BODY`` when dropped.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    try:
+        from tools.http.page_extract import to_text
+
+        # Only pay for parsing when the field actually carries markup.
+        if "<" in text or "&" in text:
+            text = to_text(text) or text
+    except Exception:  # noqa: BLE001 - a parser problem must not drop the signal
+        pass
+
+    try:
+        from tools.http.fetch_extract import scan_or_drop
+
+        cleaned, _findings, blocked = scan_or_drop(text, source=source)
+        return _INJECTION_BLOCKED_BODY if blocked else cleaned
+    except Exception:  # noqa: BLE001 - scanner unavailable → fail closed on this field
+        return _INJECTION_BLOCKED_BODY
+
+
 def _error_signal(source, error_msg):
     """Create an error signal dict for tracking scan failures.
 
@@ -1407,8 +1441,17 @@ def scan_news_blogs(config, session_config=None):
             if desc_el is None:
                 desc_el = item.find("atom:summary", ARXIV_NS)
 
-            title = (title_el.text or "").strip() if title_el is not None else ""
-            description = (desc_el.text or "").strip() if desc_el is not None else ""
+            title = _clean_feed_text(
+                (title_el.text or "") if title_el is not None else "", source=feed_url
+            )
+            # RSS <description> is HTML-bearing by spec (escaped markup or CDATA).
+            # Stored raw it carried tags, entities and any instructions hidden in
+            # them straight into the signal body that downstream triage feeds to a
+            # model. Strip with the shared parser, then scan.
+            description = _clean_feed_text(
+                (desc_el.text or "") if desc_el is not None else "",
+                source=feed_url,
+            )
             link = ""
             if link_el is not None:
                 link = (link_el.text or "").strip()

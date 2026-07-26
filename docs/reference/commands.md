@@ -190,6 +190,23 @@ cat page.html | python tools/http/page_extract.py --query "rate limits"
 # stemming, section propagation, markdown rendering): args/page_extract.yaml
 ```
 
+## Untrusted URL Fetch → Extract → Scan (oss-filter-02)
+```bash
+# One hardened path: central HTTP client (mTLS/proxy/retry) → two-pass page_extract
+# → prompt-injection scan. Use this instead of adding a urllib/requests call site.
+python tools/http/fetch_extract.py --url https://example.gov/spec
+python tools/http/fetch_extract.py --url https://example.gov/spec --query "key rotation"
+python tools/http/fetch_extract.py --url https://example.gov/spec --json
+
+# In Python — never raises; a hostile or dead URL comes back as data:
+# from tools.http.fetch_extract import fetch_page
+# page = fetch_page(url, query="key rotation")
+# page.text      # fit_markdown, already injection-scanned
+# page.blocked   # True when a critical finding dropped the content
+
+# Read cap, User-Agent, block_on_critical_injection: `fetch:` in args/http_client.yaml
+```
+
 ## Security Commands
 ```bash
 python tools/security/sast_runner.py --project-dir "/path"
