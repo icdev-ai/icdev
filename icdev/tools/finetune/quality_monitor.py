@@ -168,7 +168,7 @@ def _record_snapshot(
     conn.execute(
         """INSERT INTO ft_quality_snapshots
            (id, snapshot_type, metric_name, metric_value, baseline_value, below_threshold, created_at)
-           VALUES (?, 'rag_eval', ?, ?, ?, ?, ?)""",
+           VALUES (%s, 'rag_eval', %s, %s, %s, %s, %s)""",
         (_gen_id(), metric_name, metric_value, baseline, 1 if below else 0, now_iso()),
     )
     conn.commit()
@@ -181,7 +181,7 @@ def _count_consecutive_failures(
     """Count consecutive recent snapshots that are below threshold."""
     rows = conn.execute(
         """SELECT below_threshold FROM ft_quality_snapshots
-           WHERE metric_name = ? AND snapshot_type = 'rag_eval'
+           WHERE metric_name = %s AND snapshot_type = 'rag_eval'
            ORDER BY created_at DESC LIMIT 10""",
         (metric_name,),
     ).fetchall()
