@@ -8,15 +8,33 @@ which is **not wired to anything** also measures as zero, and a report that
 cannot tell those apart launders dead code into an evidence-backed "DROP — no
 measurable benefit".
 
-Three of the five toggles named in the task are in exactly that state: the
-modules behind ``reflective_rerank``, ``adaptive_routing`` and ``auto_indexer``
-are imported by nothing outside their own tests. So this harness refuses to
-report a delta for a toggle it cannot first prove is reachable.
+So this harness refuses to report a delta for a toggle it cannot first prove is
+reachable — and it says *why*, because "unmeasurable" collapses three states that
+call for three different actions:
+
+============================  =========================================
+``WIRED``                     measurable; benchmark it
+``WIRED-INGEST-ONLY``         changes what is indexed, not how a query is
+                              served — a retrieval sweep cannot score it
+``NOT-WIRED``                 downstream of the retriever and genuinely
+                              uncalled → wire it or delete it
+``WRAPPER-UNADOPTED``         wraps ``RAGRetriever``, so it can never appear
+                              in the retriever's closure. Needs a *caller* to
+                              adopt it — a product decision about which
+                              surface gets the behaviour, not a wiring fix
+``CLI-UNSCHEDULED``           a standalone CLI, never imported by design.
+                              Absence from the retrieval path is correct;
+                              the question is whether anything *schedules* it
+============================  =========================================
+
+The distinction matters: reporting ``NOT-WIRED`` for a documented CLI reads as
+"dead code, delete it", which is the opposite of true.
 
 Two independent things happen per toggle:
 
-1. :func:`probe_reachability` — static import-closure walk from the retrieval
-   entry point. Answers "could flipping this possibly change retrieval?"
+1. :func:`probe_reachability` — answers "could flipping this possibly change
+   retrieval?" by walking the import closure from the retrieval entry point for
+   downstream consumers, and by scanning repo-wide importers for wrappers.
 2. :func:`isolated_config` — writes a temp ``rag_config.yaml`` with exactly one
    toggle changed and points ``ICDEV_RAG_CONFIG`` at it, so a run attributes its
    delta to that toggle and nothing else.
@@ -40,6 +58,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import functools
 import copy
 import json
 import os
@@ -79,6 +98,18 @@ class Toggle:
     consumer: str
     note: str
     retrieval_side: bool = True
+    #: How the consumer relates to the retrieval path. The probe's closure walk
+    #: only answers the question correctly for ``downstream`` modules.
+    #:
+    #:   downstream  called BY retriever.search() — "is it in the closure?" is
+    #:               the right question, and a miss means genuinely unwired.
+    #:   wrapper     wraps RAGRetriever and is called by something upstream. It
+    #:               will NEVER be in the retriever's closure (the dependency
+    #:               runs the other way), so a miss there says nothing. What
+    #:               matters is whether anything imports it at all.
+    #:   standalone  a CLI invoked as a process, never imported. Absence from
+    #:               the closure is correct by design, not a defect.
+    shape: str = "downstream"
 
 
 #: The five toggles oss-meas-01 names, plus raptor for contrast (already
@@ -103,7 +134,10 @@ TOGGLES: Dict[str, Toggle] = {
             "adaptive_routing",
             "rag.adaptive_routing.enabled",
             "tools.rag.adaptive_router",
-            "Query-complexity pre-routing to a cheaper or richer retrieval path (agx-rag-01).",
+            "Query-complexity pre-routing to a cheaper or richer retrieval path (agx-rag-01). "
+            "AdaptiveRetriever WRAPS RAGRetriever, so a caller must adopt it — it cannot be "
+            "wired from inside the retriever without a cycle.",
+            shape="wrapper",
         ),
         Toggle(
             "binary_prefilter",
@@ -115,8 +149,10 @@ TOGGLES: Dict[str, Toggle] = {
             "auto_indexer",
             "rag.auto_indexer.enabled",
             "tools.rag.auto_indexer",
-            "Filesystem watcher that indexes changed files automatically.",
+            "Filesystem watcher that indexes changed files automatically. Standalone CLI "
+            "(argparse/main/__main__) with a manifest row — never imported by design.",
             retrieval_side=False,
+            shape="standalone",
         ),
         Toggle(
             "raptor",
@@ -141,12 +177,23 @@ class Reachability:
     reason: str
     importers: List[str] = field(default_factory=list)
     retrieval_side: bool = True
+    shape: str = "downstream"
 
     @property
     def verdict(self) -> str:
-        if not self.reachable:
-            return "NOT-WIRED"
-        return "WIRED" if self.retrieval_side else "WIRED-INGEST-ONLY"
+        """Why a toggle is or is not measurable — not merely whether.
+
+        Three different states used to collapse into one NOT-WIRED, and they
+        call for three different actions: delete it, give it a caller, or
+        schedule it.
+        """
+        if self.reachable:
+            return "WIRED" if self.retrieval_side else "WIRED-INGEST-ONLY"
+        if self.shape == "standalone":
+            return "CLI-UNSCHEDULED"
+        if self.shape == "wrapper":
+            return "WRAPPER-UNADOPTED"
+        return "NOT-WIRED"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -157,6 +204,7 @@ class Reachability:
             "reason": self.reason,
             "importers": self.importers,
             "retrieval_side": self.retrieval_side,
+            "shape": self.shape,
         }
 
 
@@ -203,6 +251,25 @@ def _imports_of(path: Path) -> Set[str]:
     return found
 
 
+@functools.lru_cache(maxsize=None)
+def _repo_importers(module: str) -> frozenset:
+    """Every module under ``tools/`` that imports *module*, excluding itself.
+
+    Used for wrapper-shaped consumers, where the closure walk asks the wrong
+    question. Skips ``tests/`` (a test import is not adoption) and the mirrored
+    ``icdev/`` tree (a copy importing a copy proves nothing).
+    """
+    found: Set[str] = set()
+    target_path = _module_to_path(module)
+    for path in (BASE_DIR / "tools").rglob("*.py"):
+        if target_path and path.resolve() == target_path.resolve():
+            continue
+        if module in _imports_of(path):
+            rel = path.relative_to(BASE_DIR).with_suffix("")
+            found.add(".".join(rel.parts))
+    return frozenset(found)
+
+
 def import_closure(entry: str = ENTRY_MODULE, max_depth: int = 6) -> Dict[str, List[str]]:
     """Transitive ``tools.*`` import closure from *entry*.
 
@@ -240,6 +307,46 @@ def probe_reachability(
     useless — and only one of those means "delete the config key".
     """
     toggle = TOGGLES[name]
+
+    # A standalone CLI is invoked as a process, never imported. Walking the
+    # retriever's closure for it answers a question nobody asked, and reporting
+    # NOT-WIRED reads as "delete this" when the module is a documented tool.
+    if toggle.shape == "standalone":
+        return Reachability(
+            toggle=name,
+            reachable=False,
+            consumer=toggle.consumer,
+            reason=(
+                f"{toggle.consumer} is a standalone CLI, not an imported module — "
+                "absence from the retrieval path is correct by design, not a defect. "
+                "A retrieval benchmark cannot score it, and NOT-WIRED here must not "
+                "be read as 'dead code'. Check whether anything SCHEDULES it."
+            ),
+            retrieval_side=toggle.retrieval_side,
+            shape=toggle.shape,
+        )
+
+    # A wrapper sits ABOVE RAGRetriever, so the dependency runs the other way and
+    # it can never appear in the retriever's closure. The real question is
+    # whether any caller has adopted it.
+    if toggle.shape == "wrapper":
+        callers = sorted(_repo_importers(toggle.consumer))
+        return Reachability(
+            toggle=name,
+            reachable=bool(callers),
+            consumer=toggle.consumer,
+            reason=(
+                f"imported by {', '.join(callers)}" if callers else
+                f"{toggle.consumer} wraps the retriever and NOTHING imports it. "
+                "It cannot be wired from inside retriever.search() without a cycle — "
+                "a caller has to adopt it, which is a product decision about which "
+                "surface gets the behaviour, not a mechanical fix."
+            ),
+            importers=callers,
+            retrieval_side=toggle.retrieval_side,
+            shape=toggle.shape,
+        )
+
     closure = closure if closure is not None else import_closure()
     importers = sorted(set(closure.get(toggle.consumer, [])))
 
@@ -255,6 +362,7 @@ def probe_reachability(
                 "'no benefit'."
             ),
             retrieval_side=toggle.retrieval_side,
+            shape=toggle.shape,
         )
 
     if not toggle.retrieval_side:
@@ -268,6 +376,7 @@ def probe_reachability(
             ),
             importers=importers,
             retrieval_side=False,
+            shape=toggle.shape,
         )
 
     return Reachability(

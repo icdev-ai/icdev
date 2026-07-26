@@ -371,14 +371,23 @@ def run_toggle_sweep(
         })
 
     measured = [a for a in arms if a["benchmarked"]]
+
+    def _with(verdict: str) -> List[str]:
+        return [a["toggle"] for a in arms if a["verdict"] == verdict]
+
     return {
         "control": {"aggregate": control_agg, "queries_scored": control.get("queries_scored")},
         "arms": arms,
         "summary": {
             "toggles_considered": len(names),
             "benchmarked": len(measured),
-            "not_wired": [a["toggle"] for a in arms if a["verdict"] == "NOT-WIRED"],
-            "ingest_only": [a["toggle"] for a in arms if a["verdict"] == "WIRED-INGEST-ONLY"],
+            # Bucketed by WHY, because each state needs a different fix:
+            # delete the key, give it a caller, or schedule the CLI.
+            "not_wired": _with("NOT-WIRED"),
+            "wrapper_unadopted": _with("WRAPPER-UNADOPTED"),
+            "cli_unscheduled": _with("CLI-UNSCHEDULED"),
+            "ingest_only": _with("WIRED-INGEST-ONLY"),
+            "unmeasurable": [a["toggle"] for a in arms if not a["benchmarked"]],
         },
     }
 

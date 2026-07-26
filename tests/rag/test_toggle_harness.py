@@ -60,26 +60,30 @@ def test_probe_reports_wired_and_not_wired():
     assert results["rerank"].verdict == "WIRED"
 
 
-@pytest.mark.parametrize("name", ["reflective_rerank", "adaptive_routing"])
-def test_unwired_toggles_are_reported_not_wired(name):
-    """Documents the state of the tree, and fails loudly when it changes.
+def test_no_downstream_toggle_is_left_unwired():
+    """Every ``downstream`` consumer must actually be called by the retriever.
 
-    If someone wires one of these into the retrieval path, this test breaks —
-    which is the correct signal to go re-run the benchmark and give it a real
-    KEEP/DROP decision instead of a NOT-WIRED note.
+    This is the live wire-or-delete gate. A NOT-WIRED verdict here means a config
+    toggle is advertising a capability that does nothing — either give it a
+    caller or delete the key. It is deliberately not parametrised over a frozen
+    list, so a NEW downstream toggle that ships unwired fails on arrival.
     """
-    probe = th.probe_reachability(name)
-    assert probe.reachable is False
-    assert probe.verdict == "NOT-WIRED"
-    assert probe.importers == []
-    assert "not connected" in probe.reason
+    orphans = [
+        r.toggle for r in th.probe_all()
+        if r.shape == "downstream" and not r.reachable
+    ]
+    assert not orphans, (
+        f"downstream toggles with no caller: {orphans}. "
+        "Wire them into retriever.search() or remove the config key — do not "
+        "leave a toggle that reads as a live capability and does nothing."
+    )
 
 
-def test_ingest_side_toggle_is_wired_but_unmeasurable():
+def test_ingest_side_toggle_is_not_scored_by_a_retrieval_sweep():
     """auto_indexer changes what is indexed, not how a query is served."""
     probe = th.probe_reachability("auto_indexer")
     assert probe.retrieval_side is False
-    assert probe.verdict in ("NOT-WIRED", "WIRED-INGEST-ONLY")
+    assert probe.verdict == "CLI-UNSCHEDULED"
 
 
 def test_closure_follows_deferred_imports():
@@ -245,7 +249,7 @@ def test_verify_isolation_proves_the_override_reaches_the_loader(name):
 # ── Benchmark refusal path ────────────────────────────────────────────────────
 
 
-def test_sweep_refuses_to_benchmark_unwired_toggles(monkeypatch):
+def test_sweep_refuses_to_benchmark_unmeasurable_toggles(monkeypatch):
     """The whole point: no number is emitted for dead code."""
     from tools.rag import rag_benchmark
 
@@ -257,15 +261,55 @@ def test_sweep_refuses_to_benchmark_unwired_toggles(monkeypatch):
             return {"aggregate": {"recall_at_k": 0.5, "mrr": 0.4}, "queries_scored": 3}
 
     monkeypatch.setattr(rag_benchmark, "RAGBenchmark", _StubBench)
-    sweep = rag_benchmark.run_toggle_sweep(only=["rerank", "reflective_rerank", "auto_indexer"])
+    sweep = rag_benchmark.run_toggle_sweep(
+        only=["rerank", "adaptive_routing", "auto_indexer"]
+    )
 
     by_name = {a["toggle"]: a for a in sweep["arms"]}
     assert by_name["rerank"]["benchmarked"] is True
     assert "deltas" in by_name["rerank"]
 
-    for dead in ("reflective_rerank", "auto_indexer"):
-        assert by_name[dead]["benchmarked"] is False
-        assert "deltas" not in by_name[dead], "an unwired toggle must not carry a delta"
-        assert "wire it or delete" in by_name[dead]["recommendation"]
+    for unmeasurable in ("adaptive_routing", "auto_indexer"):
+        arm = by_name[unmeasurable]
+        assert arm["benchmarked"] is False
+        assert "deltas" not in arm, "an unmeasurable toggle must not carry a delta"
 
-    assert "reflective_rerank" in sweep["summary"]["not_wired"]
+    # bucketed by WHY — each state needs a different fix
+    assert sweep["summary"]["wrapper_unadopted"] == ["adaptive_routing"]
+    assert sweep["summary"]["cli_unscheduled"] == ["auto_indexer"]
+    assert set(sweep["summary"]["unmeasurable"]) == {"adaptive_routing", "auto_indexer"}
+
+
+# ── Toggle shape (oss-meas-01, wire-or-delete pass) ──────────────────────────
+
+
+def test_wrapper_and_cli_get_their_own_verdicts():
+    """"Unmeasurable" collapsed three states that need three different actions."""
+    results = {r.toggle: r for r in th.probe_all()}
+    assert results["adaptive_routing"].verdict == "WRAPPER-UNADOPTED"
+    assert results["auto_indexer"].verdict == "CLI-UNSCHEDULED"
+
+
+def test_cli_verdict_does_not_read_as_dead_code():
+    """auto_indexer has a real CLI and a manifest row; NOT-WIRED would mislead."""
+    probe = th.probe_reachability("auto_indexer")
+    assert "by design" in probe.reason
+    assert "SCHEDULES" in probe.reason
+    assert probe.verdict != "NOT-WIRED"
+
+
+def test_wrapper_reason_names_the_actual_blocker():
+    probe = th.probe_reachability("adaptive_routing")
+    assert "wraps the retriever" in probe.reason
+    assert "cycle" in probe.reason
+
+
+def test_reflective_rerank_is_now_wired():
+    """Regression guard for the wiring added by this change.
+
+    If someone removes the step-5b branch from retriever.search(), this fails —
+    which is the signal that the config toggle has gone back to lying.
+    """
+    probe = th.probe_reachability("reflective_rerank")
+    assert probe.reachable is True, "reflective_rerank lost its caller"
+    assert "tools.rag.retriever" in probe.importers
