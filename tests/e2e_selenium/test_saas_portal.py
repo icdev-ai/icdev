@@ -9,7 +9,7 @@ Ported from .claude/commands/e2e/saas_portal.md.
 Prerequisites:
   - SaaS API gateway running with portal blueprint registered
   - Platform database initialized with at least one tenant and user
-  - Portal accessible at http://localhost:5000/portal or http://localhost:8443/portal
+  - Portal accessible at http://localhost:5050/portal or http://localhost:8443/portal
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from tools.browser.driver_manager import get_driver  # noqa: E402
 from tests.e2e_selenium.pages.base import BasePage  # noqa: E402
 
-BASE_URL = os.environ.get("ICDEV_PORTAL_URL", "http://localhost:5000")
+BASE_URL = os.environ.get("ICDEV_PORTAL_URL", "http://localhost:5050")
 CUI_BANNER = "CUI // SP-CTI"
 
 PORTAL_PAGES = [

@@ -7,7 +7,7 @@ Provides a web interface for monitoring projects, agents, compliance,
 and system health within the ICDEV™ framework.
 
 Usage:
-    python tools/dashboard/app.py [--port 5000] [--debug]
+    python tools/dashboard/app.py [--port 5050] [--debug]
 """
 
 import argparse
@@ -9938,7 +9938,7 @@ app = create_app()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ICDEV™ Dashboard")
-    parser.add_argument("--port", type=int, default=PORT, help="Port to run on (default: 5000)")
+    parser.add_argument("--port", type=int, default=PORT, help="Port to run on (default: 5050)")
     parser.add_argument("--debug", action="store_true", default=DEBUG, help="Enable debug mode")
     args = parser.parse_args()
 
