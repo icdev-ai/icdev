@@ -2077,12 +2077,24 @@ def api_chat():
         """Attach memory fields to a response payload and best-effort record the turn."""
         payload["memory"] = mem_on
         payload["resolved_subject"] = resolved_subject
+        # Report WHY memory is off. record_turn swallows write failures, so
+        # without this a broken table is indistinguishable from an idle one —
+        # which is how dic_chat_memory sat at 0 rows unnoticed.
+        if mem_on and session_id:
+            try:
+                payload["memory_health"] = _cm.memory_health()
+            except Exception:  # noqa: BLE001
+                payload["memory_health"] = {"available": False, "reason": "probe_failed"}
+        elif mem_on and not session_id:
+            payload["memory_health"] = {"available": False, "reason": "no_session_id"}
+        else:
+            payload["memory_health"] = {"available": False, "reason": "disabled"}
         if mem_on and session_id and record_results:
             try:
                 _cm.record_turn(session_id, message, answer, record_results,
                                 tenant_id=tenant_id, collection_id=collection_id or "")
             except Exception as _rexc:  # noqa: BLE001
-                logger.debug("dic chat memory record failed: %s", _rexc)
+                logger.warning("dic chat memory record failed: %s", _rexc)
         return payload
 
     try:
