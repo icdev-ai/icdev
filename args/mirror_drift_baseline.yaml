@@ -28,13 +28,12 @@ content_drift:
   ci: 1
   cli: 1
   dashboard: 4
-  data_canvas: 13
   db: 1
   document_intelligence: 2
-  finetune: 1
   foundry: 1
   genesis: 3
   llm: 1
+  memory: 1
   network: 3
   rag: 1
   showcase: 1
