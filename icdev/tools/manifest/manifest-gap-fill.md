@@ -54,9 +54,9 @@ Registers tools flagged by the gap detector's `tool_not_in_manifest` rule (8-poi
 | Data Mesh CSP Sync | tools/data_canvas/csp.py | Data Mesh — Cloud Service Provider sync (AWS DataZone, Azure Purview, GCP Dataplex). | `--sync`, `--provider`, `--json` | Sync status |
 | Data Mesh Governance Engine | tools/data_canvas/governance_engine.py | Data Mesh — governance engine: policy management, OPA-style access control, scoring. | `--json` | Governance report |
 | GameDay League DB | tools/gameday/db.py | AI GameDay League — database helpers for the `gd_ai_*` tables. | (library) | DB rows |
-| GameDay Adversarial Pack | tools/gameday/pack.py | AI GameDay League — Cyber Adversarial scenario/content pack. | (library) | Pack data |
 | Genesis Launch | tools/genesis/launch.py | Cross-platform ICDEV services entry point — launches dashboard/daemon/scheduler subprocesses. | `--<service>` | Launch status |
 | CPMP DB Init | tools/govcon/init_db.py | GovCon/CPMP — initialize CPMP DB tables (idempotent, startup-safe). | (library) | Schema init |
 | Risk Manager | tools/govcon/risk_manager.py | GovCon/CPMP — risk manager: CRUD for `cpmp_risks`. | `--json` | Risk records |
 | CloudForge Event Emitter | tools/cloudforge/event_emitter.py | CloudForge Canvas — emits `canvas_events` for DIC integration on resource provisioning and runbook execution. Injection points: `emit_resource_provisioned()` after cloud resource creation (VPC/VM/bucket/IAM), `emit_runbook_executed()` after runbook completion. Canvas not yet built; module provides the integration API so DIC wiring is ready when the canvas ships. | (library) emit_resource_provisioned(resource_id, resource_type, ...) / emit_runbook_executed(runbook_id, runbook_name, status, ...) | bool (emitted successfully) |
+| GameDay Adversarial Pack | tools/gameday/pack.py | AI GameDay League — Cyber Adversarial scenario/content pack. | (library) | Pack data |
 

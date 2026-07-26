@@ -63,4 +63,5 @@
 | Quality Reflex | tools/genesis/reflexes/quality.py | Self-Learning QA/QC: QDC gates, trend tracking, auto-fix lint/deprecation, GKP improvement proposals | config dict | Quality report |
 | Synthesize Reflex | tools/genesis/reflexes/synthesize.py | Auto-generate FORGE goal drafts from telemetry patterns; stages as GKP for human review. YELLOW, confidence 0.55 (D-SYN-1) | config dict | GKP goal drafts |
 | Cost Optimizer Reflex | tools/genesis/reflexes/cost_optimizer.py | Weekly LLM token spend audit; Haiku-eligible task detection; bloated prompt flagging. Hard rule: never flags Risk or Execution agents. GREEN tier, weekly cadence (168h) | config dict | recommendations_generated count |
+| daemon | `tools/genesis/daemon.py` | Always-on daemon: 14 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase |
 

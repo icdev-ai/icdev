@@ -27,4 +27,6 @@
 | RAG Re-rank Prompt | hardprompts/rag_rerank.md | Re-ranking prompt template for qwen3 scanner_function | (hardprompt) | Prompt template |
 | Source Mappings | context/rag/source_mappings.json | Declarative source type → table/column mappings (D26 pattern) | (data) | JSON mappings |
 | Knowledge Search Page | tools/dashboard/templates/rag/knowledge_search.html | Dashboard page: stat grid, NLQ search, results with scores, source distribution chart, recent searches | (template) | HTML |
+| Adaptive Chunker | tools/rag/chunker.py | Adaptive chunking: <500 tok whole, >2000 tok sliding window with 10% overlap at sentence boundaries (D-RAG-4) | text, source_type | List[VectorChunk] |
+| Source Registry | tools/rag/source_registry.py | Declarative SOURCE_REGISTRY mapping 20+ source types to tables, columns, priority, chunk strategy | (import) | Registry dict |
 
