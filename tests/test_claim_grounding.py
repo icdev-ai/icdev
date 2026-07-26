@@ -276,3 +276,43 @@ def test_claim_gate_can_be_disabled():
     report = ground_claims(
         "Personnel must evacuate within thirty minutes [source: chunk c1].", SOURCES)
     assert claim_gate(report, require_supported=False) == []
+
+
+# --------------------------------------------------------------------------- #
+# Citation markers are pointers, not claim content
+# --------------------------------------------------------------------------- #
+#
+# Both bugs below were invisible until the primitive was WIRED (#864 shipped it
+# with tests and no call sites). A primitive nobody calls cannot show you that
+# it mis-reads real input.
+
+
+def test_citation_tag_is_not_extracted_as_an_anchor():
+    """`[SOURCE-1]` matched the acronym pattern.
+
+    The tag then became a required anchor, was obviously absent from the source
+    prose, and marked EVERY correctly-cited claim unsupported.
+    """
+    from tools.quality.citation_grounding import strip_citations
+
+    assert "SOURCE-1" not in extract_anchors("Retention is seven years [SOURCE-1].")
+    assert "seven" in extract_anchors("Retention is seven years [SOURCE-1].")
+    assert strip_citations("Retention is seven years [SOURCE-1].") == "Retention is seven years."
+
+
+@pytest.mark.parametrize("tag", ["[SOURCE-1]", "[source: chunk c1]", "[source: c1]"])
+def test_span_binding_ignores_the_citation_tag(tag):
+    """The tag drags F1 down: source prose never contains the marker."""
+    with_tag = f"The contractor shall retain all records for seven years {tag}."
+    without = "The contractor shall retain all records for seven years."
+    a = bind_claim_span(with_tag.replace(tag, "").replace("  ", " "), RETENTION)
+    b = bind_claim_span(without, RETENTION)
+    assert a["score"] == pytest.approx(b["score"], abs=0.01)
+
+
+def test_correctly_cited_claim_is_supported_end_to_end():
+    """Regression pin for the pair. Before the fix this scored `unsupported`."""
+    v = _one("The contractor shall retain all records for seven years [SOURCE-1].",
+             {"1": RETENTION})
+    assert v["verdict"] == "supported", v
+    assert v["missing_anchors"] == []

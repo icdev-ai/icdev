@@ -401,12 +401,35 @@ def decompose_claims(text: str) -> list[tuple[str, int, int]]:
     return out
 
 
+def strip_citations(text: str) -> str:
+    """Remove citation tags so they are not mistaken for claim content.
+
+    Without this the tag itself becomes an anchor — ``[SOURCE-1]`` matches the
+    acronym pattern, is obviously absent from the source prose, and marks every
+    cited claim unsupported. It also pollutes the span-binding token set, since
+    the source text never contains the marker the model wrote.
+
+    A citation is a pointer, not an assertion; nothing inside one is a claim.
+    """
+    if not text:
+        return ""
+    out = _SOURCE_RE.sub(" ", text)
+    out = _SOURCE_N_RE.sub(" ", out)
+    out = re.sub(r"\s{2,}", " ", out)
+    # Removing a trailing tag leaves "years ." — close the gap so the stripped
+    # claim reads as prose if a caller ever shows it to a user.
+    out = re.sub(r"\s+([.,;:!?])", r"\1", out)
+    return out.strip()
+
+
 def extract_anchors(claim: str) -> list[str]:
     """Concrete particles that must appear in the source: numbers, dates, names.
 
     Order-preserving and de-duplicated. Sub-matches are dropped, so the ``7``
-    inside ``$7,500`` is not counted separately.
+    inside ``$7,500`` is not counted separately. Citation tags are stripped
+    first — a marker is a pointer, not a factual particle.
     """
+    claim = strip_citations(claim)
     if not claim:
         return []
     found: list[tuple[int, int, str]] = []
@@ -536,10 +559,14 @@ def verify_claim(claim: str, sources: dict, *, cited_ids=None, judge=None) -> di
         return {**base, "verdict": "uncited"}
 
     anchors = extract_anchors(claim)
+    # Bind on the claim WITHOUT its citation tags: the source prose never
+    # contains the marker, so leaving it in drags F1 down and can push a
+    # correctly-cited claim below the support band.
+    claim_text = strip_citations(claim) or claim
     best_span = None
     for sid in cited:
         text = sources.get(sid) or sources.get(str(sid)) or ""
-        span = bind_claim_span(claim, text, str(sid))
+        span = bind_claim_span(claim_text, text, str(sid))
         if span and (best_span is None or span["score"] > best_span["score"]):
             best_span = span
 
