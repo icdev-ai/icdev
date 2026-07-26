@@ -1,0 +1,74 @@
+# CUI // SP-CTI
+# Browser agent scope controls (oss-browse-02).
+#
+# These are the guardrails for `tools/browser/scope.py` — the mandatory seam
+# between an LLM-driven agent and a live WebDriver session. Everything here is
+# DEFAULT-DENY: with this file absent or empty, the agent may reach loopback
+# only, may spend 50 actions, and every action is audited.
+#
+# Loaded by tools.browser.scope.load_scope_config(). Override the file path
+# with ICDEV_BROWSER_SCOPE_CONFIG.
+
+classification: "CUI // SP-CTI"
+
+browser_scope:
+  # ── Where the agent may go ────────────────────────────────────────────────
+  # Exact host or parent-domain suffix match ("example.com" covers
+  # "app.example.com"). An empty list denies every navigation.
+  allowed_domains:
+    - localhost
+    - 127.0.0.1
+    - "::1"
+
+  # Denylist beats allowlist, always.
+  denied_domains: []
+
+  # Only these URL schemes are navigable. Keeping javascript:, data:, file:
+  # and about: off this list is what stops an agent from using navigate() as a
+  # script-injection or local-file-read primitive.
+  allowed_schemes:
+    - http
+    - https
+
+  # A routable (non-loopback) host stays refused until this is true AND the
+  # host is listed in allowed_domains AND egress_guard clears it. Three
+  # independent switches, all required.
+  allow_non_local: false
+
+  # Non-local hosts must clear egress_guard (https-only, DNS resolve-then-check
+  # against private/loopback/link-local ranges). Turning this off is a
+  # deliberate downgrade and should be justified in the change that does it.
+  require_egress_guard: true
+
+  # ── How much the agent may do ─────────────────────────────────────────────
+  limits:
+    max_actions_per_run: 50        # hard cap on actions in one session
+    max_failures: 3                # consecutive-or-not failures before abort
+    step_timeout_seconds: 15.0     # wall-clock budget for one action
+    page_load_timeout_seconds: 30.0
+    script_timeout_seconds: 15.0
+
+  # ── Audit ─────────────────────────────────────────────────────────────────
+  audit:
+    enabled: true
+    actor: browser_agent
+    # Left empty on purpose: audit_trail.project_id is a FK to projects(id),
+    # so a synthetic value makes the insert fail and the row disappear.
+    project_id: ""
+
+  # ── Credentials ───────────────────────────────────────────────────────────
+  # Placeholder name -> NAME OF THE ENVIRONMENT VARIABLE holding the secret.
+  # Secret VALUES never appear in this file, in the prompt, or in the audit
+  # row. The agent writes "<secret>dashboard_password</secret>"; the resolver
+  # swaps in the real value at the driver and the transcript keeps the
+  # placeholder.
+  sensitive_data:
+    # Authorization for any substitution is requested from
+    # tools/security/credential_broker.py — no new secret path is introduced.
+    broker_agent_id: browser_agent
+    broker_function: browser_credential
+    # Fail closed when the broker denies the request.
+    require_broker_authorization: true
+    placeholders: {}
+      # dashboard_password: ICDEV_DASHBOARD_PASSWORD
+      # dashboard_user: ICDEV_DASHBOARD_USER
