@@ -321,29 +321,110 @@ def load_base_config() -> dict:
         return yaml.safe_load(fh) or {}
 
 
+def build_isolated_cfg(
+    name: Optional[str], value: Any = True, base: Optional[dict] = None
+) -> dict:
+    """Config with *every* toggle written explicitly and only *name* enabled.
+
+    Writing all of them — not just the one under test — is what makes a run
+    reproducible. Inheriting the others from whatever the file happens to say
+    means a default flipped between two arms silently becomes part of the
+    measured delta, and nothing in the output would show it. ``name=None``
+    builds the all-off control.
+
+    Adopted from PR #820, which got this right where the first cut of this
+    module did not.
+    """
+    cfg = copy.deepcopy(base if base is not None else load_base_config())
+    for toggle_name, spec in TOGGLES.items():
+        _set_path(cfg, spec.path, value if toggle_name == name else False)
+    return cfg
+
+
+#: Loaders to patch in-process, as ``(module suffix, attribute, factory)``.
+#: These are the resolution points the retrieval path actually calls; patching
+#: the function rather than the file also covers modules that have not adopted
+#: ``config_path.rag_config_path()``.
+_PATCH_TARGETS = (
+    ("rag.retriever", "_load_rag_config", "full"),
+    ("rag.vector_store_factory", "_load_rag_config", "full"),
+    ("rag.sqlite_vector_store", "_load_quantization_config", "quantization"),
+)
+
+
+@contextlib.contextmanager
+def _patched_loaders(cfg: dict) -> Iterator[None]:
+    """Point already-imported retrieval loaders at *cfg* for the duration.
+
+    Belt to the env var's braces. ``ICDEV_RAG_CONFIG`` only reaches modules that
+    call :func:`rag_config_path`, and 13 modules under ``tools/rag/`` resolve the
+    path themselves. For an in-process run the loader patch closes that gap.
+
+    Both ``tools.*`` and ``icdev.tools.*`` module objects are patched when
+    already imported: under the compat shim they are **distinct module objects**,
+    and patching one leaves the other serving on-disk defaults. Adopted from
+    PR #820.
+    """
+    quant = (cfg.get("rag") or {}).get("quantization", {}) or {}
+    saved: List[Any] = []
+    try:
+        for suffix, attr, scope in _PATCH_TARGETS:
+            payload = quant if scope == "quantization" else cfg
+            for root in ("tools.", "icdev.tools."):
+                mod = sys.modules.get(root + suffix)
+                if mod is None or not hasattr(mod, attr):
+                    continue
+                saved.append((mod, attr, getattr(mod, attr)))
+                # default arg binds payload per-iteration
+                setattr(mod, attr, lambda *a, _p=payload, **k: copy.deepcopy(_p))
+        yield
+    finally:
+        for mod, attr, original in reversed(saved):
+            setattr(mod, attr, original)
+
+
+def import_retrieval_modules() -> None:
+    """Import the retrieval modules so their loaders exist to be patched.
+
+    Best-effort: a module that cannot import (missing optional backend) is
+    simply not patched, and the run degrades to the zeroed-baseline path rather
+    than aborting the sweep.
+    """
+    import importlib
+
+    for suffix, _attr, _scope in _PATCH_TARGETS:
+        with contextlib.suppress(Exception):
+            importlib.import_module("tools." + suffix)
+
+
 @contextlib.contextmanager
 def isolated_config(
     name: Optional[str],
     value: Any = True,
     base: Optional[dict] = None,
 ) -> Iterator[Path]:
-    """Run a block against a config with exactly one toggle changed.
+    """Run a block with exactly one toggle on and every other one off.
 
-    Writes a temp ``rag_config.yaml`` and points ``ICDEV_RAG_CONFIG`` at it for
-    the duration. ``name=None`` yields the unmodified baseline, so the caller
-    can measure the control arm through the identical code path rather than
-    comparing a temp-config run against a committed-config run.
+    Three layers, because no single one covers every consumer:
 
-    The committed ``args/rag_config.yaml`` is never touched — this checkout is
-    shared with other sessions and the kanban scheduler.
+    1. Every toggle is written explicitly (:func:`build_isolated_cfg`), so an
+       arm cannot inherit ambient state from the committed file.
+    2. A temp ``rag_config.yaml`` + ``ICDEV_RAG_CONFIG`` — survives into
+       subprocesses and modules that adopted :func:`rag_config_path`.
+    3. In-process loader patches (:func:`_patched_loaders`) — covers the
+       modules that resolve the path themselves, on both sides of the
+       ``tools.``/``icdev.tools.`` shim.
+
+    ``name=None`` yields the all-off control, built and applied through the
+    identical path as every variant.
+
+    The committed ``args/rag_config.yaml`` is never written — this checkout is
+    shared with other agent sessions and the kanban scheduler.
 
     Yields:
         Path to the temp config in force.
     """
-    cfg = copy.deepcopy(base if base is not None else load_base_config())
-    if name is not None:
-        toggle = TOGGLES[name]
-        _set_path(cfg, toggle.path, value)
+    cfg = build_isolated_cfg(name, value, base)
 
     previous = os.environ.get(CONFIG_ENV_VAR)
     tmp_dir = tempfile.mkdtemp(prefix="icdev-rag-toggle-")
@@ -353,7 +434,9 @@ def isolated_config(
             yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
         )
         os.environ[CONFIG_ENV_VAR] = str(tmp_path)
-        yield tmp_path
+        import_retrieval_modules()
+        with _patched_loaders(cfg):
+            yield tmp_path
     finally:
         if previous is None:
             os.environ.pop(CONFIG_ENV_VAR, None)
@@ -380,12 +463,13 @@ def verify_isolation(name: str) -> Dict[str, Any]:
         seen_cfg = _load_rag_config()
     after = get_path(_load_rag_config(), toggle.path)
 
-    # every other toggle must be untouched
+    # every other toggle must be OFF (they are written explicitly now, so the
+    # check is "off", not "same as the committed file")
     bled: List[str] = []
     for other, spec in TOGGLES.items():
         if other == name:
             continue
-        if get_path(seen_cfg, spec.path) != get_path(base, spec.path):
+        if get_path(seen_cfg, spec.path) is not False:
             bled.append(other)
 
     return {
