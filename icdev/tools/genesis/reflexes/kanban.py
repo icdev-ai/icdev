@@ -5075,27 +5075,93 @@ def _extract_claimed_file_paths(text: str, max_paths: int = 50) -> list[str]:
     return list(seen.keys())
 
 
+def _fetch_origin_main_quiet() -> None:
+    """Best-effort single lightweight fetch of origin/main. Never raises.
+
+    Called at most once per _verify_claimed_files_exist invocation, and only
+    when at least one path is missing on disk — the hot path (everything found
+    locally) never touches the network.
+    """
+    import subprocess as _sp
+
+    try:
+        _sp.run(
+            ["git", "fetch", "origin", "main", "--quiet"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=15,
+        )
+    except Exception:
+        pass
+
+
+def _path_in_origin_main(rel: str) -> bool:
+    """True if *rel* exists in the ``origin/main`` git tree.
+
+    origin/main is the source of truth for merged work. A task whose branch
+    merged and whose worktree was removed leaves no on-disk trace when the
+    shared checkout is itself stale/behind origin/main — but the file is still
+    in the origin/main tree. Windows backslashes are normalised to forward
+    slashes for the git pathspec.
+    """
+    import subprocess as _sp
+
+    pathspec = str(rel).replace("\\", "/").strip()
+    if not pathspec:
+        return False
+    try:
+        r = _sp.run(
+            ["git", "cat-file", "-e", f"origin/main:{pathspec}"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=10,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 def _verify_claimed_files_exist(
     paths: list[str], work_dir: Path | str
 ) -> tuple[int, int, list[str]]:
-    """Check how many agent-claimed paths actually exist on disk.
+    """Check how many agent-claimed paths actually exist.
 
     Returns (existing_count, claimed_count, missing_paths[:5]).
     Paths are resolved relative to work_dir AND BASE_DIR — the agent
-    may have run in a worktree OR the main checkout.
+    may have run in a worktree OR the main checkout. A path not found on
+    disk is then checked against the ``origin/main`` git tree: merged work
+    whose worktree was removed leaves no on-disk trace when the shared
+    checkout is stale/behind origin/main, so origin/main (the source of
+    truth for merged work) is treated as existence. A single best-effort
+    ``git fetch origin main`` refreshes the ref, run ONLY when something is
+    missing on disk so the hot path stays network-free.
     """
     if not paths:
         return 0, 0, []
     work = Path(work_dir) if work_dir else BASE_DIR
     existing = 0
-    missing: list[str] = []
+    on_disk_missing: list[str] = []
     for rel in paths:
         # Try work_dir first (worktree), fall back to BASE_DIR
         candidates = [work / rel, BASE_DIR / rel]
         if any(c.exists() for c in candidates):
             existing += 1
         else:
+            on_disk_missing.append(rel)
+
+    if not on_disk_missing:
+        return existing, len(paths), []
+
+    # Something is missing on disk — refresh origin/main once, then treat
+    # presence in the origin/main tree as existence (merged, worktree gone).
+    _fetch_origin_main_quiet()
+    missing: list[str] = []
+    for rel in on_disk_missing:
+        if _path_in_origin_main(rel):
+            existing += 1
+        else:
             missing.append(rel)
+
     return existing, len(paths), missing[:5]
 
 
