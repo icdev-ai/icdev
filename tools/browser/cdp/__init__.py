@@ -13,6 +13,9 @@ Layering (bottom-up), so each piece stays independently testable:
 
 * ``ws_client`` — a stdlib-only RFC 6455 WebSocket client for loopback. Frame
   codec only; it knows nothing about CDP. This is cdp-port-01.
+* ``preflight`` — reads the ``RemoteDebuggingAllowed`` policy and picks the usable
+  tier (CDP / Selenium / HTTP-only) deterministically, without launching a
+  browser. This is cdp-port-06.
 * (later) a CDP session that correlates request ids to responses and demuxes
   unsolicited events — request/response correlation lives ABOVE the frame codec,
   never inside it (cdp-port-03).
@@ -21,6 +24,13 @@ Zero new *required* runtime dependencies: CDP over loopback needs no TLS, no
 proxy, and no ``permessage-deflate``, so a stdlib ``socket`` client suffices.
 """
 
+from tools.browser.cdp.preflight import (
+    PolicyResult,
+    TierDecision,
+    preflight,
+    read_remote_debugging_policy,
+    select_tier,
+)
 from tools.browser.cdp.ws_client import (
     WebSocketError,
     WebSocketFrame,
@@ -35,4 +45,9 @@ __all__ = [
     "WebSocketError",
     "WebSocketTimeout",
     "connect",
+    "PolicyResult",
+    "TierDecision",
+    "preflight",
+    "read_remote_debugging_policy",
+    "select_tier",
 ]
