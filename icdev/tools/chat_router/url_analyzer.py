@@ -153,8 +153,28 @@ def _fetch_github(info: dict) -> str:
 # Generic URL fetcher
 # ---------------------------------------------------------------------------
 
-def fetch_content(url: str) -> tuple[str, str]:
-    """Return (content_text, source_type). source_type: 'github' | 'web' | 'error'."""
+def _extract_html(raw: str, query: Optional[str]) -> str:
+    """Two-pass fit_markdown extraction, falling back to the regex strip."""
+    try:
+        from tools.http.page_extract import extract
+
+        result = extract(raw, query=query)
+        if result["fit_markdown"].strip():
+            return result["fit_markdown"]
+    except Exception:  # noqa: BLE001 - never let extraction break a fetch
+        pass
+    return _strip_html(raw)
+
+
+def fetch_content(url: str, query: Optional[str] = None) -> tuple[str, str]:
+    """Return (content_text, source_type). source_type: 'github' | 'web' | 'error'.
+
+    HTML pages go through the two-pass ``page_extract`` filter rather than a
+    regex strip plus a positional ``[:_MAX_CONTENT]`` cut: pass 1 prunes site
+    chrome, and when *query* is supplied pass 2 keeps the blocks that actually
+    answer it — wherever they sit on the page.  The character cap survives only
+    as a backstop.
+    """
     info = _parse_github(url)
     if info:
         try:
@@ -165,7 +185,7 @@ def fetch_content(url: str) -> tuple[str, str]:
     try:
         raw = _fetch(url)
         if re.search(r"<html", raw[:300], re.I) or "<!doctype" in raw[:300].lower():
-            content = _strip_html(raw)
+            content = _extract_html(raw, query)
         else:
             content = raw
         return content[:_MAX_CONTENT], "web"
@@ -230,12 +250,15 @@ def analyze(url: str, canvas_type: str = "intake") -> dict:
     -------
     {reply: str, url: str, source_type: str, error: str | None}
     """
-    content, source_type = fetch_content(url)
+    # The canvas lens doubles as the retrieval query: it is the closest thing we
+    # have to "what the reader is looking for", so pass 2 ranks blocks against it
+    # instead of keeping whatever happened to fall inside the first 7000 chars.
+    lens = _CANVAS_LENS.get(canvas_type.lower(), _DEFAULT_LENS)
+
+    content, source_type = fetch_content(url, query=lens)
 
     if source_type == "error":
         return {"reply": content, "url": url, "source_type": "error", "error": content}
-
-    lens = _CANVAS_LENS.get(canvas_type.lower(), _DEFAULT_LENS)
 
     prompt = (
         "You are a senior technical architect performing a code and architecture review.\n\n"

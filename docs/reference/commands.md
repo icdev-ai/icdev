@@ -178,6 +178,18 @@ python tools/db/storage.py --info --json           # Show backend configuration
 
 ---
 
+## Untrusted HTML Extraction (oss-filter-01)
+```bash
+# Two-pass fit_markdown filter: prune site chrome, then BM25-rank against a query.
+python tools/http/page_extract.py --file page.html                      # prune only
+python tools/http/page_extract.py --file page.html --query "rate limits"  # + relevance
+python tools/http/page_extract.py --file page.html --query "rate limits" --json
+cat page.html | python tools/http/page_extract.py --query "rate limits"
+
+# Thresholds (prune threshold/type, min_word_threshold, BM25 threshold, stopwords,
+# stemming, section propagation, markdown rendering): args/page_extract.yaml
+```
+
 ## Security Commands
 ```bash
 python tools/security/sast_runner.py --project-dir "/path"
@@ -1866,6 +1878,16 @@ python tools/rag/retention_manager.py --status --json                           
 python tools/rag/reindex_contextual.py --reindex --source compliance_reference --dry-run --json          # Plan a contextual re-index
 python tools/rag/reindex_contextual.py --reindex --source compliance_reference --limit 500 --offset 0 --execute --json  # Resumable window (next_offset/has_more)
 python tools/rag/reindex_contextual.py --benchmark --baseline data/rag/rce_baseline.json --json          # Measure retrieval vs baseline
+
+# Chunking Templates (oss-chunk-01) — document-type chunking driven by the source_registry 'chunking' key
+python tools/rag/chunking_templates.py --list --json                                 # All templates + the default
+python tools/rag/chunking_templates.py --show oscal_catalog --json                   # One template definition
+python tools/rag/chunking_templates.py --suggest docs/catalog.md --json              # ADVISORY suggestion — never auto-applied
+python tools/rag/chunking_templates.py --preview docs/catalog.md --template oscal_catalog --json  # Chunks a template would produce
+# Templates: oscal_catalog (1 chunk/control, never split) · stig_checklist (1 chunk/rule) · rfp_sow (Section L/M)
+#            contract (numbered clauses) · sop_runbook (numbered steps) · slide_deck (1 chunk/slide)
+#            spreadsheet (row groups + header repeat) · general (default sliding window, unchanged)
+# Wire a source: set "chunking": "<template>" on its entry in tools/rag/source_registry.py
 
 # Fine-Tuning (Phase 64 Extension)
 python tools/finetune/dataset_manager.py --create --name "my-dataset" --purpose general --json   # Create dataset

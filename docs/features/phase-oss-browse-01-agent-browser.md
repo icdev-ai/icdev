@@ -98,11 +98,11 @@ lever on prompt size.
   (its frame box), not as its contents.
 - **Indirect prompt injection via page text is a real, accepted residual risk.**
   The allowlist and length caps shrink the channel; they do not close it. See
-  Gap 37 in [docs/security/sandbox-coverage.md](../security/sandbox-coverage.md).
+  Gap 38 in [docs/security/sandbox-coverage.md](../security/sandbox-coverage.md).
 
 ## Security
 
-Documented as **Gap 37 — sandboxed** in
+Documented as **Gap 38 — sandboxed** in
 [docs/security/sandbox-coverage.md](../security/sandbox-coverage.md): the
 isolation boundary is the browser's own renderer sandbox, which is the
 purpose-built tool for rendering hostile web content, rather than wrapping the

@@ -18,6 +18,9 @@ from typing import Any, Dict, List
 #   pk:             Primary key column
 #   content_cols:   Columns to index (concatenated for chunking)
 #   metadata_cols:  Columns to include as metadata on VectorChunk
+#   chunking:       Optional chunking template name, resolved against
+#                   args/chunking_templates.yaml (e.g. 'oscal_catalog',
+#                   'stig_checklist'). Omitted = configured default.
 #   priority:       Ingestion priority (1=highest)
 #   mode:           'realtime' or 'batch'
 #   description:    Human-readable description
@@ -791,6 +794,23 @@ def get_source_config(source_type: str) -> dict:
         Source configuration dict, or empty dict if not found.
     """
     return SOURCE_REGISTRY.get(source_type, {})
+
+
+def get_chunking_template(source_type: str) -> str:
+    """Get the chunking template name for a source type (oss-chunk-01).
+
+    The ``chunking`` key on a registry entry names a template defined in
+    ``args/chunking_templates.yaml``. ``tools/rag/ingestion_manager.py`` passes
+    the result to ``chunk_fields(template=...)``.
+
+    Args:
+        source_type: Source type key.
+
+    Returns:
+        Template name, or "" when the entry declares none (chunker then uses
+        the configured default, i.e. today's sliding window).
+    """
+    return SOURCE_REGISTRY.get(source_type, {}).get("chunking", "") or ""
 
 
 def get_realtime_sources() -> List[str]:
