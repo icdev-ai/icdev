@@ -810,6 +810,39 @@ def _try_pdfplumber(path: Path) -> tuple[str, int]:
 
 
 def _extract_pdf(path: Path) -> Extraction:
+    """Extract PDF text, then append any tables recovered structurally.
+
+    The four-pass text chain (_extract_pdf_text) all ends in extract_text(), so
+    a table arrives as whatever reading order the text layer happened to have —
+    columns interleave and a row's cells scatter. pdfplumber's extract_tables()
+    recovers the grid, and the markdown rendering is appended so the SAME chunk
+    carries both the prose and a correctly-associated version of the table.
+
+    Additive by construction: tables are appended, never substituted, so a
+    regression in table detection cannot cost us text we already had. When
+    pdfplumber is unavailable the extraction is byte-identical to before.
+    """
+    extraction = _extract_pdf_text(path)
+    try:
+        from tools.document_intelligence.table_extract import tables_as_markdown
+
+        tables_md = tables_as_markdown(path)
+    except Exception as exc:  # noqa: BLE001 - enhancement must not fail the document
+        logger.debug("dic.extractors: table extraction unavailable (%s)", exc)
+        return extraction
+
+    if not tables_md.strip():
+        return extraction
+
+    extraction.text = (extraction.text or "").rstrip() + "\n" + tables_md
+    extraction.provider = f"{extraction.provider}+tables"
+    logger.debug(
+        "dic.extractors: appended %d chars of recovered tables", len(tables_md)
+    )
+    return extraction
+
+
+def _extract_pdf_text(path: Path) -> Extraction:
     """Extract text from PDF using a four-pass fallback chain.
 
     Pass 1: pymupdf/fitz    — gold standard; handles CID-mapped fonts, complex encodings
