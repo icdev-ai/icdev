@@ -295,7 +295,12 @@ class WebSocketClient:
 
 
 def _accept_for_key(key_b64: str) -> str:
-    digest = hashlib.sha1((key_b64 + _WS_GUID).encode("ascii")).digest()  # noqa: S324 - RFC 6455 mandates SHA-1 here
+    # RFC 6455 §4.1 mandates SHA-1 for the accept token — a protocol constant, not
+    # a security digest. usedforsecurity=False states that intent (and satisfies
+    # bandit B324 / ruff S324 honestly, without a blanket suppression).
+    digest = hashlib.sha1(  # noqa: S324
+        (key_b64 + _WS_GUID).encode("ascii"), usedforsecurity=False
+    ).digest()
     return base64.b64encode(digest).decode("ascii")
 
 
