@@ -164,3 +164,9 @@ jsonschema>=4.0
 # clean install produced ImportError at the call site instead of at install time.
 pdfplumber>=0.11          # PDF text + TABLE extraction (oss-table-01); imported by tools/document_intelligence/
 beautifulsoup4>=4.12      # imported by tools/pulse/engine/researcher.py and 3 others (oss-table-02)
+openpyxl>=3.1             # XLSX extraction (MIT) — imported best-effort by tools/document_intelligence/extractors.py:989; without it all XLSX ingestion silently no-ops on a clean install
+# NOT declared by design: pymupdf/fitz (extractors.py:773) is dual-licensed
+# AGPL-3.0 / Artifex-commercial — a copyleft license ICDEV (Apache-2.0) cannot ship.
+# It is an optional accelerator; the PDF pass degrades to pypdf/pdfplumber without
+# it (extractors.py Pass 1 catches ImportError). Install it yourself only if its
+# AGPL terms are acceptable for your deployment.
