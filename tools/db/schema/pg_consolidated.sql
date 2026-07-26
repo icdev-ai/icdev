@@ -11511,19 +11511,30 @@ CREATE TABLE public.dic_acoic_regen_queue (
 -- Name: dic_chat_memory; Type: TABLE; Schema: public; Owner: -
 --
 
+-- Turn-based schema, kept in sync with
+-- tools/document_intelligence/chat_memory.py::_TURN_TABLE_DDL.
+--
+-- This consolidation previously carried the legacy message-log shape from
+-- migration 191 (memory_id/role/content/token_count), which NO code consumes.
+-- chat_memory.record_turn() writes the turn shape below, so every write failed
+-- and was swallowed. Migration 264 fixed that for migrated databases but was
+-- never folded in here, so a FRESH bootstrap still produced the broken table.
 CREATE TABLE public.dic_chat_memory (
-    memory_id text NOT NULL,
+    turn_id text NOT NULL,
     session_id text NOT NULL,
-    collection_id text DEFAULT 'default'::text NOT NULL,
-    user_id text DEFAULT ''::text NOT NULL,
-    role text DEFAULT 'user'::text NOT NULL,
-    content text DEFAULT ''::text NOT NULL,
+    collection_id text DEFAULT ''::text NOT NULL,
+    turn_index integer DEFAULT 0 NOT NULL,
+    query text DEFAULT ''::text NOT NULL,
+    answer text DEFAULT ''::text NOT NULL,
+    subject text DEFAULT ''::text NOT NULL,
+    subject_doc_id text DEFAULT ''::text NOT NULL,
+    entities_json text DEFAULT '[]'::text NOT NULL,
+    doc_ids_json text DEFAULT '[]'::text NOT NULL,
     citations_json text DEFAULT '[]'::text NOT NULL,
-    token_count integer DEFAULT 0 NOT NULL,
+    mode text DEFAULT 'grounded'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     tenant_id text DEFAULT 'default'::text NOT NULL,
-    classification text DEFAULT 'CUI'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT dic_chat_memory_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text, 'system'::text])))
+    classification text DEFAULT 'CUI'::text NOT NULL
 );
 
 
@@ -39663,7 +39674,7 @@ ALTER TABLE ONLY public.dic_acoic_regen_queue
 --
 
 ALTER TABLE ONLY public.dic_chat_memory
-    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (memory_id);
+    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (turn_id);
 
 
 --

@@ -115,6 +115,24 @@
 var _mode = 'search';
 var _chatHistory = [];
 
+// Stable per-tab conversation id. sessionStorage (not localStorage) so separate
+// tabs are separate conversations and closing the tab ends the thread.
+function _dicSessionId() {
+  try {
+    var k = 'dic_chat_session_id';
+    var v = window.sessionStorage.getItem(k);
+    if (!v) {
+      v = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : 'dic-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+      window.sessionStorage.setItem(k, v);
+    }
+    return v;
+  } catch (e) {
+    return '';  // private mode / storage blocked -> memory simply stays off
+  }
+}
+
 function setMode(mode) {
   _mode = mode;
   ['search','chat','kg'].forEach(function(m) {
@@ -278,10 +296,13 @@ function runChat(message) {
   document.getElementById('query-input').value = '';
   document.getElementById('chat-thinking').style.display = 'block';
 
+  // Conversational memory is keyed on session_id. The chat POST never sent one,
+  // so blueprint's `if mem_on and session_id:` was always False and follow-up
+  // resolution / turn recording were never reached from any UI. Persist per tab.
   fetch('/document-intelligence/api/chat', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({message: message, collection_id: collection || null, history: _chatHistory.slice(-6)})
+    body: JSON.stringify({message: message, collection_id: collection || null, history: _chatHistory.slice(-6), session_id: _dicSessionId()})
   }).then(function(r) { return r.json(); })
     .then(function(data) {
       document.getElementById('chat-thinking').style.display = 'none';
