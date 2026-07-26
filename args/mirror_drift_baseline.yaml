@@ -1,0 +1,45 @@
+# CUI // SP-CTI
+#
+# Recorded tools/ <-> icdev/tools/ CONTENT-drift baseline.
+#
+# A file present in BOTH trees whose bytes differ. This is the low-noise half of
+# mirror drift: "missing-from-mirror" legitimately spikes while a new subsystem
+# is mid-flight, but a file that exists on both sides and disagrees is a fix
+# that landed on one side only.
+#
+# That is not hypothetical. tools/db/schema/pg_consolidated.sql carried the
+# dic_chat_memory fix while its icdev/ twin still shipped the broken shape, so a
+# fresh bootstrap from the wheel recreated the bug the fix removed. Nothing
+# caught it: coherence_checker.check_mirror_drift audits 8 named packages of the
+# 200 that have twins, and compares only *.py.
+#
+# tests/test_mirror_drift_baseline.py fails when a package's count GROWS or a new
+# package appears. Counts may fall freely — reconciling drift needs no ceremony.
+#
+# DO NOT raise a number to make a build pass. Mirror the file instead:
+#   python tools/dx/mirror_parity.py --paths <pkg> --fix
+#
+# Regenerate the whole file only when deliberately re-baselining:
+#   python tools/dx/mirror_parity.py --all --json
+
+content_drift:
+  billing: 1
+  browser: 1
+  canvas_health: 1
+  ci: 3
+  cli: 2
+  config: 1
+  coordination: 1
+  dashboard: 6
+  db: 1
+  doc_modernization: 1
+  document_intelligence: 2
+  finetune: 1
+  foundry: 2
+  genesis: 4
+  llm: 1
+  network: 3
+  rag: 1
+  showcase: 1
+  skills: 1
+  testing: 4

@@ -49,6 +49,56 @@ def _list_files(root: Path) -> set:
     }
 
 
+def discover_mirrored_paths() -> list:
+    """Every ``tools/<pkg>`` that already has an ``icdev/tools/<pkg>`` twin.
+
+    Derived from the tree rather than a hand-maintained list. A curated list is
+    how this class of bug survives: ``coherence_checker.check_mirror_drift``
+    audits 8 named packages out of 197 that have twins, and compares only
+    ``*.py``, so a drifted ``pg_consolidated.sql`` under ``tools/db/schema``
+    was invisible to it — the twin existed, the contents differed, and nothing
+    looked.
+
+    Presence of a twin IS the signal that a package is meant to be mirrored, so
+    a newly mirrored package is covered the moment it exists, with no list to
+    remember to update.
+    """
+    mirror_root = BASE_DIR / "icdev" / "tools"
+    live_root = BASE_DIR / "tools"
+    if not mirror_root.is_dir():
+        return []
+    out = set()
+    for p in mirror_root.rglob("*"):
+        if not p.is_file() or "__pycache__" in p.parts:
+            continue
+        rel = p.relative_to(mirror_root)
+        if len(rel.parts) < 2:
+            continue  # top-level module, audited as part of the root sweep
+        top = rel.parts[0]
+        if (live_root / top).is_dir():
+            out.add(top)
+    return sorted(out)
+
+
+def audit_all(fix: bool = False) -> dict:
+    """Audit every mirrored package. Summary plus only the drifting reports.
+
+    Clean subtrees are counted but not listed — a report nobody can read is a
+    report nobody reads.
+    """
+    reports = [audit_path(p, fix=fix) for p in discover_mirrored_paths()]
+    drifting = [r for r in reports if not r["clean"]]
+    return {
+        "packages_audited": len(reports),
+        "packages_with_drift": len(drifting),
+        "content_drift": sum(len(r["content_drift"]) for r in reports),
+        "missing_from_mirror": sum(len(r["missing_from_mirror"]) for r in reports),
+        "mirror_only": sum(len(r["mirror_only"]) for r in reports),
+        "clean": not drifting,
+        "reports": drifting,
+    }
+
+
 def audit_path(subpath: str, fix: bool = False) -> dict:
     """Audit parity for a single subtree under tools/ vs icdev/tools/.
 
@@ -80,7 +130,20 @@ def audit_path(subpath: str, fix: bool = False) -> dict:
     for rel in sorted(mirror_files - live_files):
         result["mirror_only"].append(rel)
     for rel in sorted(live_files & mirror_files):
-        if _sha256(live / rel) != _sha256(mirror / rel):
+        a, b = live / rel, mirror / rel
+        # Size first: differing sizes cannot be identical bytes, and identical
+        # sizes are rare enough that the hash is only paid when it matters.
+        # `--all` compares ~20k file pairs across 200 packages; hashing every
+        # one made the sweep too slow to sit in CI, which always runs on a cold
+        # checkout. stat() is roughly two orders of magnitude cheaper than a
+        # full read, and the result is identical.
+        try:
+            if a.stat().st_size != b.stat().st_size:
+                result["content_drift"].append(rel)
+                continue
+        except OSError:
+            pass  # fall through to the authoritative hash comparison
+        if _sha256(a) != _sha256(b):
             result["content_drift"].append(rel)
         else:
             result["in_parity"] += 1
@@ -106,8 +169,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--paths",
-        required=True,
         help="Comma-separated subtrees under tools/ (e.g. security_canvas,security).",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Audit every tools/<pkg> that has an icdev/tools/<pkg> twin (auto-discovered).",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON report.")
     parser.add_argument(
@@ -121,6 +188,32 @@ def main() -> int:
         help="Exit 1 if any drift remains after optional --fix.",
     )
     args = parser.parse_args()
+
+    if not args.paths and not args.all:
+        parser.error("one of --paths or --all is required")
+
+    if args.all:
+        summary = audit_all(fix=args.fix)
+        reports = summary["reports"]
+        if args.json:
+            print(json.dumps(summary, indent=2))
+        else:
+            print(
+                f"audited {summary['packages_audited']} mirrored package(s): "
+                f"{summary['packages_with_drift']} with drift — "
+                f"{summary['content_drift']} content-drift, "
+                f"{summary['missing_from_mirror']} missing-from-mirror, "
+                f"{summary['mirror_only']} mirror-only"
+            )
+            for r in reports:
+                print(f"  [DRIFT] {r['path']}  ({r['in_parity']} in parity)")
+                for rel in r["content_drift"]:
+                    print(f"      content-drift:       {rel}")
+                for rel in r["missing_from_mirror"]:
+                    print(f"      missing-from-mirror: {rel}")
+        if args.gate and not summary["clean"]:
+            return 1
+        return 0
 
     reports = [audit_path(p.strip(), fix=args.fix) for p in args.paths.split(",") if p.strip()]
     any_drift = not all(r["clean"] for r in reports)

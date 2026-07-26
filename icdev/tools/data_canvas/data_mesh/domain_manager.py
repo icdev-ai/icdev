@@ -9,11 +9,34 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from tools.data_canvas.constants import (
+    DM_DEFAULT_MATURITY_LEVEL,
+    DM_MATURITY_LEVEL_MAP,
+)
 from tools.data_canvas.db.init_db import get_connection
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _coerce_maturity_level(value) -> int:
+    """Coerce a maturity value to the INTEGER stored in dm_domains.maturity_level.
+
+    Accepts an int, a numeric string, or a known label ("defined"/"managed"/
+    "optimizing"). Anything unrecognised falls back to the default level so a
+    bad input can never write a non-numeric value into the INTEGER column.
+    """
+    if isinstance(value, bool):  # bool is an int subclass — treat as default
+        return DM_DEFAULT_MATURITY_LEVEL
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lstrip("-").isdigit():
+            return int(text)
+        return DM_MATURITY_LEVEL_MAP.get(text.lower(), DM_DEFAULT_MATURITY_LEVEL)
+    return DM_DEFAULT_MATURITY_LEVEL
 
 
 def list_domains() -> list[dict]:
@@ -54,7 +77,7 @@ def create_domain(data: dict) -> dict:
                     data.get("description", ""),
                     data.get("owner_team", ""),
                     data.get("owner_email", ""),
-                    data.get("maturity_level", "defined"),
+                    _coerce_maturity_level(data.get("maturity_level", "defined")),
                     data.get("classification", "CUI // SP-CTI"),
                     now,
                     now,
@@ -74,6 +97,8 @@ def update_domain(domain_id: str, data: dict) -> dict | None:
                            "maturity_level", "classification")}
         if not fields:
             return get_domain(domain_id)
+        if "maturity_level" in fields:
+            fields["maturity_level"] = _coerce_maturity_level(fields["maturity_level"])
         set_clause = ", ".join(f"{k}=?" for k in fields)
         values = list(fields.values()) + [now, domain_id]
         with get_connection() as conn:

@@ -131,6 +131,7 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 | **Event Bus** | `cot_reasoning_completed` published after every chain invocation |
 | **Cost Intelligence** | `enable_cot` / `enable_cod` recommendation types for high-cost functions |
 | **Readiness Score** | 5th `explainability` dimension in `tools/canvas/orchestrator.py:compute_readiness()` |
+| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`. `council_query` tool likewise (`gap_handlers.py::handle_council_query`), primary caller cross-repo (idea_lab). |
 
 ## FORGE Artifacts
 
