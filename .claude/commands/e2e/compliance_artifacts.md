@@ -3,12 +3,12 @@
 Verify compliance artifacts (SSP, POAM, STIG, SBOM) can be viewed through the dashboard.
 
 ## Prerequisites
-- Flask dashboard running on http://localhost:5000
+- Flask dashboard running on http://localhost:5050
 - At least one project with compliance artifacts generated
 
 ## Steps
 
-1. Navigate to http://localhost:5000/compliance
+1. Navigate to http://localhost:5050/compliance
 2. Wait for the compliance page to load
 3. Screenshot the compliance overview page
 
@@ -16,7 +16,7 @@ Verify compliance artifacts (SSP, POAM, STIG, SBOM) can be viewed through the da
 5. Assert STIG findings summary is visible (CAT1/CAT2/CAT3 counts)
 6. Assert SSP/POAM document status is shown
 
-7. Navigate to http://localhost:5000/projects
+7. Navigate to http://localhost:5050/projects
 8. Click on the first project in the list
 9. Wait for the project detail page to load
 10. Click on the "Compliance" tab

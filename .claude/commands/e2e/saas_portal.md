@@ -5,7 +5,7 @@ Verify the ICDEV™ SaaS tenant portal login flow, session management, logout, a
 ## Prerequisites
 - SaaS API gateway running with portal blueprint registered
 - Platform database initialized with at least one tenant and user
-- Portal accessible at http://localhost:8443/portal or http://localhost:5000/portal
+- Portal accessible at http://localhost:8443/portal or http://localhost:5050/portal
 
 ## Steps
 
