@@ -2613,23 +2613,29 @@ def create_app(testing: bool = False) -> Flask:
 
             # Attach RBAC + canvas-access guard (backward-compatible unless
             # ICDEV_ENFORCE_CANVAS_ACCESS is set) BEFORE registering the
-            # blueprint on the app — Flask forbids adding before_request
-            # hooks to a blueprint that has already been registered once,
-            # so doing this after register_blueprint() silently no-ops the
-            # guard for every canvas (it raises, caught below as a generic
-            # "registration failed" warning even though routes still work).
-            if guard_component_access:
+            # blueprint on the app. Flask forbids adding before_request hooks to a
+            # blueprint that has already been registered once (process-wide, not
+            # per-app), and the hook persists on the blueprint across app instances
+            # anyway — so attach it ONCE. Without this guard, a second import of
+            # this module / a second create_app() re-ran the attach and raised on
+            # every canvas, logged as a spurious "registration failed" warning even
+            # though routes still worked (the hook was already on the blueprint).
+            if guard_component_access and not getattr(_cbp, "_icdev_guard_attached", False):
                 _comp_meta = _REGISTRY.get(_ck)
                 if _comp_meta:
                     _cbp.before_request(
                         guard_component_access(_ck, _comp_meta.min_il)
                     )
+                    _cbp._icdev_guard_attached = True
 
-            if not _cbp.url_prefix:
-                app.register_blueprint(_cbp, url_prefix=prefix)
-            else:
-                app.register_blueprint(_cbp)
-            app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
+            # Register on THIS app only if not already present on it (idempotent
+            # across re-entrant setup); a blueprint may be registered on several apps.
+            if _cbp.name not in app.blueprints:
+                if not _cbp.url_prefix:
+                    app.register_blueprint(_cbp, url_prefix=prefix)
+                else:
+                    app.register_blueprint(_cbp)
+                app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
 
