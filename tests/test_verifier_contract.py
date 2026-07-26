@@ -14,6 +14,21 @@ from __future__ import annotations
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _deterministic_no_llm(monkeypatch):
+    """Pin the verifier to its deterministic path for every test in this file.
+
+    `verify()` calls `_llm_supports()` per cited claim. Without ICDEV_NO_LLM the
+    router tries a real provider, and on a machine with no reachable LLM the
+    file hangs instead of failing — which is exactly what it did the first time
+    it ran in CI's environment rather than an interactive shell.
+
+    The deterministic lexical path is also what these assertions are about: the
+    fabricated-claim case must be caught with no model available at all.
+    """
+    monkeypatch.setenv("ICDEV_NO_LLM", "1")
+
 from tools.document_intelligence.verifier import (
     ClaimVerdict,
     VerifyResult,
