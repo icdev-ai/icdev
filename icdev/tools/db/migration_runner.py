@@ -37,6 +37,21 @@ from tools.db.storage import StorageConnection
 
 logger = get_logger("icdev.db.migration")
 
+
+def _detect_engine() -> str:
+    """The engine actually in use, so `engine=` need not be guessed correctly.
+
+    Defaulting to "sqlite" while connected to PostgreSQL is silent data loss:
+    `_filter_sql` drops every `@pg-only` statement, and the migration is then
+    recorded as applied.
+    """
+    try:
+        from tools.db.storage import is_pg
+
+        return "postgresql" if is_pg() else "sqlite"
+    except Exception:  # noqa: BLE001 - storage unavailable at import time
+        return "sqlite"
+
 MIGRATIONS_DIR = BASE_DIR / "tools" / "db" / "migrations"
 
 SCHEMA_MIGRATIONS_DDL = """
@@ -65,11 +80,25 @@ class MigrationRunner:
         self,
         db_path: Optional[Path] = None,
         migrations_dir: Optional[Path] = None,
-        engine: str = "sqlite",
+        engine: Optional[str] = None,
     ):
         self.db_path = db_path or (BASE_DIR / "data" / "icdev.db")
         self.migrations_dir = migrations_dir or MIGRATIONS_DIR
-        self.engine = engine
+        self.engine = engine if engine is not None else _detect_engine()
+
+        # `engine` drives _filter_sql, so a value that disagrees with the live
+        # backend does not error — it silently drops every statement meant for
+        # the real engine and applies the other one's, then records the
+        # migration as applied with ~0ms elapsed. That is indistinguishable
+        # from success. Warn loudly; the caller may still have a reason.
+        actual = _detect_engine()
+        if self.engine != actual:
+            logger.warning(
+                "MigrationRunner engine=%r but the active backend is %r. "
+                "@%s-only statements will be DROPPED and the migration may "
+                "record as applied having done nothing.",
+                self.engine, actual, "pg" if actual == "postgresql" else "sqlite",
+            )
 
     # ------------------------------------------------------------------
     # Connection helpers

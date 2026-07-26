@@ -14,7 +14,7 @@
 # the next unused version instead. Adding a file to an existing entry shadows one
 # MORE migration and is treated as a new violation.
 #
-# 54 duplicated versions; 71 migrations shadowed.
+# 53 duplicated versions; 70 migrations shadowed.
 # Regenerate the shadowed list with:
 #   python tools/db/migration_versions.py --shadowed --json
 
@@ -195,6 +195,3 @@ grandfathered:
   "289":
     - 289_agent_cron_jobs.sql
     - 289_twin_compat_reports.sql
-  "295":
-    - 295_dic_chat_memory_reconcile.sql
-    - 295_web_citation_type_and_fetch_provenance.sql

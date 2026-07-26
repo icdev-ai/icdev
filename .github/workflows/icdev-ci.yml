@@ -87,6 +87,7 @@ jobs:
             tests/test_dic_chat_memory_schema.py \
             tests/test_dic_chat_surfaces_send_session_id.py \
             tests/test_dic_citation_publish_gate.py \
+            tests/test_migration_engine_detection.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
