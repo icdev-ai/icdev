@@ -1859,6 +1859,23 @@ def ingest_file(
             )
         conn.commit()
 
+        # Inter-document cross-reference extraction (dmx-ref-01, best-effort).
+        # Deterministic regex over the extracted text — records "see Section N of
+        # <Doc>" style references into dic_cross_references for later resolution
+        # and cascade flagging. Never fails the ingest.
+        try:
+            from tools.document_intelligence.cross_reference_tracker import (
+                store_references_from_text,
+            )
+
+            store_references_from_text(
+                conn, doc_id, text, source_section="",
+                tenant_id=tid, classification=cls,
+            )
+            conn.commit()
+        except Exception as e:  # pragma: no cover - defensive
+            errors.append(f"cross-reference extraction failed: {e}")
+
         # Near-duplicate title detection (best-effort): compare this document's
         # title against existing titles in the same collection.
         if detect_near_duplicates:

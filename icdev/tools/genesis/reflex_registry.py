@@ -92,6 +92,7 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("fathomdesk_news_patterns", SUPPORT, 4.0, "FathomDesk news pattern detection"),
     ReflexEntry("fathomdesk_correlation_monitor", SUPPORT, 4.0, "FathomDesk cross-asset correlation"),
     ReflexEntry("bdc_isa_expiry",     SUPPORT, 24.0, "BDC ISA expiry tracking"),
+    ReflexEntry("freshness_guardian", SUPPORT, 1.0,  "DDC freshness quality sweep → dd_freshness_alerts/dd_quality_runs"),
     ReflexEntry("cato_monitor",       SUPPORT, 6.0,  "cATO compliance monitoring"),
     ReflexEntry("sdc_control_expiry", SUPPORT, 4.0,  "SDC security control-expiry sweep — IQR anomaly-thresholded review-date alerts"),
     ReflexEntry("cato_twin",               SUPPORT, 6.0,  "cATO digital twin sync"),
@@ -131,6 +132,14 @@ REGISTRY: List[ReflexEntry] = [
                 "PMA: nightly credential expiry scan and SPOF dependency detection"),
     ReflexEntry("pma_int_gap_monitor",       DOMAIN, 168.0,
                 "PMA: weekly INT gap persistence scan; seeds collection requirements and compliance risks"),
+    # Observability retention (obx-trc-05)
+    ReflexEntry("observability_retention",   SUPPORT, 24.0,
+                "Observability retention: archive-then-prune otel_spans/prov_*/shap_attributions "
+                "(append-only → cold *_archive twin) so list_traces/trace_stats stay fast"),
+    # ODC MITRE coverage drift (obx-cov-02)
+    ReflexEntry("odc_coverage_refresh",      SUPPORT, 6.0,
+                "ODC coverage refresh: scheduled MITRE ATT&CK coverage recompute per design; "
+                "flag >15pt coverage drops as od_audit drift events + suggested kanban cards"),
     # twx-cov-02 — cross-canvas twin freshness
     ReflexEntry("twin_freshness_sweep",      SUPPORT, 6.0,
                 "Twin Core: observer-driven cross-canvas twin freshness sweep; publishes "
