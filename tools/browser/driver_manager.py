@@ -675,12 +675,31 @@ def get_driver(
     Within a test, the returned ``WebDriver`` is single-threaded per
     selenium's own contract \u2014 do not share across threads.
 
+    Backend selection (cdp-wd-02)
+    -----------------------------
+    Opt-in and **default-unchanged**: with ``ICDEV_BROWSER_BACKEND=cdp`` set,
+    this returns a ``CDPWebDriver`` (the WebDriver-compatible CDP facade) instead
+    of a Selenium ``WebDriver`` — no driver binary, launched over the DevTools
+    protocol. This is the near-zero-edit lever that runs the whole
+    ``tests/e2e_selenium/`` estate driverless: those modules call ``get_driver()``
+    and then use ``By``/``find_element``/``WebDriverWait``, all of which work
+    unchanged against the duck-typed facade. When the env var is unset (or
+    ``selenium``), the Selenium path below is used exactly as before, so every
+    existing caller and the 108 agent-browser tests are unaffected.
+
     Air-gap behaviour
     -----------------
     If no driver binary is resolvable (no vendored binary, none on PATH),
     ``create_driver()`` raises ``AirgapDriverMissingError`` with the admin
     refresh command. **Never triggers a CDN download.**
     """
+    import os
+    if os.environ.get("ICDEV_BROWSER_BACKEND", "").strip().lower() == "cdp":
+        # Facade lives in a selenium-importing module, imported lazily so an
+        # unset/selenium default never pays that import cost.
+        from tools.browser.cdp.webdriver import CDPWebDriver
+        logger.info("[driver_manager] ICDEV_BROWSER_BACKEND=cdp — using the CDP WebDriver facade (no driver binary)")
+        return CDPWebDriver.create(headless=headless, window_size=window_size)
     return DriverManager.instance().create_driver(
         headless=headless,
         window_size=window_size,
