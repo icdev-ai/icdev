@@ -19,7 +19,7 @@ import struct
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.db.storage import get_connection
+from tools.db.storage import StorageConnection, get_connection
 from tools.rag.vector_store_provider import (
     SearchResult,
     VectorChunk,
@@ -325,11 +325,37 @@ class SQLiteVectorStore(VectorStoreProvider):
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = get_connection(db_path=str(self._db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute(f"PRAGMA busy_timeout={self._busy_timeout}")
-        return conn
+    def _get_conn(self) -> "StorageConnection":
+        """Open this store's own SQLite file. Never routes to another backend.
+
+        Deliberately ``sqlite3.connect`` rather than
+        ``storage.get_connection(db_path=...)``: that helper dispatches on
+        ``ICDEV_STORAGE_BACKEND`` and **ignores db_path entirely** when the
+        backend is postgresql, so on a PG deployment this class — whose whole
+        implementation is SQLite-specific (``?`` placeholders, float16 blob
+        decode, the ``sign_bits`` column) — silently talked to PostgreSQL.
+
+        Concretely, constructing ``SQLiteVectorStore`` on a PG deployment sent
+        ``_init_schema()``'s ``ALTER TABLE rag_chunks ADD COLUMN sign_bits BLOB``
+        at the production table. Observed 2026-07-26; only a lock timeout stopped
+        it. A class named for its backend must not be able to reach a different
+        one, so the backend is pinned here rather than resolved.
+
+        The ``StorageConnection`` wrapper is kept — parts of this module (notably
+        ``upsert``) are written with ``%s`` placeholders and depend on its
+        translation — but it is constructed against a SQLite connection directly
+        instead of asking the router which backend to use. Same wrapper, pinned
+        engine.
+        """
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        raw = sqlite3.connect(str(self._db_path), timeout=self._busy_timeout / 1000.0)
+        raw.row_factory = sqlite3.Row
+        raw.execute("PRAGMA journal_mode=WAL")
+        raw.execute(f"PRAGMA busy_timeout={self._busy_timeout}")
+        # security_context stays None: this file's rag_chunks has no tenant_id /
+        # classification columns to filter on, so the global RLS predicate would
+        # raise on every query.
+        return StorageConnection(raw, "sqlite")
 
     def configure_anomaly_detection(self, config: Optional[dict] = None) -> None:
         """Load anomaly config and compute the adaptive relevance floor."""
