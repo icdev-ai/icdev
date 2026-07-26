@@ -250,12 +250,15 @@ def analyze(url: str, canvas_type: str = "intake") -> dict:
     -------
     {reply: str, url: str, source_type: str, error: str | None}
     """
-    content, source_type = fetch_content(url)
+    # The canvas lens doubles as the retrieval query: it is the closest thing we
+    # have to "what the reader is looking for", so pass 2 ranks blocks against it
+    # instead of keeping whatever happened to fall inside the first 7000 chars.
+    lens = _CANVAS_LENS.get(canvas_type.lower(), _DEFAULT_LENS)
+
+    content, source_type = fetch_content(url, query=lens)
 
     if source_type == "error":
         return {"reply": content, "url": url, "source_type": "error", "error": content}
-
-    lens = _CANVAS_LENS.get(canvas_type.lower(), _DEFAULT_LENS)
 
     prompt = (
         "You are a senior technical architect performing a code and architecture review.\n\n"
