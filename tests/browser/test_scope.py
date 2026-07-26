@@ -205,8 +205,11 @@ def test_remote_host_must_clear_egress_guard(monkeypatch):
     # are distinct module objects and the string form resolves to the wrong one.
     import importlib
 
-    link_check = importlib.import_module("tools.doc_modernization.link_check")
-    monkeypatch.setattr(link_check, "egress_guard", fake_guard, raising=False)
+    # oss-filter-03 moved the implementation to tools/http/egress_guard.py, which
+    # is what scope.py now imports. Patching the old link_check path would leave
+    # the real guard in place and this test would pass for the wrong reason.
+    guard_mod = importlib.import_module("tools.http.egress_guard")
+    monkeypatch.setattr(guard_mod, "egress_guard", fake_guard, raising=False)
     decision = scope.check_navigation("https://example.com/", cfg)
     assert decision.allowed is False
     assert decision.reason == "egress_guard:denied_ip_range"
@@ -243,7 +246,7 @@ def test_egress_guard_unavailable_fails_closed(monkeypatch):
     real_import = builtins.__import__
 
     def blocked(name, *a, **kw):
-        if name == "tools.doc_modernization.link_check":
+        if name == "tools.http.egress_guard":
             raise ImportError("simulated")
         return real_import(name, *a, **kw)
 
