@@ -1,0 +1,93 @@
+# CUI // SP-CTI
+# Agent Browser — indexed-element page representation configuration.
+#
+# Consumed by tools/browser/agent_browser.py. Governs DOM verbosity (which
+# attributes reach the model), extraction limits, and navigation safety gates.
+#
+# Design note: every knob here exists to keep the page representation SMALL.
+# A model acts via click(14); it does not need the DOM. Adding attributes to
+# include_attributes is the single fastest way to blow up prompt size — the
+# allowlist is deliberately short.
+
+agent_browser:
+  # ── DOM verbosity ────────────────────────────────────────────────────────
+  # Only these attributes are surfaced per element. Anything not listed is
+  # dropped before the state ever reaches a model. Values duplicating the
+  # element's visible text are also dropped (see drop_attrs_matching_text).
+  include_attributes:
+    - id
+    - name
+    - type
+    - placeholder
+    - aria-label
+    - aria-expanded
+    - aria-checked
+    - title
+    - alt
+    - value
+    - href
+    - role
+    - data-testid
+
+  # Drop an attribute when its value equals the element's visible text.
+  # Kills the very common aria-label=="Submit" / title=="Submit" duplication.
+  drop_attrs_matching_text: true
+
+  # ── Extraction limits ────────────────────────────────────────────────────
+  max_elements: 200          # hard cap on indexed elements; state.truncated flags overflow
+  max_text_length: 120       # per-element visible text, characters
+  max_attr_length: 120       # per-attribute value, characters
+  viewport_only: false       # true = only index elements inside the viewport
+  occlusion_check: true      # drop in-viewport elements covered by another element
+  include_disabled: true     # index disabled controls (flagged), so the model can see them
+
+  # Elements considered interactive. Extended, not replaced, by callers.
+  interactive_selectors:
+    - a[href]
+    - button
+    - input
+    - select
+    - textarea
+    - summary
+    - "[contenteditable='true']"
+    - "[onclick]"
+    - "[tabindex]:not([tabindex='-1'])"
+    - "[role='button']"
+    - "[role='link']"
+    - "[role='checkbox']"
+    - "[role='radio']"
+    - "[role='switch']"
+    - "[role='tab']"
+    - "[role='menuitem']"
+    - "[role='menuitemcheckbox']"
+    - "[role='menuitemradio']"
+    - "[role='option']"
+    - "[role='combobox']"
+    - "[role='searchbox']"
+    - "[role='textbox']"
+    - "[role='slider']"
+    - "[role='treeitem']"
+
+  # ── Navigation ───────────────────────────────────────────────────────────
+  navigation:
+    page_load_timeout: 30    # seconds
+    script_timeout: 30       # seconds
+    settle_ms: 350           # post-navigation / post-action pause before reading state
+    allowed_schemes:         # everything else is refused (blocks javascript:, data:)
+      - http
+      - https
+      - about
+    allowed_domains: []      # empty = any host; entries match host or *.host
+    blocked_domains: []      # always refused, checked before allowed_domains
+
+  # ── Driver ───────────────────────────────────────────────────────────────
+  driver:
+    headless: true
+    window_size: [1440, 900]
+
+  # ── Screenshots ──────────────────────────────────────────────────────────
+  # Repo guardrail: screenshots always land under playwright/screenshots/.
+  # Reused by the assertion half (tools/testing/screenshot_validator.py).
+  screenshot:
+    dir: playwright/screenshots
+    default_name: agent_browser_state
