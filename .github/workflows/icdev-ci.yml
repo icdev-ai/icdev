@@ -93,6 +93,7 @@ jobs:
             tests/test_publish_gates.py \
             tests/test_dic_cove_gate.py \
             tests/test_mirror_drift_baseline.py \
+            tests/test_freshness_guardian_parity.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
