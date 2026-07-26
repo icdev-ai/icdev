@@ -21,9 +21,31 @@ import json
 import struct
 import sys
 import time
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, is_pg
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _write_embedding(cursor, entry_id, emb, pg: bool) -> None:
+    """Persist an embedding in the backend-correct format.
+
+    The PostgreSQL primary stores memory_entries.embedding as a pgvector ``vector``
+    column, so a bytea blob raises DatatypeMismatch (the real reason PG embeddings
+    stayed at 0% — every write failed). Write a pgvector literal cast to ``vector``
+    on PG; keep the struct-packed float blob on the SQLite fallback.
+    """
+    if pg:
+        vec = "[" + ",".join(f"{v:.6f}" for v in emb) + "]"
+        cursor.execute(
+            "UPDATE memory_entries SET embedding = %s::vector, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (vec, entry_id),
+        )
+    else:
+        blob = struct.pack(f"{len(emb)}f", *emb)
+        cursor.execute(
+            "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (blob, entry_id),
+        )
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -124,8 +146,10 @@ def embed_unembedded(db_path=None, limit=None):
 
     cfg = _load_config()
     batch_size = cfg.get("embed_batch_size", 20)
+    pg = is_pg(conn)
     embedded = 0
     errors = 0
+    first_error = None
 
     for i in range(0, len(rows), batch_size):
         batch = rows[i : i + batch_size]
@@ -137,33 +161,43 @@ def embed_unembedded(db_path=None, limit=None):
                 # LLM provider interface
                 for j, text in enumerate(texts):
                     emb = provider.embed(text)
-                    blob = struct.pack(f"{len(emb)}f", *emb)
-                    c.execute(
-                        "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
-                        (blob, ids[j]),
-                    )
+                    _write_embedding(c, ids[j], emb, pg)
                     embedded += 1
             else:
                 # Direct OpenAI client
                 response = provider.embeddings.create(input=texts, model="text-embedding-3-small")
                 for j, emb_data in enumerate(response.data):
-                    blob = struct.pack(f"{len(emb_data.embedding)}f", *emb_data.embedding)
-                    c.execute(
-                        "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
-                        (blob, ids[j]),
-                    )
+                    _write_embedding(c, ids[j], emb_data.embedding, pg)
                     embedded += 1
             conn.commit()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
             errors += 1
+            if first_error is None:
+                first_error = f"{type(exc).__name__}: {exc}"
+            # Roll back so a single failed batch does not poison the transaction and
+            # abort every subsequent batch (InFailedSqlTransaction cascade on PG).
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            # If the very first batch failed with nothing yet written, the write path
+            # is systematically broken (e.g. a pgvector dimension mismatch between the
+            # column and the provider) — abort rather than burn embed calls on every
+            # remaining batch this cycle. first_error carries the diagnosis.
+            if embedded == 0:
+                break
 
     conn.close()
-    return {
+    result = {
         "embedded": embedded,
         "errors": errors,
         "total_unembedded": len(rows),
         "provider": provider_name,
+        "backend": "postgresql" if pg else "sqlite",
     }
+    if first_error:
+        result["first_error"] = first_error
+    return result
 
 
 def prune_stale(days=None, db_path=None):

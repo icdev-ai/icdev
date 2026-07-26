@@ -58,6 +58,13 @@ def run(args: dict, _ctx=None) -> dict:
         result["embed"] = embed
         if embed.get("status") == "no_provider":
             logger.info("[memory_maintenance_reflex] no embedding provider reachable; flush-only this cycle")
+        elif embed.get("embedded", 0) == 0 and embed.get("errors", 0):
+            # Systematic write failure (e.g. pgvector dimension/type mismatch) — surface
+            # the diagnosis loudly so it can be fixed, not silently retried forever.
+            logger.warning(
+                "[memory_maintenance_reflex] embedding writes are failing (0 embedded, %s errors): %s",
+                embed.get("errors"), embed.get("first_error", "unknown"),
+            )
         else:
             logger.info(
                 "[memory_maintenance_reflex] embedded %s (errors %s) of %s unembedded",
