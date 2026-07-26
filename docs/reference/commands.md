@@ -2547,6 +2547,43 @@ Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_cl
 (4-label taxonomy: fact_single/summary/reasoning/unanswerable), `crag_benchmark_run`
 (CRAG evaluation campaign with hallucination-penalizing scoring).
 
+### Retrieval toggle measurement (oss-meas-01-d2)
+
+```bash
+# Which toggles can a retrieval benchmark actually score?
+python tools/rag/toggle_harness.py --probe
+python tools/rag/toggle_harness.py --probe --json
+python tools/rag/toggle_harness.py --list
+
+# Prove the isolation reaches the loader the retriever calls (and restores after)
+python tools/rag/toggle_harness.py --verify rerank --json
+
+# Benchmark ONE toggle in isolation. Exits 3 if the toggle is NOT-WIRED.
+python tools/rag/rag_benchmark.py --toggle rerank --json
+
+# Control arm + one isolated arm per wired toggle, with per-metric deltas
+python tools/rag/rag_benchmark.py --sweep
+python tools/rag/rag_benchmark.py --sweep --only rerank,binary_prefilter --json
+```
+
+```
+# Why the probe exists: an UNWIRED toggle and a wired-but-useless toggle both
+# measure as a zero delta. Reporting a number for the first turns "never
+# connected" into an evidence-backed "DROP". So --toggle/--sweep refuse to
+# benchmark a toggle whose consumer is not in the import closure of
+# tools/rag/retriever.py, and say NOT-WIRED instead.
+#
+# As of oss-meas-01-d2, of the five toggles oss-meas-01 names:
+#   WIRED     rerank, binary_prefilter        (measurable)
+#   NOT-WIRED reflective_rerank (agx-rag-02), adaptive_routing (agx-rag-01),
+#             auto_indexer — 0 non-test import sites; auto_indexer is also
+#             ingest-side, so it cannot move a retrieval metric even once wired.
+#
+# Isolation never writes args/rag_config.yaml. It writes a temp config and sets
+# ICDEV_RAG_CONFIG (tools/rag/config_path.py), because this checkout is shared
+# with other agent sessions and the kanban scheduler.
+```
+
 ---
 
 ## Ops Hub Canvas (OHC) — Phase 71

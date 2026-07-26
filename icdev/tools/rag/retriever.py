@@ -49,8 +49,15 @@ _RESULT_PREVIEW_CHARS     = 120    # max chars in result preview/logging
 
 
 def _load_rag_config() -> dict:
-    """Load RAG config."""
-    config_path = BASE_DIR / "args" / "rag_config.yaml"
+    """Load RAG config.
+
+    Path comes from :func:`tools.rag.config_path.rag_config_path` so a
+    measurement run can point ``ICDEV_RAG_CONFIG`` at a temp config with exactly
+    one toggle flipped, instead of rewriting the shared committed file.
+    """
+    from tools.rag.config_path import rag_config_path
+
+    config_path = rag_config_path()
     if not config_path.exists():
         return {}
     try:
