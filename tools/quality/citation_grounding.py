@@ -162,6 +162,34 @@ def citation_gate(
 # Mirrors the DIC doc_generator thresholds: >=0.7 include, 0.4-0.69 include +
 # HITL flag, <0.4 abstain. Kept here so every surface uses the same bands.
 
+# ── Publish gates ─────────────────────────────────────────────────────────────
+
+#: The publish/export gates that can block a promotion, and whose HITL
+#: force-overrides are recorded in the append-only ``idr_publish_audit`` table.
+#:
+#: This is the SOURCE OF TRUTH for that table's ``gate`` CHECK constraint —
+#: CLAUDE.md requires SQL CHECK constraints to derive from a Python constant
+#: rather than hardcode their values, and until now this one did not have one.
+#: ``tests/test_publish_gates.py`` asserts the constant and the SQL agree, so
+#: adding a gate here without a migration fails loudly instead of surfacing as
+#: a constraint violation the first time someone overrides that gate.
+PUBLISH_GATES: tuple[str, ...] = (
+    "citation_guard",     # inline citations missing, or citing unretrieved evidence
+    "placeholder_guard",  # unresolved [PLACEHOLDER] tokens
+    "cove_guard",         # Chain-of-Verification found a claim needing revision
+)
+
+
+def publish_gate_check_sql(column: str = "gate") -> str:
+    """Render the CHECK body for ``PUBLISH_GATES``.
+
+    Kept next to the constant so a migration can be written against it and the
+    test can compare rendered-vs-stored rather than eyeballing two lists.
+    """
+    values = ",".join(f"'{g}'" for g in sorted(PUBLISH_GATES))
+    return f"{column} IN ({values})"
+
+
 CONF_INCLUDE = 0.7
 CONF_ABSTAIN = 0.4
 

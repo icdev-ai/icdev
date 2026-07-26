@@ -63877,8 +63877,10 @@ CREATE TABLE IF NOT EXISTS public.idr_artifacts (
 CREATE TABLE IF NOT EXISTS public.idr_publish_audit (
     id          TEXT PRIMARY KEY,
     session_id  TEXT NOT NULL,
+    -- Values derived from tools.quality.citation_grounding.PUBLISH_GATES;
+    -- kept in sync by tests/test_publish_gates.py. Widened by migration 300.
     gate        TEXT NOT NULL
-                    CHECK (gate IN ('citation_guard','placeholder_guard')),
+                    CHECK (gate IN ('citation_guard','cove_guard','placeholder_guard')),
     reviewer    TEXT,
     findings    TEXT,
     tenant_id   TEXT,
