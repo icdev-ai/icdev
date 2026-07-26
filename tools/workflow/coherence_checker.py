@@ -1775,6 +1775,58 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "class, or method is copied. Concept-only citation."
         ),
     },
+    # oss-xcut-01: the four upstreams the OSS-adaptation card studied. Each is a
+    # CONCEPT adoption with an independent implementation and no runtime
+    # dependency — the wording precedent is tools/agent_toolkit/__init__.py. None
+    # is GPL/AGPL. The spike docs/spikes/oss-00-*.md carries the per-item verdict
+    # including everything deliberately REJECTED.
+    "ragflow": {
+        "url": "https://github.com/infiniflow/ragflow",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "Adopted GOALS, not stack. Template chunking (oss-chunk-01), position "
+            "breadcrumbs (oss-chunk-02), HITL chunk repair (oss-hitl-01) and real "
+            "table extraction (oss-table-01) pursue RAGFlow's 'visibility + "
+            "structural chunking' aims with pure-Python/pdfplumber implementations. "
+            "REJECTED: DeepDoc's VLM layout weights, Elasticsearch/Infinity. No "
+            "RAGFlow code, model, or dependency is used."
+        ),
+    },
+    "crawl4ai": {
+        "url": "https://github.com/unclecode/crawl4ai",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "fit_markdown's two-pass prune+BM25 idea (oss-filter-01, "
+            "tools/http/page_extract.py) was re-implemented on stdlib html.parser + "
+            "the already-pinned rank_bm25. REJECTED: a general web crawler, and any "
+            "headless-browser rendering path. No crawl4ai code or dependency."
+        ),
+    },
+    "browser-use": {
+        "url": "https://github.com/browser-use/browser-use",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "The load-bearing idea adopted is the indexed-element PAGE "
+            "REPRESENTATION (act via click(14)), not its agent loop — ICDEV has "
+            "several. Built on the existing vendored-Selenium driver_manager "
+            "(oss-browse-01..04). REJECTED: adding Python Playwright or a chromium "
+            "download. No browser-use code or dependency."
+        ),
+    },
+    "strix": {
+        "url": "https://github.com/usestrix/strix",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "Adopted the DISCIPLINE — a finding ships with a discriminating "
+            "reproduction or it is not a finding (oss-poc-01), and a scope-locked "
+            "self-test over HTTP (oss-redteam-01/02). REJECTED: STRIX's Docker "
+            "sandbox image, Caido, and nuclei. No STRIX code or dependency."
+        ),
+    },
 }
 
 # Licenses that block the gate if cited without an explicit audit exemption.
