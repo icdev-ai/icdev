@@ -3676,3 +3676,68 @@ def handle_mc_net_ai_assist(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_mc_net_ai_assist: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Browser agent tools (oss-browse-03, seam 2 of 4)
+# ---------------------------------------------------------------------------
+# Thin adapters over tools.agent_toolkit._browser, which itself delegates to
+# AgentBrowser/GuardedDriver. No scope, budget, or audit logic lives here — a
+# third copy of that policy is a third thing to keep in sync, and oss-browse-01
+# already had to unwind a second one.
+#
+# Every handler below is exercised by tests/mcp/test_registry_handler_coverage.py,
+# which imports each TOOL_REGISTRY entry and asserts it resolves. That test is
+# the reason oss-fix-01's silently-stubbed sandbox_execute cannot recur.
+
+
+def handle_browser_navigate(args: dict) -> dict:
+    """Navigate to a URL and return the indexed page state."""
+    from tools.agent_toolkit import browser_navigate
+
+    url = args.get("url")
+    if not url:
+        return {"error": "url is required", "status": "invalid_request"}
+    return browser_navigate(url, run_id=args.get("run_id"))
+
+
+def handle_browser_read_state(args: dict) -> dict:
+    """Return the current page as indexed interactive elements."""
+    from tools.agent_toolkit import browser_read_state
+
+    return browser_read_state(
+        screenshot=bool(args.get("screenshot", False)),
+        run_id=args.get("run_id"),
+    )
+
+
+def handle_browser_click(args: dict) -> dict:
+    """Click the element carrying the given index."""
+    from tools.agent_toolkit import browser_click
+
+    index = args.get("index")
+    if index is None:
+        return {"error": "index is required", "status": "invalid_request"}
+    return browser_click(int(index), run_id=args.get("run_id"))
+
+
+def handle_browser_type(args: dict) -> dict:
+    """Type text into the element at the given index."""
+    from tools.agent_toolkit import browser_type
+
+    index, text = args.get("index"), args.get("text")
+    if index is None or text is None:
+        return {"error": "index and text are required", "status": "invalid_request"}
+    return browser_type(
+        int(index), str(text),
+        clear=bool(args.get("clear", True)),
+        enter=bool(args.get("enter", False)),
+        run_id=args.get("run_id"),
+    )
+
+
+def handle_browser_screenshot(args: dict) -> dict:
+    """Capture a screenshot under playwright/screenshots/."""
+    from tools.agent_toolkit import browser_screenshot
+
+    return browser_screenshot(name=args.get("name"), run_id=args.get("run_id"))
