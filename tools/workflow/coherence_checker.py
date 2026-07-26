@@ -1651,6 +1651,22 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "zero ADW citations remaining."
         ),
     },
+    "strix": {
+        "url": "https://github.com/usestrix/strix",
+        "license": "Apache-2.0",
+        "audit_status": "clean-room verified 2026-07-25 (oss-poc-01)",
+        "notes": (
+            "reproduction_validator.py cites STRIX's reproduce-or-drop discipline "
+            "(a finding ships with a working PoC or it is not a finding). Concept "
+            "only: the ICDEV implementation is a stdlib/requests replay engine over "
+            "the existing tools/http client with its own predicate vocabulary, "
+            "allowlist scope lock, and migration-295 tables. STRIX's runtime "
+            "(Docker sandbox image, Caido proxy, nuclei bundle, curl|bash installer) "
+            "is explicitly rejected — see "
+            "docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md. "
+            "No code shared, no runtime dependency."
+        ),
+    },
     "mattpocock/skills": {
         "url": "https://github.com/mattpocock/skills",
         "license": "MIT",

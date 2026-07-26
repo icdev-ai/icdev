@@ -3380,6 +3380,38 @@ CREATE TABLE IF NOT EXISTS divergence_idea_scores (
     classification     TEXT NOT NULL DEFAULT 'CUI',
     created_at         TEXT
 );
+CREATE TABLE IF NOT EXISTS dynamic_findings (
+    id                 TEXT PRIMARY KEY,
+    finding_key        TEXT NOT NULL,
+    detector           TEXT NOT NULL DEFAULT '',
+    title              TEXT NOT NULL DEFAULT '',
+    severity           TEXT NOT NULL DEFAULT 'medium',
+    target             TEXT NOT NULL DEFAULT '',
+    status             TEXT NOT NULL DEFAULT 'unconfirmed',
+    reproduction       TEXT DEFAULT '',
+    discriminating     INTEGER NOT NULL DEFAULT 0,
+    last_outcome       TEXT NOT NULL DEFAULT '',
+    last_replayed_at   TEXT,
+    tenant_id          TEXT NOT NULL DEFAULT 'default',
+    classification     TEXT NOT NULL DEFAULT 'CUI',
+    created_at         TEXT,
+    updated_at         TEXT
+);
+CREATE TABLE IF NOT EXISTS finding_replay_attempts (
+    id                 TEXT PRIMARY KEY,
+    finding_id         TEXT NOT NULL,
+    finding_key        TEXT NOT NULL DEFAULT '',
+    outcome            TEXT NOT NULL DEFAULT 'error',
+    target             TEXT NOT NULL DEFAULT '',
+    purpose            TEXT NOT NULL DEFAULT 'confirm',
+    predicate_json     TEXT DEFAULT '',
+    observations_json  TEXT DEFAULT '',
+    detail             TEXT DEFAULT '',
+    duration_ms        INTEGER NOT NULL DEFAULT 0,
+    tenant_id          TEXT NOT NULL DEFAULT 'default',
+    classification     TEXT NOT NULL DEFAULT 'CUI',
+    created_at         TEXT
+);
 """
 
 

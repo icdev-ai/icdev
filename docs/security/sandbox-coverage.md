@@ -890,3 +890,19 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 - **Decision:** **trusted-first-party**
 - **Rationale:** All inputs are repo-authored data or the tool's own output. The modules perform no `exec()`/`eval()`/`subprocess`; they call the LLMRouter and the deterministic fitness judge and aggregate results in pure Python. There is no user-provided-content ingress to sandbox. CUI safety is preserved by routing all inference through `LLMRouter` (the api_key_env local-vs-cloud distinction keeps CUI local); the harness itself moves no CUI.
 - **Revisit if:** the benchmark is ever pointed at a user-supplied or externally-fetched task corpus (rather than the first-party `args/agx/` suite), or the leaderboard is made to ingest reports from an untrusted source — either of which would introduce untrusted-content ingress and warrant re-scoping.
+
+### Gap 36 — Reproduce-or-drop finding replay (`tools/security/reproduction_validator.py`)
+
+**Module:** `tools/security/reproduction_validator.py` (oss-poc-01).
+
+**Ingress path:** Two, both untrusted by construction. (1) A *reproduction* — a JSON object carrying `steps[]` (method/path/headers/body) and a `predicate` — which may be authored by an LLM agent claiming a dynamic finding, not by a maintainer. (2) The *response* from the replayed target, which is by definition attacker-influenceable if the target is compromised. This module is unusual among ICDEV ingress points in that it deliberately issues outbound HTTP as its core function.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither ingress reaches an execution path. A reproduction is interpreted, never executed: `validate_reproduction()` rejects unknown `kind` values, and steps are consumed only as arguments to `session.request()` — there is no `exec`/`eval`/`subprocess`/`os.system`/deserialization-of-code anywhere in the module. Predicates are evaluated by `evaluate_predicate()`, a closed dispatch over six literal types (`PREDICATE_TYPES`); an unknown type returns `False` rather than falling through, so an unevaluable predicate can never confirm a finding. Response bodies are truncated to `replay.max_body_bytes`, matched with `re.search`/`in`, and stripped by `_redact()` before they leave the replay — only status, length and sha256 persist.
+- **Guardrails:**
+  - **Scope lock (the load-bearing control):** `is_target_allowed()` is default-deny against `target_allowlist` in `args/reproduction_policy.yaml` — loopback only out of the box. A non-allowlisted host returns `refused` with zero observations; **nothing is sent**. Widening is an explicit operator act (`ICDEV_REPRO_TARGET_ALLOWLIST`), and the intent is own-targets-only, never a third-party host. `tests/test_reproduction_validator.py::TestScopeLock` asserts the refusal and that an unparseable URL is not allowlisted.
+  - Retries are disabled per replay (`HTTPAdapter(max_retries=0)`) so a reproduction is exactly-once; redirects are not followed unless a step opts in (a 302 to a login page *is* the authz signal).
+  - Proxies are cleared and `trust_env` disabled for loopback targets, so an operator-configured egress proxy cannot answer in place of the target.
+  - `replay.max_steps` (8) bounds a reproduction to session-setup-then-access; it is not a crawler.
+  - `TestEvidenceHygiene` asserts no response body — and specifically no seeded secret marker — survives into an observation, which matters because ICDEV is a public repo and these rows are read by dashboards.
+- **Revisit if:** a non-loopback host is added to the shipped allowlist; a reproduction `kind` is added whose replay executes rather than interprets its steps (a registered `_TRACE_REPLAYER` driving a real browser is the likely candidate — that engine must land its own decision); or `_redact()` is relaxed to retain bodies.
