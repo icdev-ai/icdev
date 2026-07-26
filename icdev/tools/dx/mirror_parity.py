@@ -130,7 +130,20 @@ def audit_path(subpath: str, fix: bool = False) -> dict:
     for rel in sorted(mirror_files - live_files):
         result["mirror_only"].append(rel)
     for rel in sorted(live_files & mirror_files):
-        if _sha256(live / rel) != _sha256(mirror / rel):
+        a, b = live / rel, mirror / rel
+        # Size first: differing sizes cannot be identical bytes, and identical
+        # sizes are rare enough that the hash is only paid when it matters.
+        # `--all` compares ~20k file pairs across 200 packages; hashing every
+        # one made the sweep too slow to sit in CI, which always runs on a cold
+        # checkout. stat() is roughly two orders of magnitude cheaper than a
+        # full read, and the result is identical.
+        try:
+            if a.stat().st_size != b.stat().st_size:
+                result["content_drift"].append(rel)
+                continue
+        except OSError:
+            pass  # fall through to the authoritative hash comparison
+        if _sha256(a) != _sha256(b):
             result["content_drift"].append(rel)
         else:
             result["in_parity"] += 1

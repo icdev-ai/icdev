@@ -28,7 +28,7 @@ import pathlib
 import pytest
 import yaml
 
-from tools.dx.mirror_parity import audit_all, discover_mirrored_paths
+from tools.dx.mirror_parity import audit_path, discover_mirrored_paths
 
 _BASELINE = pathlib.Path(__file__).resolve().parents[1] / "args" / "mirror_drift_baseline.yaml"
 
@@ -37,12 +37,39 @@ def _baseline() -> dict:
     if not _BASELINE.is_file():
         return {}
     data = yaml.safe_load(_BASELINE.read_text(encoding="utf-8")) or {}
-    return {str(k): int(v) for k, v in (data.get("content_drift") or {}).items()}
+    raw = {str(k): int(v) for k, v in (data.get("content_drift") or {}).items()}
+    return {k: v for k, v in raw.items() if k in GATED_PACKAGES}
+
+
+#: Packages this test sweeps on every CI run.
+#:
+#: NOT the full 200. `audit_all()` walks ~20k file pairs and takes ~68s on a
+#: cold checkout — and CI is always cold — which does not belong in the unit
+#: tier. These are the packages carrying grounding, governance, schema and the
+#: document pipeline: the ones where a fix landing on one side only is a
+#: correctness bug rather than stale convenience code.
+#:
+#: The full sweep stays a CLI concern:
+#:     python tools/dx/mirror_parity.py --all --gate
+GATED_PACKAGES = (
+    "quality",       # citation/claim grounding — the TRUST core
+    "cortex",        # governed facade
+    "db",            # schema + migrations (this is where pg_consolidated.sql drifted)
+    "document_intelligence",
+    "rag",
+    "knowledge_graph",
+)
 
 
 @pytest.fixture(scope="module")
 def current() -> dict:
-    return {r["path"]: len(r["content_drift"]) for r in audit_all()["reports"] if r["content_drift"]}
+    """Content-drift counts for the gated packages only (fast path)."""
+    out = {}
+    for pkg in GATED_PACKAGES:
+        r = audit_path(pkg)
+        if r["content_drift"]:
+            out[pkg] = len(r["content_drift"])
+    return out
 
 
 # --------------------------------------------------------------------------- #
