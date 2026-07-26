@@ -147,28 +147,55 @@ def test_ensure_table_does_not_destroy_a_populated_legacy_table():
 # --------------------------------------------------------------------------- #
 
 
-def test_turn_ddl_and_consolidated_schema_agree():
+@pytest.mark.parametrize("schema_rel", [
+    "tools/db/schema/pg_consolidated.sql",
+    "icdev/tools/db/schema/pg_consolidated.sql",
+], ids=["canonical", "icdev_mirror"])
+def test_turn_ddl_and_consolidated_schema_agree(schema_rel):
     """pg_consolidated.sql shipped the legacy shape; a fresh bootstrap was broken.
 
-    Guards against the two drifting apart again.
+    BOTH copies are checked. The original version of this test looked only at
+    the canonical file, so when the fix was applied there and not mirrored, the
+    packaged ``icdev/`` schema kept shipping the broken migration-191 shape —
+    a fresh bootstrap from the wheel would recreate the very bug the fix
+    removed, and nothing failed.
+
+    A mirror that is only half-tested is not mirrored.
     """
     import pathlib
     import re
 
     root = pathlib.Path(__file__).resolve().parents[1]
-    sql = (root / "tools" / "db" / "schema" / "pg_consolidated.sql").read_text(
-        encoding="utf-8", errors="replace"
-    )
-    block = re.search(
-        r"CREATE TABLE public\.dic_chat_memory \((.*?)\);", sql, re.S
-    )
-    assert block, "dic_chat_memory not found in pg_consolidated.sql"
+    path = root / schema_rel
+    assert path.is_file(), f"{schema_rel} missing"
+    sql = path.read_text(encoding="utf-8", errors="replace")
+    block = re.search(r"CREATE TABLE public\.dic_chat_memory \((.*?)\);", sql, re.S)
+    assert block, f"dic_chat_memory not found in {schema_rel}"
     consolidated_cols = set(re.findall(r"^\s{4}(\w+)\s", block.group(1), re.M))
     module_cols = set(re.findall(r"^\s{4}(\w+)\s", cm._TURN_TABLE_DDL, re.M))
 
-    assert "turn_id" in consolidated_cols, "consolidated schema still ships the legacy shape"
+    assert "turn_id" in consolidated_cols, f"{schema_rel} still ships the legacy shape"
     assert "memory_id" not in consolidated_cols
     assert module_cols == consolidated_cols, (
-        f"drift: only in module={module_cols - consolidated_cols}, "
-        f"only in consolidated={consolidated_cols - module_cols}"
+        f"drift in {schema_rel}: only in module={module_cols - consolidated_cols}, "
+        f"only in schema={consolidated_cols - module_cols}"
+    )
+
+
+@pytest.mark.parametrize("schema_rel", [
+    "tools/db/schema/pg_consolidated.sql",
+    "icdev/tools/db/schema/pg_consolidated.sql",
+], ids=["canonical", "icdev_mirror"])
+def test_primary_key_follows_the_turn_shape(schema_rel):
+    """The pkey must move with the columns, or the CREATE fails on bootstrap."""
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    sql = (root / schema_rel).read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY \((\w+)\)", sql)
+    assert m, f"dic_chat_memory_pkey not found in {schema_rel}"
+    assert m.group(1) == "turn_id", (
+        f"{schema_rel} keys dic_chat_memory on {m.group(1)!r}, which the turn "
+        "schema no longer has"
     )
