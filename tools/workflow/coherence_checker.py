@@ -1884,6 +1884,20 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "rejection, not a citation of use."
         ),
     },
+    # oss-02 / oss2-triage-01: the one genuinely new idea from the nine-project sweep.
+    "agent-chief": {
+        "url": "https://github.com/(agent-chief)",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss2-triage-01)",
+        "notes": (
+            "Adopted the PATTERN only — a scored interrupt/dispatch/file worthiness "
+            "stage in front of notification routing (tools/notifications/worthiness.py). "
+            "NOT the package (Python 3.12+ against ICDEV's 3.9 floor) and NOT a new "
+            "notification system: it is one config-driven scored stage over the existing "
+            "tools/notifications/ subsystem, off by default. No agent-chief code or "
+            "dependency is used."
+        ),
+    },
 }
 
 # Licenses that block the gate if cited without an explicit audit exemption.
