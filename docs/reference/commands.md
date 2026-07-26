@@ -178,6 +178,18 @@ python tools/db/storage.py --info --json           # Show backend configuration
 
 ---
 
+## Untrusted HTML Extraction (oss-filter-01)
+```bash
+# Two-pass fit_markdown filter: prune site chrome, then BM25-rank against a query.
+python tools/http/page_extract.py --file page.html                      # prune only
+python tools/http/page_extract.py --file page.html --query "rate limits"  # + relevance
+python tools/http/page_extract.py --file page.html --query "rate limits" --json
+cat page.html | python tools/http/page_extract.py --query "rate limits"
+
+# Thresholds (prune threshold/type, min_word_threshold, BM25 threshold, stopwords,
+# stemming, section propagation, markdown rendering): args/page_extract.yaml
+```
+
 ## Security Commands
 ```bash
 python tools/security/sast_runner.py --project-dir "/path"
