@@ -124,6 +124,18 @@ returns nothing. The `[:_MAX_CONTENT]` cap survives only as a backstop. The
 signature is backward compatible — existing callers pass no query and get
 prune-only extraction, which is still strictly better than the regex strip.
 
+Plumbing alone would have left pass 2 dead at the site the task was aimed at,
+so `analyze()` supplies one: it already derives a canvas **lens** describing
+what the reader is after (`_CANVAS_LENS[canvas_type]`, else `_DEFAULT_LENS`),
+and that lens is now computed above the fetch and passed as the retrieval
+query. Blocks are therefore kept by relevance to the lens rather than by
+position. `tests/chat_router/test_url_analyzer_query_wiring.py` pins the full
+hop — `analyze()` → `fetch_content(query=…)` → `extract(query=…)` — plus the
+regex-strip fallback and the error short-circuit the reorder moved past.
+
+The other two callers (`tech_writing_assist.py`, `tfw_chat_agent.py`) pass no
+query and keep prune-only behaviour.
+
 ## Files
 
 | File | Role |
@@ -132,6 +144,7 @@ prune-only extraction, which is still strictly better than the regex strip.
 | `args/page_extract.yaml` | every threshold (mirrored to `icdev/args/`) |
 | `tests/fixtures/page_extract_corpus.py` | fixed 20-page corpus |
 | `tests/http/test_page_extract.py` | 60 tests |
-| `tools/chat_router/url_analyzer.py` | consumer, defect fixed |
+| `tools/chat_router/url_analyzer.py` | consumer, defect fixed — lens supplied as the query |
+| `tests/chat_router/test_url_analyzer_query_wiring.py` | 6 tests pinning the wiring |
 | `docs/security/sandbox-coverage.md` | Gap 37 decision |
 | `tools/manifest/security.md` | tool registration |
