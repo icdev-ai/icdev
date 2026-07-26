@@ -13,6 +13,7 @@ Multi-LLM orchestration engine.
 | `ChainOrchestrator.invoke_chain_of_thought(function, request)` | Run CoT: reasoner → critic → synthesizer (up to `max_rounds`). Returns `ChainResult`. |
 | `ChainOrchestrator.invoke_chain_of_debate(function, request)` | Run CoD: N parallel debaters → neutral judge synthesis. Returns `ChainResult`. |
 | `ChainOrchestrator.invoke_council(question, context)` | Run the LLM Council (adapted from Karpathy's methodology): 5 fixed-perspective advisors (Contrarian, First Principles Thinker, Expansionist, Outsider, Executor) respond independently and in parallel, anonymously peer-review each other, then a chairman synthesizes a structured verdict (agreement, clashes, blind spots, recommendation, next step). Distinct from CoD — no debate-to-a-winner, independent single-pass analysis from fixed cognitive lenses. Routing: `council_advisor_pool` / `council_chairman` in `args/llm_config.yaml`, plus `chain_orchestration.council.per_function.idealab_council_query`. Exposed as the `council_query` MCP tool (`gap_handlers.py::handle_council_query`); primary caller is cross-repo (e.g. idea_lab pressure-testing a validated idea before committing to it). |
+| `ChainOrchestrator.invoke_divergence(function, request)` | Run Divergence (dvg-core-*): a single STRICTLY-ISOLATED generative fan-out (one round, no cross-reading) that returns a raw pool of candidate ideas — the generative counterpart to the council. Each branch gets the problem + one GENERATIVE frame (from `args/ideation_frames.yaml` `generative` set) and is forbidden from evaluating/ranking. Scoring/clustering/deepening is the SEPARATE `tools/quality/divergence_critic.py` invocation. **OPT-IN** (`chain_orchestration.divergence.enabled` default false; per-function opt-in). Routing: `divergence_branch_pool` / `divergence_critic`. Exposed as the `divergence_invoke` MCP tool (`gap_handlers.py::handle_divergence_invoke`, `score` opt-in runs the critic + advisory trap warnings) and the `icdev-divergence` skill (`.agents/skills/icdev-divergence`, headless via `tools/skills/invoke.py`). CUI: inherits the function's LOCAL-ONLY routing, opens no new egress path. |
 
 **Config:** `args/llm_config.yaml` → `chain_orchestration` section (cost cap, token cap, timeout, per-function overrides, model assignments, role keys).
 
@@ -46,6 +47,30 @@ Jinja2 prompt templates for each role.
 | `ChainPrompts.debater(...)` | Parallel debate position |
 | `ChainPrompts.judge(...)` | Neutral synthesis of debate |
 | `ChainPrompts.self_consistency_voter(...)` | Majority-vote synthesis |
+| `ChainPrompts.divergence_branch(...)` | Generative divergence branch (produce candidate ideas, no evaluation) |
+
+---
+
+## Ideation Frame Library (`args/ideation_frames.yaml` + `tools/config/ideation_frames.py`)
+
+The single config-driven source of perspective sets for multi-branch LLM modes
+(Divergence, Council), replacing hardcoded module-level lists. Versioned; each
+frame is `{key, name, stance, prompt_fragment, mode}` where `mode` is
+`generative` (produce new candidate ideas — branch system prompt forbids
+evaluation) or `evaluative` (critique a proposal already on the table). Frames
+within a set must be orthogonal.
+
+| Function | Signature |
+|----------|-----------|
+| `get_frames(frame_set, *, mode=None, path=None)` | List of `Frame(key, name, stance, prompt_fragment, mode)`; unknown set → `[]`, malformed frames skipped (never raises) |
+| `get_frame_pairs(frame_set, *, mode=None, path=None)` | `[(name, prompt_fragment), ...]` — the shape the branch/advisor builders consume |
+| `get_version(path=None)` | Library version string (stamped into chain telemetry) |
+| `list_frame_sets(path=None)` | Names of all defined frame sets |
+| `validate_library(path=None)` | Fail-loud strict validation (tests / coherence); raises `IdeationFrameError` |
+
+Seeded set `generative` (DoD/air-gap/accreditation-shaped, orthogonal): Adversary,
+Accreditor, Sustainment Owner, Air-Gap Operator, Transplant, Inverter, Shoestring,
+Naturalist. Tests: `tests/test_ideation_frames.py`.
 
 ---
 
@@ -100,11 +125,13 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 | **Kanban** | `cot_enabled` flag + `cot_trace_id` in `TransitionResult` |
 | **Loop Engine** | `cot_config` in acceptance criteria |
 | **Auto-Remediate** | CoT reasoning stored in remediation decisions |
-| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`. `council_query` tool likewise (`gap_handlers.py::handle_council_query`), primary caller cross-repo (idea_lab). |
+| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`. `council_query` and `divergence_invoke` tools likewise (`gap_handlers.py::handle_council_query` / `handle_divergence_invoke`), primary caller cross-repo (idea_lab). |
+| **Skill** | `icdev-divergence` (`.agents/skills/icdev-divergence/SKILL.md`) — interactive + headless via `python tools/skills/invoke.py --exec icdev-divergence`. |
 | **Knowledge Graph** | `reasoning_step` node type indexed by `kg_builder.py` with step_name, model_id, chain_mode, trace_id, round_num |
 | **Event Bus** | `cot_reasoning_completed` published after every chain invocation |
 | **Cost Intelligence** | `enable_cot` / `enable_cod` recommendation types for high-cost functions |
 | **Readiness Score** | 5th `explainability` dimension in `tools/canvas/orchestrator.py:compute_readiness()` |
+| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`. `council_query` tool likewise (`gap_handlers.py::handle_council_query`), primary caller cross-repo (idea_lab). |
 
 ## FORGE Artifacts
 

@@ -31,14 +31,12 @@ content_drift:
   config: 1
   coordination: 1
   dashboard: 2
-  data_canvas: 12
   db: 1
   doc_modernization: 1
   finetune: 1
   foundry: 1
   genesis: 1
   llm: 1
-  manifest: 30
   showcase: 1
   skills: 1
   testing: 4

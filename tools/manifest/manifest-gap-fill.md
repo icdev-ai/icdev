@@ -58,4 +58,5 @@ Registers tools flagged by the gap detector's `tool_not_in_manifest` rule (8-poi
 | CPMP DB Init | tools/govcon/init_db.py | GovCon/CPMP — initialize CPMP DB tables (idempotent, startup-safe). | (library) | Schema init |
 | Risk Manager | tools/govcon/risk_manager.py | GovCon/CPMP — risk manager: CRUD for `cpmp_risks`. | `--json` | Risk records |
 | CloudForge Event Emitter | tools/cloudforge/event_emitter.py | CloudForge Canvas — emits `canvas_events` for DIC integration on resource provisioning and runbook execution. Injection points: `emit_resource_provisioned()` after cloud resource creation (VPC/VM/bucket/IAM), `emit_runbook_executed()` after runbook completion. Canvas not yet built; module provides the integration API so DIC wiring is ready when the canvas ships. | (library) emit_resource_provisioned(resource_id, resource_type, ...) / emit_runbook_executed(runbook_id, runbook_name, status, ...) | bool (emitted successfully) |
+| GameDay Adversarial Pack | tools/gameday/pack.py | AI GameDay League — Cyber Adversarial scenario/content pack. | (library) | Pack data |
 

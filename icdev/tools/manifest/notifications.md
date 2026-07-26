@@ -5,6 +5,9 @@
 ## Notifications
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Routing Rules Engine | tools/notifications/routing_rules.py | Evaluate (severity x component x tenant) -> channels routing rules at send time (args/notification_routing.yaml). Canonical layer = NotificationGateway. Consumed by crx-gen-02/DMX. | resolve_channels(severity, component, tenant_id, default) | list[str] channels |
+| Escalation + Ack | tools/notifications/escalation.py | Track unacknowledged critical alerts; re-route via routing rules after a timeout. Synchronous process_escalations() sweep (reflex/scheduler hook, no daemon). notification_escalations table (tenant_id+classification, RLS). | register_alert / acknowledge / process_escalations | escalation dicts |
+| User Preferences | tools/notifications/preferences.py | Per-user channels, quiet hours (midnight-wrap aware), digest opt-in. notification_preferences table (tenant_id+classification, RLS). Narrows routing to recipient prefs. | get/set_preferences / resolve_user_channels / in_quiet_hours / wants_digest | prefs dicts / list[str] |
 | Base Adapter | tools/notifications/adapters/base.py | Abstract base class for all notification delivery adapters | (library) | NotificationAdapter ABC |
 | Email Adapter | tools/notifications/adapters/email_adapter.py | Email notification delivery adapter | --json | Delivery status |
 | Slack Adapter | tools/notifications/adapters/slack.py | Slack webhook notification adapter — delivers messages to Slack channels via incoming webhooks | --json | Delivery status |

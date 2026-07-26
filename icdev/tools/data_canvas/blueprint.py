@@ -94,12 +94,33 @@ except Exception:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
+def _is_missing_table_error(exc) -> bool:
+    """True if ``exc`` indicates a missing/undefined DB table or relation.
+
+    A fresh or partially-migrated deploy raises this when a data-canvas table
+    has not been created yet. Covers both backends without importing the drivers:
+
+      * SQLite  — ``sqlite3.OperationalError: no such table: <name>``
+      * PostgreSQL — ``psycopg2.errors.UndefinedTable`` (SQLSTATE 42P01),
+        message ``relation "<name>" does not exist``.
+
+    Detection is by SQLSTATE (``pgcode``) when available and by message text
+    otherwise, so it works whether the exception is the raw driver error or a
+    wrapper raised by ``tools.db.storage``.
+    """
+    # psycopg2 exposes SQLSTATE on .pgcode; 42P01 = undefined_table.
+    if getattr(exc, "pgcode", None) == "42P01":
+        return True
+    msg = str(exc).lower()
+    return "no such table" in msg or "does not exist" in msg or "undefinedtable" in msg
+
+
 def _audit(design_id, user, action, detail="", classification="CUI // SP-CTI"):
     """Write an audit log entry."""
     try:
         conn = get_connection()
         conn.execute(
-            "INSERT INTO dd_audit (design_id, user, action, detail, classification, created_at) "
+            'INSERT INTO dd_audit (design_id, "user", action, detail, classification, created_at) '
             "VALUES (?, ?, ?, ?, ?, ?)",
             (design_id, user, action, detail, classification, now_isoformat()),
         )
@@ -150,12 +171,79 @@ def create_data_canvas_blueprint():
 
         return decorated
 
+    def _json_api_errors(f):
+        """Wrap a JSON API route so DB/runtime errors return clean JSON.
+
+        Without this, an uncaught exception inside a handler yields Flask's
+        HTML 500 page — which breaks JSON clients. Applied to read/DB routes
+        that lack their own try/except.
+
+        A *missing-table* error (unmigrated / fresh deploy) is treated as a
+        transient unavailability and returns **503** with an ``error`` body,
+        so clients can distinguish "not initialized yet" from a real 500.
+        Demo data is never fabricated.
+        """
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except Exception as exc:
+                if _is_missing_table_error(exc):
+                    logger.warning(
+                        "data_canvas API %s: table not initialized (503): %s",
+                        getattr(f, "__name__", "?"), exc,
+                    )
+                    return jsonify({
+                        "error": "Data canvas database is not initialized",
+                        "detail": str(exc),
+                    }), 503
+                logger.warning(
+                    "data_canvas API %s failed: %s",
+                    getattr(f, "__name__", "?"), exc, exc_info=True,
+                )
+                return jsonify({"error": str(exc)}), 500
+
+        return decorated
+
+    def _page_table_guard(template, **empty_ctx):
+        """Decorator factory: render an empty-state page on missing-table.
+
+        For PAGE routes (HTML), a missing/unmigrated data-canvas table should
+        degrade to the normal template rendered with empty collections rather
+        than a 500. Any other error re-raises unchanged.
+        """
+        def deco(f):
+            @wraps(f)
+            def decorated(*args, **kwargs):
+                try:
+                    return f(*args, **kwargs)
+                except Exception as exc:
+                    if _is_missing_table_error(exc):
+                        logger.warning(
+                            "data_canvas page %s: table not initialized, "
+                            "rendering empty state: %s",
+                            getattr(f, "__name__", "?"), exc,
+                        )
+                        return render_template(template, **empty_ctx)
+                    raise
+            return decorated
+        return deco
+
     # ══════════════════════════════════════════════════════════════════════
     # PAGE ROUTES
     # ══════════════════════════════════════════════════════════════════════
 
     @bp.route("/")
     @dc_login_required
+    @_page_table_guard(
+        "data_canvas/index.html",
+        designs=[],
+        templates=[],
+        sop_count=0,
+        approved_sop_count=0,
+        objects=DATA_OBJECTS,
+        classification_levels=DATA_CLASSIFICATION_LEVELS,
+    )
     def dc_index():
         conn = get_connection()
         designs = [
@@ -236,6 +324,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/templates")
     @dc_login_required
+    @_page_table_guard("data_canvas/templates.html", templates=[])
     def dc_templates():
         """Template gallery page."""
         conn = get_connection()
@@ -250,6 +339,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/assessments")
     @dc_login_required
+    @_page_table_guard("data_canvas/assessments.html", assessments=[])
     def dc_assessments():
         """Assessment history page."""
         conn = get_connection()
@@ -286,6 +376,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_list():
         conn = get_connection()
         rows = conn.execute(
@@ -342,6 +433,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs/<design_id>", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_get(design_id):
         conn = get_connection()
         row = conn.execute("SELECT * FROM data_designs WHERE id=?", (design_id,)).fetchone()
@@ -381,16 +473,16 @@ def create_data_canvas_blueprint():
             from tools.security_canvas.agent import on_ddc_design_saved
 
             on_ddc_design_saved(design_id)
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("post-save reflex on_ddc_design_saved failed: %s", _exc, exc_info=True)
 
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
 
             rebuild_canvas_kg("ddc", design_id)
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("canvas KG rebuild failed: %s", _exc, exc_info=True)
         # Blockchain provenance
         try:
             from tools.canvas.provenance import register_canvas_provenance
@@ -400,8 +492,8 @@ def create_data_canvas_blueprint():
                 graph_json=data.get("graph_json", {}),
                 project_id=data.get("project_id", ""),
             )
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("canvas provenance registration failed: %s", _exc, exc_info=True)
 
         return jsonify({"updated": True})
 
@@ -439,6 +531,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/templates", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_list_templates():
         conn = get_connection()
         rows = conn.execute(
@@ -453,6 +546,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/snippets", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_list_snippets():
         """List available DDC snippets (reusable graph fragments)."""
         conn = get_connection()
@@ -501,8 +595,8 @@ def create_data_canvas_blueprint():
 
             pii_scan = _scan_graph(graph_data)
             result["findings"].extend(pii_scan.get("compliance_findings", []))
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("PII graph scan failed: %s", _exc, exc_info=True)
 
         # Persist assessment
         assess_id = str(_uuid.uuid4())
@@ -538,8 +632,8 @@ def create_data_canvas_blueprint():
                 assessment_data=result,
                 project_id="",
             )
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("assessment provenance registration failed: %s", _exc, exc_info=True)
 
         return jsonify(
             {
@@ -555,6 +649,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs/<design_id>/assessments", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_list_assessments(design_id):
         """List previous assessments for a design."""
         conn = get_connection()
@@ -612,15 +707,18 @@ def create_data_canvas_blueprint():
     # ══════════════════════════════════════════════════════════════════════
 
     @bp.route("/api/objects")
+    @dc_login_required
     def dc_api_objects():
         """Return data object palette for the canvas frontend."""
         return jsonify(DATA_OBJECTS)
 
     @bp.route("/api/classification-levels")
+    @dc_login_required
     def dc_api_classification_levels():
         return jsonify(DATA_CLASSIFICATION_LEVELS)
 
     @bp.route("/api/rules")
+    @dc_login_required
     def dc_api_rules():
         return jsonify(DATA_COMPLIANCE_RULES)
 
@@ -630,6 +728,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs/<design_id>/lineage", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_lineage_list(design_id):
         """List all lineage edges for a data design."""
         conn = get_connection()
@@ -644,6 +743,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs/<design_id>/lineage", methods=["POST"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_lineage_create(design_id):
         """Add a column-level lineage edge to a data design."""
         data = request.get_json(force=True, silent=True) or {}
@@ -677,6 +777,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/designs/<design_id>/lineage/<edge_id>", methods=["DELETE"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_lineage_delete(design_id, edge_id):
         """Delete a lineage edge."""
         conn = get_connection()
@@ -713,6 +814,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/lineage/<dataset_id>", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_lineage_pii(dataset_id):
         """Return lineage graph for a design with per-node PII markers.
 
@@ -869,6 +971,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/versions/<design_id>", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_list_versions(design_id):
         """List all version snapshots for a data design."""
         conn = get_connection()
@@ -896,7 +999,8 @@ def create_data_canvas_blueprint():
         raw = row_to_dict(row)["graph_json"]
         try:
             current_graph = json.loads(raw) if isinstance(raw, str) else raw
-        except Exception:
+        except Exception as _exc:
+            logger.warning("version graph_json parse failed: %s", _exc, exc_info=True)
             current_graph = {}
         ver_num = conn.execute(
             "SELECT COALESCE(MAX(version_number), 0) + 1 FROM dd_versions WHERE design_id=?",
@@ -912,8 +1016,8 @@ def create_data_canvas_blueprint():
                 try:
                     prev_graph = json.loads(prev[0]) if isinstance(prev[0], str) else prev[0]
                     change_summary = _dc_diff_graph(prev_graph, current_graph)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    logger.warning("version diff summary failed: %s", _exc, exc_info=True)
         ver_id = str(_uuid.uuid4())
         now = now_isoformat()
         conn.execute(
@@ -983,7 +1087,8 @@ def create_data_canvas_blueprint():
         try:
             graph_a = json.loads(ver_a[0]) if isinstance(ver_a[0], str) else ver_a[0]
             graph_b = json.loads(ver_b[0]) if isinstance(ver_b[0], str) else ver_b[0]
-        except Exception:
+        except Exception as _exc:
+            logger.warning("compare-versions graph parse failed: %s", _exc, exc_info=True)
             return jsonify({"error": "Failed to parse graph data"}), 500
         summary = _dc_diff_graph(graph_a, graph_b)
         return jsonify(
@@ -1324,7 +1429,8 @@ def create_data_canvas_blueprint():
             if row:
                 try:
                     existing = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
-                except Exception:
+                except Exception as _exc:
+                    logger.warning("existing graph_json parse failed: %s", _exc, exc_info=True)
                     existing = {"nodes": [], "edges": [], "boundaries": []}
                 # Merge: add introspected nodes/edges that aren't already present
                 existing_node_ids = {n["id"] for n in existing.get("nodes", [])}
@@ -1463,7 +1569,8 @@ def create_data_canvas_blueprint():
         try:
             import json as _json
             runbook["steps"] = _json.loads(runbook.get("steps_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("runbook steps_json parse failed: %s", _exc, exc_info=True)
             runbook["steps"] = []
         execs = [
             row_to_dict(r)
@@ -1554,7 +1661,8 @@ def create_data_canvas_blueprint():
         rb = row_to_dict(row)
         try:
             rb["steps"] = json.loads(rb.get("steps_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("runbook steps_json parse failed: %s", _exc, exc_info=True)
             rb["steps"] = []
         return jsonify(rb)
 
@@ -1671,6 +1779,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/sops")
     @dc_login_required
+    @_page_table_guard("data_canvas/sops.html", sops=[])
     def dc_sops():
         """SOP list page — all DDC standard operating procedures."""
         conn = get_connection()
@@ -1695,11 +1804,13 @@ def create_data_canvas_blueprint():
         sop = row_to_dict(sop_row)
         try:
             sop["steps"] = _json.loads(sop.get("steps_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("SOP steps_json parse failed: %s", _exc, exc_info=True)
             sop["steps"] = []
         try:
             sop["references"] = _json.loads(sop.get("references_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("SOP references_json parse failed: %s", _exc, exc_info=True)
             sop["references"] = []
         approvals = [
             row_to_dict(r)
@@ -1798,11 +1909,13 @@ def create_data_canvas_blueprint():
         sop = row_to_dict(row)
         try:
             sop["steps"] = _json.loads(sop.get("steps_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("SOP steps_json parse failed: %s", _exc, exc_info=True)
             sop["steps"] = []
         try:
             sop["references"] = _json.loads(sop.get("references_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("SOP references_json parse failed: %s", _exc, exc_info=True)
             sop["references"] = []
         return jsonify(sop)
 
@@ -2122,7 +2235,8 @@ def create_data_canvas_blueprint():
                 "SELECT * FROM data_twin_snapshots WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
                 (design_id,),
             ).fetchall()
-        except Exception:
+        except Exception as _exc:
+            logger.warning("twin snapshots query failed: %s", _exc, exc_info=True)
             snapshots = []
         return render_template(
             "data_canvas/twin.html",
@@ -2168,7 +2282,8 @@ def create_data_canvas_blueprint():
             return jsonify({"error": "Design not found"}), 404
         try:
             graph = json.loads(row["graph_json"] or "{}")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("twin graph_json parse failed: %s", _exc, exc_info=True)
             graph = {}
         return jsonify({"graph_json": graph}), 200
 
@@ -2237,7 +2352,7 @@ def create_data_canvas_blueprint():
         sid = str(_uuid.uuid4())[:8]
         pid = str(_uuid.uuid4())[:8]
         conn.execute(
-            "INSERT INTO dd_explore_sessions (id, design_id, user, db_conn_json, classification, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            'INSERT INTO dd_explore_sessions (id, design_id, "user", db_conn_json, classification, created_at) VALUES (?, ?, ?, ?, ?, ?)',
             (sid, design_id, session.get("user_id", ""), json.dumps({k: v for k, v in conn_params.items() if k != "password"}), classification, now_isoformat()),
         )
         conn.execute(
@@ -2298,7 +2413,7 @@ def create_data_canvas_blueprint():
     def dc_api_explore_sessions():
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, design_id, user, status, classification, created_at FROM dd_explore_sessions ORDER BY created_at DESC LIMIT 50"
+            'SELECT id, design_id, "user", status, classification, created_at FROM dd_explore_sessions ORDER BY created_at DESC LIMIT 50'
         ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows]), 200
@@ -2320,7 +2435,7 @@ def create_data_canvas_blueprint():
         history = [
             row_to_dict(r)
             for r in conn.execute(
-                "SELECT id, design_id, user, sql_text, row_count, exec_ms, classification, created_at "
+                'SELECT id, design_id, "user", sql_text, row_count, exec_ms, classification, created_at '
                 "FROM dd_query_history ORDER BY created_at DESC LIMIT 10"
             ).fetchall()
         ]
@@ -2353,7 +2468,7 @@ def create_data_canvas_blueprint():
             # Persist failed query to history (row_count=0)
             conn = get_connection()
             conn.execute(
-                "INSERT INTO dd_query_history (id, design_id, user, sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                'INSERT INTO dd_query_history (id, design_id, "user", sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (str(_uuid.uuid4())[:8], design_id, session.get("user_id", ""), sql_text[:2000], "{}", 0, result.get("exec_ms", 0), classification, now_isoformat()),
             )
             conn.commit()
@@ -2363,7 +2478,7 @@ def create_data_canvas_blueprint():
         # Persist to history
         conn = get_connection()
         conn.execute(
-            "INSERT INTO dd_query_history (id, design_id, user, sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            'INSERT INTO dd_query_history (id, design_id, "user", sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (str(_uuid.uuid4())[:8], design_id, session.get("user_id", ""), sql_text[:2000], json.dumps({k: v for k, v in conn_params.items() if k != "password"}), result.get("row_count", 0), result.get("exec_ms", 0), classification, now_isoformat()),
         )
         conn.commit()
@@ -2378,12 +2493,12 @@ def create_data_canvas_blueprint():
         conn = get_connection()
         if design_id:
             rows = conn.execute(
-                "SELECT id, design_id, user, sql_text, row_count, exec_ms, classification, created_at FROM dd_query_history WHERE design_id=? ORDER BY created_at DESC LIMIT 50",
+                'SELECT id, design_id, "user", sql_text, row_count, exec_ms, classification, created_at FROM dd_query_history WHERE design_id=? ORDER BY created_at DESC LIMIT 50',
                 (design_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, design_id, user, sql_text, row_count, exec_ms, classification, created_at FROM dd_query_history ORDER BY created_at DESC LIMIT 50"
+                'SELECT id, design_id, "user", sql_text, row_count, exec_ms, classification, created_at FROM dd_query_history ORDER BY created_at DESC LIMIT 50'
             ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows]), 200
@@ -2427,7 +2542,8 @@ def create_data_canvas_blueprint():
                     "ORDER BY fa.created_at DESC LIMIT 50"
                 ).fetchall()
             ]
-        except Exception:
+        except Exception as _exc:
+            logger.warning("freshness alerts query failed: %s", _exc, exc_info=True)
             freshness_alerts = []
         conn.close()
         from tools.data_canvas.quality_engine import quality_score
@@ -2657,7 +2773,8 @@ def create_data_canvas_blueprint():
         r = row_to_dict(row)
         try:
             r["rules"] = json.loads(r.get("rules_json") or "[]")
-        except Exception:
+        except Exception as _exc:
+            logger.warning("policy rules_json parse failed: %s", _exc, exc_info=True)
             r["rules"] = []
         return jsonify(r)
 
@@ -2953,6 +3070,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/domains", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dm_api_list_domains():
         conn = get_connection()
         rows = conn.execute(
@@ -3006,11 +3124,11 @@ def create_data_canvas_blueprint():
         )
         try:
             conn.execute(
-                "INSERT INTO dm_audit (domain_id, product_id, user, action, detail) VALUES (?, ?, ?, ?, ?)",
+                'INSERT INTO dm_audit (domain_id, product_id, "user", action, detail) VALUES (?, ?, ?, ?, ?)',
                 (domain_id, "", session.get("user_id", "system"), "domain.create", name),
             )
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("domain-create audit log failed: %s", _exc, exc_info=True)
         conn.commit()
         conn.close()
         result = {c: base_row.get(c, "") for c in cols}
@@ -3044,8 +3162,8 @@ def create_data_canvas_blueprint():
             policy_count = conn.execute(
                 "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=?", (domain_id,)
             ).fetchone()[0]
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.warning("domain OPA policy count query failed: %s", _exc, exc_info=True)
         conn.close()
         maturity_level = domain.get("maturity_level", 0) or 0
         domain["maturity_label"] = next(
@@ -3088,6 +3206,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/dm/domains", methods=["GET"])
     @dc_login_required
+    @_json_api_errors
     def dc_api_dm_domains_list():
         from tools.data_canvas.data_mesh.domain_manager import list_domains as _list_domains
         return jsonify(_list_domains())
@@ -3302,7 +3421,8 @@ def create_data_canvas_blueprint():
             complete = conn.execute(
                 "SELECT COUNT(*) FROM dd_mapping_sessions WHERE status='complete'"
             ).fetchone()[0]
-        except Exception:
+        except Exception as _exc:
+            logger.warning("mapping sessions stats query failed: %s", _exc, exc_info=True)
             sessions, total, pending, complete = [], 0, 0, 0
         finally:
             conn.close()
@@ -3360,7 +3480,8 @@ def create_data_canvas_blueprint():
             try:
                 src_fields = _json.loads(sess.get("source_schema_json") or "[]")
                 tgt_fields = _json.loads(sess.get("target_schema_json") or "[]")
-            except Exception:
+            except Exception as _exc:
+                logger.warning("mapping schema_json parse failed: %s", _exc, exc_info=True)
                 src_fields, tgt_fields = [], []
         finally:
             conn.close()
@@ -3466,7 +3587,8 @@ def create_data_canvas_blueprint():
             try:
                 src_fields = _json.loads(row[0] or "[]")
                 tgt_fields = _json.loads(row[1] or "[]")
-            except Exception:
+            except Exception as _exc:
+                logger.warning("mapping schema_json parse failed: %s", _exc, exc_info=True)
                 return jsonify({"error": "Schema not yet ingested"}), 422
             if not src_fields or not tgt_fields:
                 return jsonify({"error": "Ingest source and target schemas first"}), 422
@@ -3663,16 +3785,19 @@ def create_data_canvas_blueprint():
     # ── GeoINT routes ────────────────────────────────────────────────────────
 
     @bp.route("/geoint")
+    @dc_login_required
     def dc_geoint():
         return render_template("data_canvas/geoint.html",
                                page_title="GeoINT Situational Awareness")
 
     @bp.route("/osint")
+    @dc_login_required
     def dc_osint():
         return render_template("data_canvas/osint.html",
                                page_title="OSINT Intelligence Feed")
 
     @bp.route("/api/geoint/events")
+    @dc_login_required
     def dc_api_geoint_events():
         from tools.geoint.geoint_ingestor import list_events
         try:
@@ -3686,6 +3811,7 @@ def create_data_canvas_blueprint():
             return jsonify({"events": [], "count": 0})
 
     @bp.route("/api/geoint/ingest", methods=["POST"])
+    @dc_login_required
     def dc_api_geoint_ingest():
         from tools.geoint.geoint_ingestor import ingest as _gi
         try:
@@ -3698,6 +3824,7 @@ def create_data_canvas_blueprint():
             return jsonify({"status": "error", "error": str(e)}), 500
 
     @bp.route("/api/geoint/stats")
+    @dc_login_required
     def dc_api_geoint_stats():
         from tools.geoint.geoint_ingestor import event_stats
         try:
@@ -3706,6 +3833,7 @@ def create_data_canvas_blueprint():
             return jsonify({"error": str(e)}), 500
 
     @bp.route("/api/osint/signals")
+    @dc_login_required
     def dc_api_osint_signals():
         from tools.osint.osint_ingestor import list_signals
         try:
@@ -3719,6 +3847,7 @@ def create_data_canvas_blueprint():
             return jsonify({"signals": [], "count": 0})
 
     @bp.route("/api/osint/ingest", methods=["POST"])
+    @dc_login_required
     def dc_api_osint_ingest():
         from tools.osint.osint_ingestor import ingest as _oi
         try:
@@ -3731,6 +3860,7 @@ def create_data_canvas_blueprint():
             return jsonify({"status": "error", "error": str(e)}), 500
 
     @bp.route("/api/osint/stats")
+    @dc_login_required
     def dc_api_osint_stats():
         from tools.osint.osint_ingestor import signal_stats
         try:
@@ -3741,19 +3871,21 @@ def create_data_canvas_blueprint():
     # ── Pipeline Command Center ───────────────────────────────────────────────
 
     @bp.route("/pipeline-ops")
+    @dc_login_required
     def dc_pipeline_ops():
         return render_template("data_canvas/pipeline_ops.html",
                                page_title="Pipeline Command Center")
 
     @bp.route("/api/pipeline/status")
+    @dc_login_required
     def dc_api_pipeline_status():
         """Real metrics from live DB tables for the Pipeline Command Center."""
         from tools.db.storage import get_connection as _get_main_conn
 
         out = {
-            "active_agents": 17, "decisions": 0, "rag_chunks": 0,
-            "kg_entities": 0, "kg_edges": 0, "accuracy": 94.2,
-            "hallucination": 1.8, "throughput": 3200,
+            "active_agents": 0, "decisions": 0, "rag_chunks": 0,
+            "kg_entities": 0, "kg_edges": 0, "accuracy": None,
+            "hallucination": None, "throughput": None, "degraded": False,
         }
         try:
             conn = _get_main_conn()
@@ -3809,11 +3941,22 @@ def create_data_canvas_blueprint():
             finally:
                 conn.close()
         except Exception as e:
-            logger.warning("pipeline status query error: %s", e)
+            # Fail visibly: surface a degraded status rather than fabricating
+            # healthy demo metrics (which would mask a real DB failure).
+            logger.error(
+                "pipeline status query failed; returning degraded status: %s",
+                e, exc_info=True,
+            )
+            out["degraded"] = True
+            out["error"] = str(e)
+            out["accuracy"] = None
+            out["hallucination"] = None
+            out["throughput"] = None
 
         return jsonify(out)
 
     @bp.route("/api/pipeline/feed")
+    @dc_login_required
     def dc_api_pipeline_feed():
         """Recent real events from DB, formatted as co-worker feed items."""
         from tools.db.storage import get_connection as _get_main_conn
@@ -3844,7 +3987,8 @@ def create_data_canvas_blueprint():
             if isinstance(dt_val, str):
                 try:
                     dt_val = datetime.datetime.fromisoformat(dt_val.replace("Z",""))
-                except Exception:
+                except Exception as _exc:
+                    logger.warning("pipeline feed timestamp parse failed: %s", _exc, exc_info=True)
                     return dt_val[:5] if len(dt_val) >= 5 else dt_val
             return dt_val.strftime("%H:%M")
 
