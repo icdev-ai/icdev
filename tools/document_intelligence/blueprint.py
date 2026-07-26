@@ -2350,6 +2350,36 @@ def _record_review_note(item_id: str, item_type: str, note_text: str, reviewer_i
         pass
 
 
+def _record_publish_override(item_id: str, gate: str, findings: list,
+                             reviewer: str, tenant_id: str = "") -> None:
+    """Append a HITL force-override of a publish gate to ``idr_publish_audit``.
+
+    APPEND-ONLY (NIST AU) — never UPDATE or DELETE these rows; the table is
+    registered in ``APPEND_ONLY_TABLES`` in ``.claude/hooks/pre_tool_use.py``.
+    ``gate`` must be one of the values allowed by the table CHECK constraint:
+    ``citation_guard`` or ``placeholder_guard``.
+
+    Best-effort by design: an audit-write failure must not roll back an approval
+    the reviewer already authorised. It is logged at WARNING rather than
+    swallowed, because a silently missing audit row is the failure mode that
+    makes an override untraceable.
+    """
+    try:
+        conn = _conn()
+        audit_id = f"pub_{hashlib.sha256(f'{item_id}:{gate}:{_now()}'.encode()).hexdigest()[:16]}"
+        conn.execute(
+            "INSERT INTO idr_publish_audit (id, session_id, gate, reviewer, findings, tenant_id, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (audit_id, item_id, gate, reviewer,
+             json.dumps(findings, default=str)[:8000], tenant_id or "default", _now()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic approve: could not record %s override audit for %s: %s",
+                       gate, item_id, exc)
+
+
 @dic_bp.route("/api/review/<item_id>/assign", methods=["POST"])
 def api_review_assign(item_id):
     data = request.get_json(silent=True) or {}
@@ -2437,6 +2467,7 @@ def api_review_approve(item_id):
         cid = "default"
     if not _require_role(cid, "reviewer"):
         return _forbid("reviewer")
+    tenant_id, _cls = _security_context()
     conn = _conn()
     try:
         resp = {"status": "approved", "item_id": item_id}
@@ -2456,6 +2487,22 @@ def api_review_approve(item_id):
                 logger.warning("dic approve: consistency gate error: %s", exc)
             placeholder_hits = gate.get("placeholders") or []
             numeric_conflicts = gate.get("numeric_conflicts") or []
+
+            # citation_guard (TRUST invariant): an AI-authored section may not be
+            # published while it makes uncited claims, or cites evidence that was
+            # never retrieved for it. Mirrors placeholder_guard above and the
+            # docmod regeneration gate — same findings shape, same force+audit
+            # override — so the two gates behave identically to a reviewer.
+            citation_gate_report: dict = {}
+            try:
+                from tools.document_intelligence.consistency_checker import (
+                    check_version_citations,
+                )
+                citation_gate_report = check_version_citations(item_id)
+            except Exception as exc:
+                logger.warning("dic approve: citation gate error: %s", exc)
+            citation_hits = citation_gate_report.get("findings") or []
+
             if placeholder_hits and not force:
                 return jsonify({
                     "error": "unresolved_placeholders",
@@ -2464,8 +2511,28 @@ def api_review_approve(item_id):
                         "placeholder tokens. Resolve them or resubmit with "
                         "force=true to override."
                     ),
+                    "gate": "placeholder_guard",
                     "placeholders": placeholder_hits,
                     "numeric_conflicts": numeric_conflicts,
+                    "item_id": item_id,
+                }), 409
+            if citation_hits and not force:
+                missing = sum(1 for f in citation_hits if f.get("issue") == "missing_citations")
+                bad = sum(1 for f in citation_hits if f.get("issue") == "hallucinated_citation")
+                parts = []
+                if missing:
+                    parts.append(f"{missing} AI-authored section(s) make uncited claims")
+                if bad:
+                    parts.append(f"{bad} section(s) cite evidence that was never retrieved for them")
+                return jsonify({
+                    "error": "citation_defects",
+                    "gate": "citation_guard",
+                    "message": (
+                        f"{'; '.join(parts)}. Add citations or correct them, or "
+                        "resubmit with force=true to override (the override is audited)."
+                    ),
+                    "citation_findings": citation_hits,
+                    "ai_section_count": citation_gate_report.get("ai_section_count", 0),
                     "item_id": item_id,
                 }), 409
             conn.execute(
@@ -2482,6 +2549,21 @@ def api_review_approve(item_id):
                     f"FORCE-APPROVED with unresolved placeholders in "
                     f"{len(placeholder_hits)} section(s): {summary}"
                 )
+                _record_publish_override(item_id, "placeholder_guard",
+                                         placeholder_hits, reviewer, tenant_id)
+            if citation_hits and force:
+                resp["forced"] = True
+                resp["citation_findings"] = citation_hits
+                csummary = "; ".join(
+                    f"{f.get('item_number')}: {f.get('issue')}" for f in citation_hits[:5]
+                )
+                cnote = (
+                    f"FORCE-APPROVED over citation_guard — {len(citation_hits)} "
+                    f"defect(s): {csummary}"
+                )
+                force_note = f"{force_note}. {cnote}" if force_note else cnote
+                _record_publish_override(item_id, "citation_guard",
+                                         citation_hits, reviewer, tenant_id)
         else:
             # Try ACOIC approve helper first.
             try:

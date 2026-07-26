@@ -13,6 +13,7 @@ Public API:
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -347,3 +348,99 @@ def _r(row: Any, name: str, index: int) -> Any:
             return row[index]
         except Exception:
             return None
+
+
+# --------------------------------------------------------------------------- #
+# Citation publish gate (TRUST invariant)
+# --------------------------------------------------------------------------- #
+
+#: Section origins that make an AI-attributed claim and therefore must cite.
+#: `human_authored` prose and `template` boilerplate assert nothing on the
+#: model's behalf, so requiring `[source: ...]` of them would be noise.
+AI_ORIGINS: frozenset[str] = frozenset({"ai_generated", "ai_regenerated", "ai_assisted"})
+
+
+def _allowed_sources(citations_json: Any) -> set[str]:
+    """Chunk ids that actually backed a section, from its stored citations.
+
+    A section may only cite evidence that was recorded as retrieved for it; a
+    `[source: chunk X]` naming anything else is a hallucinated citation, which
+    is exactly what `validate_citations` is for.
+    """
+    if not citations_json:
+        return set()
+    try:
+        data = json.loads(citations_json) if isinstance(citations_json, str) else citations_json
+    except Exception:
+        return set()
+    if not isinstance(data, list):
+        return set()
+    out: set[str] = set()
+    for c in data:
+        if isinstance(c, dict):
+            for key in ("chunk_id", "id", "source_id"):
+                v = c.get(key)
+                if v:
+                    out.add(str(v))
+                    break
+        elif c:
+            out.add(str(c))
+    return out
+
+
+def check_version_citations(version_id: str) -> dict:
+    """Citation publish-gate report for a ``dic_versions`` version.
+
+    Mirrors :func:`check_version_consistency` in shape and failure posture so the
+    approve route can treat `citation_guard` and `placeholder_guard`
+    symmetrically (CLAUDE.md TRUST invariant).
+
+    Returns ``{findings: [{item_number, issue, detail}], ai_section_count,
+    section_count}``. Empty ``findings`` means the gate passes. ``issue`` is
+    ``missing_citations`` or ``hallucinated_citation``, produced by the shared
+    ``tools.quality.citation_grounding.citation_gate`` — citation parsing and
+    validation are NEVER re-implemented here.
+
+    Errors are reported under ``error`` with empty findings, so a DB hiccup
+    never hard-fails an approval; the route decides whether to proceed.
+    """
+    sections: list[dict] = []
+    total = 0
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT section_id, heading, content, citations_json, origin "
+                "FROM dic_sections WHERE version_id = %s ORDER BY created_at",
+                (version_id,),
+            ).fetchall()
+            for r in rows:
+                total += 1
+                origin = (_r(r, "origin", 4) or "").strip().lower()
+                if origin not in AI_ORIGINS:
+                    continue
+                content = _r(r, "content", 2) or ""
+                if not content.strip():
+                    continue
+                sections.append({
+                    "item_number": _r(r, "heading", 1) or _r(r, "section_id", 0),
+                    "content": content,
+                    "allowed_sources": _allowed_sources(_r(r, "citations_json", 3)),
+                })
+    except Exception as exc:
+        logger.warning("dic citation gate: could not load sections for %s: %s", version_id, exc)
+        return {"findings": [], "ai_section_count": 0, "section_count": 0, "error": str(exc)}
+
+    try:
+        from tools.quality.citation_grounding import citation_gate
+
+        findings = citation_gate(sections, require_citations=True)
+    except Exception as exc:
+        logger.warning("dic citation gate: gate error for %s: %s", version_id, exc)
+        return {"findings": [], "ai_section_count": len(sections),
+                "section_count": total, "error": str(exc)}
+
+    return {
+        "findings": findings,
+        "ai_section_count": len(sections),
+        "section_count": total,
+    }
