@@ -644,6 +644,19 @@ create_tasks([{
 # Adversarial verify (invoked automatically when adversarial_enabled=True on a looping task)
 # _run_adversarial_verify(task_id) in tools/kanban/task_factory.py — not a standalone CLI
 
+# OSS Adaptation card (oss- prefix) — 23 tasks / 12 epics adapting RAGFlow, Crawl4AI,
+# browser-use and STRIX as patterns rather than dependencies.
+# Analysis: docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md
+python tools/kanban/seed_oss_adaptation.py --dry-run --json   # Validate the graph, write nothing
+python tools/kanban/seed_oss_adaptation.py --json             # Seed tasks + ordering edges (idempotent)
+python -m tools.kanban.cli --set-status oss-gate-00 done      # RELEASE the card (deliberate human act)
+# Seeds TWO dependency layers and needs both: the scalar oss-gate-00 sentinel (blocks
+# everything while held in_progress) and 21 junction kanban_task_deps edges for intra-epic
+# ordering. Without the edges all 22 tasks become eligible at once with an arbitrary
+# created_at tiebreak, so the runner can build oss-browse-02 (scope controls) before
+# oss-browse-01 (the primitive they constrain). validate() refuses to seed on an unknown
+# edge endpoint, a self-dependency, or a cycle.
+
 # Compass dispatch probe — seeds the one trivial compass task that proves repo-aware
 # dispatch end to end (prem-vfy-01). Definition: args/kanban_seed_compass_dispatch.yaml;
 # routing: `prem-vfy` prefix in args/kanban_external_repos.yaml.
