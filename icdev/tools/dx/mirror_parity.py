@@ -22,9 +22,11 @@ Usage:
 """
 
 import argparse
+import functools
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -39,14 +41,41 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+@functools.lru_cache(maxsize=1)
+def _git_ignored() -> frozenset:
+    """Repo-relative posix paths git ignores, so they are never called drift.
+
+    Without this the audit compares files that are not in the repository at
+    all. `tools/trading/` is gitignored, so a developer with local files there
+    sees three phantom "content drifts" against their tracked `icdev/` twins —
+    invisible in CI (clean checkout) and unreproducible for anyone else. A
+    parity report that differs per working tree is worse than none.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "-z"],
+            cwd=BASE_DIR, capture_output=True, text=True, timeout=60,
+        ).stdout
+        return frozenset(p for p in out.split("\0") if p)
+    except Exception:  # noqa: BLE001 - git absent: fall back to comparing everything
+        return frozenset()
+
+
 def _list_files(root: Path) -> set:
     if not root.is_dir():
         return set()
-    return {
-        p.relative_to(root).as_posix()
-        for p in root.rglob("*")
-        if p.is_file() and "__pycache__" not in p.parts
-    }
+    ignored = _git_ignored()
+    out = set()
+    for p in root.rglob("*"):
+        if not p.is_file() or "__pycache__" in p.parts:
+            continue
+        try:
+            if p.relative_to(BASE_DIR).as_posix() in ignored:
+                continue
+        except ValueError:
+            pass
+        out.add(p.relative_to(root).as_posix())
+    return out
 
 
 def discover_mirrored_paths() -> list:
