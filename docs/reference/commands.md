@@ -870,6 +870,12 @@ python tools/workflow/coherence_checker.py --all --gate                         
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
 
+# Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
+# CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
+# grandfathered in args/doc_command_gate.yaml; NEW broken references fail the gate.
+python tools/workflow/coherence_checker.py --check doc_command_paths --json                         # List unresolved documented commands
+python tools/workflow/coherence_checker.py --check doc_command_paths --gate                         # Fail on any NEW broken reference
+
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout
 python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
@@ -2799,10 +2805,16 @@ python tools/data_canvas/sync/openmetadata_sync.py --all --gate --json
 
 ## Showcase Commands
 ```bash
-python tools/showcase/generate_app.py --slug <name> --category <cat>
-python tools/showcase/osint_engine.py --source cve --fetch --json
-python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
-python tools/showcase/validator.py --app <slug> --json
+# AI Canvas Demo Runner — 5-act DoD/IC demo across live canvas DBs
+python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json
+python tools/showcase/ai_canvas_demo_runner.py --scenario 5 --audience tech
+```
+
+`tools/showcase/synthetic_data_engine.py` is a **library, not a CLI** — import
+`SyntheticDataEngine` / `DOMAINS` from it:
+
+```python
+from icdev.tools.showcase.synthetic_data_engine import DOMAINS, SyntheticDataEngine
 ```
 
 
