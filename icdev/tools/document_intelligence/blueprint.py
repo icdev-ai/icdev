@@ -2021,20 +2021,58 @@ def _claim_grounding(answer: str, results: list) -> dict | None:
     try:
         from tools.quality.citation_grounding import ground_claims
 
-        sources: dict = {}
-        for i, r in enumerate(results[:5], start=1):
-            content = getattr(r, "content", "") or ""
-            if not content:
-                continue
-            sources[str(i)] = content                      # "[1]" ordinal form
-            cid = _r_attr(r, "chunk_id") or _r_attr(r, "id")
-            if cid:
-                sources[str(cid)] = content                # "[source: chunk X]"
+        sources = _chat_claim_sources(results)
         if not sources:
             return None
         return ground_claims(_normalise_chat_citations(answer), sources)
     except Exception as exc:  # noqa: BLE001
         logger.debug("dic: claim grounding unavailable: %s", exc)
+        return None
+
+
+def _chat_claim_sources(results: list) -> dict:
+    """``source_id -> text`` for a chat answer, keyed both ways.
+
+    Keyed BOTH by chunk id and by the ``[N]`` ordinal the synthesis prompt tells
+    the model to emit, because DIC chat answers cite ``[1]`` while
+    ``citations_json`` records chunk ids. Keying only one way would report every
+    claim as citing an unavailable source.
+    """
+    sources: dict = {}
+    for i, r in enumerate(results[:5], start=1):
+        content = getattr(r, "content", "") or ""
+        if not content:
+            continue
+        sources[str(i)] = content                      # "[1]" ordinal form
+        cid = _r_attr(r, "chunk_id") or _r_attr(r, "id")
+        if cid:
+            sources[str(cid)] = content                # "[source: chunk X]"
+    return sources
+
+
+def _derivation_disclosure(answer: str, results: list) -> dict | None:
+    """Which spans of the answer are quoted, restated, or computed.
+
+    A cited answer presents all three identically today. The computed case is
+    the one that matters: a figure appearing in NO source still passes citation
+    validation, because the chunk it cites genuinely exists.
+
+    Deterministic — the model is never asked whether it quoted or computed
+    something, since a model that fabricated a number will equally happily
+    report that it quoted one (the D391 deterministic-picker rule).
+
+    Best-effort, like ``_claim_grounding``: a disclosure failure must not cost
+    the user their answer.
+    """
+    try:
+        from tools.quality.derivation import disclose_derivations
+
+        sources = _chat_claim_sources(results)
+        if not sources:
+            return None
+        return disclose_derivations(_normalise_chat_citations(answer), sources)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: derivation disclosure unavailable: %s", exc)
         return None
 
 
@@ -2268,12 +2306,24 @@ def api_chat():
                     answer = grounded["answer"]
                     mode = "grounded"
 
+        # Computed on the FINAL answer, deliberately outside the LLM branch, so
+        # the grounded-fallback and abstention paths are disclosed too. An
+        # abstention that still surfaces a computed figure needs the same badge.
+        derivation_report = _derivation_disclosure(answer, scored_results)
+
         return jsonify(_mem({
             "answer": answer,
             "sources": sources,
             "citations": citations,
             "abstained": abstained,
             "verified": verified,
+            "derivation": derivation_report,
+            "derivation_summary": {
+                "counts": (derivation_report or {}).get("counts", {}),
+                "has_derived": (derivation_report or {}).get("has_derived", False),
+                "has_unexplained_numeric": (derivation_report or {}).get(
+                    "has_unexplained_numeric", False),
+            } if derivation_report else None,
             "claims": (claim_report or {}).get("claims", []),
             "claim_summary": {
                 k: (claim_report or {}).get(k, 0)
