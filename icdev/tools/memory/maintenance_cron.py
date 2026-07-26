@@ -65,11 +65,21 @@ def flush_buffer(db_path=None):
         return {"flushed": 0, "error": str(exc)}
 
 
-def embed_unembedded(db_path=None):
-    """Generate embeddings for entries missing them (D72 compliant)."""
+def embed_unembedded(db_path=None, limit=None):
+    """Generate embeddings for entries missing them (D72 compliant).
+
+    ``limit`` bounds how many unembedded entries one call processes, so a large
+    backlog is caught up over several scheduled runs instead of stalling a single
+    reflex cycle. ``None`` processes all missing (the CLI/backfill default).
+    """
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT id, content FROM memory_entries WHERE embedding IS NULL")
+    # LIMIT takes an internal int; inline it so the query needs no placeholder and
+    # runs on both backends.
+    sql = "SELECT id, content FROM memory_entries WHERE embedding IS NULL"
+    if limit is not None:
+        sql += f" ORDER BY created_at DESC LIMIT {int(limit)}"
+    c.execute(sql)
     rows = c.fetchall()
 
     if not rows:

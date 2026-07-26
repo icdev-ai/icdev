@@ -161,6 +161,7 @@ REFLEX_NAMES = [
     "agent_cron_reflex",  # sag-cron-01: drains due user-facing cron jobs (agent_cron_jobs) — agent/script exec modes, retry/backoff, delivery
     "sag_skill_curator",  # sag-skl-01: archives (never deletes) idle unpinned auto-skills; pin support; HITL promotion stays separate
     "review_loop",
+    "memory_maintenance_reflex",  # mem-embed: scheduled memory upkeep — flush buffer + backfill embeddings (bounded, non-destructive); closes the 0%-embedding scheduling gap oss2-meas-01 measured
 ]
 
 # Backward-compat aliases for module-level access used by other code
