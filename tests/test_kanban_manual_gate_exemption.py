@@ -167,3 +167,85 @@ class TestDispatchExclusion:
 
         assert GATE_ID not in due_ids, "manual-mode gate must never be dispatched"
         assert "prem-p2-01" in due_ids, "ordinary backlog task must still promote"
+
+
+# ── state_machine auto-close exemption ───────────────────────────────────
+#
+# Regression: startup_backfill's FK-based auto-close sweep closed a
+# manual-mode gate (e.g. lpx-gate-00) to 'done' once every dependent task
+# finished. A gate is a human-approval sentinel — automation must NEVER
+# release it. The guard lives in state_machine.auto_close_* and is exercised
+# through the same backfill path the reflex/dashboard call at startup.
+
+
+def _insert_dep_task(db_path, task_id, title, status, depends_on):
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "INSERT INTO kanban_tasks (id, title, status, depends_on_task_id) "
+        "VALUES (?, ?, ?, ?)",
+        (task_id, title, status, depends_on),
+    )
+    conn.commit()
+    conn.close()
+
+
+class TestStateMachineAutoCloseExemption:
+    def _conn(self, db_path):
+        c = sqlite3.connect(str(db_path))
+        c.row_factory = sqlite3.Row
+        return _TranslatingConn(c)
+
+    def test_gate_parent_not_auto_closed_when_all_children_done(self, icdev_db):
+        """A -gate-00 parent whose every dependent is done must stay
+        in_progress — auto_close_parent_if_all_children_done must return None."""
+        import tools.kanban.state_machine as sm
+
+        _insert_task(icdev_db, GATE_ID, GATE_TITLE, "in_progress",
+                     datetime.now(timezone.utc).isoformat())
+        _insert_dep_task(icdev_db, "lpx-work-01", "Real work", "done", GATE_ID)
+
+        conn = self._conn(icdev_db)
+        result = sm.auto_close_parent_if_all_children_done(GATE_ID, conn)
+        conn.commit()
+        conn.close()
+
+        assert result is None, "manual-mode gate must not be auto-closed"
+        assert _task_status(icdev_db, GATE_ID)[0] == "in_progress"
+
+    def test_non_gate_parent_is_still_auto_closed(self, icdev_db):
+        """Guard must not over-block: an ordinary parent with all children
+        done still closes to done."""
+        import tools.kanban.state_machine as sm
+
+        _insert_task(icdev_db, "reg-parent-01", "Ordinary parent",
+                     "in_progress", datetime.now(timezone.utc).isoformat())
+        _insert_dep_task(icdev_db, "reg-child-01", "child", "done", "reg-parent-01")
+
+        conn = self._conn(icdev_db)
+        result = sm.auto_close_parent_if_all_children_done("reg-parent-01", conn)
+        conn.commit()
+        conn.close()
+
+        assert result is not None and result.applied
+        assert _task_status(icdev_db, "reg-parent-01")[0] == "done"
+
+    def test_backfill_sweep_spares_gate_closes_ordinary(self, icdev_db):
+        """The full startup backfill sweep must close an eligible ordinary
+        parent while leaving a manual-mode gate untouched."""
+        import tools.kanban.state_machine as sm
+
+        _insert_task(icdev_db, GATE_ID, GATE_TITLE, "in_progress",
+                     datetime.now(timezone.utc).isoformat())
+        _insert_dep_task(icdev_db, "lpx-work-01", "Real work", "done", GATE_ID)
+        _insert_task(icdev_db, "reg-parent-01", "Ordinary parent",
+                     "in_progress", datetime.now(timezone.utc).isoformat())
+        _insert_dep_task(icdev_db, "reg-child-01", "child", "done", "reg-parent-01")
+
+        conn = self._conn(icdev_db)
+        closed = sm.backfill_auto_close_parents(conn)
+        conn.close()
+
+        assert GATE_ID not in closed, "backfill must never close a manual-mode gate"
+        assert "reg-parent-01" in closed
+        assert _task_status(icdev_db, GATE_ID)[0] == "in_progress"
+        assert _task_status(icdev_db, "reg-parent-01")[0] == "done"
