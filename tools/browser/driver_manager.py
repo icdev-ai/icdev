@@ -157,6 +157,58 @@ def _detect_edge_version_windows() -> Optional[str]:
     return None
 
 
+def _detect_chrome_version() -> Optional[str]:
+    """Return the installed Google Chrome version string, or None.
+
+    Symmetric with :func:`_detect_edge_version` — registry + Application dir on
+    Windows, ``--version`` on Linux/macOS. Needed so staleness detection (D2) can
+    compare the installed browser major against the vendored driver major for the
+    chrome path, not only the edge path.
+    """
+    if _IS_WIN:
+        try:
+            import winreg  # only available on Windows
+
+            keys = [
+                (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Google\Chrome\BLBeacon"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Google\Chrome\BLBeacon"),
+            ]
+            for hive, subkey in keys:
+                try:
+                    with winreg.OpenKey(hive, subkey) as k:
+                        val, _ = winreg.QueryValueEx(k, "version")
+                        if val:
+                            return str(val)
+                except OSError:
+                    continue
+        except ImportError:
+            pass
+
+        for app_dir in (
+            Path(r"C:\Program Files\Google\Chrome\Application"),
+            Path(r"C:\Program Files (x86)\Google\Chrome\Application"),
+        ):
+            if app_dir.exists():
+                for subdir in sorted(app_dir.iterdir(), reverse=True):
+                    if subdir.is_dir() and re.match(r"\d+\.\d+\.\d+\.\d+", subdir.name):
+                        return subdir.name
+
+    for exe in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
+        path = shutil.which(exe)
+        if path:
+            try:
+                out = subprocess.check_output(
+                    [path, "--version"], stderr=subprocess.DEVNULL, timeout=5
+                ).decode("utf-8", errors="replace").strip()
+                m = re.search(r"(\d+\.\d+\.\d+\.\d+)", out)
+                if m:
+                    return m.group(1)
+            except Exception:
+                pass
+    return None
+
+
 def _major(version: str) -> str:
     """Return the major version component (e.g. '134' from '134.0.3124.57')."""
     return version.split(".")[0]
@@ -225,9 +277,16 @@ def _find_vendored_chromedriver() -> Optional[Path]:
 # ── Driver resolution ─────────────────────────────────────────────────────────
 
 class DriverResolution:
-    """Result of driver resolution — browser type + executable path."""
+    """Result of driver resolution — browser type + executable path.
 
-    __slots__ = ("browser", "driver_path", "source", "edge_version")
+    ``edge_version`` / ``chrome_version`` record the *installed* browser versions
+    detected at resolve time, regardless of which browser was chosen. D6: these
+    were previously discarded on every chrome-branch resolution, so ``--probe``
+    reported ``resolved_edge_version: null`` even on a machine with Edge present.
+    Threading them through is also the prerequisite for staleness detection (D2).
+    """
+
+    __slots__ = ("browser", "driver_path", "source", "edge_version", "chrome_version")
 
     def __init__(
         self,
@@ -235,11 +294,13 @@ class DriverResolution:
         driver_path: Optional[str],
         source: str,
         edge_version: Optional[str] = None,
+        chrome_version: Optional[str] = None,
     ) -> None:
         self.browser = browser          # "edge" | "chrome"
         self.driver_path = driver_path  # absolute path or None (use PATH)
         self.source = source            # "vendored" | "path" | "selenium_manager"
         self.edge_version = edge_version
+        self.chrome_version = chrome_version
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -247,7 +308,53 @@ class DriverResolution:
             "driver_path": self.driver_path,
             "source": self.source,
             "edge_version": self.edge_version,
+            "chrome_version": self.chrome_version,
         }
+
+
+def driver_staleness(resolution: "DriverResolution") -> Dict[str, Any]:
+    """Compare a *vendored* driver's major against the installed browser major.
+
+    D2: the browser auto-updates, the vendored driver does not — chromedriver /
+    msedgedriver refuse a browser whose major differs, so a stale vendored store
+    resolves at *resolve* time but fails at *launch*. This surfaces the mismatch
+    up front. Only meaningful for ``source == "vendored"`` (the driver major is
+    the vendor subdir name); returns ``checkable=False`` otherwise, since a PATH
+    or Selenium-Manager driver's version is not known without launching it.
+    """
+    out: Dict[str, Any] = {
+        "checkable": False,
+        "stale": False,
+        "browser": resolution.browser,
+        "driver_major": None,
+        "browser_major": None,
+        "reason": None,
+    }
+    if resolution.source != "vendored" or not resolution.driver_path:
+        out["reason"] = f"not a vendored driver (source={resolution.source}); staleness not determinable"
+        return out
+
+    driver_major = Path(resolution.driver_path).parent.name
+    installed = resolution.edge_version if resolution.browser == "edge" else resolution.chrome_version
+    out["checkable"] = True
+    out["driver_major"] = driver_major
+    if not installed:
+        out["reason"] = f"{resolution.browser} not detected; cannot compare against vendored major {driver_major}"
+        return out
+
+    browser_major = _major(installed)
+    out["browser_major"] = browser_major
+    if driver_major != browser_major:
+        out["stale"] = True
+        out["reason"] = (
+            f"vendored {resolution.browser}driver major {driver_major} != installed "
+            f"{resolution.browser} major {browser_major}; the driver will refuse the browser at launch. "
+            f"Refresh: python tools/airgap/driver_vendor.py "
+            f"{'--fetch-edge' if resolution.browser == 'edge' else f'--fetch-chrome --major {browser_major}'}"
+        )
+    else:
+        out["reason"] = f"vendored major {driver_major} matches installed {resolution.browser} major {browser_major}"
+    return out
 
 
 def resolve_driver() -> DriverResolution:
@@ -262,35 +369,34 @@ def resolve_driver() -> DriverResolution:
     """
     edge_version = _detect_edge_version()
     edge_major = _major(edge_version) if edge_version else None
+    # Detected once and threaded through EVERY resolution (D6) so --probe reports
+    # the installed versions regardless of which browser/driver was chosen, and
+    # staleness (D2) can compare against them.
+    chrome_version = _detect_chrome_version()
+
+    def _res(browser: str, driver_path: Optional[str], source: str) -> DriverResolution:
+        return DriverResolution(
+            browser=browser,
+            driver_path=driver_path,
+            source=source,
+            edge_version=edge_version,
+            chrome_version=chrome_version,
+        )
 
     # 1. Vendored msedgedriver
     vendored_edge = _find_vendored_msedgedriver(edge_major)
     if vendored_edge:
-        return DriverResolution(
-            browser="edge",
-            driver_path=str(vendored_edge),
-            source="vendored",
-            edge_version=edge_version,
-        )
+        return _res("edge", str(vendored_edge), "vendored")
 
     # 2. msedgedriver on PATH
     path_edge = shutil.which("msedgedriver")
     if path_edge:
-        return DriverResolution(
-            browser="edge",
-            driver_path=path_edge,
-            source="path",
-            edge_version=edge_version,
-        )
+        return _res("edge", path_edge, "path")
 
     # 3. Vendored chromedriver
     vendored_chrome = _find_vendored_chromedriver()
     if vendored_chrome:
-        return DriverResolution(
-            browser="chrome",
-            driver_path=str(vendored_chrome),
-            source="vendored",
-        )
+        return _res("chrome", str(vendored_chrome), "vendored")
 
     # 4a. Well-known Linux/container Chrome paths (checked before PATH shutil.which
     #     to pick up headless-chromium in Alpine/Debian containers quickly)
@@ -304,19 +410,15 @@ def resolve_driver() -> DriverResolution:
         ):
             if _linux_chrome.exists():
                 _linux_chromedriver = shutil.which("chromedriver")
-                return DriverResolution(
-                    browser="chrome",
-                    driver_path=_linux_chromedriver,
-                    source="path",
-                )
+                return _res("chrome", _linux_chromedriver, "path")
 
     # 4b. chromedriver on PATH
     path_chrome = shutil.which("chromedriver")
     if path_chrome:
-        return DriverResolution(browser="chrome", driver_path=path_chrome, source="path")
+        return _res("chrome", path_chrome, "path")
 
     # 5. Let Selenium Manager handle it (selenium >= 4.6 bundles selenium-manager)
-    return DriverResolution(browser="chrome", driver_path=None, source="selenium_manager")
+    return _res("chrome", None, "selenium_manager")
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
@@ -334,17 +436,25 @@ class DriverManager:
 
     def __init__(self) -> None:
         resolution = resolve_driver()
+        self._resolution = resolution
         self.resolved_browser: str = resolution.browser
         self.resolved_driver_path: Optional[str] = resolution.driver_path
         self.resolved_source: str = resolution.source
         self.resolved_edge_version: Optional[str] = resolution.edge_version
+        self.resolved_chrome_version: Optional[str] = resolution.chrome_version
         logger.info(
-            "DriverManager: browser=%s source=%s path=%s edge_version=%s",
+            "DriverManager: browser=%s source=%s path=%s edge_version=%s chrome_version=%s",
             self.resolved_browser,
             self.resolved_source,
             self.resolved_driver_path,
             self.resolved_edge_version,
+            self.resolved_chrome_version,
         )
+        # D2: a stale vendored driver resolves but fails at launch. Warn loudly so
+        # the failure is not a cryptic chromedriver "browser N majors ahead" later.
+        staleness = driver_staleness(resolution)
+        if staleness.get("stale"):
+            logger.warning("[driver_manager] STALE vendored driver: %s", staleness["reason"])
 
     @classmethod
     def instance(cls) -> "DriverManager":
@@ -473,6 +583,10 @@ class DriverManager:
                 return wd.Chrome(service=service, options=opts)
             return wd.Chrome(options=opts)
 
+    def staleness(self) -> Dict[str, Any]:
+        """Staleness of the resolved (vendored) driver vs the installed browser."""
+        return driver_staleness(self._resolution)
+
     def probe(self) -> Dict[str, Any]:
         """Return a JSON-serialisable dict describing the resolved driver."""
         return {
@@ -480,6 +594,8 @@ class DriverManager:
             "resolved_driver_path": self.resolved_driver_path,
             "resolved_source": self.resolved_source,
             "resolved_edge_version": self.resolved_edge_version,
+            "resolved_chrome_version": self.resolved_chrome_version,
+            "staleness": self.staleness(),
             "vendored_msedgedriver_dir": str(MSEDGEDRIVER_VENDOR_DIR),
             "vendored_chromedriver_dir": str(CHROMEDRIVER_VENDOR_DIR),
             "platform": platform.system(),
@@ -583,10 +699,21 @@ if __name__ == "__main__":
     parser.add_argument("--probe", action="store_true", help="Probe driver resolution")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--smoke", action="store_true", help="Instantiate driver and quit")
+    parser.add_argument(
+        "--check-staleness",
+        action="store_true",
+        help="Exit non-zero if the resolved vendored driver's major does not match "
+        "the installed browser (D2). For admin/CI monitoring on the vendoring host.",
+    )
     args = parser.parse_args()
 
     mgr = DriverManager.instance()
     info = mgr.probe()
+
+    if args.check_staleness:
+        st = mgr.staleness()
+        print(json.dumps(st, indent=2))
+        sys.exit(1 if st.get("stale") else 0)
 
     if args.json or args.probe:
         print(json.dumps(info, indent=2))
