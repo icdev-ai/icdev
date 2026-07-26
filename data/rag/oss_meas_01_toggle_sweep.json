@@ -10,13 +10,20 @@
     "top_k": 5,
     "backend": "postgresql"
   },
-  "method": "tools/rag/rag_benchmark.py --sweep. One all-off control plus one arm per toggle, every toggle written explicitly on every arm. Control verified deterministic across 3 consecutive runs (byte-identical aggregates).",
+  "method": "tools/rag/rag_benchmark.py --sweep. One all-off control plus one arm per toggle, every toggle written explicitly on every arm. Quality verified deterministic across 3 consecutive control runs. Latency is a SINGLE sample per arm on a shared developer workstation \u2014 large deltas are real, small ones are unproven.",
   "control": {
     "aggregate": {
       "recall_at_5": 0.7431,
       "mrr": 0.7292,
       "ndcg_at_5": 0.7639,
       "citation_hit_rate": 0.8542
+    },
+    "latency": {
+      "n": 48,
+      "p50_ms": 424.13,
+      "p95_ms": 539.58,
+      "mean_ms": 745.01,
+      "total_ms": 35760.49
     },
     "queries_scored": 48
   },
@@ -52,6 +59,30 @@
           "baseline": 0.7431,
           "current": 0.7639,
           "delta": 0.0208
+        }
+      },
+      "latency": {
+        "n": 48,
+        "p50_ms": 660.79,
+        "p95_ms": 2584.5,
+        "mean_ms": 1181.44,
+        "total_ms": 56709.23
+      },
+      "latency_delta": {
+        "p50_ms": {
+          "baseline": 424.13,
+          "current": 660.79,
+          "delta": 236.66
+        },
+        "p95_ms": {
+          "baseline": 539.58,
+          "current": 2584.5,
+          "delta": 2044.92
+        },
+        "mean_ms": {
+          "baseline": 745.01,
+          "current": 1181.44,
+          "delta": 436.43
         }
       }
     },
@@ -101,6 +132,30 @@
           "current": 0.7431,
           "delta": 0.0
         }
+      },
+      "latency": {
+        "n": 48,
+        "p50_ms": 421.78,
+        "p95_ms": 447.88,
+        "mean_ms": 421.94,
+        "total_ms": 20253.31
+      },
+      "latency_delta": {
+        "p50_ms": {
+          "baseline": 424.13,
+          "current": 421.78,
+          "delta": -2.35
+        },
+        "p95_ms": {
+          "baseline": 539.58,
+          "current": 447.88,
+          "delta": -91.7
+        },
+        "mean_ms": {
+          "baseline": 745.01,
+          "current": 421.94,
+          "delta": -323.07
+        }
       }
     },
     {
@@ -141,6 +196,30 @@
           "baseline": 0.7431,
           "current": 0.7639,
           "delta": 0.0208
+        }
+      },
+      "latency": {
+        "n": 48,
+        "p50_ms": 752.68,
+        "p95_ms": 852.46,
+        "mean_ms": 1046.8,
+        "total_ms": 50246.32
+      },
+      "latency_delta": {
+        "p50_ms": {
+          "baseline": 424.13,
+          "current": 752.68,
+          "delta": 328.55
+        },
+        "p95_ms": {
+          "baseline": 539.58,
+          "current": 852.46,
+          "delta": 312.88
+        },
+        "mean_ms": {
+          "baseline": 745.01,
+          "current": 1046.8,
+          "delta": 301.79
         }
       }
     }
