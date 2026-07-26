@@ -19632,7 +19632,7 @@ CREATE TABLE public.memory_entries (
     content text NOT NULL,
     type text DEFAULT 'event'::text,
     importance integer DEFAULT 5,
-    embedding public.vector(1536),
+    embedding public.vector(768),
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     content_hash text,
