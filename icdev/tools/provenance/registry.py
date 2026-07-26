@@ -51,8 +51,29 @@ def register_citation(
 ) -> str:
     """Register a citation in the unified source_citation_registry.
 
-    Returns the registry entry ID.
+    Returns the registry entry ID, or ``""`` on failure.
+
+    Raises:
+        ValueError: if *citation_type* is not in
+            :data:`tools.provenance.citation_types.CITATION_TYPES`.
+
+    The type is validated in Python **before** the INSERT because the except
+    branch below swallows database errors and returns ``""``. Without this
+    check, a typo'd citation_type violates the CHECK constraint, gets swallowed,
+    and the caller sees an empty id it very likely does not check — the citation
+    simply never exists. For a TRUST surface, failing loudly on a bad vocabulary
+    value is worth more than the convenience of never raising.
     """
+    from tools.provenance.citation_types import CITATION_TYPES, is_valid
+
+    if not is_valid(citation_type):
+        raise ValueError(
+            f"unknown citation_type {citation_type!r}; "
+            f"valid: {', '.join(CITATION_TYPES)}. "
+            "Add new types to tools/provenance/citation_types.py and ship a "
+            "migration rendered from check_constraint_sql()."
+        )
+
     reg_id = f"scr-{uuid.uuid4().hex[:16]}"
     conn = get_connection(db_path=str(db_path or DB_PATH))
     try:
@@ -302,3 +323,135 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Web citations (oss-cite-01)
+# ---------------------------------------------------------------------------
+
+
+def register_web_citation(
+    requested_url: str,
+    content: str,
+    final_url: Optional[str] = None,
+    http_status: Optional[int] = None,
+    content_type: Optional[str] = None,
+    etag: Optional[str] = None,
+    last_modified: Optional[str] = None,
+    fetcher: str = "",
+    classification: str = "CUI",
+    project_id: Optional[str] = None,
+    trust_score: float = 0.0,
+    db_path: Path = None,
+) -> dict:
+    """Register a fetched web page as a first-class citation.
+
+    Writes both halves atomically-ish: the registry row that makes the page
+    citeable, and the ``web_fetch_provenance`` row that records what was actually
+    served. Without the second half a ``[source: https://...]`` marker is a
+    claim about the internet with nothing behind it.
+
+    ``final_url`` is stored separately from ``requested_url`` on purpose: when
+    they differ, the cited content is not at the URL the citation names, and a
+    reviewer needs to see that rather than infer it.
+
+    ``etag`` / ``last_modified`` are kept so a later re-fetch can prove the page
+    un/changed without re-downloading it — the cheap half of evidence-drift
+    detection.
+
+    Args:
+        requested_url: URL as asked for.
+        content: Fetched body; hashed, never stored here.
+        final_url: URL after redirects, when different.
+        http_status: Response status code.
+        content_type: Response Content-Type.
+        etag: Response ETag.
+        last_modified: Response Last-Modified.
+        fetcher: Module that performed the fetch, for audit.
+        classification: CUI marking. Default "CUI".
+        project_id: Owning project.
+        trust_score: Initial trust score for the registry row.
+        db_path: Override database path.
+
+    Returns:
+        ``{"citation_id": str, "provenance_id": str, "content_hash": str}``;
+        ids are empty strings when the write failed.
+    """
+    import datetime as _dt
+
+    from tools.provenance.citation_types import CITATION_TYPES
+
+    content_hash = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+    now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+    citation_id = register_citation(
+        citation_type="web",
+        source_table="web_fetch_provenance",
+        source_record_id=content_hash,
+        source_doc=requested_url,
+        source_hash=content_hash,
+        classification=classification,
+        project_id=project_id,
+        trust_score=trust_score,
+        db_path=db_path,
+    )
+    if not citation_id:
+        # register_citation swallows its own errors and returns "". Surfacing
+        # that here rather than writing an orphan provenance row.
+        return {"citation_id": "", "provenance_id": "", "content_hash": content_hash}
+
+    assert "web" in CITATION_TYPES  # tripwire if the vocabulary is edited badly
+
+    prov_id = f"wfp-{uuid.uuid4().hex[:16]}"
+    conn = get_connection(db_path=str(db_path or DB_PATH))
+    try:
+        conn.execute(
+            """INSERT INTO web_fetch_provenance
+               (id, citation_id, requested_url, final_url, http_status,
+                content_hash, content_type, content_length, etag, last_modified,
+                fetched_at, fetcher, classification, project_id)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (
+                prov_id, citation_id, requested_url, final_url, http_status,
+                content_hash, content_type, len(content or ""), etag, last_modified,
+                now, fetcher, classification, project_id,
+            ),
+        )
+        conn.commit()
+        return {
+            "citation_id": citation_id,
+            "provenance_id": prov_id,
+            "content_hash": content_hash,
+        }
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {
+            "citation_id": citation_id,
+            "provenance_id": "",
+            "content_hash": content_hash,
+        }
+    finally:
+        conn.close()
+
+
+def get_web_provenance(citation_id: str, db_path: Path = None) -> List[dict]:
+    """Return every recorded fetch behind a web citation, newest first.
+
+    A list, not a single row: the table is append-only, so a re-fetched URL
+    accumulates rows and the history is the evidence-drift signal.
+    """
+    conn = get_connection(db_path=str(db_path or DB_PATH))
+    try:
+        rows = conn.execute(
+            "SELECT * FROM web_fetch_provenance WHERE citation_id = %s "
+            "ORDER BY fetched_at DESC",
+            (citation_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
