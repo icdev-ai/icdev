@@ -99,6 +99,21 @@ jobs:
             tests/test_no_direct_provider_calls.py \
             tests/test_coordination_lease_namespaces.py \
             tests/test_dic_claim_grounding_wiring.py \
+            tests/test_reflex_registry_integrity.py \
+            tests/test_memory_maintenance_reflex.py \
+            tests/test_memory_read_db.py \
+            tests/test_memory_tier_measure.py \
+            tests/test_notification_worthiness.py \
+            tests/test_localai_provider.py \
+            tests/browser/test_backend.py \
+            tests/browser/test_driver_manager_airgap.py \
+            tests/browser/test_driver_staleness.py \
+            tests/browser/test_browser_locator.py \
+            tests/browser/cdp/test_preflight.py \
+            tests/browser/cdp/test_session.py \
+            tests/browser/cdp/test_driver.py \
+            tests/browser/cdp/test_webdriver.py \
+            tests/browser/cdp/test_ws_client.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
