@@ -244,6 +244,11 @@ class Provenance:
     version_ref: str = ""
     ingest_timestamp: str = ""
     attribution_score: float = 0.0
+    #: How the artifact relates to this source: "verbatim", "derived-text" or
+    #: "derived-numeric" (see ``tools.quality.derivation``). Empty means not
+    #: classified — deliberately NOT defaulted to "verbatim", which would assert
+    #: a quotation nobody checked.
+    derivation: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -253,6 +258,7 @@ class Provenance:
             "version_ref": self.version_ref,
             "ingest_timestamp": self.ingest_timestamp,
             "attribution_score": self.attribution_score,
+            "derivation": self.derivation,
         }
 
     @classmethod

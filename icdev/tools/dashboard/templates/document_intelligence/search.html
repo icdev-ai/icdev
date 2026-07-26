@@ -350,6 +350,46 @@ function runChat(message) {
                           'claims: ' + parts.join(' · '));
         }
       }
+      // Derivation disclosure. A quotation, a paraphrase and a computed figure
+      // all render identically in the answer text, and all three carry the same
+      // well-formed citation. This says which is which, and for computed
+      // figures shows the arithmetic and each operand's source.
+      var ds = data.derivation_summary;
+      var derivBar = '';
+      if (ds && ds.has_derived) {
+        var dc = ds.counts || {};
+        var dparts = [];
+        if (dc['verbatim'])       dparts.push(dc['verbatim'] + ' quoted');
+        if (dc['derived-text'])   dparts.push(dc['derived-text'] + ' synthesized');
+        if (dc['derived-numeric'])dparts.push(dc['derived-numeric'] + ' computed');
+        // Amber when a computed figure has no recoverable derivation — a number
+        // grounded in nothing is exactly what an invented figure looks like.
+        var risky = ds.has_unexplained_numeric;
+        if (dparts.length) {
+          derivBar = chip(risky ? '#3a1a00' : '#0a2040', risky ? '#fbbf24' : '#4f8ef7',
+                          (risky ? '⚠ ' : '') + 'derivation: ' + dparts.join(' · '));
+        }
+        var rows = ((data.derivation || {}).claims || []).filter(function(c) {
+          return c.derivation && c.derivation.kind !== 'verbatim';
+        }).map(function(c) {
+          var d = c.derivation;
+          var srcs = (d.source_ids || []).join(', ');
+          var detail = escHtml(d.description || '');
+          return '<div style="margin:6px 0;padding:6px 8px;background:#08182c;border-left:2px solid '
+               + (d.kind === 'derived-numeric' && !d.formula ? '#fbbf24' : '#1a3a60') + ';">'
+               + '<div style="color:#7fa8d0;font-size:10px;text-transform:uppercase;">'
+               + escHtml(d.label || d.kind) + (srcs ? ' · source ' + escHtml(srcs) : '') + '</div>'
+               + '<div style="color:#a8c8e0;font-size:11px;margin-top:3px;">' + escHtml(c.claim) + '</div>'
+               + '<div style="color:#8fb8d8;font-size:11px;margin-top:3px;">' + detail + '</div>'
+               + (d.quote ? '<div style="color:#6f96b8;font-size:10px;margin-top:3px;font-style:italic;">“'
+                          + escHtml(d.quote) + '”</div>' : '')
+               + '</div>';
+        }).join('');
+        if (rows) {
+          derivBar += '<details style="margin-bottom:6px;"><summary style="color:#4f8ef7;'
+                    + 'font-size:10px;cursor:pointer;">show derivations</summary>' + rows + '</details>';
+        }
+      }
       var llmUsed = data.mode === 'ai_assisted' || data.mode === 'graphrag';
       var badge = data.abstained
         ? chip('#3a1a00', '#fbbf24', '⚠ Insufficient evidence — showing cited passages only')
@@ -361,7 +401,7 @@ function runChat(message) {
 
       thread.innerHTML += '<div style="margin-bottom:14px;">' +
         '<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:2px 8px 8px 8px;padding:12px 14px;max-width:88%;">' +
-        badge + claimBar + '<span style="color:#a8c8e0;font-size:13px;line-height:1.6;">' + answerHtml + '</span>' +
+        badge + claimBar + derivBar + '<span style="color:#a8c8e0;font-size:13px;line-height:1.6;">' + answerHtml + '</span>' +
         (sourceLinks ? '<div style="margin-top:8px;">Sources: ' + sourceLinks + '</div>' : '') +
         '</div></div>';
       thread.scrollTop = thread.scrollHeight;
