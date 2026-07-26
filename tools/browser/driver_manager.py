@@ -60,6 +60,35 @@ _IS_WIN = platform.system() == "Windows"
 _DRIVER_EXE_SUFFIX = ".exe" if _IS_WIN else ""
 
 
+# ── Errors ────────────────────────────────────────────────────────────────────
+
+class AirgapDriverMissingError(RuntimeError):
+    """Raised when no driver binary is resolvable and air-gap mode is active.
+
+    This is the fail-closed guarantee: in an air-gapped environment, driver
+    resolution that falls through to Selenium Manager (which resolves drivers by
+    *downloading* them) is a promise violation, not an acceptable last resort.
+    Rather than hand control to a component that reaches the network, raise this
+    with the exact admin refresh command so the operator gets an actionable next
+    step instead of a confusing network timeout. Never triggers a CDN download.
+    """
+
+
+def _airgap_active() -> bool:
+    """True when air-gap mode is in force (env override or detected environment).
+
+    Kept as a thin wrapper so the network-download fail-closed decision has one
+    seam and a missing airgap package degrades to "not air-gapped" (the
+    commercial default) rather than crashing driver construction.
+    """
+    try:
+        from tools.airgap.detector import is_airgap
+        return bool(is_airgap())
+    except Exception:  # noqa: BLE001 - absence of the airgap pkg means commercial
+        import os
+        return os.environ.get("ICDEV_AIRGAP", "").lower() in ("1", "true", "yes")
+
+
 # ── Edge version detection ────────────────────────────────────────────────────
 
 def _detect_edge_version() -> Optional[str]:
@@ -361,11 +390,39 @@ class DriverManager:
 
         Raises
         ------
+        AirgapDriverMissingError
+            If no driver binary is resolvable (resolution fell through to
+            Selenium Manager) *and* air-gap mode is active. Carries the admin
+            refresh command; never triggers a CDN download.
         ImportError
             If selenium is not installed.
         RuntimeError
             If the driver binary cannot be located or started.
         """
+        # Fail closed BEFORE importing/launching selenium: a None driver_path
+        # means resolution fell through to Selenium Manager, which downloads.
+        # In air-gap mode that is a guarantee violation — raise an actionable
+        # error naming the search paths and the admin refresh command instead.
+        if self.resolved_driver_path is None and _airgap_active():
+            raise AirgapDriverMissingError(
+                "No vendored WebDriver binary was resolvable and air-gap mode is "
+                "active, so driver construction was refused rather than allowed to "
+                "fall through to Selenium Manager (which downloads drivers from a "
+                "CDN).\n"
+                f"  searched (vendored): {MSEDGEDRIVER_VENDOR_DIR}\n"
+                f"                       {CHROMEDRIVER_VENDOR_DIR}\n"
+                "  searched (PATH):     msedgedriver, chromedriver\n"
+                "Refresh the vendored driver on a connected admin host, then "
+                "transfer vendor/drivers/ to this host:\n"
+                "  python tools/airgap/driver_vendor.py --fetch-edge\n"
+                "  python tools/airgap/driver_vendor.py --fetch-chrome --major <installed-major>"
+            )
+        if self.resolved_driver_path is None:
+            logger.warning(
+                "[driver_manager] no driver binary resolved; handing off to "
+                "Selenium Manager, which may download a driver from the network "
+                "(commercial mode — set ICDEV_AIRGAP=true to fail closed instead)."
+            )
         try:
             from selenium import webdriver as wd
             from selenium.webdriver.edge.service import Service as EdgeService
@@ -387,6 +444,7 @@ class DriverManager:
                 opts.add_argument("--disable-gpu")
             if no_sandbox:
                 opts.add_argument("--no-sandbox")
+            opts.add_argument("--disable-dev-shm-usage")
             for arg in (extra_args or []):
                 opts.add_argument(arg)
 
@@ -406,6 +464,7 @@ class DriverManager:
                 opts.add_argument("--disable-gpu")
             if no_sandbox:
                 opts.add_argument("--no-sandbox")
+            opts.add_argument("--disable-dev-shm-usage")
             for arg in (extra_args or []):
                 opts.add_argument(arg)
 
@@ -449,8 +508,7 @@ def get_driver(
     extra_args:
         Additional browser CLI flags forwarded verbatim. Merged after the
         air-gap-safe defaults (``--no-sandbox``, ``--disable-gpu``,
-        ``--disable-dev-shm-usage``, ``--disable-features=...``) so caller
-        flags can override them.
+        ``--disable-dev-shm-usage``) so caller flags can override them.
 
     Return type
     -----------
