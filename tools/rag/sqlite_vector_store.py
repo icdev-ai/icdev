@@ -176,7 +176,9 @@ def _load_quantization_config(config: "dict | None" = None) -> dict:
         rag = cfg.get("rag")
         if isinstance(rag, dict) and "quantization" in rag:
             return rag["quantization"] or {}
-    config_path = BASE_DIR / "args" / "rag_config.yaml"
+    from tools.rag.config_path import rag_config_path
+
+    config_path = rag_config_path()
     if not config_path.exists():
         return {}
     try:
