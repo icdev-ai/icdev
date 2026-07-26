@@ -215,6 +215,57 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "filter": "status = 'ingested'",
         "description": "PDF documents ingested into RAG",
     },
+    # --- GovCon evidence corpus (the approve -> index -> retrieve -> cite flywheel) ---
+    # Approved content is placeholder-free and citation-validated by construction:
+    # the RFI export gate and response_drafter.approve_draft() both enforce that
+    # before a section can reach these statuses. That is the quality bar for reuse.
+    #
+    # Chunks carry evidence_tier in metadata: 'primary' for documents we actually
+    # submitted, 'derived' for prose this system generated and a human approved.
+    # Retrieval ranks primary first, and a numeric claim may not rest on derived
+    # evidence alone — otherwise approved prose feeds the next draft, is approved
+    # again, and claims propagate without ever touching ground truth.
+    # The sources_json clause is the depth cap: a section that was itself written
+    # from the evidence corpus must not re-enter it, or a claim would recycle
+    # indefinitely without ever resting on a submitted document.
+    "rfi_approved_sections": {
+        "table": "rfi_workbench_sections",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["title", "content"],
+        "metadata_cols": ["session_id", "part", "item_number", "status"],
+        "priority": 1,
+        "mode": "realtime",
+        "filter": (
+            "status IN ('hitl_approved', 'accepted') "
+            "AND (sources_json IS NULL OR sources_json NOT LIKE '%prior_submissions%')"
+        ),
+        "description": "Approved RFI response sections — reusable derived evidence",
+    },
+    "proposal_approved_drafts": {
+        "table": "proposal_section_drafts",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["draft_content"],
+        "metadata_cols": [
+            "opportunity_id", "shall_statement_id", "confidence_score", "draft_method", "status",
+        ],
+        "priority": 1,
+        "mode": "realtime",
+        "filter": "status = 'approved'",
+        "description": "Approved proposal section drafts — reusable derived evidence",
+    },
+    "prior_submissions": {
+        "table": "govcon_prior_submissions",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["title", "extracted_text"],
+        "metadata_cols": ["doc_type", "outcome", "file_hash", "classification"],
+        "priority": 1,
+        "mode": "batch",
+        "filter": "status = 'ingested'",
+        "description": "Uploaded prior RFIs, proposals, awards and CPARS — primary evidence",
+    },
     # --- Design Canvases (Task 17: Canvas-to-RAG Indexing) ---
     # IDC — Infrastructure Design Canvas
     "idc_designs": {
