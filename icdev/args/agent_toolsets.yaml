@@ -55,6 +55,25 @@ bundles:
       - oscal_generate
     mutating: false
 
+  browser:
+    description: >-
+      Drive an audited, scope-limited browser: navigate, read the page as
+      indexed interactive elements, click, type, screenshot (oss-browse-03).
+      Every navigation is checked against the default-deny allowlist in
+      args/browser_scope.yaml (loopback only out of the box), every action is
+      charged to a per-run budget, and every action writes an audit_trail row.
+    tools:
+      - browser_navigate
+      - browser_read_state
+      - browser_click
+      - browser_type
+      - browser_screenshot
+    # mutating: clicking and typing change state on the far side of the network.
+    # default_safety_gate in tools/agent_runtime/dispatch.py denies these unless
+    # ICDEV_SAG_ALLOW_MUTATION is set, so the standalone agent cannot reach them
+    # by default.
+    mutating: true
+
   security:
     description: >-
       Security scanning, sandboxed execution, ZTA posture, and AI-agent guards.

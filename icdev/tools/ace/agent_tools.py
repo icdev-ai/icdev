@@ -48,6 +48,104 @@ ToolHandler = Callable[[dict[str, Any], "threading.Event | None"], str]
 # ---------------------------------------------------------------------------
 
 _SCHEMAS: dict[str, dict[str, Any]] = {
+    # -- Browser (oss-browse-03 seam 4; supersedes oss-browse-01-d2) --------
+    # Opt-in per role via the role's tool list, NOT in the default set: a
+    # co-worker that can click inside a platform managing ATO artifacts is a
+    # deliberate grant. Scope, budget and audit are enforced by
+    # tools/browser/scope.py; nothing is re-implemented here.
+    "browser_navigate": {
+        "type": "function",
+        "is_read_only": False,
+        "function": {
+            "name": "browser_navigate",
+            "is_read_only": False,
+            "description": (
+                "Open a URL in an audited, scope-limited browser and return the page as "
+                "indexed interactive elements. Only hosts on the allowlist in "
+                "args/browser_scope.yaml are reachable (loopback only by default) - a "
+                "refused host never reaches the driver."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to open."},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    "browser_read_state": {
+        "type": "function",
+        "is_read_only": True,
+        "function": {
+            "name": "browser_read_state",
+            "is_read_only": True,
+            "description": (
+                "Return the current page as a numbered list of interactive elements. Act "
+                "on them by index (click 14), never by inventing a CSS selector. Indices "
+                "are valid only until the next read."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "screenshot": {"type": "boolean", "description": "Also capture a PNG."},
+                },
+            },
+        },
+    },
+    "browser_click": {
+        "type": "function",
+        "is_read_only": False,
+        "function": {
+            "name": "browser_click",
+            "is_read_only": False,
+            "description": "Click the element carrying this index from the latest browser_read_state.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer", "description": "Element index from the latest read."},
+                },
+                "required": ["index"],
+            },
+        },
+    },
+    "browser_type": {
+        "type": "function",
+        "is_read_only": False,
+        "function": {
+            "name": "browser_type",
+            "is_read_only": False,
+            "description": (
+                "Type text into the element at this index. For credentials write "
+                "<secret>NAME</secret> - the value is resolved at the driver and never "
+                "enters your context, the transcript, or the audit row."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "text": {"type": "string"},
+                    "enter": {"type": "boolean", "description": "Send Enter after typing."},
+                },
+                "required": ["index", "text"],
+            },
+        },
+    },
+    "browser_screenshot": {
+        "type": "function",
+        "is_read_only": True,
+        "function": {
+            "name": "browser_screenshot",
+            "is_read_only": True,
+            "description": "Capture a screenshot of the current page and return its path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Filename stem."},
+                },
+            },
+        },
+    },
     "read_file": {
         "type": "function",
         "is_read_only": True,
@@ -473,6 +571,8 @@ class AgentToolRegistry:
     # ------------------------------------------------------------------
 
     def _make_handler(self, name: str) -> ToolHandler | None:
+        if name.startswith("browser_"):
+            return self._make_browser_handler(name)
         if name == "read_file":
             return self._read_file
         if name == "write_file":
@@ -502,6 +602,87 @@ class AgentToolRegistry:
     # ------------------------------------------------------------------
     # Handlers
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Browser (oss-browse-03)
+    # ------------------------------------------------------------------
+
+    def _make_browser_handler(self, name: str):
+        """Bind one browser tool to this co-worker's audited session.
+
+        One AgentBrowser per co-worker instance, created lazily and reused, so
+        the per-run action budget in args/browser_scope.yaml bounds the instance
+        rather than resetting on every call. run_id carries the instance id,
+        which is what ties an audit_trail row back to a co-worker.
+        """
+        from tools.agent_toolkit import (
+            browser_click,
+            browser_navigate,
+            browser_read_state,
+            browser_screenshot,
+            browser_type,
+        )
+
+        fns = {
+            "browser_navigate": lambda b, inp: browser_navigate(inp.get("url", ""), browser=b),
+            "browser_read_state": lambda b, inp: browser_read_state(
+                browser=b, screenshot=bool(inp.get("screenshot", False))),
+            "browser_click": lambda b, inp: browser_click(int(inp.get("index", -1)), browser=b),
+            "browser_type": lambda b, inp: browser_type(
+                int(inp.get("index", -1)), str(inp.get("text", "")),
+                enter=bool(inp.get("enter", False)), browser=b),
+            "browser_screenshot": lambda b, inp: browser_screenshot(
+                name=inp.get("name"), browser=b),
+        }
+        fn = fns.get(name)
+        if fn is None:
+            return None
+
+        def _handler(inp: "dict[str, Any]", stop: "threading.Event | None") -> str:
+            browser = self._get_browser()
+            if browser is None:
+                return "Browser unavailable in this environment."
+            result = fn(browser, inp)
+            if result.get("denied"):
+                # Surfaced as text, not an exception: a scope refusal is
+                # something the model should read and route around.
+                return "Refused by browser scope policy: " + str(result.get("reason", ""))
+            if not result.get("ok"):
+                return "Browser action failed: " + str(result.get("error", "unknown error"))
+            state = result.get("state")
+            if state is not None:
+                lines = [
+                    "URL: " + str(state.get("url", "")),
+                    "Title: " + str(state.get("title", "")),
+                ]
+                for el in state.get("elements", [])[:60]:
+                    lines.append(
+                        "[%s] <%s> %s"
+                        % (el.get("index"), el.get("tag", ""), (el.get("text") or "")[:80])
+                    )
+                if state.get("truncated"):
+                    lines.append("... (element list truncated)")
+                return "\n".join(lines)
+            if "path" in result:
+                return "Screenshot saved to " + str(result["path"])
+            res = result.get("result", {})
+            return str(res.get("detail") or res)
+
+        return _handler
+
+    def _get_browser(self):
+        """Lazily create one audited browser session for this instance."""
+        existing = getattr(self, "_browser", None)
+        if existing is not None:
+            return existing
+        try:
+            from tools.browser.agent_browser import AgentBrowser
+
+            self._browser = AgentBrowser(run_id="ace:" + str(self.instance_id))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("agent_tools: browser unavailable (%s)", exc)
+            self._browser = None
+        return self._browser
 
     def _read_file(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.file_access_broker import FileAccessBroker
