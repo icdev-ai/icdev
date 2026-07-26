@@ -157,6 +157,7 @@ REFLEX_NAMES = [
     "retention_sweep",  # crx-db-03: 24h config-driven retention/archival (args/retention_policies.yaml); append-only tables archive-only, dry_run default
     "agent_cron_reflex",  # sag-cron-01: drains due user-facing cron jobs (agent_cron_jobs) — agent/script exec modes, retry/backoff, delivery
     "sag_skill_curator",  # sag-skl-01: archives (never deletes) idle unpinned auto-skills; pin support; HITL promotion stays separate
+    "review_loop",
 ]
 
 # Backward-compat aliases for module-level access used by other code
