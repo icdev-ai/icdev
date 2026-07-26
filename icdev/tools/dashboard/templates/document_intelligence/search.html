@@ -332,6 +332,24 @@ function runChat(message) {
         return '<span style="background:' + bg + ';color:' + fg + ';font-size:10px;padding:1px 6px;'
              + 'border-radius:3px;margin-bottom:6px;display:inline-block;">' + text + '</span><br>';
       }
+      // Per-claim grounding summary. Reports how many sentences are actually
+      // backed by the span they cite — the answer-level badge cannot say that.
+      var cs = data.claim_summary;
+      var claimBar = '';
+      if (cs) {
+        var parts = [];
+        if (cs.supported)   parts.push(cs.supported + ' supported');
+        if (cs.partial)     parts.push(cs.partial + ' partial');
+        if (cs.unsupported) parts.push(cs.unsupported + ' UNSUPPORTED');
+        if (cs.uncited)     parts.push(cs.uncited + ' uncited');
+        if (parts.length) {
+          // Amber whenever any claim failed to bind — the number is the point,
+          // so it must not be styled as reassuring.
+          var bad = cs.unsupported > 0;
+          claimBar = chip(bad ? '#3a1a00' : '#0a2040', bad ? '#fbbf24' : '#4f8ef7',
+                          'claims: ' + parts.join(' · '));
+        }
+      }
       var llmUsed = data.mode === 'ai_assisted' || data.mode === 'graphrag';
       var badge = data.abstained
         ? chip('#3a1a00', '#fbbf24', '⚠ Insufficient evidence — showing cited passages only')
@@ -343,7 +361,7 @@ function runChat(message) {
 
       thread.innerHTML += '<div style="margin-bottom:14px;">' +
         '<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:2px 8px 8px 8px;padding:12px 14px;max-width:88%;">' +
-        badge + '<span style="color:#a8c8e0;font-size:13px;line-height:1.6;">' + answerHtml + '</span>' +
+        badge + claimBar + '<span style="color:#a8c8e0;font-size:13px;line-height:1.6;">' + answerHtml + '</span>' +
         (sourceLinks ? '<div style="margin-top:8px;">Sources: ' + sourceLinks + '</div>' : '') +
         '</div></div>';
       thread.scrollTop = thread.scrollHeight;

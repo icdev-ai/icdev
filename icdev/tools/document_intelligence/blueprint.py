@@ -1982,6 +1982,70 @@ def _compile_grounded_answer(results: list, query: str) -> dict:
     return {"answer": answer, "sources": sources}
 
 
+#: DIC chat's own citation dialect: a bare ``[3]`` ordinal.
+#:
+#: `_llm_synthesize` instructs the model to "cite supporting facts with [N]
+#: markers", but `citation_grounding.parse_citations` recognises only
+#: `[source: ...]` and `[SOURCE-N]` — so chat citations returned []. They have
+#: never been machine-checkable by the TRUST module.
+#:
+#: Normalised HERE rather than by widening the shared parser: a global bare-[N]
+#: rule would also match markdown footnotes, array indices and enumerated list
+#: references in every other drafting surface, trading a silent miss for silent
+#: false positives. Bounded to 1-2 digits, since evidence sets are capped at 5.
+_CHAT_ORDINAL_CITE_RE = re.compile(r"\[(\d{1,2})\]")
+
+
+def _normalise_chat_citations(text: str) -> str:
+    """Rewrite DIC chat's ``[N]`` markers into the shared ``[SOURCE-N]`` form."""
+    return _CHAT_ORDINAL_CITE_RE.sub(lambda m: f"[SOURCE-{m.group(1)}]", text or "")
+
+
+def _claim_grounding(answer: str, results: list) -> dict | None:
+    """Per-claim grounding report for a chat answer, or None if unavailable.
+
+    Binds every claim to the span of the cited source that supports it
+    (token-F1 window) and checks that each concrete anchor — numbers, dates,
+    proper nouns — actually appears in that span. Deterministic: no LLM, so it
+    behaves identically air-gapped, which is the whole point of the
+    ``judge=None`` path in ``ground_claims``.
+
+    Source ids are keyed BOTH by chunk id and by the ``[N]`` ordinal the
+    synthesis prompt tells the model to emit, because DIC chat answers cite
+    ``[1]`` while ``citations_json`` records chunk ids. Keying only one way
+    would report every claim as citing an unavailable source.
+
+    Best-effort by design — a grounding failure must not cost the user their
+    answer, so this returns None and the caller simply omits the field.
+    """
+    try:
+        from tools.quality.citation_grounding import ground_claims
+
+        sources: dict = {}
+        for i, r in enumerate(results[:5], start=1):
+            content = getattr(r, "content", "") or ""
+            if not content:
+                continue
+            sources[str(i)] = content                      # "[1]" ordinal form
+            cid = _r_attr(r, "chunk_id") or _r_attr(r, "id")
+            if cid:
+                sources[str(cid)] = content                # "[source: chunk X]"
+        if not sources:
+            return None
+        return ground_claims(_normalise_chat_citations(answer), sources)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: claim grounding unavailable: %s", exc)
+        return None
+
+
+def _r_attr(obj, name):
+    """Read an attribute or mapping key off a heterogeneous result object."""
+    v = getattr(obj, name, None)
+    if v is None and isinstance(obj, dict):
+        v = obj.get(name)
+    return v
+
+
 def _llm_synthesize(
     message: str, results: list, community_summaries: list[str] | None = None
 ) -> str | None:
@@ -2160,6 +2224,8 @@ def api_chat():
         # badge is driven from this — it must never assert verification that did
         # not happen. The deterministic Path-2 answer is cited but unverified.
         verified = False
+        # Per-claim grounding report (None when unavailable). Reporting only.
+        claim_report = None
 
         if _needs_synthesis(message):
             # Global/thematic questions get the GraphRAG community summaries fed in
@@ -2179,6 +2245,18 @@ def api_chat():
                         answer = vr.verified_text or llm_answer
                         mode = "graphrag" if community_summaries else "ai_assisted"
                     verified = vr.verified
+                    # Per-claim grounding (trust-halluc): bind each claim to the
+                    # SPAN of the source that supports it, so the UI can show
+                    # which words back which sentence instead of only "this
+                    # answer cites [1]". Deterministic — span F1 + anchor guard,
+                    # no LLM — so it runs on the air-gap path too.
+                    #
+                    # Reporting only. It does not gate the chat answer: a
+                    # corpus audit found 61% of AI-authored sections carry no
+                    # citation at all, so blocking here would reject most
+                    # content for a defect upstream in generation. The verdicts
+                    # make that visible; the approve gate is where it blocks.
+                    claim_report = _claim_grounding(answer, scored_results)
                 except Exception as verr:
                     # Never publish an unverified draft as if it had passed. A
                     # verifier failure means we do not know whether the answer is
@@ -2196,6 +2274,11 @@ def api_chat():
             "citations": citations,
             "abstained": abstained,
             "verified": verified,
+            "claims": (claim_report or {}).get("claims", []),
+            "claim_summary": {
+                k: (claim_report or {}).get(k, 0)
+                for k in ("supported", "partial", "unsupported", "uncited")
+            } if claim_report else None,
             "mode": mode,
         }, answer=answer, record_results=scored_results))
     except Exception as exc:
