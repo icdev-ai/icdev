@@ -890,3 +890,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 - **Decision:** **trusted-first-party**
 - **Rationale:** All inputs are repo-authored data or the tool's own output. The modules perform no `exec()`/`eval()`/`subprocess`; they call the LLMRouter and the deterministic fitness judge and aggregate results in pure Python. There is no user-provided-content ingress to sandbox. CUI safety is preserved by routing all inference through `LLMRouter` (the api_key_env local-vs-cloud distinction keeps CUI local); the harness itself moves no CUI.
 - **Revisit if:** the benchmark is ever pointed at a user-supplied or externally-fetched task corpus (rather than the first-party `args/agx/` suite), or the leaderboard is made to ingest reports from an untrusted source — either of which would introduce untrusted-content ingress and warrant re-scoping.
+
+### Gap 36 — Agent browser: indexed page representation (`tools/browser/agent_browser.py`)
+
+**Module:** `tools/browser/agent_browser.py` (OSS adaptation oss-browse-01)
+
+**Ingress path:** The module renders a live page in a real Chromium/Edge session and injects a first-party extraction script that walks the DOM, so page content — titles, visible text, and allowlisted attribute values — flows back into Python and, from there, into an agent's prompt. Page content is externally-influenceable whenever the target is not a first-party ICDEV surface.
+
+- **Decision:** **bypass-documented** — the browser process is the sandbox; the Python layer never executes page-supplied code.
+- **Rationale:** All DOM traversal happens inside the browser's own renderer sandbox. The injected JS is a fixed, checked-in constant (`_EXTRACT_JS`) parameterised only by config from `args/agent_browser.yaml` — page content is never concatenated into script source, and nothing returned from the page is `eval`'d, `exec`'d, or passed to a shell. The returned value is plain JSON (strings/dicts) plus opaque Selenium element handles. Running the same page through ICDEV's generic content sandbox would add nothing the renderer does not already provide.
+- **Guardrails:**
+  - **Localhost-only by default** — `navigate()` refuses any http(s) host outside `agent_browser.allowed_domains` (`localhost`, `127.0.0.1`, `::1`) and any scheme outside `allowed_schemes`, raising `BrowserScopeError`. Widening the allowlist is a deliberate configuration act.
+  - **Attribute allowlist** — only attributes named in `include_attributes` reach the descriptor, so page-authored attributes cannot smuggle arbitrary payloads into the prompt by volume.
+  - **Bounded representation** — `max_elements` and `max_text_length` cap how much page text can enter a prompt; hidden and `aria-hidden` nodes are dropped.
+  - **Indexed actions only** — the surface exposes `click/type/select/press` against integers from the last `read_state()`; there is no "run this selector/script from the page" path, and a node that left the DOM raises `ElementIndexError` rather than acting on a substituted element.
+  - **Vendored drivers** — the session comes from `driver_manager.get_driver()`, which never downloads a driver at runtime.
+  - **Regression test** — `tests/browser/test_agent_browser.py` asserts the indexed element list, the hidden-element exclusions, the attribute allowlist (including a narrowed-config case), and both scope refusals.
+- **Revisit if:** page content is ever fed to `exec`/`eval`/a shell, the extraction JS is ever built by interpolating page-derived strings, `allowed_domains` is widened to the open internet, or credentials are typed into pages before oss-browse-02 lands credential brokering — any of which changes the trust boundary this decision rests on.

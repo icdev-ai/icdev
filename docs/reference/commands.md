@@ -76,6 +76,25 @@ python tools/testing/e2e_runner.py --run-all           # Execute all E2E tests
 
 ---
 
+## Browser Automation Commands
+```bash
+# Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
+python tools/browser/driver_manager.py --probe          # Show resolved browser + driver path
+python tools/browser/driver_manager.py --smoke          # Launch, visit about:blank, quit
+
+# Agent browser — indexed-element page representation (browser-use adaptation)
+python tools/browser/agent_browser.py --url http://localhost:5050 --json
+python tools/browser/agent_browser.py --url http://localhost:5050 --screenshot home
+python tools/browser/agent_browser.py --url http://localhost:5050 --headed   # visible window
+# Config: args/agent_browser.yaml — interactive_selector, include_attributes (DOM
+# verbosity allowlist), max_elements/max_text_length, allowed_domains (localhost-only
+# by default; navigate() raises BrowserScopeError otherwise).
+# Python: AgentBrowser().navigate(url) -> {url, title, element_count, elements[]}
+#         then click(i) / type(i, text) / select(i, value) / press(key) / screenshot(name)
+```
+
+---
+
 ## Enterprise-Configurable Platform Commands
 ```bash
 # Project scaffolding — ALWAYS run `icdev init` after `pip install icdev`
