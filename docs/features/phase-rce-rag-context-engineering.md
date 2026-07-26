@@ -37,7 +37,7 @@ persisted).
 | rce-eval-04-d4 | #764 | Benchmark comparison vs the compliance baseline — `data/rag/rce_contextual_compliance.json`. |
 | rce-eval-04-d5 | (this) | **KEEP decision** for `contextual_retrieval`, backed by the measured delta + per-query analysis below. |
 | rce-eval-05 | #760 | RAPTOR live tree build (rce-eval-05-d3). |
-| rce-eval-05-d4/d5 | (this) | **DROP decision** for `raptor` — measured 0.0 recall / 0.0 MRR / −0.0005 nDCG vs OFF; toggle stays OFF. |
+| rce-eval-05-d4/d5 | (this) | ~~**DROP decision** for `raptor`~~ — **SUPERSEDED by oss-meas-01-d3**; the golden set it was measured on had no headroom. See below. |
 
 ## Toggles
 
@@ -256,7 +256,38 @@ the model id, and `ollama_cloud` is a cloud egress path — fine for this public
 reference corpus, but a CUI corpus must pin the local provider before
 re-indexing.
 
-#### `raptor`: MEASURED → **DROP / keep-OFF** (rce-eval-05-d4/d5)
+#### `raptor`: ~~MEASURED → **DROP / keep-OFF**~~ → **SUPERSEDED** (rce-eval-05-d4/d5, overturned by oss-meas-01-d3)
+
+> **This DROP has been withdrawn. The measurement below is sound arithmetic on an
+> instrument that could not detect an improvement.**
+>
+> The v1 33-query compliance golden set had **29 of 33 queries already at both
+> perfect recall and perfect MRR** — the correct chunk was already rank 1. Four
+> queries of headroom existed in the entire set, so a retrieval improvement had
+> almost nowhere to register and `0.0` was close to the only reachable result.
+>
+> Re-measured on the v2 48-query set (`oss-meas-01-d1`, PR #817) against the
+> **same corpus** — 4,111 chunks / 3,830 summaries / 2 levels, identical to the
+> environment recorded below — `raptor` ON measures **+0.0208 recall@5 /
+> +0.0093 MRR / +0.0103 nDCG@5**. Same corpus, same toggle, opposite sign.
+>
+> **This does not establish that RAPTOR is worth enabling.** The delta is one
+> query out of 48, and no latency was captured — which a corpus-wide
+> LLM-summarisation pass plus per-query summary search plainly requires. The
+> toggle correctly stays `false`. What changed is that it stays false *pending a
+> decision*, not because a measurement settled it.
+>
+> Full re-measurement:
+> [oss-meas-01-retrieval-toggle-benchmark.md](oss-meas-01-retrieval-toggle-benchmark.md).
+>
+> The transferable lesson: **a golden set with no headroom cannot produce a KEEP
+> decision, only a DROP.** Any verdict on this page measured against the v1 set
+> is suspect the same way, including the KEEP for `contextual_retrieval` above —
+> its +0.0151 recall / +0.0202 MRR was measured with the same four queries of
+> headroom, so it is a *lower bound*, not a characterisation.
+
+**The original d4/d5 record follows unedited**, so the arithmetic and the
+reasoning that produced the withdrawn decision both stay auditable:
 
 > **Decision: DROP.** `rag.raptor.enabled` stays `false` in
 > `args/rag_config.yaml`. Enabling the RAPTOR summary tier produced
