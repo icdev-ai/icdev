@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -164,6 +166,33 @@ def score_query(
 # ---------------------------------------------------------------------------
 
 
+def latency_stats(samples: List[float]) -> Dict[str, Any]:
+    """Summarise per-query wall-clock in milliseconds.
+
+    p50/p95 rather than the mean alone: retrieval latency is long-tailed (a cold
+    cache or one slow embed dominates an average over ~48 queries), and a toggle
+    that helps the median while wrecking the tail is a regression a mean hides.
+
+    Nearest-rank percentiles — no interpolation, so a reported p95 is always an
+    observed measurement rather than a synthesised value.
+    """
+    if not samples:
+        return {"n": 0, "p50_ms": None, "p95_ms": None, "mean_ms": None, "total_ms": None}
+    ordered = sorted(samples)
+
+    def _pct(p: float) -> float:
+        idx = max(0, min(len(ordered) - 1, math.ceil(p / 100.0 * len(ordered)) - 1))
+        return round(ordered[idx], 2)
+
+    return {
+        "n": len(ordered),
+        "p50_ms": _pct(50),
+        "p95_ms": _pct(95),
+        "mean_ms": round(sum(ordered) / len(ordered), 2),
+        "total_ms": round(sum(ordered), 2),
+    }
+
+
 class RAGBenchmark:
     """Runs the golden query set through a retriever and aggregates metrics."""
 
@@ -229,6 +258,7 @@ class RAGBenchmark:
         agg_recall: List[float] = []
         agg_mrr: List[float] = []
         agg_ndcg: List[float] = []
+        latencies: List[float] = []
         hits = 0
         scored = 0
 
@@ -238,15 +268,22 @@ class RAGBenchmark:
             expect = q.get("expect", {}) or {}
             if not query or not _query_targets(expect):
                 continue
+            # Wall-clock per query. Some toggles are SPEED optimisations whose
+            # correct outcome is a zero quality delta (binary_prefilter shrinks
+            # the candidate set without changing what comes back), so a sweep
+            # that reports only quality cannot decide them at all.
+            started = time.perf_counter()
             try:
                 results = do_search(query, self._top_k) or []
             except Exception as exc:  # a broken retriever must not abort the run
                 per_query.append({"id": qid, "query": query, "error": str(exc)})
                 continue
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
 
             scores = score_query(results, expect, top_k=self._top_k)
-            scores.update({"id": qid, "query": query})
+            scores.update({"id": qid, "query": query, "latency_ms": round(elapsed_ms, 2)})
             per_query.append(scores)
+            latencies.append(elapsed_ms)
 
             agg_recall.append(scores["recall_at_k"])
             agg_mrr.append(scores["mrr"])
@@ -270,6 +307,12 @@ class RAGBenchmark:
                 f"ndcg_at_{self._top_k}": _avg(agg_ndcg),
                 "citation_hit_rate": round(hits / scored, _SCORE_PRECISION) if scored else None,
             },
+            # Kept OUT of `aggregate` on purpose: everything in there is a
+            # quality score in [0, 1] that a comparison can subtract blindly.
+            # Latency is milliseconds and lower-is-better, so mixing it in would
+            # make `compare_to_baseline`'s per-key delta loop report a slowdown
+            # as a positive number alongside genuine quality gains.
+            "latency": latency_stats(latencies),
             "results": per_query,
         }
 
@@ -337,6 +380,7 @@ def run_toggle_sweep(
     with isolated_config(None, base=base_cfg):
         control = RAGBenchmark(golden_set_path=golden_set, top_k=top_k).run()
     control_agg = control.get("aggregate", {})
+    control_lat = control.get("latency", {})
 
     arms: List[Dict[str, Any]] = []
     for name in names:
@@ -361,6 +405,7 @@ def run_toggle_sweep(
             metric: _delta(control_agg.get(metric), agg.get(metric))
             for metric in sorted(set(control_agg) | set(agg))
         }
+        lat = run.get("latency", {})
         arms.append({
             "toggle": name,
             "verdict": probe.verdict,
@@ -368,6 +413,14 @@ def run_toggle_sweep(
             "path": TOGGLES[name].path,
             "aggregate": agg,
             "deltas": deltas,
+            "latency": lat,
+            # Reported separately from `deltas` because lower is better here.
+            # A toggle can be a KEEP on quality and a DROP on cost; collapsing
+            # the two into one signed number hides exactly that trade.
+            "latency_delta": {
+                stat: _delta(control_lat.get(stat), lat.get(stat))
+                for stat in ("p50_ms", "p95_ms", "mean_ms")
+            },
         })
 
     measured = [a for a in arms if a["benchmarked"]]
@@ -376,7 +429,11 @@ def run_toggle_sweep(
         return [a["toggle"] for a in arms if a["verdict"] == verdict]
 
     return {
-        "control": {"aggregate": control_agg, "queries_scored": control.get("queries_scored")},
+        "control": {
+            "aggregate": control_agg,
+            "latency": control_lat,
+            "queries_scored": control.get("queries_scored"),
+        },
         "arms": arms,
         "summary": {
             "toggles_considered": len(names),
@@ -441,6 +498,13 @@ def main() -> None:
                     if isinstance(d.get("delta"), (int, float))
                 )
                 print(f"  {arm['verdict']:18s} {arm['toggle']:18s} {deltas or '(no numeric metrics)'}")
+                ld = arm.get("latency_delta", {})
+                cost = ", ".join(
+                    f"{s.replace('_ms','')} {d['delta']:+.1f}ms" for s, d in ld.items()
+                    if isinstance(d.get("delta"), (int, float))
+                )
+                if cost:
+                    print(f"  {'':18s} {'':18s} cost: {cost}")
             s = sweep["summary"]
             print(f"\n{s['benchmarked']}/{s['toggles_considered']} benchmarked; "
                   f"not wired: {', '.join(s['not_wired']) or 'none'}")
