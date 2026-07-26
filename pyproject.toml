@@ -108,6 +108,13 @@ testing = [
     "ruff>=0.12",
     "pydantic>=2.0",
 ]
+# Browser automation — the agent browser (tools/browser/) and tests/e2e_selenium/.
+# Air-gap safe: the selenium PYTHON package is pure Python and installable offline;
+# only the driver BINARY is the air-gap concern (see tools/browser/driver_manager.py
+# + tools/airgap/driver_vendor.py). cdp-00 defect D3.
+browser = [
+    "selenium>=4.15.0",
+]
 # SaaS multi-tenancy (PostgreSQL, Redis, production WSGI — NOT needed for air-gap)
 saas = [
     "psycopg2-binary>=2.9",
