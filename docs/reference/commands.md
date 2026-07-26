@@ -3394,3 +3394,65 @@ python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"
 # Config/registry: adapters self-register from tools/twin_core/adapters/*.py
 # Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
 ```
+
+## Agent Browser — Indexed-Element Page Representation (tools/browser/)
+
+```bash
+# Probe which WebDriver resolves (vendored msedgedriver → chromedriver → Selenium Manager)
+python tools/browser/driver_manager.py --probe
+python tools/browser/driver_manager.py --smoke
+
+# Index a page — prints exactly what a model sees:
+#   [24] <button> + Add Task
+#   [20] <input> role=text Filter tasks (id=kanban-filter-input, type=text)
+python tools/browser/agent_browser.py --url http://localhost:5050/kanban --text
+
+# JSON state (index, role, text, allowlisted attributes, bounds, in_viewport, disabled)
+python tools/browser/agent_browser.py --url http://localhost:5050 --json
+
+# State + screenshot (always lands under playwright/screenshots/)
+python tools/browser/agent_browser.py --url http://localhost:5050 --text --screenshot --name home
+
+# Show the resolved config
+python tools/browser/agent_browser.py --config --json
+
+# In a git worktree use the module form — a script path does not put the repo
+# root on sys.path, so tools.* resolves to the shared checkout's vendor/drivers.
+python -m tools.browser.agent_browser --url http://localhost:5050 --text
+```
+
+```python
+# Library API — act by index, never by an invented CSS selector
+from tools.browser.agent_browser import AgentBrowser
+
+with AgentBrowser() as b:
+    state = b.navigate("http://localhost:5050/kanban")
+    print(state.to_text())              # model-facing rendering
+    b.type_text(20, "oss-browse")       # index from the state above
+    b.click(24)
+    b.press("Escape")
+    b.select(19, "Engineering")         # matches option value, then visible text
+    state = b.read_state(screenshot=True)
+    print(b.validate("The CUI banner is visible"))   # reuses screenshot_validator
+
+# Agent-loop wiring (same convention as tools/ace/agent_tools.py)
+from tools.browser.agent_tools import BrowserToolRegistry
+tools, handlers = BrowserToolRegistry(browser).build()
+```
+
+```
+# Config: args/agent_browser.yaml — page representation only
+#   include_attributes  — DOM verbosity allowlist (the main prompt-size knob)
+#   max_elements / max_text_length / max_attr_length — hard caps (state.truncated)
+#   viewport_only / occlusion_check — geometry filters
+#   navigation.settle_ms — post-action pause before re-reading state
+#
+# Config: args/browser_scope.yaml — the enforced policy (tools/browser/scope.py)
+#   allowed_domains / denied_domains / allowed_schemes — default-deny nav gate
+#   allow_non_local + require_egress_guard — the two extra switches a routable host needs
+#   limits.max_actions_per_run / max_failures / step_timeout_seconds — per-run budget
+#   AgentBrowser holds a GuardedDriver, so all of the above applies to every method.
+#   There is no navigation policy in agent_browser.yaml — one policy, one file.
+# Tests: tests/test_agent_browser.py (56 tests; real-browser test auto-skips with no driver)
+#        tests/browser/test_scope.py (52 tests; the policy decision table)
+```
