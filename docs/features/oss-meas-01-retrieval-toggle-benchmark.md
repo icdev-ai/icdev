@@ -16,9 +16,10 @@ anything** (the fifth, `auto_indexer`, is a CLI that was never a retrieval toggl
 
 Two things worth carrying off this page:
 
-1. **Latency inverted two of three decisions.** On quality alone `rerank` and `raptor` looked like
-   the winners and `binary_prefilter` looked inert. With cost attached, `binary_prefilter` is the
-   only KEEP and the other two are DROPs.
+1. **Cost turned two apparent winners into DROPs, and no toggle survives as a KEEP.** On quality
+   alone `rerank` and `raptor` looked like wins; their p95 cost rules both out. `binary_prefilter`
+   is not applicable on this backend at all. `oss-meas-01-d5` therefore flips **nothing** on — a
+   legitimate result of a measurement card, not a failure to deliver.
 2. **The previously-published RAPTOR *DROP* was produced by an instrument that could not detect an
    improvement** — 29 of 33 v1 queries were already at rank 1. It lands on DROP again here, but for
    a reason that holds.
@@ -42,21 +43,24 @@ Control latency: **p50 424.1 ms, p95 539.6 ms, mean 745.0 ms** (n=48).
 
 | Toggle | Verdict | recall@5 | MRR | nDCG@5 | Δp50 | Δp95 | Decision |
 |---|---|---|---|---|---|---|---|
-| `binary_prefilter` | WIRED | 0.0000 | 0.0000 | 0.0000 | **−2.4 ms** | **−91.7 ms** | **KEEP** |
+| `binary_prefilter` | **INERT-ON-BACKEND** | 0.0000 | 0.0000 | 0.0000 | +1.3 ms | +6.3 ms | **NOT APPLICABLE — no decision** |
 | `rerank` | WIRED | +0.0208 | +0.0104 | +0.0098 | +236.7 ms | **+2044.9 ms** | **DROP on cost** |
 | `raptor` | WIRED | +0.0208 | +0.0093 | +0.0103 | +328.6 ms | +312.9 ms | **DROP on cost** |
 | `reflective_rerank` | NOT-WIRED | — | — | — | — | — | wire or delete |
 | `adaptive_routing` | NOT-WIRED | — | — | — | — | — | wire or delete |
 | `auto_indexer` | NOT-WIRED (by design) | — | — | — | — | — | **keep — it is a CLI, not a retrieval toggle** |
 
-### Latency inverted two of the three decisions
+### Latency changed the picture — and one reading of it was wrong
 
 Read on quality alone, `rerank` and `raptor` were the winners and `binary_prefilter` was the
 nothing-burger. With cost attached, that is backwards:
 
-- **`binary_prefilter` → KEEP.** A zero quality delta is what a candidate-set prefilter is *supposed*
-  to produce — identical results, less work. It returns the same answers with **mean latency down
-  323.1 ms (−43%)** and the p95 down 91.7 ms. This is the only toggle on the list that is free.
+- **`binary_prefilter` → RETRACTED, no decision.** An earlier revision of this page called it "the
+  only free win", citing mean latency down 323.1 ms. **That was wrong.** The toggle is implemented in
+  `sqlite_vector_store` only — `pg_vector_store.py` contains no such code path — and this deployment
+  runs `PgVectorStore`. It cannot execute here at all. The apparent win was first-run cold start:
+  three repetitions per arm put it at **+1.3 ms p50 / +6.3 ms p95**, inside a control that varies by
+  ±34 ms p50 against itself. On a SQLite deployment it remains unmeasured.
 - **`rerank` → DROP on cost.** One extra correct query out of 48, paid for with **p95 +2044.9 ms** —
   the tail nearly quintuples, 539.6 ms → 2584.5 ms. A cross-encoder pass over the candidate set is
   not worth a two-second tail for a 2% recall move.
@@ -130,7 +134,13 @@ Stated plainly, because the quality deltas are small enough that these matter:
    neither has been shown to generalise. `n=1` is a signal to investigate, not a mandate to ship.
    Both DROP verdicts above rest on the *cost* side, which is measured over all 48 queries and is
    therefore the sturdier half of each decision.
-2. **Latency was measured on one machine, once per arm.** Unlike the quality metrics — where the
+2. **Latency was measured on one machine.** Three repetitions per arm, not one — the first cut of
+   this page used a single sample and drew a wrong conclusion from it. Observed control variance is
+   ±34 ms p50 / ±29 ms p95, so `rerank`'s +2497 ms p95 is ~85x the noise floor and solid, `raptor`'s
+   +392 ms is ~13x and solid, and anything in single-digit ms is indistinguishable from nothing.
+   Original single-sample caveat retained below.
+
+3. **Superseded caveat (single sample per arm).** Unlike the quality metrics — where the
    control was verified byte-identical across three consecutive runs — the timings are a single
    sample per arm on a developer workstation sharing a box with the dashboard, the scheduler and
    PostgreSQL. The `rerank` p95 (+2044.9 ms) is far too large to be noise; the `binary_prefilter`
@@ -141,8 +151,9 @@ Stated plainly, because the quality deltas are small enough that these matter:
 
 ## Recommended next steps
 
-- **Flip `binary_prefilter` on** (`oss-meas-01-d5`). It is the one measured free win: identical
-  results, mean −43%.
+- **Flip nothing on** (`oss-meas-01-d5`). No toggle earned it: two are DROPs on cost and the third
+  cannot run on this backend. Re-open d5 only if a SQLite deployment needs `binary_prefilter`
+  measured on its own terms.
 - Leave `rerank` and `raptor` OFF, now on cost evidence rather than absent evidence.
 - Repeat the latency arms a few times on a quiet machine before treating the smaller deltas as
   settled.

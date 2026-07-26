@@ -385,7 +385,7 @@ def run_toggle_sweep(
     arms: List[Dict[str, Any]] = []
     for name in names:
         probe = probes[name]
-        if not (probe.reachable and probe.retrieval_side):
+        if not probe.measurable:
             arms.append({
                 "toggle": name,
                 "verdict": probe.verdict,
@@ -441,6 +441,7 @@ def run_toggle_sweep(
             # Bucketed by WHY, because each state needs a different fix:
             # delete the key, give it a caller, or schedule the CLI.
             "not_wired": _with("NOT-WIRED"),
+            "inert_on_backend": _with("INERT-ON-BACKEND"),
             "wrapper_unadopted": _with("WRAPPER-UNADOPTED"),
             "cli_unscheduled": _with("CLI-UNSCHEDULED"),
             "ingest_only": _with("WIRED-INGEST-ONLY"),
@@ -518,7 +519,7 @@ def main() -> None:
                               "known": sorted(TOGGLES)}, indent=2))
             sys.exit(2)
         probe = probe_reachability(args.toggle)
-        if not (probe.reachable and probe.retrieval_side):
+        if not probe.measurable:
             # Refusing is the point: a number here would be indistinguishable
             # from a real measurement and would licence a false DROP.
             print(json.dumps({"error": "toggle is not measurable by a retrieval benchmark",

@@ -313,3 +313,61 @@ def test_reflective_rerank_is_now_wired():
     probe = th.probe_reachability("reflective_rerank")
     assert probe.reachable is True, "reflective_rerank lost its caller"
     assert "tools.rag.retriever" in probe.importers
+
+
+# ── Backend applicability ────────────────────────────────────────────────────
+
+
+def test_backend_specific_toggle_is_inert_off_its_backend(monkeypatch):
+    """Import-reachable is not the same as active.
+
+    binary_prefilter lives in sqlite_vector_store, which pgvector deployments
+    still import via vector_store_factory — so the closure walk calls it WIRED
+    while the code cannot run. Benchmarking it there produced a 0.0 delta that
+    was read as "measured, no benefit" when the truth is "not applicable here".
+    """
+    th.active_vector_backend.cache_clear()
+    monkeypatch.setattr(th, "active_vector_backend", lambda: "pgvector")
+
+    probe = th.probe_reachability("binary_prefilter")
+    assert probe.verdict == "INERT-ON-BACKEND"
+    assert probe.measurable is False
+    assert probe.backend_supported is False
+    assert probe.active_backend == "pgvector"
+    assert "not applicable" in probe.reason
+
+
+def test_backend_specific_toggle_is_measurable_on_its_own_backend(monkeypatch):
+    th.active_vector_backend.cache_clear()
+    monkeypatch.setattr(th, "active_vector_backend", lambda: "sqlite")
+
+    probe = th.probe_reachability("binary_prefilter")
+    assert probe.verdict == "WIRED"
+    assert probe.measurable is True
+
+
+def test_unknown_backend_does_not_fabricate_a_mismatch(monkeypatch):
+    """An undetectable backend must not be claimed as a mismatch."""
+    th.active_vector_backend.cache_clear()
+    monkeypatch.setattr(th, "active_vector_backend", lambda: "unknown")
+
+    probe = th.probe_reachability("binary_prefilter")
+    assert probe.verdict != "INERT-ON-BACKEND"
+
+
+def test_backend_independent_toggles_are_unaffected(monkeypatch):
+    th.active_vector_backend.cache_clear()
+    monkeypatch.setattr(th, "active_vector_backend", lambda: "pgvector")
+    for name in ("rerank", "raptor", "reflective_rerank"):
+        assert th.TOGGLES[name].backends == (), f"{name} should be backend-independent"
+        assert th.probe_reachability(name).backend_supported is True
+
+
+def test_measurable_is_the_single_gate(monkeypatch):
+    """The CLI count and the sweep must not drift apart on what counts."""
+    th.active_vector_backend.cache_clear()
+    monkeypatch.setattr(th, "active_vector_backend", lambda: "pgvector")
+    probes = {r.toggle: r for r in th.probe_all()}
+    assert probes["binary_prefilter"].measurable is False
+    assert probes["rerank"].measurable is True
+    assert probes["auto_indexer"].measurable is False

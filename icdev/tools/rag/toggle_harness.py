@@ -66,7 +66,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 import yaml
 
@@ -110,6 +110,15 @@ class Toggle:
     #:   standalone  a CLI invoked as a process, never imported. Absence from
     #:               the closure is correct by design, not a defect.
     shape: str = "downstream"
+    #: Vector-store backends that actually IMPLEMENT this toggle. Empty means
+    #: backend-independent.
+    #:
+    #: Import-reachable is not the same as active. `binary_prefilter` lives in
+    #: sqlite_vector_store, which pgvector deployments still import through
+    #: vector_store_factory — so the closure walk calls it WIRED while the code
+    #: cannot run. Benchmarking it there yields a zero delta that reads as
+    #: "measured, no benefit" instead of "not applicable here".
+    backends: Tuple[str, ...] = ()
 
 
 #: The five toggles oss-meas-01 names, plus raptor for contrast (already
@@ -143,7 +152,9 @@ TOGGLES: Dict[str, Toggle] = {
             "binary_prefilter",
             "rag.quantization.binary_prefilter.enabled",
             "tools.rag.sqlite_vector_store",
-            "Binary-quantised prefilter that shrinks the candidate set before exact scoring.",
+            "Binary-quantised prefilter that shrinks the candidate set before exact scoring. "
+            "Implemented in sqlite_vector_store ONLY — pg_vector_store has no such code path.",
+            backends=("sqlite",),
         ),
         Toggle(
             "auto_indexer",
@@ -178,6 +189,18 @@ class Reachability:
     importers: List[str] = field(default_factory=list)
     retrieval_side: bool = True
     shape: str = "downstream"
+    #: Live vector-store backend, when the toggle restricts to specific ones.
+    active_backend: Optional[str] = None
+    backend_supported: bool = True
+
+    @property
+    def measurable(self) -> bool:
+        """True when a retrieval benchmark can produce a meaningful number.
+
+        Single source of truth — the CLI count and the sweep's benchmark gate
+        both read this, so they cannot drift into disagreeing about what counts.
+        """
+        return self.reachable and self.retrieval_side and self.backend_supported
 
     @property
     def verdict(self) -> str:
@@ -187,6 +210,8 @@ class Reachability:
         call for three different actions: delete it, give it a caller, or
         schedule it.
         """
+        if self.reachable and not self.backend_supported:
+            return "INERT-ON-BACKEND"
         if self.reachable:
             return "WIRED" if self.retrieval_side else "WIRED-INGEST-ONLY"
         if self.shape == "standalone":
@@ -203,8 +228,11 @@ class Reachability:
             "consumer": self.consumer,
             "reason": self.reason,
             "importers": self.importers,
+            "measurable": self.measurable,
             "retrieval_side": self.retrieval_side,
             "shape": self.shape,
+            "active_backend": self.active_backend,
+            "backend_supported": self.backend_supported,
         }
 
 
@@ -249,6 +277,27 @@ def _imports_of(path: Path) -> Set[str]:
             for alias in node.names:
                 found.add(f"{mod}.{alias.name}")
     return found
+
+
+@functools.lru_cache(maxsize=None)
+def active_vector_backend() -> str:
+    """Name of the vector store this deployment will actually query.
+
+    Uses the same factory the retriever uses, so the answer reflects real
+    resolution (including pgvector auto-detect) rather than a config string that
+    may say ``auto``. Unknown on failure — the probe then declines to claim a
+    backend mismatch it cannot substantiate.
+    """
+    try:
+        from tools.rag.vector_store_factory import VectorStoreFactory
+
+        name = type(VectorStoreFactory.create()).__name__.lower()
+    except Exception:
+        return "unknown"
+    for backend in ("pgvector", "chroma", "faiss", "sqlite"):
+        if backend in name:
+            return "pgvector" if backend == "pgvector" else backend
+    return name
 
 
 @functools.lru_cache(maxsize=None)
@@ -346,6 +395,29 @@ def probe_reachability(
             retrieval_side=toggle.retrieval_side,
             shape=toggle.shape,
         )
+
+    # Backend gate. Runs BEFORE the closure walk because import-reachability is
+    # the wrong question for a backend-specific toggle: sqlite_vector_store is
+    # imported by vector_store_factory on every deployment, so the closure says
+    # WIRED even where the code cannot execute.
+    if toggle.backends:
+        live = active_vector_backend()
+        if live != "unknown" and live not in toggle.backends:
+            return Reachability(
+                toggle=name,
+                reachable=True,
+                consumer=toggle.consumer,
+                reason=(
+                    f"implemented for {', '.join(toggle.backends)} only; this deployment "
+                    f"runs {live}. The module is import-reachable but the code path does "
+                    "not exist here, so a benchmark would report a zero delta meaning "
+                    "'not applicable', not 'no benefit'."
+                ),
+                retrieval_side=toggle.retrieval_side,
+                shape=toggle.shape,
+                active_backend=live,
+                backend_supported=False,
+            )
 
     closure = closure if closure is not None else import_closure()
     importers = sorted(set(closure.get(toggle.consumer, [])))
@@ -635,7 +707,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             for r in results:
                 print(f"{r.verdict:18s} {r.toggle:18s} {r.reason}")
-            wired = sum(1 for r in results if r.reachable and r.retrieval_side)
+            wired = sum(1 for r in results if r.measurable)
             print(f"\n{wired}/{len(results)} toggles are measurable by a retrieval benchmark.")
         return 0
     return 0
