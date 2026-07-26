@@ -2336,6 +2336,18 @@ python tools/llm/proxy_budgets.py check <key_id> --projected 0.05 --json        
 python tools/llm/proxy_budgets.py spend <key_id> --json                            # spend summary for current window
 python tools/llm/proxy_budgets.py record <key_id> --cost 0.05 --input-tokens 1200 --output-tokens 400 --json  # record spend
 
+# LLM Proxy Observability (lpx-obs-01) — spend + rate metrics into /ops/llm
+python tools/llm/proxy_metrics.py --json                                            # Proxy spend/rate metrics (ledger + best-effort Prometheus scrape)
+python tools/llm/proxy_metrics.py --window-hours 24 --top 10 --no-scrape --json     # Ledger-only aggregation over a window
+
+# LLM Proxy Reconciliation (lpx-obs-02) — proxy spend vs token_tracker
+python tools/llm/proxy_reconcile.py --json                                          # Reconcile proxy spend vs token_tracker/gateway audit
+python tools/llm/proxy_reconcile.py --window-hours 24 --threshold-pct 10 --gate --json  # Exit 1 if divergence past threshold (proxy active + both have spend)
+
+# LLM Proxy CUI egress gate (lpx-egress-02) — classified content never traverses the proxy
+# ICDEV_LLM_PROXY_MAX_CLASSIFICATION (default UNCLASSIFIED) — highest classification allowed through the proxy;
+# CUI and above are refused (fail-closed, invoke-time) unless explicitly raised (an ATO-boundary decision).
+
 # LLM Gateway
 python tools/llm/gateway.py --stats --json                                             # Gateway usage statistics
 python tools/llm/gateway.py --audit --json --limit 50                                  # Audit log (last N requests)
