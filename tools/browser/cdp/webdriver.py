@@ -316,7 +316,7 @@ class CDPWebDriver(CDPDriver):
     def refresh(self) -> None:
         self._session.drain_events("Page.loadEventFired")
         self._cmd("Page.reload", {})
-        self._await_event("Page.loadEventFired", timeout=self._page_load_timeout)
+        self._session.wait_for_event("Page.loadEventFired", timeout=self._page_load_timeout)
 
     def close(self) -> None:
         # Close the current page target (Selenium `close`), distinct from `quit`.

@@ -33,7 +33,7 @@ import json
 from typing import Any, List, Optional
 
 from tools.browser.cdp.launcher import LaunchedBrowser, launch
-from tools.browser.cdp.session import CDPError, CDPSession
+from tools.browser.cdp.session import CDPSession
 from tools.browser.cdp.ws_client import connect
 from tools.logging.icdev_logger import get_logger
 
@@ -104,13 +104,17 @@ class CDPDriver:
     # -- navigation -----------------------------------------------------------
 
     def get(self, url: str) -> None:
-        """Navigate and wait (best-effort) for the load event."""
+        """Navigate and wait for the load event.
+
+        The wait genuinely blocks on ``Page.loadEventFired`` (via
+        ``session.wait_for_event``) — an earlier best-effort single round-trip
+        returned before the DOM was parsed, so a subsequent ``find_element`` could
+        query a document that had a ``<title>`` but not yet a ``<body>``. A timeout
+        is not fatal (an SPA may never fire it), matching Selenium's pageLoadStrategy.
+        """
         self._session.drain_events("Page.loadEventFired")
         self._cmd("Page.navigate", {"url": url}, timeout=self._page_load_timeout)
-        # Best-effort load wait: poll for the loadEventFired event we enabled.
-        # A timeout is not fatal (SPAs may never fire it) — mirrors Selenium's
-        # pageLoadStrategy leniency.
-        self._await_event("Page.loadEventFired", timeout=self._page_load_timeout)
+        self._session.wait_for_event("Page.loadEventFired", timeout=self._page_load_timeout)
 
     @property
     def current_url(self) -> str:
@@ -181,19 +185,3 @@ class CDPDriver:
     def _cmd(self, method: str, params: Optional[dict] = None, *, timeout: Optional[float] = None) -> dict:
         """Send a command scoped to the page session (when attached)."""
         return self._session.send(method, params, timeout=timeout, session_id=self._page_sid)
-
-    def _await_event(self, method: str, timeout: float) -> bool:
-        """Return True if ``method`` has been (or is) seen within ``timeout``.
-
-        Events already buffered by the session are checked first; otherwise a
-        single lightweight command round-trip lets the read loop drain pending
-        events. Never fatal — navigation without a load event is tolerated.
-        """
-        if self._session.drain_events(method):
-            return True
-        try:
-            # A cheap command forces the read loop to process any buffered frames.
-            self._cmd("Runtime.evaluate", {"expression": "1", "returnByValue": True}, timeout=timeout)
-        except (CDPError, Exception):  # noqa: BLE001 - best-effort
-            return False
-        return bool(self._session.drain_events(method))
