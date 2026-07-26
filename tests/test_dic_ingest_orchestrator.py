@@ -222,7 +222,10 @@ def test_pdf_text_path_returns_first_available_provider(tmp_path: Path):
         pytest.skip("constitution.pdf not available")
 
     extraction = _extract_pdf(pdf_path)
-    assert extraction.provider in ("pymupdf", "pdfplumber", "pypdf")
+    # A provider may augment itself ("pymupdf+tables" when table extraction also
+    # ran). The chain position is what this pins, not the augmentation, so
+    # compare the base provider.
+    assert extraction.provider.split("+")[0] in ("pymupdf", "pdfplumber", "pypdf")
     assert len(extraction.text) > 1000
     assert extraction.page_count == 19
 
