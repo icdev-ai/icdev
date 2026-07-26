@@ -1591,6 +1591,34 @@ gates:
     nist_controls: [SI-10, SC-8, SA-11]
     bandit_test: B310
 
+  - id: BROWSER-SEC-001
+    name: Agent Browser Registration Gate
+    description: >-
+      The agent browser (oss-browse-01) is registered at four parallel agent-tool
+      seams (oss-browse-03). Two failure modes are silent rather than loud, so
+      they are gated rather than left to review. (1) A TOOL_REGISTRY entry whose
+      handler does not resolve is swapped for an error stub in unified_server.py
+      — the tool is advertised, answers plausibly, and never works (the oss-fix-01
+      lesson). (2) A browser is a general-purpose egress channel that can reach
+      any allowlisted host and type broker-resolved credentials into it, so
+      losing the explicit per-role `browser_*` deny, or marking any browser tool
+      read_only, would hand it to a role or an agent loop that never approved it.
+    severity: HIGH
+    block_on:
+      - browser_tool_handler_unresolved
+      - browser_rbac_deny_missing
+      - browser_tool_marked_read_only
+    warn_on:
+      - browser_seam_vocabulary_drift
+      - browser_bundle_not_mutating
+    seams:
+      - tools/agent_toolkit/__init__.py
+      - tools/mcp/tool_registry.py
+      - args/agent_toolsets.yaml
+      - tools/ace/agent_tools.py
+    tool: "python -m pytest tests/browser/test_browser_tool_registration.py -q"
+    nist_controls: [AC-3, AC-4, AU-12, SC-7, SI-10]
+
   # NOC Operations Canvas gates
   - id: NOC-OPS-001
     name: P1 Incident Unacknowledged

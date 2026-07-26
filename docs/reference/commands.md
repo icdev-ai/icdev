@@ -3460,6 +3460,53 @@ with AgentBrowser() as b:
 # Agent-loop wiring (same convention as tools/ace/agent_tools.py)
 from tools.browser.agent_tools import BrowserToolRegistry
 tools, handlers = BrowserToolRegistry(browser).build()
+
+# ...or bind to a named session instead of owning a browser yourself
+tools, handlers = BrowserToolRegistry(session="my-run").build()
+```
+
+### Agent-tool registration — four seams (oss-browse-03)
+
+`tools/browser/session.py` is a **library, no CLI**: a process-local registry of
+named browser sessions plus one set of seam-neutral operations. It exists because
+element indices are per-instance state and three of the four seams dispatch one
+stateless call at a time. Every operation goes through `AgentBrowser`, so the
+allowlist gate, action budget, and audit trail all still apply.
+
+```python
+# Seam 1 — in-process toolkit, alongside read_file / execute_shell
+from tools.agent_toolkit import browser_navigate, browser_click, browser_close
+
+try:
+    state = browser_navigate("http://localhost:5050/kanban")   # session "default"
+    browser_click(24)                                          # index from state
+finally:
+    browser_close()
+
+# Session management (several concurrent browsers, capped by ICDEV_BROWSER_MAX_SESSIONS)
+from tools.browser.session import get_session, list_sessions, close_all
+
+get_session("run-a", headless=False)   # kwargs fix the policy for the session
+list_sessions()                        # name, url, generation, element_count, status
+close_all()
+```
+
+```
+# Seam 2 — MCP gateway: browser_navigate, browser_read_state, browser_click,
+#          browser_type, browser_select, browser_press, browser_screenshot,
+#          browser_close (category "browser"; each takes an optional `session`).
+#          tools/agent_runtime/discovery.py derives the SAG ToolSpec from these.
+# Seam 3 — args/agent_toolsets.yaml, bundle `browser`, mutating: true
+# Seam 4 — tools/ace/agent_tools.py; opt-in per co-worker via `icdev_tools`,
+#          one session per instance id so concurrent co-workers never collide.
+
+# Enforcement
+#   ICDEV_SAG_ALLOW_MUTATION   — unset, default_safety_gate denies every browser tool
+#   ICDEV_BROWSER_MAX_SESSIONS — live drivers per process (default 4)
+#   args/owasp_agentic_config.yaml — browser_* is an explicit deny for
+#     pm/developer/isso/co; deny beats allow, so a wildcard cannot grant it
+#   Gate: BROWSER-SEC-001 (args/security_gates.yaml)
+# Tests: tests/browser/test_browser_tool_registration.py (174 tests, driver-free)
 ```
 
 ```

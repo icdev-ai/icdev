@@ -36,6 +36,28 @@ bundles:
       - run_command       # mutating — safety-gated
     mutating: true
 
+  browser:
+    description: >-
+      Agent browser (oss-browse-01): drive a real page by element index rather
+      than by invented CSS selectors. Navigation is allowlist-gated
+      (args/browser_scope.yaml, loopback-only by default), every action is
+      charged to a per-run budget, and each writes an audit_trail row.
+    tools:
+      - browser_navigate     # mutating — safety-gated
+      - browser_read_state   # mutating — safety-gated (see note)
+      - browser_click        # mutating — safety-gated
+      - browser_type         # mutating — safety-gated
+      - browser_select       # mutating — safety-gated
+      - browser_press        # mutating — safety-gated
+      - browser_screenshot   # mutating — safety-gated (see note)
+      - browser_close        # mutating — safety-gated
+    # The whole bundle is gated, including read_state/screenshot. Those two do
+    # not mutate the page, but they are how untrusted remote content enters the
+    # model's context, and discovery's read-only heuristic cannot tell a browser
+    # read from a filesystem read. Gating the surface as one unit is the
+    # fail-closed choice; approve the session, not each glance at it.
+    mutating: true
+
   compliance:
     description: >-
       NIST / FedRAMP / CMMC / STIG compliance artifact generation and lookups.

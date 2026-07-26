@@ -30,6 +30,7 @@ import threading
 from typing import Any, Callable
 
 from icdev.tools.llm.agent_loop import DONE, AgentLoopUnsupported, run_agent_loop
+from tools.browser.agent_tools import browser_schemas
 from tools.logging.icdev_logger import get_logger
 
 # Module-level LLMRouter reference so _spawn_agent can be monkeypatched in tests.
@@ -400,6 +401,16 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
+# Browser tools (oss-browse-03, seam 4 of 4). Merged in rather than restated so
+# a description fixed in tools/browser/agent_tools.py is fixed here too. They are
+# opt-in: never in the default tool set, only built when a co-worker's
+# `icdev_tools` names them explicitly.
+_SCHEMAS.update(browser_schemas())
+
+#: Tool names handled by the browser registry rather than an ACE built-in.
+_BROWSER_TOOLS: frozenset[str] = frozenset(browser_schemas())
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -443,6 +454,8 @@ class AgentToolRegistry:
         self._folder_access = list(getattr(spec, "folder_access", []) or [])
         self._icdev_tools = list(getattr(spec, "icdev_tools", []) or [])
         self._coordination_namespace = getattr(spec, "coordination_namespace", None) or instance_id
+        # Built on first browser-tool request; one session per co-worker instance.
+        self._browser_registry: Any = None
 
     def build(self, tool_names: list[str]) -> tuple[list[dict[str, Any]], dict[str, ToolHandler]]:
         """Return ``(tools, tool_handlers)`` filtered to *tool_names*.
@@ -497,7 +510,25 @@ class AgentToolRegistry:
             return self._post_result
         if name == "read_result":
             return self._read_result
+        if name in _BROWSER_TOOLS:
+            return self._browser_handler(name)
         return None
+
+    def _browser_handler(self, name: str) -> ToolHandler | None:
+        """Bind a browser tool to this co-worker's own browser session.
+
+        The session is keyed by instance id, so two co-workers running
+        concurrently never address each other's element indices. Delegates to
+        :class:`tools.browser.agent_tools.BrowserToolRegistry` — the same
+        handlers the standalone agent runtime uses, not a second implementation.
+        """
+        from tools.browser.agent_tools import BrowserToolRegistry
+
+        if self._browser_registry is None:
+            self._browser_registry = BrowserToolRegistry(
+                session=f"ace-{self.instance_id}"
+            )
+        return self._browser_registry._make_handler(name)  # noqa: SLF001 — first-party
 
     # ------------------------------------------------------------------
     # Handlers

@@ -46,8 +46,10 @@ Categories:
     nova (9)
     pulse (1)
     cortex (8)
+    browser (8)
 
-Total: 444 tools, 6 resources
+Total: 458 tools in TOOL_REGISTRY, plus 51 more declared in RESOURCE_REGISTRY
+alongside its 6 true resources (both dicts are merged by list_tools()).
 """
 
 TOOL_REGISTRY = {
@@ -7317,6 +7319,142 @@ TOOL_REGISTRY = {
                 "graph": {"type": "object", "description": "Inline pipeline graph {nodes, edges} (overrides pipeline_id)"},
                 "name": {"type": "string", "description": "Pipeline name"},
                 "format": {"type": "string", "description": "Export format", "default": "gitlab_ci"},
+            },
+        },
+    },
+    # ============================================================
+    # BROWSER (8 tools) — oss-browse-03
+    #
+    # The agent browser as an MCP surface. Every handler routes through
+    # tools/browser/session.py -> AgentBrowser -> scope.GuardedDriver, so
+    # navigation is allowlist-gated (args/browser_scope.yaml), actions are
+    # budgeted, and each one writes an audit_trail row. State is per-session:
+    # element indices are only valid until the page changes, and `session`
+    # (default "default") picks which browser a call addresses.
+    #
+    # RBAC: browser_* is denied to every non-admin role in
+    # args/owasp_agentic_config.yaml — a browser is a general-purpose egress
+    # channel, so it is opt-in per role rather than covered by a wildcard.
+    # ============================================================
+    "browser_navigate": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_navigate",
+        "description": "Open a URL in an agent browser session and return the indexed page state (url, title, and every interactive element with a stable integer index). Only http/https hosts on the browser scope allowlist are permitted. Requires MCP authorization (deny-by-default): supply mcp_role.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Absolute URL to open"},
+                "session": {"type": "string", "description": "Browser session name (default: 'default')"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default; browser_* is denied to every non-admin role)"},
+            },
+            "required": ["url"],
+        },
+    },
+    "browser_read_state": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_read_state",
+        "description": "Re-index the current page and return its state. Call after any action that changes the page — indices from an earlier read are rejected rather than applied to the wrong element. Requires MCP authorization (deny-by-default): supply mcp_role.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session": {"type": "string", "description": "Browser session name (default: 'default')"},
+                "screenshot": {"type": "boolean", "description": "Also capture a PNG and report its path", "default": False},
+                "name": {"type": "string", "description": "Screenshot filename stem"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default; browser_* is denied to every non-admin role)"},
+            },
+        },
+    },
+    "browser_click": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_click",
+        "description": "Click the element carrying the given index from the latest browser_read_state. Requires MCP authorization (deny-by-default): supply mcp_role.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "description": "Element index from the latest browser_read_state"},
+                "session": {"type": "string", "description": "Browser session name (default: 'default')"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default; browser_* is denied to every non-admin role)"},
+            },
+            "required": ["index"],
+        },
+    },
+    "browser_type": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_type",
+        "description": "Type text into the input/textarea at the given index. Credentials are written as <secret>NAME</secret> placeholders and resolved at the driver — the value never appears in the prompt, transcript, or audit row. Requires MCP authorization (deny-by-default): supply mcp_role.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "description": "Element index from the latest browser_read_state"},
+                "text": {"type": "string", "description": "Text to type; may contain <secret>NAME</secret>"},
+                "clear": {"type": "boolean", "description": "Clear the field first", "default": True},
+                "enter": {"type": "boolean", "description": "Press Enter after typing", "default": False},
+                "session": {"type": "string", "description": "Browser session name (default: 'default')"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default; browser_* is denied to every non-admin role)"},
+            },
+            "required": ["index", "text"],
+        },
+    },
+    "browser_select": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_select",
+        "description": "Choose an option in the <select> at the given index. Matches the option value first, then its visible text. Requires MCP authorization (deny-by-default): supply mcp_role.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "description": "Element index of a <select>"},
+                "value": {"type": "string", "description": "Option value or visible text"},
+                "session": {"type": "string", "description": "Browser session name (default: 'default')"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default; browser_* is denied to every non-admin role)"},
+            },
+            "required": ["index", "value"],
+        },
+    },
+    "browser_press": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_press",
+        "description": "Send a key to the element at an index, or to the focused element. Names: Enter, Tab, Escape, Backspace, Delete, ArrowUp/Down/Left/Right, PageUp, PageDown, Home, End — or any single character. Requires MCP authorization (deny-by-default): supply mcp_role.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Key name or single character"},
+                "index": {"type": "integer", "description": "Optional target element index"},
+                "session": {"type": "string", "description": "Browser session name (default: 'default')"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default; browser_* is denied to every non-admin role)"},
+            },
+            "required": ["key"],
+        },
+    },
+    "browser_screenshot": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_screenshot",
+        "description": "Capture a PNG of the current page under playwright/screenshots/ and return its path (assertable with validate_screenshot). Requires MCP authorization (deny-by-default): supply mcp_role.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Screenshot filename stem"},
+                "session": {"type": "string", "description": "Browser session name (default: 'default')"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default; browser_* is denied to every non-admin role)"},
+            },
+        },
+    },
+    "browser_close": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_close",
+        "description": "Quit the browser for a session and release the driver. Idempotent. Requires MCP authorization (deny-by-default): supply mcp_role.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session": {"type": "string", "description": "Browser session name (default: 'default')"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default; browser_* is denied to every non-admin role)"},
             },
         },
     },

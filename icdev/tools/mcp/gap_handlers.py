@@ -3676,3 +3676,170 @@ def handle_mc_net_ai_assist(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_mc_net_ai_assist: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Browser — agent browser primitive (oss-browse-03, seam 2 of 4)
+#
+# Every handler is a thin call onto tools.browser.session, which owns the
+# per-process session registry and drives AgentBrowser (allowlist-gated,
+# budgeted, audited by scope.GuardedDriver). No handler here touches a raw
+# WebDriver: a second, unguarded path to the session is precisely the failure
+# this registration is meant to avoid.
+#
+# The browser is stateful across calls — element indices are only valid for the
+# session that produced them, until the page changes. `session` names the
+# session; omit it for "default".
+#
+# RBAC: every handler runs _mcp_authz_gate first. That gate is opt-in per handler
+# in this module, and declaring `browser_*` denies in
+# args/owasp_agentic_config.yaml would be inert without this call — the policy
+# would read as enforced while nothing consulted it. Deny-by-default: a caller
+# supplying no `mcp_role` is refused. The gate runs BEFORE argument validation so
+# an unauthorized caller cannot use error messages to probe the tool surface.
+# ---------------------------------------------------------------------------
+
+
+def _browser_call(tool: str, fn, **kwargs) -> dict:
+    """Invoke a session operation, normalising failures to the handler contract.
+
+    Errors are returned rather than raised (MCP handlers return dicts), but the
+    exception *type* is preserved: ``StaleIndexError`` tells a caller to re-read
+    the page, which is actionable, not merely a failure.
+    """
+    try:
+        from tools.browser import session as _session
+
+        return dict(getattr(_session, fn)(**kwargs))
+    except Exception as exc:
+        logger.warning("handle_%s: %s", tool, exc)
+        return {"error": str(exc), "error_type": type(exc).__name__, "status": "failed"}
+
+
+def _browser_denied(tool: str, args: dict) -> dict | None:
+    """Deny-first RBAC for the browser surface; None when the call may proceed.
+
+    A browser is a general-purpose egress channel that can reach any allowlisted
+    host and type broker-resolved credentials into it, so it is authorized like
+    the state-changing DSOC tools rather than like a read-only query.
+    """
+    denied = _mcp_authz_gate(tool, args)
+    if denied is None:
+        return None
+    denied.setdefault("status", "failed")
+    return denied
+
+
+def handle_browser_navigate(args: dict) -> dict:
+    """Open a URL in an agent browser session and return the indexed page state."""
+    denied = _browser_denied("browser_navigate", args)
+    if denied is not None:
+        return denied
+    url = args.get("url")
+    if not url:
+        return {"error": "browser_navigate requires 'url'", "status": "failed"}
+    return _browser_call(
+        "browser_navigate", "browser_navigate", url=str(url), session=args.get("session")
+    )
+
+
+def handle_browser_read_state(args: dict) -> dict:
+    """Re-index the current page and return its state (url, title, elements)."""
+    denied = _browser_denied("browser_read_state", args)
+    if denied is not None:
+        return denied
+    return _browser_call(
+        "browser_read_state",
+        "browser_read_state",
+        session=args.get("session"),
+        screenshot=bool(args.get("screenshot", False)),
+        name=args.get("name"),
+    )
+
+
+def handle_browser_click(args: dict) -> dict:
+    """Click the element carrying the given index from the latest read_state."""
+    denied = _browser_denied("browser_click", args)
+    if denied is not None:
+        return denied
+    if args.get("index") is None:
+        return {"error": "browser_click requires 'index'", "status": "failed"}
+    return _browser_call(
+        "browser_click", "browser_click", index=args.get("index"), session=args.get("session")
+    )
+
+
+def handle_browser_type(args: dict) -> dict:
+    """Type text into the input/textarea at the given index."""
+    denied = _browser_denied("browser_type", args)
+    if denied is not None:
+        return denied
+    if args.get("index") is None:
+        return {"error": "browser_type requires 'index'", "status": "failed"}
+    if args.get("text") is None:
+        return {"error": "browser_type requires 'text'", "status": "failed"}
+    return _browser_call(
+        "browser_type",
+        "browser_type",
+        index=args.get("index"),
+        text=str(args.get("text")),
+        session=args.get("session"),
+        clear=bool(args.get("clear", True)),
+        enter=bool(args.get("enter", False)),
+    )
+
+
+def handle_browser_select(args: dict) -> dict:
+    """Choose an option in the <select> at the given index."""
+    denied = _browser_denied("browser_select", args)
+    if denied is not None:
+        return denied
+    if args.get("index") is None:
+        return {"error": "browser_select requires 'index'", "status": "failed"}
+    if args.get("value") is None:
+        return {"error": "browser_select requires 'value'", "status": "failed"}
+    return _browser_call(
+        "browser_select",
+        "browser_select",
+        index=args.get("index"),
+        value=str(args.get("value")),
+        session=args.get("session"),
+    )
+
+
+def handle_browser_press(args: dict) -> dict:
+    """Send a key to the element at an index, or to the focused element."""
+    denied = _browser_denied("browser_press", args)
+    if denied is not None:
+        return denied
+    key = args.get("key")
+    if not key:
+        return {"error": "browser_press requires 'key'", "status": "failed"}
+    return _browser_call(
+        "browser_press",
+        "browser_press",
+        key=str(key),
+        index=args.get("index"),
+        session=args.get("session"),
+    )
+
+
+def handle_browser_screenshot(args: dict) -> dict:
+    """Capture a PNG of the current page under playwright/screenshots/."""
+    denied = _browser_denied("browser_screenshot", args)
+    if denied is not None:
+        return denied
+    return _browser_call(
+        "browser_screenshot",
+        "browser_screenshot",
+        session=args.get("session"),
+        name=args.get("name"),
+    )
+
+
+def handle_browser_close(args: dict) -> dict:
+    """Quit the browser for a session. Idempotent."""
+    denied = _browser_denied("browser_close", args)
+    if denied is not None:
+        return denied
+    return _browser_call("browser_close", "browser_close", session=args.get("session"))

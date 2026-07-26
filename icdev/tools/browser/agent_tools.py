@@ -46,6 +46,7 @@ DEFAULT_TOOLS: List[str] = [
     "browser_select",
     "browser_press",
     "browser_screenshot",
+    "browser_close",
 ]
 
 _INDEX_DESC = (
@@ -186,7 +187,28 @@ _SCHEMAS: Dict[str, Dict[str, Any]] = {
             },
         },
     },
+    "browser_close": {
+        "type": "function",
+        "function": {
+            "name": "browser_close",
+            "description": (
+                "Close the browser and release the driver. Call this when the "
+                "task is finished — a session left open holds a real process."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
 }
+
+
+def browser_schemas() -> Dict[str, Dict[str, Any]]:
+    """Return a copy of the browser tool schemas, keyed by tool name.
+
+    The public accessor other seams merge from (oss-browse-03) — ACE folds these
+    into its own ``_SCHEMAS`` rather than restating them, so a description fixed
+    here is fixed everywhere.
+    """
+    return {name: dict(schema) for name, schema in _SCHEMAS.items()}
 
 
 class BrowserToolRegistry:
@@ -196,10 +218,28 @@ class BrowserToolRegistry:
         browser: The :class:`~tools.browser.agent_browser.AgentBrowser` every
             handler drives. One browser per registry — indices are per-browser
             state, so sharing a registry across browsers would mis-address.
+            Omit it to bind to a *named session* from
+            :mod:`tools.browser.session` instead, resolved on first use, so a
+            caller that only has a session name (ACE, the MCP gateway) does not
+            have to construct and own a browser itself.
+        session: Session name to bind to when ``browser`` is omitted. Defaults to
+            :data:`tools.browser.session.DEFAULT_SESSION`.
     """
 
-    def __init__(self, browser: Any) -> None:
-        self.browser = browser
+    def __init__(self, browser: Any = None, *, session: Optional[str] = None) -> None:
+        self._browser = browser
+        # Only a session-bound registry may close the session registry entry; a
+        # caller who passed their own browser keeps ownership of it.
+        self._session = None if browser is not None else (session or "")
+
+    @property
+    def browser(self) -> Any:
+        """The bound browser, resolved from the session registry on first use."""
+        if self._browser is None:
+            from tools.browser.session import get_session
+
+            self._browser = get_session(self._session or None)
+        return self._browser
 
     def build(
         self, tool_names: Optional[List[str]] = None
@@ -232,6 +272,7 @@ class BrowserToolRegistry:
             "browser_select": self._select,
             "browser_press": self._press,
             "browser_screenshot": self._screenshot,
+            "browser_close": self._close,
         }.get(name)
 
     # ── handlers ─────────────────────────────────────────────────────────
@@ -268,3 +309,13 @@ class BrowserToolRegistry:
     def _screenshot(self, inp: Dict[str, Any], stop: "threading.Event | None") -> str:
         path = self.browser.screenshot(name=inp.get("name"))
         return f"screenshot saved: {path}"
+
+    def _close(self, inp: Dict[str, Any], stop: "threading.Event | None") -> str:
+        if self._session is not None:
+            from tools.browser.session import close_session
+
+            closed = close_session(self._session or None)
+            self._browser = None
+            return "browser closed" if closed else "no browser session was open"
+        self.browser.close()
+        return "browser closed"

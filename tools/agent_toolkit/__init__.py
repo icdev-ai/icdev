@@ -2,7 +2,7 @@
 """ICDEV™ Agent Toolkit — unified builtin tool catalog (OPT-67).
 
 Provides the deterministic primitive tools every ICDEV agent needs
-(filesystem, shell, planning, subagent spawning) plus a one-line
+(filesystem, shell, browser, planning, subagent spawning) plus a one-line
 `create_agent()` composer. Inspired by the tool catalog pattern
 from langchain-ai/deepagents (MIT, 20k stars) but implemented as
 pure deterministic Python on top of tools.llm.router.LLMRouter —
@@ -43,6 +43,16 @@ from tools.agent_toolkit._fs import (
     grep,
 )
 from tools.agent_toolkit._shell import execute_shell
+from tools.agent_toolkit._browser import (
+    browser_navigate,
+    browser_read_state,
+    browser_click,
+    browser_type,
+    browser_select,
+    browser_press,
+    browser_screenshot,
+    browser_close,
+)
 from tools.agent_toolkit._planning import write_todos, update_todo
 from tools.agent_toolkit._subagent import (
     delegate_batch,
@@ -66,6 +76,15 @@ __all__ = [
     "grep",
     # Shell
     "execute_shell",
+    # Browser (stateful — indices belong to a named session; close when done)
+    "browser_navigate",
+    "browser_read_state",
+    "browser_click",
+    "browser_type",
+    "browser_select",
+    "browser_press",
+    "browser_screenshot",
+    "browser_close",
     # Planning
     "write_todos",
     "update_todo",
