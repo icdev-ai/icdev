@@ -997,6 +997,20 @@ def api_import_from_docgen():
         else:
             section_pairs = [(h, "") for h in template_headings]
 
+        # TRUST: scrub leaked CoT/CoD scaffolding before persisting, exactly as
+        # doc_generator does on its own write path (doc_generator.py:933). This
+        # bridge is a SECOND path into dic_sections and did not scrub, so model
+        # reasoning ("Step 1: Analyze the Source Material...") was being stored
+        # verbatim as published document content. A live audit found it in 20 of
+        # 49 AI-authored sections.
+        if ai_content:
+            from tools.document_intelligence.doc_generator import (
+                _strip_reasoning_artifacts,
+            )
+            section_pairs = [
+                (h, _strip_reasoning_artifacts(c) if c else c) for h, c in section_pairs
+            ]
+
         for i, (heading, content) in enumerate(section_pairs):
             # section_id carries a sortable index — section listings ORDER BY section_id.
             s_id = f"{doc_id[:8]}-s{i:03d}-{_uuid.uuid4().hex[:8]}"
