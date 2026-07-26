@@ -51,6 +51,23 @@ from tools.db.storage import get_connection
 from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 from tools.rag.chunker import chunk_content
+from tools.rag.chunking_templates import suggest_template
+
+
+def _resolve_chunk_template(text: str, explicit: str | None) -> tuple[str, str]:
+    """Resolve which chunking template a DIC document should use (oss2-fix-02, D2).
+
+    An explicit ``chunk_template`` always wins. Otherwise ``suggest_template`` scores
+    the text against each template's detect patterns; it is advisory and safely
+    returns the default (``general``) when nothing clears its ``min_score``, so a
+    confident OSCAL/STIG/RFP match gets structural chunking while ambiguous text is
+    unchanged. Returns ``(template_name, reason)``; the reason is surfaced to the
+    operator (progress event + persisted chunk metadata) rather than applied silently.
+    """
+    if explicit:
+        return explicit, "explicit"
+    sugg = suggest_template(text)
+    return (sugg.get("suggested") or "general"), f"auto ({sugg.get('reason', 'detected')})"
 
 logger = get_logger(__name__)
 
@@ -1503,6 +1520,7 @@ def ingest_file(
     detect_near_duplicates: bool = False,
     detect_anomalies: bool = True,
     workflow_custom_fields: list[dict] | None = None,
+    chunk_template: str | None = None,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1736,16 +1754,35 @@ def ingest_file(
 
         # 2) Chunk (reuse chunker). chunk_content returns VectorChunk objects whose
         #    .chunk_id is the canonical rag_chunks id used by the vector store + KG.
-        _emit("chunking", "Splitting into chunks…", 15)
+        #
+        # oss2-fix-02 (D2): template chunking (oscal_catalog/stig_checklist/rfp_sow/…)
+        # shipped but the DIC pipeline it was built for never passed template=, so
+        # every document fell back to general sliding-window chunking and structured
+        # controls were split mid-control. Resolve a template here: an explicit
+        # chunk_template always wins; otherwise auto-detect. suggest_template is
+        # advisory and safely returns the default ("general") when nothing scores
+        # above its min_score, so a confident OSCAL/STIG match gets structural
+        # chunking while ambiguous text is unchanged. The choice is surfaced to the
+        # operator (progress + persisted template_type) so it is not silent.
+        resolved_template, template_reason = _resolve_chunk_template(text, chunk_template)
+        _emit("chunking", f"Splitting into chunks (template: {resolved_template})…", 15)
         chunks = chunk_content(
             text,
             source_type="dic_document",
             source_id=source_id,
             source_table="dic_documents",
-            metadata={"filename": p.name, "collection_id": collection_id},
+            metadata={
+                "filename": p.name,
+                "collection_id": collection_id,
+                # Record which template was used (and why) on every chunk, so the
+                # choice is auditable without touching the dic_documents insert.
+                "chunk_template": resolved_template,
+                "chunk_template_reason": template_reason,
+            },
             tenant_id=tid,
             project_id=collection_id,
             classification=cls,
+            template=resolved_template,
         )
         # Scope the content hash to the collection so identical text uploaded to
         # different collections gets distinct rag_chunks rows tied to each
