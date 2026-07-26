@@ -4629,3 +4629,61 @@ def api_attach_coworker(collection_id):
 # Kept in a separate module so this file stops growing; import has side effects
 # (route registration) and must stay at the bottom after dic_bp is fully built.
 from tools.document_intelligence import modernization_routes  # noqa: E402,F401
+
+
+# ── Chunk inspect & repair (oss-hitl-01) ─────────────────────────────────────
+#
+# Reuses the section-review HITL shape (RBAC via _require_role, _conn, review
+# notes) applied to rag_chunks. A repair is a reviewer-gated mutation, not an
+# autonomous rewrite, and every repair re-baselines dic_chunk_links so the
+# evidence baseline stays honest. The engine (tools/document_intelligence/
+# chunk_repair.py) does the work; these routes are the reviewer-gated seam.
+
+
+def _chunk_repair_engine():
+    from tools.document_intelligence.chunk_repair import ChunkRepairEngine
+    from tools.rag.vector_store_factory import VectorStoreFactory
+
+    return ChunkRepairEngine(
+        store=VectorStoreFactory.create(),
+        conn_factory=_conn,
+        actor=_current_user(),
+    )
+
+
+@dic_bp.route("/api/chunks/<collection_id>/repair", methods=["POST"])
+def api_chunk_repair(collection_id):
+    """Apply a HITL chunk repair. Reviewer role required.
+
+    Body: {operation: merge|split|rechunk|reembed, chunk_ids|chunk_id, texts|text,
+           offset?, template?}. The operator supplies the current text so the
+           engine does not have to re-read it under the reviewer's lock.
+    """
+    from tools.document_intelligence.chunk_repair import (
+        MERGE, RECHUNK, REEMBED, SPLIT,
+    )
+
+    if not _require_role(collection_id, "reviewer"):
+        return _forbid("reviewer")
+
+    data = request.get_json(silent=True) or {}
+    op = (data.get("operation") or "").strip()
+    engine = _chunk_repair_engine()
+    try:
+        if op == MERGE:
+            result = engine.merge(data.get("chunk_ids") or [], data.get("texts") or [])
+        elif op == SPLIT:
+            result = engine.split(data.get("chunk_id", ""), data.get("text", ""),
+                                   int(data.get("offset", 0)))
+        elif op == RECHUNK:
+            result = engine.rechunk(data.get("chunk_id", ""), data.get("text", ""),
+                                    template=data.get("template", "general"))
+        elif op == REEMBED:
+            result = engine.reembed(data.get("chunk_id", ""), data.get("text", ""))
+        else:
+            return jsonify({"error": f"unknown operation {op!r}"}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+
+    status = 200 if result.ok else 422
+    return jsonify(result.to_dict()), status
