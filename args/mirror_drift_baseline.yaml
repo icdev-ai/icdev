@@ -25,18 +25,7 @@
 content_drift:
   billing: 1
   browser: 1
-  canvas_health: 1
-  ci: 2
-  cli: 1
-  config: 1
-  coordination: 1
-  dashboard: 2
   db: 1
-  doc_modernization: 1
-  finetune: 1
-  foundry: 1
-  genesis: 1
   llm: 1
   showcase: 1
-  skills: 1
-  testing: 4
+  testing: 2

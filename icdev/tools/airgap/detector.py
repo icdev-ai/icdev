@@ -102,7 +102,11 @@ def probe_local_llm_servers() -> List[Dict[str, Any]]:
         ("vllm", os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")),
         ("llama_cpp", os.environ.get("LLAMA_CPP_BASE_URL", "http://localhost:8080/v1")),
         ("lm_studio", os.environ.get("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")),
-        ("localai", os.environ.get("LOCALAI_BASE_URL", "http://localhost:8081/v1")),
+        # D1: LocalAI's upstream default is 8080 (same as llama.cpp — only one runs
+        # there at a time). The previous 8081 dodged that collision but meant a
+        # stock LocalAI install was never detected. Probe its real default; users on
+        # a non-default port set LOCALAI_BASE_URL.
+        ("localai", os.environ.get("LOCALAI_BASE_URL", "http://localhost:8080/v1")),
         ("tgi", os.environ.get("TGI_BASE_URL", "http://localhost:8082")),
     ]
 

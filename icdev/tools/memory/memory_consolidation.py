@@ -100,11 +100,13 @@ class MemoryConsolidator:
 
         # Try hybrid search first
         try:
-            from tools.memory.hybrid_search import hybrid_search
+            # D5: the symbol is ``search`` (not ``hybrid_search``), its size arg is
+            # ``limit`` (not ``top_k``), and it returns ``type`` (not ``entry_type``).
+            from tools.memory.hybrid_search import search
 
-            results = hybrid_search(
+            results = search(
                 query=content[:200],
-                top_k=max_candidates,
+                limit=max_candidates,
             )
             for r in results:
                 sim = r.get("score", 0)
@@ -113,19 +115,22 @@ class MemoryConsolidator:
                         {
                             "id": r.get("id"),
                             "content": r.get("content", ""),
-                            "entry_type": r.get("entry_type", ""),
+                            "entry_type": r.get("type", ""),
                             "similarity": sim,
                         }
                     )
             return similar
-        except (ImportError, Exception):
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Log rather than swallow silently: a swallowed ImportError here is
+            # exactly how this whole path stayed dead and unnoticed (D5). Fall back
+            # to the Jaccard keyword path below.
+            logger.debug("Hybrid search unavailable, using keyword fallback: %s", exc)
 
         # Fallback: Jaccard keyword search against recent entries
         try:
             conn = get_connection()
             rows = conn.execute(
-                """SELECT id, content, entry_type
+                """SELECT id, content, type AS entry_type
                    FROM memory_entries
                    ORDER BY created_at DESC LIMIT 200"""
             ).fetchall()
@@ -350,7 +355,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
         try:
             conn = get_connection()
             rows = conn.execute(
-                "SELECT id, content, entry_type FROM memory_entries ORDER BY created_at DESC LIMIT %s",
+                "SELECT id, content, type AS entry_type FROM memory_entries ORDER BY created_at DESC LIMIT %s",
                 (batch_size,),
             ).fetchall()
             conn.close()
