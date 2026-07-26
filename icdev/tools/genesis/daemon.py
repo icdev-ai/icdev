@@ -88,9 +88,12 @@ REFLEX_NAMES = [
     "experiment",
     "synthesize",
     "kanban",
-    "oracle",
-    "goal_learner",
-    "remediation_lens",
+    # rri: removed dead entries "oracle", "goal_learner", "remediation_lens" —
+    # a stale auto-committed batch with no reflex module, so the daemon marked
+    # each `missing`/`is_stub` and skipped it every cycle. The real triage reflex
+    # is oracle_triage, which runs via the harness/eval path (eval_harness.py),
+    # NOT this loop — adding it here would double-dispatch it. check_reflex_registry
+    # now fails the coherence gate on any REFLEX_NAMES entry with no module.
     "awareness",
     "canvas_indexer",
     "self_monitor",
@@ -157,6 +160,7 @@ REFLEX_NAMES = [
     "retention_sweep",  # crx-db-03: 24h config-driven retention/archival (args/retention_policies.yaml); append-only tables archive-only, dry_run default
     "agent_cron_reflex",  # sag-cron-01: drains due user-facing cron jobs (agent_cron_jobs) — agent/script exec modes, retry/backoff, delivery
     "sag_skill_curator",  # sag-skl-01: archives (never deletes) idle unpinned auto-skills; pin support; HITL promotion stays separate
+    "review_loop",
 ]
 
 # Backward-compat aliases for module-level access used by other code
