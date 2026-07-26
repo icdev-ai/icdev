@@ -6217,8 +6217,8 @@ TOOL_REGISTRY = {
     },
     "canvas_link_design": {
         "category": "canvas",
-        "module": "tools.canvas.orchestrator",
-        "handler": "link_design",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_canvas_link_design",
         "description": "Link a canvas design to a project. canvas_key: idc/ndc/sdc/bdc/pdc/odc/ddc/qdc/mdc.",
         "input_schema": {
             "type": "object",
@@ -6232,8 +6232,8 @@ TOOL_REGISTRY = {
     },
     "canvas_unlink_design": {
         "category": "canvas",
-        "module": "tools.canvas.orchestrator",
-        "handler": "unlink_design",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_canvas_unlink_design",
         "description": "Unlink a canvas design from a project.",
         "input_schema": {
             "type": "object",
@@ -6278,8 +6278,8 @@ TOOL_REGISTRY = {
     },
     "canvas_kg_rebuild": {
         "category": "canvas",
-        "module": "tools.canvas.kg_builder",
-        "handler": "rebuild_canvas_kg",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_canvas_kg_rebuild",
         "description": "Rebuild the knowledge graph for a specific canvas design. Extracts nodes/edges and writes to unified KG.",
         "input_schema": {
             "type": "object",
@@ -6385,8 +6385,8 @@ TOOL_REGISTRY = {
     },
     "mc_net_ai_assist": {
         "category": "migration",
-        "module": "tools.migration_canvas.network_migration",
-        "handler": "ai_assist",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_mc_net_ai_assist",
         "description": "AI migration assistant — answers engineer questions with session context (BGP drain, optic compatibility, rollback steps, etc.). Saves conversation to mc_net_ai_sessions audit trail.",
         "input_schema": {
             "type": "object",
