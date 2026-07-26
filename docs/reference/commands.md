@@ -205,6 +205,40 @@ python tools/integrity/pr_gates.py --base origin/main --gate            # CI gat
 
 ---
 
+## Browser Automation & Agent Scope Controls
+```bash
+# Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
+python tools/browser/driver_manager.py --probe            # Resolved browser + driver path
+python tools/browser/driver_manager.py --smoke            # Launch, visit about:blank, quit
+
+# Agent browser scope controls (oss-browse-02) — config: args/browser_scope.yaml
+python tools/browser/scope.py --show --json               # Print the active policy
+python tools/browser/scope.py --check-url http://localhost:5050/ --json   # exit 0 = allowed
+python tools/browser/scope.py --check-url https://example.com/ --json     # exit 1 = denied
+# Override the config path with ICDEV_BROWSER_SCOPE_CONFIG.
+```
+
+Any **agent-driven** browser session must go through `GuardedDriver`, never a raw
+WebDriver. It enforces the domain allowlist (loopback only by default; a routable
+host needs to be allowlisted **and** `allow_non_local: true` **and** cleared by
+`egress_guard`), the per-run action cap, the per-step timeout, `<secret>name</secret>`
+placeholder substitution at the driver, and an `audit_trail` row per action.
+
+```python
+from tools.browser import get_driver, GuardedDriver
+
+driver = get_driver(headless=True)
+try:
+    session = GuardedDriver(driver, run_id="vv-001")
+    session.navigate("http://localhost:5050/")        # allowed
+    session.type_text(field, "<secret>dashboard_password</secret>")
+    session.navigate("https://example.com/")          # raises NavigationDenied
+finally:
+    driver.quit()
+```
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
