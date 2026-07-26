@@ -25,9 +25,21 @@ credential placeholder substitution, and the audit trail::
         session.navigate("http://localhost:5050/")   # allowlisted
     finally:
         driver.quit()
+
+For agent-facing use — an indexed representation of the page's interactive
+elements, so a model can act via ``click(14)`` instead of guessing a selector.
+``AgentBrowser`` runs its own scheme allowlist and defers every http(s) target
+to ``scope.check_navigation``, so it can only ever be narrower than the
+canonical policy::
+
+    from tools.browser import AgentBrowser
+
+    with AgentBrowser() as ab:
+        state = ab.navigate("http://localhost:5050/kanban")
 """
 
 from tools.browser.driver_manager import get_driver, DriverManager
+from tools.browser.agent_browser import AgentBrowser
 from tools.browser.scope import (
     ActionBudget,
     ActionBudgetExceeded,
@@ -46,6 +58,7 @@ from tools.browser.scope import (
 __all__ = [
     "get_driver",
     "DriverManager",
+    "AgentBrowser",
     "GuardedDriver",
     "BrowserScopeConfig",
     "ScopeDecision",

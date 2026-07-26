@@ -1,0 +1,71 @@
+# CUI // SP-CTI
+# args/agent_browser.yaml — behaviour settings for tools/browser/agent_browser.py
+#
+# The agent browser turns a live page into an indexed list of interactive
+# elements so an LLM can act via click(14) instead of inventing a CSS selector.
+# Everything that governs DOM verbosity lives here, not in Python.
+
+agent_browser:
+  # ── Driver launch ────────────────────────────────────────────────────────
+  headless: true
+  window_size: [1920, 1080]
+  page_load_timeout: 30          # seconds; applied via set_page_load_timeout
+  implicit_wait: 0               # seconds; 0 keeps read_state() deterministic
+
+  # ── Page representation ──────────────────────────────────────────────────
+  # CSS selector deciding which nodes are candidates for an index. Kept as a
+  # single string so it can be tuned without touching the extraction JS.
+  interactive_selector: >-
+    a[href], button, input:not([type="hidden"]), select, textarea, summary,
+    [role="button"], [role="link"], [role="checkbox"], [role="radio"],
+    [role="tab"], [role="menuitem"], [role="menuitemcheckbox"],
+    [role="menuitemradio"], [role="switch"], [role="option"],
+    [role="combobox"], [role="textbox"], [role="searchbox"],
+    [role="slider"], [role="spinbutton"],
+    [onclick], [contenteditable="true"], [tabindex]:not([tabindex="-1"])
+
+  # DOM attributes copied into each element descriptor. Anything not listed is
+  # dropped — this is the verbosity control (browser-use `include_attributes`).
+  include_attributes:
+    - id
+    - name
+    - type
+    - role
+    - href
+    - value
+    - placeholder
+    - title
+    - alt
+    - aria-label
+    - aria-expanded
+    - aria-checked
+    - aria-selected
+    - data-testid
+    - disabled
+    - checked
+    - required
+
+  max_elements: 200              # hard cap on indexed elements per read_state()
+  max_text_length: 120           # visible text truncated to this many chars
+  skip_disabled: false           # true drops disabled controls from the index
+
+  # ── Screenshots ──────────────────────────────────────────────────────────
+  screenshot_dir: playwright/screenshots
+
+  # ── Scope controls ───────────────────────────────────────────────────────
+  # Default is localhost-only. This is a SECOND allowlist, not the only one:
+  # every http(s) target must also be cleared by args/browser_scope.yaml via
+  # scope.check_navigation(). Widening the list here therefore permits nothing
+  # the canonical policy denies — it can only narrow it further.
+  allowed_domains:
+    - localhost
+    - 127.0.0.1
+    - "::1"
+  # Schemes navigate() will accept. http/https hosts are additionally checked
+  # against allowed_domains; file/about/data carry no host.
+  allowed_schemes:
+    - http
+    - https
+    - file
+    - about
+    - data
