@@ -17,7 +17,7 @@ Usage:
     python tools/testing/acceptance_validator.py \
         --plan specs/issue-3-icdev-abc-plan.md \
         --test-results .tmp/test_runs/<run_id>/state.json \
-        --base-url http://localhost:5000 \
+        --base-url http://localhost:5050 \
         --pages / /agents /events /query /diagrams /monitoring \
         --json
 
@@ -309,7 +309,7 @@ def main():
     )
     parser.add_argument(
         "--base-url",
-        help="Base URL for page content checks (e.g., http://localhost:5000)",
+        help="Base URL for page content checks (e.g., http://localhost:5050)",
     )
     parser.add_argument(
         "--pages",

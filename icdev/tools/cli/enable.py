@@ -229,10 +229,6 @@ def _print_status(result: dict) -> None:
           f"({'exists' if result['env_file_exists'] else 'NOT FOUND'})")
     print(f"Enabled: {result['enabled_count']} / {result['total_count']}")
     print()
-    if not rows:
-        print("  No components found — component_registry.yaml could not be located.")
-        print("  Run from an ICDEV project directory, or reinstall the package.")
-        return
     # Table: status | name | description | flags
     name_w = max(len(r["name"]) for r in rows) + 2
     for r in rows:
