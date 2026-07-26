@@ -38,7 +38,6 @@ content_drift:
   foundry: 2
   genesis: 4
   llm: 1
-  manifest: 30
   network: 3
   rag: 1
   showcase: 1

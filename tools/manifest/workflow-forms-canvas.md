@@ -30,6 +30,8 @@ canvas with enterprise branding, form-to-workflow integration, and multi-format 
 | `tools/workflow_canvas/reverse_regen.py` | Reverse document regeneration from a workflow definition |
 | `tools/workflow_canvas/sla_checker.py` | SLA gate enforcement / status checker for workflows |
 | `args/component_registry.yaml` | Canvas registration under key: wfc |
+| `tools/workflow_canvas/form_node.py` | FORM_INTAKE_TOOL definition for DAG integration |
+| `tools/workflow_canvas/db/migrations/001_wfc_init.sql` | wfc_branding, wfc_workflow_form_nodes tables |
 
 ## Routes
 
