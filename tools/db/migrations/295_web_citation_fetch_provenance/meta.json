@@ -1,0 +1,11 @@
+{
+  "id": "295_web_citation_fetch_provenance",
+  "name": "web_citation_fetch_provenance",
+  "description": "oss-cite-01: widen source_citation_registry.citation_type to include 'web' (constraint re-derived from tools/provenance/registry.py::CITATION_TYPES, never hand-written), and create the append-only web_fetch_provenance table recording requested URL, final URL after redirects, redirect chain, HTTP status, fetched_at, content hash and ETag/Last-Modified. Idempotent on both PostgreSQL and SQLite.",
+  "created": "2026-07-26",
+  "author": "icdev-builder",
+  "targets": ["icdev.db"],
+  "reversible": false,
+  "requires_downtime": false,
+  "adrs": []
+}

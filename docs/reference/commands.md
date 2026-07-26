@@ -348,6 +348,26 @@ python tools/compliance/xai_assessor.py --project-id "sparkpilot" --json
 
 ---
 
+## Provenance & Citation Commands
+```bash
+# Unified source citation registry
+python tools/provenance/registry.py --index-existing --json
+python tools/provenance/registry.py --list-project "sparkpilot" --json
+
+# Web citation & fetch provenance (oss-cite-01) — makes a fetched page citeable.
+# Records requested URL, final URL after redirects, HTTP status, fetched_at,
+# content hash and ETag/Last-Modified, then registers a 'web' citation.
+python tools/provenance/web_citation.py --init-db --json
+python tools/provenance/web_citation.py --fetch "https://example.gov/policy" --json
+python tools/provenance/web_citation.py --fetch "https://example.gov/policy" --no-register --json
+python tools/provenance/web_citation.py --show "wfp-abc123" --json
+python tools/provenance/web_citation.py --list --project "sparkpilot" --json
+# Validate inline [source: wfp-...] tags in a draft against persisted fetch rows
+python tools/provenance/web_citation.py --validate draft.md --project "sparkpilot" --json
+```
+
+---
+
 ## EQO Centralized Logging Commands (eqo-log)
 ```bash
 # Query the append-only centralized_logs sink (RLS-aware, newest first)

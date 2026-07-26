@@ -360,6 +360,52 @@ CREATE TABLE IF NOT EXISTS constitutional_audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_constitutional_audit_rule ON constitutional_audit_log(rule_id, verdict);
 CREATE INDEX IF NOT EXISTS idx_constitutional_audit_recorded_at ON constitutional_audit_log(recorded_at);
+-- oss-cite-01 / migration 295. citation_type deliberately carries the same CHECK
+-- the migration derives from tools/provenance/registry.py::CITATION_TYPES, so a
+-- test that registers an unlisted type fails here exactly as it would on PG.
+CREATE TABLE IF NOT EXISTS source_citation_registry (
+    id TEXT PRIMARY KEY,
+    citation_type TEXT NOT NULL CHECK(citation_type IN (
+        'hitl','rag','prov_entity','prov_activity','canvas_ai',
+        'slsa','sbom','compliance_evidence','agent_decision','manual','web',
+        'cortex','asset_token'
+    )),
+    source_table TEXT NOT NULL,
+    source_record_id TEXT NOT NULL,
+    source_doc TEXT,
+    source_hash TEXT NOT NULL,
+    anchor_hash TEXT,
+    merkle_root TEXT,
+    blockchain_tx_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    project_id TEXT,
+    trust_score REAL DEFAULT 0.0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scr_project ON source_citation_registry(project_id);
+CREATE INDEX IF NOT EXISTS idx_scr_type ON source_citation_registry(citation_type);
+CREATE INDEX IF NOT EXISTS idx_scr_hash ON source_citation_registry(source_hash);
+CREATE TABLE IF NOT EXISTS web_fetch_provenance (
+    id TEXT PRIMARY KEY,
+    requested_url TEXT NOT NULL,
+    final_url TEXT NOT NULL,
+    http_status INTEGER NOT NULL,
+    fetched_at TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    content_type TEXT,
+    content_length INTEGER,
+    etag TEXT,
+    last_modified TEXT,
+    redirect_chain TEXT,
+    title TEXT,
+    fetch_tool TEXT,
+    project_id TEXT,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wfp_hash ON web_fetch_provenance(content_hash);
+CREATE INDEX IF NOT EXISTS idx_wfp_project ON web_fetch_provenance(project_id);
 CREATE TABLE IF NOT EXISTS abac_decisions (
     id TEXT PRIMARY KEY,
     user_id TEXT,

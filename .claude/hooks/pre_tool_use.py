@@ -89,6 +89,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cortex_audit",
         # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)
         "constitutional_audit_log",
+        # Web fetch provenance backing 'web' citations (oss-cite-01, migration 295, NIST AU).
+        # A fetch is an observation of bytes at an instant; editing one rewrites evidence
+        # that already-registered citations validate against.
+        "web_fetch_provenance",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
         # FathomDesk auto-trading (append-only NIST AU)

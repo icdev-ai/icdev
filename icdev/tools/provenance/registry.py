@@ -21,10 +21,11 @@ Usage:
 import argparse
 import hashlib
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -33,6 +34,220 @@ if str(BASE_DIR) not in sys.path:
 from tools.db.storage import get_connection
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+
+# ---------------------------------------------------------------------------
+# Citation types — the single source of truth
+# ---------------------------------------------------------------------------
+# The ``source_citation_registry.citation_type`` CHECK constraint is DERIVED
+# from this tuple (see :func:`citation_type_check_sql`), never hand-written in
+# SQL. Adding a value here and running the newest constraint migration is the
+# whole procedure; a hand-edited CHECK would silently drift from the Python
+# constant, which is exactly the failure migration 271 had to repair for the
+# ACE state constraints.
+
+CITATION_TYPES: tuple[str, ...] = (
+    "hitl",
+    "rag",
+    "prov_entity",
+    "prov_activity",
+    "canvas_ai",
+    "slsa",
+    "sbom",
+    "compliance_evidence",
+    "agent_decision",
+    "manual",
+    # oss-cite-01 — a page fetched over HTTP, with fetch provenance persisted in
+    # web_fetch_provenance (tools/provenance/web_citation.py).
+    "web",
+    # --- Types shipped code already passes, which migration 149 never allowed --
+    # These are not new capabilities. Both call sites below have been calling
+    # register_citation() with these values since they shipped; the INSERT failed
+    # the ten-value CHECK every time and the `except Exception: return ""` below
+    # swallowed it, so the caller got an empty id and no row was ever written.
+    # That is a silent TRUST violation: Cortex's Gate 7a reports a provenance
+    # record it never persisted. Enumerating them here is what makes the
+    # derived constraint true to the code, and is required for correctness of
+    # the ValueError raised below — without it, that raise converts a silent
+    # failure into a hard one (Cortex fails closed when CortexContext.fail_closed).
+    "cortex",       # tools/cortex/governance.py::_gate_register_provenance
+    "asset_token",  # tools/blockchain/asset_ledger.py (2 call sites)
+)
+
+CITATION_TYPE_CONSTRAINT = "source_citation_registry_citation_type_check"
+
+# Column order of source_citation_registry as created by migration 149. Used by
+# the SQLite constraint rebuild, which has to copy rows column-by-column.
+_REGISTRY_COLUMNS: tuple[str, ...] = (
+    "id",
+    "citation_type",
+    "source_table",
+    "source_record_id",
+    "source_doc",
+    "source_hash",
+    "anchor_hash",
+    "merkle_root",
+    "blockchain_tx_id",
+    "classification",
+    "project_id",
+    "trust_score",
+    "created_at",
+)
+
+_QUOTED_RE = re.compile(r"'([^']+)'")
+# The citation_type CHECK body inside a stored SQLite CREATE TABLE statement.
+_CHECK_BODY_RE = re.compile(
+    r"CHECK\s*\(\s*citation_type\s+IN\s*\(([^)]*)\)", re.IGNORECASE
+)
+
+
+def citation_type_check_sql(column: str = "citation_type") -> str:
+    """Return the CHECK body for ``citation_type``, derived from CITATION_TYPES."""
+    values = ", ".join(f"'{t}'" for t in CITATION_TYPES)
+    return f"{column} IN ({values})"
+
+
+def citation_registry_ddl(table: str = "source_citation_registry") -> str:
+    """CREATE TABLE for the registry with the derived CHECK constraint."""
+    return f"""
+        CREATE TABLE {table} (
+            id TEXT PRIMARY KEY,
+            citation_type TEXT NOT NULL CHECK({citation_type_check_sql()}),
+            source_table TEXT NOT NULL,
+            source_record_id TEXT NOT NULL,
+            source_doc TEXT,
+            source_hash TEXT NOT NULL,
+            anchor_hash TEXT,
+            merkle_root TEXT,
+            blockchain_tx_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            project_id TEXT,
+            trust_score REAL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """.strip()
+
+
+def _is_pg(conn: Any) -> bool:
+    try:
+        from tools.db.storage import is_pg
+
+        return bool(is_pg(conn))
+    except Exception:
+        mod = type(conn).__module__
+        return "psycopg" in mod or "psycopg2" in mod
+
+
+def repair_citation_type_constraint(conn: Any) -> dict:
+    """Re-derive the ``citation_type`` CHECK constraint from :data:`CITATION_TYPES`.
+
+    Idempotent, and safe on a table that already matches — a second call
+    reports ``"ok"``. Returns ``{"status": ..., "allowed": [...]}`` where status
+    is one of ``ok`` / ``repaired`` / ``added`` / ``absent`` / ``skipped:<why>``.
+
+    PostgreSQL: read ``pg_get_constraintdef``, compare the encoded value set to
+    the constant, and DROP + ADD in one transaction when they differ — the same
+    shape as ``tools/ace/db/init_db.py::repair_state_constraints``.
+
+    SQLite: a CHECK constraint cannot be altered in place, so the table is
+    rebuilt (create-copy-drop-rename) when its stored DDL does not already
+    allow every value in the constant. This path matters because SQLite is a
+    real runtime backend here, not only a test harness: without the rebuild an
+    ``INSERT ... citation_type='web'`` fails the stale CHECK and
+    :func:`register_citation` swallows it and returns ``""``.
+    """
+    expected = set(CITATION_TYPES)
+
+    if _is_pg(conn):
+        try:
+            row = conn.execute(
+                "SELECT pg_get_constraintdef(c.oid) "
+                "FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid "
+                "WHERE t.relname = 'source_citation_registry' AND c.conname = %s",
+                (CITATION_TYPE_CONSTRAINT,),
+            ).fetchone()
+        except Exception as exc:
+            return {"status": f"skipped:{type(exc).__name__}", "allowed": sorted(expected)}
+
+        current = set(_QUOTED_RE.findall(row[0])) if row else None
+        if current == expected:
+            return {"status": "ok", "allowed": sorted(expected)}
+        try:
+            if row is not None:
+                conn.execute(
+                    f"ALTER TABLE source_citation_registry DROP CONSTRAINT {CITATION_TYPE_CONSTRAINT}"
+                )
+            conn.execute(
+                f"ALTER TABLE source_citation_registry ADD CONSTRAINT {CITATION_TYPE_CONSTRAINT} "
+                f"CHECK ({citation_type_check_sql()})"
+            )
+            conn.commit()
+            return {
+                "status": "repaired" if row is not None else "added",
+                "allowed": sorted(expected),
+            }
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return {"status": f"skipped:{type(exc).__name__}", "allowed": sorted(expected)}
+
+    # ---- SQLite: rebuild the table ----------------------------------------
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'source_citation_registry'"
+        ).fetchone()
+    except Exception as exc:
+        return {"status": f"skipped:{type(exc).__name__}", "allowed": sorted(expected)}
+
+    if not row:
+        return {"status": "absent", "allowed": sorted(expected)}
+
+    ddl = row[0] or ""
+    # Scope the value scan to the citation_type CHECK body only. A naive scan of
+    # the whole DDL also picks up DEFAULT 'CUI', which never matches the constant
+    # and so would make every call report "repaired" — an infinite rebuild.
+    # A table with no CHECK at all yields an empty set and is rebuilt once, so
+    # the constraint starts being enforced.
+    body = _CHECK_BODY_RE.search(ddl)
+    current = set(_QUOTED_RE.findall(body.group(1))) if body else set()
+    if current == expected:
+        return {"status": "ok", "allowed": sorted(expected)}
+
+    cols = ", ".join(_REGISTRY_COLUMNS)
+    try:
+        conn.execute(citation_registry_ddl("source_citation_registry__new"))
+        conn.execute(
+            f"INSERT INTO source_citation_registry__new ({cols}) "
+            f"SELECT {cols} FROM source_citation_registry"
+        )
+        conn.execute("DROP TABLE source_citation_registry")
+        conn.execute(
+            "ALTER TABLE source_citation_registry__new RENAME TO source_citation_registry"
+        )
+        for idx, col in (
+            ("idx_scr_project", "project_id"),
+            ("idx_scr_type", "citation_type"),
+            ("idx_scr_hash", "source_hash"),
+            ("idx_scr_anchor", "anchor_hash"),
+        ):
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS {idx} ON source_citation_registry({col})"
+            )
+        conn.commit()
+        return {"status": "repaired", "allowed": sorted(expected)}
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        try:
+            conn.execute("DROP TABLE IF EXISTS source_citation_registry__new")
+            conn.commit()
+        except Exception:
+            pass
+        return {"status": f"skipped:{type(exc).__name__}", "allowed": sorted(expected)}
 
 
 def register_citation(
@@ -51,8 +266,19 @@ def register_citation(
 ) -> str:
     """Register a citation in the unified source_citation_registry.
 
-    Returns the registry entry ID.
+    Returns the registry entry ID, or ``""`` if the insert failed.
+
+    Raises ValueError for a ``citation_type`` outside :data:`CITATION_TYPES`.
+    An unknown type would fail the CHECK constraint anyway, and the INSERT
+    below swallows that into an empty return — so the caller would see a
+    "registered" citation that does not exist. Failing loudly on a typo is the
+    only way that distinction survives.
     """
+    if citation_type not in CITATION_TYPES:
+        raise ValueError(
+            f"unknown citation_type {citation_type!r}; "
+            f"allowed: {', '.join(CITATION_TYPES)}"
+        )
     reg_id = f"scr-{uuid.uuid4().hex[:16]}"
     conn = get_connection(db_path=str(db_path or DB_PATH))
     try:

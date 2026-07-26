@@ -17,3 +17,15 @@ default_ports:
 cidr_mask_bits:
   min: 1
   max: 32
+
+# Outbound egress policy (SSRF guard). Default OFF, matching the semantics of
+# the guard's original home in tools/doc_modernization/link_check.py. When
+# enabled, the guard runs BEFORE any socket is opened: HTTPS-only, suffix
+# allow/denylist with deny-wins, then resolve-and-reject if ANY resolved
+# address is private/loopback/link-local/multicast/reserved.
+# Consumed today by tools/provenance/web_citation.py::check_egress; oss-filter-03
+# promotes the guard to tools/http/egress_guard.py and widens the consumer set.
+egress:
+  enabled: false
+  allowlist: []   # empty = any public host that passes the IP-range checks
+  denylist: []    # suffix match; beats the allowlist
