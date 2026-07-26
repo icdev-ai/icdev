@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import io
 import base64
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -484,15 +483,6 @@ def assess_text_parse_quality(text: str) -> TextParseQualityReport:
 # Extractor implementations
 # --------------------------------------------------------------------------- #
 
-def _strip_html(raw: str) -> str:
-    raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
-    raw = re.sub(r"(?s)<[^>]+>", " ", raw)
-    raw = re.sub(r"&nbsp;", " ", raw)
-    raw = re.sub(r"[ \t]+", " ", raw)
-    raw = re.sub(r"\n{3,}", "\n\n", raw)
-    return raw.strip()
-
-
 def _extract_text(path: Path) -> Extraction:
     raw = path.read_text(encoding="utf-8", errors="replace")
     warnings: list[str] = []
@@ -512,14 +502,32 @@ def _extract_text(path: Path) -> Extraction:
 
 
 def _extract_html(path: Path) -> Extraction:
+    """Extract a local HTML file via the two-pass ``page_extract`` filter.
+
+    Pass 2 is skipped (no query at ingestion time), so this is pass-1 pruning:
+    nav, cookie banners and link farms are dropped, headings/lists/tables survive
+    as markdown.  ``to_text`` is the degraded fallback — never a regex tag strip.
+    """
+    from tools.http import page_extract
+
     raw = path.read_text(encoding="utf-8", errors="replace")
-    text = _strip_html(raw)
+    warnings: list[str] = []
+    title = path.stem
+    try:
+        result = page_extract.extract(raw)
+        text = result["fit_markdown"].strip() or result["raw_text"]
+        title = result["title"] or title
+    except Exception as exc:  # noqa: BLE001 - extraction must not fail an ingest
+        text = page_extract.to_text(raw)
+        warnings.append(f"page_extract failed ({type(exc).__name__}: {exc}) — used plain-text fallback")
+
     return Extraction(
         text=text,
         provider="builtin-html",
         content_type="text/html",
         page_count=1,
-        title=path.stem,
+        title=title,
+        warnings=warnings,
     )
 
 
@@ -1177,57 +1185,69 @@ def get_extractor(ext: str) -> callable | None:
 # Web URL and YouTube extractors (non-file, dual-mode)
 # --------------------------------------------------------------------------- #
 
-def extract_url(url: str) -> Extraction:
+def extract_url(url: str, query: str | None = None) -> Extraction:
     """Fetch and extract text from a web URL.
 
-    Online: full HTTP fetch + HTML strip.
-    Air-gap / network failure: returns empty Extraction with a warning so the
+    Online: central-client fetch → two-pass ``page_extract`` → injection scan.
+    Air-gap / network failure: returns an empty Extraction with a warning so the
     caller can still create a placeholder source entry.
+
+    Args:
+        url: the page to ingest (untrusted third-party content).
+        query: optional retrieval question.  When supplied, pass 2 keeps only the
+            blocks that answer it; otherwise the whole pruned page is kept.
+
+    The byte cap comes from ``fetch.max_bytes`` in ``args/http_client.yaml``, and
+    the title comes from the parsed document rather than a ``<title>`` regex —
+    which matched the first ``</title>`` anywhere in the file, including inside
+    a comment or an inline SVG.
     """
-    import urllib.request
-    import urllib.error
+    from tools.http.fetch_extract import fetch_page
 
-    title = url
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 ICDEV/1.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = resp.read(2 * 1024 * 1024).decode("utf-8", errors="replace")  # 2 MB cap
-        content_type = resp.headers.get_content_type() or "text/html"
+    page = fetch_page(url, query=query)
 
-        # Extract <title>
-        import re as _re
-        m = _re.search(r"<title[^>]*>(.*?)</title>", raw, _re.I | _re.S)
-        title = _re.sub(r"\s+", " ", m.group(1)).strip() if m else url
-
-        text = _strip_html(raw)
-        return Extraction(
-            text=text,
-            provider="builtin-url",
-            content_type=content_type,
-            page_count=1,
-            title=title,
-            metadata={"source_url": url},
-        )
-    except urllib.error.URLError as exc:
+    if not page.ok:
         return Extraction(
             text="",
             provider="builtin-url",
-            content_type="text/html",
+            content_type=page.content_type or "text/html",
             page_count=0,
-            title=title,
-            warnings=[f"URL fetch failed (network unavailable or blocked): {exc}"],
+            title=url,
+            warnings=[f"URL fetch failed (network unavailable or blocked): {page.error}"],
             metadata={"source_url": url},
         )
-    except Exception as exc:
+
+    if page.blocked:
         return Extraction(
             text="",
             provider="builtin-url",
-            content_type="text/html",
+            content_type=page.content_type or "text/html",
             page_count=0,
-            title=title,
-            warnings=[f"URL extraction error: {exc}"],
-            metadata={"source_url": url},
+            title=page.title or url,
+            warnings=[
+                "Content dropped: prompt-injection scan reported a critical finding "
+                f"({', '.join(sorted({str(f.get('category')) for f in page.injection_findings}))})"
+            ],
+            metadata={"source_url": url, "injection_findings": page.injection_findings},
         )
+
+    warnings: list[str] = []
+    if page.truncated:
+        warnings.append("Response body reached fetch.max_bytes — page may be incomplete.")
+    if page.injection_findings:
+        warnings.append(
+            f"Injection scan reported {len(page.injection_findings)} non-critical finding(s)."
+        )
+
+    return Extraction(
+        text=page.text,
+        provider="builtin-url",
+        content_type=page.content_type or "text/html",
+        page_count=1,
+        title=page.title or url,
+        warnings=warnings,
+        metadata={"source_url": url, "extraction_reason": page.reason},
+    )
 
 
 def _is_youtube_url(url: str) -> bool:
@@ -1303,7 +1323,8 @@ def extract_video(url: str) -> Extraction:
     Priority:
       1. YouTube transcript API  — for YouTube URLs (online only)
       2. yt-dlp subtitles        — for YouTube + 1000+ other sites + IPTV descriptions
-      3. URL text extraction     — fall back to the video page's text (trafilatura)
+      3. URL text extraction     — fall back to the video page's text via
+         ``extract_url`` (central HTTP client + two-pass ``page_extract``)
 
     Works in air-gap for yt-dlp (subtitles cached locally) and URL text extraction.
     IPTV m3u8/HLS streams: extracts playlist description via yt-dlp dump-json.
@@ -1322,16 +1343,20 @@ def extract_video(url: str) -> Extraction:
                 text = " ".join(
                     (s.text if hasattr(s, "text") else s["text"]) for s in fetched
                 )
-                # Attempt oEmbed title
+                # Attempt oEmbed title (via the central HTTP client, not raw urllib)
+                title = f"YouTube: {video_id}"
                 try:
                     import json as _json
-                    import urllib.request as _ur
-                    with _ur.urlopen(
-                        f"https://www.youtube.com/oembed?url={url}&format=json", timeout=5
-                    ) as r:
-                        title = _json.loads(r.read()).get("title", f"YouTube: {video_id}")
+
+                    from tools.http.fetch_extract import fetch_raw
+
+                    oembed = fetch_raw(
+                        f"https://www.youtube.com/oembed?url={url}&format=json"
+                    )
+                    if oembed.ok:
+                        title = _json.loads(oembed.raw_text).get("title", title)
                 except Exception:
-                    title = f"YouTube: {video_id}"
+                    pass
                 if text:
                     return Extraction(
                         text=text, provider="youtube-transcript", content_type="text/plain",

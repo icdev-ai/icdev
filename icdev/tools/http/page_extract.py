@@ -68,7 +68,7 @@ try:  # pragma: no cover - pyyaml is a core ICDEV dependency
 except ImportError:  # pragma: no cover
     _yaml = None  # type: ignore[assignment]
 
-__all__ = ["extract", "load_config", "ARGS_FILENAME"]
+__all__ = ["extract", "to_text", "load_config", "ARGS_FILENAME"]
 
 ARGS_FILENAME = "page_extract.yaml"
 
@@ -685,6 +685,34 @@ def extract(
         "dropped_blocks": dropped,
         "reason": reason,
     }
+
+
+def to_text(html: str, *, drop_tags: Optional[frozenset] = None) -> str:
+    """Return the visible plain text of *html* using the same parser as :func:`extract`.
+
+    This is the degraded-mode partner to :func:`extract` — used when the full
+    two-pass filter fails or when a caller only needs tag-free text (an RSS
+    ``<description>``, a scraped product name).  It exists so no call site has to
+    keep a hand-rolled ``re.sub(r"<[^>]+>", "", ...)`` around: regex tag-stripping
+    silently mangles ``<`` in text, leaves entities and comments behind, and keeps
+    the contents of ``<script>``/``<style>`` when the tags are malformed.
+
+    Cheaper than :func:`extract` (no scoring, no BM25) and never raises on
+    malformed markup — ``html.parser`` is lenient by construction.
+    """
+    if not html:
+        return ""
+    tags = drop_tags
+    if tags is None:
+        try:
+            tags = frozenset(load_config()["pruning"]["drop_tags"])
+        except Exception:  # noqa: BLE001 - text extraction must not depend on args
+            tags = frozenset({"script", "style", "noscript", "iframe", "svg", "template"})
+    builder = _TreeBuilder(tags)
+    builder.feed(html)
+    builder.close()
+    body = _find_tag(builder.root, "body") or builder.root
+    return _WS_RE.sub(" ", _plain_text(body)).strip()
 
 
 def _run_pass1(

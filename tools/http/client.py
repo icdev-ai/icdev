@@ -76,9 +76,19 @@ def _load_config() -> dict:
 
 
 def _cfg(section: str, key: str, default: float) -> float:
+    """Read ``key`` from ``section``; an empty *section* means the yaml top level.
+
+    ``max_retries``/``backoff_factor``/``max_redirects``/``*_chunk_size`` live at
+    the top level of ``args/http_client.yaml``, so an empty section must resolve
+    against the root mapping — looking up a literal ``""`` key would silently
+    discard every operator edit to those five settings.
+    """
     cfg = _load_config()
+    scope = cfg if not section else cfg.get(section, {})
+    if not isinstance(scope, dict):
+        return default
     try:
-        return float(cfg.get(section, {}).get(key, default))
+        return float(scope.get(key, default))
     except (TypeError, ValueError):
         return default
 
