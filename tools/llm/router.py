@@ -2117,13 +2117,44 @@ class LLMRouter:
         "unknown model" fails closed — so a perfectly good LOCAL model gets refused
         and the call dies. Fails safe, but still broken.
         """
+        # CUI egress gate (lpx-egress-02): the shared LLM proxy is a NEW cloud
+        # egress path. Independently of the general routing-policy threshold,
+        # classified/controlled content must never SILENTLY traverse the proxy to
+        # a cloud provider. This check is invoke-time (it reads the live request's
+        # classification, unavailable at cached-provider construction) and only
+        # fires when the proxy WOULD carry this provider — otherwise a no-op. A
+        # refusal is raised as ForceLocalViolation so the chain falls back to a
+        # local model exactly like any other egress refusal.
+        # proxy_gateway is stdlib-only and already imported at provider
+        # construction; calling it here cannot introduce a new failure mode. It is
+        # deliberately NOT wrapped in a swallow-all except — a gate that fails open
+        # is not a gate. Any error propagates as a call failure (fail closed).
+        from tools.llm.proxy_gateway import proxy_egress_classification_block
+
+        providers = self._config.get("providers", {})
+        provider_name = (model_cfg or {}).get("provider", "")
+        provider_cfg = providers.get(provider_name, {}) if provider_name else {}
+        _proxy_block = proxy_egress_classification_block(
+            provider_cfg, getattr(request, "classification", None)
+        )
+        if _proxy_block:
+            logger.warning(
+                "proxy_egress[%s]: REFUSED model '%s' — %s",
+                function or "<no function>", model_id, _proxy_block,
+            )
+            raise ForceLocalViolation(
+                f"Refusing to send content to '{model_id}' via the LLM proxy: {_proxy_block}",
+                function=function or "",
+                model=model_id,
+                rule="proxy_cui_egress",
+            )
+
         from tools.llm.routing_policy import resolve as _resolve_policy
 
         decision = _resolve_policy(function, request, self._config)
         if not decision.local_only:
             return
 
-        provider_name = (model_cfg or {}).get("provider", "")
         if _provider_is_local_only(provider_name, self._config.get("providers", {})):
             return
 

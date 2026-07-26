@@ -60,6 +60,35 @@ ENV_VIRTUAL_KEY = "ICDEV_LLM_PROXY_VIRTUAL_KEY"
 # found in the environment.
 ENV_LOCAL_COPY = "ICDEV_LLM_LOCAL_COPY"
 
+# CUI egress gate (lpx-egress-02). The shared proxy is a NEW cloud egress path;
+# by default it may carry ONLY unclassified traffic. Anything above the configured
+# ceiling (CUI and up) must NOT silently traverse the proxy to a cloud provider —
+# it stays local. An operator who has accredited the proxy for a higher level can
+# raise this via ``ICDEV_LLM_PROXY_MAX_CLASSIFICATION`` (an ATO-boundary decision,
+# documented in the feature doc), but the SAFE DEFAULT is fail-closed.
+ENV_MAX_CLASSIFICATION = "ICDEV_LLM_PROXY_MAX_CLASSIFICATION"
+
+# Ordinal clearance ranking, fail-CLOSED: an unknown/garbled label maps to a very
+# high order (99) so it is treated as maximally sensitive and blocked, rather than
+# fail-open (classification_manager defaults unknown -> CUI). Mirrors the intent of
+# routing_policy._clearance_order without importing it (keep this module dependency
+# -light and self-contained inside tools/llm/).
+_CLEARANCE_ORDER = {
+    "PUBLIC": 0, "UNCLASSIFIED": 0, "U": 0, "UNCLASS": 0,
+    "IL2": 0,
+    "CUI": 1, "CONTROLLED UNCLASSIFIED INFORMATION": 1, "IL4": 1,
+    "ECI": 2, "IL5": 2,
+    "CONFIDENTIAL": 3,
+    "SECRET": 4, "IL6": 4,
+    "TOP SECRET": 5, "TS": 5,
+    "TOP SECRET//SCI": 6, "TS//SCI": 6, "TS/SCI": 6,
+}
+
+# By default the proxy may carry only UNCLASSIFIED/PUBLIC (order 0). CUI (1) and
+# above are refused unless an operator explicitly raises the ceiling.
+_DEFAULT_MAX_CLEARANCE = 0
+_UNKNOWN_CLEARANCE = 99
+
 _DEFAULT_BASE_URL = "http://localhost:4000"
 
 
@@ -203,3 +232,83 @@ def _gateway_reachable(base_url: str, timeout: float) -> bool:
             return True
     except OSError:
         return False
+
+
+# ── CUI egress gate (lpx-egress-02) ──────────────────────────────────────────
+
+def _clearance_order(classification) -> int:
+    """Ordinal clearance for a classification/impact label — fail CLOSED.
+
+    Unknown/garbled labels return :data:`_UNKNOWN_CLEARANCE` (99) so they are
+    treated as maximally sensitive and blocked from the proxy, never fail-open.
+    """
+    if not classification:
+        # No label given: default is CUI (matches LLMRequest's default), so treat
+        # as CUI — sensitive enough to be blocked by the default ceiling.
+        return _CLEARANCE_ORDER["CUI"]
+    norm = str(classification).strip().upper()
+    if norm in _CLEARANCE_ORDER:
+        return _CLEARANCE_ORDER[norm]
+    # Tolerate common banner suffixes (e.g. "CUI // SP-CTI", "SECRET//NOFORN").
+    head = norm.split("//")[0].strip()
+    if head in _CLEARANCE_ORDER:
+        return _CLEARANCE_ORDER[head]
+    return _UNKNOWN_CLEARANCE
+
+
+def proxy_max_clearance() -> int:
+    """The highest clearance order permitted to traverse the proxy.
+
+    Default is UNCLASSIFIED (0) — CUI and above are refused. An operator may raise
+    it with ``ICDEV_LLM_PROXY_MAX_CLASSIFICATION`` (e.g. ``CUI``) only after
+    accrediting the proxy for that level; an unrecognised value fails closed to 0.
+    """
+    raw = os.environ.get(ENV_MAX_CLASSIFICATION, "").strip()
+    if not raw:
+        return _DEFAULT_MAX_CLEARANCE
+    norm = raw.upper()
+    if norm in _CLEARANCE_ORDER:
+        return _CLEARANCE_ORDER[norm]
+    head = norm.split("//")[0].strip()
+    return _CLEARANCE_ORDER.get(head, _DEFAULT_MAX_CLEARANCE)
+
+
+def will_redirect(provider_cfg: Dict) -> bool:
+    """True when the gateway WOULD redirect this provider to the proxy.
+
+    Mirrors the activation condition in :func:`apply_gateway_to_provider_cfg`:
+    proxy enabled OR local-copy mode, AND a redirectable cloud provider type. When
+    False the CUI egress gate is a no-op (no proxy path exists for this call).
+    """
+    if not is_proxy_enabled() and not is_local_copy_mode():
+        return False
+    return str(provider_cfg.get("type", "")) in _PROXYABLE_TYPES
+
+
+def proxy_egress_classification_block(provider_cfg: Dict, classification) -> str:
+    """Return a refusal reason if this classification must NOT traverse the proxy.
+
+    Pure predicate (no raise, no router dependency): returns a human-readable
+    reason string when the proxy WOULD carry this provider's traffic AND the
+    request's classification exceeds the configured proxy ceiling; otherwise
+    returns ``""``. The caller (the router's invoke-time egress gate) turns a
+    non-empty reason into a ``ForceLocalViolation`` so the call falls back to a
+    local model instead of silently traversing the cloud proxy.
+
+    Invoke-time by construction: ``classification`` comes from the live
+    ``LLMRequest`` — it is deliberately NOT consulted at cached-provider
+    construction, where no request (hence no classification) is available.
+    """
+    if not will_redirect(provider_cfg):
+        return ""
+    order = _clearance_order(classification)
+    if order > proxy_max_clearance():
+        label = str(classification).strip() if classification else "CUI (unlabelled default)"
+        return (
+            f"classification '{label}' may not traverse the shared LLM proxy — "
+            f"classified/controlled content stays local (proxy ceiling: "
+            f"{os.environ.get(ENV_MAX_CLASSIFICATION, '').strip() or 'UNCLASSIFIED'}). "
+            "Route this via a local provider (Ollama) or a properly accredited "
+            "GovCloud path (bedrock), which the proxy never redirects."
+        )
+    return ""
