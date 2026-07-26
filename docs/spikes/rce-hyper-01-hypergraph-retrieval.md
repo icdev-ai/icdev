@@ -5,6 +5,33 @@
 **Status:** COMPLETE — recommendation below
 **Depends on:** rce-eval-03 (compliance baseline), informed by rce-eval-05 (raptor DROP)
 
+> ### ⚠ Premise check — 2026-07-26 (oss-meas-01-d3)
+>
+> **The saturation argument this NO-GO rests on was an artefact of the golden
+> set, not a property of the retrieval problem.** Read this before acting on the
+> recommendation below.
+>
+> The reasoning quoted immediately after this box — "the compliance golden set is
+> already retrieval-saturated (0.9545 recall@5, 30/33 queries perfect)" — is
+> arithmetically right about the **v1 33-query set** (measured independently:
+> 29/33 at both perfect recall and perfect MRR, not 30). But that saturation was
+> a property of the *instrument*. On the v2 48-query set (`oss-meas-01-d1`, PR
+> #817), against the **same corpus**, the control sits at **recall@5 0.7431** —
+> roughly 21 points of headroom where the v1 set showed almost none.
+>
+> The `raptor DROP` this spike is "informed by" has itself been withdrawn for the
+> same reason: same corpus, same toggle, opposite sign once measured with an
+> instrument that could register a gain.
+>
+> **This box does not reopen the NO-GO.** The spike's other objections — build
+> cost, schema complexity, maintenance surface — are untouched and may still
+> carry the decision on their own. What is void is the specific claim that there
+> is no measurable headroom for a retrieval improvement to occupy. If that claim
+> was load-bearing for the NO-GO, the decision needs retaking; if it was
+> supporting, the conclusion may stand on the remaining grounds.
+>
+> See [oss-meas-01-retrieval-toggle-benchmark.md](../features/oss-meas-01-retrieval-toggle-benchmark.md).
+
 > **Recommendation up front: NO-GO for a production build now; DEFER as a
 > documented design.** The engineering is feasible and cheap to prototype, but the
 > adoption case does not clear the bar this phase has repeatedly set: the

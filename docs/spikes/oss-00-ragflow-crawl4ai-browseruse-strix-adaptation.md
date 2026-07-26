@@ -64,7 +64,7 @@ requirement appears. See §6.
 |---|---|---|
 | RAGFlow: hybrid vector + keyword retrieval | `tools/rag/retriever.py` (embed → vector top-50 → RRF fusion → time decay → rerank → top-5), `vector_store_factory.py` (pgvector/sqlite/chroma/faiss), `rank_bm25` in `requirements.txt:27` | Built — but BM25 is a **re-scorer over the vector top-50**, not an index. See gap R4. |
 | RAGFlow: reranking | `tools/rag/reranker.py`, `reranker_provider.py` (BGE via Ollama / LLM), `reflective_reranker.py` | Built — **`rag.rerank.enabled: false` by default.** |
-| RAGFlow: RAPTOR | `tools/rag/raptor.py` (693 ln), merge in `retriever.py:206` | Built, **measured, and deliberately kept OFF** — recorded as a *regression* (0.0 recall@5, 0.0 MRR, −0.0005 nDCG@5). Do not resurrect on RAGFlow's say-so. |
+| RAGFlow: RAPTOR | `tools/rag/raptor.py` (693 ln), merge in `retriever.py:206` | Built, kept OFF. ~~Recorded as a *regression* (0.0 recall@5, 0.0 MRR, −0.0005 nDCG@5); do not resurrect on RAGFlow's say-so.~~ **That regression is withdrawn (oss-meas-01-d3):** it was measured on a golden set with 4 queries of headroom in 33. Re-measured on the v2 48-query set, same corpus, `raptor` ON gives **+0.0208 recall@5 / +0.0093 MRR**. Still OFF, but now *undecided* rather than settled — needs a latency number. |
 | RAGFlow: GraphRAG | `tools/knowledge_graph/graph_rag.py` (1874 ln, 5 scoring profiles), `tools/rag/rag_to_kg_ingester.py`, DIC KG bridge | **Already built, and well past RAGFlow.** |
 | RAGFlow: agentic workflows / self-correction | `corrective_rag.py`, `crag_evaluator.py` (1119 ln), `adaptive_router.py`, `query_classifier.py`, `evaluator.py`, `quality_feedback_loop.py`, and `tools/mcp/rag_server.py`'s 14 tools incl. `rag_decompose` + `rag_evaluate(self_eval_retrieve)` | **Already built, ahead of RAGFlow.** Several toggles default OFF. |
 | RAGFlow: traceable citations | `tools/quality/citation_grounding.py` (`citation_gate`, `classify_confidence`), `content_grounding.py`, `cove_guard.py`, + `dic_chunk_links.chunk_hash` evidence baseline (`ingest_orchestrator.py:214`) | Already built; ours is stronger (hash-at-link-time drift detection). |
@@ -515,6 +515,14 @@ against a persisted provenance record, and today a web page has no valid type.
   shows no regression in recall@k / MRR / nDCG@5 / citation_hit_rate versus the
   committed baselines in `data/rag/rce_*_compliance.json` — the same measurement
   discipline that produced the KEEP(contextual_retrieval)/DROP(raptor) decisions.
+
+  > **Do not benchmark against `rce_*_compliance.json` alone (oss-meas-01-d3).**
+  > Those baselines were taken on the v1 33-query set, where 29 of 33 queries sat
+  > at both perfect recall and perfect MRR. A change measured only against them
+  > can show "no regression" while being invisible either way — which is exactly
+  > how the withdrawn RAPTOR DROP was produced. Use the v2 48-query set
+  > (`args/rag/golden_query_set.yaml`, control recall@5 0.7431) so an improvement
+  > has somewhere to register.
 
 ### A2b — real table extraction *(from RAGFlow's DeepDoc, minus DeepDoc)*
 Call `pdfplumber.extract_tables()` in the DIC PDF path and emit **markdown tables**
