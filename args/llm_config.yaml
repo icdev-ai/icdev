@@ -35,6 +35,15 @@ providers:
     base_url: ${VLLM_BASE_URL:-http://localhost:8000/v1}
     api_key_env: VLLM_API_KEY
 
+  # LocalAI — OpenAI-compatible local inference AND embeddings, air-gap friendly
+  # (Go binary, no Python deps). Upstream default port is 8080; set LOCALAI_BASE_URL
+  # to override. Named provider added by oss2-fix-01 (D1) so a LocalAI deployment is
+  # selectable, not just probe-detectable.
+  localai:
+    type: openai_compatible
+    base_url: ${LOCALAI_BASE_URL:-http://localhost:8080/v1}
+    api_key_env: LOCALAI_API_KEY
+
   ibm_watsonx:
     type: ibm_watsonx
     api_key_env: IBM_CLOUD_API_KEY

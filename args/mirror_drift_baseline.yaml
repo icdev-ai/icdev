@@ -23,19 +23,13 @@
 #   python tools/dx/mirror_parity.py --all --json
 
 content_drift:
+  airgap: 1
   billing: 1
   browser: 1
-  ci: 1
-  cli: 1
-  dashboard: 4
   db: 1
-  document_intelligence: 2
-  foundry: 1
-  genesis: 3
+  document_intelligence: 1
   llm: 1
-  memory: 1
-  network: 3
-  rag: 1
+  memory: 3
   showcase: 1
   skills: 1
   testing: 2

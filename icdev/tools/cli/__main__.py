@@ -44,6 +44,9 @@ Subcommands:
                            List / export (JSONL) / full-text search conversations.
   skills list|search|install|update
                            Manage skills via the local registry + marketplace.
+  cron create|list|pause|resume|remove|run|runs
+                           Schedule standalone-agent prompts or allowlisted
+                           scripts (interval or 5-field cron).
   audit export             Export SOC 2 (and future framework) evidence reports.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and

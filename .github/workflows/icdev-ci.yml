@@ -96,6 +96,7 @@ jobs:
             tests/test_freshness_guardian_parity.py \
             tests/test_data_canvas_mirror_parity.py \
             tests/test_quality_monitor_parity.py \
+            tests/test_no_direct_provider_calls.py \
             tests/test_coordination_lease_namespaces.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)

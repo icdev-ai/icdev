@@ -17,6 +17,13 @@ tags:
 
 CUI // SP-CTI
 
+> **⚠️ Reference seed — NOT an executable capability (oss2-fix-03 / D3).**
+> This card embeds an AutoGen agent definition, but **AutoGen is not an ICDEV
+> dependency and nothing executes it** — `autogen` is imported nowhere in `tools/`.
+> It is retained as a design reference from the SkillHub seed, not a wired agent.
+> For the capability it describes, use ICDEV's actual implementation: the ANVIL
+> build workflow via the `/feature` command (`.claude/commands/feature.md`).
+
 ## Overview
 
 Senior engineer agent with full-stack expertise, security awareness, and TDD discipline.
