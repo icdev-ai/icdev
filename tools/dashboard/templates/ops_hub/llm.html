@@ -108,6 +108,55 @@
 </div>
 {% endif %}
 
+<!-- LLM Proxy Metrics (lpx-obs-01) -->
+{% set proxy = data.get('proxy', {}) %}
+<div class="section-card mt-3">
+  <h4>🔀 LLM Proxy {% if proxy.get('proxy_enabled') %}<span class="tag-active">enabled</span>{% else %}<span class="tag-ab">off (default)</span>{% endif %}</h4>
+  {% if proxy.get('error') %}
+    <p class="text-muted small mb-0">Proxy metrics unavailable: {{ proxy.get('error') }}</p>
+  {% else %}
+    {% set led = proxy.get('ledger_spend', {}) %}
+    {% set rate = proxy.get('ledger_rate', {}) %}
+    {% set prom = proxy.get('prometheus', {}) %}
+    <div class="row g-2 mb-2">
+      <div class="col-6 col-md-3"><div class="stat-card">
+        <div class="val" style="font-size:1.3rem;">${{ led.get('total_spend_usd', 0)|round(4) }}</div>
+        <div class="lbl">Key Spend ({{ proxy.get('window_hours', 24) }}h, ledger)</div>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card">
+        <div class="val" style="font-size:1.3rem;">{{ led.get('event_count', 0) }}</div>
+        <div class="lbl">Spend Events</div>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card">
+        <div class="val" style="font-size:1.3rem;">{{ rate.get('total_requests', 0) }}</div>
+        <div class="lbl">Team Requests (rate ledger)</div>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card">
+        <div class="val" style="font-size:1.3rem;color:{{ '#f59e0b' if prom.get('rate_limit_errors',0) else '#22c55e' }}">
+          {{ prom.get('rate_limit_errors', 0) if prom.get('available') else '—' }}</div>
+        <div class="lbl">Rate-limit Errors (proxy)</div>
+      </div></div>
+    </div>
+    {% set topkeys = led.get('by_key', []) %}
+    {% if topkeys %}
+      <div class="small text-muted mb-1">Top spenders (by key / scope):</div>
+      {% for k in topkeys[:5] %}
+      <div class="prompt-row">
+        <span style="color:#e2e8f0;">{{ k.get('scope_type','?') }}:{{ k.get('key_id','?')[:12] }}…</span>
+        <span class="tag-ab">${{ k.get('spend_usd', 0)|round(4) }} · {{ k.get('requests',0) }} req</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="text-muted small mb-0">No proxy spend recorded in the window.
+      {% if not proxy.get('proxy_enabled') %}The proxy is opt-in and off by default.{% endif %}</p>
+    {% endif %}
+    <div class="small text-muted mt-2">
+      Prometheus scrape: {{ 'available' if prom.get('available') else prom.get('reason','unavailable') }}.
+    </div>
+  {% endif %}
+  <a href="/api/ops/llm" class="small text-muted mt-2 d-block">View full JSON →</a>
+</div>
+
 {% include "includes/reasoned_codegen_widget.html" %}
 
 {% include "includes/iqe_query_widget.html" %}

@@ -186,11 +186,13 @@ def create_ops_hub_blueprint() -> Blueprint:
         from tools.ops_hub.llmops_engine import (
             get_llmops_summary, get_gateway_audit, get_cost_report,
             get_drift_events, get_prompt_registry, get_eval_results, get_langfuse_traces,
+            get_proxy_metrics,
         )
         return jsonify({
             "summary": get_llmops_summary(),
             "gateway_audit": get_gateway_audit(limit=20),
             "cost": get_cost_report(),
+            "proxy": get_proxy_metrics(),
             "drift_events": get_drift_events(limit=10),
             "prompts": get_prompt_registry(),
             "evals": get_eval_results(limit=5),

@@ -66,6 +66,22 @@ def get_cost_recommendations() -> list[dict]:
         return [{"error": str(exc)}]
 
 
+# ── LLM Proxy Metrics (lpx-obs-01) ─────────────────────────────────────────────
+
+def get_proxy_metrics(window_hours: int = 24) -> dict:
+    """Return LLM proxy spend + rate metrics for the /ops/llm page.
+
+    Combines ICDEV's own spend/rate ledgers (always present) with a best-effort
+    scrape of the proxy's Prometheus endpoint (only when the proxy is enabled and
+    reachable). Never raises — returns an ``available``/``error`` shape on failure.
+    """
+    try:
+        from tools.llm.proxy_metrics import collect_proxy_metrics
+        return collect_proxy_metrics(window_hours=window_hours)
+    except Exception as exc:
+        return {"error": str(exc), "proxy_enabled": False}
+
+
 # ── Model Monitor / Drift ─────────────────────────────────────────────────────
 
 def get_model_health() -> dict:
@@ -199,6 +215,7 @@ def get_llmops_summary() -> dict[str, Any]:
             "latency_p95": langfuse_latency,
         },
         "reasoned_codegen": get_reasoned_codegen_config(),
+        "proxy": get_proxy_metrics(),
         "domain": "llmops",
     }
 
