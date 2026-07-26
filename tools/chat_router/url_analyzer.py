@@ -153,8 +153,28 @@ def _fetch_github(info: dict) -> str:
 # Generic URL fetcher
 # ---------------------------------------------------------------------------
 
-def fetch_content(url: str) -> tuple[str, str]:
-    """Return (content_text, source_type). source_type: 'github' | 'web' | 'error'."""
+def _extract_html(raw: str, query: Optional[str]) -> str:
+    """Two-pass fit_markdown extraction, falling back to the regex strip."""
+    try:
+        from tools.http.page_extract import extract
+
+        result = extract(raw, query=query)
+        if result["fit_markdown"].strip():
+            return result["fit_markdown"]
+    except Exception:  # noqa: BLE001 - never let extraction break a fetch
+        pass
+    return _strip_html(raw)
+
+
+def fetch_content(url: str, query: Optional[str] = None) -> tuple[str, str]:
+    """Return (content_text, source_type). source_type: 'github' | 'web' | 'error'.
+
+    HTML pages go through the two-pass ``page_extract`` filter rather than a
+    regex strip plus a positional ``[:_MAX_CONTENT]`` cut: pass 1 prunes site
+    chrome, and when *query* is supplied pass 2 keeps the blocks that actually
+    answer it — wherever they sit on the page.  The character cap survives only
+    as a backstop.
+    """
     info = _parse_github(url)
     if info:
         try:
@@ -165,7 +185,7 @@ def fetch_content(url: str) -> tuple[str, str]:
     try:
         raw = _fetch(url)
         if re.search(r"<html", raw[:300], re.I) or "<!doctype" in raw[:300].lower():
-            content = _strip_html(raw)
+            content = _extract_html(raw, query)
         else:
             content = raw
         return content[:_MAX_CONTENT], "web"
