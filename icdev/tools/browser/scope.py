@@ -370,7 +370,7 @@ def check_navigation(
 
     if cfg.require_egress_guard:
         try:
-            from tools.doc_modernization.link_check import egress_guard
+            from tools.http.egress_guard import egress_guard
         except Exception as exc:  # fail closed — no guard, no egress
             logger.warning("egress_guard unavailable: %s", exc)
             return ScopeDecision(

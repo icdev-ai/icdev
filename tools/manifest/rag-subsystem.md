@@ -5,6 +5,7 @@
 ## RAG Subsystem (Additional)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Position Breadcrumbs | tools/rag/breadcrumbs.py | oss-chunk-02. Derives a chunk's document position (`doc > section > subsection`, page) from the document's own heading structure and prepends it to the EMBEDDED text only — stored/cited content is untouched. Numbered clause headings take depth from their NUMBER, not the hash count, because exported compliance documents make every heading `##` and ATX depth there collapses 3/3.4/3.4.1 into one level. Recognises the `--- Page N ---` markers the PDF extractors emit, so page numbers survive extraction rather than being re-derived. DETERMINISTIC complement to contextual_retrieval's LLM prefix (which stays ON) — the difference that justifies both is that these values also land in real columns, making them filterable and citable | (import) | ChunkPosition / prefix |
 | Auto Indexer | tools/rag/auto_indexer.py | Automatic RAG index maintenance | --index, --json | Index status |
 | Corrective RAG | tools/rag/corrective_rag.py | Parallel multi-strategy retrieval (D-KARL-3) | --parallel, --query, --profile, --json | Merged results |
 | PDF Provider | tools/rag/pdf_provider.py | PDF text extraction for RAG ingestion (D-FT-11) | (library) | Extracted text |
