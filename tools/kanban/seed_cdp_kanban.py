@@ -72,33 +72,43 @@ Holds every `cdp-*` task until a human has read {SPIKE} and approved the
 approach. `promote_backlog_to_scheduled` will not dispatch sibling tasks while
 this task is open.
 
-Release procedure — TWO GO/NO-GO CHECKS FIRST (spike §4.7):
+BOTH earlier go/no-go questions have been ANSWERED by the product owner
+(2026-07-26). Recorded here so nobody re-opens them:
 
-  1. FALSIFY THE PREMISE. On the ACTUAL air-gapped image, run:
+  Q1 "enterprise policy" -> Policy-dependent behaviour is NOT available in
+     air-gapped deployments (we cannot ask for a policy change); in commercial
+     deployments it is fine. BOTH profiles must be supported.
+  Q2 "scope" -> BOTH use cases must work: the agent browser AND the E2E Selenium
+     estate. See the new `wd` epic.
+
+KEY CORRECTION that follows from Q1 — do not plan around the old assumption:
+Selenium is NOT a fallback for a policy-blocked CDP. `RemoteDebuggingAllowed`
+(Edge >=93, Chrome equivalent) blocks BOTH --remote-debugging-port AND
+--remote-debugging-pipe, and chromedriver/msedgedriver drive the browser over
+CDP themselves — they launch it with --remote-debugging-port. The classic
+"DevToolsActivePort file doesn't exist" ChromeDriver error IS this policy firing.
+So CDP's preconditions are a strict SUBSET of Selenium's: anywhere Selenium
+works, CDP works; anywhere policy blocks CDP, Selenium is dead too. The real
+fallback is Tier 3 (browser-free HTTP verification), not Selenium.
+
+Release procedure:
+
+  1. Confirm the tier ladder in spike §4.7.2 is still the agreed shape:
+       Tier 1 CDP (no binary)  ->  Tier 2 Selenium+driver (compatibility only)
+       ->  Tier 3 browser-free HTTP (route_smoke / api_contract_tester /
+           fathomdesk_smoke), which is what remains when policy forbids debugging.
+
+  2. Confirm the epic `fix` tasks are still valid — they are independent of the
+     adaptation and may already have been fixed by other work.
+
+  3. Optional one-time empirical confirmation on the real air-gapped image (the
+     registry preflight in cdp-port-06 makes this a confirmation, not a
+     discovery):
        msedge.exe --headless=new --remote-debugging-port=0 \
                   --user-data-dir=%TEMP%\\cdpprobe about:blank
      then check whether %TEMP%\\cdpprobe\\DevToolsActivePort appears.
-     Managed Windows images commonly set Edge's RemoteDebuggingAllowed=0 or pin
-     UserDataDir by policy. If the file does NOT appear, CDP is blocked too —
-     CANCEL the entire `port` epic. The `fix` epic then becomes the whole scope,
-     and the real answer is obtaining a matching msedgedriver through the
-     sanctioned software-transfer channel.
 
-  2. CONFIRM WHICH PROBLEM IS BEING SOLVED. CDP fixes the AGENT BROWSER ONLY.
-     It does NOT fix tests/e2e_selenium/ (30+ modules) or
-     tools/sharepoint/browser_fallback.py — those use the full WebDriver API
-     (find_element, WebDriverWait, By, ActionChains) and still need a
-     version-matched driver binary. If the operative pain is "the E2E suite
-     cannot run air-gapped", this work does NOT solve it and the scope is much
-     larger. Settle this before releasing the gate.
-
-  3. Confirm the §4.6 backend policy decision
-     (recommendation: CDP default, Selenium selectable via config).
-
-  4. Confirm the epic `fix` tasks are still valid — they are independent of the
-     adaptation and may already have been fixed by other work.
-
-  5. Set this task done:
+  4. Set this task done:
      python tools/kanban/cli.py --set-status {GATE_ID} done
 
 Justification to keep in view: the case for this work is RECURRENCE, not today's
@@ -453,6 +463,141 @@ Attribution (`_ATTRIBUTION_REGISTRY` in `tools/workflow/coherence_checker.py`):
 
 Acceptance: `python tools/workflow/coherence_checker.py --all --gate` green.
 """,
+    ),
+    _t(
+        "cdp-port-06",
+        "Policy/tier preflight — read RemoteDebuggingAllowed, pick and report the tier",
+        f"""
+§4.7.3 of {SPIKE}. Do this EARLY — it is cheap, deterministic, and it can shrink
+the rest of the plan.
+
+The enterprise policy that decides whether ANY browser automation is possible is
+readable from the registry. No launch, no timeout, no trial and error:
+  HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge   -> RemoteDebuggingAllowed (REG_DWORD)
+  HKLM\\SOFTWARE\\Policies\\Google\\Chrome    -> RemoteDebuggingAllowed
+  (+ the HKCU equivalents)
+
+UNSET MEANS PERMITTED — that is the documented default, and it is the state on
+the dev machine (all four keys unset, verified 2026-07-26).
+
+Implement a preflight that reads the policy, resolves the tier, and REPORTS it:
+  Tier 1 CDP            — policy permits + a Chromium-family browser is present
+  Tier 2 Selenium       — Tier 1 preconditions PLUS a version-matched driver
+                          (compatibility/audit option, not the air-gap answer)
+  Tier 3 browser-free   — policy forbids debugging; no browser transport is
+                          possible at all, either flavour
+
+Surface it in `DriverManager.probe()` (add `--probe-cdp`) and register a
+capability in `tools/testing/health_check.py --json` so a degraded tier shows up
+in the health check rather than at first click.
+
+CRITICAL — do not encode the old assumption: Tier 2 is NOT a fallback for a
+policy-blocked Tier 1. chromedriver/msedgedriver launch the browser with
+--remote-debugging-port, so the same policy kills them. Selecting Selenium when
+policy forbids debugging must be impossible by construction.
+
+Acceptance: with RemoteDebuggingAllowed=0 set in the registry, preflight selects
+Tier 3, says so explicitly, and neither browser transport is attempted. With the
+key unset, Tier 1 is selected. Both assertions covered by tests with the registry
+read monkeypatched.
+""",
+        priority="high",
+    ),
+    _t(
+        "cdp-port-07",
+        "Document the Tier-3 degradation — what is lost when policy forbids debugging",
+        f"""
+§4.7.2 of {SPIKE}. Honesty requirement, small.
+
+When `RemoteDebuggingAllowed=0`, NO browser transport works — CDP and Selenium
+alike. What survives is the browser-free HTTP tier, which already exists:
+  - tools/testing/route_smoke.py        — authenticated sweep of every nav route
+  - tools/testing/api_contract_tester.py — live requests replayed vs the OpenAPI spec
+  - tools/testing/fathomdesk_smoke.py    — HTTP-only page/API/DB-schema checks
+
+What is genuinely LOST at Tier 3 must be stated, not discovered:
+  - tools/testing/a11y_sweep.py (injects axe-core into a live browser)
+  - visual regression / screenshot validation
+  - the agent browser itself
+
+Do: a short ops section (airgap runbook + tools/browser/README.md) naming the
+surviving commands and the lost capabilities, plus what a site should do if it
+needs the lost ones (get the policy changed, which is a commercial-profile
+option only).
+
+Acceptance: an operator on a policy-locked image can read one page and know
+exactly which verification commands still work.
+""",
+        priority="low",
+        task_type="chore",
+    ),
+    # ── Epic: wd — WebDriver-compatible facade (the E2E estate) ───────────────
+    _t(
+        "cdp-wd-01",
+        "WebDriver-compatible CDP facade — the ~22-operation E2E surface",
+        f"""
+§4.8 of {SPIKE}. LARGE. Depends on the `port` epic being proven first — this is
+worthless until the transport works.
+
+Answers the product-owner decision that BOTH use cases must work air-gapped: the
+agent browser AND the E2E Selenium estate.
+
+Measured surface across tests/e2e_selenium/ (30 modules), ~76 tests/e2e_*.py
+scripts, tools/sharepoint/browser_fallback.py, tools/testing/e2e_*.py:
+  find_element 531, .text 302, find_elements 240, click 119, execute_script 116,
+  send_keys 100, is_displayed 98, quit 96, save_screenshot 69, close 46,
+  title 44, page_source 44, clear 38, get_attribute 34, implicitly_wait 30,
+  current_url 28, set_window_size 20, switch_to 6, refresh 2, is_selected 2,
+  submit 1, get_cookies 1.
+
+~22 distinct operations. CDP mappings:
+  find_element/find_elements -> Runtime.evaluate querySelector/querySelectorAll,
+                                returnByValue=False -> objectId handles
+  .text / is_displayed / get_attribute / is_selected -> Runtime.callFunctionOn
+  page_source                -> DOM.getOuterHTML (or documentElement.outerHTML)
+  set_window_size            -> Browser.setWindowBounds / Emulation.setDeviceMetricsOverride
+  implicitly_wait            -> polling loop with deadline
+  get_cookies                -> Network.getCookies / Storage.getCookies
+  refresh                    -> Page.reload
+
+THE FACT THAT MAKES THIS CHEAP: the `selenium` PYTHON PACKAGE is pure Python and
+pip-installable offline (already a vendored wheel here). What cannot be obtained
+air-gapped is the DRIVER BINARY, not the library. So By, WebDriverWait and
+expected_conditions — plain Python helpers that just call driver.find_element(...)
+— keep working UNCHANGED against a duck-typed CDP driver. Do not reimplement them.
+
+Design: same duck-typing decision as the agent-browser port. No inheritance from
+selenium classes; match the method names and return shapes the estate already
+calls. Element handles must expose the element-level operations above.
+
+Acceptance: a representative sample of tests/e2e_selenium/ runs green with NO
+driver binary present and NO test-body edits beyond driver construction.
+""",
+        priority="medium",
+    ),
+    _t(
+        "cdp-wd-02",
+        "Cut the E2E estate over to the facade and prove it driverless",
+        f"""
+§9 criterion 2 of {SPIKE}. Depends on cdp-wd-01.
+
+Do:
+  - Route `tests/e2e_selenium/conftest.py` driver construction through the tier
+    selector so the whole suite picks CDP by default (this is also where
+    cdp-fix-04's port 5000 -> 5050 fix must already have landed, or the suite
+    silently SKIPS instead of running — see the conftest autouse TCP probe).
+  - Cut `tools/sharepoint/browser_fallback.py` and the `tools/testing/e2e_*.py`
+    scripts over.
+  - Record which scripts could not be cut over and why (the e2e script inventory
+    at docs/testing/e2e-script-inventory.md already tracks 76 total / 69
+    importable / 7 broken-import).
+
+Acceptance: with `vendor/drivers/` EMPTY, the sampled suite runs green. Report the
+pass/skip/fail split before and after so the change is measured, not asserted.
+Do NOT let previously-skipping tests count as newly passing.
+""",
+        priority="medium",
+        task_type="test",
     ),
     # ── Epic: vv ──────────────────────────────────────────────────────────────
     _t(
