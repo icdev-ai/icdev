@@ -46,6 +46,59 @@ Several of the missing objects are **TRUST / provenance infrastructure** that ot
 Anything that reads these degrades through a broad `except` rather than failing loudly, which is why
 none of it has surfaced as a visible bug.
 
+## Root cause of a large share of it: duplicate version numbers
+
+**Added 2026-07-26, after the initial triage.** The missing objects are not simply "migrations that
+were never run". Many of them *cannot* run, ever.
+
+`schema_migrations.version` is UNIQUE, and `MigrationRunner.get_pending_migrations` dedupes by
+version within a run as well, keeping the first entry by sort order. Its own docstring says the
+consequence out loud:
+
+> in steady state get_pending naturally yields only the first because the version is already in
+> applied_versions after the first run
+
+So when two migration files claim the same version number, **only the first is ever applied. The
+rest are skipped permanently and silently** — no error, no warning, no row, and the tables they
+declare never exist.
+
+On disk today: **275 versions, 54 of them duplicated, 71 migrations shadowed and unrunnable.** Some
+versions are claimed by four or five files (139 has five).
+
+Cross-referencing against the missing-objects list above, the overlap is not subtle:
+
+| Version | Applied | Shadowed — never runs | Confirmed missing from live DB |
+|---|---|---|---|
+| 283 | `283_dic_claims.sql` | `283_soar_playbook_runs.sql` | `soar_playbook_runs`, `soar_playbook_audit` |
+| 282 | `282_docmod_nist_pubs.sql` | `282_insider_risk_uba.sql` | `insider_risk_baselines`, `insider_risk_scores` |
+| 289 | `289_agent_cron_jobs.sql` | `289_twin_compat_reports.sql` | `twin_compat_reports` |
+
+`179`, `215`, `223`, `236`, `257` follow the same pattern.
+
+**This was about to happen again.** Three branches independently claimed version `295`:
+`295_dic_chat_memory_reconcile.sql` (merged and applied), `295_web_citation_fetch_provenance/`
+(PR #824) and `295_dynamic_finding_reproductions.sql` (PR #819). Because 295 is already recorded as
+applied, both of the others would have been skipped on merge and their tables would have joined the
+missing list — with nothing anywhere reporting it.
+
+### Guard
+
+`tools/db/migration_versions.py` + `tests/test_migration_version_uniqueness.py`:
+
+```bash
+python tools/db/migration_versions.py --json        # report
+python tools/db/migration_versions.py --gate        # exit 1 on NEW duplicates
+python tools/db/migration_versions.py --shadowed    # what will never run
+```
+
+The 54 existing collisions are grandfathered in `args/migration_duplicate_versions.yaml` so the gate
+is actionable rather than perpetually red. Entries must not be added to silence a new collision —
+renumber instead. Adding a third file to an existing collision shadows one more migration and is
+treated as a new violation.
+
+**Picking a migration number is a repo-wide claim, not a local choice.** Check open PRs, not just
+`main` — `main` had no 295 when all three of these branches chose it.
+
 ## The failure mode this produced — worth generalising
 
 `dic_chat_memory` is the fully-diagnosed instance, and the shape of it is likely to repeat:
