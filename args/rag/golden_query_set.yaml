@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# RAG retrieval-quality golden query set (rce-eval-01).
+# RAG retrieval-quality golden query set (rce-eval-01, extended by oss-meas-01-d1).
 #
 # Repeatable benchmark ground-truth for the RCE (RAG Context Engineering) card.
 # Every later RCE change (contextual prefixes, RAPTOR hierarchy, quantization)
@@ -14,6 +14,11 @@
 # Schema per query:
 #   id        : stable identifier for the query (never reused / renumbered)
 #   query     : natural-language question sent to the retriever
+#   pattern   : simple | multi_hop | complex — retrieval pattern the query
+#               exercises. Aggregates MUST be reported per pattern, not only
+#               in the round-robin mean (see "Why patterns" below).
+#   hops      : multi_hop only — number of distinct chunks/controls that must be
+#               co-retrieved inside top_k for full recall.
 #   expect:
 #     substrings   : [list] — a retrieved chunk hits if its content contains the
 #                    substring (case-insensitive). Primary, re-index-safe target.
@@ -25,7 +30,50 @@
 #
 # A "target" for recall/MRR is each substring + chunk_id + source_id. A query
 # with no targets is skipped by the harness.
-version: 1
+#
+# ---------------------------------------------------------------------------
+# Why patterns — the v1 set could not measure a reranker (oss-meas-01-d1)
+# ---------------------------------------------------------------------------
+# v1 was 33 single-fact lookups that all name their control ID in the query
+# text ("...under AC-3?"). Against data/rag/rce_baseline_compliance.json that
+# set scores recall@5 0.9394 / MRR 0.9343, and 30 of the 33 queries are at
+# BOTH perfect recall and perfect MRR — the correct chunk is already rank 1.
+#
+# A cross-encoder reranker only REORDERS the top-k. It cannot improve a query
+# whose answer is already rank 1, so 30/33 of v1 is structurally incapable of
+# showing rerank signal; the whole measurement rides on 3 queries' worth of
+# headroom. Likewise rag.adaptive_routing only diverges from the default path
+# on queries its classifier calls complex (it widens to complex_top_k: 10) —
+# with a uniformly simple set it is measuring the null change.
+#
+# v2 therefore adds two patterns chosen to have real headroom:
+#   multi_hop — the answer spans 2-3 control chunks that must ALL land inside
+#               top_k. Single-vector similarity tends to return three near
+#               duplicates of the strongest hop; this is where reranking and a
+#               widened complex_top_k can actually move recall.
+#   complex   — the answer is one chunk, but the query shares little or no
+#               vocabulary with it (scenario phrasing, paraphrase, no control
+#               ID, comparison across frameworks). This is where embedding
+#               recall degrades and reflective reranking has something to fix.
+#
+# Design rule for new hard queries (keeps them discriminating, not dead):
+#   every substring target must be one ALREADY PROVEN retrievable by a v1
+#   query that scored recall 1.0. The difficulty then comes only from
+#   co-retrieval and phrasing, never from the corpus lacking the content.
+#   Deliberately avoided as unproven: "authorization boundary", "SC-13" /
+#   "cryptographic protection", and "hardening" — the three v1 targets that
+#   did NOT score 1.0. A query that scores 0.0 for every toggle (as RAPTOR
+#   did) measures nothing.
+#
+# ---------------------------------------------------------------------------
+# Comparability with the committed baselines
+# ---------------------------------------------------------------------------
+# data/rag/rce_baseline_compliance.json and rce_contextual_compliance.json were
+# generated over the 33 v1 queries. Aggregates over all 48 v2 queries are NOT
+# comparable to them. The 33 v1 ids are frozen as cohort "rce-eval-01" (listed
+# in args/rag/benchmark_baseline.yaml) so a v2 run can still emit a 33-query
+# aggregate that IS directly comparable, alongside the full v2 numbers.
+version: 2
 description: >-
   Compliance/NIST-heavy golden query set for RCE retrieval-quality baselining.
 top_k: 5
@@ -33,145 +81,303 @@ queries:
   # --- NIST SP 800-53 access control (AC) family ---
   - id: q-ac2-account-mgmt
     query: "What does NIST 800-53 AC-2 require for account management?"
+    pattern: simple
     expect:
       substrings: ["account management", "AC-2"]
       source_types: ["compliance_artifacts"]
   - id: q-ac3-access-enforcement
     query: "How is access enforcement defined under AC-3?"
+    pattern: simple
     expect:
       substrings: ["access enforcement", "AC-3"]
   - id: q-ac6-least-privilege
     query: "Explain the least privilege principle in AC-6."
+    pattern: simple
     expect:
       substrings: ["least privilege", "AC-6"]
   - id: q-ac17-remote-access
     query: "What are the remote access controls in AC-17?"
+    pattern: simple
     expect:
       substrings: ["remote access", "AC-17"]
   # --- Audit and accountability (AU) family ---
   - id: q-au2-event-logging
     query: "Which events must be logged per AU-2 event logging?"
+    pattern: simple
     expect:
       substrings: ["event logging", "AU-2"]
   - id: q-au3-audit-content
     query: "What content must audit records contain under AU-3?"
+    pattern: simple
     expect:
       substrings: ["audit record", "AU-3"]
   - id: q-au9-protection-audit
     query: "How does AU-9 protect audit information from tampering?"
+    pattern: simple
     expect:
       substrings: ["protection of audit", "AU-9"]
   # --- Identification and authentication (IA) family ---
   - id: q-ia2-mfa
     query: "Does IA-2 require multi-factor authentication?"
+    pattern: simple
     expect:
       substrings: ["multi-factor", "IA-2"]
   - id: q-ia5-authenticator-mgmt
     query: "What are the authenticator management rules in IA-5?"
+    pattern: simple
     expect:
       substrings: ["authenticator management", "IA-5"]
   # --- System and communications protection (SC) family ---
   - id: q-sc7-boundary-protection
     query: "How is boundary protection implemented under SC-7?"
+    pattern: simple
     expect:
       substrings: ["boundary protection", "SC-7"]
   - id: q-sc8-transmission-confidentiality
     query: "What does SC-8 require for transmission confidentiality?"
+    pattern: simple
     expect:
       substrings: ["transmission confidentiality", "SC-8"]
   - id: q-sc13-cryptographic-protection
     query: "Which cryptographic protections are mandated by SC-13?"
+    pattern: simple
     expect:
       substrings: ["cryptographic protection", "SC-13"]
   - id: q-sc28-data-at-rest
     query: "How is protection of information at rest handled in SC-28?"
+    pattern: simple
     expect:
       substrings: ["information at rest", "SC-28"]
   # --- Configuration management (CM) family ---
   - id: q-cm2-baseline-config
     query: "What is a baseline configuration under CM-2?"
+    pattern: simple
     expect:
       substrings: ["baseline configuration", "CM-2"]
   - id: q-cm6-config-settings
     query: "How are configuration settings enforced per CM-6?"
+    pattern: simple
     expect:
       substrings: ["configuration settings", "CM-6"]
   - id: q-cm7-least-functionality
     query: "Explain least functionality as required by CM-7."
+    pattern: simple
     expect:
       substrings: ["least functionality", "CM-7"]
   # --- Risk assessment (RA) family ---
   - id: q-ra5-vuln-scanning
     query: "What are the vulnerability scanning requirements in RA-5?"
+    pattern: simple
     expect:
       substrings: ["vulnerability scanning", "RA-5"]
   - id: q-ra3-risk-assessment
     query: "How often must a risk assessment be performed per RA-3?"
+    pattern: simple
     expect:
       substrings: ["risk assessment", "RA-3"]
   # --- Contingency planning (CP) / Incident response (IR) ---
   - id: q-cp9-system-backup
     query: "What does CP-9 require for system backup?"
+    pattern: simple
     expect:
       substrings: ["system backup", "CP-9"]
   - id: q-ir4-incident-handling
     query: "Describe incident handling obligations under IR-4."
+    pattern: simple
     expect:
       substrings: ["incident handling", "IR-4"]
   - id: q-ir6-incident-reporting
     query: "What are the incident reporting timelines in IR-6?"
+    pattern: simple
     expect:
       substrings: ["incident reporting", "IR-6"]
   # --- Security assessment / authorization (CA) ---
   - id: q-ca2-control-assessments
     query: "What is required for control assessments under CA-2?"
+    pattern: simple
     expect:
       substrings: ["control assessment", "CA-2"]
   - id: q-ca5-poam
     query: "How is a plan of action and milestones defined in CA-5?"
+    pattern: simple
     expect:
       substrings: ["plan of action", "CA-5"]
   - id: q-ca7-continuous-monitoring
     query: "What does continuous monitoring require under CA-7?"
+    pattern: simple
     expect:
       substrings: ["continuous monitoring", "CA-7"]
   # --- FedRAMP ---
   - id: q-fedramp-impact-levels
     query: "What are the FedRAMP impact levels for cloud authorization?"
+    pattern: simple
     expect:
       substrings: ["FedRAMP", "impact level"]
   - id: q-fedramp-authorization-boundary
     query: "How is the FedRAMP authorization boundary scoped?"
+    pattern: simple
     expect:
       substrings: ["authorization boundary", "FedRAMP"]
   - id: q-fedramp-continuous-monitoring
     query: "What continuous monitoring does FedRAMP require post-authorization?"
+    pattern: simple
     expect:
       substrings: ["continuous monitoring", "FedRAMP"]
   # --- CMMC ---
   - id: q-cmmc-levels
     query: "What are the CMMC maturity levels?"
+    pattern: simple
     expect:
       substrings: ["CMMC", "level"]
   - id: q-cmmc-cui-protection
     query: "How does CMMC protect controlled unclassified information?"
+    pattern: simple
     expect:
       substrings: ["controlled unclassified information", "CMMC"]
   # --- STIG / DISA ---
   - id: q-stig-cat1
     query: "What is a CAT I severity finding in a DISA STIG?"
+    pattern: simple
     expect:
       substrings: ["CAT I", "STIG"]
   - id: q-stig-hardening
     query: "How do STIGs drive operating system hardening?"
+    pattern: simple
     expect:
       substrings: ["STIG", "hardening"]
   # --- General FIPS / classification ---
   - id: q-fips199-categorization
     query: "How does FIPS 199 categorize information systems?"
+    pattern: simple
     expect:
       substrings: ["FIPS 199", "categoriz"]
   - id: q-cui-marking
     query: "How must CUI be marked on artifacts?"
+    pattern: simple
     expect:
       substrings: ["CUI", "marking"]
+
+  # =========================================================================
+  # multi_hop (oss-meas-01-d1) — the answer spans 2-3 control chunks that must
+  # ALL land inside top_k. Every substring below is proven retrievable by a v1
+  # query at recall 1.0, so a miss is a ranking failure, never missing content.
+  # =========================================================================
+  - id: q-mh-privilege-lifecycle
+    query: >-
+      How does an account get created, restricted to the minimum permissions it
+      needs, and have that restriction actually enforced when it requests access?
+    pattern: multi_hop
+    hops: 3
+    expect:
+      substrings: ["account management", "least privilege", "access enforcement"]
+  - id: q-mh-mfa-remote-boundary
+    query: >-
+      A contractor connects to the system over VPN from home. Which controls
+      govern how strongly they authenticate, the remote connection itself, and
+      the network boundary that connection crosses?
+    pattern: multi_hop
+    hops: 3
+    expect:
+      substrings: ["multi-factor", "remote access", "boundary protection"]
+  - id: q-mh-audit-chain
+    query: >-
+      Walk the audit trail end to end: what has to be logged, what each record
+      must contain, and how the records themselves are protected from tampering.
+    pattern: multi_hop
+    hops: 3
+    expect:
+      substrings: ["event logging", "audit record", "protection of audit"]
+  - id: q-mh-incident-to-recovery
+    query: >-
+      Ransomware encrypts a production database. Which controls cover responding
+      to the incident, notifying the right parties, and restoring the system?
+    pattern: multi_hop
+    hops: 3
+    expect:
+      substrings: ["incident handling", "incident reporting", "system backup"]
+  - id: q-mh-finding-to-poam
+    query: >-
+      A scan turns up an unremediated CAT I finding. Which controls carry it from
+      detection through to a tracked remediation commitment?
+    pattern: multi_hop
+    hops: 3
+    expect:
+      substrings: ["vulnerability scanning", "CAT I", "plan of action"]
+  - id: q-mh-config-lockdown
+    query: >-
+      Which controls together establish an approved system configuration, enforce
+      its settings, and strip out services the system does not need?
+    pattern: multi_hop
+    hops: 3
+    expect:
+      substrings: ["baseline configuration", "configuration settings", "least functionality"]
+  - id: q-mh-assess-to-monitor
+    query: >-
+      How does a system get from a point-in-time control assessment to ongoing
+      oversight once it is authorized to operate in the cloud?
+    pattern: multi_hop
+    hops: 3
+    expect:
+      substrings: ["control assessment", "continuous monitoring", "FedRAMP"]
+  - id: q-mh-data-in-transit-vs-rest
+    query: >-
+      Which requirements protect data while it moves across the network, and
+      which protect the same data once it is written to disk?
+    pattern: multi_hop
+    hops: 2
+    expect:
+      substrings: ["transmission confidentiality", "information at rest"]
+
+  # =========================================================================
+  # complex (oss-meas-01-d1) — one correct chunk, but the query shares little or
+  # no vocabulary with it: scenario phrasing, paraphrase, no control ID, or a
+  # comparison spanning two frameworks. Targets kept narrow (1-2) so the metric
+  # measures FINDING the chunk, not breadth.
+  # =========================================================================
+  - id: q-cx-password-not-enough
+    query: "Is a password on its own enough to let someone in, or is more needed?"
+    pattern: complex
+    expect:
+      substrings: ["multi-factor"]
+  - id: q-cx-stolen-laptop
+    query: >-
+      A government laptop is stolen out of a car. What was supposed to protect
+      the data already sitting on its drive?
+    pattern: complex
+    expect:
+      substrings: ["information at rest"]
+  - id: q-cx-admin-rights-creep
+    query: >-
+      What stops an ordinary user from quietly holding administrator rights they
+      have no business having?
+    pattern: complex
+    expect:
+      substrings: ["least privilege"]
+  - id: q-cx-fedramp-vs-cmmc
+    query: >-
+      We already went through one federal authorization — how is the defense
+      contractor certification different in what it actually assesses?
+    pattern: complex
+    expect:
+      substrings: ["FedRAMP", "CMMC"]
+  - id: q-cx-how-impact-decided
+    query: >-
+      Who decides whether a system is treated as low, moderate, or high, and on
+      what basis is that call made?
+    pattern: complex
+    expect:
+      substrings: ["FIPS 199", "impact level"]
+  - id: q-cx-sensitive-not-classified
+    query: >-
+      A document holds sensitive government information but nothing classified.
+      What has to appear on the face of it before we send it out?
+    pattern: complex
+    expect:
+      substrings: ["controlled unclassified information", "marking"]
+  - id: q-cx-prove-logging-works
+    query: >-
+      An assessor wants evidence that our logging is actually working. Which
+      requirements produce that evidence?
+    pattern: complex
+    expect:
+      substrings: ["event logging", "control assessment"]
