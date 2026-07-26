@@ -909,6 +909,10 @@ python tools/workflow/coherence_checker.py --check doc_command_paths --gate     
 python tools/quality/completion_auditor.py                                                           # Human table to stdout
 python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
 python tools/quality/completion_auditor.py --md                                                      # Write docs/quality/completion-scorecard.md (sorted least->most complete)
+# Local "review-until-green" loop (greploop-adapted) — gates as a score function over the diff
+python tools/quality/review_loop.py --json                            # Working-tree mode: ruff + coherence + SIPA, autofix, iterate
+python tools/quality/review_loop.py --base origin/main --max 3 --gate # Branch diff vs base; exit 0=green / 1=not green
+python tools/quality/review_loop.py --no-autofix --json               # Report only (no edits); emit fix_brief for the agent
 ```
 
 ---

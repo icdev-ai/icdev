@@ -1281,6 +1281,19 @@ reflexes:
       threshold: 0
       operator: gte
 
+  review_loop:
+    timeout_seconds: 300     # bounded — coherence(changed) + SIPA subprocesses
+    enabled: true
+    risk_tier: green         # REPORT-ONLY drift probe — never edits the checkout
+    schedule: "every 6h"
+    interval_seconds: 21600  # low cadence; the real greening is per-task (pre-PR/pre-commit)
+    cooldown_minutes: 0
+    description: "review_loop drift probe — report-only review-until-green over the working tree (ruff + changed-files coherence + SIPA); no autofix. Cheap no-op on a clean checkout. Per-task greening lives in git_ops pre-PR preflight + the pre-commit hook. Config: args/review_loop_config.yaml"
+    success_metric:
+      name: review_loop_errors
+      threshold: 0
+      operator: eq
+
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
   oracle_triage:
