@@ -194,3 +194,64 @@ class TestStats:
         c = MemoryConsolidator()
         result = c.get_stats()
         assert result == {"stats": []}
+
+
+# ---------------------------------------------------------------------------
+# oss2-fix-04 (D5) — the REAL _find_similar paths, unmocked.
+#
+# The pre-existing tests above mock _find_similar, which is exactly why the D5
+# defects survived: the dead import (`hybrid_search` instead of `search`) and the
+# wrong SQL column (`entry_type` instead of `type`) were never executed. These
+# tests exercise both real paths so a regression re-breaks them loudly.
+# ---------------------------------------------------------------------------
+
+
+def _memdb_with(rows):
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE memory_entries ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT, type TEXT DEFAULT 'event',"
+        " created_at TEXT DEFAULT (datetime('now')))"
+    )
+    for content, mtype in rows:
+        conn.execute("INSERT INTO memory_entries (content, type) VALUES (?, ?)", (content, mtype))
+    conn.commit()
+    return conn
+
+
+class TestFindSimilarRealPaths:
+    def test_hybrid_search_module_exports_search_not_hybrid_search(self):
+        """Regression guard for the dead import: the symbol is `search`."""
+        import tools.memory.hybrid_search as hs
+
+        assert hasattr(hs, "search")
+        assert not hasattr(hs, "hybrid_search"), "the D5 dead-import name must not exist"
+
+    @patch("tools.memory.hybrid_search.search")
+    def test_hybrid_path_reads_type_key(self, mock_search):
+        """The hybrid result key is `type` (search returns {id, content, type, score})."""
+        mock_search.return_value = [
+            {"id": 7, "content": "the sky is blue", "type": "fact", "score": 0.95}
+        ]
+        c = MemoryConsolidator(use_llm=False, dry_run=True, similarity_threshold=0.3)
+        out = c._find_similar("the sky is blue today", max_candidates=5)
+        assert out and out[0]["entry_type"] == "fact"  # sourced from `type`, not `entry_type`
+
+    @patch("tools.memory.memory_consolidation.get_connection")
+    @patch("tools.memory.hybrid_search.search", side_effect=RuntimeError("no fts index"))
+    def test_jaccard_fallback_executes_type_column(self, mock_search, mock_conn):
+        """When hybrid raises, the Jaccard fallback runs `SELECT ... type AS entry_type`.
+        Before D5 this selected a non-existent `entry_type` column, raised
+        OperationalError, was swallowed, and returned [] — so nothing consolidated."""
+        mock_conn.return_value = _memdb_with([
+            ("deploy the service using kubernetes helm charts", "procedure"),
+            ("something entirely unrelated about weather", "fact"),
+        ])
+        c = MemoryConsolidator(use_llm=False, dry_run=True, similarity_threshold=0.3)
+        out = c._find_similar("deploy the service using kubernetes helm charts now", max_candidates=5)
+        assert out, "Jaccard fallback must find the near-duplicate (type column must resolve)"
+        assert out[0]["entry_type"] == "procedure"
+        assert out[0]["similarity"] >= 0.3
