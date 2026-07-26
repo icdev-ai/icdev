@@ -2084,6 +2084,52 @@ def _r_attr(obj, name):
     return v
 
 
+#: Per-passage extract size. Unchanged from the original 1000 so a passage
+#: still reads as a focused quote rather than a wall; the budget now governs
+#: HOW MANY passages, which is where the old cap actually hurt.
+_PASSAGE_CHARS = 1000
+
+#: Floor on evidence passages, so even a tiny window gets something to cite.
+_MIN_EVIDENCE = 3
+
+#: Ceiling regardless of window. A 1M-token model could swallow the whole
+#: candidate set, but the retriever only ranks ~50 and precision falls off well
+#: before that — more evidence past this point buys noise and latency, not
+#: accuracy. Raise only with a measured recall@k curve behind it.
+_MAX_EVIDENCE = 25
+
+
+def _budgeted_evidence(results: list, message: str) -> tuple:
+    """Pick as many retrieved passages as the model's real window affords.
+
+    Returns ``(kept, dropped_count)``. Falls back to the historical fixed 5 on
+    any failure — a budgeting error must never cost the user their answer.
+    """
+    try:
+        from tools.llm.context_budget import available_input_tokens, estimate_tokens
+
+        budget = available_input_tokens(
+            "question_answering", question=message, reserved_output=1024,
+        )
+        kept, used = [], 0
+        for r in (results or [])[:_MAX_EVIDENCE]:
+            passage = _extract_passage(
+                getattr(r, "content", "") or "", message, max_chars=_PASSAGE_CHARS
+            )
+            cost = estimate_tokens(passage)
+            if len(kept) >= _MIN_EVIDENCE and used + cost > budget:
+                break
+            kept.append(r)
+            used += cost
+        if not kept:
+            kept = list((results or [])[:5])
+        return kept, max(len(results or []) - len(kept), 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: context budgeting unavailable, using fixed slice: %s", exc)
+        head = list((results or [])[:5])
+        return head, max(len(results or []) - len(head), 0)
+
+
 def _llm_synthesize(
     message: str, results: list, community_summaries: list[str] | None = None
 ) -> str | None:
@@ -2096,18 +2142,33 @@ def _llm_synthesize(
     For global/thematic questions, ``community_summaries`` carries the GraphRAG
     whole-corpus themes so the model can answer a question no single chunk covers.
     """
-    evidence_results = results[:5]
+    # Budget the evidence against the model's REAL window instead of a fixed
+    # results[:5] x 1000 chars (~1.2k tokens). The retriever already fetched 50
+    # candidates and the old slice discarded 45 of them before the model was
+    # asked — on a 200k-window model that threw away the answer to save nothing.
+    #
+    # Degrades safely: with no config the floor window applies and the pack is
+    # roughly the old size, so a small local model is not asked to swallow more
+    # than it can hold.
+    evidence_results, dropped_count = _budgeted_evidence(results, message)
     sources = _build_sources(evidence_results)
     source_map = {(s["doc_id"], s["page"]): s["num"] for s in sources}
     evidence_lines = []
     for r in evidence_results:
         num = source_map.get((r.doc_id, r.page), "?")
-        passage = _extract_passage(r.content or "", message, max_chars=1000)
+        passage = _extract_passage(r.content or "", message, max_chars=_PASSAGE_CHARS)
         evidence_lines.append(
             f"[{num}] {r.doc_title or r.doc_id or 'Document'} "
             f"(p.{r.page or '?'})\n{passage}"
         )
     evidence = "\n\n".join(evidence_lines)
+    if dropped_count:
+        # Never drop silently. The model is told what it is NOT seeing, so it
+        # cannot present a partial view as exhaustive.
+        evidence += (
+            f"\n\n[NOTE: {dropped_count} further retrieved passage(s) did not fit "
+            "the context budget and are not shown. Do not claim completeness.]"
+        )
     graph_overview = ""
     if community_summaries:
         overview_lines = "\n".join(f"- {s}" for s in community_summaries[:5])
