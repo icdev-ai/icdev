@@ -288,3 +288,305 @@ def build_artifact_provenance(
         method=method,
         sources=norm,
     )
+
+
+# ── Claim-level grounding ─────────────────────────────────────────────────────
+#
+# Everything above answers "does this citation point at a source that exists?".
+# That is a structural check: `validate_citations` compares cited ids against the
+# ids that were offered, and `compute_attribution_score` measures how much of a
+# chunk resurfaced in the output. Neither compares a CLAIM against the TEXT of
+# the source it cites, so a well-formed `[source: chunk 3]` attached to a wholly
+# invented sentence passes every gate above.
+#
+# This section closes that. Two deterministic signals, both required, no LLM:
+#
+#   1. Span binding — find the window of the cited source that best matches the
+#      claim, scored by token *F1*. F1 rather than recall: recall alone rewards
+#      a claim that merely reuses the source's vocabulary while asserting more
+#      than the source says. The winning window is also what a UI can show as
+#      the supporting quote.
+#   2. Anchor guard — every number, date, currency amount, percentage, acronym
+#      and capitalised proper noun in the claim must appear in that bound span.
+#      A fabricated claim carrying a real citation nearly always carries a
+#      fabricated anchor, so this is the highest-signal check here and it costs
+#      nothing.
+#
+# An optional `judge` callable adds entailment on top. It is INJECTED, never
+# imported, so this module stays pure (no LLM, no DB, no Flask) and the
+# deterministic tier remains the air-gap floor — per D310 the blocking path must
+# not require a model.
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(\[])")
+_WORD_SPAN_RE = re.compile(r"\b\w+\b")
+
+# Spelled-out numbers. Without these the guard misses the single most likely
+# fabrication in prose: "seven years" quietly becoming "forty-seven years".
+# Digits-only anchors do not fire, and the surrounding sentence is otherwise
+# near-identical, so lexical overlap alone scores it as well supported.
+_NUM_ONES = ("zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+             "thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen")
+_NUM_TENS = "twenty|thirty|forty|fourty|fifty|sixty|seventy|eighty|ninety"
+_NUM_SCALE = "hundred|thousand|million|billion|trillion"
+_NUMBER_WORD_RE = re.compile(
+    rf"\b(?:(?:{_NUM_TENS})(?:[-\s](?:{_NUM_ONES}))?|(?:{_NUM_ONES}))"
+    rf"(?:[-\s](?:{_NUM_SCALE}))?\b",
+    re.IGNORECASE,
+)
+
+# Anchors: the concrete, checkable particles of a claim.
+_ANCHOR_PATTERNS = (
+    re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?"),                 # currency
+    re.compile(r"\b\d+(?:\.\d+)?\s?%"),                     # percentage
+    re.compile(r"\b\d{4}-\d{2}-\d{2}\b"),                   # ISO date
+    re.compile(r"\b\d[\d,]*(?:\.\d+)?\b"),                  # bare number
+    _NUMBER_WORD_RE,                                        # spelled-out number
+    re.compile(r"\b[A-Z]{2,}(?:-\d+)?\b"),                  # acronym / AC-3
+    re.compile(r"\b(?:[A-Z][a-z]+\s){1,3}[A-Z][a-z]+\b"),   # proper-noun phrase
+)
+
+# Tokens that look like anchors but carry no factual weight on their own.
+_ANCHOR_STOP = frozenset({"The", "This", "That", "These", "Those", "It", "A", "An", "I"})
+
+
+def decompose_claims(text: str) -> list[tuple[str, int, int]]:
+    """Split ``text`` into atomic claims as ``(claim, start, end)`` offsets.
+
+    Offsets index the ORIGINAL text, so a caller can highlight, strip or
+    annotate the exact span. That is what makes per-claim provenance
+    renderable rather than merely computable.
+    """
+    if not text or not text.strip():
+        return []
+    out: list[tuple[str, int, int]] = []
+    pos = 0
+    for part in _SENTENCE_SPLIT_RE.split(text):
+        if not part:
+            continue
+        start = text.find(part, pos)
+        if start < 0:
+            start = pos
+        end = start + len(part)
+        pos = end
+        if part.strip():
+            out.append((part.strip(), start, end))
+    return out
+
+
+def extract_anchors(claim: str) -> list[str]:
+    """Concrete particles that must appear in the source: numbers, dates, names.
+
+    Order-preserving and de-duplicated. Sub-matches are dropped, so the ``7``
+    inside ``$7,500`` is not counted separately.
+    """
+    if not claim:
+        return []
+    found: list[tuple[int, int, str]] = []
+    for pat in _ANCHOR_PATTERNS:
+        for m in pat.finditer(claim):
+            tok = m.group(0).strip()
+            if tok and tok not in _ANCHOR_STOP:
+                found.append((m.start(), m.end(), tok))
+    found.sort(key=lambda t: (t[0], -(t[1] - t[0])))
+    out: list[str] = []
+    covered: list[tuple[int, int]] = []
+    for s, e, tok in found:
+        if any(s >= cs and e <= ce for cs, ce in covered):
+            continue  # contained within a longer anchor already taken
+        covered.append((s, e))
+        if tok not in out:
+            out.append(tok)
+    return out
+
+
+def _norm_anchor(text: str) -> str:
+    """Collapse separators so '$7,500' and '7500' compare equal."""
+    return (text.lower().replace(",", "").replace("$", "")
+            .replace(" ", "").replace("-", ""))
+
+
+def _anchor_present(anchor: str, span_text: str) -> bool:
+    """Is ``anchor`` genuinely present in ``span_text``?
+
+    Word-boundary aware on purpose. A naive substring test reports "seven" as
+    present in "seventeen", which would let a quantity swap through the guard —
+    the exact defect the guard exists to catch. Numeric forms fall back to a
+    separator-insensitive comparison so "$7,500" matches "7500", and hyphens
+    are collapsed so "forty-seven" matches "forty seven".
+    """
+    a = (anchor or "").strip().strip(".,;:")
+    if not a or not span_text:
+        return False
+    if re.fullmatch(r"[\w\-\s]+", a) and re.search(r"[A-Za-z]", a):
+        # Word-ish anchor: require whole-word match, tolerating hyphen/space.
+        pattern = r"[-\s]+".join(re.escape(p) for p in re.split(r"[-\s]+", a) if p)
+        return bool(re.search(rf"\b{pattern}\b", span_text, re.IGNORECASE))
+    na = _norm_anchor(a)
+    return bool(na) and na in _norm_anchor(span_text)
+
+
+def bind_claim_span(claim: str, source_text: str, source_id: str = "") -> dict | None:
+    """Best-matching window of ``source_text`` for ``claim``, scored by token F1.
+
+    Returns ``{source_id, start, end, quote, score}``, or ``None`` when either
+    side is empty or nothing overlaps. The window is sized relative to the claim
+    (0.75x-2.5x its token count) so a one-line claim cannot be "supported" by
+    matching a whole page.
+    """
+    if not claim or not source_text:
+        return None
+    claim_tokens = _tokenize(claim)
+    if not claim_tokens:
+        return None
+
+    spans = [(m.start(), m.end(), m.group(0).lower())
+             for m in _WORD_SPAN_RE.finditer(source_text)]
+    if not spans:
+        return None
+
+    n_claim = max(len(claim_tokens), 1)
+    best_score = 0.0
+    best_start = 0
+    best_end = 0
+    widths = {max(1, int(n_claim * 0.75)), n_claim,
+              max(1, int(n_claim * 1.5)), max(1, int(n_claim * 2.5))}
+    for width in widths:
+        width = max(1, min(width, len(spans)))
+        step = max(1, width // 4)
+        for i in range(0, max(1, len(spans) - width + 1), step):
+            window = spans[i:i + width]
+            win_tokens = {w[2] for w in window}
+            overlap = len(claim_tokens & win_tokens)
+            if not overlap:
+                continue
+            precision = overlap / len(win_tokens)
+            recall = overlap / len(claim_tokens)
+            f1 = 2 * precision * recall / (precision + recall)
+            if f1 > best_score:
+                best_score = f1
+                best_start = window[0][0]
+                best_end = window[-1][1]
+
+    if best_score <= 0.0:
+        return None
+    return {
+        "source_id": source_id,
+        "start": best_start,
+        "end": best_end,
+        "quote": source_text[best_start:best_end],
+        "score": round(best_score, 4),
+    }
+
+
+def verify_claim(claim: str, sources: dict, *, cited_ids=None, judge=None) -> dict:
+    """Verify one claim against the source(s) it cites.
+
+    Args:
+        claim: the claim text.
+        sources: ``{source_id: source_text}``.
+        cited_ids: ids this claim cites; parsed from the claim when omitted.
+        judge: optional ``(claim, span_text) -> bool | None`` entailment check.
+            Injected so this module stays LLM-free. ``None`` means "no opinion"
+            and leaves the deterministic verdict standing.
+
+    Returns ``{claim, verdict, score, method, cited_ids, bound_spans,
+    missing_anchors}`` where ``verdict`` is ``supported`` | ``partial`` |
+    ``unsupported`` | ``uncited``.
+    """
+    cited = list(cited_ids) if cited_ids is not None else parse_citations(claim)
+    base = {
+        "claim": claim,
+        "cited_ids": cited,
+        "bound_spans": [],
+        "missing_anchors": [],
+        "score": 0.0,
+        "method": "span",
+    }
+    if not cited:
+        # No attribution. Not a defect on its own — `citation_gate` decides
+        # whether an uncited sentence is acceptable on a given surface.
+        return {**base, "verdict": "uncited"}
+
+    anchors = extract_anchors(claim)
+    best_span = None
+    for sid in cited:
+        text = sources.get(sid) or sources.get(str(sid)) or ""
+        span = bind_claim_span(claim, text, str(sid))
+        if span and (best_span is None or span["score"] > best_span["score"]):
+            best_span = span
+
+    if best_span is None:
+        return {**base, "verdict": "unsupported", "missing_anchors": anchors}
+
+    missing = [a for a in anchors if not _anchor_present(a, best_span["quote"])]
+    out = {
+        **base,
+        "bound_spans": [best_span],
+        "score": best_span["score"],
+        "missing_anchors": missing,
+    }
+
+    # A missing anchor is decisive regardless of lexical overlap: the claim
+    # asserts a specific that its own cited span does not contain.
+    if missing:
+        return {**out, "verdict": "unsupported", "method": "anchor"}
+
+    mapped = {"include": "supported", "flag": "partial", "abstain": "unsupported"}[
+        classify_confidence(best_span["score"])
+    ]
+
+    if judge is not None:
+        try:
+            opinion = judge(claim, best_span["quote"])
+        except Exception:  # noqa: BLE001 - a judge failure must never block
+            opinion = None
+        if opinion is False:
+            return {**out, "verdict": "unsupported", "method": "judge"}
+        if opinion is True and mapped == "partial" and best_span["score"] > 0.0:
+            # A judge may promote a borderline span, but never one with zero
+            # lexical footprint: a model must not rescue a claim that is absent
+            # from the text it cites. Ported from the DIC verifier cross-check.
+            return {**out, "verdict": "supported", "method": "judge"}
+    return {**out, "verdict": mapped}
+
+
+def ground_claims(text: str, sources: dict, *, judge=None) -> dict:
+    """Per-claim grounding report for a whole answer.
+
+    Returns ``{claims, supported, partial, unsupported, uncited,
+    supported_ratio}``. ``supported_ratio`` counts only CITED claims — an
+    uncited sentence makes no attributed assertion, so scoring it either way
+    would distort the result (the same reasoning as
+    ``doc_generator._compute_section_confidence``).
+    """
+    verdicts = [verify_claim(c, sources, judge=judge)
+                for c, _s, _e in decompose_claims(text)]
+    counts = {"supported": 0, "partial": 0, "unsupported": 0, "uncited": 0}
+    for v in verdicts:
+        counts[v["verdict"]] = counts.get(v["verdict"], 0) + 1
+    cited_total = len(verdicts) - counts["uncited"]
+    ratio = (
+        (counts["supported"] + 0.5 * counts["partial"]) / cited_total
+    ) if cited_total else 1.0
+    return {"claims": verdicts, **counts, "supported_ratio": round(ratio, 4)}
+
+
+def claim_gate(report: dict, *, require_supported: bool = True) -> list[dict]:
+    """Turn a :func:`ground_claims` report into blocking findings.
+
+    Mirrors the shape of :func:`citation_gate` and
+    ``content_grounding.placeholder_findings`` — ``{item_number, issue, detail}``
+    — so a promote/export gate consumes all three symmetrically instead of
+    special-casing each.
+    """
+    findings: list[dict] = []
+    if not require_supported:
+        return findings
+    for i, v in enumerate(report.get("claims") or [], start=1):
+        if v.get("verdict") == "unsupported":
+            findings.append({
+                "item_number": i,
+                "issue": "unsupported_claim",
+                "detail": v.get("missing_anchors") or [v.get("claim", "")[:120]],
+            })
+    return findings
