@@ -121,13 +121,19 @@ Progress checkpoints (same long-running process, PID 8716,
 | 13:29 | 213 / 2,029 | 457 | 246 | 211 |
 | 13:44 | 279 / 2,029 | 598 | 323 | 275 |
 | 13:45 | 292 / 2,029 | 624 | 336 | 288 |
+| 14:06 | 534 / 2,029 | 1,095 | 572 | 523 |
 
 The build **survived a host power event and resumed cleanly** — writes commit
 per-upsert, so nothing already summarized was lost. Between the last two
-checkpoints the source-rank probe advanced 267 → 283 in ~80 s, i.e. **≈12
-sources/min warm**; at that rate the remaining ~1,746 sources need a further
-**≈2.4 h**. The index is **partial but functional** — see
-[Verification](#verification).
+checkpoints the source-rank probe advanced 292 → 534 in 21 min, i.e. **≈11.5
+sources/min**; at that rate the remaining ~1,495 sources need a further **≈2.2 h**.
+PID 8716 was confirmed still alive at the 14:06 checkpoint (start time 13:18 EDT),
+so this is one continuous process, not a restart. The index is **partial but
+functional** — see [Verification](#verification).
+
+At 14:06 every one of the 1,095 persisted summary rows carried a non-null
+embedding (`SELECT COUNT(*) … WHERE embedding IS NULL` → `0`), so no row has been
+written in a half-built state.
 
 There is no concurrency, no batching, and no progress output.
 
