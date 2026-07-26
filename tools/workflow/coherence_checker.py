@@ -1827,6 +1827,29 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "sandbox image, Caido, and nuclei. No STRIX code or dependency."
         ),
     },
+    # oss-fix-03 introduced tools/quality/review_loop.py, whose docstring cites
+    # greptileai/skills/greploop. Only the LOOP SHAPE (review -> fix -> re-review
+    # until a score clears or N iterations) was adopted; greploop's score is
+    # Greptile's 5/5 confidence, ICDEV's is its OWN existing gates (ruff,
+    # coherence, sipa) run over the local diff. No greploop code, class, or method
+    # is copied. Registered here to close the attribution warn that oss-fix-03's
+    # cherry-pick left open. License left honest-unknown (Greptile's skills repo
+    # license was not verifiable offline this session) — concept-only citations
+    # carry no derivative-work exposure regardless, and "unknown (audit pending)"
+    # is not a _BLOCKING_LICENSES value, matching the leanstral/nemoclaw precedent.
+    "greptileai/skills/greploop": {
+        "url": "https://github.com/greptileai/skills (skills/greploop)",
+        "license": "unknown (audit pending)",
+        "audit_status": (
+            "concept-only, clean-room 2026-07-26 (attribution follow-up to "
+            "oss-fix-03). tools/quality/review_loop.py adopts the review-until-green "
+            "LOOP SHAPE only; scoring is replaced entirely by ICDEV's own gates "
+            "(ruff / coherence_checker --all / sipa pr_gates over the branch diff). "
+            "Structural review confirms no greploop code, class, or method is "
+            "copied and there is no runtime dependency. Upstream repo license not "
+            "positively verified offline; treated as prose-only reference."
+        ),
+    },
 }
 
 # Licenses that block the gate if cited without an explicit audit exemption.
