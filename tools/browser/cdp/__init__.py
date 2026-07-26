@@ -16,14 +16,24 @@ Layering (bottom-up), so each piece stays independently testable:
 * ``preflight`` — reads the ``RemoteDebuggingAllowed`` policy and picks the usable
   tier (CDP / Selenium / HTTP-only) deterministically, without launching a
   browser. This is cdp-port-06.
-* (later) a CDP session that correlates request ids to responses and demuxes
-  unsolicited events — request/response correlation lives ABOVE the frame codec,
-  never inside it (cdp-port-03).
+* ``session`` — a CDP session that correlates request ids to responses and demuxes
+  unsolicited events, ABOVE the frame codec (cdp-port-03).
+* ``launcher`` — starts the browser with an ephemeral loopback debug port + a
+  mandatory temp profile, reads ``DevToolsActivePort``, tears it down (cdp-port-03).
+* ``driver`` — the ~10-operation, Selenium-compatible driver surface over a page
+  target (cdp-port-03).
 
 Zero new *required* runtime dependencies: CDP over loopback needs no TLS, no
 proxy, and no ``permessage-deflate``, so a stdlib ``socket`` client suffices.
 """
 
+from tools.browser.cdp.driver import CDPDriver, CDPScriptError, wrap_script_as_iife
+from tools.browser.cdp.launcher import (
+    CDPLaunchError,
+    LaunchedBrowser,
+    build_launch_args,
+    launch,
+)
 from tools.browser.cdp.preflight import (
     PolicyResult,
     TierDecision,
@@ -31,6 +41,7 @@ from tools.browser.cdp.preflight import (
     read_remote_debugging_policy,
     select_tier,
 )
+from tools.browser.cdp.session import CDPError, CDPSession
 from tools.browser.cdp.ws_client import (
     WebSocketError,
     WebSocketFrame,
@@ -50,4 +61,13 @@ __all__ = [
     "preflight",
     "read_remote_debugging_policy",
     "select_tier",
+    "CDPSession",
+    "CDPError",
+    "CDPLaunchError",
+    "LaunchedBrowser",
+    "build_launch_args",
+    "launch",
+    "CDPDriver",
+    "CDPScriptError",
+    "wrap_script_as_iife",
 ]
