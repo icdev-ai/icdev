@@ -1850,6 +1850,40 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "positively verified offline; treated as prose-only reference."
         ),
     },
+    # cdp-00 / cdp-port-*: the two upstreams the CDP air-gap browser card studied,
+    # registered proactively per the spike (§6) — before any file cites them.
+    "cdp-use": {
+        "url": "https://github.com/browser-use/cdp-use",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (cdp-port-01/03)",
+        "notes": (
+            "cdp-use showed that a browser can be driven over the DevTools Protocol "
+            "with a tiny pure-Python stack (httpx/websockets). ICDEV adopted the "
+            "TRANSPORT DECISION only and re-implemented it stdlib-only "
+            "(tools/browser/cdp/ws_client.py — a hand-rolled RFC 6455 client, no "
+            "third-party WS library) because the air-gap target has neither websockets "
+            "nor websocket-client declared. No cdp-use code, class, or dependency is "
+            "used; cdp-use also requires Python >=3.11 while ICDEV floors at 3.9."
+        ),
+    },
+    # firecrawl is REJECTED, recorded so the rejection is auditable. It is AGPL-3.0
+    # (a _BLOCKING_LICENSES value), but nothing here CITES it as an adaptation — no
+    # file adapts firecrawl code — so this entry documents the decision without
+    # creating a derivative-work exposure. Its value was already shipped
+    # (page_extract/fetch_extract, oss-00 A1/A1b); self-hosting needs Docker + Redis +
+    # a Playwright microservice, all standing non-goals. See spike cdp-00 §5.
+    "firecrawl": {
+        "url": "https://github.com/firecrawl/firecrawl",
+        "license": "AGPL-3.0 (main repo; SDKs/UI MIT) — REJECTED, not used",
+        "audit_status": "REJECTED 2026-07-26 (cdp-00 §5) — no code, no dependency, no adaptation",
+        "notes": (
+            "Copyleft-blocking and its runtime is the already-rejected shape (Docker + "
+            "Redis + PostgreSQL + a Playwright microservice, which reintroduces the very "
+            "browser download this card eliminates). Its non-duplicated idea (/map "
+            "sitemap discovery) stays deferred per oss-00 Gap C2. Recorded as a "
+            "rejection, not a citation of use."
+        ),
+    },
 }
 
 # Licenses that block the gate if cited without an explicit audit exemption.
