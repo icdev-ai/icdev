@@ -16,6 +16,19 @@ schemathesis>=3.0             # Property-based API contract tests (tests/api/tes
 ruff>=0.12               # Ultra-fast Python linter (replaces flake8+isort+black)
 pydantic>=2.0            # Test data validation (TestResult, E2ETestResult models)
 
+# === Browser Automation (air-gap safe) ===
+# The selenium PYTHON PACKAGE is pure Python and pip-installable offline, so it
+# is a first-class declared dependency here — required by tools/browser/ (the
+# agent browser + its 108 tests) and tests/e2e_selenium/. What CANNOT be obtained
+# air-gapped is the DRIVER BINARY (chromedriver/msedgedriver), which is a separate
+# concern handled by tools/browser/driver_manager.py (resolve from vendor/drivers/,
+# fail closed via AirgapDriverMissingError) and tools/airgap/driver_vendor.py
+# (pre-stage on a connected admin host). Previously undeclared — present only as a
+# git-ignored wheel in vendor/wheels/, i.e. a local machine artifact — so a clean
+# install silently lacked it until the first browser call. Declaring it removes
+# that cliff. See docs/spikes/cdp-00-*.md defect D3.
+selenium>=4.15.0
+
 # === Compliance ===
 # cyclonedx-bom>=4.0     # SBOM generation (install when needed)
 # oscal-pydantic>=1.0    # OSCAL Pydantic models for type-safe validation (optional, D303)
