@@ -114,8 +114,15 @@ def test_isolated_config_preserves_a_pre_existing_override(monkeypatch, tmp_path
     assert os.environ[CONFIG_ENV_VAR] == sentinel
 
 
-def test_isolated_config_flips_exactly_one_toggle():
-    base = th.load_base_config()
+def test_isolated_config_writes_every_toggle_explicitly():
+    """Only the named toggle is on; the rest are written OFF, not inherited.
+
+    Inheriting the others from the committed file means a default flipped
+    between two arms silently becomes part of the measured delta, and nothing in
+    the output would show it. Asserting ``is False`` rather than "same as base"
+    matters: every toggle happens to be false today, so an inherit-based
+    implementation would pass a comparison against base while still being wrong.
+    """
     with th.isolated_config("rerank", True) as path:
         written = yaml.safe_load(path.read_text(encoding="utf-8"))
 
@@ -123,17 +130,91 @@ def test_isolated_config_flips_exactly_one_toggle():
     for name, spec in th.TOGGLES.items():
         if name == "rerank":
             continue
-        assert th.get_path(written, spec.path) == th.get_path(base, spec.path), (
-            f"{name} changed while isolating rerank"
+        assert th.get_path(written, spec.path) is False, (
+            f"{name} was not explicitly written off while isolating rerank"
         )
 
 
-def test_none_yields_an_unmodified_baseline():
-    """The control arm runs through the same temp-config path as the variants."""
-    base = th.load_base_config()
-    with th.isolated_config(None) as path:
-        written = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert written == base
+def test_build_isolated_cfg_does_not_inherit_a_stray_on_toggle():
+    """The guard the previous test cannot give us while all defaults are false."""
+    dirty = th.load_base_config()
+    th._set_path(dirty, th.TOGGLES["raptor"].path, True)      # someone flipped a default
+
+    cfg = th.build_isolated_cfg("rerank", True, base=dirty)
+
+    assert th.get_path(cfg, "rag.rerank.enabled") is True
+    assert th.get_path(cfg, th.TOGGLES["raptor"].path) is False, (
+        "a toggle left ON in the base config leaked into an isolated arm"
+    )
+
+
+def test_none_yields_the_all_off_control():
+    """The control arm is all-off, built through the same path as the variants."""
+    dirty = th.load_base_config()
+    th._set_path(dirty, th.TOGGLES["raptor"].path, True)
+
+    cfg = th.build_isolated_cfg(None, base=dirty)
+
+    for name, spec in th.TOGGLES.items():
+        assert th.get_path(cfg, spec.path) is False, f"{name} on in the control arm"
+
+
+# ── In-process loader patching (ported from PR #820) ──────────────────────────
+
+
+def test_loader_patch_reaches_modules_that_ignore_the_env_var():
+    """13 modules resolve the config path themselves; the env var misses them.
+
+    ``retriever._load_rag_config`` is patched directly so an in-process run sees
+    the isolated config regardless of whether the module adopted
+    ``config_path.rag_config_path()``.
+    """
+    import importlib
+
+    retriever = importlib.import_module("tools.rag.retriever")
+    before = th.get_path(retriever._load_rag_config(), "rag.rerank.enabled")
+
+    with th.isolated_config("rerank", True):
+        during = th.get_path(retriever._load_rag_config(), "rag.rerank.enabled")
+
+    after = th.get_path(retriever._load_rag_config(), "rag.rerank.enabled")
+    assert during is True
+    assert after == before, "loader was not restored"
+
+
+def test_loader_patch_is_shim_aware():
+    """``tools.x`` and ``icdev.tools.x`` are distinct module objects.
+
+    Patching only one leaves the other serving on-disk defaults, which is the
+    classic failure in this repo's compat shim.
+    """
+    import importlib
+
+    tools_mod = importlib.import_module("tools.rag.retriever")
+    try:
+        icdev_mod = importlib.import_module("icdev.tools.rag.retriever")
+    except Exception:                      # pragma: no cover - shim layout varies
+        pytest.skip("icdev.tools.rag.retriever not importable here")
+
+    if tools_mod is icdev_mod:
+        pytest.skip("shim resolves to a single module object in this environment")
+
+    with th.isolated_config("rerank", True):
+        assert th.get_path(tools_mod._load_rag_config(), "rag.rerank.enabled") is True
+        assert th.get_path(icdev_mod._load_rag_config(), "rag.rerank.enabled") is True
+
+
+def test_loader_patch_restores_on_exception():
+    import importlib
+
+    retriever = importlib.import_module("tools.rag.retriever")
+    original = retriever._load_rag_config
+
+    with pytest.raises(RuntimeError):
+        with th.isolated_config("rerank", True):
+            raise RuntimeError("boom")
+
+    assert retriever._load_rag_config is original
 
 
 def test_committed_config_is_never_written():
