@@ -82,7 +82,22 @@ class TestChunkContent:
     def test_metadata_passed_through(self):
         meta = {"key": "val"}
         chunks = chunk_content("text", metadata=meta)
-        assert chunks[0].metadata == meta
+        # Caller metadata survives alongside the chunking-provenance keys
+        # stamped by oss-chunk-01.
+        assert chunks[0].metadata["key"] == "val"
+        assert meta == {"key": "val"}, "caller's dict must not be mutated"
+
+    def test_chunking_template_recorded(self):
+        """Every chunk records which template produced it (oss-chunk-01)."""
+        chunks = chunk_content("text")
+        assert chunks[0].metadata["chunking_template"] == "general"
+        assert chunks[0].metadata["chunking_strategy"] == "sliding_window"
+
+    def test_metadata_not_shared_between_chunks(self):
+        long_text = ". ".join("This is sentence number {}".format(i) for i in range(500))
+        chunks = chunk_content(long_text, chunk_config={"chunk_size_tokens": 100})
+        assert len(chunks) > 1
+        assert chunks[0].metadata is not chunks[1].metadata
 
     def test_classification_set(self):
         chunks = chunk_content("text", classification="SECRET")
