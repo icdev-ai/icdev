@@ -17,9 +17,10 @@ the frame codec.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Callable, Dict, List, Optional
 
-from tools.browser.cdp.ws_client import WebSocketClient
+from tools.browser.cdp.ws_client import WebSocketClient, WebSocketTimeout
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.browser.cdp.session")
@@ -127,6 +128,37 @@ class CDPSession:
             # A stray reply for a different id (rare in single-flight) — ignore it
             # but log, so a genuine desync is visible rather than silently eaten.
             logger.debug("[cdp session] out-of-band reply id=%s while awaiting %s", message.get("id"), msg_id)
+
+    def wait_for_event(self, method: str, *, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
+        """Block until an unsolicited event with ``method`` arrives; return it (or
+        ``None`` on timeout).
+
+        Reads frames off the socket, dispatching every other event as it goes, so a
+        load wait genuinely waits for ``Page.loadEventFired`` instead of racing the
+        DOM parse. Lenient by design: a timeout returns ``None`` (an SPA may never
+        fire the event) rather than raising, matching Selenium's pageLoadStrategy.
+        A buffered matching event is returned immediately.
+        """
+        buffered = self.drain_events(method)
+        if buffered:
+            return buffered[0]
+        budget = self.default_timeout if timeout is None else timeout
+        deadline = time.monotonic() + (budget or 0.0)
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            try:
+                raw = self._ws.recv_text(timeout=max(0.1, remaining))
+            except WebSocketTimeout:
+                return None
+            try:
+                message = json.loads(raw)
+            except ValueError:
+                continue
+            if "method" in message:
+                self._dispatch_event(message)
+                if message.get("method") == method:
+                    return message
+        return None
 
     # -- lifecycle ------------------------------------------------------------
 

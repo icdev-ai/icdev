@@ -29,7 +29,10 @@ class FakeWS:
     def recv_text(self, timeout=None):
         if not self._script:
             raise AssertionError("recv_text called with no scripted frames left")
-        return self._script.pop(0)
+        item = self._script.pop(0)
+        if isinstance(item, Exception):  # scripted transport error (e.g. timeout)
+            raise item
+        return item
 
     def close(self):
         self.closed = True
@@ -50,6 +53,36 @@ def test_send_returns_matching_result_skipping_events():
     # the interleaved event was buffered, not lost or mistaken for the result
     events = s.drain_events()
     assert len(events) == 1 and events[0]["method"] == "Runtime.consoleAPICalled"
+
+
+def test_wait_for_event_returns_when_seen_dispatching_others():
+    """cdp-vv-01 regression: the load wait must genuinely block until the event
+    arrives, dispatching intervening events — an earlier best-effort version
+    returned before Page.loadEventFired, racing the DOM parse."""
+    ws = FakeWS([
+        _msg(method="Page.frameStartedLoading", params={}),
+        _msg(method="Page.loadEventFired", params={"timestamp": 2.0}),
+    ])
+    s = CDPSession(ws)
+    ev = s.wait_for_event("Page.loadEventFired", timeout=5)
+    assert ev is not None and ev["method"] == "Page.loadEventFired"
+
+
+def test_wait_for_event_returns_buffered_event_immediately():
+    ws = FakeWS([
+        _msg(method="Page.loadEventFired", params={}),
+        _msg(id=1, result={}),
+    ])
+    s = CDPSession(ws)
+    s.send("Page.navigate", {"url": "x"})  # buffers the loadEventFired
+    assert s.wait_for_event("Page.loadEventFired", timeout=5)["method"] == "Page.loadEventFired"
+
+
+def test_wait_for_event_timeout_returns_none_not_raise():
+    from tools.browser.cdp.ws_client import WebSocketTimeout
+    ws = FakeWS([WebSocketTimeout("no frame")])
+    s = CDPSession(ws)
+    assert s.wait_for_event("Page.loadEventFired", timeout=1) is None
 
 
 def test_command_id_increments_and_is_sent():
