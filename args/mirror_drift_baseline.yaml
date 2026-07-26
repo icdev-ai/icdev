@@ -31,7 +31,6 @@ content_drift:
   config: 1
   coordination: 1
   dashboard: 6
-  data_canvas: 14
   db: 1
   doc_modernization: 1
   document_intelligence: 2
