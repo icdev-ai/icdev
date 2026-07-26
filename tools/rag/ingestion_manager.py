@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 from tools.rag.chunker import chunk_fields
 from tools.rag.source_registry import (
     SOURCE_REGISTRY,
+    get_chunking_template,
     get_source_config,
 )
 from tools.rag.vector_store_factory import VectorStoreFactory
@@ -468,6 +469,9 @@ def ingest_source(
     total_masked = 0
     total_contextualized = 0
     ingestion_mode = mode or cfg.get("mode", "batch")
+    # oss-chunk-01: the registry's `chunking` key names a template in
+    # args/chunking_templates.yaml. "" = configured default (sliding window).
+    chunking_template = get_chunking_template(source_type)
     # trust-mask-02: decide once per run whether to mask content at ingestion.
     _mask_ingest = _mask_at_ingestion_enabled()
     # rce-ctx-01: decide once per run whether to apply contextual prefixes.
@@ -499,6 +503,7 @@ def ingest_source(
             metadata=meta,
             tenant_id=tenant_id,
             project_id=project_id,
+            template=chunking_template or None,
         )
 
         if not chunks:
@@ -561,6 +566,7 @@ def ingest_source(
         "chunks_skipped": total_skipped,
         "chunks_embedded": total_embedded,
         "mode": ingestion_mode,
+        "chunking_template": chunking_template or "default",
         "embed_batch_size": embed_batch_size,
         "skip_rate": round(skip_rate, 3),
         "skip_rate_anomaly": skip_anomaly,
@@ -710,6 +716,8 @@ def ingest_single_record(
         metadata=meta,
         tenant_id=tenant_id,
         project_id=project_id,
+        # oss-chunk-01: honour the registry's `chunking` key on realtime ingest.
+        template=get_chunking_template(source_type) or None,
     )
 
     if not chunks:
