@@ -1827,6 +1827,16 @@ python tools/rag/reindex_contextual.py --reindex --source compliance_reference -
 python tools/rag/reindex_contextual.py --reindex --source compliance_reference --limit 500 --offset 0 --execute --json  # Resumable window (next_offset/has_more)
 python tools/rag/reindex_contextual.py --benchmark --baseline data/rag/rce_baseline.json --json          # Measure retrieval vs baseline
 
+# Chunking Templates (oss-chunk-01) — document-type chunking driven by the source_registry 'chunking' key
+python tools/rag/chunking_templates.py --list --json                                 # All templates + the default
+python tools/rag/chunking_templates.py --show oscal_catalog --json                   # One template definition
+python tools/rag/chunking_templates.py --suggest docs/catalog.md --json              # ADVISORY suggestion — never auto-applied
+python tools/rag/chunking_templates.py --preview docs/catalog.md --template oscal_catalog --json  # Chunks a template would produce
+# Templates: oscal_catalog (1 chunk/control, never split) · stig_checklist (1 chunk/rule) · rfp_sow (Section L/M)
+#            contract (numbered clauses) · sop_runbook (numbered steps) · slide_deck (1 chunk/slide)
+#            spreadsheet (row groups + header repeat) · general (default sliding window, unchanged)
+# Wire a source: set "chunking": "<template>" on its entry in tools/rag/source_registry.py
+
 # Fine-Tuning (Phase 64 Extension)
 python tools/finetune/dataset_manager.py --create --name "my-dataset" --purpose general --json   # Create dataset
 python tools/finetune/dataset_manager.py --list --json                                            # List datasets
