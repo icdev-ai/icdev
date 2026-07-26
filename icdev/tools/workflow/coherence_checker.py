@@ -2540,6 +2540,84 @@ def check_karpathy_sync() -> CoherenceCheck:
     )
 
 
+def check_reflex_registry() -> CoherenceCheck:
+    """rri — every daemon.REFLEX_NAMES entry must resolve to a dispatchable reflex.
+
+    The daemon schedules reflexes by importing ``tools.genesis.reflexes.<name>``
+    and calling its ``run``. When the module is absent it silently marks the
+    entry ``missing`` / ``is_stub`` and skips it every cycle — a registered
+    capability that never fires, invisible unless someone reads the schedule.
+    This is the same class of defect as a TOOL_REGISTRY entry with no handler
+    (oss-fix-01): a registry that lists something it cannot dispatch.
+
+    Fails the gate on any REFLEX_NAMES entry whose module does not import, or
+    imports without a callable ``run``.
+    """
+    import importlib.util
+
+    try:
+        from tools.genesis.daemon import REFLEX_NAMES
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id="reflex_registry",
+            check_name="Reflex Registry Integrity",
+            status="warn",
+            expected=["daemon.REFLEX_NAMES importable"],
+            actual=[f"import failed: {exc}"],
+            missing=[],
+            extra=[],
+            message=f"could not import REFLEX_NAMES: {exc}",
+        )
+
+    missing: List[str] = []
+    no_run: List[str] = []
+    for name in REFLEX_NAMES:
+        spec = importlib.util.find_spec(f"tools.genesis.reflexes.{name}")
+        if spec is None:
+            missing.append(name)
+            continue
+        try:
+            mod = importlib.import_module(f"tools.genesis.reflexes.{name}")
+            if not callable(getattr(mod, "run", None)):
+                no_run.append(name)
+        except Exception:  # noqa: BLE001 - import error is a dispatch failure
+            no_run.append(name)
+
+    broken = missing + no_run
+    if broken:
+        detail = []
+        if missing:
+            detail.append(f"no module: {', '.join(missing)}")
+        if no_run:
+            detail.append(f"no callable run(): {', '.join(no_run)}")
+        return CoherenceCheck(
+            check_id="reflex_registry",
+            check_name="Reflex Registry Integrity",
+            status="fail",
+            expected=["every REFLEX_NAMES entry resolves to a reflex with run()"],
+            actual=[f"{len(REFLEX_NAMES)} registered, {len(broken)} undispatchable"],
+            missing=broken,
+            extra=[],
+            message=(
+                f"{len(broken)} REFLEX_NAMES entr(y/ies) cannot be dispatched "
+                f"({'; '.join(detail)}). Create the reflex module, correct the "
+                "name, or remove the entry — a registered reflex that never fires "
+                "is worse than an unregistered one."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="reflex_registry",
+        check_name="Reflex Registry Integrity",
+        status="pass",
+        expected=["every REFLEX_NAMES entry resolves to a reflex with run()"],
+        actual=[f"all {len(REFLEX_NAMES)} registered reflexes dispatch"],
+        missing=[],
+        extra=[],
+        message=f"all {len(REFLEX_NAMES)} REFLEX_NAMES entries resolve to a reflex with run()",
+    )
+
+
 def check_sandbox_coverage() -> CoherenceCheck:
     """OPT-58 — verify docs/security/sandbox-coverage.md exists and
     documents all 4 tracked ingress-point gap files.
@@ -6214,6 +6292,7 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "reflex_registry": check_reflex_registry,
     "direct_anthropic_import": check_direct_anthropic_import,
     "provider_bypass": check_provider_bypass,
     "architecture_agnosticism": check_architecture_agnosticism,

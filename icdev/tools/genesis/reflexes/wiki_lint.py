@@ -365,8 +365,21 @@ def run_wiki_lint() -> Dict[str, Any]:
     }
 
 
+def run(args: dict, _ctx=None) -> Dict[str, Any]:
+    """Daemon dispatch entry (rri).
+
+    The daemon schedules reflexes by calling ``run(args, ctx)`` on the module.
+    This file had ``run_reflex()`` — whose docstring even claimed it was "called
+    by Genesis daemon" — but no ``run``, so the dispatcher marked wiki_lint
+    undispatchable and skipped it every cycle. This thin shim connects the two.
+    Caught by check_reflex_registry, which is exactly the class of gap it exists
+    to find.
+    """
+    return run_reflex()
+
+
 def run_reflex() -> Dict[str, Any]:
-    """Main entry point called by Genesis daemon."""
+    """Wiki-lint reflex body. Dispatched via :func:`run`."""
     lint = run_wiki_lint()
 
     cards: Dict[str, Any] = {}
