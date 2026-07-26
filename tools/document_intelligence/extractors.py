@@ -42,59 +42,89 @@ logger = get_logger(__name__)
 # --------------------------------------------------------------------------- #
 # Layout-aware extraction requires optional libraries that pull heavy backends
 # (PaddlePaddle / torch) and download model weights over the network on first
-# use — neither is air-gap safe by default. We probe their importability once at
-# module-load time inside a guarded try/except: any failure (missing package,
-# broken backend, blocked network fetch during import) is logged and the module
-# falls back to the always-present 'flat-ocr' path so ingestion never breaks.
+# use — neither is air-gap safe by default.
+#
+# The probe is therefore IMPORT-ONLY: `importlib.util.find_spec` asks the import
+# system whether a module could be loaded WITHOUT executing its body. The
+# earlier version called `importlib.import_module`, which runs the package at
+# DIC module-load time — exactly the network fetch and multi-second torch import
+# this probe exists to avoid, on a code path that runs whether or not anyone
+# ever extracts a document. In an air-gapped deployment that is a startup hang,
+# not a graceful degrade.
+#
+# Only ONE backend is needed for layout-aware extraction, so the first available
+# candidate wins. Requiring all of them meant a complete PaddleOCR install still
+# degraded to flat-ocr because an unrelated second package was absent.
 
-LAYOUT_MODE_AWARE = "layout-aware"   # region/table/column segmentation available
-LAYOUT_MODE_FLAT = "flat-ocr"        # sequential text only — air-gap baseline
+LAYOUT_MODE_STRUCTURED = "structured"  # region/table/column segmentation available
+LAYOUT_MODE_FLAT_OCR = "flat-ocr"      # sequential text only — air-gap baseline
 
-_LAYOUT_LIBS = ("paddleocr", "doclayout_yolo")
+#: Back-compat aliases for the pre-rename constant names.
+LAYOUT_MODE_AWARE = LAYOUT_MODE_STRUCTURED
+LAYOUT_MODE_FLAT = LAYOUT_MODE_FLAT_OCR
+
+#: ``(module_name, pip_name)``, in priority order.
+_LAYOUT_BACKENDS = (
+    ("paddleocr", "paddleocr"),
+    ("doclayout_yolo", "doclayout-yolo"),
+)
 
 
-def _probe_layout_libs():
-    """Detect whether every layout-detection library imports cleanly.
+def _probe_layout_backend():
+    """Find the first importable layout backend, without importing it.
 
-    Returns ``(mode, missing)``: ``mode`` is :data:`LAYOUT_MODE_AWARE` only when
-    all libraries import without error, otherwise :data:`LAYOUT_MODE_FLAT`.
-    Never raises — callers rely on this to choose a fallback, not to fail.
+    Returns ``(mode, backend_name)`` — :data:`LAYOUT_MODE_STRUCTURED` plus the
+    module name when a candidate spec is found, otherwise
+    :data:`LAYOUT_MODE_FLAT_OCR` and ``None``.
+
+    Never raises. A broken native install can make ``find_spec`` itself throw
+    (it may execute a package's ``__init__`` while resolving a namespace
+    parent), and callers rely on this to choose a fallback, not to fail.
     """
-    import importlib
+    import importlib.util
 
-    missing: list[str] = []
-    for lib in _LAYOUT_LIBS:
+    for module_name, _pip_name in _LAYOUT_BACKENDS:
         try:
-            importlib.import_module(lib)
-        except Exception as exc:
-            missing.append(lib)
-            logger.debug("dic.extractors: layout lib %r unavailable: %s", lib, exc)
-    if missing:
-        return LAYOUT_MODE_FLAT, missing
-    return LAYOUT_MODE_AWARE, []
+            if importlib.util.find_spec(module_name) is not None:
+                return LAYOUT_MODE_STRUCTURED, module_name
+        except Exception as exc:  # noqa: BLE001 - broken install must degrade
+            logger.debug(
+                "dic.extractors: probing layout backend %r failed: %s", module_name, exc
+            )
+    return LAYOUT_MODE_FLAT_OCR, None
 
 
 try:
-    LAYOUT_MODE, _LAYOUT_MISSING = _probe_layout_libs()
+    LAYOUT_MODE, LAYOUT_BACKEND = _probe_layout_backend()
 except Exception as exc:  # defensive: the probe itself must never break import
     logger.error(
         "dic.extractors: layout-detection probe failed (%s) — forcing 'flat-ocr' fallback",
         exc,
     )
-    LAYOUT_MODE, _LAYOUT_MISSING = LAYOUT_MODE_FLAT, list(_LAYOUT_LIBS)
+    LAYOUT_MODE, LAYOUT_BACKEND = LAYOUT_MODE_FLAT_OCR, None
 
-if LAYOUT_MODE == LAYOUT_MODE_FLAT:
+if LAYOUT_MODE == LAYOUT_MODE_FLAT_OCR:
     logger.warning(
-        "dic.extractors: layout-detection libraries unavailable (%s) — using "
+        "dic.extractors: no layout-detection backend available (%s) — using "
         "'flat-ocr' fallback (no region/table/column segmentation). For "
-        "layout-aware extraction install: pip install paddleocr doclayout-yolo",
-        ", ".join(_LAYOUT_MISSING) or "none",
+        "layout-aware extraction install one of: %s",
+        ", ".join(m for m, _ in _LAYOUT_BACKENDS),
+        ", ".join(f"pip install {p}" for _, p in _LAYOUT_BACKENDS),
     )
 
 
-def layout_mode() -> str:
-    """Return the active layout-extraction mode ('layout-aware' or 'flat-ocr')."""
+def get_layout_mode() -> str:
+    """Return the active layout-extraction mode ('structured' or 'flat-ocr')."""
     return LAYOUT_MODE
+
+
+def layout_detection_available() -> bool:
+    """True when a layout backend was found and segmentation is possible."""
+    return LAYOUT_MODE == LAYOUT_MODE_STRUCTURED
+
+
+#: Back-compat alias for the pre-rename accessor.
+layout_mode = get_layout_mode
 
 
 @dataclass
@@ -501,6 +531,13 @@ def _extract_text(path: Path) -> Extraction:
     )
 
 
+#: Below this raw-HTML size, boilerplate pruning is assumed to be doing more
+#: harm than good: a document this small has no nav bar or link farm to strip,
+#: so anything the pruner removes is body copy. Sized well above a heading +
+#: a few paragraphs and well below any real page with chrome.
+_HTML_PRUNE_MIN_CHARS = 2000
+
+
 def _extract_html(path: Path) -> Extraction:
     """Extract a local HTML file via the two-pass ``page_extract`` filter.
 
@@ -515,7 +552,27 @@ def _extract_html(path: Path) -> Extraction:
     title = path.stem
     try:
         result = page_extract.extract(raw)
-        text = result["fit_markdown"].strip() or result["raw_text"]
+        fit = (result["fit_markdown"] or "").strip()
+        raw_text = (result["raw_text"] or "").strip()
+        # `page_extract` is tuned for SCRAPED web pages: it drops nav, cookie
+        # banners and link farms, and with them any very short paragraph that
+        # looks like chrome. A local HTML document has no such chrome, so on a
+        # small file that heuristic deletes real body copy — "<p>Hello world</p>"
+        # disappears and only the heading survives.
+        #
+        # Below the size at which boilerplate is even plausible, keep whichever
+        # retains more text. Ingestion silently discarding body content is the
+        # failure this whole layer exists to prevent, and it is invisible
+        # downstream: the chunk simply never contains the answer.
+        if raw_text and len(raw) <= _HTML_PRUNE_MIN_CHARS and len(raw_text) > len(fit):
+            text = raw_text
+            warnings.append(
+                "html_prune_bypassed — boilerplate pruning removed body text from a "
+                f"small document ({len(fit)} of {len(raw_text)} chars retained); "
+                "kept the unpruned text"
+            )
+        else:
+            text = fit or raw_text
         title = result["title"] or title
     except Exception as exc:  # noqa: BLE001 - extraction must not fail an ingest
         text = page_extract.to_text(raw)

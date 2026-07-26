@@ -69,9 +69,13 @@ def _db(tmp_path, monkeypatch):
     conn.commit()
 
     def _fake_conn():
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        # Must be a StorageConnection, NOT a raw sqlite3 connection. The module
+        # under test authors PostgreSQL-dialect SQL (`%s` placeholders), which
+        # sqlite3 cannot parse; the statement raised, the caller's bare `except`
+        # swallowed it, and the assertion saw zero rows. A raw connection here
+        # tests a dialect the production code does not speak.
+        from tools.db.storage import get_connection
+        return get_connection(str(db_path))
 
     monkeypatch.setattr(analytics, "_conn", _fake_conn)
     return conn
