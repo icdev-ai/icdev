@@ -6114,6 +6114,58 @@ projects:
   - key: xcut
     title: Cross-Cutting — Attribution & Close-Out
     priority: low
+- key: cdp
+  name: CDP Air-Gap Browser Automation
+  description: 'Adapt browser-use''s transport decision: drive the browser over the Chrome DevTools
+    Protocol instead of a version-matched WebDriver binary, so browser automation works on air-gapped
+    hosts with no CDN access. Serves both deployment profiles (commercial, where enterprise policy is
+    ours to set; and air-gapped, where it is not) via one capability ladder: Tier 1 CDP, Tier 2
+    Selenium+driver for WebDriver-mandated audits, Tier 3 browser-free HTTP verification when policy
+    forbids remote debugging. Covers both consumers - the agent browser and the E2E Selenium estate.
+    Also fixes the false air-gap guarantee in driver_manager. Firecrawl evaluated and rejected
+    (AGPL-3.0, Docker + Redis + Playwright microservice, value already shipped as
+    page_extract/fetch_extract).'
+  task_prefix: cdp-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/cdp-00-browser-automation-airgap-adaptation.md'
+  - 'gate: held; both go/no-go questions answered 2026-07-26 - support BOTH deployment profiles and
+    BOTH consumers. Key correction recorded on the task: Selenium is NOT a fallback for a
+    policy-blocked CDP, because RemoteDebuggingAllowed kills chromedriver too (cdp-gate-00)'
+  - 'fix: air-gap guarantee is undefined - AirgapDriverMissingError does not exist and the real
+    fallthrough downloads via Selenium Manager (cdp-fix-01)'
+  - 'fix: vendored chromedriver 147 vs installed Chrome 150; msedgedriver empty vs Edge 150 (cdp-fix-02)'
+  - 'port: stdlib RFC 6455 WebSocket client, loopback only, zero new required deps (cdp-port-01)'
+  - 'port: shared network-free browser locator, Edge then Chrome then Chromium (cdp-port-02)'
+  - 'port: CDP driver - callFunctionOn wrapping, viewport-vs-page coords, launch lifecycle (cdp-port-03)'
+  - 'port: backend selection leaving scope.py and all 108 tests untouched (cdp-port-04)'
+  - 'port: sandbox-coverage Gap 36/38 revision plus attribution registry entries (cdp-port-05)'
+  - 'port: policy/tier preflight - read RemoteDebuggingAllowed from the registry, pick and report the
+    tier deterministically; unset means permitted (cdp-port-06)'
+  - 'port: document the Tier-3 degradation - what survives and what is lost when policy forbids
+    remote debugging (cdp-port-07)'
+  - 'wd: WebDriver-compatible CDP facade covering the ~22-operation E2E surface; the selenium PYTHON
+    package is pure-Python and offline-installable, so By/WebDriverWait/expected_conditions keep
+    working unchanged - only the driver binary is unobtainable (cdp-wd-01)'
+  - 'wd: cut tests/e2e_selenium + sharepoint fallback + tools/testing/e2e_* onto the facade and prove
+    driverless; report the pass/skip/fail split before and after (cdp-wd-02)'
+  - 'vv: reproduce an e2e script''s assertions on a machine with no vendored driver (cdp-vv-01)'
+  epics:
+  - key: gate
+    title: GATE — Held Pending Review
+    priority: high
+  - key: fix
+    title: FIX — Driver Path Defects (independent of the adaptation)
+    priority: high
+  - key: port
+    title: PORT — CDP Transport & Tier Selection
+    priority: high
+  - key: wd
+    title: WD — WebDriver-Compatible Facade (E2E estate)
+    priority: medium
+  - key: vv
+    title: VV — Driverless Proof
+    priority: high
 - key: oss2
   name: OSS-02 Nine-Project Adaptation
   description: 'Adopt/reject decision for anything-llm, DeepDoc, LocalAI, AutoGen, mem0, CrewAI,
