@@ -1879,6 +1879,20 @@ python tools/rag/reindex_contextual.py --reindex --source compliance_reference -
 python tools/rag/reindex_contextual.py --reindex --source compliance_reference --limit 500 --offset 0 --execute --json  # Resumable window (next_offset/has_more)
 python tools/rag/reindex_contextual.py --benchmark --baseline data/rag/rce_baseline.json --json          # Measure retrieval vs baseline
 
+# Retrieval-Quality Benchmark (rce-eval-01) — golden query set scored for recall@k / MRR / nDCG@k / citation-hit-rate / latency
+python tools/rag/rag_benchmark.py --json                                             # Score the compliance golden set
+python tools/rag/rag_benchmark.py --baseline-out data/rag/rce_baseline.json --json   # Record a baseline artifact
+python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline.json --json        # Deltas vs a saved baseline
+
+# Single-toggle isolation (oss-meas-01) — measure each OFF-by-default retrieval toggle on its own
+python tools/rag/rag_benchmark.py --dry-run                                          # List the 5 toggles under test; retrieves nothing
+python tools/rag/rag_benchmark.py --toggle-matrix --json                             # All-off control + 1 run per toggle, with deltas
+python tools/rag/rag_benchmark.py --toggle-matrix --matrix-out data/rag/oss_toggle_matrix.json --json
+# Toggles: rag.rerank.enabled · rag.reflective_rerank.enabled · rag.adaptive_routing.enabled
+#          rag.quantization.binary_prefilter.enabled · rag.auto_indexer.enabled
+# Each run forces the other four OFF, so a metric delta is attributable to one toggle.
+# RAPTOR (rag.raptor.enabled) is excluded — already measured as a regression in rce-eval-05-d4/d5.
+
 # Chunking Templates (oss-chunk-01) — document-type chunking driven by the source_registry 'chunking' key
 python tools/rag/chunking_templates.py --list --json                                 # All templates + the default
 python tools/rag/chunking_templates.py --show oscal_catalog --json                   # One template definition

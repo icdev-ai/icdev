@@ -78,6 +78,17 @@ python tools/testing/e2e_runner.py --run-all           # Execute all E2E tests
 
 ## Enterprise-Configurable Platform Commands
 ```bash
+# Project scaffolding — ALWAYS run `icdev init` after `pip install icdev`
+icdev init [target]               # Scaffold a project (CLAUDE.md + FORGE data + .claude/ + .env)
+icdev init my-project --profile air-gap   # Non-interactive: apply a core profile
+icdev init my-project --profile none      # Registry defaults, skip the profile prompt
+icdev init --list                 # Dry-run: show what would be copied
+
+# Interactive feature-toggle TUI (stdlib-only; primary browser-free on/off surface)
+icdev setup                       # Browse every component + sub-pages, toggle, write .env
+icdev setup --plain               # Force the plain numbered-menu mode (non-TTY)
+icdev setup --json                # Dump current component state as JSON
+
 # Component registry — single source of truth for canvases, child apps, features, core extensions
 python -c "from tools.config.component_registry import get_registry; r=get_registry(); print([c.key for c in r.iter_canvases()])"
 python -c "from tools.config.component_registry import get_registry; r=get_registry(); print(r.get_nav_context())"
@@ -98,6 +109,16 @@ icdev profile apply <name> --dry-run  # Preview overrides
 # Scaffolding
 icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas
 icdev scaffold child-app <key> --display-name "Name" --flavor <flavor> [--canvases k1,k2] [--out <dir>]  # Generate a child app (minimal, compliance, ai-lab, govcon)
+
+# Document-currency packs (docmod) — let any domain own its own coverage.
+# Writes IN PLACE (packs are discovered by location under args/docmod/) and never
+# overwrites an existing file.
+icdev scaffold docmod-pack <key> --display-name "Name"                        # rulebook flavor: YAML only, NO Python
+icdev scaffold docmod-pack <key> --display-name "Name" --entity-type standard --finding-type deprecated_tech
+icdev scaffold docmod-pack <key> --display-name "Name" --flavor catalog --evidence-table <table>  # table-driven; generates a Python stub
+icdev scaffold docmod-pack <key> --display-name "Name" --dry-run --json       # preview
+# Then: write rules in args/docmod/rulebook_<key>.yaml, set enabled: true in
+# args/docmod/packs/<key>.yaml — the next docmod sweep auto-discovers it.
 
 # Validation
 python tools/workflow/coherence_checker.py --all --gate      # Registry/profile/completeness coherence gate
@@ -157,6 +178,18 @@ python tools/db/storage.py --info --json           # Show backend configuration
 
 ---
 
+## Untrusted HTML Extraction (oss-filter-01)
+```bash
+# Two-pass fit_markdown filter: prune site chrome, then BM25-rank against a query.
+python tools/http/page_extract.py --file page.html                      # prune only
+python tools/http/page_extract.py --file page.html --query "rate limits"  # + relevance
+python tools/http/page_extract.py --file page.html --query "rate limits" --json
+cat page.html | python tools/http/page_extract.py --query "rate limits"
+
+# Thresholds (prune threshold/type, min_word_threshold, BM25 threshold, stopwords,
+# stemming, section propagation, markdown rendering): args/page_extract.yaml
+```
+
 ## Security Commands
 ```bash
 python tools/security/sast_runner.py --project-dir "/path"
@@ -180,6 +213,40 @@ python tools/security/audit_posture.py --json
 python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
 python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)
 python tools/integrity/pr_gates.py --base origin/main --gate            # CI gate: exit 1 on a blocking (QUARANTINE) verdict
+```
+
+---
+
+## Browser Automation & Agent Scope Controls
+```bash
+# Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
+python tools/browser/driver_manager.py --probe            # Resolved browser + driver path
+python tools/browser/driver_manager.py --smoke            # Launch, visit about:blank, quit
+
+# Agent browser scope controls (oss-browse-02) — config: args/browser_scope.yaml
+python tools/browser/scope.py --show --json               # Print the active policy
+python tools/browser/scope.py --check-url http://localhost:5050/ --json   # exit 0 = allowed
+python tools/browser/scope.py --check-url https://example.com/ --json     # exit 1 = denied
+# Override the config path with ICDEV_BROWSER_SCOPE_CONFIG.
+```
+
+Any **agent-driven** browser session must go through `GuardedDriver`, never a raw
+WebDriver. It enforces the domain allowlist (loopback only by default; a routable
+host needs to be allowlisted **and** `allow_non_local: true` **and** cleared by
+`egress_guard`), the per-run action cap, the per-step timeout, `<secret>name</secret>`
+placeholder substitution at the driver, and an `audit_trail` row per action.
+
+```python
+from tools.browser import get_driver, GuardedDriver
+
+driver = get_driver(headless=True)
+try:
+    session = GuardedDriver(driver, run_id="vv-001")
+    session.navigate("http://localhost:5050/")        # allowed
+    session.type_text(field, "<secret>dashboard_password</secret>")
+    session.navigate("https://example.com/")          # raises NavigationDenied
+finally:
+    driver.quit()
 ```
 
 ---
@@ -622,6 +689,29 @@ create_tasks([{
 
 # Adversarial verify (invoked automatically when adversarial_enabled=True on a looping task)
 # _run_adversarial_verify(task_id) in tools/kanban/task_factory.py — not a standalone CLI
+
+# OSS Adaptation card (oss- prefix) — 23 tasks / 12 epics adapting RAGFlow, Crawl4AI,
+# browser-use and STRIX as patterns rather than dependencies.
+# Analysis: docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md
+python tools/kanban/seed_oss_adaptation.py --dry-run --json   # Validate the graph, write nothing
+python tools/kanban/seed_oss_adaptation.py --json             # Seed tasks + ordering edges (idempotent)
+python -m tools.kanban.cli --set-status oss-gate-00 done      # RELEASE the card (deliberate human act)
+# Seeds TWO dependency layers and needs both: the scalar oss-gate-00 sentinel (blocks
+# everything while held in_progress) and 21 junction kanban_task_deps edges for intra-epic
+# ordering. Without the edges all 22 tasks become eligible at once with an arbitrary
+# created_at tiebreak, so the runner can build oss-browse-02 (scope controls) before
+# oss-browse-01 (the primitive they constrain). validate() refuses to seed on an unknown
+# edge endpoint, a self-dependency, or a cycle.
+
+# Compass dispatch probe — seeds the one trivial compass task that proves repo-aware
+# dispatch end to end (prem-vfy-01). Definition: args/kanban_seed_compass_dispatch.yaml;
+# routing: `prem-vfy` prefix in args/kanban_external_repos.yaml.
+python -m tools.kanban.seed_compass_dispatch_probe --dry-run --json   # Validate routing, write nothing
+python -m tools.kanban.seed_compass_dispatch_probe --json             # Seed onto the board
+# Refuses to seed if the id's prefix does not resolve to the repo the YAML claims
+# (an unregistered prefix defaults to ICDev — that would build a compass task in ICDev).
+# The external repo root must be set where the scheduler runs, else dispatch SKIPs it:
+#   $env:ICDEV_KANBAN_REPO_COMPASS = "C:/path/to/compass"
 ```
 
 ---
@@ -791,6 +881,12 @@ python tools/workflow/coherence_checker.py --all --fix --json                   
 python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+
+# Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
+# CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
+# grandfathered in args/doc_command_gate.yaml; NEW broken references fail the gate.
+python tools/workflow/coherence_checker.py --check doc_command_paths --json                         # List unresolved documented commands
+python tools/workflow/coherence_checker.py --check doc_command_paths --gate                         # Fail on any NEW broken reference
 
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout
@@ -1779,6 +1875,33 @@ python tools/rag/ingestion_manager.py --daemon --json                           
 python tools/rag/retriever.py --query "FedRAMP AC-2" --json                          # Search across all knowledge
 python tools/rag/retention_manager.py --migrate --json                               # Hot/warm/cold tier migration
 python tools/rag/retention_manager.py --status --json                                # Retention tier status
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference --dry-run --json          # Plan a contextual re-index
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference --limit 500 --offset 0 --execute --json  # Resumable window (next_offset/has_more)
+python tools/rag/reindex_contextual.py --benchmark --baseline data/rag/rce_baseline.json --json          # Measure retrieval vs baseline
+
+# Retrieval-Quality Benchmark (rce-eval-01) — golden query set scored for recall@k / MRR / nDCG@k / citation-hit-rate / latency
+python tools/rag/rag_benchmark.py --json                                             # Score the compliance golden set
+python tools/rag/rag_benchmark.py --baseline-out data/rag/rce_baseline.json --json   # Record a baseline artifact
+python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline.json --json        # Deltas vs a saved baseline
+
+# Single-toggle isolation (oss-meas-01) — measure each OFF-by-default retrieval toggle on its own
+python tools/rag/rag_benchmark.py --dry-run                                          # List the 5 toggles under test; retrieves nothing
+python tools/rag/rag_benchmark.py --toggle-matrix --json                             # All-off control + 1 run per toggle, with deltas
+python tools/rag/rag_benchmark.py --toggle-matrix --matrix-out data/rag/oss_toggle_matrix.json --json
+# Toggles: rag.rerank.enabled · rag.reflective_rerank.enabled · rag.adaptive_routing.enabled
+#          rag.quantization.binary_prefilter.enabled · rag.auto_indexer.enabled
+# Each run forces the other four OFF, so a metric delta is attributable to one toggle.
+# RAPTOR (rag.raptor.enabled) is excluded — already measured as a regression in rce-eval-05-d4/d5.
+
+# Chunking Templates (oss-chunk-01) — document-type chunking driven by the source_registry 'chunking' key
+python tools/rag/chunking_templates.py --list --json                                 # All templates + the default
+python tools/rag/chunking_templates.py --show oscal_catalog --json                   # One template definition
+python tools/rag/chunking_templates.py --suggest docs/catalog.md --json              # ADVISORY suggestion — never auto-applied
+python tools/rag/chunking_templates.py --preview docs/catalog.md --template oscal_catalog --json  # Chunks a template would produce
+# Templates: oscal_catalog (1 chunk/control, never split) · stig_checklist (1 chunk/rule) · rfp_sow (Section L/M)
+#            contract (numbered clauses) · sop_runbook (numbered steps) · slide_deck (1 chunk/slide)
+#            spreadsheet (row groups + header repeat) · general (default sliding window, unchanged)
+# Wire a source: set "chunking": "<template>" on its entry in tools/rag/source_registry.py
 
 # Fine-Tuning (Phase 64 Extension)
 python tools/finetune/dataset_manager.py --create --name "my-dataset" --purpose general --json   # Create dataset
@@ -2069,6 +2192,12 @@ python tools/creative/trend_tracker.py --report --json
 python tools/creative/spec_generator.py --generate-all --json
 python tools/creative/spec_generator.py --list --json
 
+# Divergent ideation benchmark (dvg-bench-01) — divergence vs single-shot on real
+# ICDEV functions; recommend-only (flips no default), air-gap => status "unmeasured"
+python tools/creative/divergence_benchmark.py --dry-run                 # list tasks, no model calls
+python tools/creative/divergence_benchmark.py --run --json              # measure + persist to data/divergence/
+python tools/creative/divergence_benchmark.py --run --tasks <path> --out <dir>
+
 # Daemon mode
 python tools/creative/creative_engine.py --daemon --json
 ```
@@ -2253,6 +2382,61 @@ python tools/databridge/connectors/clawhub_connector.py --health --json
 ## LLM Tools — Gateway, Prompt Registry, Cost Intelligence, Model Monitor
 
 ```bash
+# AGX reasoning-architecture benchmark + leaderboard (agx-bench-01/02)
+python tools/llm/architectures/benchmark.py --dry-run --json                            # List task suite + registered architectures (no model calls)
+python tools/llm/architectures/benchmark.py --run --json                                # Run the bench (live models if reachable) -> data/agx/benchmark_latest.json
+python tools/llm/architectures/benchmark.py --run --architectures chain_of_thought,baseline --min-samples 3  # Subset / threshold
+python tools/llm/architectures/leaderboard.py --markdown                                # Render leaderboard + routing recommendations from latest report
+python tools/llm/architectures/leaderboard.py --recommend --json                        # Evidence-based routing recommendations only (RECOMMEND — never writes config)
+
+# LLM Proxy Keys (lpx-keys-01) — virtual keys for /gameday & /academy cohorts
+python tools/llm/proxy_keys.py issue --scope-type team --scope-ref 7 --session-id 42 --budget 10 --budget-window exercise --json  # Issue a budgeted team key (shown once)
+python tools/llm/proxy_keys.py list --session-id 42 --json                              # List keys (metadata only, never the key/hash)
+python tools/llm/proxy_keys.py show <key_id> --json                                     # Show one key by id
+python tools/llm/proxy_keys.py revoke <key_id> --actor admin --reason "left cohort" --json  # Revoke (per-key, immediate)
+python tools/llm/proxy_keys.py rotate <key_id> --actor admin --json                     # Rotate: revoke old, issue linked successor (new key shown once)
+python tools/llm/proxy_keys.py expire --json                                            # Sweep keys past expiry -> status expired
+python tools/llm/proxy_keys.py audit --key-id <key_id> --json                           # Append-only lifecycle audit trail (NIST AU)
+# Default expiry: ICDEV_LLM_PROXY_KEY_TTL_DAYS (default 30; 0 disables) so a cohort key cannot outlive the cohort
+# Master/admin key from ICDEV_LLM_PROXY_MASTER_KEY (never logged/returned); LiteLLM sync is best-effort and OFF unless ICDEV_LLM_PROXY_ENABLED=true
+
+# Local canvas copy (lpx-keys-04) — per-person virtual key, fail-closed, no real key on a laptop
+#   Use .env.local-copy.template (gateway URL + virtual-key slot, NO real-provider-key slot). Set ICDEV_LLM_LOCAL_COPY=true.
+python -c "import json;from tools.llm.proxy_gateway import local_copy_preflight;print(json.dumps(local_copy_preflight()))"  # onboarding/health preflight
+# A local copy with no gateway reachable / no virtual key fails CLOSED with a clear message; it never falls back to a real provider key.
+
+# Per-team spend attribution (lpx-teams-03) — "what did each team spend this exercise?"
+python tools/ttx/team_spend.py <session_id> --json                                  # Per-team calls/tokens/cost from ttx_api_log
+python tools/ttx/team_spend.py <session_id> --total --json                           # + exercise roll-up
+
+# LLM Proxy Team Budgets (lpx-teams-02) — per-team gameday spend (a team's budget is its key's budget)
+python tools/llm/proxy_team_budgets.py provision <session_id> <team_id> --budget 40 --json  # Provision/update exercise budget
+python tools/llm/proxy_team_budgets.py check <session_id> <team_id> --projected 0.05 --json  # allow/warn/block + facilitator_message
+python tools/llm/proxy_team_budgets.py status <session_id> --json                    # Per-team spend vs budget (attribution is per-team)
+
+# LLM Proxy Team Rate Ceilings (lpx-teams-01) — competition fairness for /gameday
+python tools/llm/proxy_team_limits.py configure <session_id> --json                 # Compute+persist per-team RPM/TPM ceilings (sized off actual team count)
+python tools/llm/proxy_team_limits.py check <session_id> <team_id> --tokens 1200 --json  # allow/deny for one team (degrades only that team)
+python tools/llm/proxy_team_limits.py status <session_id> --json                    # Facilitator per-team usage vs ceiling (at_ceiling flag)
+# Org limits: ICDEV_LLM_ORG_RPM (60) / ICDEV_LLM_ORG_TPM (100000); burst ICDEV_LLM_TEAM_BURST_FACTOR (1.5)
+
+# LLM Proxy Budgets (lpx-keys-02) — per-key spend budgets scoped to team/guild/user
+python tools/llm/proxy_budgets.py check <key_id> --projected 0.05 --json          # allow|warn|block for a key's budget
+python tools/llm/proxy_budgets.py spend <key_id> --json                            # spend summary for current window
+python tools/llm/proxy_budgets.py record <key_id> --cost 0.05 --input-tokens 1200 --output-tokens 400 --json  # record spend
+
+# LLM Proxy Observability (lpx-obs-01) — spend + rate metrics into /ops/llm
+python tools/llm/proxy_metrics.py --json                                            # Proxy spend/rate metrics (ledger + best-effort Prometheus scrape)
+python tools/llm/proxy_metrics.py --window-hours 24 --top 10 --no-scrape --json     # Ledger-only aggregation over a window
+
+# LLM Proxy Reconciliation (lpx-obs-02) — proxy spend vs token_tracker
+python tools/llm/proxy_reconcile.py --json                                          # Reconcile proxy spend vs token_tracker/gateway audit
+python tools/llm/proxy_reconcile.py --window-hours 24 --threshold-pct 10 --gate --json  # Exit 1 if divergence past threshold (proxy active + both have spend)
+
+# LLM Proxy CUI egress gate (lpx-egress-02) — classified content never traverses the proxy
+# ICDEV_LLM_PROXY_MAX_CLASSIFICATION (default UNCLASSIFIED) — highest classification allowed through the proxy;
+# CUI and above are refused (fail-closed, invoke-time) unless explicitly raised (an ATO-boundary decision).
+
 # LLM Gateway
 python tools/llm/gateway.py --stats --json                                             # Gateway usage statistics
 python tools/llm/gateway.py --audit --json --limit 50                                  # Audit log (last N requests)
@@ -2284,6 +2468,98 @@ python tools/llm/model_monitor.py --detect-drift --json                         
 python tools/llm/model_monitor.py --health --json                                      # Model health dashboard
 python tools/llm/model_monitor.py --gate                                               # Gate check (CI/CD)
 ```
+
+---
+
+## ICDEV Cortex — Unified AI Facade (ctx-*)
+
+Cortex is a Python **API facade** (`tools/cortex/`, mirrored to `icdev/tools/cortex/`) over
+LLMRouter, the four retrieval backends (RAG / GraphRAG / DIC / KB), IQE, and the enforced
+TRUST governance chain. There is no standalone argparse CLI — call it in-process or via
+`python -c`. Routing is config-driven (`cortex_*` chains in `args/llm_config.yaml`); behavior
+tuning lives in `args/cortex_config.yaml` (`$ICDEV_CORTEX_CONFIG` overrides). All chains keep a
+local ollama tier so the facade is air-gap safe.
+
+```bash
+# --- Generation (api.py: complete / classify / extract) ---
+# Free-form completion via the cortex_complete routing chain
+python -c "from tools.cortex import complete; r = complete('Summarize NIST 800-53 AC-2'); print(r.text)"
+
+# Single-label classification (LLM chain, deterministic query_classifier fallback offline/air-gap)
+python -c "from tools.cortex import classify; r = classify('reset my password', ['billing','account','technical']); print(r.text, r.provider)"
+
+# Structured extraction to a JSON schema (output_schema + fenced-JSON parse)
+python -c "from tools.cortex import extract; r = extract('Contact: Jane Doe, jane@x.mil', {'type':'object','properties':{'name':{'type':'string'},'email':{'type':'string'}}}); print(r.text)"
+
+# --- Unified search (search_service.py: strategy routing + CRAG correction) ---
+# Agentic auto-routing (classify_route -> backend selection / fan-out), top_k=5
+python -c "from tools.cortex import search; [print(h.backend, round(h.score,3), h.content[:60]) for h in search('who owns satellite AX-7', top_k=5)]"
+
+# Force a specific backend or full fan-out (bypass classification): rag|graph|dic|kb|all
+python -c "from tools.cortex import search; print(len(search('quarterly revenue trend', strategy='all')))"
+
+# Inspect the routing decision without running backends
+python -c "from tools.cortex import classify_route; print(classify_route('list all vendors linked to CVE-2024-1234'))"
+
+# --- Analyst (analyst.py: ask-your-data, IQE primary + NL->SQL fallback) ---
+# Natural-language query over platform data (mode: auto | iqe | nlq)
+python -c "from tools.cortex import ask; r = ask('show all satellites', mode='auto'); print(r.provider); print(r.text)"
+
+# Pin a canvas scope and request an LLM prose summary (citations grounded/validated)
+python -c "from tools.cortex import ask; r = ask('top 5 open incidents', canvas='nocc', summarize=True); print(r.metadata.get('grounding')); print(r.text)"
+
+# --- Governance (governance.py: enforced TRUST chain — gateway, redaction, grounding, provenance) ---
+# Wrap any Cortex call so every gate in GATE_ORDER runs (fail-open unless ctx.fail_closed)
+python -c "from tools.cortex import GovernancePipeline, complete, CortexContext; ctx=CortexContext(tenant_id='t1', classification='CUI', fail_closed=True); res, rpt = GovernancePipeline().wrap(lambda: complete('draft an RFI intro'), ctx, prompt='draft an RFI intro'); print(rpt.gates_run, rpt.outcomes)"
+
+# --- Config / air-gap invariant (config.py) ---
+# Load the merged cortex config (weights, rrf_k, crag_threshold, timeouts)
+python -c "from tools.cortex import load_cortex_config; c = load_cortex_config(); print(c['search']['crag_threshold'], c['search']['timeouts'])"
+
+# Verify every cortex_* routing chain retains a local ollama tier (raises CortexAirgapError if not)
+python -c "from tools.cortex import assert_airgap_ready; assert_airgap_ready(); print('cortex air-gap ready')"
+
+# --- Domain lenses (domains/: data-driven config profiles over the facade, ctx-canvas-04) ---
+# Load the security (XSIAM-style) lens; scope search to threat/vuln/incident sources
+python -c "from tools.cortex import load_domain_profile, list_domain_names; print(list_domain_names()); print(load_domain_profile('security').sources)"
+
+# --- MCP server (cortex_server.py: 8 cortex_* tools, ctx-expose-01) ---
+# Start the Cortex MCP server over stdio (cortex_search/ask/complete/reason/classify/extract/govern/agent_launch)
+python tools/mcp/cortex_server.py
+
+# --- REST API v1 (rest_v1.py folded onto the /cortex blueprint, ctx-expose-02) ---
+# POST JSON to the versioned surface (identity derived server-side; only `domain` is caller-supplied):
+#   POST /cortex/api/v1/search   {"query": "...", "top_k": 5, "strategy": "auto", "domain": "security"}
+#   POST /cortex/api/v1/ask      {"question": "...", "mode": "auto", "summarize": true}
+#   POST /cortex/api/v1/complete {"prompt": "...", "system_prompt": "..."}
+#   POST /cortex/api/v1/reason   {"prompt": "...", "mode": "cot"}   # mode: cot | debate | council
+#   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}
+#   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
+#   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
+# Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
+#   GET  /cortex/api/v1/health   (unauthenticated liveness — status only)
+
+# --- Service keys (service_keys.py: external-caller auth, ctx-expose-02) ---
+# Issue a scoped, tenant-bound icdev_ctx_ key for an external consumer (raw key shown ONCE)
+python -m tools.cortex.service_keys create --label compass --tenant compass --scopes cortex:search,cortex:ask,cortex:complete,cortex:govern --ceiling CUI --json
+python -m tools.cortex.service_keys list --json
+python -m tools.cortex.service_keys revoke --key-id <id> --json
+# External callers send the key as `Authorization: Bearer icdev_ctx_...` on
+# /cortex/api/v1/* and /api/databridge/v1/* ONLY; tenant/classification bind server-side.
+
+# --- Client SDK (client.py — vendored into compass/idea_lab, ctx-expose-06) ---
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.is_available())"
+
+# --- DataBridge feeds (IRIS stub, ctx-expose-05) ---
+#   GET  /api/databridge/v1/iris/staffing_alignment     (scope databridge:iris:read)
+#   POST /api/databridge/v1/iris/performance_reviews    (scope databridge:iris:write)
+# Stub rows carry metadata.stub=true until the vendor publishes the IRIS API
+# (flip with IRIS_STUB_MODE=false + IRIS_BASE_URL + IRIS_API_KEY).
+```
+
+Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_classify`
+(4-label taxonomy: fact_single/summary/reasoning/unanswerable), `crag_benchmark_run`
+(CRAG evaluation campaign with hallucination-penalizing scoring).
 
 ---
 
@@ -2889,6 +3165,65 @@ python tools/kanban/seed_ace_kanban.py [--dry-run]
 ICDEV_ACE_ENABLED=true
 ```
 
+### Cross-Repo SME Consult (MCP tools, idea_lab bridge)
+Three MCP tools let an external process (primary caller: the standalone
+`idea_lab` project's Specialist advisor) consult ICDEV without launching a
+full async ACE team session:
+
+```bash
+# ace_persona_query — one-shot, persona-informed answer from a single ACE
+# role (or an on-the-fly generated persona if role_id is omitted/unknown
+# but domain_description is given). tools/ace/persona_query.py + persona_generator.py
+# council_query — pressure-test a decision through the 5-perspective LLM
+# Council + chairman synthesis. tools/llm/chain_orchestrator.py::invoke_council()
+# writeguard_analyze — full deterministic WriteGuard quality check, zero LLM.
+# tools/pulse/writeguard.py::handle_writeguard_analyze
+
+# Registered in tools/mcp/tool_registry.py; handlers in tools/mcp/gap_handlers.py
+# (ace_persona_query, council_query) and tools/pulse/writeguard.py (writeguard_analyze).
+# See tools/manifest/ace.md, tools/manifest/llm-chain-orchestration.md, and
+# tools/manifest/writeguard-writing-quality-analysis.md for full details.
+```
+
+### Divergent Ideation (Divergence)
+Generative counterpart to the Council: widen the option space, then score. OPT-IN
+per function (`chain_orchestration.divergence.enabled` default false).
+
+```bash
+# Generate a raw idea pool (single isolated generative fan-out)
+python tools/llm/chain_orchestrator.py --divergence --function <fn> --prompt "<problem>" --json
+
+# Score + trap-flag the pool (the separate critic; novelty/viability/fit + advisory traps)
+python tools/quality/divergence_critic.py --function <fn> --pool-file <pool.md> --json
+
+# Headless skill (both halves, documented steps)
+python tools/skills/invoke.py --exec icdev-divergence -- --function <fn> --prompt "<problem>"
+
+# MCP tool: divergence_invoke  params: function, prompt, system_prompt?, score?(bool)
+#   Returns: {content, chain_mode, models_used, total_cost_usd, trace_id, stop_reason,
+#             rounds, scored?, trap_warnings?}  — advisory traps, never a blocker.
+# Registered in tools/mcp/tool_registry.py; handler tools/mcp/gap_handlers.py::handle_divergence_invoke
+```
+
+### Cross-Repo Compass Bridge (MCP tools, optional)
+Two MCP tools let ICDEV's CPMP/GovCon modules query a separate, standalone
+Compass app (`C:\AI\standalone\compass` — LCAT/staffing/rate-card automation)
+instead of duplicating its taxonomy. Reverse direction of Compass's own
+bridge into ICDEV (dic_search/dic_ingest/ace_persona_query/council_query).
+
+```bash
+# compass_lcat_lookup — best-matching BLS SOC labor category for a task
+# description or resume, via Compass's live LCAT taxonomy.
+# compass_staffing_summary — Compass's current staffing matrix (personnel
+# vs. resume-matched LCAT compliance, mismatch/unresolved counts).
+
+# Registered in tools/mcp/tool_registry.py; handlers + HTTP client in
+# tools/integrations/compass_mcp_handlers.py + compass_client.py.
+# Optional: degrades to an error dict (never raises) if Compass isn't
+# configured/reachable. Config: args/compass_integration.yaml.
+# See tools/manifest/govcon-intelligence.md for full details.
+```
+
 ## Autonomous Capability Foundry (ACF) Commands
 ```bash
 # ── Engine — run one harvest→synth→novelty→score→CoD→spec→task-graph→seed cycle ──
@@ -3052,4 +3387,108 @@ python tools/network/patch_planner.py --plan-summary <plan_id> --json
 python tools/iqe/cli.py --file context/iqe/queries/network/pvm_01_risk_trajectory.iqe --adapter ndc --json
 python tools/iqe/cli.py --file context/iqe/queries/network/pvm_02_attack_surface.iqe   --adapter ndc --json
 python tools/iqe/cli.py --file context/iqe/queries/network/pvm_03_triage_queue.iqe     --adapter ndc --json
+```
+
+## Document Modernization Engine (docmod)
+
+```bash
+# Scan documents for stale content (EOL hardware/software, deprecated tech, superseded standards)
+python -c "from tools.doc_modernization import scan_collection; import json; print(json.dumps(scan_collection(), indent=2))"
+python -c "from tools.doc_modernization import scan_document; import json; print(json.dumps(scan_document('<doc_id>'), indent=2))"
+
+# Latest-state findings (append-only supersede chains resolved)
+python -c "from tools.doc_modernization import get_findings; import json; print(json.dumps(get_findings(state='open'), indent=2, default=str))"
+
+# endoflife.date cache — seed (air-gap), live sync, bundle import
+python -m tools.doc_modernization.eol_products_sync --seed --json
+python -m tools.doc_modernization.eol_products_sync --sync --json
+python -m tools.doc_modernization.eol_products_sync --import bundle.yaml --json
+
+# De facto deployment standards from ni_devices (recency-weighted)
+python -c "from tools.doc_modernization.defacto_learner import recompute; print(recompute())"
+
+# Nightly sweep reflex (standalone)
+python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
+
+# UI: http://localhost:5050/standards-catalog (curated standards, all domains)
+#     http://localhost:5050/document-intelligence/freshness (staleness triage)
+# Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
+# MCP tools: docmod_scan, docmod_findings, docmod_redline
+```
+
+## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
+
+```bash
+# Cross-canvas twin health report (snapshot freshness, verdict distribution,
+# violation counts by severity, refresh-schedule adherence vs genesis reflexes)
+python -m tools.twin_core.observer --json
+python -m tools.twin_core.observer --window-hours 24 --stale-after-hours 48 --json
+
+# Library API
+python -c "from tools.twin_core import observe; import json; print(json.dumps(observe(), default=str)[:400])"
+python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"  # registered twins
+# Config/registry: adapters self-register from tools/twin_core/adapters/*.py
+# Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
+```
+
+## Agent Browser — Indexed-Element Page Representation (tools/browser/)
+
+```bash
+# Probe which WebDriver resolves (vendored msedgedriver → chromedriver → Selenium Manager)
+python tools/browser/driver_manager.py --probe
+python tools/browser/driver_manager.py --smoke
+
+# Index a page — prints exactly what a model sees:
+#   [24] <button> + Add Task
+#   [20] <input> role=text Filter tasks (id=kanban-filter-input, type=text)
+python tools/browser/agent_browser.py --url http://localhost:5050/kanban --text
+
+# JSON state (index, role, text, allowlisted attributes, bounds, in_viewport, disabled)
+python tools/browser/agent_browser.py --url http://localhost:5050 --json
+
+# State + screenshot (always lands under playwright/screenshots/)
+python tools/browser/agent_browser.py --url http://localhost:5050 --text --screenshot --name home
+
+# Show the resolved config
+python tools/browser/agent_browser.py --config --json
+
+# In a git worktree use the module form — a script path does not put the repo
+# root on sys.path, so tools.* resolves to the shared checkout's vendor/drivers.
+python -m tools.browser.agent_browser --url http://localhost:5050 --text
+```
+
+```python
+# Library API — act by index, never by an invented CSS selector
+from tools.browser.agent_browser import AgentBrowser
+
+with AgentBrowser() as b:
+    state = b.navigate("http://localhost:5050/kanban")
+    print(state.to_text())              # model-facing rendering
+    b.type_text(20, "oss-browse")       # index from the state above
+    b.click(24)
+    b.press("Escape")
+    b.select(19, "Engineering")         # matches option value, then visible text
+    state = b.read_state(screenshot=True)
+    print(b.validate("The CUI banner is visible"))   # reuses screenshot_validator
+
+# Agent-loop wiring (same convention as tools/ace/agent_tools.py)
+from tools.browser.agent_tools import BrowserToolRegistry
+tools, handlers = BrowserToolRegistry(browser).build()
+```
+
+```
+# Config: args/agent_browser.yaml — page representation only
+#   include_attributes  — DOM verbosity allowlist (the main prompt-size knob)
+#   max_elements / max_text_length / max_attr_length — hard caps (state.truncated)
+#   viewport_only / occlusion_check — geometry filters
+#   navigation.settle_ms — post-action pause before re-reading state
+#
+# Config: args/browser_scope.yaml — the enforced policy (tools/browser/scope.py)
+#   allowed_domains / denied_domains / allowed_schemes — default-deny nav gate
+#   allow_non_local + require_egress_guard — the two extra switches a routable host needs
+#   limits.max_actions_per_run / max_failures / step_timeout_seconds — per-run budget
+#   AgentBrowser holds a GuardedDriver, so all of the above applies to every method.
+#   There is no navigation policy in agent_browser.yaml — one policy, one file.
+# Tests: tests/test_agent_browser.py (56 tests; real-browser test auto-skips with no driver)
+#        tests/browser/test_scope.py (52 tests; the policy decision table)
 ```

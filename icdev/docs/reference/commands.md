@@ -1,4 +1,4 @@
-﻿# ICDEV™ CLI Command Reference
+# ICDEV™ CLI Command Reference
 
 Complete CLI command reference for all ICDEV™ modules. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
 
@@ -35,6 +35,14 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Config: args/llm_config.yaml — providers, models, routing, embeddings
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
+
+# Reasoned Codegen (CoT/CoD + adversary critique + verify/repair)
+# Library: tools/llm/reasoned_codegen.py — generate_reasoned_code(function=, request=, verifier=, mode=)
+#   Config: args/llm_config.yaml -> reasoned_codegen (section kill-switch + per_function mode/critique)
+#   Wired: translation (default ON); ANVIL agentic_runner --reasoned auto|on|off; chat per-session reasoning_mode
+python tools/llm/reasoned_codegen_advisor.py --function code_generation --spec "..." --file-count 5 --json  # advise enable/mode
+python tools/anvil/agentic_runner.py --task-id X --task-desc "..." --reasoned auto   # auto|on|off
+# Dashboard panel: /ops/llm (config view + advisor runner + recent chain runs)
 ```
 
 ---
@@ -64,6 +72,57 @@ python tools/testing/health_check.py --json           # JSON output
 python tools/testing/test_orchestrator.py --project-dir /path/to/project
 python tools/testing/e2e_runner.py --discover         # List available E2E test specs
 python tools/testing/e2e_runner.py --run-all           # Execute all E2E tests
+```
+
+---
+
+## Enterprise-Configurable Platform Commands
+```bash
+# Project scaffolding — ALWAYS run `icdev init` after `pip install icdev`
+icdev init [target]               # Scaffold a project (CLAUDE.md + FORGE data + .claude/ + .env)
+icdev init my-project --profile air-gap   # Non-interactive: apply a core profile
+icdev init my-project --profile none      # Registry defaults, skip the profile prompt
+icdev init --list                 # Dry-run: show what would be copied
+
+# Interactive feature-toggle TUI (stdlib-only; primary browser-free on/off surface)
+icdev setup                       # Browse every component + sub-pages, toggle, write .env
+icdev setup --plain               # Force the plain numbered-menu mode (non-TTY)
+icdev setup --json                # Dump current component state as JSON
+
+# Component registry — single source of truth for canvases, child apps, features, core extensions
+python -c "from tools.config.component_registry import get_registry; r=get_registry(); print([c.key for c in r.iter_canvases()])"
+python -c "from tools.config.component_registry import get_registry; r=get_registry(); print(r.get_nav_context())"
+
+# Canvas / feature toggles
+icdev enable <name> [...]         # Turn on canvas / subsystem toggles in .env
+icdev disable <name> [...]        # Turn off toggles
+icdev status                      # Show active toggles
+icdev status --json               # Machine-readable status
+icdev list                        # List supported toggles
+
+# Core enterprise profiles
+icdev profile list                 # List available profiles
+icdev profile show [<name>]        # Show profile details (active profile by default)
+icdev profile apply <name>         # Append profile env overrides to .env
+icdev profile apply <name> --dry-run  # Preview overrides
+
+# Scaffolding
+icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas
+icdev scaffold child-app <key> --display-name "Name" --flavor <flavor> [--canvases k1,k2] [--out <dir>]  # Generate a child app (minimal, compliance, ai-lab, govcon)
+
+# Document-currency packs (docmod) — let any domain own its own coverage.
+# Writes IN PLACE (packs are discovered by location under args/docmod/) and never
+# overwrites an existing file.
+icdev scaffold docmod-pack <key> --display-name "Name"                        # rulebook flavor: YAML only, NO Python
+icdev scaffold docmod-pack <key> --display-name "Name" --entity-type standard --finding-type deprecated_tech
+icdev scaffold docmod-pack <key> --display-name "Name" --flavor catalog --evidence-table <table>  # table-driven; generates a Python stub
+icdev scaffold docmod-pack <key> --display-name "Name" --dry-run --json       # preview
+# Then: write rules in args/docmod/rulebook_<key>.yaml, set enabled: true in
+# args/docmod/packs/<key>.yaml — the next docmod sweep auto-discovers it.
+
+# Validation
+python tools/workflow/coherence_checker.py --all --gate      # Registry/profile/completeness coherence gate
+python tools/builder/forge_validator.py --gate               # FORGE gate for child apps
 ```
 
 ---
@@ -119,6 +178,18 @@ python tools/db/storage.py --info --json           # Show backend configuration
 
 ---
 
+## Untrusted HTML Extraction (oss-filter-01)
+```bash
+# Two-pass fit_markdown filter: prune site chrome, then BM25-rank against a query.
+python tools/http/page_extract.py --file page.html                      # prune only
+python tools/http/page_extract.py --file page.html --query "rate limits"  # + relevance
+python tools/http/page_extract.py --file page.html --query "rate limits" --json
+cat page.html | python tools/http/page_extract.py --query "rate limits"
+
+# Thresholds (prune threshold/type, min_word_threshold, BM25 threshold, stopwords,
+# stemming, section propagation, markdown rendering): args/page_extract.yaml
+```
+
 ## Security Commands
 ```bash
 python tools/security/sast_runner.py --project-dir "/path"
@@ -137,6 +208,68 @@ python tools/security/encryption_at_rest.py --rotate --classification TS --json
 python tools/security/mtls_integration.py --verify --json
 python tools/security/security_middleware.py --init-app --json
 python tools/security/audit_posture.py --json
+
+# SIPA Software Integrity PR gate (eqo-sipa) — assess only the *.py files changed on a branch
+python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
+python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)
+python tools/integrity/pr_gates.py --base origin/main --gate            # CI gate: exit 1 on a blocking (QUARANTINE) verdict
+```
+
+---
+
+## Browser Automation & Agent Scope Controls
+```bash
+# Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
+python tools/browser/driver_manager.py --probe            # Resolved browser + driver path
+python tools/browser/driver_manager.py --smoke            # Launch, visit about:blank, quit
+
+# Agent browser scope controls (oss-browse-02) — config: args/browser_scope.yaml
+python tools/browser/scope.py --show --json               # Print the active policy
+python tools/browser/scope.py --check-url http://localhost:5050/ --json   # exit 0 = allowed
+python tools/browser/scope.py --check-url https://example.com/ --json     # exit 1 = denied
+# Override the config path with ICDEV_BROWSER_SCOPE_CONFIG.
+```
+
+Any **agent-driven** browser session must go through `GuardedDriver`, never a raw
+WebDriver. It enforces the domain allowlist (loopback only by default; a routable
+host needs to be allowlisted **and** `allow_non_local: true` **and** cleared by
+`egress_guard`), the per-run action cap, the per-step timeout, `<secret>name</secret>`
+placeholder substitution at the driver, and an `audit_trail` row per action.
+
+```python
+from tools.browser import get_driver, GuardedDriver
+
+driver = get_driver(headless=True)
+try:
+    session = GuardedDriver(driver, run_id="vv-001")
+    session.navigate("http://localhost:5050/")        # allowed
+    session.type_text(field, "<secret>dashboard_password</secret>")
+    session.navigate("https://example.com/")          # raises NavigationDenied
+finally:
+    driver.quit()
+```
+
+---
+
+## Security Canvas (SDC) — Demo Runner
+```bash
+# Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
+python tools/sdc/demo_runner.py --audience exec --json
+python tools/sdc/demo_runner.py --audience tech --json
+python tools/sdc/demo_runner.py --audience engineer --json
+
+# Run a specific scenario
+python tools/sdc/demo_runner.py --scenario A --audience exec --json          # Red Team: STRIDE + attack paths
+python tools/sdc/demo_runner.py --scenario B --simulate --json               # 12-Step Workflow + auto-approve ISSO gates
+python tools/sdc/demo_runner.py --scenario C --audience tech --json          # After State: 0 CAT1, IaC, crosswalk
+
+# Write output to file
+python tools/sdc/demo_runner.py --audience exec --json --output demo_result.json
+
+# Seed demo data before first run
+python tools/db/seeds/seed_sdc_demo.py --all
+
+# Dashboard route: http://localhost:5050/security/demo
 ```
 
 ---
@@ -152,6 +285,26 @@ python tools/compliance/atlas_assessor.py --project-id "sparkpilot" --json
 python tools/compliance/owasp_llm_assessor.py --project-id "sparkpilot" --json
 python tools/compliance/owasp_agentic_assessor.py --project-id "sparkpilot" --json
 python tools/security/agent_trust_scorer.py --all --json
+```
+
+---
+
+## Aggregation Guard (prop-sec-03 through prop-sec-08)
+```bash
+# Evaluate SCG aggregation rules against a result set (dry-run, no events written)
+python tools/security/aggregation_guard.py --evaluate-rules --json
+
+# Run full guard check for a surface (writes aggregation_events on match)
+python tools/security/aggregation_guard.py --guard --surface "proposals/list" --json
+
+# Gate mode — exits non-zero if action=block
+python tools/security/aggregation_guard.py --guard --surface "proposals/export" --gate --json
+
+# Show recent aggregation events (audit trail)
+python tools/security/aggregation_guard.py --events --limit 50 --json
+
+# Check guard health (rule count, events table row count)
+python tools/security/aggregation_guard.py --health --json
 ```
 
 ---
@@ -191,6 +344,17 @@ python tools/observability/shap/agent_shap.py --project-id "sparkpilot" --last-n
 python tools/observability/provenance/prov_query.py --entity-id "<id>" --direction backward --json
 python tools/observability/provenance/prov_export.py --project-id "sparkpilot" --json
 python tools/compliance/xai_assessor.py --project-id "sparkpilot" --json
+```
+
+---
+
+## EQO Centralized Logging Commands (eqo-log)
+```bash
+# Query the append-only centralized_logs sink (RLS-aware, newest first)
+python tools/logging/log_query.py --component genesis --level ERROR --json
+python tools/logging/log_query.py --contains timeout --since 2026-06-06 --limit 50
+# Dashboard: /logs  |  JSON API: GET /api/logs?component=&level=&since=&contains=&limit=
+# IQE: POST /logs/api/iqe-query {question}  (collection logs.entries)
 ```
 
 ---
@@ -499,6 +663,59 @@ python tools/genesis/reporter.py --list --json                # List all reports
 
 ---
 
+## Loop Engineering — GEPA Optimizer & Adversarial Verify
+```bash
+# GEPA (Genetic Evolution of Prompt Architectures) optimizer
+python tools/skills/gepa_optimizer.py --dry-run              # Preview evolution cycle without writing
+python tools/skills/gepa_optimizer.py --json                 # Run full GEPA cycle, JSON output
+python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis reflex path
+
+# Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
+python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
+
+# Kanban task_factory — loop_type and adversarial fields
+# Create a looping task (loop_type: "fixed" | "adaptive" | "gepa")
+python -c "
+from tools.kanban.task_factory import create_tasks
+create_tasks([{
+  'id': 'loop-example-01',
+  'title': 'Example loop task',
+  'loop_type': 'adaptive',          # fixed | adaptive | gepa
+  'adversarial_enabled': True,      # spawns _run_adversarial_verify after each iteration
+  'description': '...',
+  'acceptance_criteria': '...',
+}])
+"
+
+# Adversarial verify (invoked automatically when adversarial_enabled=True on a looping task)
+# _run_adversarial_verify(task_id) in tools/kanban/task_factory.py — not a standalone CLI
+
+# OSS Adaptation card (oss- prefix) — 23 tasks / 12 epics adapting RAGFlow, Crawl4AI,
+# browser-use and STRIX as patterns rather than dependencies.
+# Analysis: docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md
+python tools/kanban/seed_oss_adaptation.py --dry-run --json   # Validate the graph, write nothing
+python tools/kanban/seed_oss_adaptation.py --json             # Seed tasks + ordering edges (idempotent)
+python -m tools.kanban.cli --set-status oss-gate-00 done      # RELEASE the card (deliberate human act)
+# Seeds TWO dependency layers and needs both: the scalar oss-gate-00 sentinel (blocks
+# everything while held in_progress) and 21 junction kanban_task_deps edges for intra-epic
+# ordering. Without the edges all 22 tasks become eligible at once with an arbitrary
+# created_at tiebreak, so the runner can build oss-browse-02 (scope controls) before
+# oss-browse-01 (the primitive they constrain). validate() refuses to seed on an unknown
+# edge endpoint, a self-dependency, or a cycle.
+
+# Compass dispatch probe — seeds the one trivial compass task that proves repo-aware
+# dispatch end to end (prem-vfy-01). Definition: args/kanban_seed_compass_dispatch.yaml;
+# routing: `prem-vfy` prefix in args/kanban_external_repos.yaml.
+python -m tools.kanban.seed_compass_dispatch_probe --dry-run --json   # Validate routing, write nothing
+python -m tools.kanban.seed_compass_dispatch_probe --json             # Seed onto the board
+# Refuses to seed if the id's prefix does not resolve to the repo the YAML claims
+# (an unregistered prefix defaults to ICDev — that would build a compass task in ICDev).
+# The external repo root must be set where the scheduler runs, else dispatch SKIPs it:
+#   $env:ICDEV_KANBAN_REPO_COMPASS = "C:/path/to/compass"
+```
+
+---
+
 ## Bayesian Autoresearch Commands (Phase 67)
 ```bash
 # Experiment engine (Karpathy Loop)
@@ -664,6 +881,17 @@ python tools/workflow/coherence_checker.py --all --fix --json                   
 python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+
+# Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
+# CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
+# grandfathered in args/doc_command_gate.yaml; NEW broken references fail the gate.
+python tools/workflow/coherence_checker.py --check doc_command_paths --json                         # List unresolved documented commands
+python tools/workflow/coherence_checker.py --check doc_command_paths --gate                         # Fail on any NEW broken reference
+
+# Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
+python tools/quality/completion_auditor.py                                                           # Human table to stdout
+python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
+python tools/quality/completion_auditor.py --md                                                      # Write docs/quality/completion-scorecard.md (sorted least->most complete)
 ```
 
 ---
@@ -723,6 +951,42 @@ python tools/harness/trace_analyzer.py --recommendations --limit 20 --json
 # Scaffold baseline harness for child apps
 python tools/harness/scaffold_harness.py --output-dir /path/to/project --json
 python tools/harness/scaffold_harness.py --output-dir /path --impact-level IL4 --json
+```
+
+---
+
+## NOVA — Autonomous Self-Learning Digital Coworker Commands
+```bash
+# DB init — creates NOVA tables in PostgreSQL (called automatically at dashboard startup)
+python -c "from tools.nova.db.init_db import init_nova_tables; print(init_nova_tables())"
+
+# ECHO — Execution Tracing
+python -c "
+from tools.workflow.trace_logger import start_trace, close_trace
+tid = start_trace('task-001', 'build', 'icdev-build')
+close_trace(tid, 'success', 'success_first_try')
+print('trace_id:', tid)
+"
+python -c "from tools.workflow.trace_logger import get_recent_traces; import json; print(json.dumps(get_recent_traces(limit=10), indent=2))"
+
+# ECHO — Reflexion (requires ICDEV_HARNESS_COLEARN=true)
+python -c "from tools.workflow.reflexion_agent import run_batch_reflexion; import json; print(json.dumps(run_batch_reflexion(['build'], dry_run=True), indent=2))"
+python -c "from tools.workflow.reflexion_agent import get_latest_improvement; print(get_latest_improvement('build'))"
+
+# SOUL — Coworker Identity
+python -c "from icdev.tools.ace.soul_manager import build_identity_preamble; print(build_identity_preamble('ai_developer'))"
+python -c "from icdev.tools.ace.soul_manager import record_learning; print(record_learning('ai_developer', 'Always use get_canvas_connection() for canvas tables.'))"
+
+# TRUST — Trust Calibration
+python -c "from tools.ace.trust_calibrator import get_trust_score, get_dispatch_config; import json; print(json.dumps(get_dispatch_config('ai_developer'), indent=2))"
+python -c "from tools.ace.trust_calibrator import record_trust_event; import json; print(json.dumps(record_trust_event('ai_developer', 'success', 'task-001'), indent=2))"
+python -c "from tools.ace.trust_calibrator import get_trust_summary; import json; print(json.dumps(get_trust_summary(), indent=2))"
+python -c "from tools.ace.trust_calibrator import run_weekly_recalibration; import json; print(json.dumps(run_weekly_recalibration(), indent=2))"
+
+# SELA — Skill Evolution (dry-run — never auto-merges)
+python -c "from tools.evolution.artifact_evolver import evolve_artifact; import json; print(json.dumps(evolve_artifact('icdev-status', 'skill', dry_run=True), indent=2))"
+python -c "from tools.evolution.artifact_evolver import evolve_all_skills; import json; print(json.dumps(evolve_all_skills(dry_run=True, limit=3), indent=2))"
+python -c "from tools.evolution.eval_builder import build_dataset; ds = build_dataset('icdev-build', '', min_examples=3); print(f'train={len(ds.train)} val={len(ds.val)}')"
 ```
 
 ---
@@ -1305,6 +1569,10 @@ python tools/builder/profile_detector.py --repo-path /path/to/repo --json       
 python tools/builder/profile_detector.py --text "We use Go, snake_case, 120-char lines" --json  # Detect from text
 python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --json     # Generate PROFILE.md
 python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --output /path/PROFILE.md --store  # Generate + store in DB
+python tools/builder/cursor_profile_generator.py --scope project --scope-id "proj-123" --format cursorrules                    # Export to .cursorrules
+python tools/builder/cursor_profile_generator.py --scope project --scope-id "proj-123" --format mdc --output .cursor/rules/icdev.mdc  # Export to .mdc
+python tools/builder/cursor_profile_importer.py --scan .cursor/rules/ --json                                              # Scan Cursor rules
+python tools/builder/cursor_profile_importer.py --scan .cursor/rules/ --create --scope platform --scope-id cursor-default --json   # Seed profile from Cursor
 
 # Universal AI Coding Companion (D194-D198)
 python tools/dx/companion.py --setup --write                              # Auto-detect tools + generate all configs
@@ -1398,6 +1666,89 @@ python tools/registry/evolution_daemon.py --reflex absorb --json         # Repor
 python tools/registry/evolution_daemon.py --enable discover              # Enable a reflex
 python tools/registry/evolution_daemon.py --disable absorb               # Disable a reflex
 python tools/registry/evolution_daemon.py --reset test --json            # Reset circuit breaker
+
+# Loop Engineering — GEPA Optimizer & Genesis Daemon Trigger
+# GEPA Optimizer — Genome Evolution Pressure Analyzer (gepa-mcp-01)
+python tools/skills/gepa_optimizer.py --json                             # Run optimization pass (prune low-fitness genome entries)
+python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan without applying writes
+# MCP tool: gepa_optimizer
+#   Parameters: dry_run (bool, default false) — when true, scan runs but no DB writes are committed.
+#   Returns:    {applied: [{capability_id, action, fitness, dry_run}],
+#                skipped: [{capability_id, reason, fitness}],
+#                errors:  [str]}
+#   Handler:    tools/mcp/gap_handlers.py::get_gepa_optimizer_handler
+#   Skill:      tools/skills/gepa_optimizer.py::run()
+# Genesis daemon 24h trigger — GEPA reflex fires daily via the genesis daemon loop:
+#   Config:     args/genesis_config.yaml — add a "gepa_optimizer" entry with interval_seconds: 86400
+#   Interval:   86400 s (24 h); controlled by interval_seconds / interval_hours in genesis_config.yaml
+#   Enable:     python tools/genesis/daemon.py --enable gepa_optimizer
+#   Disable:    python tools/genesis/daemon.py --disable gepa_optimizer
+#   Run once:   python tools/genesis/daemon.py --reflex gepa_optimizer --json
+#   Thresholds: args/security_gates.yaml → loop_engineering.gepa_min_composite_score (0.60)
+#                                           loop_engineering.gepa_min_score_delta (0.05)
+
+# adversarial_verify — Multi-agent adversarial verification for loop-generated outputs
+# Spawns N independent skeptic agents, each prompted to REFUTE a finding; result survives
+# only when ≥majority agents fail to refute (default threshold: 2 of 3).
+# MCP tool: adversarial_verify
+#   Parameters: claim (str) — the finding or output to verify
+#               agents (int, default 3) — number of skeptic agents to spawn
+#               threshold (int, default 2) — minimum non-refuting votes to pass
+#               context (str, optional) — supporting context injected into each skeptic prompt
+#   Returns:    {survives: bool, votes: int, refuted: int, rationale: str}
+#   Handler:    tools/mcp/gap_handlers.py::get_adversarial_verify_handler
+# CLI usage (single finding):
+python tools/skills/adversarial_verify.py --claim "Finding text here" --agents 3 --json
+python tools/skills/adversarial_verify.py --claim "Finding text here" --threshold 2 --json
+python tools/skills/adversarial_verify.py --dry-run --json                              # Preview skeptic prompts without spawning agents
+# Batch verify (read findings from a JSONL file, one claim per line):
+python tools/skills/adversarial_verify.py --batch .tmp/findings.jsonl --json
+# Integration: call from workflow scripts via agent() inside pipeline()/parallel() stages
+#   const votes = await parallel(Array.from({length: 3}, () => () =>
+#     agent(`Try to refute: ${claim}`, {schema: VERDICT})))
+#   const survives = votes.filter(Boolean).filter(v => !v.refuted).length >= 2
+
+# --- Loop Engineering Parameters ---
+#
+# loop_type — Classifies the intent of a workflow loop; gates which required processes
+#             the process verifier enforces for that loop (see args/workflow_loop_config.yaml).
+#   Column:   workflow_loops.loop_type  (TEXT, DEFAULT 'build')
+#   CLI arg:  --loop-type <value>  (tools/workflow/loop_engine.py --create)
+#   Valid values:
+#     'build'      — Standard feature/implementation loop (default). Enforces security scan,
+#                    tests, CUI marking, and compliance check.
+#     'compliance' — Compliance-only loop (policy updates, ATO artifacts). Enforces compliance
+#                    check and CUI marking; security scan is advisory.
+#     'deploy'     — Deployment and release loop. Enforces health check and smoke tests.
+#     'fix'        — Bug-fix / hotfix loop. Enforces tests and security scan.
+#     'research'   — Research / discovery loop (no deploy gate). No process enforcement;
+#                    outputs are informational only.
+#     'custom'     — User-defined loop. Required processes are caller-specified via
+#                    --boundaries; process verifier skips default enforcement.
+#   Example:
+python tools/workflow/loop_engine.py --create --project-id "proj-123" --phase "integrate" --loop-type fix --json
+python tools/workflow/process_verifier.py --check --project-id "proj-123" --loop-type build --json
+#
+# adversarial_enabled — Per-task flag that opts a kanban task into the adversarial gate.
+#   Column:   kanban_tasks.adversarial_enabled  (INTEGER, DEFAULT 0; 0=off, 1=on)
+#   Scope:    Applies only to kanban task dispatch, not to generic workflow loops.
+#   Behavior: When adversarial_enabled=1, the kanban scheduler spawns a second Claude CLI
+#             subprocess in review-only mode (--max-turns 10) inside a git worktree. The
+#             subprocess reads the task title and description (truncated to 1 200 chars) and
+#             must emit 'APPROVED:' or 'REJECTED:' on its last non-empty line. Any failure
+#             (timeout after 180 s, non-zero exit, unrecognised output) is treated as APPROVED
+#             so the gate is never permanently blocking.
+#   Pairing:  Conventionally used together with loop_type='non_deterministic' tasks — those
+#             whose outputs are non-reproducible and therefore benefit from an independent
+#             adversarial review before the result is persisted.
+#   Security: The reviewer subprocess is NOT granted --dangerously-allow-filesystem write
+#             access or network egress. Re-scope to sandboxed executor if either is added.
+#   Set via task_factory (preferred) or kanban CLI:
+#     # task_factory: pass adversarial_enabled=True (and loop_type) when seeding tasks
+#     from tools.kanban.task_factory import create_tasks
+#     create_tasks([{"title": "...", "loop_type": "non_deterministic", "adversarial_enabled": True}])
+#     # CLI fallback:
+#     python tools/kanban/cli.py --set-field <task-id> adversarial_enabled 1
 
 # Cloud-Agnostic Architecture (Phase 38)
 # Cloud Mode Manager (D232)
@@ -1524,6 +1875,33 @@ python tools/rag/ingestion_manager.py --daemon --json                           
 python tools/rag/retriever.py --query "FedRAMP AC-2" --json                          # Search across all knowledge
 python tools/rag/retention_manager.py --migrate --json                               # Hot/warm/cold tier migration
 python tools/rag/retention_manager.py --status --json                                # Retention tier status
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference --dry-run --json          # Plan a contextual re-index
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference --limit 500 --offset 0 --execute --json  # Resumable window (next_offset/has_more)
+python tools/rag/reindex_contextual.py --benchmark --baseline data/rag/rce_baseline.json --json          # Measure retrieval vs baseline
+
+# Retrieval-Quality Benchmark (rce-eval-01) — golden query set scored for recall@k / MRR / nDCG@k / citation-hit-rate / latency
+python tools/rag/rag_benchmark.py --json                                             # Score the compliance golden set
+python tools/rag/rag_benchmark.py --baseline-out data/rag/rce_baseline.json --json   # Record a baseline artifact
+python tools/rag/rag_benchmark.py --compare data/rag/rce_baseline.json --json        # Deltas vs a saved baseline
+
+# Single-toggle isolation (oss-meas-01) — measure each OFF-by-default retrieval toggle on its own
+python tools/rag/rag_benchmark.py --dry-run                                          # List the 5 toggles under test; retrieves nothing
+python tools/rag/rag_benchmark.py --toggle-matrix --json                             # All-off control + 1 run per toggle, with deltas
+python tools/rag/rag_benchmark.py --toggle-matrix --matrix-out data/rag/oss_toggle_matrix.json --json
+# Toggles: rag.rerank.enabled · rag.reflective_rerank.enabled · rag.adaptive_routing.enabled
+#          rag.quantization.binary_prefilter.enabled · rag.auto_indexer.enabled
+# Each run forces the other four OFF, so a metric delta is attributable to one toggle.
+# RAPTOR (rag.raptor.enabled) is excluded — already measured as a regression in rce-eval-05-d4/d5.
+
+# Chunking Templates (oss-chunk-01) — document-type chunking driven by the source_registry 'chunking' key
+python tools/rag/chunking_templates.py --list --json                                 # All templates + the default
+python tools/rag/chunking_templates.py --show oscal_catalog --json                   # One template definition
+python tools/rag/chunking_templates.py --suggest docs/catalog.md --json              # ADVISORY suggestion — never auto-applied
+python tools/rag/chunking_templates.py --preview docs/catalog.md --template oscal_catalog --json  # Chunks a template would produce
+# Templates: oscal_catalog (1 chunk/control, never split) · stig_checklist (1 chunk/rule) · rfp_sow (Section L/M)
+#            contract (numbered clauses) · sop_runbook (numbered steps) · slide_deck (1 chunk/slide)
+#            spreadsheet (row groups + header repeat) · general (default sliding window, unchanged)
+# Wire a source: set "chunking": "<template>" on its entry in tools/rag/source_registry.py
 
 # Fine-Tuning (Phase 64 Extension)
 python tools/finetune/dataset_manager.py --create --name "my-dataset" --purpose general --json   # Create dataset
@@ -1814,6 +2192,12 @@ python tools/creative/trend_tracker.py --report --json
 python tools/creative/spec_generator.py --generate-all --json
 python tools/creative/spec_generator.py --list --json
 
+# Divergent ideation benchmark (dvg-bench-01) — divergence vs single-shot on real
+# ICDEV functions; recommend-only (flips no default), air-gap => status "unmeasured"
+python tools/creative/divergence_benchmark.py --dry-run                 # list tasks, no model calls
+python tools/creative/divergence_benchmark.py --run --json              # measure + persist to data/divergence/
+python tools/creative/divergence_benchmark.py --run --tasks <path> --out <dir>
+
 # Daemon mode
 python tools/creative/creative_engine.py --daemon --json
 ```
@@ -1948,12 +2332,12 @@ python tools/marketplace/catalog_manager.py --get --slug "tenant-abc/my-skill" -
 # Provenance
 python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" --json
 
-# OpenClaw Bridge — Zero-trust import/export for SkillHub (skillhub.ai) skills (Phase 69)
+# OpenClaw Bridge — Zero-trust import/export for ClawHub (clawhub.ai) skills (Phase 69)
 # Import a skill from local OpenClaw directory
 python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
-# Import with SkillHub URL for provenance tracking
-python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --skillhub-url "https://skillhub.ai/author/skill-name" --tenant-id "tenant-abc" --imported-by "user@mil" --json
+# Import with ClawHub URL for provenance tracking
+python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --clawhub-url "https://clawhub.ai/author/skill-name" --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
 # List quarantined imports
 python tools/marketplace/openclaw_bridge.py --list-quarantine --json
@@ -1977,20 +2361,20 @@ python tools/marketplace/openclaw_bridge.py --health --json
 # Revoke a promoted import (rollback)
 python tools/marketplace/openclaw_bridge.py --revoke --import-id "oci-abc123" --revoked-by "isso@dod.mil" --reason "Causing errors" --json
 
-# Discover skills on SkillHub (vector search — requires network)
+# Discover skills on ClawHub (vector search — requires network)
 python tools/marketplace/openclaw_bridge.py --discover "code review automation" --limit 10 --json
 
-# Fetch + import a skill from SkillHub by slug (download → quarantine → scan → translate)
+# Fetch + import a skill from ClawHub by slug (download → quarantine → scan → translate)
 python tools/marketplace/openclaw_bridge.py --fetch self-improving-agent --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
 # Gate check (CI/CD)
 python tools/marketplace/openclaw_bridge.py --gate --json
 
-# SkillHub DataBridge Connector (standalone)
-python tools/databridge/connectors/skillhub_connector.py --search "self-improvement" --json
-python tools/databridge/connectors/skillhub_connector.py --get self-improving-agent --json
-python tools/databridge/connectors/skillhub_connector.py --download self-improving-agent --output .tmp/ --json
-python tools/databridge/connectors/skillhub_connector.py --health --json
+# ClawHub DataBridge Connector (standalone)
+python tools/databridge/connectors/clawhub_connector.py --search "self-improvement" --json
+python tools/databridge/connectors/clawhub_connector.py --get self-improving-agent --json
+python tools/databridge/connectors/clawhub_connector.py --download self-improving-agent --output .tmp/ --json
+python tools/databridge/connectors/clawhub_connector.py --health --json
 ```
 
 ---
@@ -1998,6 +2382,61 @@ python tools/databridge/connectors/skillhub_connector.py --health --json
 ## LLM Tools — Gateway, Prompt Registry, Cost Intelligence, Model Monitor
 
 ```bash
+# AGX reasoning-architecture benchmark + leaderboard (agx-bench-01/02)
+python tools/llm/architectures/benchmark.py --dry-run --json                            # List task suite + registered architectures (no model calls)
+python tools/llm/architectures/benchmark.py --run --json                                # Run the bench (live models if reachable) -> data/agx/benchmark_latest.json
+python tools/llm/architectures/benchmark.py --run --architectures chain_of_thought,baseline --min-samples 3  # Subset / threshold
+python tools/llm/architectures/leaderboard.py --markdown                                # Render leaderboard + routing recommendations from latest report
+python tools/llm/architectures/leaderboard.py --recommend --json                        # Evidence-based routing recommendations only (RECOMMEND — never writes config)
+
+# LLM Proxy Keys (lpx-keys-01) — virtual keys for /gameday & /academy cohorts
+python tools/llm/proxy_keys.py issue --scope-type team --scope-ref 7 --session-id 42 --budget 10 --budget-window exercise --json  # Issue a budgeted team key (shown once)
+python tools/llm/proxy_keys.py list --session-id 42 --json                              # List keys (metadata only, never the key/hash)
+python tools/llm/proxy_keys.py show <key_id> --json                                     # Show one key by id
+python tools/llm/proxy_keys.py revoke <key_id> --actor admin --reason "left cohort" --json  # Revoke (per-key, immediate)
+python tools/llm/proxy_keys.py rotate <key_id> --actor admin --json                     # Rotate: revoke old, issue linked successor (new key shown once)
+python tools/llm/proxy_keys.py expire --json                                            # Sweep keys past expiry -> status expired
+python tools/llm/proxy_keys.py audit --key-id <key_id> --json                           # Append-only lifecycle audit trail (NIST AU)
+# Default expiry: ICDEV_LLM_PROXY_KEY_TTL_DAYS (default 30; 0 disables) so a cohort key cannot outlive the cohort
+# Master/admin key from ICDEV_LLM_PROXY_MASTER_KEY (never logged/returned); LiteLLM sync is best-effort and OFF unless ICDEV_LLM_PROXY_ENABLED=true
+
+# Local canvas copy (lpx-keys-04) — per-person virtual key, fail-closed, no real key on a laptop
+#   Use .env.local-copy.template (gateway URL + virtual-key slot, NO real-provider-key slot). Set ICDEV_LLM_LOCAL_COPY=true.
+python -c "import json;from tools.llm.proxy_gateway import local_copy_preflight;print(json.dumps(local_copy_preflight()))"  # onboarding/health preflight
+# A local copy with no gateway reachable / no virtual key fails CLOSED with a clear message; it never falls back to a real provider key.
+
+# Per-team spend attribution (lpx-teams-03) — "what did each team spend this exercise?"
+python tools/ttx/team_spend.py <session_id> --json                                  # Per-team calls/tokens/cost from ttx_api_log
+python tools/ttx/team_spend.py <session_id> --total --json                           # + exercise roll-up
+
+# LLM Proxy Team Budgets (lpx-teams-02) — per-team gameday spend (a team's budget is its key's budget)
+python tools/llm/proxy_team_budgets.py provision <session_id> <team_id> --budget 40 --json  # Provision/update exercise budget
+python tools/llm/proxy_team_budgets.py check <session_id> <team_id> --projected 0.05 --json  # allow/warn/block + facilitator_message
+python tools/llm/proxy_team_budgets.py status <session_id> --json                    # Per-team spend vs budget (attribution is per-team)
+
+# LLM Proxy Team Rate Ceilings (lpx-teams-01) — competition fairness for /gameday
+python tools/llm/proxy_team_limits.py configure <session_id> --json                 # Compute+persist per-team RPM/TPM ceilings (sized off actual team count)
+python tools/llm/proxy_team_limits.py check <session_id> <team_id> --tokens 1200 --json  # allow/deny for one team (degrades only that team)
+python tools/llm/proxy_team_limits.py status <session_id> --json                    # Facilitator per-team usage vs ceiling (at_ceiling flag)
+# Org limits: ICDEV_LLM_ORG_RPM (60) / ICDEV_LLM_ORG_TPM (100000); burst ICDEV_LLM_TEAM_BURST_FACTOR (1.5)
+
+# LLM Proxy Budgets (lpx-keys-02) — per-key spend budgets scoped to team/guild/user
+python tools/llm/proxy_budgets.py check <key_id> --projected 0.05 --json          # allow|warn|block for a key's budget
+python tools/llm/proxy_budgets.py spend <key_id> --json                            # spend summary for current window
+python tools/llm/proxy_budgets.py record <key_id> --cost 0.05 --input-tokens 1200 --output-tokens 400 --json  # record spend
+
+# LLM Proxy Observability (lpx-obs-01) — spend + rate metrics into /ops/llm
+python tools/llm/proxy_metrics.py --json                                            # Proxy spend/rate metrics (ledger + best-effort Prometheus scrape)
+python tools/llm/proxy_metrics.py --window-hours 24 --top 10 --no-scrape --json     # Ledger-only aggregation over a window
+
+# LLM Proxy Reconciliation (lpx-obs-02) — proxy spend vs token_tracker
+python tools/llm/proxy_reconcile.py --json                                          # Reconcile proxy spend vs token_tracker/gateway audit
+python tools/llm/proxy_reconcile.py --window-hours 24 --threshold-pct 10 --gate --json  # Exit 1 if divergence past threshold (proxy active + both have spend)
+
+# LLM Proxy CUI egress gate (lpx-egress-02) — classified content never traverses the proxy
+# ICDEV_LLM_PROXY_MAX_CLASSIFICATION (default UNCLASSIFIED) — highest classification allowed through the proxy;
+# CUI and above are refused (fail-closed, invoke-time) unless explicitly raised (an ATO-boundary decision).
+
 # LLM Gateway
 python tools/llm/gateway.py --stats --json                                             # Gateway usage statistics
 python tools/llm/gateway.py --audit --json --limit 50                                  # Audit log (last N requests)
@@ -2029,6 +2468,98 @@ python tools/llm/model_monitor.py --detect-drift --json                         
 python tools/llm/model_monitor.py --health --json                                      # Model health dashboard
 python tools/llm/model_monitor.py --gate                                               # Gate check (CI/CD)
 ```
+
+---
+
+## ICDEV Cortex — Unified AI Facade (ctx-*)
+
+Cortex is a Python **API facade** (`tools/cortex/`, mirrored to `icdev/tools/cortex/`) over
+LLMRouter, the four retrieval backends (RAG / GraphRAG / DIC / KB), IQE, and the enforced
+TRUST governance chain. There is no standalone argparse CLI — call it in-process or via
+`python -c`. Routing is config-driven (`cortex_*` chains in `args/llm_config.yaml`); behavior
+tuning lives in `args/cortex_config.yaml` (`$ICDEV_CORTEX_CONFIG` overrides). All chains keep a
+local ollama tier so the facade is air-gap safe.
+
+```bash
+# --- Generation (api.py: complete / classify / extract) ---
+# Free-form completion via the cortex_complete routing chain
+python -c "from tools.cortex import complete; r = complete('Summarize NIST 800-53 AC-2'); print(r.text)"
+
+# Single-label classification (LLM chain, deterministic query_classifier fallback offline/air-gap)
+python -c "from tools.cortex import classify; r = classify('reset my password', ['billing','account','technical']); print(r.text, r.provider)"
+
+# Structured extraction to a JSON schema (output_schema + fenced-JSON parse)
+python -c "from tools.cortex import extract; r = extract('Contact: Jane Doe, jane@x.mil', {'type':'object','properties':{'name':{'type':'string'},'email':{'type':'string'}}}); print(r.text)"
+
+# --- Unified search (search_service.py: strategy routing + CRAG correction) ---
+# Agentic auto-routing (classify_route -> backend selection / fan-out), top_k=5
+python -c "from tools.cortex import search; [print(h.backend, round(h.score,3), h.content[:60]) for h in search('who owns satellite AX-7', top_k=5)]"
+
+# Force a specific backend or full fan-out (bypass classification): rag|graph|dic|kb|all
+python -c "from tools.cortex import search; print(len(search('quarterly revenue trend', strategy='all')))"
+
+# Inspect the routing decision without running backends
+python -c "from tools.cortex import classify_route; print(classify_route('list all vendors linked to CVE-2024-1234'))"
+
+# --- Analyst (analyst.py: ask-your-data, IQE primary + NL->SQL fallback) ---
+# Natural-language query over platform data (mode: auto | iqe | nlq)
+python -c "from tools.cortex import ask; r = ask('show all satellites', mode='auto'); print(r.provider); print(r.text)"
+
+# Pin a canvas scope and request an LLM prose summary (citations grounded/validated)
+python -c "from tools.cortex import ask; r = ask('top 5 open incidents', canvas='nocc', summarize=True); print(r.metadata.get('grounding')); print(r.text)"
+
+# --- Governance (governance.py: enforced TRUST chain — gateway, redaction, grounding, provenance) ---
+# Wrap any Cortex call so every gate in GATE_ORDER runs (fail-open unless ctx.fail_closed)
+python -c "from tools.cortex import GovernancePipeline, complete, CortexContext; ctx=CortexContext(tenant_id='t1', classification='CUI', fail_closed=True); res, rpt = GovernancePipeline().wrap(lambda: complete('draft an RFI intro'), ctx, prompt='draft an RFI intro'); print(rpt.gates_run, rpt.outcomes)"
+
+# --- Config / air-gap invariant (config.py) ---
+# Load the merged cortex config (weights, rrf_k, crag_threshold, timeouts)
+python -c "from tools.cortex import load_cortex_config; c = load_cortex_config(); print(c['search']['crag_threshold'], c['search']['timeouts'])"
+
+# Verify every cortex_* routing chain retains a local ollama tier (raises CortexAirgapError if not)
+python -c "from tools.cortex import assert_airgap_ready; assert_airgap_ready(); print('cortex air-gap ready')"
+
+# --- Domain lenses (domains/: data-driven config profiles over the facade, ctx-canvas-04) ---
+# Load the security (XSIAM-style) lens; scope search to threat/vuln/incident sources
+python -c "from tools.cortex import load_domain_profile, list_domain_names; print(list_domain_names()); print(load_domain_profile('security').sources)"
+
+# --- MCP server (cortex_server.py: 8 cortex_* tools, ctx-expose-01) ---
+# Start the Cortex MCP server over stdio (cortex_search/ask/complete/reason/classify/extract/govern/agent_launch)
+python tools/mcp/cortex_server.py
+
+# --- REST API v1 (rest_v1.py folded onto the /cortex blueprint, ctx-expose-02) ---
+# POST JSON to the versioned surface (identity derived server-side; only `domain` is caller-supplied):
+#   POST /cortex/api/v1/search   {"query": "...", "top_k": 5, "strategy": "auto", "domain": "security"}
+#   POST /cortex/api/v1/ask      {"question": "...", "mode": "auto", "summarize": true}
+#   POST /cortex/api/v1/complete {"prompt": "...", "system_prompt": "..."}
+#   POST /cortex/api/v1/reason   {"prompt": "...", "mode": "cot"}   # mode: cot | debate | council
+#   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}
+#   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
+#   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
+# Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
+#   GET  /cortex/api/v1/health   (unauthenticated liveness — status only)
+
+# --- Service keys (service_keys.py: external-caller auth, ctx-expose-02) ---
+# Issue a scoped, tenant-bound icdev_ctx_ key for an external consumer (raw key shown ONCE)
+python -m tools.cortex.service_keys create --label compass --tenant compass --scopes cortex:search,cortex:ask,cortex:complete,cortex:govern --ceiling CUI --json
+python -m tools.cortex.service_keys list --json
+python -m tools.cortex.service_keys revoke --key-id <id> --json
+# External callers send the key as `Authorization: Bearer icdev_ctx_...` on
+# /cortex/api/v1/* and /api/databridge/v1/* ONLY; tenant/classification bind server-side.
+
+# --- Client SDK (client.py — vendored into compass/idea_lab, ctx-expose-06) ---
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.is_available())"
+
+# --- DataBridge feeds (IRIS stub, ctx-expose-05) ---
+#   GET  /api/databridge/v1/iris/staffing_alignment     (scope databridge:iris:read)
+#   POST /api/databridge/v1/iris/performance_reviews    (scope databridge:iris:write)
+# Stub rows carry metadata.stub=true until the vendor publishes the IRIS API
+# (flip with IRIS_STUB_MODE=false + IRIS_BASE_URL + IRIS_API_KEY).
+```
+
+Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_classify`
+(4-label taxonomy: fact_single/summary/reasoning/unanswerable), `crag_benchmark_run`
+(CRAG evaluation campaign with hallucination-penalizing scoring).
 
 ---
 
@@ -2348,6 +2879,23 @@ python -c "from tools.system_graph.graph_builder import get_node_detail; print(g
 #   system_graph_stats       — source counts + timing
 ```
 
+## Conflict Mesh Commands
+```bash
+# ETL — pull from all providers, normalize, and load into sg_conflict_events
+python tools/conflict_mesh/etl_pipeline.py --since 2024-01-01 --dry-run --json
+python tools/conflict_mesh/etl_pipeline.py --since 2024-01-01 --limit 50 --json
+python tools/conflict_mesh/etl_pipeline.py --providers acled gdelt --since 2024-01-01 --json
+
+# Escalation Predictor — score events and surface high-risk predictions
+python tools/conflict_mesh/escalation_predictor.py --batch-since 2024-01-01 --threshold 0.7 --json
+python tools/conflict_mesh/escalation_predictor.py --event-id acled-12345 --json
+python tools/conflict_mesh/escalation_predictor.py --threshold 0.8 --limit 10 --json
+
+# Python API
+python -c "from tools.conflict_mesh.mesh_coordinator import MeshCoordinator; from tools.conflict_mesh.providers.acled_provider import ACLEDProvider; c = MeshCoordinator([ACLEDProvider()]); print(len(c.fetch_all()))"
+python -c "from tools.conflict_mesh.ml_pattern_engine import MLPatternEngine; e = MLPatternEngine(); print(e.extract_signals('Artillery bombardment kills soldiers', {}))"
+```
+
 ## STRATEGOS Commands
 ```bash
 # Adversarial Data Validation Pipeline (bias / deepfake / manipulation detection)
@@ -2594,4 +3142,353 @@ python tools/pmc_canvas/transit_pricing_benchmark.py --roi --json
 #   GET  /api/pmc/transit/benchmark?region=na&speed_gbps=10 — Market benchmark
 #   POST /api/pmc/transit/roi — Peering-vs-transit NPV analysis
 #   GET  /pmc/transit         — Transit pricing dashboard page
+```
+
+## ANVIL Co-Worker Engine (ACE) Commands
+```bash
+# Launch a new ACE problem-solving instance
+python -m icdev.tools.ace.controller --launch 'problem text' [--json]
+
+# Check status of a running ACE instance
+python -m icdev.tools.ace.controller --status <instance_id> [--json]
+
+# Abort a running ACE instance
+python -m icdev.tools.ace.controller --abort <instance_id>
+
+# List available ACE roles
+python -m icdev.tools.ace.controller --list-roles
+
+# Seed ACE kanban tasks (dry-run preview)
+python tools/kanban/seed_ace_kanban.py [--dry-run]
+
+# Environment variable to enable /coworker/ canvas
+ICDEV_ACE_ENABLED=true
+```
+
+### Cross-Repo SME Consult (MCP tools, idea_lab bridge)
+Three MCP tools let an external process (primary caller: the standalone
+`idea_lab` project's Specialist advisor) consult ICDEV without launching a
+full async ACE team session:
+
+```bash
+# ace_persona_query — one-shot, persona-informed answer from a single ACE
+# role (or an on-the-fly generated persona if role_id is omitted/unknown
+# but domain_description is given). tools/ace/persona_query.py + persona_generator.py
+# council_query — pressure-test a decision through the 5-perspective LLM
+# Council + chairman synthesis. tools/llm/chain_orchestrator.py::invoke_council()
+# writeguard_analyze — full deterministic WriteGuard quality check, zero LLM.
+# tools/pulse/writeguard.py::handle_writeguard_analyze
+
+# Registered in tools/mcp/tool_registry.py; handlers in tools/mcp/gap_handlers.py
+# (ace_persona_query, council_query) and tools/pulse/writeguard.py (writeguard_analyze).
+# See tools/manifest/ace.md, tools/manifest/llm-chain-orchestration.md, and
+# tools/manifest/writeguard-writing-quality-analysis.md for full details.
+```
+
+### Divergent Ideation (Divergence)
+Generative counterpart to the Council: widen the option space, then score. OPT-IN
+per function (`chain_orchestration.divergence.enabled` default false).
+
+```bash
+# Generate a raw idea pool (single isolated generative fan-out)
+python tools/llm/chain_orchestrator.py --divergence --function <fn> --prompt "<problem>" --json
+
+# Score + trap-flag the pool (the separate critic; novelty/viability/fit + advisory traps)
+python tools/quality/divergence_critic.py --function <fn> --pool-file <pool.md> --json
+
+# Headless skill (both halves, documented steps)
+python tools/skills/invoke.py --exec icdev-divergence -- --function <fn> --prompt "<problem>"
+
+# MCP tool: divergence_invoke  params: function, prompt, system_prompt?, score?(bool)
+#   Returns: {content, chain_mode, models_used, total_cost_usd, trace_id, stop_reason,
+#             rounds, scored?, trap_warnings?}  — advisory traps, never a blocker.
+# Registered in tools/mcp/tool_registry.py; handler tools/mcp/gap_handlers.py::handle_divergence_invoke
+```
+
+### Cross-Repo Compass Bridge (MCP tools, optional)
+Two MCP tools let ICDEV's CPMP/GovCon modules query a separate, standalone
+Compass app (`C:\AI\standalone\compass` — LCAT/staffing/rate-card automation)
+instead of duplicating its taxonomy. Reverse direction of Compass's own
+bridge into ICDEV (dic_search/dic_ingest/ace_persona_query/council_query).
+
+```bash
+# compass_lcat_lookup — best-matching BLS SOC labor category for a task
+# description or resume, via Compass's live LCAT taxonomy.
+# compass_staffing_summary — Compass's current staffing matrix (personnel
+# vs. resume-matched LCAT compliance, mismatch/unresolved counts).
+
+# Registered in tools/mcp/tool_registry.py; handlers + HTTP client in
+# tools/integrations/compass_mcp_handlers.py + compass_client.py.
+# Optional: degrades to an error dict (never raises) if Compass isn't
+# configured/reachable. Config: args/compass_integration.yaml.
+# See tools/manifest/govcon-intelligence.md for full details.
+```
+
+## Autonomous Capability Foundry (ACF) Commands
+```bash
+# ── Engine — run one harvest→synth→novelty→score→CoD→spec→task-graph→seed cycle ──
+python tools/foundry/engine.py --run --json              # full cycle (seeds kanban)
+python tools/foundry/engine.py --run --dry-run --json    # full pipeline, seeds NOTHING
+python tools/foundry/engine.py --run --max-concepts 3 --json   # override per-cycle cap
+python tools/foundry/engine.py --status --json           # recent runs + pipeline + rate_limits
+
+# ── Pipeline stages (standalone, for debugging one stage) ──
+python tools/foundry/harvester.py --run-id <id> --json                  # Stage 1 — collect signals
+python tools/foundry/novelty_gate.py --concept-json '{...}' --json      # Stage 3 — dedup verdict
+python tools/foundry/novelty_gate.py --catalog --json                   #   rebuild dedup catalog
+python tools/foundry/spec_generator.py --concept-id <id> --json         # Stage 6 — spec + contract
+python tools/foundry/spec_generator.py --concept-json '{...}' --no-persist --json
+python tools/foundry/task_graph.py --contract-json '{...}' --json        # Stage 7 — epic skeleton
+
+# ── Schema ──
+python -c "from tools.foundry.db.init_db import init_db; init_db()"     # 6 append-only foundry_* tables
+
+# ── Genesis reflex (12h continuous-autonomy loop) ──
+python tools/genesis/reflexes/foundry_cycle.py            # run one cycle (no-op if flag off)
+python tools/genesis/reflexes/foundry_cycle.py --dry-run  # compute cycle, no persistence
+python -c "from tools.genesis.reflexes.foundry_cycle import run; print(run({'dry_run': True}, None))"
+
+# ── Dashboard (web UI) ──
+#   GET  /foundry                — cycle roll-up + concept pipeline board
+#   GET  /foundry/<concept_id>   — concept detail: scores, spec, emitted tasks, outcomes
+
+# ── REST API ──
+#   GET  /api/foundry/runs           — recent foundry_runs (JSON)
+#   GET  /api/foundry/concepts       — concept list (filter: status, run_id)
+#   GET  /api/foundry/concept/<id>   — single concept + spec + tasks + outcomes
+#   POST /api/foundry/run            — trigger one cycle ({"dry_run": true} to skip seeding)
+#   POST /foundry/api/iqe-query      — plain-English → IQE → rows
+
+# ── IQE collections (read-only, via /foundry widget or /ask-icdev) ──
+#   foundry.concepts | foundry.signals | foundry.runs | foundry.outcomes
+#   Seed queries: context/iqe/queries/foundry/01-05
+
+# ── MCP gateway (unified) ──
+#   foundry_run    {dry_run, max_concepts}  — trigger one cycle
+#   foundry_status {limit}                  — read-only pipeline snapshot
+
+# ── Config + feature flag ──
+#   args/foundry_config.yaml     — sources, synthesis, novelty, scoring, rate_limits,
+#                                  circuit breaker, self_vet, deliberation (CoD), foundry_cycle
+ICDEV_FOUNDRY_ENABLED=true       # .env — master toggle for canvas + reflex
+
+# ── Tests ──
+pytest tests/foundry/ -v                                          # engine, novelty, spec, task-graph, blueprint
+pytest tests/test_foundry_cycle_reflex.py tests/test_foundry_mcp.py tests/test_foundry_harvester.py -v
+```
+
+## ANVIL Co-Worker Engine (ACE) Commands
+
+```bash
+# Launch a co-worker instance with a problem statement
+python -m icdev.tools.ace.controller --launch 'problem text' [--json]
+
+# Check the status of a running co-worker instance
+python -m icdev.tools.ace.controller --status <instance_id> [--json]
+
+# Abort a running co-worker instance
+python -m icdev.tools.ace.controller --abort <instance_id>
+
+# List available co-worker roles
+python -m icdev.tools.ace.controller --list-roles
+
+# Seed ACE-related kanban tasks (use --dry-run to preview)
+python tools/kanban/seed_ace_kanban.py [--dry-run]
+
+# Feature flag — enable /coworker/ canvas
+ICDEV_ACE_ENABLED=true        # .env — master toggle for ACE canvas + co-worker reflex
+```
+
+## Document Intelligence Canvas (DIC) — Notebook
+
+```bash
+# Notebook page (NotebookLM-style view)
+# URL: http://localhost:5050/document-intelligence/notebook
+# URL: http://localhost:5050/document-intelligence/notebook/<collection_id>
+
+# URL ingest (online mode; air-gap returns empty with warning)
+# POST /document-intelligence/api/ingest/url
+# Body: {"url": "https://...", "collection_id": "my-collection"}
+
+# YouTube transcript ingest (online mode only)
+# POST /document-intelligence/api/ingest/youtube
+# Body: {"url": "https://youtube.com/watch?v=...", "collection_id": "my-collection"}
+
+# AI output generators (dual-mode: LLM online, deterministic air-gap fallback)
+# POST /document-intelligence/api/generate/study-guide
+# POST /document-intelligence/api/generate/faq
+# POST /document-intelligence/api/generate/timeline
+# POST /document-intelligence/api/generate/audio
+# Body: {"collection_id": "my-collection"}
+
+# List outputs for a collection
+# GET /document-intelligence/api/outputs?collection_id=my-collection
+
+# Get a single output
+# GET /document-intelligence/api/outputs/<output_id>
+
+# Mode info (air-gap vs online, available capabilities)
+# GET /document-intelligence/api/mode
+
+# Python — generate outputs directly
+python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_timeline; import json; print(json.dumps(generate_timeline('my-collection', 'default'), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_audio_overview; import json; print(json.dumps(generate_audio_overview('my-collection', 'default'), indent=2))"
+
+# Python — ingest URL or YouTube
+python -c "from tools.document_intelligence.extractors import extract_url; e = extract_url('https://example.com/page'); print(e.text[:200])"
+python -c "from tools.document_intelligence.extractors import extract_youtube; e = extract_youtube('https://youtube.com/watch?v=dQw4w9WgXcQ'); print(e.text[:200])"
+
+# Push any canvas artifact into DIC
+python -c "from tools.document_intelligence.canvas_push import push_artifact; print(push_artifact('compliance', 'NIST Report', 'report text here', 'compliance-docs', 'CUI', 'default'))"
+
+# DIC → Research engine: scan a collection as signals
+python -c "from tools.research.source_scanners.dic_scanner import scan_dic_collection; signals = scan_dic_collection({}, {'dic_collection_id': 'my-col'}); print(len(signals), 'signals')"
+
+# DIC → Innovation engine: discover with DIC context
+python -c "from tools.innovation.innovation_manager import stage_discover; print(stage_discover(dic_collection_id='my-col'))"
+
+# Weekly DIC digest reflex (manual trigger)
+python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None))"
+```
+
+---
+
+## Network Canvas — PVM (Predictive Vulnerability Management)
+
+```bash
+# Risk Predictor
+python tools/network/vuln_predictor.py --predict <advisory_id> --json
+python tools/network/vuln_predictor.py --predict-all --json
+python tools/network/vuln_predictor.py --trajectory <advisory_id> [--limit 10] --json
+python tools/network/vuln_predictor.py --top-risks [--limit 20] --json
+
+# Attack Surface Mapper
+python tools/network/attack_surface_mapper.py --map [--network-id <id>] --json
+python tools/network/attack_surface_mapper.py --surface [--cve CVE-XXXX-XXXX] [--device <name>] [--min-score 0.5] --json
+python tools/network/attack_surface_mapper.py --summary --json
+
+# Vulnerability Triage Engine
+python tools/network/vuln_triage_engine.py --score [--advisory-ids 1,2,3] --json
+python tools/network/vuln_triage_engine.py --queue [--status pending] --json
+python tools/network/vuln_triage_engine.py --approve <advisory_id> --by analyst@example.com --json
+python tools/network/vuln_triage_engine.py --defer  <advisory_id> --by analyst@example.com --json
+
+# AI Patch Planner
+python tools/network/patch_planner.py --create-plan [--approved-by EMAIL] --json
+python tools/network/patch_planner.py --plans [--plan-id <uuid>] [--advisory-id <id>] --json
+python tools/network/patch_planner.py --plan-summary <plan_id> --json
+
+# PVM Dashboard
+# http://localhost:5050/network/vulnerability-intelligence
+
+# PVM IQE Seed Queries
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_01_risk_trajectory.iqe --adapter ndc --json
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_02_attack_surface.iqe   --adapter ndc --json
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_03_triage_queue.iqe     --adapter ndc --json
+```
+
+## Document Modernization Engine (docmod)
+
+```bash
+# Scan documents for stale content (EOL hardware/software, deprecated tech, superseded standards)
+python -c "from tools.doc_modernization import scan_collection; import json; print(json.dumps(scan_collection(), indent=2))"
+python -c "from tools.doc_modernization import scan_document; import json; print(json.dumps(scan_document('<doc_id>'), indent=2))"
+
+# Latest-state findings (append-only supersede chains resolved)
+python -c "from tools.doc_modernization import get_findings; import json; print(json.dumps(get_findings(state='open'), indent=2, default=str))"
+
+# endoflife.date cache — seed (air-gap), live sync, bundle import
+python -m tools.doc_modernization.eol_products_sync --seed --json
+python -m tools.doc_modernization.eol_products_sync --sync --json
+python -m tools.doc_modernization.eol_products_sync --import bundle.yaml --json
+
+# De facto deployment standards from ni_devices (recency-weighted)
+python -c "from tools.doc_modernization.defacto_learner import recompute; print(recompute())"
+
+# Nightly sweep reflex (standalone)
+python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
+
+# UI: http://localhost:5050/standards-catalog (curated standards, all domains)
+#     http://localhost:5050/document-intelligence/freshness (staleness triage)
+# Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
+# MCP tools: docmod_scan, docmod_findings, docmod_redline
+```
+
+## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
+
+```bash
+# Cross-canvas twin health report (snapshot freshness, verdict distribution,
+# violation counts by severity, refresh-schedule adherence vs genesis reflexes)
+python -m tools.twin_core.observer --json
+python -m tools.twin_core.observer --window-hours 24 --stale-after-hours 48 --json
+
+# Library API
+python -c "from tools.twin_core import observe; import json; print(json.dumps(observe(), default=str)[:400])"
+python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"  # registered twins
+# Config/registry: adapters self-register from tools/twin_core/adapters/*.py
+# Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
+```
+
+## Agent Browser — Indexed-Element Page Representation (tools/browser/)
+
+```bash
+# Probe which WebDriver resolves (vendored msedgedriver → chromedriver → Selenium Manager)
+python tools/browser/driver_manager.py --probe
+python tools/browser/driver_manager.py --smoke
+
+# Index a page — prints exactly what a model sees:
+#   [24] <button> + Add Task
+#   [20] <input> role=text Filter tasks (id=kanban-filter-input, type=text)
+python tools/browser/agent_browser.py --url http://localhost:5050/kanban --text
+
+# JSON state (index, role, text, allowlisted attributes, bounds, in_viewport, disabled)
+python tools/browser/agent_browser.py --url http://localhost:5050 --json
+
+# State + screenshot (always lands under playwright/screenshots/)
+python tools/browser/agent_browser.py --url http://localhost:5050 --text --screenshot --name home
+
+# Show the resolved config
+python tools/browser/agent_browser.py --config --json
+
+# In a git worktree use the module form — a script path does not put the repo
+# root on sys.path, so tools.* resolves to the shared checkout's vendor/drivers.
+python -m tools.browser.agent_browser --url http://localhost:5050 --text
+```
+
+```python
+# Library API — act by index, never by an invented CSS selector
+from tools.browser.agent_browser import AgentBrowser
+
+with AgentBrowser() as b:
+    state = b.navigate("http://localhost:5050/kanban")
+    print(state.to_text())              # model-facing rendering
+    b.type_text(20, "oss-browse")       # index from the state above
+    b.click(24)
+    b.press("Escape")
+    b.select(19, "Engineering")         # matches option value, then visible text
+    state = b.read_state(screenshot=True)
+    print(b.validate("The CUI banner is visible"))   # reuses screenshot_validator
+
+# Agent-loop wiring (same convention as tools/ace/agent_tools.py)
+from tools.browser.agent_tools import BrowserToolRegistry
+tools, handlers = BrowserToolRegistry(browser).build()
+```
+
+```
+# Config: args/agent_browser.yaml — page representation only
+#   include_attributes  — DOM verbosity allowlist (the main prompt-size knob)
+#   max_elements / max_text_length / max_attr_length — hard caps (state.truncated)
+#   viewport_only / occlusion_check — geometry filters
+#   navigation.settle_ms — post-action pause before re-reading state
+#
+# Config: args/browser_scope.yaml — the enforced policy (tools/browser/scope.py)
+#   allowed_domains / denied_domains / allowed_schemes — default-deny nav gate
+#   allow_non_local + require_egress_guard — the two extra switches a routable host needs
+#   limits.max_actions_per_run / max_failures / step_timeout_seconds — per-run budget
+#   AgentBrowser holds a GuardedDriver, so all of the above applies to every method.
+#   There is no navigation policy in agent_browser.yaml — one policy, one file.
+# Tests: tests/test_agent_browser.py (56 tests; real-browser test auto-skips with no driver)
+#        tests/browser/test_scope.py (52 tests; the policy decision table)
 ```
