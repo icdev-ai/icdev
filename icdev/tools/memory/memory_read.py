@@ -67,15 +67,19 @@ def read_db_recent(limit=10, user_id=None, tenant_id=None, clearance=None, compa
     conn = _connect()
     c = conn.cursor()
 
+    # D6: author placeholders as %s (PostgreSQL — the production backend via
+    # get_connection); translate_sql rewrites %s -> ? for the SQLite fallback. The
+    # previous bare ? tripped translate_sql's "use %%s" warning on every read (this
+    # is the Session Start Protocol command).
     sql = "SELECT content, type, importance, created_at, classification, compartment FROM memory_entries WHERE 1=1"
     params = []
     if user_id:
-        sql += " AND (user_id = ? OR user_id IS NULL)"
+        sql += " AND (user_id = %s OR user_id IS NULL)"
         params.append(user_id)
     if tenant_id:
-        sql += " AND (tenant_id = ? OR tenant_id IS NULL)"
+        sql += " AND (tenant_id = %s OR tenant_id IS NULL)"
         params.append(tenant_id)
-    sql += " ORDER BY created_at DESC LIMIT ?"
+    sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
 
     c.execute(sql, params)
@@ -111,7 +115,12 @@ def format_markdown(memory_text, logs, db_entries):
 
     if db_entries:
         output.append("## Recent DB Entries\n")
-        for content, type_, importance, created_at in db_entries:
+        # D6: read_db_recent selects SIX columns (content, type, importance,
+        # created_at, classification, compartment); unpacking four raised
+        # ValueError: too many values to unpack. Index the display columns and
+        # ignore the trailing security-context columns.
+        for row in db_entries:
+            content, type_, importance, created_at = row[0], row[1], row[2], row[3]
             output.append(f"- **[{type_}]** (importance: {importance}) {content} — {created_at}")
         output.append("")
 
