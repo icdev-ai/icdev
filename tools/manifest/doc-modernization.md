@@ -57,3 +57,5 @@ modules registered in `tools/manifest/document-intelligence-canvas.md`. The
 `dmx-claims-02` semantic-claim implementation is PARKED pending human sign-off
 on the design spike (`docs/design/dmx-claims-tracking-spike.md`); no
 claims-panel UI ships. Full closeout: `docs/features/phase-dmx-docmod-extension.md`.
+## Reconciled from packaged mirror
+| Policy Pack | tools/doc_modernization/packs/policy_refs.py | Supersession map (args/docmod/rulebook_policy.yaml): NIST rev withdrawals, RFC obsoletions, FIPS 140-2→3; KG standard-node corroboration | pack API | Verdict/Replacement |
