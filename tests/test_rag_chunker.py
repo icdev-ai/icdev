@@ -108,11 +108,21 @@ class TestChunkContent:
         assert chunks[0].tenant_id == "t1"
         assert chunks[0].project_id == "p1"
 
-    def test_medium_content_single_chunk(self):
-        """Content between short_threshold and chunk_size should be single chunk."""
+    def test_medium_content_uses_adaptive_floor(self):
+        """The adaptive floor, not the configured size, governs medium content.
+
+        Predates oss-chunk-01: adaptive sizing takes min(configured, adaptive)
+        with the adaptive value clamped to a 150-token floor, so a 375-token
+        document splits at 150 even though 500 was configured. The old
+        assertion here (single chunk) described the pre-adaptive behaviour and
+        had been failing on main since adaptive sizing landed.
+        """
         text = "word " * 300  # ~300 words, ~1500 chars, ~375 tokens
         chunks = chunk_content(text, chunk_config={"chunk_size_tokens": 500})
-        assert len(chunks) == 1
+        assert len(chunks) > 1
+        # Content at or below the 150-token floor is still one chunk.
+        short = "word " * 100  # ~500 chars, ~125 tokens
+        assert len(chunk_content(short, chunk_config={"chunk_size_tokens": 500})) == 1
 
     def test_overlap_in_long_chunks(self):
         """Verify chunks overlap when splitting long content."""
