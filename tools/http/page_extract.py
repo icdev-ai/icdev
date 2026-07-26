@@ -32,7 +32,7 @@ Output is markdown that preserves headings, lists and tables, with
 context window.
 
 Security posture: this module ingests untrusted third-party HTML.  See
-``docs/security/sandbox-coverage.md`` (Gap 36) for the recorded decision — the
+``docs/security/sandbox-coverage.md`` (Gap 37) for the recorded decision — the
 parser never executes, resolves or fetches anything; ``script``, ``style``,
 ``iframe``, ``svg`` and form controls are dropped subtrees.
 

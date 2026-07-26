@@ -4,7 +4,7 @@
 
 **Status:** shipped
 **Card:** `oss-` (OSS adaptation) — see `docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md`
-**Sandbox decision:** Gap 36 in [docs/security/sandbox-coverage.md](../security/sandbox-coverage.md)
+**Sandbox decision:** Gap 37 in [docs/security/sandbox-coverage.md](../security/sandbox-coverage.md)
 
 ## The defect
 
@@ -133,5 +133,5 @@ prune-only extraction, which is still strictly better than the regex strip.
 | `tests/fixtures/page_extract_corpus.py` | fixed 20-page corpus |
 | `tests/http/test_page_extract.py` | 60 tests |
 | `tools/chat_router/url_analyzer.py` | consumer, defect fixed |
-| `docs/security/sandbox-coverage.md` | Gap 36 decision |
+| `docs/security/sandbox-coverage.md` | Gap 37 decision |
 | `tools/manifest/security.md` | tool registration |
