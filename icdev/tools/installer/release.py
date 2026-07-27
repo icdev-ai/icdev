@@ -473,6 +473,7 @@ def step_verify_payload(version: str) -> dict:
     for mod, label in (
         ("icdev/tools/cli/setup_wizard.py", "guided setup wizard"),
         ("icdev/tools/cli/setup.py", "component setup TUI"),
+        ("icdev/tools/cli/provision_db.py", "database + vector-store provisioner"),
     ):
         if mod not in names:
             problems.append(f"wheel carries no {label} ({mod})")
