@@ -36,16 +36,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install docker-compose (v2)
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y docker-compose-plugin
+      # No install step: ubuntu-latest ships Docker Compose v2 already.
+      # `apt-get install docker-compose-plugin` failed with "no installation
+      # candidate" because that package comes from Docker's own apt repo, which
+      # is not configured on the runner — so this job had been red on every run
+      # that triggered it. It only fires on docker/**, docker-compose*.yml or
+      # deploy/** changes, which is why it stayed unnoticed.
+      - name: Show Docker Compose version
+        run: docker compose version
 
       - name: Validate docker-compose.yml syntax
         run: docker compose -f docker-compose.yml config --quiet
 
-      - name: Validate docker-compose.ci.yml syntax
-        run: docker compose -f docker-compose.ci.yml config --quiet
+      # Guarded: docker-compose.ci.yml does not exist in this repo, so an
+      # unconditional validate failed the job even once the install step was
+      # fixed. Mirrors the `if [ -d deploy/helm ]` guard the Helm step below
+      # already uses.
+      - name: Validate docker-compose.ci.yml syntax (if present)
+        run: |
+          if [ -f docker-compose.ci.yml ]; then
+            docker compose -f docker-compose.ci.yml config --quiet
+          else
+            echo "docker-compose.ci.yml not present — skipping"
+          fi
 
       - name: Validate Helm chart (if present)
         uses: azure/setup-helm@v4
