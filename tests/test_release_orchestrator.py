@@ -300,3 +300,175 @@ def test_orchestrator_does_not_call_python_m_build_directly():
 
 def test_build_release_script_exists():
     assert (rel.REPO_ROOT / "tools" / "installer" / "build_release.py").is_file()
+
+
+# --------------------------------------------------------------------------- #
+# Payload completeness — the wheel must carry what the repo tracks
+# --------------------------------------------------------------------------- #
+
+
+def _platform_entries() -> dict:
+    """Every AI platform instruction file, as the wheel stores them.
+
+    A complete test wheel must carry these — the payload gate requires them, so
+    that an installed project is never Claude-only.
+    """
+    from tools.dx.ai_platforms import AI_PLATFORM_FILES, bootstrap_name
+
+    return {f"icdev/data/claude_bootstrap/{bootstrap_name(rel)}": b"x"
+            for _p, rel in AI_PLATFORM_FILES}
+
+
+def _make_wheel(tmp_path, names: dict):
+    """Build a minimal .whl containing exactly ``names`` (path -> bytes)."""
+    import zipfile
+
+    dist = tmp_path / "dist"
+    dist.mkdir(exist_ok=True)
+    whl = dist / "icdev-9.9.9-py3-none-any.whl"
+    with zipfile.ZipFile(whl, "w") as z:
+        for n, data in names.items():
+            z.writestr(n, data)
+    return dist
+
+
+def test_payload_gate_flags_a_tracked_file_missing_from_the_wheel(tmp_path, monkeypatch):
+    """The tools/agents/ failure: 9 real source files never shipped, silently.
+
+    A bare `agents/` rule in .gitignore matched the source directory at any
+    depth, so the files were untracked — present only on the machine that wrote
+    them, absent from every fresh clone and therefore every wheel.
+    """
+    dist = _make_wheel(tmp_path, {"icdev/tools/kept.py": b"x"})
+    monkeypatch.setattr(rel, "DIST_DIR", dist)
+    monkeypatch.setattr(rel, "_parent_only_dirs", lambda: set())
+    monkeypatch.setattr(rel.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"stdout": "tools/kept.py\ntools/agents/registry.py\n"})())
+
+    out = rel.step_verify_payload("9.9.9")
+    assert not out["ok"]
+    assert any("absent from the wheel" in p for p in out["problems"])
+    assert any("agents/registry.py" in p for p in out["problems"])
+
+
+def test_payload_gate_ignores_parent_only_subsystems(tmp_path, monkeypatch):
+    """Deliberate exclusions must not read as missing payload."""
+    dist = _make_wheel(tmp_path, {
+        "icdev/tools/kept.py": b"x",
+        "icdev/data/args/component_registry.yaml": b"x",
+        "icdev/data/goals/g.md": b"x",
+        "icdev/data/hardprompts/h.md": b"x",
+        "icdev/data/context/c.md": b"x",
+        "icdev/data/claude_bootstrap/CLAUDE.md": b"x",
+        "icdev/data/claude_bootstrap/claude/commands/build.md": b"x",
+        "icdev/data/.env.template": b"x",
+        **_platform_entries(),
+    })
+    monkeypatch.setattr(rel, "DIST_DIR", dist)
+    monkeypatch.setattr(rel, "_parent_only_dirs", lambda: {"trading"})
+    monkeypatch.setattr(rel.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"stdout": "tools/kept.py\ntools/trading/secret.py\n"})())
+
+    out = rel.step_verify_payload("9.9.9")
+    assert out["ok"], out["problems"]
+
+
+@pytest.mark.parametrize("drop,expect", [
+    ("icdev/data/args/component_registry.yaml", "component_registry"),
+    ("icdev/data/goals/g.md", "goals"),
+    ("icdev/data/claude_bootstrap/CLAUDE.md", "no CLAUDE.md"),
+    ("icdev/data/.env.template", ".env.template"),
+])
+def test_payload_gate_requires_each_forge_layer(tmp_path, monkeypatch, drop, expect):
+    """`icdev init` copies these OUT of the wheel.
+
+    Without them a fresh project has no .claude/, no .env, and no canvases —
+    which is exactly what a user reports as "pip install gave me nothing".
+    """
+    full = {
+        "icdev/tools/kept.py": b"x",
+        "icdev/data/args/component_registry.yaml": b"x",
+        "icdev/data/goals/g.md": b"x",
+        "icdev/data/hardprompts/h.md": b"x",
+        "icdev/data/context/c.md": b"x",
+        "icdev/data/claude_bootstrap/CLAUDE.md": b"x",
+        "icdev/data/claude_bootstrap/claude/commands/build.md": b"x",
+        "icdev/data/.env.template": b"x",
+        **_platform_entries(),
+    }
+    full.pop(drop)
+    dist = _make_wheel(tmp_path, full)
+    monkeypatch.setattr(rel, "DIST_DIR", dist)
+    monkeypatch.setattr(rel, "_parent_only_dirs", lambda: set())
+    monkeypatch.setattr(rel.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"stdout": "tools/kept.py\n"})())
+
+    out = rel.step_verify_payload("9.9.9")
+    assert not out["ok"]
+    assert any(expect in p for p in out["problems"]), out["problems"]
+
+
+def test_payload_gate_flags_missing_genesis_reflexes(tmp_path, monkeypatch):
+    """A reflex absent from the wheel fails silently — the daemon just never finds it."""
+    dist = _make_wheel(tmp_path, {
+        **_platform_entries(),
+        "icdev/tools/genesis/reflexes/kept.py": b"x",
+        "icdev/data/args/component_registry.yaml": b"x",
+        "icdev/data/goals/g.md": b"x",
+        "icdev/data/hardprompts/h.md": b"x",
+        "icdev/data/context/c.md": b"x",
+        "icdev/data/claude_bootstrap/CLAUDE.md": b"x",
+        "icdev/data/claude_bootstrap/claude/commands/build.md": b"x",
+        "icdev/data/.env.template": b"x",
+    })
+    monkeypatch.setattr(rel, "DIST_DIR", dist)
+    monkeypatch.setattr(rel, "_parent_only_dirs", lambda: set())
+    monkeypatch.setattr(rel.subprocess, "run", lambda *a, **k: type("R", (), {
+        "stdout": "tools/genesis/reflexes/kept.py\ntools/genesis/reflexes/gone.py\n"})())
+
+    out = rel.step_verify_payload("9.9.9")
+    assert not out["ok"]
+    assert any("genesis reflex" in p for p in out["problems"])
+
+
+def test_payload_gate_compares_against_git_not_the_working_tree():
+    """An untracked file on the release engineer's disk is the whole problem.
+
+    Comparing against the working directory would have called every broken
+    release healthy, because the files WERE there — locally, and nowhere else.
+    """
+    import inspect
+
+    src = inspect.getsource(rel.step_verify_payload)
+    assert "git" in src and "ls-files" in src
+
+
+def test_payload_gate_runs_in_the_pipeline():
+    import inspect
+
+    src = inspect.getsource(rel.main)
+    assert "step_verify_payload" in src
+    assert src.index("step_verify_artifacts") < src.index("step_verify_payload")
+
+
+def test_parent_only_dirs_are_read_from_the_sync_tool():
+    """A hardcoded copy would report deliberate exclusions as missing payload."""
+    import inspect
+
+    src = inspect.getsource(rel._parent_only_dirs)
+    assert "sync_package_tree" in src
+    assert rel._parent_only_dirs(), "PARENT_ONLY_DIRS should be non-empty"
+
+
+def test_tools_agents_is_tracked_by_git():
+    """The regression itself: these 9 files must be under version control.
+
+    They are real source (the agent adapter registry), not agent OUTPUT, and a
+    bare `agents/` ignore rule had quietly excluded them from every release.
+    """
+    import subprocess as sp
+
+    out = sp.run(["git", "ls-files", "tools/agents/"], cwd=rel.REPO_ROOT,
+                 capture_output=True, text=True).stdout.split()
+    assert any(f.endswith("registry.py") for f in out), \
+        "tools/agents/ is untracked — it will not ship in the wheel"

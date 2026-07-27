@@ -100,6 +100,21 @@ BOOTSTRAP_MAP: list[tuple[str, str]] = [
     ("data/claude_bootstrap/claude/agents", ".claude/agents"),
 ]
 
+# The non-Claude AI platform instruction files. ICDEV publishes the same
+# guardrails to every major coding tool; without these, an installed project is
+# Claude-only and the LLM-agnostic claim is false at the point it matters most
+# — in the user's project. Restored from their flattened bootstrap names back
+# to real paths (`platforms/cursor__rules__icdev.mdc` -> `.cursor/rules/icdev.mdc`).
+try:
+    from tools.dx.ai_platforms import AI_PLATFORM_FILES, bootstrap_name
+
+    BOOTSTRAP_MAP.extend(
+        (f"data/claude_bootstrap/{bootstrap_name(rel)}", rel)
+        for _platform, rel in AI_PLATFORM_FILES
+    )
+except Exception:  # noqa: BLE001 - a missing platform list must not break init
+    AI_PLATFORM_FILES = ()
+
 # Bootstrap sources that may legitimately be absent from the package (e.g.
 # `.claude/agents` ships zero files today but will the day agents are added).
 # A missing OPTIONAL source is reported as "optional_missing" and does NOT
@@ -108,6 +123,17 @@ BOOTSTRAP_MAP: list[tuple[str, str]] = [
 OPTIONAL_SOURCES: set[str] = {
     "data/claude_bootstrap/claude/agents",
 }
+
+# A wheel built before the platform files were packaged simply will not have
+# them; init should degrade to a Claude-only project, not fail.
+try:
+    from tools.dx.ai_platforms import bootstrap_name as _bn
+
+    OPTIONAL_SOURCES.update(
+        f"data/claude_bootstrap/{_bn(rel)}" for _p, rel in AI_PLATFORM_FILES
+    )
+except Exception:  # noqa: BLE001
+    pass
 
 # FORGE data (editable project config, copied from package defaults)
 FORGE_MAP: list[tuple[str, str]] = [

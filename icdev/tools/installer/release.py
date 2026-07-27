@@ -297,6 +297,149 @@ def step_build(skip_smoke: bool) -> dict:
     }
 
 
+def _wheel_path(version: str):
+    hits = sorted(DIST_DIR.glob(f"icdev-{version}-*.whl")) if DIST_DIR.is_dir() else []
+    return hits[0] if hits else None
+
+
+def step_verify_payload(version: str) -> dict:
+    """Assert the wheel carries everything a fresh clone would.
+
+    THE FAILURE THIS EXISTS FOR
+
+    `tools/agents/` — the 9-file agent adapter registry — never shipped in any
+    release. `.gitignore` carried a bare ``agents/`` rule intended for agent
+    OUTPUT directories, and it matched the source directory at any depth. The
+    files were therefore untracked: present on the machine that wrote them,
+    absent from every fresh clone, every CI checkout, and every wheel built from
+    one. Nothing failed; the code was simply not there.
+
+    Neither `twine check` nor the venv smoke test can see this. Both inspect what
+    the wheel HAS; neither knows what it SHOULD have.
+
+    The comparison is deliberately against ``git ls-files``, not the working
+    directory. An untracked file on the release engineer's disk is exactly the
+    thing that produces a wheel nobody else can reproduce — comparing against
+    the working tree would have called the broken releases healthy.
+    """
+    import zipfile
+
+    problems = []
+    wheel = _wheel_path(version)
+    if wheel is None:
+        return {"ok": False, "problems": [f"no wheel for {version} in dist/"]}
+
+    parent_only = _parent_only_dirs()
+    tracked = subprocess.run(
+        ["git", "ls-files", "tools/"], cwd=REPO_ROOT, capture_output=True, text=True
+    ).stdout.split()
+
+    with zipfile.ZipFile(wheel) as z:
+        names = set(z.namelist())
+
+    missing = []
+    for rel in tracked:
+        if not rel.endswith(".py"):
+            continue
+        parts = rel.split("/")
+        if len(parts) > 1 and parts[1] in parent_only:
+            continue
+        if f"icdev/{rel}" not in names:
+            missing.append(rel)
+
+    if missing:
+        problems.append(
+            f"{len(missing)} tracked source file(s) absent from the wheel — "
+            f"first few: {missing[:5]}")
+
+    # The FORGE layers a project cannot run without. `icdev init` copies these
+    # out of the wheel; if they are not inside it, init silently produces a
+    # project with no goals, no args and no orchestration layer.
+    required_prefixes = {
+        "icdev/data/args/": "FORGE args layer",
+        "icdev/data/goals/": "FORGE goals layer",
+        "icdev/data/hardprompts/": "FORGE hardprompts layer",
+        "icdev/data/context/": "FORGE context layer",
+    }
+    for prefix, label in required_prefixes.items():
+        if not any(n.startswith(prefix) for n in names):
+            problems.append(f"wheel carries no {label} ({prefix})")
+
+    # CLAUDE.md by EXACT path, not by prefix. A `claude_bootstrap/` prefix test
+    # passes as long as anything at all lives under it — including the platform
+    # instruction files — so a missing CLAUDE.md would slip straight through.
+    if "icdev/data/claude_bootstrap/CLAUDE.md" not in names:
+        problems.append("wheel carries no CLAUDE.md — `icdev init` has no master instructions")
+    if not any(n.startswith("icdev/data/claude_bootstrap/claude/commands/") for n in names):
+        problems.append("wheel carries no .claude/commands payload")
+
+    # `icdev init` writes .env from this template; without it a fresh project
+    # has no configuration at all.
+    if not any(n.endswith(".env.template") for n in names):
+        problems.append("wheel carries no .env.template — `icdev init` cannot write .env")
+
+    # The component registry drives every canvas and menu entry. A wheel that
+    # ships without it discovers zero components (the 1.2.38 pip-install bug).
+    if "icdev/data/args/component_registry.yaml" not in names:
+        problems.append("wheel carries no component_registry.yaml — no canvases or menu items")
+
+    # ICDEV is LLM-agnostic. All ten non-Claude platform instruction files were
+    # tracked in git and none of them shipped, so an installed project was
+    # Claude-only. A release that quietly drops them makes the claim false at
+    # the point it matters most — in the user's project.
+    try:
+        sys.path.insert(0, str(REPO_ROOT))
+        from tools.dx.ai_platforms import AI_PLATFORM_FILES, bootstrap_name
+
+        plat_missing = [
+            rel for _p, rel in AI_PLATFORM_FILES
+            if f"icdev/data/claude_bootstrap/{bootstrap_name(rel)}" not in names
+        ]
+        if plat_missing:
+            problems.append(
+                f"{len(plat_missing)} AI platform instruction file(s) missing from the "
+                f"wheel — an installed project would be Claude-only: {plat_missing[:5]}")
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"could not verify AI platform coverage: {exc}")
+
+    # Genesis reflexes are scheduled work; a partial set fails silently at
+    # runtime because the daemon simply never finds the reflex.
+    reflexes_tracked = {r for r in tracked
+                        if r.startswith("tools/genesis/reflexes/") and r.endswith(".py")}
+    reflexes_missing = [r for r in reflexes_tracked if f"icdev/{r}" not in names]
+    if reflexes_missing:
+        problems.append(
+            f"{len(reflexes_missing)} genesis reflex(es) missing from the wheel: "
+            f"{reflexes_missing[:5]}")
+
+    return {
+        "ok": not problems,
+        "problems": problems,
+        "wheel": wheel.name,
+        "tracked_py_checked": sum(
+            1 for r in tracked
+            if r.endswith(".py") and not (len(r.split("/")) > 1 and r.split("/")[1] in parent_only)
+        ),
+        "genesis_reflexes": len(reflexes_tracked),
+    }
+
+
+def _parent_only_dirs() -> set:
+    """Subsystems intentionally absent from the public wheel.
+
+    Read from sync_package_tree.py so the two cannot disagree — a hardcoded copy
+    here would start reporting deliberate exclusions as missing payload the
+    first time that list changed.
+    """
+    try:
+        sys.path.insert(0, str(REPO_ROOT))
+        from tools.installer.sync_package_tree import PARENT_ONLY_DIRS
+
+        return set(PARENT_ONLY_DIRS)
+    except Exception:  # noqa: BLE001 - fall back to checking everything
+        return set()
+
+
 def step_verify_artifacts(version: str) -> dict:
     """Assert the built artifacts are the ones we think, and are importable.
 
@@ -454,6 +597,17 @@ def main(argv: list | None = None) -> int:
     if not verify["ok"]:
         report["ok"] = False
         report["failed_at"] = "verify"
+        _emit(report, args.json)
+        return 1
+
+    # Completeness. `verify` proves the wheel is well-formed; this proves it is
+    # WHOLE. tools/agents/ shipped as nothing at all for months because no step
+    # compared the wheel against what the repo actually tracks.
+    payload = step_verify_payload(version)
+    report["steps"]["payload"] = payload
+    if not payload["ok"]:
+        report["ok"] = False
+        report["failed_at"] = "payload"
         _emit(report, args.json)
         return 1
 

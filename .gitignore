@@ -72,6 +72,13 @@ agents/
 # Exception: dashboard template sub-directories named agents/ are source code
 !tools/dashboard/templates/agents/
 !icdev/tools/dashboard/templates/agents/
+# Exception: tools/agents/ is the agent adapter REGISTRY — real source code, not
+# agent output. The bare `agents/` rule above silently untracked all 9 files, so
+# they existed only on the machine that wrote them: absent from every fresh
+# clone, every CI checkout, and therefore from every published wheel. Same class
+# of failure as the /logs/ one documented above.
+!tools/agents/
+!icdev/tools/agents/
 
 # Claude Code output
 claude-max-output.json
