@@ -2303,12 +2303,25 @@ def api_chat():
         # ── Path 1: High-confidence direct lookup — NO LLM ──────────────────
         if best_result and top_match_score >= 0.7 and not _needs_synthesis(message):
             grounded = _compile_grounded_answer([best_result], message)
+            # Disclose on THIS path too. It is the one that most often returns a
+            # near-verbatim extract, so "quoted vs restated" is exactly the
+            # distinction a reader needs here — and an answer surface that
+            # silently omits the disclosure is indistinguishable from one that
+            # checked and found nothing derived.
+            p1_derivation = _derivation_disclosure(grounded["answer"], [best_result])
             return jsonify(_mem({
                 "answer": grounded["answer"],
                 "sources": grounded["sources"],
                 "citations": citations,
                 "abstained": False,
                 "mode": "grounded",
+                "derivation": p1_derivation,
+                "derivation_summary": {
+                    "counts": (p1_derivation or {}).get("counts", {}),
+                    "has_derived": (p1_derivation or {}).get("has_derived", False),
+                    "has_unexplained_numeric": (p1_derivation or {}).get(
+                        "has_unexplained_numeric", False),
+                } if p1_derivation else None,
             }, answer=grounded["answer"], record_results=scored_results))
 
         # ── Path 2: Grounded answer from top chunks — NO LLM ────────────────
