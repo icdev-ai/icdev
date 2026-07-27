@@ -342,8 +342,8 @@ def test_payload_gate_flags_a_tracked_file_missing_from_the_wheel(tmp_path, monk
     dist = _make_wheel(tmp_path, {"icdev/tools/kept.py": b"x"})
     monkeypatch.setattr(rel, "DIST_DIR", dist)
     monkeypatch.setattr(rel, "_parent_only_dirs", lambda: set())
-    monkeypatch.setattr(rel.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": "tools/kept.py\ntools/agents/registry.py\n"})())
+    monkeypatch.setattr(rel.subprocess, "run", _git_stub(
+        {"tools": ["tools/kept.py", "tools/agents/registry.py"]}))
 
     out = rel.step_verify_payload("9.9.9")
     assert not out["ok"]
@@ -366,8 +366,8 @@ def test_payload_gate_ignores_parent_only_subsystems(tmp_path, monkeypatch):
     })
     monkeypatch.setattr(rel, "DIST_DIR", dist)
     monkeypatch.setattr(rel, "_parent_only_dirs", lambda: {"trading"})
-    monkeypatch.setattr(rel.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": "tools/kept.py\ntools/trading/secret.py\n"})())
+    monkeypatch.setattr(rel.subprocess, "run", _git_stub(
+        {"tools": ["tools/kept.py", "tools/trading/secret.py"]}))
 
     out = rel.step_verify_payload("9.9.9")
     assert out["ok"], out["problems"]
@@ -400,8 +400,7 @@ def test_payload_gate_requires_each_forge_layer(tmp_path, monkeypatch, drop, exp
     dist = _make_wheel(tmp_path, full)
     monkeypatch.setattr(rel, "DIST_DIR", dist)
     monkeypatch.setattr(rel, "_parent_only_dirs", lambda: set())
-    monkeypatch.setattr(rel.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": "tools/kept.py\n"})())
+    monkeypatch.setattr(rel.subprocess, "run", _git_stub({"tools": ["tools/kept.py"]}))
 
     out = rel.step_verify_payload("9.9.9")
     assert not out["ok"]
@@ -423,8 +422,8 @@ def test_payload_gate_flags_missing_genesis_reflexes(tmp_path, monkeypatch):
     })
     monkeypatch.setattr(rel, "DIST_DIR", dist)
     monkeypatch.setattr(rel, "_parent_only_dirs", lambda: set())
-    monkeypatch.setattr(rel.subprocess, "run", lambda *a, **k: type("R", (), {
-        "stdout": "tools/genesis/reflexes/kept.py\ntools/genesis/reflexes/gone.py\n"})())
+    monkeypatch.setattr(rel.subprocess, "run", _git_stub(
+        {"tools": ["tools/genesis/reflexes/kept.py", "tools/genesis/reflexes/gone.py"]}))
 
     out = rel.step_verify_payload("9.9.9")
     assert not out["ok"]
@@ -472,3 +471,100 @@ def test_tools_agents_is_tracked_by_git():
                  capture_output=True, text=True).stdout.split()
     assert any(f.endswith("registry.py") for f in out), \
         "tools/agents/ is untracked — it will not ship in the wheel"
+
+
+# --------------------------------------------------------------------------- #
+# Hollow modules — present in the wheel, but importing from themselves
+# --------------------------------------------------------------------------- #
+
+
+def _git_stub(mapping: dict):
+    """Stand in for `git ls-files <path>`, answering PER PATH.
+
+    The payload gate calls it once for tools/ and once for each FORGE data
+    layer. A stub that returns the same list every time makes tools/ files look
+    like missing goals/ files.
+    """
+    def _run(cmd, *a, **k):
+        path = cmd[-1] if isinstance(cmd, (list, tuple)) else ""
+        out = chr(10).join(mapping.get(path.rstrip("/"), []))
+        return type("R", (), {"stdout": out, "stderr": "", "returncode": 0})()
+
+    return _run
+
+
+def _zip_of(tmp_path, members: dict):
+    import zipfile
+
+    whl = tmp_path / "w.whl"
+    with zipfile.ZipFile(whl, "w") as z:
+        for n, b in members.items():
+            z.writestr(n, b)
+    return whl
+
+
+def _scan(tmp_path, members: dict):
+    import zipfile
+
+    whl = _zip_of(tmp_path, members)
+    with zipfile.ZipFile(whl) as z:
+        return rel._self_importing_modules(set(z.namelist()), z.read)
+
+
+def test_detects_a_module_importing_from_itself(tmp_path):
+    """The 1.2.41 defect, verbatim.
+
+    A back-compat shim copied over its real implementation. Python raises
+    ImportError on a partially initialized module, so the capability is gone —
+    but the file is present, so every presence check passes.
+    """
+    hollow = _scan(tmp_path, {
+        "icdev/tools/llm/agent_loop.py": b"from icdev.tools.llm.agent_loop import DONE\n",
+    })
+    assert hollow == ["icdev/tools/llm/agent_loop.py"]
+
+
+def test_a_healthy_module_is_not_flagged(tmp_path):
+    hollow = _scan(tmp_path, {
+        "icdev/tools/llm/router.py": b"DONE = 1\n\n\ndef go():\n    return DONE\n",
+    })
+    assert hollow == []
+
+
+def test_a_legitimate_cross_module_import_is_not_flagged(tmp_path):
+    """Importing a DIFFERENT icdev module is normal and must stay allowed."""
+    hollow = _scan(tmp_path, {
+        "icdev/tools/quality/derivation.py":
+            b"from icdev.tools.quality.citation_grounding import parse_citations\n",
+    })
+    assert hollow == []
+
+
+def test_init_files_are_skipped(tmp_path):
+    """`icdev/tools/__init__.py` re-exporting from `icdev.tools` is the shim
+    package's whole job, not a defect."""
+    hollow = _scan(tmp_path, {"icdev/tools/__init__.py": b"from icdev.tools import x\n"})
+    assert hollow == []
+
+
+def test_non_icdev_members_are_ignored(tmp_path):
+    hollow = _scan(tmp_path, {"other/pkg/mod.py": b"from other.pkg.mod import y\n"})
+    assert hollow == []
+
+
+def test_the_check_runs_inside_the_payload_gate():
+    """And blocks — a hollow module must fail the release, not warn."""
+    import inspect
+
+    src = inspect.getsource(rel.step_verify_payload)
+    assert "_self_importing_modules" in src
+    assert "import from THEMSELVES" in src
+
+
+def test_the_scan_uses_one_open_archive():
+    """Reopening per member would mean thousands of archive opens on a
+    3,400-module wheel."""
+    import inspect
+
+    src = inspect.getsource(rel.step_verify_payload)
+    assert "_self_importing_modules(names, z.read)" in src
