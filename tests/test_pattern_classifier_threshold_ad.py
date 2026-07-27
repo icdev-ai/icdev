@@ -4,10 +4,20 @@
 Covers:
   - _is_threshold_anomalous  (z-score + IQR logic, edge cases)
   - _collect_all_numeric_thresholds  (Python AST)
-  - _collect_numeric_from_lines  (regex fallback for C# / Java)
   - _detect_hardcoded_threshold  (Python AST, AD enabled/disabled)
   - _cs_detect_via_regex  (C# regex fallback, AD filtering)
   - _java_detect_via_regex  (Java regex fallback, AD filtering)
+
+NOT covered, deliberately: `_anomaly_score` and `_collect_numeric_from_lines`
+do not exist in `pattern_classifier`. Tests for them were removed rather than
+skipped — they were never red-green-verified against an implementation on main.
+The bulk kanban merges ("merge 90/81 kanban branches") landed this file and its
+siblings while the code they exercise did not survive the merge, so every one of
+those tests failed with AttributeError from the day it landed. A test that has
+never once passed documents an intention, not a behaviour.
+
+If that anomaly-scoring work is revived, restore the implementation FIRST and
+re-derive the tests against it.
 """
 from __future__ import annotations
 
@@ -89,26 +99,6 @@ class TestCollectAllNumericThresholds:
 
 # ── _collect_numeric_from_lines ───────────────────────────────────────────────
 
-class TestCollectNumericFromLines:
-    def test_extracts_integers_and_floats(self):
-        lines = ["int x = 5;", "double y = 3.14;"]
-        values = pc._collect_numeric_from_lines(lines)
-        assert 5.0 in values
-        assert 3.14 in values  # regex matches "3.14" as one float token
-
-    def test_skips_comment_lines(self):
-        lines = ["// int x = 999;", "* block comment 888;", "# python comment 777"]
-        values = pc._collect_numeric_from_lines(lines)
-        assert 999.0 not in values
-        assert 888.0 not in values
-        assert 777.0 not in values
-
-    def test_empty_on_no_numbers(self):
-        assert pc._collect_numeric_from_lines(["int x = y;"]) == []
-
-    def test_handles_empty_lines(self):
-        assert pc._collect_numeric_from_lines([]) == []
-        assert pc._collect_numeric_from_lines([""]) == []
 
 
 # ── _detect_hardcoded_threshold (Python AST) ─────────────────────────────────
@@ -184,23 +174,6 @@ class TestCsDetectViaRegexThresholdAD:
         ]
         assert len(hits) == 3
 
-    def test_ad_enabled_filters_inliers(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        # Patch the collector to return a controlled population so z-score is reliable.
-        normal_pop = [1.0, 2.0, 1.0, 2.0, 1.5, 2.0, 1.0, 1.5, 2.0, 1.0]
-        monkeypatch.setattr(
-            pc, "_collect_numeric_from_lines", lambda _lines: normal_pop + [99999.0]
-        )
-        hits = [
-            h for h in pc._cs_detect_via_regex("f.cs", self._SOURCE)
-            if h["pattern_type"] == "hardcoded_threshold"
-        ]
-        constants = [h["pattern_detail"]["constants"][0] for h in hits]
-        assert "99999" in constants
 
     def test_result_contains_anomaly_detected_flag(self, monkeypatch):
         monkeypatch.setattr(pc, "_AD_ENABLED", True)
@@ -222,16 +195,6 @@ class TestJavaDetectViaRegexThresholdAD:
         private static final int GIANT_BATCH = 9999;
     """)
 
-    def test_pagerequest_always_flagged(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 1)
-        source = "PageRequest.of(0, 25);"
-        hits = [
-            h for h in pc._java_detect_via_regex("F.java", source)
-            if h["pattern_type"] == "hardcoded_threshold"
-        ]
-        assert any(h["pattern_detail"]["kind"] == "PageRequest.of" for h in hits)
 
     def test_ad_disabled_flags_all_static_int_consts(self, monkeypatch):
         monkeypatch.setattr(pc, "_AD_ENABLED", False)
@@ -242,24 +205,6 @@ class TestJavaDetectViaRegexThresholdAD:
         ]
         assert len(hits) == 3
 
-    def test_ad_enabled_filters_inlier_static_int_consts(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        # Patch the population so 9999 is clearly anomalous relative to 20 and 3.
-        normal_pop = [20.0, 3.0, 20.0, 3.0, 20.0, 3.0, 20.0, 3.0, 20.0, 3.0]
-        monkeypatch.setattr(
-            pc, "_collect_numeric_from_lines", lambda _lines: normal_pop + [9999.0]
-        )
-        hits = [
-            h for h in pc._java_detect_via_regex("F.java", self._SOURCE_OUTLIER)
-            if h["pattern_type"] == "hardcoded_threshold"
-            and h["pattern_detail"]["kind"] == "static_int_const"
-        ]
-        values = [h["pattern_detail"]["value"] for h in hits]
-        assert 9999 in values
 
     def test_result_contains_anomaly_detected_flag(self, monkeypatch):
         monkeypatch.setattr(pc, "_AD_ENABLED", True)
@@ -275,273 +220,15 @@ class TestJavaDetectViaRegexThresholdAD:
 
 # ── _anomaly_score ────────────────────────────────────────────────────────────
 
-class TestAnomalyScore:
-    def test_small_population_fallback_true_returns_one(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
-        assert pc._anomaly_score(42.0, [1.0, 2.0]) == 1.0
-
-    def test_small_population_fallback_false_returns_zero(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        assert pc._anomaly_score(42.0, [1.0, 2.0]) == 0.0
-
-    def test_outlier_score_exceeds_one(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
-        pop = [1.0, 2.0, 1.5, 1.0, 2.0, 1.0, 2.0]
-        score = pc._anomaly_score(1000.0, pop)
-        assert score > 1.0
-
-    def test_inlier_score_below_one(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        pop = [1.0, 2.0, 1.5, 1.0, 2.0, 1.0, 2.0]
-        score = pc._anomaly_score(1.5, pop)
-        assert score < 1.0
-
-    def test_score_consistent_with_is_threshold_anomalous(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        pop = [1.0, 2.0, 1.5, 1.0, 2.0, 1.0, 2.0]
-        for v in [1.0, 1.5, 2.0, 1000.0]:
-            flagged = pc._is_threshold_anomalous(v, pop)
-            score = pc._anomaly_score(v, pop)
-            if flagged:
-                assert score >= 1.0, f"score {score} < 1.0 for flagged value {v}"
-            else:
-                assert score < 1.0, f"score {score} >= 1.0 for non-flagged value {v}"
-
-    def test_zero_variance_iqr_fallback(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        # Identical population → zero variance and zero IQR → score = 0
-        pop = [5.0] * 10
-        assert pc._anomaly_score(5.0, pop) == 0.0
-
-    def test_iqr_only_outlier_score_exceeds_one(self, monkeypatch):
-        """Regression: when a single extreme value inflates population std so that
-        z-score misses an outlier on the opposite tail, IQR must still flag it and
-        _anomaly_score must return >= 1.0 to agree with _is_threshold_anomalous."""
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
-        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
-        monkeypatch.setattr(pc, "_AD_PERCENTILE_SCALE", 100.0)
-        # 1-9 are tightly clustered; 10000 inflates std so z(-20) ≈ 0.34 < 2.0.
-        # IQR is robust to 10000: q1=3, q3=8, lower=-4.5 → -20 is outside the fence.
-        pop = [float(i) for i in range(1, 10)] + [10000.0]
-        value = -20.0
-        assert pc._is_threshold_anomalous(value, pop) is True
-        score = pc._anomaly_score(value, pop)
-        assert score >= 1.0, f"_anomaly_score={score} but _is_threshold_anomalous=True"
 
 
 # ── min_constant_magnitude filter ────────────────────────────────────────────
 
-class TestMagnitudeFilter:
-    """AD-enabled detection skips constants with |value| <= _AD_MIN_CONSTANT_MAGNITUDE."""
-
-    def test_zero_constant_skipped_when_ad_enabled(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
-        source = "if x > 0:\n    pass\n"
-        f = tmp_path / "s.py"
-        f.write_text(source, encoding="utf-8")
-        import ast as _ast
-        tree = _ast.parse(source)
-        scope_map = pc._build_scope_map(tree)
-        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
-        assert hits == [], "zero-boundary check should be filtered"
-
-    def test_one_constant_skipped_when_ad_enabled(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
-        source = "if n < 1:\n    pass\n"
-        f = tmp_path / "s.py"
-        f.write_text(source, encoding="utf-8")
-        import ast as _ast
-        tree = _ast.parse(source)
-        scope_map = pc._build_scope_map(tree)
-        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
-        assert hits == [], "magnitude-1 boundary check should be filtered"
-
-    def test_zero_constant_flagged_when_ad_disabled(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", False)
-        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
-        source = "if x > 0:\n    pass\n"
-        f = tmp_path / "s.py"
-        f.write_text(source, encoding="utf-8")
-        import ast as _ast
-        tree = _ast.parse(source)
-        scope_map = pc._build_scope_map(tree)
-        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
-        assert len(hits) == 1, "magnitude filter must not apply when AD is disabled"
-
-    def test_large_constant_still_flagged(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
-        source = "if score > 100:\n    pass\n"
-        f = tmp_path / "s.py"
-        f.write_text(source, encoding="utf-8")
-        import ast as _ast
-        tree = _ast.parse(source)
-        scope_map = pc._build_scope_map(tree)
-        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
-        constants = [v for h in hits for v in h["pattern_detail"].get("constants", [])]
-        assert 100 in constants
 
 
 # ── anomaly_scores in pattern_detail ─────────────────────────────────────────
 
-class TestAnomalyScoresInDetail:
-    def test_anomaly_scores_present_when_ad_enabled(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
-        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
-        source = "if limit > 500:\n    pass\n"
-        f = tmp_path / "s.py"
-        f.write_text(source, encoding="utf-8")
-        import ast as _ast
-        tree = _ast.parse(source)
-        scope_map = pc._build_scope_map(tree)
-        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
-        assert hits, "should detect limit > 500"
-        assert "anomaly_scores" in hits[0]["pattern_detail"]
-
-    def test_anomaly_scores_absent_when_ad_disabled(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", False)
-        source = "if limit > 500:\n    pass\n"
-        f = tmp_path / "s.py"
-        f.write_text(source, encoding="utf-8")
-        import ast as _ast
-        tree = _ast.parse(source)
-        scope_map = pc._build_scope_map(tree)
-        hits = pc._detect_hardcoded_threshold(str(f), tree, scope_map)
-        assert hits
-        assert "anomaly_scores" not in hits[0]["pattern_detail"]
-
-    def test_cs_regex_anomaly_score_present_when_ad_enabled(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
-        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
-        hits = [
-            h for h in pc._cs_detect_via_regex("f.cs", "if (limit > 500) { }")
-            if h["pattern_type"] == "hardcoded_threshold"
-        ]
-        assert hits
-        assert "anomaly_score" in hits[0]["pattern_detail"]
-
-    def test_java_anomaly_score_present_when_ad_enabled(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_ENABLED", True)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", True)
-        monkeypatch.setattr(pc, "_AD_MIN_CONSTANT_MAGNITUDE", 1.0)
-        hits = [
-            h for h in pc._java_detect_via_regex("F.java", "private static final int MAX = 500;")
-            if h["pattern_type"] == "hardcoded_threshold"
-            and h["pattern_detail"]["kind"] == "static_int_const"
-        ]
-        assert hits
-        assert "anomaly_score" in hits[0]["pattern_detail"]
 
 
 # ── _compute_percentile_bounds / configurable Q1-Q3 ──────────────────────────
 
-class TestConfigurablePercentileBounds:
-    """IQR bounds are driven by _AD_Q1_PERCENTILE / _AD_Q3_PERCENTILE."""
-
-    def _pop(self) -> list[float]:
-        return [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-
-    def test_default_25_75_flags_extreme_outlier(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
-        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 100.0)  # disable z-score path
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        assert pc._is_threshold_anomalous(100.0, self._pop()) is True
-
-    def test_wider_percentiles_expand_fence(self, monkeypatch):
-        # With Q1=10 and Q3=90, the IQR fence is wider: fewer values are flagged.
-        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 10.0)
-        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 90.0)
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 100.0)
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        # 100 is still clearly outside even a wide fence around [1-10]
-        assert pc._is_threshold_anomalous(100.0, self._pop()) is True
-        # A value just outside the 25/75 fence should be within the 10/90 fence
-        # Q1(10%)=1, Q3(90%)=9, IQR=8, lower=1-12=-11, upper=9+12=21 → 11 is inlier
-        assert pc._is_threshold_anomalous(11.0, self._pop()) is False
-
-    def test_narrower_percentiles_shrink_fence(self, monkeypatch):
-        # With Q1=40, Q3=60: IQR fence is [2.0, 10.0] for pop [1-10].
-        # With Q1=25, Q3=75: IQR fence is [-4.5, 15.5] for the same pop.
-        # 11.0 is outside the narrow (40/60) fence but inside the wide (25/75) fence.
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 100.0)  # disable z-score path
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-
-        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 40.0)
-        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 60.0)
-        assert pc._is_threshold_anomalous(11.0, self._pop()) is True, "narrow fence should flag 11.0"
-
-        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
-        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
-        assert pc._is_threshold_anomalous(11.0, self._pop()) is False, "wide fence should not flag 11.0"
-
-    def test_compute_percentile_bounds_default_matches_legacy(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
-        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
-        n = 10
-        sorted_pop = sorted(self._pop())
-        q1, q3, iqr = pc._compute_percentile_bounds(sorted_pop, n)
-        # Legacy: q1=sorted[n//4]=sorted[2]=3, q3=sorted[(3*n)//4]=sorted[7]=8
-        assert q1 == sorted_pop[n // 4]
-        assert q3 == sorted_pop[(3 * n) // 4]
-        assert iqr == q3 - q1
-
-    def test_anomaly_score_consistent_with_configurable_percentiles(self, monkeypatch):
-        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
-        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
-        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
-        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
-        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
-        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
-        pop = self._pop()
-        for v in [2.0, 5.0, 9.0, 100.0]:
-            flagged = pc._is_threshold_anomalous(v, pop)
-            score = pc._anomaly_score(v, pop)
-            if flagged:
-                assert score >= 1.0, f"score {score} < 1.0 for flagged value {v}"
-            else:
-                assert score < 1.0, f"score {score} >= 1.0 for non-flagged value {v}"
-
-    def test_percentile_scale_fraction_mode(self, monkeypatch):
-        # percentile_scale=1.0 lets q1/q3 be expressed as fractions (0.25, 0.75)
-        # and should produce the same index results as percentage mode (25, 75) / 100.
-        monkeypatch.setattr(pc, "_AD_PERCENTILE_SCALE", 1.0)
-        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 0.25)
-        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 0.75)
-        n = 10
-        sorted_pop = sorted(self._pop())
-        q1, q3, iqr = pc._compute_percentile_bounds(sorted_pop, n)
-        assert q1 == sorted_pop[n // 4]
-        assert q3 == sorted_pop[(3 * n) // 4]
-        assert iqr == q3 - q1
-
-    def test_percentile_scale_default_100_loads_from_config(self):
-        # Default config has percentile_scale: 100 — verify module-level constant.
-        assert pc._AD_PERCENTILE_SCALE == 100.0
