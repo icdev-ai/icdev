@@ -134,11 +134,23 @@ EXCLUDE_PATTERNS = (
     "*.orig",
 )
 
-# Directories to exclude wholesale (path suffix match)
+# Directories to exclude wholesale, matched on ANY path component.
+#
+# "logs" is deliberately NOT here. It was, and because the match is by component
+# at any depth it also swallowed `context/iqe/queries/logs/` — the /logs canvas's
+# IQE seed queries — so that canvas shipped with an empty Ask-Any-Canvas widget.
+# .gitignore carries a comment about this exact directory being lost the same
+# way. Runtime log directories are excluded by ROOT-ANCHORED path below instead.
 EXCLUDE_DIRS = (
     "screenshots",       # dashboard test screenshots (1.2 MB)
-    "logs",              # runtime logs
     "__pycache__",
+)
+
+#: Repo-root-relative directories excluded wholesale. Anchored, so a source
+#: directory that merely SHARES a name is unaffected.
+EXCLUDE_ROOT_DIRS = (
+    "logs",
+    ".logs",
 )
 
 
@@ -158,6 +170,13 @@ def _should_skip(path: Path) -> bool:
     for part in path.parts:
         if part in EXCLUDE_DIRS:
             return True
+    # Root-anchored excludes: only the repo's own top-level runtime dirs.
+    try:
+        rel = path.resolve().relative_to(REPO_ROOT)
+        if rel.parts and rel.parts[0] in EXCLUDE_ROOT_DIRS:
+            return True
+    except (ValueError, OSError):
+        pass
     return False
 
 
