@@ -30,6 +30,13 @@ hand:
     ImportError for anyone who installed it.
   * Both passed ``twine check``. **A wheel that cannot import passes twine
     check** — it validates metadata, not behaviour.
+  * Worse, the guard added to ``sync_package_tree`` after 1.2.41 could not fire
+    on the DOCUMENTED path: ``build_release.py`` runs ``--clean``, which deleted
+    the mirror before the guard had a target to protect. Every release built the
+    intended way would have shipped the same hollow module. Fixed by making
+    ``--clean`` git-restore the tracked tree, and caught here regardless by the
+    self-import check in ``step_verify_payload`` — a defect this cheap to detect
+    should never again depend on one tool getting its ordering right.
 
 Every one of those was preventable by running ``build_release.py``, whose step 8
 installs the built wheel into a clean venv and imports it. The failure was not
@@ -302,6 +309,46 @@ def _wheel_path(version: str):
     return hits[0] if hits else None
 
 
+_SELF_IMPORT_SKIP = ("__init__.py",)
+
+
+def _self_importing_modules(names, read) -> list:
+    """Modules in the wheel that import from THEMSELVES.
+
+    `icdev/tools/llm/agent_loop.py` containing
+    `from icdev.tools.llm.agent_loop import DONE` is a back-compat SHIM that has
+    been copied over the real implementation. Python raises ImportError on a
+    partially initialized module the first time anything imports it, so the
+    capability is simply gone from the installed package.
+
+    This happened twice. 1.2.41 shipped it outright. Then the guard added to
+    `sync_package_tree` could not fire on the DOCUMENTED release path at all,
+    because `build_release.py` runs `--clean`, which deletes the mirror before
+    the guard has a target to protect — so every release built the intended way
+    would have carried it.
+
+    Presence checks cannot see this: the file is there, it is just hollow. This
+    is a cheap, decisive, offline check for a defect that otherwise only shows up
+    when a user imports the module.
+    """
+    import re as _re
+
+    bad = []
+    for name in names:
+        if not name.startswith("icdev/") or not name.endswith(".py"):
+            continue
+        if name.rsplit("/", 1)[-1] in _SELF_IMPORT_SKIP:
+            continue
+        module = name[:-3].replace("/", ".")
+        try:
+            text = read(name).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 - unreadable member is not this check's job
+            continue
+        if _re.search(rf"^\s*from\s+{_re.escape(module)}\s+import\b", text, _re.M):
+            bad.append(name)
+    return bad
+
+
 def step_verify_payload(version: str) -> dict:
     """Assert the wheel carries everything a fresh clone would.
 
@@ -336,6 +383,9 @@ def step_verify_payload(version: str) -> dict:
 
     with zipfile.ZipFile(wheel) as z:
         names = set(z.namelist())
+        # Detected while the archive is open — reopening per member would mean
+        # thousands of archive opens on a 3,400-module wheel.
+        hollow = _self_importing_modules(names, z.read)
 
     missing = []
     for rel in tracked:
@@ -402,6 +452,13 @@ def step_verify_payload(version: str) -> dict:
             problems.append(
                 f"{len(gone)}/{len(want)} tracked {top}/ file(s) absent from the wheel "
                 f"— first few: {gone[:4]}")
+
+    # Hollow modules: present in the wheel, but importing from themselves.
+    if hollow:
+        problems.append(
+            f"{len(hollow)} module(s) in the wheel import from THEMSELVES — a "
+            f"back-compat shim was copied over the real implementation, so "
+            f"importing them raises ImportError: {hollow[:4]}")
 
     # ICDEV is LLM-agnostic. All ten non-Claude platform instruction files were
     # tracked in git and none of them shipped, so an installed project was
