@@ -460,6 +460,17 @@ def step_verify_payload(version: str) -> dict:
             f"back-compat shim was copied over the real implementation, so "
             f"importing them raises ImportError: {hollow[:4]}")
 
+    # `icdev setup` is the first thing a pip user runs after `icdev init`. It
+    # ships as ordinary package code, so it can go missing exactly the way the
+    # AI platform files and tools/agents did — present in the repo, absent from
+    # the wheel, discovered by a user rather than by CI.
+    for mod, label in (
+        ("icdev/tools/cli/setup_wizard.py", "guided setup wizard"),
+        ("icdev/tools/cli/setup.py", "component setup TUI"),
+    ):
+        if mod not in names:
+            problems.append(f"wheel carries no {label} ({mod})")
+
     # ICDEV is LLM-agnostic. All ten non-Claude platform instruction files were
     # tracked in git and none of them shipped, so an installed project was
     # Claude-only. A release that quietly drops them makes the claim false at
