@@ -383,6 +383,26 @@ def step_verify_payload(version: str) -> dict:
     if "icdev/data/args/component_registry.yaml" not in names:
         problems.append("wheel carries no component_registry.yaml — no canvases or menu items")
 
+    # The FORGE DATA layers, file by file — not just "the directory exists".
+    #
+    # A prefix check passes on a single file. 295 IQE seed queries were absent
+    # from the wheel while `data/context/` looked present, because `.iqe` was
+    # missing from the package-data patterns: the engine shipped, its queries
+    # did not, and every canvas came up with an empty Ask-Any-Canvas widget.
+    data_layers = {"goals": "data/goals", "args": "data/args",
+                   "hardprompts": "data/hardprompts", "context": "data/context"}
+    for top, pkg_rel in data_layers.items():
+        want = [r for r in subprocess.run(
+            ["git", "ls-files", f"{top}/"], cwd=REPO_ROOT,
+            capture_output=True, text=True).stdout.split() if r]
+        gone = [r for r in want
+                if f"icdev/{pkg_rel}/{r.split('/', 1)[1]}" not in names
+                and not _deliberately_unpackaged(r)] if want else []
+        if gone:
+            problems.append(
+                f"{len(gone)}/{len(want)} tracked {top}/ file(s) absent from the wheel "
+                f"— first few: {gone[:4]}")
+
     # ICDEV is LLM-agnostic. All ten non-Claude platform instruction files were
     # tracked in git and none of them shipped, so an installed project was
     # Claude-only. A release that quietly drops them makes the claim false at
@@ -422,6 +442,23 @@ def step_verify_payload(version: str) -> dict:
         ),
         "genesis_reflexes": len(reflexes_tracked),
     }
+
+
+#: Tracked files that are deliberately NOT packaged. Kept explicit so the gate
+#: reports real omissions instead of crying wolf — a gate that always fails is a
+#: gate people learn to skip.
+_UNPACKAGED_SUFFIXES = (".bak", ".tmp", ".pem", ".key", ".crt")
+_UNPACKAGED_NAMES = (".gitkeep", ".gitignore")
+
+
+def _deliberately_unpackaged(rel: str) -> bool:
+    """True for build scratch, VCS placeholders and credentials.
+
+    `.pem`/`.key`/`.crt` are excluded on purpose: shipping certificates inside a
+    public wheel would be worse than omitting them.
+    """
+    name = rel.rsplit("/", 1)[-1]
+    return name in _UNPACKAGED_NAMES or rel.endswith(_UNPACKAGED_SUFFIXES)
 
 
 def _parent_only_dirs() -> set:
