@@ -100,6 +100,12 @@ VERSION_FILES: tuple[tuple[str, str, str], ...] = (
     ("icdev/_version.py", r'^__version__ = "(?P<v>[^"]+)"', '__version__ = "{v}"'),
     ("pyproject.toml", r'^version = "(?P<v>[^"]+)"', 'version = "{v}"'),
     ("args/brand.yaml", r'^version: "(?P<v>[^"]+)"', 'version: "{v}"'),
+    # The Helm chart's appVersion. A chart advertising a version the package
+    # never had makes "which build is this cluster running?" unanswerable, and
+    # it had drifted to 21.0.0 while the package was 1.2.42. Chart `version:`
+    # is deliberately NOT bumped here — that is the CHART's own revision and
+    # moves when the templates change, not when the app does.
+    ("deploy/helm/Chart.yaml", r'^appVersion: "(?P<v>[^"]+)"', 'appVersion: "{v}"'),
 )
 
 SOURCE_OF_TRUTH = "icdev/_version.py"
