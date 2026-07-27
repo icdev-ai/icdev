@@ -256,7 +256,33 @@ def sync_tools(dry_run: bool = False, clean: bool = False) -> list:
         return [{"error": f"{src_root} missing"}]
 
     if clean and not dry_run and PKG_TOOLS.exists():
+        # `--clean` removes stale build residue. It must NOT destroy tracked
+        # mirror content, because much of icdev/tools/ has no regenerable
+        # source: where `tools/x.py` is a back-compat SHIM, the REAL
+        # implementation lives only in `icdev/tools/x.py` and in git.
+        #
+        # Deleting the tree also defeats the shim guard, which can only refuse a
+        # copy when a target exists to protect. So a --clean sync overwrote every
+        # real implementation with its 89-line stub — and `--clean` is exactly
+        # what build_release.py runs. Every release built the documented way
+        # would have shipped `icdev.tools.llm.agent_loop` importing from itself.
+        #
+        # Restore the tracked state from git immediately after wiping: stale
+        # untracked files stay gone, tracked content comes back, and the guard
+        # has something to protect. If git cannot restore, the wipe is skipped
+        # entirely rather than left half-done.
         shutil.rmtree(PKG_TOOLS)
+        restored = subprocess.run(
+            ["git", "checkout", "--", str(PKG_TOOLS.relative_to(REPO_ROOT))],
+            cwd=REPO_ROOT, capture_output=True, text=True,
+        )
+        if restored.returncode != 0 or not PKG_TOOLS.exists():
+            raise RuntimeError(
+                "--clean wiped icdev/tools but git could not restore the tracked "
+                f"content ({restored.stderr.strip()[:160]}). Refusing to continue: "
+                "syncing now would overwrite real implementations with their "
+                "back-compat shims. Restore icdev/tools and re-run."
+            )
 
     PKG_TOOLS.mkdir(parents=True, exist_ok=True)
 
