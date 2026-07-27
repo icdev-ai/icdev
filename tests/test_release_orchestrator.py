@@ -362,6 +362,8 @@ def test_payload_gate_ignores_parent_only_subsystems(tmp_path, monkeypatch):
         "icdev/data/claude_bootstrap/CLAUDE.md": b"x",
         "icdev/data/claude_bootstrap/claude/commands/build.md": b"x",
         "icdev/data/.env.template": b"x",
+        "icdev/tools/cli/setup_wizard.py": b"x",
+        "icdev/tools/cli/setup.py": b"x",
         **_platform_entries(),
     })
     monkeypatch.setattr(rel, "DIST_DIR", dist)
@@ -394,6 +396,8 @@ def test_payload_gate_requires_each_forge_layer(tmp_path, monkeypatch, drop, exp
         "icdev/data/claude_bootstrap/CLAUDE.md": b"x",
         "icdev/data/claude_bootstrap/claude/commands/build.md": b"x",
         "icdev/data/.env.template": b"x",
+        "icdev/tools/cli/setup_wizard.py": b"x",
+        "icdev/tools/cli/setup.py": b"x",
         **_platform_entries(),
     }
     full.pop(drop)
@@ -568,3 +572,43 @@ def test_the_scan_uses_one_open_archive():
 
     src = inspect.getsource(rel.step_verify_payload)
     assert "_self_importing_modules(names, z.read)" in src
+
+
+# --------------------------------------------------------------------------- #
+# `icdev setup` must survive packaging
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("mod", [
+    "icdev/tools/cli/setup_wizard.py",
+    "icdev/tools/cli/setup.py",
+])
+def test_payload_gate_requires_the_setup_surface(tmp_path, monkeypatch, mod):
+    """Setup is the first thing a pip user runs after `icdev init`.
+
+    It ships as ordinary package code, so it can vanish exactly the way the AI
+    platform files and tools/agents did — present in the repo, absent from the
+    wheel, found by a user instead of by CI.
+    """
+    members = {
+        "icdev/tools/kept.py": b"x",
+        "icdev/data/args/component_registry.yaml": b"x",
+        "icdev/data/goals/g.md": b"x",
+        "icdev/data/hardprompts/h.md": b"x",
+        "icdev/data/context/c.md": b"x",
+        "icdev/data/claude_bootstrap/CLAUDE.md": b"x",
+        "icdev/data/claude_bootstrap/claude/commands/build.md": b"x",
+        "icdev/data/.env.template": b"x",
+        "icdev/tools/cli/setup_wizard.py": b"x",
+        "icdev/tools/cli/setup.py": b"x",
+        **_platform_entries(),
+    }
+    members.pop(mod)
+    dist = _make_wheel(tmp_path, members)
+    monkeypatch.setattr(rel, "DIST_DIR", dist)
+    monkeypatch.setattr(rel, "_parent_only_dirs", lambda: set())
+    monkeypatch.setattr(rel.subprocess, "run", _git_stub({"tools": ["tools/kept.py"]}))
+
+    out = rel.step_verify_payload("9.9.9")
+    assert not out["ok"]
+    assert any("setup" in p for p in out["problems"]), out["problems"]
