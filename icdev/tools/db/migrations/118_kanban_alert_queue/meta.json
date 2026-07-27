@@ -1,0 +1,11 @@
+{
+  "id": "118",
+  "name": "kanban_alert_queue",
+  "description": "Create kanban_alert_queue table for durable local alert storage used by _queue_alert_locally in kanban reflex.",
+  "created_at": "2026-05-20",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Safe to re-run (CREATE TABLE IF NOT EXISTS). Fixes orphan_db_table gap: kanban_alert_queue was INSERT-referenced without a CREATE TABLE definition."
+}
