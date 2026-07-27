@@ -3605,3 +3605,52 @@ substitution, no stripped-down variant. A test pins that
 the entry point of ANVIL, and CLAUDE.md instructs the agent to read
 `goals/manifest.md` before starting any task — a scaffold without it produces a
 project that contradicts its own first instruction.
+
+## Guided setup after `pip install icdev`
+
+`pip install` installs the package; `icdev init` copies the project payload out;
+`icdev setup` configures it. The wizard is OS-aware (Windows, WSL, Linux, macOS)
+and writes everything to `.env`.
+
+```bash
+icdev setup                    # guided: OS → LLM → database → RAG+KG → Docker
+icdev setup --components       # skip to the component enable/disable TUI
+icdev setup --non-interactive  # accept detected defaults, ask nothing
+icdev setup --no-probe         # skip LLM reachability checks (air-gapped)
+icdev setup --docker-only      # only (re)generate docker-compose.yml
+icdev setup --postgres         # assume PostgreSQL rather than SQLite
+icdev setup --dry-run          # show what would change; write nothing
+icdev setup --json             # machine-readable environment report
+```
+
+**What it configures**
+
+| Step | Detail |
+|---|---|
+| Environment | OS + release, Python, Docker, local PostgreSQL (:5432), local Ollama (:11434), WSL |
+| LLM | primary + fallback provider, API keys, bounded reachability probe |
+| Database | SQLite (zero-config) or PostgreSQL; writes DSN or DB path |
+| RAG + KG | enable flags and embedding dimension (768 — the air-gap-safe default) |
+| Docker | generates a `docker-compose.yml` matched to the answers |
+| Components | hands off to the existing registry-driven TUI |
+
+**Why the compose file is generated rather than documented**
+
+Volume paths are where setup actually fails, and the failure is silent — the
+container starts and the mount is empty:
+
+| Host | Bind-mount source |
+|---|---|
+| Windows | `C:/ai/proj/data` — forward slashes, not what `os.path` produces |
+| WSL | `./data` — **Linux** rules, even though users think of it as Windows |
+| Linux / macOS | `./data` |
+
+The generated file also uses `pgvector/pgvector:pg16` rather than stock
+`postgres:16` (ICDEV stores embeddings in a `vector` column, so plain postgres
+cannot host the RAG schema), points the app at the `postgres` **service name**
+rather than `localhost`, and gates startup on a healthcheck so the first
+migration doesn't race the database.
+
+**The LLM probe** is bounded and skippable. A key that is present but rejected
+is worse than one that is absent — it fails over silently at runtime, which is
+how a stale key can degrade retrieval for weeks before anyone notices.

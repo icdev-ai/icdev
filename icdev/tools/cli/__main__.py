@@ -82,8 +82,17 @@ def main(argv: list[str] | None = None) -> int:
         return enable_main([sub] + rest)
 
     if sub == "setup":
-        from icdev.tools.cli.setup import main as setup_main
-        return setup_main(rest)
+        # `icdev setup` is the GUIDED wizard (OS -> LLM -> database -> RAG ->
+        # Docker -> components). The original component-toggle TUI is still one
+        # flag away as `--components`; the wizard hands off to it directly.
+        #
+        # Flags the old TUI owns (--plain/--json on components) still reach it,
+        # so existing scripted usage does not break.
+        if any(a in rest for a in ("--components", "--plain")):
+            from icdev.tools.cli.setup import main as setup_main
+            return setup_main([a for a in rest if a != "--components"])
+        from icdev.tools.cli.setup_wizard import main as wizard_main
+        return wizard_main(rest)
 
     if sub == "scaffold":
         from icdev.tools.cli.scaffold import main as scaffold_main
