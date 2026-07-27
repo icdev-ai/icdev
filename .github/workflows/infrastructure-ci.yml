@@ -46,6 +46,16 @@ jobs:
         run: docker compose version
 
       - name: Validate docker-compose.yml syntax
+        # `docker compose config` interpolates EVERY service, including ones
+        # behind an inactive profile — so the llm-proxy profile's required
+        # LITELLM_MASTER_KEY has to resolve even though the proxy is off.
+        #
+        # Supplied here rather than given a default in docker-compose.yml on
+        # purpose: the "must be set" requirement is a real safety property
+        # (it stops the proxy starting with no auth), and weakening the compose
+        # file to make CI pass would trade a runtime guarantee for a green tick.
+        env:
+          LITELLM_MASTER_KEY: ci-validation-placeholder
         run: docker compose -f docker-compose.yml config --quiet
 
       # Guarded: docker-compose.ci.yml does not exist in this repo, so an
