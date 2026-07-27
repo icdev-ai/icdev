@@ -218,7 +218,12 @@ spec:
     spec:
       containers:
         - name: postgresql
-          image: "{{ .Values.image.repository }}/postgresql:15-hardened"
+          # pgvector is REQUIRED whenever RAG/KG is on: ICDEV stores embeddings
+          # in a `vector` column, so a stock postgres image cannot host the RAG
+          # schema at all -- `CREATE EXTENSION vector` fails and every embedding
+          # write raises. The hardened base stays the default for deployments
+          # that run with RAG disabled and must keep their own image lineage.
+          image: {{ if .Values.rag.enabled }}{{ .Values.rag.vectorImage | quote }}{{ else }}"{{ .Values.image.repository }}/postgresql:15-hardened"{{ end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: 5432
@@ -236,6 +241,20 @@ spec:
                   key: password
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
+          {{- if .Values.rag.enabled }}
+          # Runs once on an empty data directory. Idempotent: IF NOT EXISTS, so
+          # re-deploying onto an existing volume is a no-op rather than an error.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - >-
+                    until pg_isready -U {{ .Values.platformDb.user }}; do sleep 1; done;
+                    psql -U {{ .Values.platformDb.user }} -d {{ .Values.platformDb.name }}
+                    -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+          {{- end }}
           resources:
             {{- toYaml .Values.platformDb.resources | nindent 12 }}
           securityContext:
