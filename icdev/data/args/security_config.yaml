@@ -176,6 +176,38 @@ abac_policies:
       - PATCH
     decision: Deny
 
+  # --- Proposal draft review policies (approve/reject in api/govcon.py) ---
+  # Separation of duties: reviewing/privileged roles decide; a section_writer
+  # never self-approves/rejects their own draft.
+
+  - name: proposal_draft_review_privileged
+    subject:
+      role:
+        operator: in
+        values:
+          - capture_mgr
+          - proposal_mgr
+          - pm
+          - reviewer
+          - tenant_admin
+          - admin
+    resource:
+      type: proposal_draft
+    action:
+      - approve
+      - reject
+    decision: Permit
+
+  - name: proposal_draft_writer_deny_unassigned
+    subject:
+      role: section_writer
+    resource:
+      type: proposal_draft
+    action:
+      - approve
+      - reject
+    decision: Deny
+
 # ---------------------------------------------------------------------------
 # Column-Level Security — per-role, per-table column masking
 # ---------------------------------------------------------------------------
@@ -264,6 +296,92 @@ column_policies:
     role: co
     columns:
       value: "null"
+  - table: pg_cost_volumes
+    role: reviewer
+    columns:
+      total_evaluated_price: "null"
+      direct_labor_cost: "null"
+      fringe_rate: "null"
+      overhead_rate: "null"
+      g_and_a_rate: "null"
+      fee_rate: "null"
+      subcontractor_cost: "null"
+      odc_cost: "null"
+      ptw_estimate_low: "null"
+      ptw_estimate_high: "null"
+      calc_benchmark_median: "null"
+  - table: pg_cost_volumes
+    role: co
+    columns:
+      total_evaluated_price: "null"
+      direct_labor_cost: "null"
+      fringe_rate: "null"
+      overhead_rate: "null"
+      g_and_a_rate: "null"
+      fee_rate: "null"
+      subcontractor_cost: "null"
+      odc_cost: "null"
+      ptw_estimate_low: "null"
+      ptw_estimate_high: "null"
+      calc_benchmark_median: "null"
+  - table: pg_win_themes
+    role: reviewer
+    columns:
+      theme_statement: "null"
+      supporting_evidence: "null"
+      target_eval_factor: "null"
+      ghost_competitor: "null"
+  - table: pg_win_themes
+    role: co
+    columns:
+      theme_statement: "null"
+      supporting_evidence: "null"
+      target_eval_factor: "null"
+      ghost_competitor: "null"
+  - table: pg_win_loss_records
+    role: reviewer
+    columns:
+      competitor_strengths: "null"
+  - table: pg_win_loss_records
+    role: co
+    columns:
+      competitor_strengths: "null"
+  - table: proposal_blackhat_assessments
+    role: reviewer
+    columns:
+      price_estimate_low: "null"
+      price_estimate_high: "null"
+      win_strategy: "null"
+      differentiators: "null"
+      strengths: "null"
+      weaknesses: "null"
+      risk_factors: "null"
+  - table: proposal_blackhat_assessments
+    role: co
+    columns:
+      price_estimate_low: "null"
+      price_estimate_high: "null"
+      win_strategy: "null"
+      differentiators: "null"
+      strengths: "null"
+      weaknesses: "null"
+      risk_factors: "null"
+  # pg_competitor_awards feeds the price-to-win computation. award_amount is
+  # deliberately NOT masked here: rate_benchmarker.ptw_analysis() aggregates it
+  # server-side, and masking it to NULL at the DB layer would not hide the answer
+  # — it would make ptw_analysis silently return "no award amounts" with a bogus
+  # recommendation. The derived PTW figures are withheld from these roles at the
+  # response layer instead (see _mask_ptw_analysis in dashboard/api/proposals.py),
+  # matching the pg_cost_volumes ptw_estimate_* policy above. labor_categories is
+  # read by no computation, so it is masked here.
+  - table: pg_competitor_awards
+    role: reviewer
+    columns:
+      labor_categories: "null"
+  - table: pg_competitor_awards
+    role: co
+    columns:
+      labor_categories: "null"
 
 # ---------------------------------------------------------------------------
 # Field-Level Security — API response field filtering

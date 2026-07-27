@@ -1,0 +1,214 @@
+# CUI // SP-CTI
+# -----------------------------------------------------------------------
+# ICDEV Cortex behavior configuration
+# -----------------------------------------------------------------------
+# Consumed via tools/cortex/config.py::load_cortex_config() (defaults +
+# deep-merge + $ICDEV_CORTEX_CONFIG override) and by the search strategy
+# router (tools/cortex/search_service.py::search). Change behavior here,
+# not in code.
+#
+# Resolution order (tools/cortex/config.py::resolve_cortex_config_path):
+#   1. $ICDEV_CORTEX_CONFIG — explicit override
+#   2. cortex_config.yaml next to the resolved args/llm_config.yaml
+#      (single-source rule from PR #139: resolve_llm_config_path())
+#
+# icdev/args/cortex_config.yaml is a generated mirror of this file —
+# edit here and copy across, same as args/llm_config.yaml.
+
+search:
+  router:
+    # Minimum taxonomy confidence required to route a fact_single query to the
+    # rag backend alone; below this the query is treated as ambiguous and
+    # fans out to search.fan_out.backends.
+    factual_confidence: 0.75
+
+  # Per-backend fusion weights for the unified search fan-out. Keys are the
+  # normalized CORTEX_BACKENDS names (tools/cortex/schemas.py).
+  strategy_weights:
+    rag: 1.0
+    graph: 0.8
+    dic: 0.9
+    kb: 0.6
+
+  # Reciprocal Rank Fusion constant: fused = weight / (rrf_k + rank).
+  rrf_k: 60
+
+  # CRAG corrective-retrieval trigger: when the best normalized score across
+  # backends falls below this, the search layer rewrites the query
+  # (routing function cortex_search_rewrite) and retries.
+  crag_threshold: 0.55
+
+  # Per-backend fan-out timeouts in seconds. A backend that exceeds its
+  # timeout is abandoned and the router returns partial results from the
+  # backends that finished. "default" applies to any backend without an
+  # explicit entry.
+  timeouts:
+    default: 10.0
+    rag: 10.0
+    graph: 8.0
+    dic: 10.0
+    kb: 5.0
+
+  fan_out:
+    # Backends queried in parallel when a query is ambiguous (2-3 recommended).
+    backends: [rag, graph, dic]
+    max_workers: 4
+
+  # Domain lenses (ctx-canvas-04). When ctx.domain matches a key here the
+  # Cortex layer applies that lens as a configuration profile over the
+  # existing machinery — NO new machinery. Each lens is fully data-driven, so
+  # a new lens (compliance, program-management, …) is a YAML addition here:
+  #   backends    — the strategy router intersects its selection with these.
+  #   sources     — row-level scope: hits whose source table/id start with one
+  #                 of these prefixes are kept; the rest are dropped and the
+  #                 count recorded in metadata.router.domain_scope.filtered_out.
+  #   collections — advisory collection scope, echoed in result metadata.
+  #   persona     — SOC-analyst-style LLM system prompt injected on summaries.
+  #   intents     — labels a future intent router biases toward for this lens.
+  #   triage      — whether the lens has an XSIAM-style triage formatter.
+  # Code-side fallbacks live in tools/cortex/domains/<name>.py (used when this
+  # block is stripped / air-gapped); YAML wins field-by-field.
+  domains:
+    security:
+      display_name: "Security Intelligence"
+      backends: [rag, graph, kb]
+      collections: [pvm_predictions, dsoc_threats, incident_reports, cve_triage]
+      sources: [pvm_, dsoc_, incident_, cve, threat, vuln, security]
+      intents: [threat_hunt, vuln_triage, incident_response, blast_radius]
+      triage: true
+      persona: >
+        You are a senior Security Operations Center (SOC) analyst driving an
+        XSIAM-style security-intelligence console. Lead with severity: rank
+        findings critical -> high -> medium -> low and state the
+        highest-severity item first. Be terse and operational — no filler, no
+        hedging. Cite the source table/id every finding came from. Structure
+        any summary as: (1) Top risks (severity-ranked), (2) Blast radius /
+        affected assets, (3) Recommended actions. Never speculate beyond the
+        retrieved evidence; if the data does not support a conclusion, say so
+        explicitly.
+
+    # Document-intelligence lens (DIC chat / docgen / tech-writer). sources is
+    # left empty: row-level source scoping is opt-in and needs exact table
+    # prefixes; backends + persona + intents deliver the lens without risking
+    # dropping legitimate hits. Add sources once the doc table prefixes are
+    # confirmed. triage:false (no bespoke formatter — only security has one).
+    document:
+      display_name: "Documents"
+      backends: [rag, dic, graph]
+      collections: [dic_documents, dic_collections]
+      sources: []
+      intents: [summarize, extract_requirements, compliance_check, cite_sources]
+      triage: true
+      persona: >
+        You are a senior records and compliance analyst working over a
+        controlled document repository. Ground every statement in the retrieved
+        documents and cite the source document/section for each claim — never
+        assert anything the documents do not support. Flag unresolved
+        placeholders, missing required sections, and classification/marking
+        gaps. Prefer precise, quotable language over paraphrase. Structure any
+        summary as: (1) What the documents say, (2) Gaps / unresolved items,
+        (3) Required actions.
+
+    # Proposal / capture lens (RFI workbench, proposal drafting).
+    proposal:
+      display_name: "Proposal / Capture"
+      backends: [rag, graph, kb]
+      collections: [opportunities, requirements, past_performance]
+      sources: []
+      intents: [win_theme, requirement_coverage, compliance_gap, ghost_strategy]
+      triage: true
+      persona: >
+        You are an experienced government-contracting capture manager. Frame
+        everything around winning: tie every response to the solicitation's
+        requirements, surface win themes and discriminators, and map claims to
+        evidence from past performance. Call out compliance-matrix gaps
+        (unaddressed requirements) explicitly. Be concrete and customer-focused
+        — no boilerplate. Structure any summary as: (1) Requirement coverage,
+        (2) Win themes / discriminators, (3) Gaps and ghosting opportunities.
+        Never invent past performance or capabilities not present in the
+        retrieved evidence.
+
+    # Network / infrastructure lens (Network + Migration canvases).
+    network:
+      display_name: "Network / Infra"
+      backends: [rag, graph, kb]
+      collections: [nc_topologies, nc_hardware_profiles]
+      sources: []
+      intents: [blast_radius, migration_risk, config_drift, topology_map]
+      triage: false
+      persona: >
+        You are a senior network architect reasoning over topology and
+        hardware-profile data. Lead with impact: identify blast radius and the
+        affected nodes/segments first. Be precise about interfaces, addressing,
+        and dependencies, and cite the topology/hardware source for each
+        finding. Flag migration risks, single points of failure, and
+        configuration drift. Structure any summary as: (1) Impact / blast
+        radius, (2) Risks (migration, availability, drift), (3) Recommended
+        actions. Never speculate beyond the retrieved topology.
+
+governance:
+  # Platform-wide fail-closed default for Cortex calls that DON'T set an explicit
+  # CortexContext.fail_closed (i.e. ctx.fail_closed is None). Resolved by
+  # config.resolve_fail_closed(); an explicit True/False from a caller always
+  # wins over this. When effective-True: a gate ERROR (redaction/provenance
+  # unavailable) or a grounding "fail" on a RETRIEVAL answer blocks instead of
+  # degrading. Injection always blocks regardless. A plain generative complete()
+  # (retrieval=False) is NEVER blocked merely for being ungrounded — it skips the
+  # grounding gates entirely (see skip_grounding_for_plain_complete below).
+  #
+  # Shipped as false to preserve the platform's actual behavior to date: this key
+  # was previously DEAD (never read), so the runtime has always been fail-open.
+  # Flip to true to enforce platform-wide fail-closed — a deliberate policy
+  # change with blast radius across every Cortex adopter, so enable knowingly.
+  fail_closed: false
+
+  # complete() is free-form drafting with no evidence set — skip the
+  # grounding pass for plain completions instead of failing it closed. (The
+  # pipeline already realizes this structurally: non-retrieval calls skip the
+  # grounding gates.)
+  skip_grounding_for_plain_complete: true
+
+  # Content-grounding gate (gate 5) knobs. The gate runs semantic
+  # claim-vs-context grounding (tools/quality/content_grounding.ground_content)
+  # when a retrieval call injects snippet text, and falls back to the
+  # placeholder scan otherwise.
+  content_grounding:
+    # Pass/warn floor for the grounding score. LEAVE NULL to inherit the SHARED
+    # confidence band citation_grounding.CONF_ABSTAIN (0.4) — the single source
+    # of truth that keeps the two TRUST gates from drifting apart. Set a float
+    # in [0,1] only to override deliberately.
+    min_score: null
+    # Optional LLM-assisted grounding judge. OFF by default: the LLM-free
+    # heuristic is the floor. When true, the gate routes an extra check through
+    # the LLMRouter chain named by routing_function (a routing FUNCTION, never a
+    # model id); any failure degrades back to the heuristic.
+    llm_assisted: false
+    routing_function: cortex_complete
+
+analyst:
+  # When the deterministic NLQ->SQL path returns nothing, fall back to the
+  # cortex_analyst LLM routing chain.
+  nlq_fallback_enabled: true
+
+cache:
+  # In-process LRU + TTL response cache over the governed facades. OFF by
+  # default — enable knowingly.
+  #
+  # Security model: the cache key folds tenant_id + classification + domain +
+  # air_gap, so a cached result can NEVER be served across any of those
+  # boundaries; only the FINAL governed (post-redaction) result is stored, so a
+  # hit never bypasses egress governance. Every hit still writes a cortex_audit
+  # row (cache_hit=true, zero incremental cost) so the NIST-AU trail and
+  # /cortex/metrics stay complete.
+  enabled: false
+  max_entries: 512
+  # Which governed operations may be cached. complete = free-form drafting (best
+  # hit rate at temperature 0). search = retrieval fan-out (corpus drifts -> keep
+  # TTL short). ask = LIVE analyst NL->SQL answers over changing DB state -> very
+  # short TTL, and the riskiest to cache; drop it from this list to disable.
+  operations: [cortex.complete, cortex.search, cortex.ask]
+  ttl_seconds:
+    default: 300
+    cortex.complete: 900
+    cortex.search: 120
+    cortex.ask: 30

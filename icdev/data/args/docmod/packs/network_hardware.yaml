@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+# Network hardware currency pack. Curated nc_hardware_profiles (via the
+# read-only NetworkCatalogAdapter) is the authoritative standard; de facto
+# deployment stats corroborate and drive divergence/catalog_gap findings.
+pack_id: network_hardware
+label: Network Hardware
+enabled: true
+evaluator: tools.doc_modernization.packs.network_hardware.NetworkHardwarePack
+entity_types: [hardware_model]
+extraction:
+  patterns:
+    - '(?i)\b(Catalyst|Nexus|ASR|ISR|Meraki[ ]MS)\s?-?\d{3,4}[A-Z0-9-]*\b'
+    - '(?i)\b(SRX|MX|EX|QFX)\s?-?\d{3,4}[A-Z0-9-]*\b'
+    - '(?i)\bPA-\d{3,4}[A-Z0-9-]*\b'
+    - '(?i)\bFortiGate[ -]?\d{2,4}[A-Z]?\b'
+  inventory_terms: true          # also match distinct ni_devices vendor+model strings
+evidence_sources: [catalog, ni_devices, mc_net_eol_data, docmod_defacto_standards]
+verdict_rules:
+  eol_past: eol
+  eos_past: deprecated
+  eol_within_days: {"365": aging}
+replacement:
+  strategy: catalog_first        # curated catalog -> defacto tie-breaker

@@ -1,0 +1,86 @@
+# CUI // SP-CTI
+# ===========================================================================
+# Config-driven Retention / Archival Framework  (crx-db-03)
+# ===========================================================================
+# Maps a high-churn operational table -> retention policy. Executed by the
+# Genesis reflex `retention_sweep` (tools/genesis/reflexes/retention_sweep.py,
+# registered in tools/genesis/daemon.py REFLEX_NAMES).
+#
+# HARD RULES (enforced in code, not merely by this config):
+#   * Append-only / audit tables (the APPEND_ONLY_TABLES list in
+#     .claude/hooks/pre_tool_use.py) are NEVER pruned. A `prune` strategy
+#     declared against such a table is FORCE-DOWNGRADED to `archive` at runtime
+#     (copy-to-cold twin; source rows are left intact) so NIST AU retention
+#     minimums always hold. The append-only set is the single source of truth —
+#     the reflex parses it from the hook at runtime and fails CLOSED (archive
+#     only, never delete) if it cannot be read.
+#   * Subsystems that already self-manage their own retention are EXCLUDED here
+#     (see `excluded`): RAG (tools/rag/retention_manager.py), the observability
+#     archive-then-prune reflex, and PDC / digital-twin snapshot retention.
+#   * dry_run defaults TRUE. Nothing is ever deleted or archived while dry_run
+#     is true — the reflex only reports what it WOULD do. Flip to false only
+#     after reviewing a dry-run report.
+#   * Every prune/archive action is written to the append-only
+#     `retention_action_log` table (created on demand; in APPEND_ONLY_TABLES).
+#
+# Policy schema (per table):
+#   keep_days:         int   — rows older than now-keep_days are eligible
+#   strategy:          prune | archive
+#   timestamp_column:  column used to age rows (default: created_at)
+#   id_column:         primary-key column used for bounded/idempotent batching
+#                      (default: id)
+#   archive_dest:      cold twin table name for `archive` strategy
+#                      (default: <table>_archive)
+
+retention:
+  enabled: true
+  dry_run: true              # SAFETY DEFAULT — no rows touched until set false
+  max_rows_per_table: 5000   # per-run cap: bounds one drain / transaction size
+
+  # Owned by another retention manager — never touched by this framework.
+  excluded:
+    - rag_retrieval_log        # tools/rag/retention_manager.py self-manages
+    - rag_ingestion_log        # tools/rag/retention_manager.py self-manages
+    - otel_spans               # observability_retention reflex (obx-trc-05)
+    - prov_entities            # observability_retention reflex
+    - prov_activities          # observability_retention reflex
+    - prov_relations           # observability_retention reflex
+    - shap_attributions        # observability_retention reflex
+    - data_twin_snapshots      # PDC / digital-twin snapshot retention self-manages
+    - metric_snapshots         # PDC snapshot dedup/retention self-manages
+
+  policies:
+    # --- Non-append-only operational churn tables -> PRUNE ---------------
+    # Agent run traces: operational execution history; latest runs matter,
+    # old traces are safe to drop after 30d.
+    agent_execution_traces:
+      keep_days: 30
+      strategy: prune
+      timestamp_column: created_at
+      id_column: trace_id
+
+    # Kanban verification run records: the newest verification per task is
+    # authoritative; historical run rows are operational churn.
+    kanban_verifications:
+      keep_days: 45
+      strategy: prune
+      timestamp_column: created_at
+      id_column: id
+
+    # A2A task status history: transient inter-agent status log.
+    a2a_task_history:
+      keep_days: 30
+      strategy: prune
+      timestamp_column: timestamp
+      id_column: id
+
+    # --- Append-only audit table -> ARCHIVE-to-cold ONLY (NEVER pruned) ---
+    # hook_events is in APPEND_ONLY_TABLES; even though this is declared
+    # `archive`, the runtime hard-rule would force archive regardless. Rows are
+    # COPIED to hook_events_archive; the hot table is never reduced.
+    hook_events:
+      keep_days: 90
+      strategy: archive
+      timestamp_column: created_at
+      id_column: id
+      archive_dest: hook_events_archive

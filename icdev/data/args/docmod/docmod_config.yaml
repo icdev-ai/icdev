@@ -1,0 +1,77 @@
+# CUI // SP-CTI
+# Document Modernization Engine — behavior settings (FORGE Args layer).
+# Change behavior here, not in code.
+
+confidence_threshold: 0.7        # findings below this never promote to kanban
+recency_half_life_days: 180      # de-facto learner deployment recency weighting
+max_redlines_per_sweep: 10       # cap AI redline drafts per reflex sweep
+scan_cadence_hours: 24
+sunset_warning_window_days: 90   # rulebook temporal validity: WARN when a cited
+                                 # standard's sunset_date is within this many days
+                                 # (past sunset -> HIGH). See doc_modernization/temporal.py
+
+# endoflife.date integration (software EOL). offline: true forces seed/import only.
+endoflife_base_url: "https://endoflife.date/api"
+offline: false
+
+# External-feed wiring (dmx-loop-02). Scheduled pull only — no push/webhooks.
+# offline: true (above) forces seed/import for the NIST feed too; both pollers
+# degrade gracefully (skip + log, never fail the sweep) when egress is absent.
+#
+# NIST publication revision feed → docmod_nist_pubs cache (policy_refs evidence).
+nist_pubs_feed_url: "https://csrc.nist.gov/CSRC/media/feeds/rss/publications.xml"
+nist_pubs_cadence_hours: 24        # skip live sync if one ran inside this window
+nist_pubs_timeout_seconds: 15      # tight timeout on the outbound feed GET
+#
+# CVE → docmod bridge: products cited in documents matched against the existing
+# supply-chain cve_triage store (no new poller). Emits HITL drift via acoic.
+cve_bridge_enabled: true
+cve_bridge_project_id: null        # null = scan CVEs across all projects
+
+# Proactive freshness owner notifications (dmx-loop-01). Fires an owner/steward
+# alert via tools/notifications/gateway.py the first time a document CROSSES into
+# `aging` or `stale`. Crossing-only (a doc already stale does NOT re-alert every
+# scan) with a per-document cooldown so a stale doc alerts at most once per
+# window. DEFAULT OFF — no notifications are sent until enabled. Notify-only:
+# never edits documents (HITL pending_review gating is untouched). Air-gap safe:
+# if the gateway/channel is unreachable the crossing is logged and skipped.
+freshness_notifications:
+  enabled: false                 # master toggle — DEFAULT OFF
+  cooldown_hours: 168            # min hours between alerts for the same document (1 week)
+  event_type: dic_freshness_alert  # gateway routing key (args/notification_config.yaml)
+  default_channel: ""            # fallback owner/channel when the collection has no owner_id
+  base_url: ""                   # dashboard base URL for the modernization link (e.g. https://icdev.example.mil)
+  max_findings: 3                # top-N modernization findings listed in the alert body
+  severity_by_state:             # gateway severity per target state
+    aging: warning
+    stale: error
+
+# Semantic claim tracking (dmx-claims-02). Extracts typed (subject, predicate,
+# object) claims anchored to a VERBATIM char span in an approved version, so a
+# rulebook/evidence change can flag the exact sentence rather than the whole
+# document. DEFAULT OFF — with enabled: false the extraction entry point is a
+# complete no-op (zero LLM calls, zero rows) and DocMod behaves exactly as today.
+# Deterministic-first (TRUST rule 1): the LLM only PROPOSES claim structure; it
+# never evaluates validity. Claims land status='pending_review' (HITL). Air-gap:
+# extraction degrades to the rulebook-anchored no-LLM path ($0 LLM).
+# See docs/design/dmx-claims-tracking-spike.md (human-approved).
+claims:
+  enabled: false                       # master toggle — DEFAULT OFF (never remove)
+  pack_domains: [crypto_protocols]      # domains claim extraction is scoped to (Phase B: crypto only)
+
+# URL link-rot detection (tools/doc_modernization/link_check.py). This is a
+# NETWORK feature and is OFF by default — enable only where the sweep host has
+# controlled outbound egress. Outbound checks are guarded: https-only, the
+# hostname is resolved and every resolved IP is rejected if it falls in
+# loopback / private / link-local (incl. instance-metadata) / reserved space,
+# and the allow/denylist below is honored (denylist wins). When offline: true
+# (air-gap) link checking skips cleanly — URLs are reported "not checked", never
+# rotted.
+link_rot:
+  enabled: false            # network feature — default OFF
+  max_urls_per_sweep: 50    # cap URL checks per sweep (blast-radius + politeness)
+  timeout_seconds: 5        # tight per-request timeout
+  max_redirects: 3          # cap redirect chain depth; each hop is re-validated
+  head_hash_bytes: 4096     # bytes of the (ranged) response hashed for drift detection
+  allowlist: []             # if non-empty, ONLY these hostnames (+subdomains) are checked
+  denylist: []              # hostnames (+subdomains) never checked

@@ -12,7 +12,7 @@
 product_name: "ICDEV™"
 product_short: "ICDEV"
 tagline: "AI-Native Defense & Enterprise Platform"
-version: "1.2.30"
+version: "1.2.41"
 
 # Paths relative to tools/dashboard/static/
 logo_path: "img/icdev-logo.svg"

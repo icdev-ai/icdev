@@ -3,12 +3,12 @@
 Verify the ICDEV™ web dashboard loads correctly with CUI banners and core navigation.
 
 ## Prerequisites
-- Flask dashboard running on http://localhost:5000
+- Flask dashboard running on http://localhost:5050
 - Database initialized with at least one project
 
 ## Steps
 
-1. Navigate to http://localhost:5000
+1. Navigate to http://localhost:5050
 2. Wait for the page to fully load
 3. Verify the page title contains "ICDEV™"
 4. Screenshot the full dashboard page

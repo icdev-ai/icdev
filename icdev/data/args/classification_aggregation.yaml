@@ -1,0 +1,199 @@
+# CUI // SP-CTI
+# ICDEV™ Classification Aggregation / Mosaic-Effect Guard — SCG rules (prop-sec-03)
+#
+# Declarative Security Classification Guide (SCG) aggregation ruleset. Evaluated
+# by tools/security/aggregation_guard.py — pure, deterministic data comparisons,
+# no LLM judgment call in the enforcement path.
+#
+# Covers the "classification by compilation" / "mosaic effect" concern: two or
+# more individually unclassified/low-sensitivity items, when combined, reveal
+# something more sensitive than any single item (DoD 5200.01 / DoDM 5200.01
+# Vol 1 aggregation guidance; 32 CFR 2002 CUI aggregation practice).
+#
+# Rule forms (see `kind` on each rule):
+#   field_cooccurrence — structured DB-row result sets (govcon/proposals/cpmp
+#                        query results): named columns present together.
+#   entity_cooccurrence — free-text sections (RFI/proposal prose): entity
+#                        types / keyword lists / regexes detected together,
+#                        reusing tools/redaction/detector.py's vocabulary
+#                        (see args/redaction_config.yaml, args/redaction_govcon.yaml).
+#   count_threshold    — >= N rows/events matching a filter within a time window
+#                        (e.g. repeated narrow queries against one agency).
+#   entity_diversity   — >= N distinct values of a given attribute within a
+#                        result set/window (blunts incremental scraping).
+#
+# `when.operator` reuses the exact vocabulary of tools/security/abac_engine.py's
+# PDP._match_condition: >=, <, equals, in, not_in, contains_any, contains_all.
+#
+# `scope` — user-locked decision: `document` (within one session/document only).
+# `section` is reserved for a future stricter same-section-only rule; no v1
+# rule uses it.
+#
+# `action` — `block` (halt export/finalize, HITL review required to clear) or
+# `warn` (annotate view/banner, do not block).
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# Free-text rules — /rfi, /proposals section prose
+# ---------------------------------------------------------------------------
+rules:
+  - id: SCG-AGG-001
+    kind: entity_cooccurrence
+    description: >
+      Unclassified facility/unit location + unclassified unit designation +
+      a specific date/date-range together can reveal an operation's
+      disposition (classic OPSEC mosaic pattern).
+    citation: "DoDM 5200.01 Vol 1, Aggregation — Location/Unit/Timeframe"
+    scope: document
+    match: all
+    conditions:
+      - kind: entity_type
+        entity_type: LOCATION
+      - kind: keyword_list
+        name: unit_designation
+        terms: ["battalion", "squadron", "carrier strike group", "task force", "wing"]
+      - kind: regex
+        name: date_range
+        pattern: '\b(NLT|NET|O/A)?\s?\d{1,2}\s?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s?\d{2,4}\b'
+    derive: SECRET
+    action: block
+    severity: high
+
+  - id: SCG-AGG-002
+    kind: entity_cooccurrence
+    description: >
+      Unclassified customer/agency name + an unclassified program name +
+      a specific delivery/fielding date pattern together can reveal a
+      program's existence and schedule.
+    citation: "DoDM 5200.01 Vol 1, Aggregation — Customer/Program/Schedule"
+    scope: document
+    match: {at_least: 2}
+    conditions:
+      - kind: entity_type
+        entity_type: AGENCY_NAME
+      - kind: entity_type
+        entity_type: PROGRAM_NAME
+      - kind: regex
+        name: delivery_date
+        pattern: '\b(delivery|IOC|FOC|fielding)\b.{0,40}\b(Q[1-4]\s?\d{4}|\d{4})\b'
+    derive: SECRET
+    action: block
+    severity: high
+
+  - id: SCG-AGG-003
+    kind: entity_cooccurrence
+    description: >
+      Protected teaming-partner org + pricing/rate figures + a contract/
+      task-order identifier together can reveal a specific award's value
+      and structure — business-sensitive (FOUO/CUI tier), not national
+      security, so this is a warn not a hard block.
+    citation: "FAR 3.104 / CUI Cat. Proprietary Business Information — Partner/Price/Award-ID"
+    scope: document
+    match: all
+    conditions:
+      - kind: entity_type
+        entity_type: PROTECTED_ORG
+      - kind: entity_type
+        entity_type: DOLLAR_AMOUNT
+      - kind: entity_type
+        entity_type: DOD_CONTRACT
+    derive: CUI
+    action: warn
+    severity: medium
+
+  - id: SCG-AGG-004
+    kind: entity_cooccurrence
+    description: >
+      A CAGE code or UEI paired with a specific solicitation/task-order
+      number together identify a specific awardee on a specific effort —
+      combine with pricing and the risk becomes source-selection-sensitive.
+    citation: "FAR 3.104 — Awardee identity + effort + price"
+    scope: document
+    match: all
+    conditions:
+      - kind: entity_type
+        entity_type: CAGE_CODE
+      - kind: entity_type
+        entity_type: SOLICITATION_NUMBER
+      - kind: entity_type
+        entity_type: DOLLAR_AMOUNT
+    derive: CUI
+    action: warn
+    severity: medium
+
+# ---------------------------------------------------------------------------
+# Structured / platform-wide rules — govcon, proposals, cpmp DB result sets
+# ---------------------------------------------------------------------------
+structured_rules:
+  - id: SCG-AGG-101
+    kind: field_cooccurrence
+    description: >
+      A result set that includes a capture plan, competitor black-hat/PTW
+      assessment, and incumbent pricing together for the same opportunity
+      reveals bid strategy detail beyond any single field's sensitivity.
+    citation: "FAR 3.104 — Capture strategy + competitive intel + incumbent price"
+    when:
+      tables: [pg_capture_plans, pg_competitor_assessments, proposal_competitors]
+      columns: [capture_strategy, ptw_assessment, incumbent_price]
+      operator: contains_all
+    derive: SECRET
+    action: block
+    severity: high
+
+  - id: SCG-AGG-102
+    kind: count_threshold
+    description: >
+      Repeated narrow queries/exports against the same agency within a short
+      window can incrementally reconstruct a withheld picture (scraping
+      defense) even though each individual query result is unclassified.
+    citation: "Mosaic/aggregation — incremental reconstruction via repeated narrow queries"
+    when:
+      tables: [proposal_opportunities, sam_gov_opportunities]
+      group_by: agency
+      count: {operator: ">=", value: 10}
+      window: "1h"
+    derive: CUI
+    action: warn
+    severity: medium
+
+  - id: SCG-AGG-103
+    kind: entity_diversity
+    description: >
+      A single user/session touching a high diversity of distinct opportunity
+      identifiers, agencies, or NAICS codes within a short window suggests
+      broad reconnaissance rather than routine work on an assigned effort.
+    citation: "Mosaic/aggregation — entity-diversity scraping defense"
+    when:
+      attribute: opportunity_id
+      distinct_count: {operator: ">=", value: 25}
+      window: "1h"
+    derive: CUI
+    action: warn
+    severity: medium
+
+# ---------------------------------------------------------------------------
+# Scope controls
+# ---------------------------------------------------------------------------
+scope_controls:
+  # Which surfaces (routes/pipelines) enforce this guard. Mirrors
+  # redaction_config.yaml's enforced_modules pattern.
+  enforced_surfaces:
+    - rfi/export           # /rfi assemble_and_export
+    - proposals/submit     # /proposals status transition to 'submitted'
+  # Fast-follow, not yet wired (prop-sec-07 note):
+  #   - govcon/read
+  #   - govcon/export
+  #   - cpmp/read
+  #   - cpmp/export
+
+# ---------------------------------------------------------------------------
+# Audit
+# ---------------------------------------------------------------------------
+audit:
+  enabled: true
+  table: aggregation_events
+  # Log fired rule ids + element ids, NOT raw content (same discipline as
+  # redaction_config.yaml's audit.log_entity_values: false).
+  log_element_content: false
+  retention_days: 365

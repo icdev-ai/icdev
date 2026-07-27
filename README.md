@@ -28,7 +28,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1240--trust-depth-derivation-disclosure--retrieval-that-actually-returns-your-documents)
+- [What's New](#whats-new-in-1241--packaging-fix-the-1240-wheel-shipped-a-stale-config-layer)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [13 Design Canvases](#13-design-canvases)
 - [Quick Start](#quick-start)
@@ -46,6 +46,14 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.41 — Packaging Fix: the 1.2.40 Wheel Shipped a Stale Config Layer
+
+**If you installed 1.2.40 from PyPI, upgrade.** Its packaged FORGE configuration layer is incomplete.
+
+- **The pre-build package sync was not run for 1.2.40.** `tools/installer/sync_package_tree.py` mirrors `args/`, `goals/`, `context/`, `hardprompts/`, `docs/` and `tools/` into the packaged `icdev/` tree, and must run **before** `python -m build`. Skipping it meant the published wheel carried **29 differing and 53 missing** `args/` files — including `component_registry.yaml`, the file 1.2.39 had just fixed for `pip install` — and a `brand.yaml` still reading 1.2.30, so an installed dashboard showed a stale version badge. Re-synced here; the mirror now reports zero drift.
 
 ---
 

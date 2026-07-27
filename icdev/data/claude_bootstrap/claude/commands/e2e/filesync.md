@@ -3,13 +3,13 @@
 Verify the File Sync dashboard page renders correctly with stat grid, job table, activity log, and create modal.
 
 ## Prerequisites
-- Flask dashboard running on http://localhost:5000
+- Flask dashboard running on http://localhost:5050
 - Database initialized (`python tools/db/init_icdev_db.py`)
 - Valid API key for dashboard login
 
 ## Steps
 
-1. Navigate to http://localhost:5000/filesync
+1. Navigate to http://localhost:5050/filesync
 2. Wait for the page to fully load
 3. Verify the page title contains "File Sync"
 

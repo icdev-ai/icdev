@@ -1,0 +1,5 @@
+# IQE-TWINOBS-001: All registered twins with health
+# One row per registered canvas twin (from the twin_core observer).
+
+foreach t in twin_observatory.twins
+select t.canvas, t.display_name, t.latest_verdict, t.snapshot_count, t.stale

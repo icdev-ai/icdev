@@ -1,0 +1,7 @@
+# Intent: Surface tracked AI skills that are actually being adopted, so ROI
+#         reporting can focus on capabilities in real use.
+# Expected: rows from aisg.skills that have been used at least once.
+
+foreach s in aisg.skills
+  where s.total_uses > 0
+  select s.name, s.skill_type, s.status, s.total_uses, s.user_count, s.last_used_at

@@ -155,6 +155,7 @@
 - [Canvas Auto-Remediation](manifest/canvas-auto-remediation.md)
 - [BDC cATO Twin (Phase BDC-1)](manifest/bdc-cato-twin.md)
 - [IDC IaC Twin (Phase IDC-1)](manifest/idc-twin.md)
+- [Twin Core — Cross-Canvas Digital-Twin Unification (TWX)](manifest/twin-core.md)
 - [Agent Adapters (OPT-71)](manifest/agent-adapters.md)
 - [Skill Invocation (OPT-41, 2026-04-12)](manifest/skill-invocation.md)
 - [ANVIL Headless Commands (OPT-42, 2026-04-12)](manifest/anvil-headless-commands.md)
@@ -1192,3 +1193,28 @@
 | Pipeline Grader | tools\workflow\pipeline_grader.py | Auto-registered: workflow/pipeline_grader.py | --json | JSON |
 | Standards Catalog | tools\iqe\adapters\standards_catalog.py | Auto-registered: adapters/standards_catalog.py | --json | JSON |
 | Doc Modernization Sweep | tools\genesis\reflexes\doc_modernization_sweep.py | Auto-registered: reflexes/doc_modernization_sweep.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Prd Common | tools\aiify\prd_common.py | Auto-registered: aiify/prd_common.py | --json | JSON |
+| Export Pptx | tools\boundary_canvas\export_pptx.py | Auto-registered: boundary_canvas/export_pptx.py | --json | JSON |
+| Drift Bridge | tools\doc_modernization\drift_bridge.py | Auto-registered: doc_modernization/drift_bridge.py | --json | JSON |
+| Cost Volume Intake | tools\govcon\cost_volume_intake.py | Auto-registered: govcon/cost_volume_intake.py | --json | JSON |
+| Key Personnel | tools\govcon\key_personnel.py | Auto-registered: govcon/key_personnel.py | --json | JSON |
+| Build Mode | tools\kanban\build_mode.py | Auto-registered: kanban/build_mode.py | --json | JSON |
+| Model Override | tools\kanban\model_override.py | Auto-registered: kanban/model_override.py | --json | JSON |
+| Routing Policy | tools\llm\routing_policy.py | Auto-registered: llm/routing_policy.py | --json | JSON |
+| Pptx Export | tools\network\pptx_export.py | Auto-registered: network/pptx_export.py | --json | JSON |
+| Html Sanitizer | tools\quality\html_sanitizer.py | Auto-registered: quality/html_sanitizer.py | --json | JSON |
+| Redaction Util | tools\second_brain\redaction_util.py | Auto-registered: second_brain/redaction_util.py | --json | JSON |
+| Stub Gate | tools\security\stub_gate.py | Auto-registered: security/stub_gate.py | --json | JSON |
+| Llm Adapter | tools\security_canvas\llm_adapter.py | Auto-registered: security_canvas/llm_adapter.py | --json | JSON |
+| Lens Network | tools\oracle\lenses\lens_network.py | Auto-registered: lenses/lens_network.py | --json | JSON |
+| Collab Capture | tools\network\routes\collab_capture.py | Auto-registered: routes/collab_capture.py | --json | JSON |
+| Import Io | tools\network\routes\import_io.py | Auto-registered: routes/import_io.py | --json | JSON |
+| Peering Inventory | tools\network\routes\peering_inventory.py | Auto-registered: routes/peering_inventory.py | --json | JSON |
+| Topology Ops | tools\network\routes\topology_ops.py | Auto-registered: routes/topology_ops.py | --json | JSON |
+| Twin Migration | tools\network\routes\twin_migration.py | Auto-registered: routes/twin_migration.py | --json | JSON |
+| Bgp Hijack Monitor | tools\genesis\reflexes\bgp_hijack_monitor.py | Auto-registered: reflexes/bgp_hijack_monitor.py | --json | JSON |

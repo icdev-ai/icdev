@@ -18,6 +18,10 @@ agent_tools:
 - run_tool
 - done
 max_iterations: 12
+# Real-time rubric gating: this agentic codegen role is graded by the delivery
+# pipeline (build -> gates -> revise in-session) instead of trusting its own
+# `done`. Opt-in; only takes effect in agent mode.
+rubric: pipeline
 steps: []
 communication:
   protocol: a2a

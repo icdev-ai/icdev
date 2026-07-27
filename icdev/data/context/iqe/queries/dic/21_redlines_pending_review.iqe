@@ -1,0 +1,6 @@
+# IQE-DIC-021: Drafted redlines awaiting reviewer disposition
+# TRUST-gated suggested edits linked to modernization findings.
+
+foreach f in dic.modernization_findings
+where f.state == "redline_drafted"
+select f.doc_id, f.entity_label, f.redline_suggestion_id, f.confidence

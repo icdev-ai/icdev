@@ -6,6 +6,13 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.41] - 2026-07-27
+
+### Fixed
+- **The 1.2.40 wheel shipped a stale FORGE args layer.** `tools/installer/sync_package_tree.py` mirrors `args/`, `goals/`, `context/`, `hardprompts/`, `docs/` and `tools/` into the packaged `icdev/` tree and must run **before** `python -m build`; it was not run for 1.2.40. The published wheel therefore carried **29 differing and 53 missing** `args/` files, including `component_registry.yaml` — the very file 1.2.39 fixed for `pip install` — and a `brand.yaml` still reading 1.2.30, so an installed dashboard showed a stale version badge. The mirror is re-synced here and now reports zero drift (the single exclusion, `llm_config.yaml.bak`, is a backup file and correctly skipped).
+
+  If you installed **1.2.40 from PyPI, upgrade** — its packaged configuration layer is incomplete.
+
 ## [1.2.40] - 2026-07-27
 
 Grounding work aimed at one problem: working with a corpus far larger than any available context window, without the answers quietly inventing things. 1.2.35 introduced TRUST citations; this release makes the grounding underneath them work.

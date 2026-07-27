@@ -3,12 +3,12 @@
 Verify the unified Chat page loads correctly with multi-context UI, RICOAS sidebar, message send, and intervention controls.
 
 ## Prerequisites
-- Flask dashboard running on http://localhost:5000
+- Flask dashboard running on http://localhost:5050
 - Database initialized (chat_contexts, chat_messages, chat_tasks tables present)
 
 ## Steps
 
-1. Navigate to http://localhost:5000/chat
+1. Navigate to http://localhost:5050/chat
 2. Wait for the page to fully load
 3. Verify the page title or heading contains "Chat"
 4. Screenshot the full chat page
@@ -35,9 +35,9 @@ Verify the unified Chat page loads correctly with multi-context UI, RICOAS sideb
 19. Verify the sent message displays with role "user"
 20. Verify the context status indicator shows processing or idle state
 
-21. Navigate back to http://localhost:5000
+21. Navigate back to http://localhost:5050
 22. Verify the main dashboard loads without errors
-23. Navigate to http://localhost:5000/chat again
+23. Navigate to http://localhost:5050/chat again
 24. Verify the previously created context is still listed in the sidebar
 
 ## Expected Results

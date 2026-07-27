@@ -1,0 +1,7 @@
+{
+  "description": "Backfill tenant_id (+ confirm classification) onto proposal/govcon/cpmp/pg surface tables",
+  "date": "2026-07-07",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}

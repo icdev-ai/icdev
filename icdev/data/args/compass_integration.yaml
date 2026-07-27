@@ -1,0 +1,27 @@
+# tools/integrations/compass_client.py configuration.
+#
+# Optional, cross-repo integration with Compass (C:\AI\standalone\compass) --
+# the reverse direction of the bridge Compass itself uses to reach ICDEV
+# (tools/mcp: dic_search/dic_ingest/ace_persona_query/council_query, called
+# by Compass's own tools/integrations/icdev_client.py). This lets ICDEV's
+# own CPMP/GovCon modules query Compass's LCAT taxonomy and staffing data
+# instead of duplicating it. Degrades to a silent no-op everywhere it's
+# consulted if `enabled: false`, COMPASS_URL is unset, or Compass isn't
+# reachable -- never required for ICDEV to function; this is a stretch/
+# optional integration (D-CPMP epics don't depend on it).
+#
+# Unlike icdev_client.py (a stdio MCP subprocess bridge, because ICDEV is
+# an MCP server), Compass is a plain FastAPI web app -- this is a simple
+# HTTP client, no subprocess/warm-process management needed.
+
+enabled: true
+
+# Base URL of a running Compass FastAPI backend (see Compass's own
+# CLAUDE.md: `uvicorn backend.main:app --port 8010`).
+compass_url: "http://127.0.0.1:8010"
+
+# Timeout for a single HTTP request to Compass. Compass's lookups
+# (lcat_mapper.map_to_lcat, staffing_matrix) are all deterministic/no-LLM,
+# so this is generous headroom, not a measured-tight value like the
+# icdev_client.py council/persona timeouts.
+timeout_seconds: 15.0
