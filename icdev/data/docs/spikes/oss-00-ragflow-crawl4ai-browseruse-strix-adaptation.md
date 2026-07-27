@@ -413,19 +413,12 @@ security regression. Plus `run_agent_loop_with_rubric` / `_grade_against_rubric`
 ### Gap S3 — advertised-but-missing implementations (found while mapping)
 Two concrete defects surfaced during this review; both are independent of any
 adaptation and worth fixing on their own:
-- ~~**`sandbox_execute` has no handler.** `tools/mcp/tool_registry.py:5061` points at
+- **`sandbox_execute` has no handler.** `tools/mcp/tool_registry.py:5061` points at
   `tools.mcp.gap_handlers.handle_sandbox_execute`, which does not exist (only
   `handle_sandbox_score`). `unified_server.py:75-95` therefore substitutes a `_stub`
   returning `{"error": "Module not available"}` — and `sandbox_execute` is listed in
   the `security` bundle of `args/agent_toolsets.yaml:65`, so the standalone agent's
-  advertised sandbox tool is non-functional.~~
-  **FIXED — oss-fix-01.** Resolved by *implementing* the handler rather than removing
-  the registry entry: `handle_sandbox_execute` now calls `SandboxExecutor` directly
-  (`tools/mcp/gap_handlers.py:2949`), and the same pass closed **57** registry entries
-  that were silently resolving to the stub. The class of defect is now gated by
-  `tests/mcp/test_registry_handler_coverage.py`, which asserts every `TOOL_REGISTRY`
-  entry resolves to a real handler, that none fall through to `unified_server._stub`,
-  and that nothing advertised in an `args/agent_toolsets.yaml` bundle is non-functional.
+  advertised sandbox tool is non-functional.
 - ~~**`tools/showcase/validator.py` does not exist** despite being documented in
   `CLAUDE.md`'s Quick Reference (`python tools/showcase/validator.py --app <slug> --json`).~~
   **FIXED — oss-fix-02.** The phantom showcase commands were removed from the docs

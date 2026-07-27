@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Intel — GovLift{% endblock %}
+{% block extra_css %}
+<style>
+.gl-page-header{background:linear-gradient(135deg,#0f172a,#1a1a0a);padding:22px 28px;border-radius:10px;margin-bottom:24px;}
+.gl-page-header h1{margin:0;font-size:1.4rem;font-weight:700;color:#fef08a;}
+.gl-page-header p{margin:4px 0 0;color:#fde047;font-size:.85rem;}
+.classification-banner{background:#1e3a1a;border:1px solid #166534;color:#86efac;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-align:center;padding:6px 12px;border-radius:6px;margin-bottom:18px;}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;text-align:center;}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#fef08a;}
+.stat-card.ok .val{color:#d1fae5;}
+.stat-card .lbl{font-size:.75rem;color:#64748b;margin-top:2px;}
+.back-link{color:#6ee7b7;text-decoration:none;font-size:.85rem;}
+.back-link:hover{color:#34d399;}
+.section-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;margin-bottom:18px;}
+.section-card h2{font-size:1rem;font-weight:700;color:#fef08a;margin:0 0 14px;}
+.gl-table{width:100%;border-collapse:collapse;}
+.gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;}
+.gl-table tbody tr:hover{background:#1a2540;}
+.gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;}
+.risk-chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.7rem;font-weight:700;}
+.risk-critical{background:#450a0a;color:#fca5a5;}
+.risk-high{background:#451a03;color:#fdba74;}
+.risk-medium{background:#1c1a05;color:#fde047;}
+.risk-low{background:#14532d;color:#86efac;}
+.empty-state{text-align:center;padding:30px;color:#475569;font-size:.85rem;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="classification-banner">{{ classification }}</div>
+<a class="back-link" href="/govlift">← GovLift</a>
+
+<div class="gl-page-header mt-2">
+  <h1>Threat &amp; Supply-Chain Intelligence</h1>
+  <p>Pre-migration threat assessment and vendor risk analysis — {{ classification }}</p>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val">{{ data.summary.threats }}</div>
+      <div class="lbl">Threats Tracked</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val">{{ data.summary.supply_chain_risks }}</div>
+      <div class="lbl">Supply Chain Risks</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val">{{ data.summary.critical_risks }}</div>
+      <div class="lbl">Critical Risks</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card ok">
+      <div class="val">{{ data.summary.high_risks }}</div>
+      <div class="lbl">High Risks</div>
+    </div>
+  </div>
+</div>
+
+<div class="section-card">
+  <h2>Intel Threats</h2>
+  {% if data.threats %}
+  <div style="overflow-x:auto;">
+    <table class="gl-table">
+      <thead>
+        <tr>
+          <th>Threat</th>
+          <th>Type</th>
+          <th>CVE</th>
+          <th>Risk</th>
+          <th>Detected</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in data.threats %}
+        <tr>
+          <td>{{ t.threat_name }}</td>
+          <td>{{ t.threat_type }}</td>
+          <td>{{ t.cve_id or '—' }}</td>
+          <td><span class="risk-chip risk-{{ t.risk_level }}">{{ t.risk_level | upper }}</span></td>
+          <td>{{ t.detected_at[:10] if t.detected_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="empty-state">No intel threats recorded.</div>
+  {% endif %}
+</div>
+
+<div class="section-card">
+  <h2>Supply Chain Risk Register</h2>
+  {% if data.supply_chain %}
+  <div style="overflow-x:auto;">
+    <table class="gl-table">
+      <thead>
+        <tr>
+          <th>Vendor</th>
+          <th>Risk Level</th>
+          <th>CVEs</th>
+          <th>Last Scanned</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sc in data.supply_chain %}
+        <tr>
+          <td>{{ sc.vendor_name }}</td>
+          <td><span class="risk-chip risk-{{ sc.risk_level }}">{{ sc.risk_level | upper }}</span></td>
+          <td>{{ sc.cve_count }}</td>
+          <td>{{ sc.scanned_at[:10] if sc.scanned_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="empty-state">No supply chain risk records.</div>
+  {% endif %}
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}
