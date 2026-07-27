@@ -3581,3 +3581,27 @@ release, not an error — otherwise a failure after the bump would wedge the ret
 > Do not call `python -m build` directly. That skips `sync_package_tree.py`,
 > which is what made the 1.2.40 wheel ship 29 differing and 53 missing `args/`
 > files — including the `component_registry.yaml` that 1.2.39 had just fixed.
+
+
+## Getting ICDEV files WITHOUT a full scaffold
+
+`pip install icdev` installs the package; it does not write into your project.
+`icdev init` copies the payload out. If you don't want a full scaffold, take
+only what you need:
+
+```bash
+icdev init --list                      # dry run: show what WOULD be copied
+icdev init --only CLAUDE.md            # just the master instruction file
+icdev init --only CLAUDE.md goals      # CLAUDE.md + the FORGE Goals layer
+icdev init --only AGENTS.md            # a single AI-platform instruction file
+icdev init --minimal                   # CLAUDE.md + .claude/ + platform files + goals/
+```
+
+The packaged `CLAUDE.md` is the repo's file **byte-for-byte** — no template
+substitution, no stripped-down variant. A test pins that
+(`test_packaged_claude_md_is_not_a_stripped_template`).
+
+`goals/` is copied even under `--minimal`. It is the Goals layer of FORGE and
+the entry point of ANVIL, and CLAUDE.md instructs the agent to read
+`goals/manifest.md` before starting any task — a scaffold without it produces a
+project that contradicts its own first instruction.
