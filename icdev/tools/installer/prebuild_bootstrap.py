@@ -51,6 +51,20 @@ SOURCES: list[tuple[str, str, str]] = [
     (".claude/agents", "claude/agents", "dir"),
 ]
 
+# ICDEV is LLM-agnostic: the same guardrails ship for every major AI coding
+# tool, not just Claude Code. All ten of these were tracked in git and NONE of
+# them reached the wheel, so `pip install icdev && icdev init` produced a
+# Claude-only project. Sourced from tools/dx/ai_platforms.py so the generator,
+# the wheel and `icdev init` cannot drift apart.
+try:
+    from tools.dx.ai_platforms import AI_PLATFORM_FILES, bootstrap_name
+
+    SOURCES.extend(
+        (rel, bootstrap_name(rel), "file") for _platform, rel in AI_PLATFORM_FILES
+    )
+except Exception:  # noqa: BLE001 - never break the build over the platform list
+    pass
+
 # Sources that may legitimately not exist yet. A missing OPTIONAL source is
 # recorded under `skipped_optional` and does NOT go to `errors`, so the
 # prebuild step (and the build that runs it) never fails just because an
