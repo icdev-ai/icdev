@@ -1,0 +1,93 @@
+# CUI // SP-CTI — IaC resource -> NIST 800-53 control map (twx-fed-03)
+#
+# ATO acceleration (SHIFT Pattern 8): maps concrete Infrastructure-as-Code
+# resource TYPES to the NIST 800-53 control(s) they help implement, so a twin
+# compatibility run can auto-draft control-implementation statements grounded in
+# the actual IaC resource (TRUST: every statement cites the resource address)
+# and raise POA&M items for infra-relevant controls no resource satisfies.
+#
+# This is a DETERMINISTIC composition input, NOT new compliance logic. The
+# baseline set of required controls comes from the existing crosswalk engine
+# (tools/compliance/crosswalk_engine.get_controls_for_impact_level); the OSCAL /
+# SSP / POA&M emission comes from the existing BDC path. This file only says
+# "resource X evidences control Y".
+#
+# PUBLIC-DATA-ONLY: only public NIST 800-53 control identifiers + generic cloud
+# resource-type names. No customer/system-specific data.
+#
+# Keys under `resources:` are lower-cased Terraform-style resource TYPES. Token
+# rules under `token_rules:` are a fallback for resources whose exact type is not
+# listed but whose name/type contains a distinctive token (e.g. any "*kms*" ->
+# key management). Exact-type match wins over token rules.
+
+version: 1
+
+resources:
+  # ── Encryption / key management (SC-12, SC-13, SC-28) ──────────────────────
+  aws_kms_key:            { controls: [SC-12, SC-13], role: "Platform / KMS" }
+  aws_kms_alias:          { controls: [SC-12], role: "Platform / KMS" }
+  azurerm_key_vault:      { controls: [SC-12, SC-13], role: "Platform / KMS" }
+  google_kms_crypto_key:  { controls: [SC-12, SC-13], role: "Platform / KMS" }
+  aws_s3_bucket_server_side_encryption_configuration: { controls: [SC-28], role: "Data" }
+  aws_ebs_encryption_by_default: { controls: [SC-28], role: "Platform" }
+
+  # ── Storage (SC-28 at rest) ────────────────────────────────────────────────
+  aws_s3_bucket:          { controls: [SC-28, AU-9], role: "Data" }
+  azurerm_storage_account: { controls: [SC-28], role: "Data" }
+  google_storage_bucket:  { controls: [SC-28], role: "Data" }
+
+  # ── Audit logging (AU-2, AU-9, AU-12) ──────────────────────────────────────
+  aws_cloudtrail:         { controls: [AU-2, AU-12, AU-9], role: "SecOps" }
+  aws_cloudwatch_log_group: { controls: [AU-2, AU-12], role: "SecOps" }
+  azurerm_monitor_diagnostic_setting: { controls: [AU-2, AU-12], role: "SecOps" }
+  google_logging_project_sink: { controls: [AU-2, AU-12], role: "SecOps" }
+
+  # ── Identity & access (AC-2, AC-3, AC-6, IA-2, IA-5) ───────────────────────
+  aws_iam_role:           { controls: [AC-2, AC-3, AC-6], role: "IAM" }
+  aws_iam_policy:         { controls: [AC-3, AC-6], role: "IAM" }
+  aws_secretsmanager_secret: { controls: [IA-5], role: "IAM" }
+  azurerm_role_assignment: { controls: [AC-2, AC-3], role: "IAM" }
+  google_service_account: { controls: [AC-2, IA-2], role: "IAM" }
+
+  # ── Network / boundary protection (SC-7, AC-4) ─────────────────────────────
+  aws_security_group:     { controls: [SC-7, AC-4], role: "Network" }
+  aws_network_acl:        { controls: [SC-7, AC-4], role: "Network" }
+  aws_wafv2_web_acl:      { controls: [SC-7], role: "Network" }
+  aws_lb:                 { controls: [SC-7], role: "Network" }
+  azurerm_network_security_group: { controls: [SC-7, AC-4], role: "Network" }
+  google_compute_firewall: { controls: [SC-7, AC-4], role: "Network" }
+
+  # ── Backup / contingency (CP-9, CP-10) ─────────────────────────────────────
+  aws_backup_vault:       { controls: [CP-9, CP-10], role: "Platform" }
+  aws_backup_plan:        { controls: [CP-9], role: "Platform" }
+  aws_db_instance:        { controls: [SC-28, CP-9], role: "Data" }
+
+  # ── Continuous monitoring / posture (CA-7, RA-5, SI-4) ─────────────────────
+  aws_guardduty_detector: { controls: [SI-4, CA-7], role: "SecOps" }
+  aws_securityhub_account: { controls: [CA-7, RA-5], role: "SecOps" }
+  aws_config_configuration_recorder: { controls: [CM-8, CA-7], role: "SecOps" }
+  aws_inspector2_enabler: { controls: [RA-5], role: "SecOps" }
+
+  # ── Container / registry (CM-2, SA-10) ─────────────────────────────────────
+  aws_ecr_repository:     { controls: [CM-2, SA-10], role: "Platform" }
+  aws_eks_cluster:        { controls: [AC-3, AC-6], role: "Platform" }
+
+token_rules:
+  - match: [kms, keyvault, "key_vault"]
+    controls: [SC-12, SC-13]
+    role: "Platform / KMS"
+  - match: [cloudtrail, audit, "log_group", logging]
+    controls: [AU-2, AU-12]
+    role: "SecOps"
+  - match: [iam, "role_assignment", "service_account"]
+    controls: [AC-2, AC-3]
+    role: "IAM"
+  - match: [security_group, firewall, "network_acl", waf]
+    controls: [SC-7, AC-4]
+    role: "Network"
+  - match: [backup]
+    controls: [CP-9, CP-10]
+    role: "Platform"
+  - match: [guardduty, securityhub, defender]
+    controls: [SI-4, CA-7]
+    role: "SecOps"

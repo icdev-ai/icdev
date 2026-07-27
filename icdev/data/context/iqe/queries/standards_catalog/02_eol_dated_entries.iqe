@@ -1,0 +1,6 @@
+# IQE-SCAT-002: Catalog entries carrying EOL dates
+# Feed for EOL-horizon planning and docmod eol_hardware/eol_software findings.
+
+foreach e in standards_catalog.entries
+where e.eol_date != null
+select e.domain, e.vendor, e.product, e.version, e.status, e.eol_date, e.eos_date

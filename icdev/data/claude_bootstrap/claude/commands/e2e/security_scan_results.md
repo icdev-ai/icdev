@@ -3,12 +3,12 @@
 Verify security scan results are properly displayed in the dashboard.
 
 ## Prerequisites
-- Flask dashboard running on http://localhost:5000
+- Flask dashboard running on http://localhost:5050
 - At least one project with security scan results
 
 ## Steps
 
-1. Navigate to http://localhost:5000
+1. Navigate to http://localhost:5050
 2. Wait for the dashboard to load
 3. Assert the dashboard shows an active alerts section
 

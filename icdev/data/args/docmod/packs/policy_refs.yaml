@@ -1,0 +1,16 @@
+# CUI // SP-CTI
+# Policy/standards reference pack — supersession map (rulebook_policy.yaml).
+pack_id: policy_refs
+label: Policy & Standards References
+enabled: true
+evaluator: tools.doc_modernization.packs.policy_refs.PolicyRefsPack
+entity_types: [standard]
+extraction:
+  patterns:
+    - '(?i)\bNIST\s?SP\s?800-\d+[A-Z]?(?:\s?Rev(?:ision|\.)?\s?\d+)?\b'
+    - '(?i)\bRFC\s?\d{3,5}\b'
+    - '(?i)\bSTIG\s?V\d+R\d+\b'
+evidence_sources: [rulebook_policy, kg_nodes]
+verdict_rules: {}
+replacement:
+  strategy: supersession_map

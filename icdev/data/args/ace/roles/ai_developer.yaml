@@ -27,6 +27,10 @@ communication:
   - task.blocked
   - pr.ready
 llm_function: code_generation
+# Real-time rubric gating: grade this codegen role against the delivery pipeline
+# (build -> gates -> revise) when it runs agent-mode. Inert in the default
+# step-mode; declared here so an agent-mode variant inherits the gate.
+rubric: pipeline
 tool_permissions:
 - Read
 - Write

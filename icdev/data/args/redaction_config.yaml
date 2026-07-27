@@ -35,6 +35,20 @@ fail_closed: true
 mask_at_ingestion: false
 
 # ---------------------------------------------------------------------------
+# Second Brain (/me) egress masking (cnr-me-02)
+# ---------------------------------------------------------------------------
+# The Second Brain assembles deeply personal context (full name, work email,
+# org, objectives, challenges, meeting titles, attendee names/emails) into
+# LLM prompts for briefings and profile summaries. When redact_llm_egress is
+# true these prompts are run through the anonymizer BEFORE they reach the
+# router, so raw PII never egresses to a cloud LLM. Default true — this is an
+# IL4 canvas of personal data. Env override: ICDEV_SECOND_BRAIN_REDACT_EGRESS.
+# On anonymizer failure the platform `fail_closed` flag above governs whether
+# the call is refused (fail-closed) or proceeds unmasked (fail-open).
+second_brain:
+  redact_llm_egress: true
+
+# ---------------------------------------------------------------------------
 # Detection Engine
 # ---------------------------------------------------------------------------
 detection:

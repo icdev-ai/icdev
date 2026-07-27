@@ -33,12 +33,16 @@ from tools.dx.mirror_parity import audit_path, discover_mirrored_paths
 _BASELINE = pathlib.Path(__file__).resolve().parents[1] / "args" / "mirror_drift_baseline.yaml"
 
 
-def _baseline() -> dict:
+def _baseline_raw() -> dict:
+    """Every recorded package, unfiltered — used only to prove the file is real."""
     if not _BASELINE.is_file():
         return {}
     data = yaml.safe_load(_BASELINE.read_text(encoding="utf-8")) or {}
-    raw = {str(k): int(v) for k, v in (data.get("content_drift") or {}).items()}
-    return {k: v for k, v in raw.items() if k in GATED_PACKAGES}
+    return {str(k): int(v) for k, v in (data.get("content_drift") or {}).items()}
+
+
+def _baseline() -> dict:
+    return {k: v for k, v in _baseline_raw().items() if k in GATED_PACKAGES}
 
 
 #: Packages this test sweeps on every CI run.
@@ -133,5 +137,14 @@ def test_trust_critical_packages_are_discovered(pkg):
 
 
 def test_baseline_file_exists_and_parses():
+    """The file is real and readable — NOT that drift still exists.
+
+    This deliberately checks the UNFILTERED baseline. Asserting on the
+    gated subset made two tests in this file contradict each other the moment
+    the last gated package was reconciled: `test_baseline_has_no_stale_entries`
+    demands a now-clean package be removed, and this one refused to let the
+    result be empty. That would have required drift to exist forever, punishing
+    the fix — `db` reached parity and tripped exactly that.
+    """
     assert _BASELINE.is_file(), "args/mirror_drift_baseline.yaml missing"
-    assert _baseline(), "baseline parsed empty — the gate would be vacuous"
+    assert _baseline_raw(), "baseline parsed empty — the file is missing or malformed"

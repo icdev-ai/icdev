@@ -9,7 +9,7 @@ Verify the Fine-Tuning dashboard pages at `/finetune` render correctly, display 
 ## Steps
 
 ### Login
-1. Navigate to `http://localhost:5000/login`
+1. Navigate to `http://localhost:5050/login`
 2. Fill in the API key field with the test API key
 3. Click "Login" button
 4. Assert redirect to home page
@@ -20,7 +20,7 @@ Verify the Fine-Tuning dashboard pages at `/finetune` render correctly, display 
 7. Assert the CUI banner is visible at the bottom of the page
 
 ### Navigate to Fine-Tuning Overview
-8. Navigate to `http://localhost:5000/finetune`
+8. Navigate to `http://localhost:5050/finetune`
 9. Assert the page title contains "Fine-Tuning"
 10. Assert the heading "Fine-Tuning" is visible
 
@@ -39,34 +39,34 @@ Verify the Fine-Tuning dashboard pages at `/finetune` render correctly, display 
 18. Assert links to sub-pages are visible (Datasets, Jobs, Models)
 
 ### Datasets Page
-19. Navigate to `http://localhost:5000/finetune/datasets`
+19. Navigate to `http://localhost:5050/finetune/datasets`
 20. Assert the heading contains "Datasets"
 21. Assert a "Create Dataset" button or link is visible
 22. Assert a dataset table or empty state is visible
 
 ### Jobs Page
-23. Navigate to `http://localhost:5000/finetune/jobs`
+23. Navigate to `http://localhost:5050/finetune/jobs`
 24. Assert the heading contains "Training Jobs"
 25. Assert a table or empty state is visible
 
 ### Models Page
-26. Navigate to `http://localhost:5000/finetune/models`
+26. Navigate to `http://localhost:5050/finetune/models`
 27. Assert the heading contains "Model Versions"
 28. Assert a table or empty state is visible
 
 ### Label Page
-29. Navigate to `http://localhost:5000/finetune/label`
+29. Navigate to `http://localhost:5050/finetune/label`
 30. Assert the heading contains "Labeling"
 31. Assert dataset selector dropdown is visible
 32. Assert batch action buttons are visible (Approve, Reject)
 
 ### Evaluate Page
-33. Navigate to `http://localhost:5000/finetune/evaluate`
+33. Navigate to `http://localhost:5050/finetune/evaluate`
 34. Assert the heading contains "Evaluations"
 35. Assert a table or empty state is visible
 
 ### Screenshots
-36. Navigate to `http://localhost:5000/finetune`
+36. Navigate to `http://localhost:5050/finetune`
 37. Take screenshot at desktop viewport (1920x1080) - save as `playwright/screenshots/finetune-desktop.png`
 38. Resize to tablet viewport (768x1024)
 39. Take screenshot - save as `playwright/screenshots/finetune-tablet.png`

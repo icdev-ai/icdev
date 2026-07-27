@@ -1,0 +1,60 @@
+# CUI // SP-CTI
+# Dispatch-proof seed — the one real compass task behind ked-vfy-01
+# ("Prove it: dispatch one real compass task end to end").
+#
+# Consumed by tools/kanban/seed_compass_dispatch_probe.py. This file is the
+# task definition; the ROUTING that actually sends it to compass lives in
+# args/kanban_external_repos.yaml (prefix `prem-vfy` -> compass). Both must
+# agree — the seeder cross-checks them and refuses to seed if they drift,
+# because an unregistered prefix resolves to ICDev by default and would build
+# a "compass" task inside ICDev's own tree.
+#
+# The work itself is deliberately trivial and low-blast-radius: the point is to
+# observe dispatch -> branch -> PR -> merge in compass (ked-vfy-01 d2-d5), not to
+# land meaningful product change through an unproven pipeline.
+#
+# The task must also be ACHIEVABLE, or the proof fails for content reasons and is
+# misread as "external dispatch is broken". The first version of this seed asked
+# for a CI status badge in compass's README — but compass has NO README.md and no
+# .github/ directory at all, so that task asked an agent to badge a file that does
+# not exist with a link to a workflow that does not exist. The only ways to
+# "finish" it were to invent both. Verify the premise of a probe task against the
+# target repo before seeding it.
+
+task:
+  id: prem-vfy-01
+  title: Add a README.md to the compass repo root
+  task_type: build
+  target_repo: icdev-ai/compass
+  complexity: low
+  priority: medium
+  status: backlog
+  description: |
+    compass has no README.md at its repo root — only AGENTS.md and CLAUDE.md,
+    which are AI-agent instructions, not a human entry point. Anyone landing on
+    github.com/icdev-ai/compass sees no description of what the project is.
+
+    Add a short, accurate README.md at the repo root covering:
+      - what compass is (one paragraph)
+      - the stack (FastAPI backend + React/TS frontend, per the repo layout)
+      - how to run the backend and the frontend locally
+      - where the docs live (docs/premium-roadmap.md)
+
+    Describe ONLY what is actually in the repo. Do not invent features, do not add
+    a CI badge (compass has no GitHub Actions workflows), and do not add install
+    steps you have not verified against requirements.txt / package.json. If a claim
+    cannot be checked against the tree, leave it out.
+
+    Documentation only — do not modify code, config or tests. Scope is one new
+    file; this task exists to prove the repo-aware kanban dispatch path works end
+    to end against a real external repo, so do not bundle adjacent work.
+
+    Definition of done:
+      - README.md exists at the root of a `kanban/prem-vfy-01` branch in
+        icdev-ai/compass and renders correctly.
+      - compass's own gate (pytest + ruff) passes on that branch — a doc-only
+        change must not break it.
+      - A PR is open against compass `main` and merges cleanly.
+
+    If a README.md already exists by the time this runs, do not rewrite it — close
+    this task as a no-op rather than inventing adjacent work.

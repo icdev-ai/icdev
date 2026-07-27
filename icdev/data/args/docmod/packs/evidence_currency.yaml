@@ -1,0 +1,34 @@
+# CUI // SP-CTI
+# Evidence-currency pack — has the source this document was built from changed?
+#
+# The only pack that needs no domain knowledge: baseline is the hash of each
+# chunk the approved version cited (dic_chunk_links.chunk_hash, migration 267),
+# current is that chunk's hash now. Works for ANY document type.
+#
+# Documents with no chunk links are reported UNVERIFIABLE (severity info) rather
+# than skipped — a document nothing can check must not look identical to one
+# that was checked and found current.
+
+pack_id: evidence_currency
+label: Evidence Currency
+enabled: true
+evaluator: tools.doc_modernization.packs.evidence_currency.EvidenceCurrencyPack
+entity_types: [evidence_anchor]
+
+# No extraction patterns: the subject is the citation, not the prose.
+extraction:
+  patterns: []
+
+# Cited chunk deleted — the claim can no longer be traced to anything.
+deleted_severity: high
+# Cited chunk edited — the document may no longer reflect its source.
+changed_severity: medium
+# Document has no anchors at all — visible, but not alarming on its own.
+unverifiable_severity: info
+
+# NIST controls this domain implicates, passed to the DocDrift bridge for
+# control re-mapping. DECLARED, never inferred.
+#   CM-12 Information Location · SA-5 System Documentation
+nist_controls: [CM-12, SA-5]
+
+evidence_sources: [dic_chunk_links, rag_chunks]

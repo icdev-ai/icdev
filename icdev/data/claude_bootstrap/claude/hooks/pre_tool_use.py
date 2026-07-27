@@ -81,10 +81,15 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
     validator to detect drift: python tools/testing/claude_dir_validator.py --json
     """
     APPEND_ONLY_TABLES = [
+    "web_fetch_provenance",   # oss-cite-01: a fetch is an observation; re-fetch appends
         # === CHILD-INHERITABLE (copied to child apps via step_09c) ===
         # Core audit
         "audit_trail",
         "hook_events",
+        # Cortex canvas governance/facade audit (ctx-canvas-01)
+        "cortex_audit",
+        # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)
+        "constitutional_audit_log",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
         # FathomDesk auto-trading (append-only NIST AU)
@@ -130,6 +135,18 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_options_coach_events",
         # FathomDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
+        # AI-ify Canvas (penta-aiify-04) — PRD provenance/citation lineage for
+        # AI-boosted PRDs; the latest row per phase supersedes, never mutated
+        "aiify_prd_provenance",
+        # Document Modernization Engine (docmod, migration 258) — findings state
+        # transitions are superseding rows; scan runs and catalog curation are audit
+        "docmod_findings",
+        "docmod_scan_runs",
+        "docmod_catalog_audit",
+        # Document Modernization — semantic claim tracking (dmx-claims-02, migration
+        # 283). Claim status transitions are superseding rows (supersedes_id chain);
+        # a state change is a NEW row, never a mutation. HITL + deterministic-first.
+        "dic_claims",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
@@ -179,6 +196,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "prov_relations",
         "shap_attributions",
         "xai_assessments",
+        # crx-db-03 — Retention framework action log (append-only NIST AU record of every prune/archive)
+        "retention_action_log",
+        # sag-cron-01 — User-facing cron run log (append-only record of every scheduled job execution)
+        "agent_cron_runs",
         # Phase 47 — Production Readiness Audit (D292)
         "production_audits",
         # Phase 47 — Production Remediation (D296-D300)
@@ -208,6 +229,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "rag_retrieval_log",
         # RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
         "rag_provenance_ledger",
+        # ICDEV Cortex governance audit — one append-only row per governed Cortex
+        # call (ctx-govern-03, NIST AU). cortex_sessions is intentionally NOT here
+        # (mutable session lifecycle: status/updated_at).
+        "cortex_audit",
         # Phase 69 — Codebase Assistant (D-CA-6)
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)
@@ -259,6 +284,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cpmp_cor_access_log",
         # RFI Workbench (migration 236) — export log is append-only
         "rfi_workbench_exports",
+        # RFI Capability-Gap Demand Loop (migration 251) — provenance links are
+        # immutable (gap -> emitted kanban task). rfi_capability_gaps itself is NOT
+        # append-only (frequency/priority update in place).
+        "rfi_gap_task_links",
         # Phase 61 — ANVIL Critique (Feature 3)
         "anvil_critique_sessions",
         "anvil_critique_findings",
@@ -291,6 +320,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "pg_capture_activities",
         "pg_capture_gate_decisions",
         "pg_teaming_assessments",
+        "pg_pwin_assessments",
         # Proposal Genesis Enhancement (append-only review/theme/experiment tracking)
         "pg_review_findings",
         "pg_theme_tracking",
@@ -314,6 +344,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "evolution_audit",
         # Outcome Verifier (D-EVO-6, self-healing feedback loop)
         "outcome_verification_log",
+        # SOAR-lite response playbooks (crx-sec-02) — append-only per-run event log (NIST AU)
+        "soar_playbook_audit",
         # NemoClaw-Adapted Agent Sandboxing (D-NC-1, D-NC-2, D-NC-3, D-NC-5)
         "credential_broker_log",
         "egress_policy_audit",
@@ -446,10 +478,16 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "genesis_reflex_log",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
         "mc_net_ai_sessions",
+        # Migration Canvas — forced wave-close HITL override audit (crx-mig-01, NIST AU — append-only)
+        "mc_wave_close_overrides",
         # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
         "sg_war_readiness_events",
         # STRATEGOS — adversarial data validation audit (NIST AU-9 — append-only)
         "sg_adversarial_validation_audit",
+        # STRATEGOS — INTSUM grounding force-override audit (migration 280, nav-strat-01, NIST AU — append-only HITL override log)
+        "sg_intsum_grounding_audit",
+        # STRATEGOS — OPORD grounding force-override audit (migration 279, NIST AU — append-only)
+        "sg_opord_grounding_audit",
         # NDC↔Migration — topology snapshots (NIST AU; phase-completion history must be immutable)
         "nc_topology_snapshots",
         # Phase 71 — OHC Ops Hub Canvas (migration 120, NIST AU — adapter health log + drift events append-only)
@@ -492,10 +530,24 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "session_risk_log",
         # AI Data Mapping — transformation artifact audit (NIST AU-9, append-only)
         "dd_mapping_transforms",
+        # Data Design Canvas (dcpr-) — audit trails + immutable run-logs (NIST AU-9, append-only)
+        # dd_audit / dm_audit are trigger-protected; the run/scan logs are insert-only.
+        # EXCLUDED: dd_lineage (runtime DELETE of edges), ddc_runbook_executions (runtime status UPDATE + DELETE).
+        "dd_audit",
+        "dm_audit",
+        "dm_policy_audit_log",
+        "dm_csp_sync_log",
+        "dm_contract_test_runs",
+        "dd_query_history",
+        "dd_anomaly_runs",
+        "dd_quality_runs",
+        "dd_pii_scans",
         # Slide Deck Generator — generation audit trail (NIST AU, append-only)
         "slides_audit",
         # ACE (Autonomous Collaborative Engine) — step execution audit trail + skill candidates (NIST AU, append-only)
         "ace_audit_log",
+        "ace_step_audit_log",
+        "ace_webhook_log",
         "ace_skill_candidates",
         # SIPA Software Integrity & Provenance Assessor (sipa-, NIST AU — assessment evidence is immutable)
         "integrity_capabilities",
@@ -530,6 +582,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "api_keys",
         # IDR — conflict resolution trail is append-only (resolution recorded in-place, rows never deleted — NIST AU)
         "idr_conflicts",
+        # IDR — TRUST publish-gate override audit (migration 276 — NIST AU): one row per force_* override
+        "idr_publish_audit",
+        # Pulse — judge-verdict publish-gate override audit (migration 281 — NIST AU): one row per admin force_publish
+        "pulse_publish_audit",
         # NQE / Forward Networks Integration (migration 220, 222 — NIST AU)
         "nc_advisory_assessments",   # impact assessment results — proof chain for ATO
         "nc_nqe_audit_log",          # every translate/run/approve action traced
@@ -555,6 +611,33 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ace_qa_failures",
         # BI Dashboard Canvas — AI chart-generation audit trail (NIST AU)
         "bi_generation_log",
+        # prop-sec-05 — Aggregation Guard / mosaic-effect rule evaluation log (NIST AU)
+        "aggregation_events",
+        # Document Modernization Engine (docmod-core, migration 257) — scan runs and
+        # findings are append-only (state transitions = new row w/ supersedes_id);
+        # catalog curation audit is NIST AU append-only
+        "docmod_scan_runs",
+        "docmod_findings",
+        "docmod_catalog_audit",
+        # Pipeline Design Canvas (pdx-sec-04, NIST AU) — write-route audit trail and
+        # twin/snapshot history are immutable evidence; rows never UPDATE/DELETE
+        # pdc_snapshots deliberately excluded (pdx reconciliation, user-approved
+        # 2026-07-18): design-history working store with bounded auto-snapshot
+        # retention (review finding P1-7), not an audit record.
+        "pc_audit",
+        "pipeline_snapshots",
+        # Security Design Canvas (migration 272, NIST AU) — sc_audit carries DB-level
+        # immutability triggers (sc_audit_no_update/no_delete); non-repudiation trail
+        # for ZIG capability/activity/evidence/assessment writes (cnr-zig-03)
+        "sc_audit",
+        # LPX LLM-proxy virtual-key lifecycle (lpx-keys-03, NIST AU) — issuance,
+        # rotation, revocation, and expiry are immutable evidence; rows never
+        # UPDATE/DELETE.
+        "llm_proxy_key_audit",
+        # AI GameDay per-team API-call receipts (lpx-teams-03) — spend attribution
+        # for competition integrity; append-only in fact (only engine.log_api_receipt
+        # inserts, every other reference is a SELECT). Rows never UPDATE/DELETE.
+        "ttx_api_log",
     ]
 
     if tool_name == "Bash":

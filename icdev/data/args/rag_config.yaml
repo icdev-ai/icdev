@@ -247,6 +247,21 @@ rag:
     # Default OFF — when off, retrieval + existing tests are byte-for-byte the
     # flat-leaf path. Summaries are LLM-generated (graceful no-op when the LLM
     # is unavailable) and MUST NOT be surfaced as citation sources.
+    # rce-eval-05-d4/d5: measured DROP — raptor ON added 0.0 recall@5 / 0.0 MRR
+    # and −0.0005 ndcg@5 vs OFF on the compliance golden set; kept OFF.
+    #
+    # SUPERSEDED (oss-meas-01-d3, 2026-07-26). That DROP is not safe to rely on.
+    # It was measured on the v1 33-query golden set, where 29 of 33 queries were
+    # already at BOTH perfect recall and perfect MRR — four queries of headroom in
+    # the whole instrument, so ~0.0 was close to the only reachable answer.
+    # Re-measured on the v2 48-query set against the SAME corpus (4,111 chunks /
+    # 3,830 summaries / 2 levels — identical to the rce-eval-05 environment
+    # block), raptor ON measures +0.0208 recall@5 / +0.0093 MRR / +0.0103 ndcg@5.
+    # That does not make it good: the delta is one query out of 48, and no
+    # latency was captured, which a corpus-wide summarisation pass needs to
+    # justify. It does mean the DROP has no evidence behind it.
+    # Stays OFF pending a decision with latency attached — see
+    # docs/features/oss-meas-01-retrieval-toggle-benchmark.md.
     enabled: false
     group_size: 5           # sibling leaves summarized into one level-1 parent
     llm_function: rag_evaluate  # LLMRouter function for cheap-LLM summarization

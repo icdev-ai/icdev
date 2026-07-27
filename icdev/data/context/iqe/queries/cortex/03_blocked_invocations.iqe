@@ -1,0 +1,6 @@
+# IQE-CORTEX-03: Governance-blocked facade invocations
+# Facade calls the TRUST governance pipeline blocked, with reason.
+
+foreach a in cortex.audit
+where a.blocked == true
+select a.function, a.outcome, a.session_id, a.created_at

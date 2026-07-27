@@ -1,0 +1,60 @@
+# CUI // SP-CTI
+# Deprecated crypto & protocol rulebook — deterministic evidence source for the
+# crypto_protocols pack. Each rule: pattern (regex), verdict, severity,
+# rationale, replacement. Rule ids are cited in finding evidence
+# ([source: rule:<id>]) — never re-word these via LLM.
+#
+# Vocabulary sources: tools/compliance/stig_checker.py _check_fips_crypto
+# (md5|sha1|DES|RC4|3DES) and tools/network/config_review.py protocol posture
+# (ssh version 2, no telnet). TLS floors per NIST SP 800-52r2.
+
+rules:
+  - id: crypto-tls-01
+    pattern: '(?i)\bTLS[ ]?v?1\.0\b|\bSSLv?[23]\b'
+    entity_type: protocol
+    verdict: deprecated
+    severity: critical
+    rationale: "SSL 2/3 and TLS 1.0 are prohibited (NIST SP 800-52r2)."
+    replacement: "TLS 1.2 or higher"
+  - id: crypto-tls-02
+    pattern: '(?i)\bTLS[ ]?v?1\.1\b'
+    entity_type: protocol
+    verdict: deprecated
+    severity: high
+    rationale: "TLS 1.1 is deprecated (RFC 8996; NIST SP 800-52r2 requires TLS 1.2+)."
+    replacement: "TLS 1.2 or higher (prefer TLS 1.3)"
+  - id: crypto-ssh-01
+    pattern: '(?i)\bSSH[ ]?v?1(?:\.[05])?\b'
+    entity_type: protocol
+    verdict: deprecated
+    severity: critical
+    rationale: "SSH protocol version 1 is cryptographically broken."
+    replacement: "SSH protocol version 2"
+  - id: crypto-telnet-01
+    pattern: '(?i)\btelnet\b'
+    entity_type: protocol
+    verdict: deprecated
+    severity: high
+    rationale: "Telnet transmits credentials in cleartext."
+    replacement: "SSH protocol version 2"
+  - id: crypto-snmp-01
+    pattern: '(?i)\bSNMP[ ]?v?1\b|\bSNMP[ ]?v?2c?\b'
+    entity_type: protocol
+    verdict: deprecated
+    severity: medium
+    rationale: "SNMPv1/v2c use community strings without encryption."
+    replacement: "SNMPv3 (authPriv)"
+  - id: crypto-hash-01
+    pattern: '(?i)\b(?:MD5|SHA-?1)\b'
+    entity_type: crypto_algorithm
+    verdict: deprecated
+    severity: high
+    rationale: "MD5/SHA-1 are collision-broken; FIPS 180-4 requires SHA-2 family."
+    replacement: "SHA-256 or stronger"
+  - id: crypto-cipher-01
+    pattern: '(?i)\b(?:3?DES|RC4|arcfour)\b'
+    entity_type: crypto_algorithm
+    verdict: deprecated
+    severity: high
+    rationale: "DES/3DES/RC4 are non-FIPS, deprecated ciphers."
+    replacement: "AES-128 or stronger (FIPS 197)"

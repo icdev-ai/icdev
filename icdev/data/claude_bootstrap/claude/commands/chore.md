@@ -162,7 +162,7 @@ These gates apply to every commit regardless of project type.
        ```bash
        python tools/dashboard/app.py &
        ```
-       Wait for it to be ready (check `http://localhost:5000/`).
+       Wait for it to be ready (check `http://localhost:5050/`).
 
     2. **Run ALL existing E2E test specs** — discover and execute every spec in `.claude/commands/e2e/`:
        ```bash

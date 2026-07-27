@@ -1,0 +1,6 @@
+# IQE-DIC-020: Open modernization findings across the corpus
+# EOL hardware/software, deprecated tech, superseded standards awaiting HITL.
+
+foreach f in dic.modernization_findings
+where f.state == "open"
+select f.doc_id, f.finding_type, f.entity_label, f.severity, f.recommended_replacement

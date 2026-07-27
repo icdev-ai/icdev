@@ -38,3 +38,51 @@ dashboard:
   sse_heartbeat_seconds: 15
   # Runtime: port from ICDEV_DASHBOARD_PORT env var (default: 5000)
   event_ingest_endpoint: "http://127.0.0.1:{ICDEV_DASHBOARD_PORT}/api/events/ingest"
+
+# ---------------------------------------------------------------------------
+# Trace / provenance / XAI retention (obx-trc-05)
+# ---------------------------------------------------------------------------
+# With tracing activated (PR #467) the high-volume trace tables accumulate
+# without bound. list_traces (GROUP BY trace_id) and trace_stats degrade as
+# otel_spans grows, and the provenance/SHAP tables grow with every agent run.
+# The observability_retention Genesis reflex archives-then-prunes rows older
+# than the window below so the hot tables stay small and fast.
+#
+# APPEND-ONLY DECISION: all five source tables are declared append-only in
+# .claude/hooks/pre_tool_use.py APPEND_ONLY_TABLES. otel_spans is append-only
+# BY DESIGN (D6); prov_entities/prov_activities/prov_relations and
+# shap_attributions are NIST AU immutable evidence. Retention therefore never
+# raw-DELETEs: expired rows are copied into a cold "<table>_archive" twin
+# (created idempotently) BEFORE deletion from the hot table. No trace or
+# provenance record is destroyed — only relocated out of the hot path.
+trace_retention:
+  # Days to keep OTel spans in the hot otel_spans table before archiving.
+  spans_days: 30
+  # Days to keep W3C PROV records (prov_entities, prov_activities, prov_relations).
+  provenance_days: 180
+  # Days to keep SHAP attributions (shap_attributions).
+  shap_days: 90
+  # Rows archived + pruned per iteration. Bounded so a huge backlog cannot wedge
+  # the daemon in a single unbroken transaction.
+  batch_size: 5000
+  # Max iterations per table per run. Ceiling per table per run is
+  # batch_size * max_iterations; leftover rows are handled on the next cadence.
+  max_iterations: 20
+
+# ---------------------------------------------------------------------------
+# ODC MITRE ATT&CK coverage drift (obx-cov-02)
+# ---------------------------------------------------------------------------
+# Signal-source coverage (odc_gap_scores / odc_technique_coverage) only refreshed
+# when a user opened a design and hit the coverage-compute route (obx-cov-01).
+# The odc_coverage_refresh Genesis reflex recomputes coverage on a 6h cadence and
+# flags any design whose coverage_pct dropped by more than threshold_pct
+# (percentage points) since its previous odc_gap_scores snapshot — matching the
+# rb-odc-siem-gap-detected runbook trigger ("MITRE ATT&CK coverage drops >15%").
+# A drift records an od_audit row AND a status=suggested kanban card (one per
+# drifted design, idempotency-keyed so same-day re-runs never duplicate).
+coverage_drift:
+  # Absolute percentage-point drop in coverage_pct that trips a drift event.
+  threshold_pct: 15.0
+  # Max designs recomputed per run. Bounded so a large canvas cannot wedge the
+  # daemon; overflow designs are deferred to the next cadence and logged.
+  max_designs: 50
