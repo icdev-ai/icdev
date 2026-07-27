@@ -45,6 +45,14 @@ jobs:
       - name: Show Docker Compose version
         run: docker compose version
 
+      # docker-compose.yml declares `env_file: .env`, and .env is gitignored —
+      # so a fresh checkout has none and `config` fails before it validates
+      # anything. Created empty: the required values come from the step env
+      # below, and an empty file satisfies the env_file reference without
+      # inventing configuration that would mask a real missing default.
+      - name: Create placeholder .env for validation
+        run: touch .env
+
       - name: Validate docker-compose.yml syntax
         # `docker compose config` interpolates EVERY service, including ones
         # behind an inactive profile — so the llm-proxy profile's required
