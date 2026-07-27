@@ -767,14 +767,21 @@ class DictRow:
 # ---------------------------------------------------------------------------
 
 def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
-    """Append one row to rls_audit. Never raises — failures are silently dropped."""
+    """Append one row to rls_audit. Never raises — failures are silently dropped.
+
+    Placeholders are `?`, not `%s`: this opens a RAW ``sqlite3`` connection and
+    bypasses ``translate_sql`` entirely, so it must speak sqlite's dialect. With
+    `%s` every insert raised, the bare ``except`` below swallowed it, and **no
+    RLS audit record was ever written** — an audit trail that reported nothing
+    while appearing to be enabled. NIST AU expects the opposite failure mode.
+    """
     try:
         import sqlite3 as _sq
         from datetime import datetime, timezone
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO rls_audit (table_name, action, tenant_id, details, recorded_at)"
-            " VALUES (%s, %s, %s, %s, %s)",
+            " VALUES (?, ?, ?, ?, ?)",
             (table_name, "rls_filter", tenant_id, "{}", datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -784,7 +791,11 @@ def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
 
 
 def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
-    """Append one row to column_mask_audit. Never raises."""
+    """Append one row to column_mask_audit. Never raises.
+
+    Raw ``sqlite3`` connection, so `?` placeholders — see _write_rls_audit for
+    why `%s` here silently produced an empty audit table.
+    """
     try:
         import sqlite3 as _sq
         import json as _js
@@ -792,7 +803,7 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO column_mask_audit (table_name, role, masked_columns, recorded_at)"
-            " VALUES (%s, %s, %s, %s)",
+            " VALUES (?, ?, ?, ?)",
             (table_name, role, _js.dumps(masked_cols), datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
