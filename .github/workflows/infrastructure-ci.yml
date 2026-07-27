@@ -55,7 +55,10 @@ jobs:
         # (it stops the proxy starting with no auth), and weakening the compose
         # file to make CI pass would trade a runtime guarantee for a green tick.
         env:
+          # Every `${VAR:?...}` in docker-compose.yml, enumerated rather than
+          # discovered one failed CI run at a time.
           LITELLM_MASTER_KEY: ci-validation-placeholder
+          ICDEV_PG_PASSWORD: ci-validation-placeholder
         run: docker compose -f docker-compose.yml config --quiet
 
       # Guarded: docker-compose.ci.yml does not exist in this repo, so an
