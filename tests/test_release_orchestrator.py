@@ -364,6 +364,7 @@ def test_payload_gate_ignores_parent_only_subsystems(tmp_path, monkeypatch):
         "icdev/data/.env.template": b"x",
         "icdev/tools/cli/setup_wizard.py": b"x",
         "icdev/tools/cli/setup.py": b"x",
+        "icdev/tools/cli/provision_db.py": b"x",
         **_platform_entries(),
     })
     monkeypatch.setattr(rel, "DIST_DIR", dist)
@@ -398,6 +399,7 @@ def test_payload_gate_requires_each_forge_layer(tmp_path, monkeypatch, drop, exp
         "icdev/data/.env.template": b"x",
         "icdev/tools/cli/setup_wizard.py": b"x",
         "icdev/tools/cli/setup.py": b"x",
+        "icdev/tools/cli/provision_db.py": b"x",
         **_platform_entries(),
     }
     full.pop(drop)
@@ -582,6 +584,7 @@ def test_the_scan_uses_one_open_archive():
 @pytest.mark.parametrize("mod", [
     "icdev/tools/cli/setup_wizard.py",
     "icdev/tools/cli/setup.py",
+    "icdev/tools/cli/provision_db.py",
 ])
 def test_payload_gate_requires_the_setup_surface(tmp_path, monkeypatch, mod):
     """Setup is the first thing a pip user runs after `icdev init`.
@@ -601,6 +604,7 @@ def test_payload_gate_requires_the_setup_surface(tmp_path, monkeypatch, mod):
         "icdev/data/.env.template": b"x",
         "icdev/tools/cli/setup_wizard.py": b"x",
         "icdev/tools/cli/setup.py": b"x",
+        "icdev/tools/cli/provision_db.py": b"x",
         **_platform_entries(),
     }
     members.pop(mod)
@@ -611,4 +615,5 @@ def test_payload_gate_requires_the_setup_surface(tmp_path, monkeypatch, mod):
 
     out = rel.step_verify_payload("9.9.9")
     assert not out["ok"]
-    assert any("setup" in p for p in out["problems"]), out["problems"]
+    # Names the exact module, so the message tells you which file to restore.
+    assert any(mod in p for p in out["problems"]), out["problems"]
