@@ -3654,3 +3654,24 @@ migration doesn't race the database.
 **The LLM probe** is bounded and skippable. A key that is present but rejected
 is worse than one that is absent — it fails over silently at runtime, which is
 how a stale key can degrade retrieval for weeks before anyone notices.
+
+### Kubernetes (Helm)
+
+```bash
+helm install icdev deploy/helm/                       # defaults: RAG on, pgvector
+helm install icdev deploy/helm/ -f deploy/helm/values-aws.yaml
+helm install icdev deploy/helm/ --set rag.enabled=false   # no vector DB needed
+```
+
+`rag.enabled` (default **true**) selects `pgvector/pgvector:pg16` for the
+platform database and runs `CREATE EXTENSION IF NOT EXISTS vector` on first
+start. With RAG off, the hardened base image is used instead.
+
+This matters: ICDEV stores embeddings in a `vector` column, so a stock postgres
+image cannot host the RAG schema — the extension fails to create and every
+embedding write raises. Override `rag.vectorImage` with your own mirrored build
+in air-gapped or registry-restricted clusters.
+
+`Chart.yaml`'s `appVersion` tracks `icdev/_version.py` and is bumped by
+`release.py`. The chart's own `version:` is deliberately independent — it moves
+when the templates change, not when the application does.
