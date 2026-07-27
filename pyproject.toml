@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "icdev"
-version = "1.2.39"
+version = "1.2.40"
 description = "ICDEV™ — Intelligent Certified Development Platform. AI-powered SDLC with NIST 800-53 RMF compliance, multi-agent orchestration, FORGE framework, and ANVIL build workflow."
 readme = "README.md"
 requires-python = ">=3.9"
