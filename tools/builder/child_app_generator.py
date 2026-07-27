@@ -1856,7 +1856,7 @@ def step_06_goals_and_hardprompts(child_root: Path, blueprint: dict, icdev_root:
     for goal_name in goals_config:
         filename = goal_files.get(goal_name)
         if filename:
-            src = icdev_root / "goals" / filename
+            src = _forge_dir(icdev_root, "goals") / filename
             if src.exists():
                 shutil.copy2(src, goals_dir / filename)
                 copied += 1
@@ -2022,7 +2022,7 @@ def _validate_child_ontology(child_root: Path, blueprint: dict, icdev_root: Path
         errors.append("app.ttl missing owl:imports (parent ontology link)")
     else:
         # Verify parent ontology file exists (in parent project)
-        parent_ttl = icdev_root / "args" / "ontology" / "icdev_core.ttl"
+        parent_ttl = _forge_dir(icdev_root, "args") / "ontology" / "icdev_core.ttl"
         if not parent_ttl.exists():
             warnings.append(f"Parent ontology not found at {parent_ttl}")
 
@@ -2062,7 +2062,7 @@ def _inherit_ontology_security_tags(blueprint: dict, icdev_root: Path) -> dict:
 
     Returns updated blueprint snippet with inherited tags.
     """
-    parent_ttl = icdev_root / "args" / "ontology" / "icdev_core.ttl"
+    parent_ttl = _forge_dir(icdev_root, "args") / "ontology" / "icdev_core.ttl"
     inherited_tags = []
 
     if parent_ttl.exists():
@@ -2161,7 +2161,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
             logger.debug("Args file not found: %s", src)
 
     # --- Context files ---
-    ctx_src = icdev_root / "context"
+    ctx_src = _forge_dir(icdev_root, "context")
     ctx_dest = child_root / "context"
 
     # Always copy: context/languages/
@@ -2245,7 +2245,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
 
     if mosa_enabled:
         # Copy MOSA config
-        mosa_cfg_src = icdev_root / "args" / "mosa_config.yaml"
+        mosa_cfg_src = _forge_dir(icdev_root, "args") / "mosa_config.yaml"
         mosa_cfg_dest = child_root / "args" / "mosa_config.yaml"
         if mosa_cfg_src.exists():
             if _copy_and_adapt_file(mosa_cfg_src, mosa_cfg_dest, [], blueprint):
@@ -2259,7 +2259,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
 
         # Copy MOSA catalog and crosswalk
         for mosa_file in ("mosa_framework.json", "mosa_crosswalk.json"):
-            src = icdev_root / "context" / "compliance" / mosa_file
+            src = _forge_dir(icdev_root, "context") / "compliance" / mosa_file
             dest = child_root / "context" / "compliance" / mosa_file
             if src.exists():
                 if _copy_and_adapt_file(src, dest, [], blueprint):
@@ -2832,7 +2832,7 @@ def step_09c_claude_code_config(
         files_copied.append(".claude/settings.json")
 
     # --- file_access_tiers.yaml ---
-    tiers_src = icdev_root / "args" / "file_access_tiers.yaml"
+    tiers_src = _forge_dir(icdev_root, "args") / "file_access_tiers.yaml"
     if tiers_src.exists():
         tiers_dst = child_root / "args" / "file_access_tiers.yaml"
         tiers_dst.parent.mkdir(parents=True, exist_ok=True)
@@ -3717,6 +3717,27 @@ def step_17_agent_card_validation(
 # MAIN ORCHESTRATOR
 # ============================================================
 
+
+
+def _forge_dir(icdev_root: Path, layer: str) -> Path:
+    """Locate a FORGE layer under EITHER repo layout.
+
+    A source checkout keeps the layers at the root (`<root>/goals`); the wheel
+    installs them as package data (`<root>/data/goals`). This function probes the
+    packaged location first and falls back to the source one.
+
+    Without it, `generate_child_app` run from `pip install icdev` resolved
+    `_forge_dir(icdev_root, "goals")` against `site-packages/icdev/goals`, which does not
+    exist — so every goal lookup missed and the generated child app came out
+    with ZERO goals and ZERO hardprompts. It still "succeeded": a skeleton with
+    no FORGE Goals layer, which is the part that makes a generated app a system
+    that can build systems. Same defect class as the 1.2.39 component-registry
+    fix, which probed only the source layout.
+    """
+    packaged = icdev_root / "data" / layer
+    if packaged.is_dir():
+        return packaged
+    return icdev_root / layer
 
 def generate_child_app(
     blueprint: dict,

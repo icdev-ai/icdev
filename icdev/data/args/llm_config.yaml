@@ -1699,9 +1699,12 @@ chain_orchestration:
   # decision points where being wrong has real consequences. Therefore:
   #   * enabled DEFAULT FALSE at the mode level -- divergence never runs unless a
   #     caller opts a function in via per_function.<fn>.enabled: true.
-  #   * cost_cap_usd / token_cap / timeout_seconds inherit the outer
-  #     chain_orchestration backstops; the generative_intelligence module budget
-  #     (_check_module_budget) trips BEFORE any branch model call.
+  #   * cost_cap_usd / timeout_seconds are declared HERE at the mode level rather
+  #     than inherited: this mode is an N-way parallel fan-out, so the outer
+  #     single-call backstop (0.50 / 120s) would under-reserve the module budget
+  #     by ~num_branches and let a run start that cannot afford to finish. The
+  #     cap is the PRE-FLIGHT ESTIMATE handed to _check_module_budget, which
+  #     trips BEFORE any branch model call.
   #   * excluded_functions is honored by _is_excluded -- a hard block that wins
   #     even over a per_function enable.
   #
@@ -1718,6 +1721,12 @@ chain_orchestration:
     deepen_top_k: 3           # dvg-critic-03: only the top-K clusters are deepened (expensive)
     branch_pool_role: divergence_branch_pool  # get_diverse_models() picks N distinct models
     critic_role: divergence_critic            # reserved for the SEPARATE dvg-critic-* pass
+    # Fan-out-aware backstops (mode rung; see the cost note above). Sized off
+    # num_branches, NOT off a single call: 6 branches x the 0.50 outer per-call
+    # cap. Raising num_branches without raising cost_cap_usd re-introduces the
+    # under-reservation this exists to prevent (pinned by the config tests).
+    cost_cap_usd: 3.00        # >= num_branches * chain_orchestration.cost_cap_usd
+    timeout_seconds: 180      # branches run in parallel; slowest branch + pool contention
     # Legacy direct model names — fallback when the pool role resolves to nothing
     branch_models:
       - qwen3-local
