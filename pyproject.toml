@@ -244,6 +244,13 @@ exclude = [
     "args/**/*.yaml", "args/**/*.yml", "args/**/*.json",
     "context/**/*.json", "context/**/*.yaml", "context/**/*.md",
     "context/**/*.j2", "context/**/*.txt",
+    # IQE seed queries. 295 .iqe files existed in the repo and NONE shipped, so
+    # an installed ICDEV had the IQE engine and no queries to seed any canvas
+    # with — `tools/api/v1/blueprint.py` serves this directory at runtime, and
+    # CLAUDE.md's canvas completeness gate requires >=3 seed queries per canvas.
+    "context/**/*.iqe", "context/**/*.jsonl", "context/**/*.conf",
+    # RDF ontologies backing ontology_query / ontology_build.
+    "args/**/*.ttl",
     "goals/**/*.md",
     "hardprompts/**/*.md",
     "features/**/*.feature", "features/**/*.py",

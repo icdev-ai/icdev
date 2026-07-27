@@ -3536,3 +3536,72 @@ tools, handlers = BrowserToolRegistry(browser).build()
 # Tests: tests/test_agent_browser.py (56 tests; real-browser test auto-skips with no driver)
 #        tests/browser/test_scope.py (52 tests; the policy decision table)
 ```
+
+## Release & PyPI Packaging
+
+One command from version bump to publish. The middle of the pipeline (sync,
+validate, build, wheel inspection, throwaway-venv smoke, air-gap install) is
+delegated to `build_release.py` — never reimplemented.
+
+```bash
+# Dry run — bump, build, verify everything. Uploads NOTHING. Start here.
+python tools/installer/release.py --version 1.2.43
+
+# Let it pick the number
+python tools/installer/release.py --bump patch
+
+# Stub out the README + CHANGELOG sections, then stop so you can write them
+python tools/installer/release.py --version 1.2.43 --scaffold-notes
+
+# Publish for real (irreversible — a version number can never be reused)
+python tools/installer/release.py --version 1.2.43 --publish
+
+# Only reconcile the version declarations
+python tools/installer/release.py --version 1.2.43 --bump-only
+
+# Machine-readable report
+python tools/installer/release.py --bump patch --json
+```
+
+Credentials are read from `.env` (`TWINE_USERNAME`/`TWINE_PASSWORD`, or
+`PYPI_API_TOKEN`) and never printed.
+
+**Refusals, each traceable to a release that shipped broken:**
+
+| Refusal | Why |
+|---|---|
+| `--publish` with `--skip-smoke` | The throwaway-venv smoke test is the only step that catches a wheel which builds, passes `twine check`, and cannot import. 1.2.41 shipped exactly that. |
+| `--publish` with `--allow-missing-notes` | `/updates` renders `CHANGELOG.md`; a release with no entry leaves the dashboard advertising an older version. 1.2.38 and 1.2.39 shipped with no entry. |
+| Publishing by default | Uploads are irreversible. The default run builds and verifies, then tells you the command to publish. |
+
+The notes gate runs **before** the version bump, so a missing-notes run writes
+nothing. Re-running the current version is treated as resuming a half-finished
+release, not an error — otherwise a failure after the bump would wedge the retry.
+
+> Do not call `python -m build` directly. That skips `sync_package_tree.py`,
+> which is what made the 1.2.40 wheel ship 29 differing and 53 missing `args/`
+> files — including the `component_registry.yaml` that 1.2.39 had just fixed.
+
+
+## Getting ICDEV files WITHOUT a full scaffold
+
+`pip install icdev` installs the package; it does not write into your project.
+`icdev init` copies the payload out. If you don't want a full scaffold, take
+only what you need:
+
+```bash
+icdev init --list                      # dry run: show what WOULD be copied
+icdev init --only CLAUDE.md            # just the master instruction file
+icdev init --only CLAUDE.md goals      # CLAUDE.md + the FORGE Goals layer
+icdev init --only AGENTS.md            # a single AI-platform instruction file
+icdev init --minimal                   # CLAUDE.md + .claude/ + platform files + goals/
+```
+
+The packaged `CLAUDE.md` is the repo's file **byte-for-byte** — no template
+substitution, no stripped-down variant. A test pins that
+(`test_packaged_claude_md_is_not_a_stripped_template`).
+
+`goals/` is copied even under `--minimal`. It is the Goals layer of FORGE and
+the entry point of ANVIL, and CLAUDE.md instructs the agent to read
+`goals/manifest.md` before starting any task — a scaffold without it produces a
+project that contradicts its own first instruction.
