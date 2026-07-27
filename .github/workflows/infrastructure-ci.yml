@@ -36,16 +36,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install docker-compose (v2)
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y docker-compose-plugin
+      # No install step: ubuntu-latest ships Docker Compose v2 already.
+      # `apt-get install docker-compose-plugin` failed with "no installation
+      # candidate" because that package comes from Docker's own apt repo, which
+      # is not configured on the runner — so this job had been red on every run
+      # that triggered it. It only fires on docker/**, docker-compose*.yml or
+      # deploy/** changes, which is why it stayed unnoticed.
+      - name: Show Docker Compose version
+        run: docker compose version
+
+      # docker-compose.yml declares `env_file: .env`, and .env is gitignored —
+      # so a fresh checkout has none and `config` fails before it validates
+      # anything. Created empty: the required values come from the step env
+      # below, and an empty file satisfies the env_file reference without
+      # inventing configuration that would mask a real missing default.
+      - name: Create placeholder .env for validation
+        run: touch .env
 
       - name: Validate docker-compose.yml syntax
+        # `docker compose config` interpolates EVERY service, including ones
+        # behind an inactive profile — so the llm-proxy profile's required
+        # LITELLM_MASTER_KEY has to resolve even though the proxy is off.
+        #
+        # Supplied here rather than given a default in docker-compose.yml on
+        # purpose: the "must be set" requirement is a real safety property
+        # (it stops the proxy starting with no auth), and weakening the compose
+        # file to make CI pass would trade a runtime guarantee for a green tick.
+        env:
+          # Every `${VAR:?...}` in docker-compose.yml, enumerated rather than
+          # discovered one failed CI run at a time.
+          LITELLM_MASTER_KEY: ci-validation-placeholder
+          ICDEV_PG_PASSWORD: ci-validation-placeholder
         run: docker compose -f docker-compose.yml config --quiet
 
-      - name: Validate docker-compose.ci.yml syntax
-        run: docker compose -f docker-compose.ci.yml config --quiet
+      # Guarded: docker-compose.ci.yml does not exist in this repo, so an
+      # unconditional validate failed the job even once the install step was
+      # fixed. Mirrors the `if [ -d deploy/helm ]` guard the Helm step below
+      # already uses.
+      - name: Validate docker-compose.ci.yml syntax (if present)
+        run: |
+          if [ -f docker-compose.ci.yml ]; then
+            docker compose -f docker-compose.ci.yml config --quiet
+          else
+            echo "docker-compose.ci.yml not present — skipping"
+          fi
 
       - name: Validate Helm chart (if present)
         uses: azure/setup-helm@v4
