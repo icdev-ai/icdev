@@ -6,6 +6,14 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.42] - 2026-07-27
+
+### Fixed
+- **The 1.2.41 wheel could not import `icdev.tools.llm.agent_loop`.** `sync_package_tree.py` mirrors `tools/` over `icdev/tools/`, but several `tools/*.py` files are the back-compat SHIMS documented in CLAUDE.md — thin modules that re-export from the canonical `icdev.tools.*`. Copying a shim over its own twin produced a module importing from **itself**, so `icdev/tools/llm/agent_loop.py` went from 1,825 lines to an 89-line stub that raised `ImportError: cannot import name 'DONE' from partially initialized module`. Five modules were affected (`llm/agent_loop`, `billing/tier`, `showcase/synthetic_data_engine`, `testing/qa_agent_runner`, `testing/selector_healer`); all are restored.
+- **The sync can no longer destroy an implementation.** `_is_backcompat_shim()` refuses to copy when the source is a shim (imports from `icdev.tools.*`) **and** the target is substantially larger. Deliberately narrow: a genuine module that merely imports from `icdev.tools.*` still syncs. Proven by re-running the full sync — the restored files survive it.
+
+  **If you installed 1.2.41 or 1.2.40, upgrade.**
+
 ## [1.2.41] - 2026-07-27
 
 ### Fixed

@@ -28,7 +28,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1241--packaging-fix-the-1240-wheel-shipped-a-stale-config-layer)
+- [What's New](#whats-new-in-1242--packaging-fix-the-sync-overwrote-real-modules-with-their-shims)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [13 Design Canvases](#13-design-canvases)
 - [Quick Start](#quick-start)
@@ -46,6 +46,15 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.42 — Packaging Fix: the Sync Overwrote Real Modules With Their Shims
+
+**If you installed 1.2.40 or 1.2.41 from PyPI, upgrade.**
+
+- **`import icdev.tools.llm.agent_loop` failed in the 1.2.41 wheel.** `sync_package_tree.py` mirrors `tools/` over `icdev/tools/`, but several `tools/*.py` files are the back-compat **shims** documented in CLAUDE.md — thin modules re-exporting from the canonical `icdev.tools.*`. Copying a shim over its own twin produced a module that imports from *itself*: `agent_loop.py` went from 1,825 lines to an 89-line stub raising `ImportError: cannot import name 'DONE' from partially initialized module`. Five modules were affected and are restored.
+- **The sync can no longer destroy an implementation.** A guard refuses to copy when the source is a shim *and* the target is substantially larger — narrow enough that a genuine module importing from `icdev.tools.*` still syncs. Verified by re-running the full sync against the restored files.
 
 ---
 

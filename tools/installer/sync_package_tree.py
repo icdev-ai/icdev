@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -160,6 +161,44 @@ def _should_skip(path: Path) -> bool:
     return False
 
 
+#: A `tools/x.py` that only re-exports from `icdev.tools.x` — the back-compat
+#: shim documented in CLAUDE.md. `icdev.tools.*` is the CANONICAL namespace, so
+#: for these modules the real implementation lives in the mirror and the source
+#: file is the stub.
+_SHIM_RE = re.compile(r"^\s*from\s+icdev\.tools\.[\w.]+\s+import\b", re.M)
+
+
+def _is_backcompat_shim(src_file: Path, target: Path) -> bool:
+    """True when copying ``src_file`` would DESTROY a real implementation.
+
+    Copying a shim over its own twin produces a module that imports from
+    itself — `from icdev.tools.llm.agent_loop import DONE` inside
+    `icdev/tools/llm/agent_loop.py` — which raises ImportError on a partially
+    initialized module the first time anything imports it.
+
+    That is not hypothetical: a sync run replaced the 1,825-line
+    `icdev/tools/llm/agent_loop.py` with its 89-line shim and the result was
+    published to PyPI, where `import icdev.tools.llm.agent_loop` failed outright.
+
+    The guard is deliberately narrow — it only refuses when the source really is
+    a shim (small, and importing from the canonical package) AND a substantially
+    larger implementation already exists at the target. A genuine module that
+    merely happens to import from `icdev.tools.*` still syncs.
+    """
+    if src_file.suffix != ".py" or not target.exists():
+        return False
+    try:
+        src_text = src_file.read_text(encoding="utf-8", errors="replace")
+        dst_text = target.read_text(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - unreadable file is not a shim decision
+        return False
+    if not _SHIM_RE.search(src_text):
+        return False
+    # A shim is a stub. If the target is not meaningfully bigger, the source is
+    # the implementation and must win as usual.
+    return len(dst_text.splitlines()) > len(src_text.splitlines()) * 2
+
+
 def _copy_tree(src: Path, dst: Path, dry_run: bool = False) -> dict:
     """Copy a directory tree honoring EXCLUDE_PATTERNS."""
     if not src.exists():
@@ -176,6 +215,9 @@ def _copy_tree(src: Path, dst: Path, dry_run: bool = False) -> dict:
         if p.is_file():
             rel = p.relative_to(src)
             target = dst / rel
+            if _is_backcompat_shim(p, target):
+                skipped += 1
+                continue
             if not dry_run:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(p, target)
