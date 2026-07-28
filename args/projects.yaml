@@ -6207,3 +6207,145 @@ projects:
   - key: triage
     title: TRIAGE — Event Worthiness (agent-chief)
     priority: medium
+- key: ahx
+  name: AHX — Agent Harness Truth & Measurement
+  description: 'Close the harness measurement loop, per the five audit docs in C:\AI\searches (icdev_agent_harness_audit.md,
+    icdev_optimization_audit_self_healing.md, icdev_loop_agent_youtube_adaptation.md, icdev_uber_agent_orchestration_adaptation.md,
+    icdev_phase_4_6_strategic_roadmap.md) — CORRECTED against the codebase; disposition recorded in docs/spikes/ahx-00-agent-audit-docs-disposition.md.
+    The audit''s headline claim is STALE: harness_eval is not "13 rows, all oracle_triage, zero codegen"
+    — it holds 129 rows including 65 codegen. The real defect is sharper and was missed: 123 of 129 rows
+    have actual_outcome IS NULL, so compute_metrics (which counts only resolved/false_positive/self_resolved/failed)
+    derives precision, recall and ECE from roughly six rows. Decisions are recorded; outcomes are not.
+    Root cause is record_outcome (tools/genesis/harness/eval_harness.py) issuing a bare UPDATE with no
+    rowcount check — when no decision row exists the update touches zero rows and returns silently, so
+    every caller believes it succeeded. Two further verified findings: context/capabilities/harness.yaml
+    advertises five CLI invocations across three tools that exist nowhere in the repo, and the Claude
+    auto-memory path is hardcoded per-machine in two modules while a dynamic derivation of the same slug
+    already exists in memory_write.py. This card fixes measurement only — it is the prerequisite for
+    the arr and clx cards, both of which are gated behind it.'
+  task_prefix: ahx-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/ahx-00-agent-audit-docs-disposition.md'
+  - 'gate: held so the kanban runner cannot race the human-driven worktree build (ahx-gate-00)'
+  - 'eval: record_outcome silently succeeds on a zero-row UPDATE — no rowcount check, no warning, no
+    audit. Return a status and warn instead (ahx-eval-01)'
+  - 'eval: close the open outcome loop — 123 of 129 harness_eval rows have actual_outcome IS NULL across
+    the codegen and sampled-oracle paths (ahx-eval-02)'
+  - 'eval: harness_eval has no numbered migration — schema exists only in pg_consolidated.sql and tests/conftest.py
+    (ahx-eval-03)'
+  - 'doc: context/capabilities/harness.yaml advertises maturity_assessor.py, trace_analyzer.py and exit_criteria_evaluator.py,
+    none of which exist anywhere in the repo (ahx-doc-01)'
+  - 'path: de-hardcode the .claude/projects/C--AI-ICDev/memory path in wiki_tool_query.py and ace/controller.py,
+    reusing the dynamic slug derivation already in memory_write.py (ahx-path-01)'
+  - 'heal: three divergent self-heal rate limits — 3/hr in self_heal_analyzer, 5/hr in the knowledge_server
+    fallback, 3/day in heal_constitution.yaml (ahx-heal-01)'
+  - 'vv: prove the NULL-outcome share falls on a real run (ahx-vv-01)'
+  - 'NOT in scope: install_dependency / runtime pip install — rejected, conflicts with the air-gap and
+    supply-chain posture. See the arr card for the declare-and-degrade replacement'
+  epics:
+  - key: gate
+    title: GATE — Held Pending Review
+    priority: high
+  - key: eval
+    title: EVAL — Close the Outcome Loop
+    priority: high
+  - key: doc
+    title: DOC — Phantom Tool Documentation
+    priority: medium
+  - key: path
+    title: PATH — Hardcoded Machine Paths
+    priority: medium
+  - key: heal
+    title: HEAL — Reconcile Rate Limits
+    priority: medium
+  - key: vv
+    title: VV — Verification
+    priority: high
+- key: arr
+  name: ARR — Agent Runtime Resilience (Air-Gap Safe)
+  description: 'Give the agent loop an error taxonomy, adapted from C:\AI\searches\icdev_optimization_audit_self_healing.md
+    — with its central recommendation REJECTED. The doc proposes an install_dependency tool that runs
+    pip install inside the agent loop. That is refused: ICDEV targets air-gapped IL4-IL6, args/security_gates.yaml
+    enforces sbom_max_age_days 30, min_slsa_level 2 and attestation presence, and tools/airgap/wheel_vendor.py
+    exists precisely so packages arrive as vetted vendored wheels. An agent that mutates its own runtime
+    from PyPI invalidates the SBOM and defeats the air-gap story. The doc''s motivating example is also
+    already solved: tools/airgap/pdf_fallback.py handles a missing PDF library by declaring a local fallback
+    chain (pypdf, then LLaVA via Ollama) rather than installing anything. Adopted instead is declare-and-degrade
+    — classify the error, name the missing capability as a structured actionable result, route it to
+    wheel vendoring plus HITL, never mutate the environment. Two further corrections to the doc: the agent
+    loop is not unguarded (it already has a consecutive-all-error circuit breaker, a duplicate-call guard,
+    a stall detector, per-tool timeouts and token/cost caps) and pass@K already ships as run_agent_loop_with_rubric.
+    Only the taxonomy and the structured tool result are genuinely missing. OVERLAPS the sag card (Phase
+    76, ADR D384-D390) — read tools/agent_runtime/ before writing anything and obey D384''s governing
+    rule, compose existing primitives rather than rebuilding them.'
+  task_prefix: arr-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/ahx-00-agent-audit-docs-disposition.md'
+  - 'gate: held pending ahx- landing; measurement must exist before resilience can be evaluated (arr-gate-00)'
+  - 'tax: error taxonomy mapping exception type to a remediation disposition (arr-tax-01)'
+  - 'res: structured tool result carrying success, error_type and remediation_hint, replacing the flat
+    stringified exception (arr-res-01)'
+  - 'res: inline single retry for genuinely safe remediations only — cache clear, reconnect, re-init
+    (arr-res-02)'
+  - 'deg: declare-and-degrade for missing capabilities, routed to wheel_vendor plus HITL (arr-deg-01)'
+  - 'esc: escalation path producing a kanban card carrying the full failure context (arr-esc-01)'
+  - 'NOT in scope: install_dependency, environment mutation, args/safe_packages.yaml — rejected above'
+  - 'NOT in scope: pass@K — already ships as run_agent_loop_with_rubric in icdev/tools/llm/agent_loop.py'
+  epics:
+  - key: gate
+    title: GATE — Held Pending AHX
+    priority: high
+  - key: tax
+    title: TAX — Error Taxonomy
+    priority: high
+  - key: res
+    title: RES — Structured Results & Retry
+    priority: high
+  - key: deg
+    title: DEG — Declare and Degrade
+    priority: medium
+  - key: esc
+    title: ESC — Escalation
+    priority: medium
+- key: clx
+  name: CLX — Control Loop Discipline
+  description: 'Adapt the control-loop framing from C:\AI\searches\icdev_loop_agent_youtube_adaptation.md
+    (Kyle, Human Layer — sense, set point, control, actuate, feedback) to ICDEV''s autonomous loops.
+    Verified genuinely absent: there is no .icdev/ directory, no versioned feedback file, no golden-pattern
+    directory and no backpressure gate on autonomous work — a repo-wide grep for golden_pattern, golden_dataset
+    and feedback.md returns nothing. The flow-control idea is the valuable one and maps onto known pain,
+    namely kanban churn and stranded branches. CORRECTIONS to the doc: the deterministic sensor it asks
+    for already exists as tools/quality/review_loop.py, which runs ruff, coherence_checker and SIPA over
+    a diff and emits a fix brief — wrap it, do not rebuild it; backpressure also already exists for a
+    different consumer in tools/databridge/scale/backpressure.py and is worth reading first. Do not re-propose
+    LangGraph-style orchestration, formally rejected in ADR D391. OVERLAPS the sag cron epic and the kanban
+    pipeline hardening work — check both before starting.'
+  task_prefix: clx-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/ahx-00-agent-audit-docs-disposition.md'
+  - 'gate: held pending ahx- landing; a control loop needs a working sensor before it can be tuned (clx-gate-00)'
+  - 'fb: versioned feedback file loaded into loop context every run and updated from HITL decisions (clx-fb-01)'
+  - 'flow: backpressure — do not start new autonomous work while the previous output is unreviewed (clx-flow-01)'
+  - 'sense: deterministic sensor interface wrapping the existing review_loop.py, not a new scanner (clx-sense-01)'
+  - 'gold: golden-pattern directory of human-written reference implementations for high-frequency ICDEV
+    tasks (clx-gold-01)'
+  - 'NOT in scope: LangGraph or LangChain orchestration — rejected in ADR D391'
+  epics:
+  - key: gate
+    title: GATE — Held Pending AHX
+    priority: high
+  - key: fb
+    title: FB — Versioned Feedback
+    priority: high
+  - key: flow
+    title: FLOW — Backpressure
+    priority: high
+  - key: sense
+    title: SENSE — Deterministic Sensing
+    priority: medium
+  - key: gold
+    title: GOLD — Golden Patterns
+    priority: medium
