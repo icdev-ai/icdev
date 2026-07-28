@@ -3675,3 +3675,65 @@ in air-gapped or registry-restricted clusters.
 `Chart.yaml`'s `appVersion` tracks `icdev/_version.py` and is bumped by
 `release.py`. The chart's own `version:` is deliberately independent — it moves
 when the templates change, not when the application does.
+
+### Provisioning the database and vector store
+
+`icdev setup` writes a DSN; it does not make a database exist. `--provision-db`
+creates whatever is missing, in dependency order:
+
+```bash
+icdev setup --provision-db                 # create what's missing
+python -m tools.cli.provision_db --check   # report only, change nothing
+python -m tools.cli.provision_db --provision --docker --dry-run
+python -m tools.cli.provision_db --sqlite --provision
+```
+
+Four things must exist before RAG works, and each fails differently:
+
+| Layer | Failure when absent |
+|---|---|
+| PostgreSQL **server** | connection refused |
+| **database + role** | `FATAL: database "icdev" does not exist` |
+| **pgvector extension** | `ERROR: type "vector" does not exist` |
+| **schema** | `relation "rag_chunks" does not exist` |
+
+The third bites hardest: the extension is only *installable* if the running
+image ships pgvector. On stock `postgres:16` the `CREATE EXTENSION` in migration
+044 fails and every embedding write raises afterwards — so availability is
+checked, not just whether it's enabled.
+
+**Greenfield options**
+
+| Option | Notes |
+|---|---|
+| **SQLite** | Zero install. File created on first connect; vector store is `rag_chunks` with a BLOB column. Always works, air-gap safe. Brute-force cosine rather than an indexed scan. |
+| **Docker** | Starts `pgvector/pgvector:pg16` from the generated compose file and **waits for the server to accept connections** — `compose up -d` returns when the container is created, not when Postgres is ready. |
+| **Native** | Per-OS install commands are printed, not executed: that needs elevation and changes the machine outside your project. |
+| **Existing server** | Provisions the database, role, extension and schema into a server that's already running (RDS, Cloud SQL, a shared box) without touching its install. |
+
+**Port conflicts** are detected and distinguished, because the three cases need
+opposite handling:
+
+- **free** — start a container here
+- **an existing PostgreSQL** — do *not* start a second one; provision into it. Two servers is a silent second source of truth.
+- **something else** — republish on 5433+, rewriting the DSN and the compose file's host port together. Only the host side moves; Postgres inside the container always listens on 5432.
+
+Provisioning is non-destructive: it creates a database, role and extension, and
+never drops, alters or overwrites one that exists. `--dry-run` prints the plan.
+
+### Keeping `/updates` correct
+
+`http://localhost:5050/updates` renders `CHANGELOG.md` live, so the page updates
+the moment the file does. What `release.py` guarantees is that the file is
+*worth rendering* — the notes gate blocks a release unless, checked with the
+page's own parser:
+
+| Check | Blocks when |
+|---|---|
+| `updates_parses` | the entry doesn't parse — `/updates` would silently omit the release |
+| `updates_is_newest` | it isn't the top entry — the page would lead with an older version |
+| `updates_has_content` | it's still a `--scaffold-notes` TODO stub |
+
+The middle one is the state that had `/updates` advertising 1.2.37 while the
+package shipped 1.2.39. The last exists because notes that read as written but
+say nothing are worse than none.

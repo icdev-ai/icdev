@@ -160,11 +160,13 @@ def test_preflight_refuses_to_release_from_main(monkeypatch):
 
 def test_notes_status_detects_the_current_release():
     """The version in the tree must have notes — it was just released."""
-    assert rel.notes_status(rel.current_version()) == {"readme": True, "changelog": True}
+    got = rel.notes_status(rel.current_version())
+    assert got["readme"] and got["changelog"]
 
 
 def test_notes_status_reports_missing_for_an_unreleased_version():
-    assert rel.notes_status("9.9.9") == {"readme": False, "changelog": False}
+    got = rel.notes_status("9.9.9")
+    assert not got["readme"] and not got["changelog"]
 
 
 def test_scaffold_notes_is_non_destructive_in_dry_run(tmp_path, monkeypatch):
@@ -364,6 +366,7 @@ def test_payload_gate_ignores_parent_only_subsystems(tmp_path, monkeypatch):
         "icdev/data/.env.template": b"x",
         "icdev/tools/cli/setup_wizard.py": b"x",
         "icdev/tools/cli/setup.py": b"x",
+        "icdev/tools/cli/provision_db.py": b"x",
         **_platform_entries(),
     })
     monkeypatch.setattr(rel, "DIST_DIR", dist)
@@ -398,6 +401,7 @@ def test_payload_gate_requires_each_forge_layer(tmp_path, monkeypatch, drop, exp
         "icdev/data/.env.template": b"x",
         "icdev/tools/cli/setup_wizard.py": b"x",
         "icdev/tools/cli/setup.py": b"x",
+        "icdev/tools/cli/provision_db.py": b"x",
         **_platform_entries(),
     }
     full.pop(drop)
@@ -582,6 +586,7 @@ def test_the_scan_uses_one_open_archive():
 @pytest.mark.parametrize("mod", [
     "icdev/tools/cli/setup_wizard.py",
     "icdev/tools/cli/setup.py",
+    "icdev/tools/cli/provision_db.py",
 ])
 def test_payload_gate_requires_the_setup_surface(tmp_path, monkeypatch, mod):
     """Setup is the first thing a pip user runs after `icdev init`.
@@ -601,6 +606,7 @@ def test_payload_gate_requires_the_setup_surface(tmp_path, monkeypatch, mod):
         "icdev/data/.env.template": b"x",
         "icdev/tools/cli/setup_wizard.py": b"x",
         "icdev/tools/cli/setup.py": b"x",
+        "icdev/tools/cli/provision_db.py": b"x",
         **_platform_entries(),
     }
     members.pop(mod)
@@ -611,4 +617,84 @@ def test_payload_gate_requires_the_setup_surface(tmp_path, monkeypatch, mod):
 
     out = rel.step_verify_payload("9.9.9")
     assert not out["ok"]
-    assert any("setup" in p for p in out["problems"]), out["problems"]
+    # Names the exact module, so the message tells you which file to restore.
+    assert any(mod in p for p in out["problems"]), out["problems"]
+
+
+# --------------------------------------------------------------------------- #
+# /updates must actually render the release
+# --------------------------------------------------------------------------- #
+
+
+def _notes_repo(tmp_path, changelog: str, version: str = "9.9.9"):
+    (tmp_path / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "# T\n\n## What's New in " + version + " - x\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_updates_page_accepts_a_real_entry(tmp_path, monkeypatch):
+    monkeypatch.setattr(rel, "REPO_ROOT", _notes_repo(
+        tmp_path, "# Changelog\n\n## [9.9.9] - 2026-07-27\n\n### Fixed\n"
+                  "- A real thing that broke.\n"))
+    got = rel.updates_page_status("9.9.9")
+    assert got == {"updates_parses": True, "updates_is_newest": True,
+                   "updates_has_content": True}
+
+
+def test_an_unedited_scaffold_is_rejected(tmp_path, monkeypatch):
+    """Notes that read as written but say nothing are worse than none."""
+    monkeypatch.setattr(rel, "REPO_ROOT", _notes_repo(
+        tmp_path, "# Changelog\n\n## [9.9.9] - 2026-07-27\n\n### Fixed\n"
+                  "- TODO: what broke, and why it mattered.\n"))
+    assert rel.updates_page_status("9.9.9")["updates_has_content"] is False
+
+
+def test_an_entry_that_is_not_newest_is_flagged(tmp_path, monkeypatch):
+    """/updates leads with the top entry.
+
+    This is exactly the state that had the page advertising 1.2.37 while the
+    package shipped 1.2.39.
+    """
+    monkeypatch.setattr(rel, "REPO_ROOT", _notes_repo(
+        tmp_path, "# Changelog\n\n## [9.9.9] - 2026-07-27\n\n### Fixed\n- new\n\n"
+                  "## [1.0.0] - 2026-01-01\n\n### Fixed\n- old\n", version="1.0.0"))
+    got = rel.updates_page_status("1.0.0")
+    assert got["updates_parses"] is True
+    assert got["updates_is_newest"] is False
+
+
+def test_a_missing_entry_parses_as_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(rel, "REPO_ROOT", _notes_repo(
+        tmp_path, "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n### Fixed\n- old\n"))
+    assert rel.updates_page_status("9.9.9")["updates_parses"] is False
+
+
+def test_validation_uses_the_pages_own_parser():
+    """A second implementation would drift from what /updates actually renders."""
+    import inspect
+
+    src = inspect.getsource(rel.updates_page_status)
+    assert "tools.dashboard.changelog" in src
+    assert "parse_changelog" in src
+
+
+def test_notes_status_includes_the_updates_checks():
+    got = rel.notes_status(rel.current_version())
+    assert {"updates_parses", "updates_is_newest", "updates_has_content"} <= set(got)
+
+
+def test_the_current_release_renders_on_updates():
+    """The version in the tree must be the one /updates leads with."""
+    got = rel.notes_status(rel.current_version())
+    assert got["updates_parses"] and got["updates_is_newest"]
+    assert got["updates_has_content"]
+
+
+def test_the_gate_blocks_on_a_page_level_defect():
+    """Headings alone are not enough — the gate must require renderability."""
+    import inspect
+
+    src = inspect.getsource(rel.main)
+    assert "updates_parses" in src and "updates_is_newest" in src
+    assert "updates_has_content" in src

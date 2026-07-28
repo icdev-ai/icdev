@@ -234,7 +234,8 @@ def compose_volume_path(project_dir: Path, env: Environment) -> str:
 
 
 def render_compose(env: Environment, *, use_postgres: bool, project_dir: Path,
-                   dashboard_port: int = 5050, pg_password: str = "icdev") -> str:
+                   dashboard_port: int = 5050, pg_password: str = "icdev",
+                   pg_port: int = _PG_DEFAULT_PORT) -> str:
     """Produce a docker-compose.yml matched to the answers.
 
     pgvector rather than stock postgres: ICDEV stores embeddings in a `vector`
@@ -263,7 +264,9 @@ def render_compose(env: Environment, *, use_postgres: bool, project_dir: Path,
             "      POSTGRES_USER: icdev",
             f"      POSTGRES_PASSWORD: {pg_password}",
             "    ports:",
-            f'      - "{_PG_DEFAULT_PORT}:{_PG_DEFAULT_PORT}"',
+            # host:container. Only the HOST side moves when 5432 is taken —
+            # postgres inside the container always listens on 5432.
+            f'      - "{pg_port}:{_PG_DEFAULT_PORT}"',
             "    volumes:",
             f"      - {vol}/postgres:/var/lib/postgresql/data",
             "    healthcheck:",
@@ -272,6 +275,11 @@ def render_compose(env: Environment, *, use_postgres: bool, project_dir: Path,
             "      retries: 10",
             "",
         ]
+
+    if use_postgres and pg_port != _PG_DEFAULT_PORT:
+        lines.insert(len(lines) - 1,
+                     f"# NOTE: published on host port {pg_port} because "
+                     f"{_PG_DEFAULT_PORT} was already in use.")
 
     lines += [
         "  icdev:",
@@ -482,6 +490,8 @@ def main(argv: list | None = None) -> int:
     ap.add_argument("--no-probe", action="store_true",
                     help="Skip LLM reachability probes (air-gapped installs).")
     ap.add_argument("--postgres", action="store_true", help="Assume PostgreSQL.")
+    ap.add_argument("--provision-db", action="store_true",
+                    help="Create the database and vector store if they do not exist.")
     ap.add_argument("--dry-run", action="store_true", help="Write nothing.")
     ap.add_argument("--json", action="store_true", help="Machine-readable report.")
     args = ap.parse_args(argv)
@@ -585,6 +595,27 @@ def main(argv: list | None = None) -> int:
             compose.write_text(text, encoding="utf-8")
         report.compose_file = str(compose)
         report.steps.append({"step": "compose", "path": str(compose)})
+
+    # ── Database + vector store ────────────────────────────────────────────
+    # Writing a DSN does not make a database exist. On a fresh machine the
+    # first real failure is a connection refused, or a `CREATE EXTENSION vector`
+    # that cannot work because the running image has no pgvector at all.
+    if args.provision_db:
+        from tools.cli.provision_db import check_sqlite, provision
+
+        if use_pg:
+            pres = provision(dsn, use_docker=env.docker,
+                             compose_file=project_dir / "docker-compose.yml",
+                             dry_run=args.dry_run)
+        else:
+            st = check_sqlite(project_dir / "data" / "icdev.db")
+            pres = {"ok": st.ready, "steps": [], "status": st.to_dict()}
+        report.steps.append({"step": "provision-db", **pres})
+        s = pres["status"]
+        print(f"  database ready : {s['ready']}"
+              + (f"  (missing: {', '.join(s['missing'])})" if s["missing"] else ""))
+        if pres.get("hint"):
+            print(f"  {pres['hint']}")
 
     print()
     print("=" * 68)
