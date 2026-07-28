@@ -22,6 +22,19 @@ Reserved keys
 ``_inputs`` — run inputs supplied at trigger time (dwo-evt-04).  Run inputs
 land here rather than in a parallel store.
 
+``canvas`` — the canvas slug the run belongs to, written by the runner from
+the workflow template's ``canvas:`` declaration (dwo-mem-02).
+
+``artifacts`` — every step's declared artifacts, keyed by step name::
+
+    {"Generate IaC": [{"name": "main.tf", "path": "...", "type": "tf"}, ...]}
+
+The runner writes each step's entry as that step completes, so a later step
+reads its inputs from here instead of re-parsing an earlier step's stdout.
+Keyed by step name rather than flattened so that a consumer asking for the
+IaC generator's ``.tf`` files cannot pick up a ``.tf`` emitted by some other
+step in the same run.
+
 This is NOT ``tools/memory/`` — that is the long-term session memory system,
 a different concern entirely.
 
@@ -56,6 +69,12 @@ RUN_ID_ENV = "ICDEV_RUN_ID"
 
 #: Key under which dwo-evt-04 run inputs are stored.
 INPUTS_KEY = "_inputs"
+
+#: Key under which the run's canvas slug is stored (dwo-mem-02).
+CANVAS_KEY = "canvas"
+
+#: Key under which per-step artifact lists are stored (dwo-mem-02).
+ARTIFACTS_KEY = "artifacts"
 
 _MISSING = object()
 
