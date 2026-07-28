@@ -172,3 +172,109 @@ def test_touched_templates_still_parse(template):
     import jinja2
 
     jinja2.Environment().parse((TEMPLATES / template).read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# fga-fix-05 — a broken pattern source must not look like an empty one
+# ---------------------------------------------------------------------------
+
+def test_pattern_failure_is_distinguishable_from_no_patterns():
+    from apps.forge_academy.integrations import patterns_status
+
+    state = patterns_status()
+    assert set(state) == {"patterns", "available", "error"}
+    # In the default environment aisg_patterns does not exist, so this reports
+    # unavailable rather than silently returning an empty catalogue.
+    if not state["available"]:
+        assert state["error"], "unavailable must carry the reason"
+        assert state["patterns"] == []
+
+
+def test_pattern_failure_logs_at_error_not_warning(monkeypatch, caplog):
+    """A swallowed warning never reached a health check."""
+    import logging
+
+    from apps.forge_academy import integrations
+
+    records: list = []
+
+    class _Cap(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    handler = _Cap(level=logging.ERROR)
+    integrations._log.addHandler(handler)
+    try:
+        integrations.patterns_status()
+    finally:
+        integrations._log.removeHandler(handler)
+
+    if records:
+        assert any(r.levelno >= logging.ERROR for r in records)
+
+
+def test_list_patterns_stays_backward_compatible():
+    from apps.forge_academy.integrations import list_patterns
+
+    assert isinstance(list_patterns(), list)
+
+
+def test_workflow_builder_distinguishes_the_two_empty_states():
+    src = (TEMPLATES / "workflow_builder.html").read_text(encoding="utf-8")
+    assert "Pattern library unavailable" in src
+    assert "No patterns configured yet." in src
+    assert "No patterns available." not in src, "the ambiguous message must be gone"
+
+
+def test_workflow_builder_route_passes_the_state():
+    import inspect
+
+    from apps.forge_academy import blueprint
+
+    src = inspect.getsource(blueprint.workflow_builder_page)
+    assert "patterns_status()" in src
+    assert "patterns_available" in src
+
+
+# ---------------------------------------------------------------------------
+# fga-fix-04 — the Arena advertises a feature that cannot work
+# ---------------------------------------------------------------------------
+
+def test_arena_link_is_hidden_when_no_challenge_exists():
+    """Option (b): hide the entry point rather than seed fabricated filler."""
+    src = (TEMPLATES / "page.html").read_text(encoding="utf-8")
+    assert "{% if has_challenges %}" in src
+    assert "/academy/arena" in src
+
+
+def test_hub_computes_challenge_availability():
+    import inspect
+
+    from apps.forge_academy import blueprint
+
+    assert "has_challenges" in inspect.getsource(blueprint.hub)
+
+
+def test_active_challenge_count_is_zero_safe(monkeypatch):
+    """No fa_challenges table must not raise into a page render."""
+    from apps.forge_academy import db as fadb
+
+    def _boom():
+        raise RuntimeError("no such table: fa_challenges")
+
+    monkeypatch.setattr(fadb, "get_connection", _boom)
+    assert fadb.active_challenge_count() == 0
+
+
+def test_no_fabricated_challenges_were_seeded():
+    """The task explicitly rejected filler data to populate the page."""
+    import subprocess
+
+    out = subprocess.run(
+        ["git", "grep", "-l", "--untracked", "INSERT INTO fa_challenges", "--",
+         "apps/", "tools/"],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    )
+    assert not out.stdout.strip(), (
+        f"challenge rows are being seeded: {out.stdout.strip()}"
+    )

@@ -439,6 +439,25 @@ def get_or_create_user(username: str, display_name: str = "", email: str = "", t
     return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
 
 
+def active_challenge_count() -> int:
+    """How many challenges are currently running.
+
+    fa_challenges has never had an INSERT anywhere in the repo — no seeder, no
+    admin-create route — so the Arena has always rendered "No Active
+    Challenges" and the entry API was unreachable (fga-fix-04). This lets the
+    nav hide a feature that cannot work rather than advertising a dead end.
+    Returns 0 on any error: a nav link is not worth an exception.
+    """
+    try:
+        row = get_connection().execute(
+            "SELECT COUNT(*) FROM fa_challenges WHERE ends_at > datetime('now')"
+        ).fetchone()
+        return int(row[0]) if row else 0
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("active_challenge_count failed: %s", exc)
+        return 0
+
+
 def update_user_display_name(user_id: int, display_name: str) -> None:
     """Persist a display name for an EXISTING user.
 
