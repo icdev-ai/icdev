@@ -396,18 +396,22 @@ def gate_coherence(
             failed = not passed
         if not failed:
             continue
-        name = (check.get("check_name") or check.get("name")
-                or check.get("check_id") or "check")
+        # Distinct from the gate's own `name` ("coherence"). This used to rebind
+        # `name`, so the GateResult below was labelled with whichever check
+        # happened to be last in the list — any consumer keying on the gate name
+        # saw e.g. "Canvas Connection Placeholder Style" instead of "coherence".
+        check_name = (check.get("check_name") or check.get("name")
+                      or check.get("check_id") or "check")
         msgs = check.get("issues") or check.get("errors")
         if not msgs:
             single = check.get("message")
-            msgs = [single] if single else [name]
+            msgs = [single] if single else [check_name]
         for msg in msgs:
             findings.append(Finding(
                 gate="coherence",
-                file=name,
+                file=check_name,
                 message=str(msg),
-                code=str(check.get("check_id") or name),
+                code=str(check.get("check_id") or check_name),
             ))
     return GateResult(
         name, blocking, passed=overall, findings=findings,
