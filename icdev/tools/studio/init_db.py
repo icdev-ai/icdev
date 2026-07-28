@@ -38,7 +38,7 @@ STUDIO_TABLES: dict[str, str] = {
             -- classification, and create_workflow() stamps the caller's own value
             -- so the create->read->delete roundtrip stays visible to that caller.
             -- Without these the INSERT fails outright ("no column named
-            -- classification"). Backfilled onto existing DBs by migration 305.
+            -- classification"). Backfilled onto existing DBs by migration 307.
             classification TEXT NOT NULL DEFAULT 'CUI',
             tenant_id      TEXT
         )
@@ -219,7 +219,7 @@ STUDIO_TABLES: dict[str, str] = {
     """,
     # APPEND-ONLY — audit trail: every MCP dispatch attempt (dwo-mcp-02-d5).
     # decision CHECK mirrors mcp_executor.DECISIONS; params are digested, never
-    # stored verbatim. See migration 305 for the full rationale.
+    # stored verbatim. See migration 307 for the full rationale.
     "studio_mcp_dispatch_audit": """
         CREATE TABLE IF NOT EXISTS studio_mcp_dispatch_audit (
             audit_id       TEXT PRIMARY KEY,

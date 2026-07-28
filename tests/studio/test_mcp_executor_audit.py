@@ -196,11 +196,11 @@ def test_classification_tracks_impact_level_and_is_not_hardcoded():
 
 def test_check_constraint_mirrors_the_python_decision_constants():
     """CLAUDE.md: a CHECK list derives from Python constants, never drifts."""
-    sql = (_ROOT / "tools/db/migrations/305_studio_mcp_dispatch_audit.sql").read_text(
+    sql = (_ROOT / "tools/db/migrations/307_studio_mcp_dispatch_audit.sql").read_text(
         encoding="utf-8"
     )
     match = re.search(r"CHECK\(decision IN \(([^)]*)\)\)", sql)
-    assert match, "migration 305 has no decision CHECK constraint"
+    assert match, "migration 307 has no decision CHECK constraint"
     in_sql = {v.strip().strip("'") for v in match.group(1).split(",")}
     assert in_sql == set(mcp_executor.DECISIONS)
 

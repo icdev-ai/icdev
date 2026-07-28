@@ -1,4 +1,4 @@
--- 305_studio_mcp_dispatch_audit.sql
+-- 307_studio_mcp_dispatch_audit.sql
 -- DWO / dwo-mcp-02-d5 — append-only audit of every MCP dispatch attempt.
 --
 -- d1-d4 built the gates (allowlist, caller IL/RBAC, human approval) but each

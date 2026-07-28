@@ -227,7 +227,7 @@ dispatch. `0` parks the gate without blocking.
 ## MCP dispatch audit (dwo-mcp-02-d5)
 
 d1–d4 decide; d5 records. Every attempt writes exactly one row to the
-append-only `studio_mcp_dispatch_audit` table (migration 305), on all three
+append-only `studio_mcp_dispatch_audit` table (migration 307), on all three
 paths, before `run()` returns or re-raises.
 
 | Path | `decision` | `reason` |

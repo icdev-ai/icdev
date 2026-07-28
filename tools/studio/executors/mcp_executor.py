@@ -924,7 +924,7 @@ def check_caller_authorized(
 
 # ── Append-only dispatch audit (dwo-mcp-02-d5) ─────────────────────────────
 
-#: Append-only table every attempt lands in. Created by migration 305 and by
+#: Append-only table every attempt lands in. Created by migration 307 and by
 #: ``tools/studio/init_db.py``; registered in APPEND_ONLY_TABLES in
 #: ``.claude/hooks/pre_tool_use.py``.
 AUDIT_TABLE = "studio_mcp_dispatch_audit"
@@ -939,7 +939,7 @@ DECISION_REFUSED = "refused"
 DECISION_PENDING_APPROVAL = "pending_approval"
 
 #: The closed decision vocabulary. The ``decision`` CHECK constraint in
-#: migration 305 and ``init_db.py`` mirrors this tuple; the audit tests assert
+#: migration 307 and ``init_db.py`` mirrors this tuple; the audit tests assert
 #: the two have not drifted.
 DECISIONS = (DECISION_ALLOWED, DECISION_REFUSED, DECISION_PENDING_APPROVAL)
 
