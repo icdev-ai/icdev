@@ -364,13 +364,28 @@ CLX_TASKS: list[dict] = [
 ]
 
 
+def _gate_for(task_id: str) -> str:
+    """The gate sentinel a task must wait behind — ``arr-res-01`` -> ``arr-gate-00``.
+
+    Holding the sentinel ``in_progress`` is NOT on its own enough to stop the
+    runner. The dispatcher's eligibility predicate (see
+    ``tools/genesis/reflexes/kanban.py``: ``depends_on_task_id IS NULL OR the
+    dependency is done``) only holds a task back when something actually points
+    at the gate. The first cut of this script seeded the sentinels and the work
+    but wired no dependency, so every gate was decorative and the runner
+    dispatched nine tasks that a human was already implementing by hand.
+    """
+    return task_id.split("-", 1)[0] + "-gate-00"
+
+
 def _specs() -> tuple[list[dict], list[dict]]:
     gates = [
         {**g, "task_type": "chore", "status": "in_progress"}
         for g in GATES
     ]
     work = [
-        {**t, "task_type": "build", "status": "backlog"}
+        {**t, "task_type": "build", "status": "backlog",
+         "depends_on_task_id": _gate_for(t["id"])}
         for t in (AHX_TASKS + ARR_TASKS + CLX_TASKS)
     ]
     return gates, work
