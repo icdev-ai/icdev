@@ -39,9 +39,52 @@ steps:
 """
 
 
+TERMINAL_RUN_STATUSES = ("success", "failed", "cancelled")
+
+
 @pytest.fixture(autouse=True)
-def _schema():
+def _schema(tmp_path, monkeypatch):
+    """One throwaway store per test, and no worker thread left behind.
+
+    Both halves matter. `reconcile_runs_on_boot()` resumes *every* parked run it
+    finds, so on a shared store it also re-attaches workers to the runs earlier
+    tests in this file seeded and deliberately left parked. Those workers park on
+    a gate nobody decides and poll the store on a 10s cycle for the rest of the
+    session — long after the next test file has repointed `ICDEV_DB_PATH` at a
+    database with no `studio_workflow_runs` in it. The resulting write fails on a
+    background thread, and pytest attributes it to whichever test happens to be
+    running, so the reported failure has no relation to its cause. That is the
+    order-dependent flake this fixture removes.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "icdev.db"))
     init_studio_tables()
+
+    yield
+
+    # Release every gate still parked so the workers this test started observe a
+    # decision and exit while their store still exists. Rejecting once is not
+    # enough: a worker that had not yet armed its gate rewrites the step row to
+    # awaiting_approval afterwards and then waits out the whole approval window,
+    # so keep deciding until the runs a worker owns have all finished.
+    owned: list[str] = []
+    deadline = wr.time.time() + 20
+    while wr.time.time() < deadline:
+        with wr._run_queues_lock:
+            owned = list(wr._run_queues)
+        owned = [r for r in owned if _run_status(r) not in TERMINAL_RUN_STATUSES]
+        if not owned:
+            break
+        for step_run_id in wr.get_pending_approvals():
+            wr.reject_step(step_run_id, reason="pytest teardown", actor="pytest")
+        wr.time.sleep(0.1)
+    assert not owned, f"worker threads outlived the test for runs: {owned}"
+
+    wr._approval_events.clear()
+    wr._approval_results.clear()
+    wr._approval_reasons.clear()
+    with wr._run_queues_lock:
+        wr._run_queues.clear()
 
 
 def _now(offset_hours: float = 0) -> str:
