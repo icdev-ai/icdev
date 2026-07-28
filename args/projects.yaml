@@ -6349,3 +6349,52 @@ projects:
   - key: gold
     title: GOLD — Golden Patterns
     priority: medium
+- key: fga
+  name: FORGE Academy + GameDay Content Wiring
+  description: 'Disposition and remediation of five external audit documents on /academy
+    and /gameday (C:\AI\searches\FORGE, 2026-07-26/27). About one quarter of the ~40
+    recommendations survived verification; see the spike for the full TRUE/FALSE/STALE
+    split. The headline correction: the reports prescribe authoring step content for
+    Tier-1 missions M01-M10 as High effort, but Tier 1 is not unwritten, it is unwired.
+    199 markdown step files across 43 mission directories sit on disk and are never
+    ingested, because content_loader.py seeds steps only from the hand-maintained
+    BUILTIN_STEPS dict and never scans the content/ tree (content_loader.py:1618).
+    53 of 89 missions have zero steps; 43 of those have authored content on disk. The
+    fix is a registration change, not an authoring project, plus the reverse-direction
+    test whose absence let 43 directories rot unnoticed. Also carded: guild creation
+    500s on every call (blueprint.py:586 passes invite_code= to a 3-arg db.create_guild);
+    27 of 27 watch steps render an identical fake Demo Output block that teaches a call
+    which would raise (_step_watch.html:20-34); profile save drops display_name and
+    writes a tenant_id IS NULL orphan row; fa_challenges has zero INSERTs repo-wide so
+    Arena is permanently empty; the Workflow Builder palette is emptied by a swallowed
+    import failure; GameDay scenario manager and builder are unreachable from the hub;
+    and 12 of 34 GameDay tool links are POST-only APIs rendered as GET anchors. REFUTED
+    and deliberately NOT carded: the Continue button (two-click by design), the code
+    runner (hardened sandbox, 14 tests), progress APIs (report probed /academy/api/*,
+    real prefix is /api/academy/*), Oracle and the GameDay responses API (both RBAC-gated,
+    401 read as breakage), and the GameDay scenario picker (9 distinct packs on disk).
+    Two GameDay findings were already fixed on 2026-07-18, eight days before the audit
+    ran. PRIOR ART: the penta card (epics gd + aca, 31 merged PRs, closed 2026-07-18)
+    covered code-runner hardening, the AI League repoint, ontology_tags_json, stored XSS,
+    the /forge-academy nav 404, and 10 new missions. This card covers only what PENTA
+    did not; do not reopen penta. Both apps ship default_enabled false and are opt-in
+    child apps. MANUAL-ONLY: all tasks gated behind fga-gate-00 (held in_progress) so
+    the kanban runner never dispatches them; worktree + push + PR, no auto-merge.'
+  task_prefix: fga-
+  default_open: true
+  briefs:
+  - label: Audit disposition - what survived verification (fga-00)
+    path: /docs/spikes/fga-00-academy-gameday-audit-disposition.md
+  epics:
+  - key: gate
+    title: Manual Gate (held)
+    priority: high
+  - key: wire
+    title: WIRE - Orphaned Mission Content Ingestion
+    priority: high
+  - key: fix
+    title: FIX - Academy Defects
+    priority: medium
+  - key: gd
+    title: GD - GameDay Defects
+    priority: medium
