@@ -28,8 +28,9 @@ steps:
 
 ## Extended fields — node type and routing
 
-Five optional fields extend each step node to support human-in-the-loop gates,
-approval workflows, documentation hooks, and team-member routing.
+Seven optional fields extend each step node to support human-in-the-loop gates,
+approval workflows, MCP tool dispatch, documentation hooks, and team-member
+routing.
 
 ### `node_type`
 
@@ -59,6 +60,11 @@ node_type: tool | human | approval | mcp   # default: tool
     path: tools/
 ```
 
+| Key | Type | Required | Meaning |
+|-----|------|----------|---------|
+| `mcp_tool` | string | **yes** — for `node_type: mcp` | Name of the MCP tool to dispatch.  Must be a key in `tools/mcp/tool_registry.py::TOOL_REGISTRY` and allowlisted under `mcp_workflow_tools.allowed` in `args/security_gates.yaml` (gate `MCP-WF-001`). |
+| `mcp_params` | dict | no | Parameters passed to the MCP tool's handler.  Defaults to `{}` when omitted. |
+
 Only meaningful when `node_type: mcp`.  The engine ignores the step's `tool`
 field for these nodes and runs every one of them through the shared executor
 `tools/studio/executors/mcp_executor.py`:
@@ -72,7 +78,10 @@ python tools/studio/executors/mcp_executor.py \
 `mcp_params` is normally a mapping and is serialized to JSON for `--params`.
 A string is passed through verbatim, so a template may hand-author the JSON;
 either way the executor rejects anything that is not a JSON object.  A step
-with `node_type: mcp` and no `mcp_tool` is skipped rather than run.
+with `node_type: mcp` and no `mcp_tool` is skipped rather than run.  Likewise,
+if the executor is not present in the checkout the runner skips the step with
+`Tool not found: tools/studio/executors/mcp_executor.py` instead of failing the
+run.
 
 The step's per-run `args` are **not** forwarded — an MCP tool takes its
 arguments from `mcp_params` only.
@@ -202,13 +211,17 @@ steps:
 
 ## Field applicability matrix
 
-| Field | `tool` | `human` | `approval` |
-|-------|--------|---------|------------|
-| `node_type` | ✓ | ✓ | ✓ |
-| `role` | ignored | owner | approver group |
-| `human_required` | ignored | ✓ | ignored |
-| `approval_policy` | ignored | ignored | ✓ |
-| `doc_template` | optional | optional | optional |
+| Field | `tool` | `human` | `approval` | `mcp` |
+|-------|--------|---------|------------|-------|
+| `node_type` | ✓ | ✓ | ✓ | ✓ |
+| `tool` | executed | not executed — gate only | not executed — gate only | ignored |
+| `mcp_tool` | ignored | ignored | ignored | **required** |
+| `mcp_params` | ignored | ignored | ignored | optional |
+| `args` | forwarded to `tool` | unused | unused | not forwarded |
+| `role` | ignored | owner | approver group | ignored |
+| `human_required` | ignored | ✓ | ignored | ignored |
+| `approval_policy` | ignored | ignored | ✓ | ignored |
+| `doc_template` | optional | optional | optional | optional |
 
 ---
 
