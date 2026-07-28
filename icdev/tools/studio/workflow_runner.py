@@ -160,6 +160,9 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     try:
         _env = os.environ.copy()
         _env["PYTHONPATH"] = str(_ROOT) + os.pathsep + _env.get("PYTHONPATH", "")
+        # dwo-mem-01: the step reads/writes run-scoped memory through this id.
+        if run_id:
+            _env["ICDEV_RUN_ID"] = run_id
         proc = subprocess.run(
             cmd,
             capture_output=True,
