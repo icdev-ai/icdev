@@ -1553,6 +1553,74 @@ loop_engineering:
   gepa_min_composite_score: 0.60
   gepa_min_score_delta: 0.05
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MCP tool allowlist for Studio workflow steps (dwo-mcp-02)
+#
+# A `node_type: mcp` workflow step dispatches an MCP tool in-process through
+# tools/mcp/tool_registry.py. That registry exposes 500+ tools, many of them
+# destructive or classification-sensitive, so the workflow surface is
+# DEFAULT-DENY: a tool is callable from a workflow step only when it is named
+# below. Anything else is refused before import/dispatch and audited.
+#
+#   default            — policy for any tool not named here. Always `deny`.
+#   allowed            — dispatched with no human gate. Read-only / advisory
+#                        tools only: they must not mutate state, spend money,
+#                        deploy, or move data across a classification boundary.
+#   requires_approval  — dispatched only after an approved `node_type: human`
+#                        gate in the same run. State-changing, destructive,
+#                        or egress-bearing tools.
+#
+# Rules for editing this list:
+#   * Names must match tool_registry.py keys exactly — a typo silently reads as
+#     "not allowlisted" and the step is refused at runtime, not at edit time.
+#   * A tool appears in at most ONE of the two lists.
+#   * Adding a tool that writes, deletes, deploys, or egresses to `allowed` is
+#     a gate violation; it belongs in `requires_approval`.
+#   * IL and role limits are NOT restated here. They come from the tool's own
+#     registry metadata plus args/component_registry.yaml (min_il /
+#     default_roles), evaluated per-dispatch alongside this allowlist.
+#   * Refusals and approvals are both audited append-only with tool name,
+#     params digest, run id, step id and actor.
+mcp_workflow_tools:
+  default: deny
+  nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
+
+  # Read-only: query, inspect, report. Safe to run unattended inside a workflow.
+  allowed:
+    - health_check          # platform health probe, no writes
+    - get_status            # project/agent status read
+    - project_status        # compliance + deployment posture read
+    - rag_search            # retrieval over the existing index
+    - kg_search             # knowledge-graph query
+    - search_knowledge      # learning knowledge-base lookup
+    - trace_query           # requirement/artifact traceability read
+    - nist_lookup           # control catalog lookup
+    - crosswalk_query       # framework crosswalk read
+    - stig_check            # STIG evaluation, report-only
+    - code_analyze          # static analysis, report-only
+    - scan_dependencies     # dependency audit, report-only
+    - classification_check  # marking validation, report-only
+    - kanban_list_tasks     # board read
+    - kanban_get_task       # board read
+    - studio_list_workflows # workflow catalog read
+
+  # State-changing, destructive, or egress-bearing: a human gate must be
+  # approved in the same run before the executor dispatches these.
+  requires_approval:
+    - terraform_apply       # mutates cloud infrastructure
+    - k8s_deploy            # deploys workloads to a cluster
+    - ansible_run           # executes playbooks against hosts
+    - rollback              # tears down / reverts a deployment
+    - self_heal             # applies unattended remediation
+    - kanban_delete_task    # destructive board write
+    - rag_delete_source     # destructive index write
+    - sandbox_execute       # runs caller-supplied code
+    - send_command          # issues a command to a remote agent
+    - install_asset         # installs third-party marketplace code
+    - publish_asset         # publishes outward to the marketplace
+    - emass_sync            # egress of compliance data to eMASS
+    - xacta_sync            # egress of compliance data to Xacta
+
 # Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
 gates:
   - id: AI-TRACE-001
@@ -1574,6 +1642,19 @@ gates:
     warn_on: [no_tls, missing_classification]
     tool: tools/mcp/mcp_scanner.py
     nist_controls: [SC-8, AC-3, AU-12]
+
+  - id: MCP-WF-001
+    name: MCP Workflow Tool Allowlist Gate
+    description: Refuses a workflow step that dispatches an MCP tool absent from mcp_workflow_tools.allowed, and blocks a mcp_workflow_tools.requires_approval tool until its human gate is approved. Policy lives in the mcp_workflow_tools section of this file.
+    severity: HIGH
+    block_on:
+      - mcp_tool_not_allowlisted
+      - mcp_tool_awaiting_human_approval
+      - mcp_tool_exceeds_caller_il
+    warn_on:
+      - mcp_tool_unknown_to_registry
+    policy: mcp_workflow_tools
+    nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
 
   - id: URL-SEC-001
     name: URL Scheme Validation Gate (B310)
