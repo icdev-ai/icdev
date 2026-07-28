@@ -331,6 +331,22 @@ def _remember_canvas(run_id: str, canvas: str) -> None:
         logger.warning("Could not record canvas for run %s: %s", run_id, exc)
 
 
+def _remember_inputs(run_id: str, inputs: dict) -> None:
+    """Publish a run's inputs to run memory so every step can read them.
+
+    dwo-evt-04 deliberately reuses the dwo-mem-01 run-memory channel rather
+    than adding a third mechanism: steps already receive ``ICDEV_RUN_ID`` in
+    their environment, so ``run_memory.get_inputs()`` is all a step needs.
+    Written before the worker thread starts, so step 1 sees it.
+    """
+    if not run_id or not inputs:
+        return
+    try:
+        run_memory.set(run_id, run_memory.INPUTS_KEY, inputs)
+    except Exception as exc:
+        logger.warning("Could not record inputs for run %s: %s", run_id, exc)
+
+
 def _remember_artifacts(run_id: str, step_name: str, artifacts: list) -> None:
     """Record a step's artifacts under run memory's ``artifacts`` key.
 
@@ -359,14 +375,30 @@ def _push(run_queue: queue.Queue, event: dict) -> None:
         pass
 
 
-def _create_run_record(run_id: str, workflow_id: str, workflow_name: str, project_id: str) -> None:
+def _create_run_record(
+    run_id: str,
+    workflow_id: str,
+    workflow_name: str,
+    project_id: str,
+    inputs_json: str | None = None,
+    trigger_event_id: str | None = None,
+) -> None:
     conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO studio_workflow_runs
-               (run_id, workflow_id, workflow_name, status, started_at, project_id)
-               VALUES (%s, %s, %s, 'pending', %s, %s)""",
-            (run_id, workflow_id, workflow_name, datetime.now(timezone.utc).isoformat(), project_id),
+               (run_id, workflow_id, workflow_name, status, started_at, project_id,
+                inputs_json, trigger_event_id)
+               VALUES (%s, %s, %s, 'pending', %s, %s, %s, %s)""",
+            (
+                run_id,
+                workflow_id,
+                workflow_name,
+                datetime.now(timezone.utc).isoformat(),
+                project_id,
+                inputs_json,
+                trigger_event_id,
+            ),
         )
         conn.commit()
     finally:
@@ -865,8 +897,24 @@ def _worker(
 
 # ── Public API ─────────────────────────────────────────────
 
-def start_run(workflow_id: str, project_id: str = "default") -> str:
-    """Load a studio workflow from DB, spawn execution thread, return run_id."""
+def start_run(
+    workflow_id: str,
+    project_id: str = "default",
+    inputs: dict | None = None,
+    trigger_event_id: str | None = None,
+) -> str:
+    """Load a studio workflow from DB, spawn execution thread, return run_id.
+
+    ``inputs`` (dwo-evt-04) is an optional payload — typically an event body
+    mapped through a trigger's ``input_mapping_json`` — made visible to every
+    step through run memory under ``run_memory.INPUTS_KEY``.  A step reads it
+    with ``run_memory.get_inputs()``, which resolves the run from the
+    ``ICDEV_RUN_ID`` the runner already exports into the step environment.
+
+    ``inputs`` and ``trigger_event_id`` are keyword args with defaults, so
+    every existing caller — and every manually started run — behaves exactly
+    as before: no inputs are written, and ``inputs_json`` stays NULL.
+    """
     from tools.studio.workflow_editor import get_workflow  # noqa: PLC0415
 
     wf = get_workflow(workflow_id)
@@ -879,7 +927,16 @@ def start_run(workflow_id: str, project_id: str = "default") -> str:
     with _run_queues_lock:
         _run_queues[run_id] = run_queue
 
-    _create_run_record(run_id, workflow_id, wf.get("name", workflow_id), project_id)
+    _create_run_record(
+        run_id,
+        workflow_id,
+        wf.get("name", workflow_id),
+        project_id,
+        json.dumps(inputs) if inputs else None,
+        trigger_event_id,
+    )
+    # Before the worker starts, so the first step can already read them.
+    _remember_inputs(run_id, inputs or {})
 
     t = threading.Thread(
         target=_worker,

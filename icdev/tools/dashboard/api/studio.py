@@ -18,14 +18,24 @@ if str(_ROOT) not in sys.path:
 
 from tools.dashboard.auth import require_role  # noqa: E402
 from tools.studio.workflow_editor import (  # noqa: E402
+    _loads,
+    create_event_source,
+    create_trigger,
     create_workflow,
+    delete_trigger,
     delete_workflow,
     get_builtin_template,
     get_tool_catalog,
+    get_run_trigger_event,
+    get_trigger,
     get_workflow,
     list_builtin_templates,
+    list_event_sources,
+    list_triggers,
     list_workflows,
     save_workflow,
+    simulate_trigger,
+    update_trigger,
     update_workflow,
     workflow_to_composer_format,
 )
@@ -915,6 +925,10 @@ def api_get_run(run_id: str):
     if not run:
         return jsonify({"error": "Run not found"}), 404
     run["steps"] = get_run_steps(run_id)
+    # dwo-evt-04: what started this run. None for a manual run — the run-detail
+    # badge tests this to decide whether to render at all.
+    run["trigger_event"] = get_run_trigger_event(run_id)
+    run["inputs"] = _loads(run.get("inputs_json"), {})
     return jsonify(run)
 
 
@@ -1036,4 +1050,109 @@ def api_chat_generate_workflow():
         return jsonify({"status": "error", "error": "LLM did not respond within 25 seconds. Try again or check Ollama status.", "raw": ""}), 504
     if result.get("status") == "error":
         return jsonify(result), 422
+    return jsonify(result)
+
+
+# ── Triggers panel (dwo-evt-04) ────────────────────────────
+#
+# Backs the workflow editor's Triggers panel: bind an event source + filter +
+# input mapping to the open workflow, test it against a sample payload, and
+# turn it off.  Mutations require a role — a trigger starts real runs.
+
+_TRIGGER_MUTATION_ROLES = ("admin", "pm")
+
+
+@studio_api.route("/event-sources", methods=["GET"])
+def api_list_event_sources():
+    return jsonify({"sources": list_event_sources()})
+
+
+@studio_api.route("/event-sources", methods=["POST"])
+@require_role(*_TRIGGER_MUTATION_ROLES)
+def api_create_event_source():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    kind = (data.get("kind") or "").strip()
+    if not name or not kind:
+        return jsonify({"error": "name and kind are required"}), 400
+    try:
+        return jsonify(create_event_source(name, kind, data.get("config"))), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@studio_api.route("/triggers", methods=["GET"])
+def api_list_triggers():
+    return jsonify({"triggers": list_triggers(request.args.get("workflow_id"))})
+
+
+@studio_api.route("/triggers", methods=["POST"])
+@require_role(*_TRIGGER_MUTATION_ROLES)
+def api_create_trigger():
+    data = request.get_json(silent=True) or {}
+    source_id = (data.get("source_id") or "").strip()
+    workflow_id = (data.get("workflow_id") or "").strip()
+    if not source_id or not workflow_id:
+        return jsonify({"error": "source_id and workflow_id are required"}), 400
+    trigger = create_trigger(
+        source_id,
+        workflow_id,
+        event_type=data.get("event_type"),
+        conditions=data.get("conditions"),
+        input_mapping=data.get("input_mapping"),
+        enabled=bool(data.get("enabled", True)),
+    )
+    return jsonify(trigger), 201
+
+
+@studio_api.route("/triggers/<trigger_id>", methods=["GET"])
+def api_get_trigger(trigger_id: str):
+    trigger = get_trigger(trigger_id)
+    if not trigger:
+        return jsonify({"error": "Trigger not found"}), 404
+    return jsonify(trigger)
+
+
+@studio_api.route("/triggers/<trigger_id>", methods=["PATCH"])
+@require_role(*_TRIGGER_MUTATION_ROLES)
+def api_update_trigger(trigger_id: str):
+    data = request.get_json(silent=True) or {}
+    enabled = data.get("enabled")
+    trigger = update_trigger(
+        trigger_id,
+        event_type=data.get("event_type"),
+        conditions=data.get("conditions"),
+        input_mapping=data.get("input_mapping"),
+        enabled=None if enabled is None else bool(enabled),
+    )
+    if not trigger:
+        return jsonify({"error": "Trigger not found"}), 404
+    return jsonify(trigger)
+
+
+@studio_api.route("/triggers/<trigger_id>", methods=["DELETE"])
+@require_role(*_TRIGGER_MUTATION_ROLES)
+def api_delete_trigger(trigger_id: str):
+    if not delete_trigger(trigger_id):
+        return jsonify({"error": "Trigger not found"}), 404
+    return jsonify({"deleted": trigger_id})
+
+
+@studio_api.route("/triggers/<trigger_id>/simulate", methods=["POST"])
+@require_role(*_TRIGGER_MUTATION_ROLES)
+def api_simulate_trigger(trigger_id: str):
+    """Test a trigger against a sample payload.
+
+    Defaults to a dry run: it reports whether the filter matched and what the
+    input mapping resolved to, without starting anything.  Pass
+    ``{"execute": true}`` to actually start the run.
+    """
+    data = request.get_json(silent=True) or {}
+    result = simulate_trigger(
+        trigger_id,
+        data.get("payload") or {},
+        execute=bool(data.get("execute", False)),
+    )
+    if result.get("error"):
+        return jsonify(result), 404
     return jsonify(result)
