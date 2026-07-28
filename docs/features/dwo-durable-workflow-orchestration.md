@@ -199,3 +199,24 @@ workflow_hitl releases the Studio run gate; approving from Studio completes the
 external step; a Telegram approval closes the external step; rejection
 propagates; and a second decision on a decided gate is refused without
 overwriting the first decider.
+
+`tests/test_dwo_vv_durability.py`, `tests/test_dwo_vv_mcp_dispatch.py`,
+`tests/test_dwo_vv_triggers.py` — the dwo-vv-02 V&V suite over durable runs,
+MCP dispatch, and event→trigger routing.
+
+### E2E spec card
+
+`.claude/commands/e2e/dwo_workflow.md` — the browser-driven V&V spec, registered
+as the skill card **`e2e:dwo_workflow`** (discovered by
+`tools/testing/e2e_runner.py` from the sorted glob of `.claude/commands/e2e/*.md`,
+alongside `e2e:kanban_pipeline`, `e2e:observability` and the rest):
+
+```bash
+python tools/testing/e2e_runner.py --discover --mode mcp          # lists dwo_workflow
+python tools/testing/e2e_runner.py --test-file .claude/commands/e2e/dwo_workflow.md
+```
+
+Six scenarios: Studio page render, a gate that survives a restart, the single
+reviewer inbox (exactly one `wf_external_steps` row, released exactly once), the
+resume control's 202/404/409 contract, default-deny `node_type: mcp` dispatch,
+and run-scoped memory across the resume.
