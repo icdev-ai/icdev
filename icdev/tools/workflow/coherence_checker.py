@@ -6239,10 +6239,32 @@ def _doc_reference_exists(ref: str) -> bool:
     return (PROJECT_ROOT / rel).with_suffix(".py").is_file() or (PROJECT_ROOT / rel / "__init__.py").is_file()
 
 
+def _expand_doc_entries(docs: List[str]) -> List[str]:
+    """Expand wildcard entries in the doc set to concrete repo-relative paths.
+
+    Listing files one by one means a doc surface added later silently escapes
+    the gate — which is how context/capabilities/harness.yaml came to advertise
+    three tools that were never written (ahx-doc-01). A pattern entry keeps new
+    files covered by default. Non-wildcard entries pass through untouched, so
+    existing configs behave exactly as before.
+    """
+    expanded: List[str] = []
+    for doc in docs:
+        if "*" not in doc and "?" not in doc:
+            expanded.append(doc)
+            continue
+        for match in sorted(PROJECT_ROOT.glob(doc)):
+            if match.is_file():
+                expanded.append(match.relative_to(PROJECT_ROOT).as_posix())
+    # Preserve order, drop duplicates (a file may match a pattern and be listed).
+    seen: set = set()
+    return [d for d in expanded if not (d in seen or seen.add(d))]
+
+
 def _scan_doc_commands(docs: List[str]) -> List[Tuple[str, int, str]]:
     """Return ``(doc, lineno, reference)`` for every documented python invocation."""
     found: List[Tuple[str, int, str]] = []
-    for doc in docs:
+    for doc in _expand_doc_entries(docs):
         path = PROJECT_ROOT / doc
         if not path.is_file():
             continue

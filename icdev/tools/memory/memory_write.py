@@ -222,19 +222,14 @@ def update_crossrefs(new_slug: str, new_content: str, memory_dir: Path | None = 
     Returns:
         List of file paths that were updated with a back-link.
     """
-    import os
     import re
 
     if memory_dir is None:
-        userprofile = Path(os.environ.get("USERPROFILE", Path.home()))
-        project_slug = (
-            str(BASE_DIR)
-            .replace("\\", "-")
-            .replace("/", "-")
-            .replace(":", "-")
-            .lstrip("-")
-        )
-        memory_dir = userprofile / ".claude" / "projects" / project_slug / "memory"
+        # This derivation used to live here and was duplicated as a hardcoded
+        # literal in wiki_tool_query and ace/controller. One definition now.
+        from tools.memory.claude_memory_path import claude_memory_dir
+
+        memory_dir = claude_memory_dir(BASE_DIR)
 
     if not memory_dir.is_dir():
         return []

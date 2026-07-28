@@ -1089,14 +1089,10 @@ def _file_qa_to_wiki(query: str, answer: str, collection_id: str | None) -> None
     are silently swallowed so they never break the caller.
     """
     try:
-        import os
-        from pathlib import Path
+        from tools.memory.claude_memory_path import claude_memory_dir
         from tools.memory.memory_write import update_crossrefs
 
-        auto_dir = (
-            Path(os.environ.get("USERPROFILE", Path.home()))
-            / ".claude/projects/C--AI-ICDev/memory"
-        )
+        auto_dir = claude_memory_dir()
         if not auto_dir.is_dir():
             return
 
@@ -1180,13 +1176,9 @@ def _check_wiki_cache(query: str, collection_id: str | None) -> "DICAnswer | Non
     Karpathy-wiki integration plan).
     """
     try:
-        import os
-        from pathlib import Path
+        from tools.memory.claude_memory_path import claude_memory_dir
 
-        auto_dir = (
-            Path(os.environ.get("USERPROFILE", Path.home()))
-            / ".claude/projects/C--AI-ICDev/memory"
-        )
+        auto_dir = claude_memory_dir()
         if not auto_dir.is_dir():
             return None
 
