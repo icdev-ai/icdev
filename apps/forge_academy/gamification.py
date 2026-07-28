@@ -38,8 +38,16 @@ def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
     leveled_up = result["level"] != old_level
 
     achievements = []
-    if leveled_up:
-        slug = f"level_{result['level']}"
+    # NOTE: a `slug = f"level_{result['level']}"` was computed here and never
+    # used — ruff F841. Do not "fix" it by passing that slug to
+    # grant_achievement(): none of the 29 defined achievements is a level_*
+    # entry, and grant_achievement() returns None for an unknown slug, so the
+    # call would no-op and the visible behaviour would be identical. The real
+    # gap is that per-level achievements were designed and never defined.
+    # Defining them (names, xp_bonus, rarity) is a content decision, so the dead
+    # assignment is removed rather than dressed up as a working feature.
+    # `leveled_up` is still reported in the return value, which is what the UI
+    # actually consumes.
     if speed_bonus:
         ach = grant_achievement(user_id, "speed_demon")
         if ach:
