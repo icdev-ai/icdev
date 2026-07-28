@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 _log = logging.getLogger(__name__)
@@ -1562,11 +1563,28 @@ def seed_mission_catalog() -> None:
         from tools.db.storage import get_connection
         conn = get_connection()
         # Fast path: skip if catalog is already fully seeded
+        # Hand-written catalog plus any mission whose content is on disk but
+        # which no catalog entry covers (fga-wire-07).
+        discovered = discover_steps()
+        catalog = all_missions(discovered)
+
+        # Same collapse risk as the BUILTIN_MISSIONS check above, now that the
+        # catalog has a second source. discover_missions() excludes catalogued
+        # slugs, so this should be unreachable — assert it rather than trust it,
+        # because the failure mode is a mission silently vanishing.
+        _all = [m["slug"] for m in catalog]
+        _all_dupes = sorted({s for s in _all if _all.count(s) > 1})
+        if _all_dupes:
+            raise ValueError(
+                f"Duplicate mission slug(s) across the combined catalog: {_all_dupes} — "
+                "a discovered mission collided with a hand-written one."
+            )
+
         try:
             existing_count = conn.execute(
                 "SELECT COUNT(*) FROM fa_missions WHERE is_active=1"
             ).fetchone()[0]
-            if existing_count >= len(BUILTIN_MISSIONS):
+            if existing_count >= len(catalog):
                 _log.debug("FORGE Academy: mission catalog already seeded (%d missions), skipping", existing_count)
                 return
         except Exception:
@@ -1582,7 +1600,7 @@ def seed_mission_catalog() -> None:
                 m.get("difficulty", "intermediate"), m.get("estimated_minutes", 30),
                 m.get("source_credit", ""),
             )
-            for m in BUILTIN_MISSIONS
+            for m in catalog
         ]
         conn.executemany(
             """INSERT INTO fa_missions
@@ -1597,7 +1615,7 @@ def seed_mission_catalog() -> None:
         conn.commit()
 
         # Fetch all IDs in one query instead of N per-mission SELECTs
-        slugs = [m["slug"] for m in BUILTIN_MISSIONS]
+        slugs = [m["slug"] for m in catalog]
         slug_to_id = {}
         for row in conn.execute(
             "SELECT id, slug FROM fa_missions WHERE slug IN ({})".format(
@@ -1607,25 +1625,263 @@ def seed_mission_catalog() -> None:
         ).fetchall():
             slug_to_id[row["slug"]] = row["id"]
 
-        # Seed steps for missions that have none
-        for m in BUILTIN_MISSIONS:
+        # Seed steps for missions that have none. Source of truth is
+        # BUILTIN_STEPS where an entry exists (curated titles, xp weights,
+        # starter/test code paths), otherwise the authored markdown discovered
+        # on disk. Before fga-wire-01 only the dict was consulted, so 53 of 89
+        # missions rendered "Content is being authored" — 43 of them with their
+        # content already committed.
+        seeded_from_disk = 0
+        for m in catalog:
             mission_id = slug_to_id.get(m["slug"])
             if not mission_id:
                 continue
             existing = conn.execute(
                 "SELECT COUNT(*) FROM fa_mission_steps WHERE mission_id=?", (mission_id,)
             ).fetchone()[0]
-            if existing == 0 and m["slug"] in BUILTIN_STEPS:
-                _seed_steps(conn, mission_id, m["slug"])
+            if existing:
+                continue
+            steps = steps_for(m["slug"], discovered)
+            if not steps:
+                continue
+            _seed_steps(conn, mission_id, m["slug"], steps=steps)
+            if m["slug"] not in BUILTIN_STEPS:
+                seeded_from_disk += 1
+        if seeded_from_disk:
+            _log.info(
+                "FORGE Academy: seeded %d mission(s) from discovered content", seeded_from_disk
+            )
         conn.commit()
-        _log.info("FORGE Academy: seeded/updated %d missions", len(BUILTIN_MISSIONS))
+        _log.info("FORGE Academy: seeded/updated %d missions (%d derived from content)",
+                  len(catalog), len(catalog) - len(BUILTIN_MISSIONS))
     except Exception as e:
         _log.warning("Mission catalog seed failed: %s", e)
 
 
-def _seed_steps(conn, mission_id: int, mission_slug: str) -> None:
-    """Insert step records for a mission from BUILTIN_STEPS."""
-    steps = BUILTIN_STEPS.get(mission_slug, [])
+# ---------------------------------------------------------------------------
+# Filesystem discovery of authored step content (fga-wire-01)
+# ---------------------------------------------------------------------------
+# Steps used to be seeded ONLY from the hand-maintained BUILTIN_STEPS dict, so a
+# mission absent from that dict got zero step rows permanently and the UI showed
+# "Content is being authored" even with its markdown sitting on disk. 53 of 89
+# missions had no steps; 43 of those had authored content. Adding 43 more dict
+# entries would have cleared the symptom and left the mechanism that produced it,
+# so discovery replaces the dict as the source of truth for *which* steps exist.
+#
+# Discovery keys on the frontmatter, not the path. Content uses three different
+# layouts (tier1/<slug>/steps/stepN_x.md, tier2/<family>/<slug>/steps/stepN_x.md,
+# tier2/<slug>/step-N.md) but every one of the 212 files carries
+# `ontology_id: icdev:mission:<slug>:step:<n>` and an H1 title, which makes the
+# mission and step number unambiguous without guessing at directory conventions.
+
+#: icdev:mission:<mission-slug>:step:<step-num>
+_ONTOLOGY_STEP_RE = re.compile(
+    r"icdev:mission:(?P<slug>[A-Za-z0-9._-]+):step:(?P<num>\d+)"
+)
+
+#: frontmatter step_class -> the fa_mission_steps.step_type vocabulary.
+_STEP_CLASS_TO_TYPE = {
+    "lesson": "watch",
+    "assessment": "reflect",
+    "reflect": "reflect",
+    "configure": "configure",
+    "lab": "coding",
+    "coding": "coding",
+    "verify": "configure",
+    "design": "reflect",
+}
+
+_DEFAULT_STEP_TYPE = "watch"
+_DEFAULT_XP = 50
+_DEFAULT_SECONDS = 300
+
+
+def _step_type_from_class(step_class: str) -> str:
+    """Map `step_class: icdev:Lesson` to a step_type the UI understands."""
+    tail = str(step_class or "").split(":")[-1].strip().lower()
+    return _STEP_CLASS_TO_TYPE.get(tail, _DEFAULT_STEP_TYPE)
+
+
+def _title_from_body(body: str, fallback: str) -> str:
+    """First markdown H1, else a humanised filename."""
+    for line in (body or "").splitlines():
+        line = line.strip()
+        if line.startswith("# "):
+            return line[2:].strip()[:200]
+    return fallback
+
+
+def discover_steps() -> dict:
+    """Scan CONTENT_ROOT and return ``{mission_slug: [step-record, ...]}``.
+
+    Records match the BUILTIN_STEPS shape so both sources feed one writer. Files
+    whose frontmatter carries no parsable ontology_id are skipped rather than
+    guessed at — a step attached to the wrong mission is worse than one that is
+    visibly absent.
+    """
+    found: dict = {}
+    if not CONTENT_ROOT.is_dir():
+        return found
+
+    for path in sorted(CONTENT_ROOT.rglob("*.md")):
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        fm, body = _parse_frontmatter(raw)
+        match = _ONTOLOGY_STEP_RE.search(str(fm.get("ontology_id") or ""))
+        if not match:
+            continue
+        rel = path.relative_to(CONTENT_ROOT).as_posix()
+        found.setdefault(match.group("slug"), []).append({
+            "step_num": int(match.group("num")),
+            "title": _title_from_body(body, path.stem.replace("_", " ").title()),
+            "step_type": _step_type_from_class(fm.get("step_class")),
+            "content_path": rel,
+            "config_schema": {},
+            "xp_partial": _DEFAULT_XP,
+            "skill_tag": str(fm.get("skill_tag") or ""),
+            "estimated_seconds": _DEFAULT_SECONDS,
+        })
+
+    for slug, steps in found.items():
+        steps.sort(key=lambda s: s["step_num"])
+        seen: set = set()
+        deduped = []
+        for st in steps:
+            if st["step_num"] in seen:
+                _log.warning(
+                    "FORGE Academy: duplicate step %d for mission %s (%s) — keeping the first",
+                    st["step_num"], slug, st["content_path"],
+                )
+                continue
+            seen.add(st["step_num"])
+            deduped.append(st)
+        found[slug] = deduped
+    return found
+
+
+# ---------------------------------------------------------------------------
+# Mission discovery — authored content with no catalog entry (fga-wire-07)
+# ---------------------------------------------------------------------------
+# Step discovery above fixes missions the catalog KNOWS about. A second,
+# previously unrecorded gap sits one level up: 37 mission directories carry
+# authored steps but appear in no catalog at all, so no amount of step discovery
+# reaches them. They are whole track continuations — tier3/m-t3-02..07, m-pm-02..06,
+# m-issm-03..06 — where the content was written and the catalog stopped short.
+#
+# Mission metadata (tagline, xp, difficulty) is NOT on disk; only the step files
+# are. Rather than invent a curated-looking catalog entry, these are derived
+# deterministically from the slug and path and marked in source_credit so a
+# reviewer can tell a derived mission from a hand-curated one at a glance.
+
+_MISSION_SLUG_RE = re.compile(r"^m-(?P<family>[a-z0-9]+)-(?:[a-z0-9]+-)?(?P<num>\d+)-")
+
+#: Slug family -> the role_filter the browse UI filters on.
+_FAMILY_ROLE = {
+    "ciso": "ciso", "issm": "issm", "isso": "isso", "pm": "pm",
+    "secops": "secops", "swe": "swe", "devops": "devops",
+    "dataops": "dataops", "sre": "sre", "netops": "netops",
+}
+
+_DERIVED_CREDIT = "derived from authored content (fga-wire-07)"
+
+
+def _tier_from_path(content_path: str) -> int:
+    head = (content_path or "").split("/", 1)[0]
+    if head.startswith("tier") and head[4:].isdigit():
+        return int(head[4:])
+    return 2
+
+
+def _humanise_slug(slug: str) -> str:
+    """`m-t3-02-write-your-first-tool` -> `Write Your First Tool`."""
+    parts = [p for p in slug.split("-") if not p.isdigit()]
+    if parts and parts[0] == "m":
+        parts = parts[1:]
+    if parts and (parts[0] in _FAMILY_ROLE or parts[0].startswith("t")):
+        parts = parts[1:] or parts
+    return " ".join(p.capitalize() for p in parts) or slug
+
+
+def discover_missions(discovered: dict | None = None) -> list:
+    """Catalog entries for authored missions absent from BUILTIN_MISSIONS.
+
+    Excludes a slug whose family+number already has a catalogued mission: that
+    is superseded or renamed content, and adding it would put two missions at the
+    same position in a track. Those are reported for a human instead.
+    """
+    if discovered is None:
+        discovered = discover_steps()
+    catalogued = {m["slug"] for m in BUILTIN_MISSIONS}
+
+    def _track_key(slug: str):
+        m = _MISSION_SLUG_RE.match(slug)
+        return (m.group("family"), m.group("num")) if m else None
+
+    taken = {k for k in (_track_key(s) for s in catalogued) if k}
+
+    out: list = []
+    for slug in sorted(set(discovered) - catalogued):
+        steps = discovered.get(slug) or []
+        if not steps:
+            continue
+        key = _track_key(slug)
+        if key and key in taken:
+            _log.warning(
+                "FORGE Academy: %s has authored content but its track position is "
+                "already held by a catalogued mission — not auto-catalogued; "
+                "resolve by hand (superseded or renamed?)", slug,
+            )
+            continue
+        first = steps[0]
+        match = _MISSION_SLUG_RE.match(slug)
+        family = match.group("family") if match else ""
+        out.append({
+            "slug": slug,
+            "title": _humanise_slug(slug),
+            "tagline": first.get("title") or _humanise_slug(slug),
+            "tier": _tier_from_path(first.get("content_path", "")),
+            "topic": family or "general",
+            "role_filter": _FAMILY_ROLE.get(family, "all"),
+            "mission_type": first.get("step_type") or "watch",
+            "xp_reward": 100,
+            "order_idx": int(match.group("num")) if match else 99,
+            "difficulty": "intermediate",
+            "estimated_minutes": max(5, (len(steps) * _DEFAULT_SECONDS) // 60),
+            "prereqs": [],
+            "source_credit": _DERIVED_CREDIT,
+        })
+    return out
+
+
+def all_missions(discovered: dict | None = None) -> list:
+    """BUILTIN_MISSIONS plus any mission discovered from authored content."""
+    return list(BUILTIN_MISSIONS) + discover_missions(discovered)
+
+
+def steps_for(mission_slug: str, discovered: dict | None = None) -> list:
+    """Steps for one mission: the hand-authored dict wins, else discovery.
+
+    BUILTIN_STEPS keeps priority because its entries carry curated titles,
+    xp weights and starter/test code paths that the markdown does not express.
+    """
+    if mission_slug in BUILTIN_STEPS:
+        return BUILTIN_STEPS[mission_slug]
+    if discovered is None:
+        discovered = discover_steps()
+    return discovered.get(mission_slug, [])
+
+
+def _seed_steps(conn, mission_id: int, mission_slug: str, steps: list | None = None) -> None:
+    """Insert step records for a mission.
+
+    ``steps`` defaults to the BUILTIN_STEPS entry so existing callers are
+    unchanged; the seeder passes discovered steps for missions the dict does
+    not cover.
+    """
+    if steps is None:
+        steps = BUILTIN_STEPS.get(mission_slug, [])
     for step in steps:
         try:
             conn.execute(
