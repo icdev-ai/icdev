@@ -33,7 +33,14 @@ STUDIO_TABLES: dict[str, str] = {
             created_at    TEXT DEFAULT (datetime('now')),
             updated_at    TEXT DEFAULT (datetime('now')),
             version       INTEGER DEFAULT 1,
-            shared        INTEGER DEFAULT 0
+            shared        INTEGER DEFAULT 0,
+            -- RLS columns. get_connection() injects an exact-match predicate on
+            -- classification, and create_workflow() stamps the caller's own value
+            -- so the create->read->delete roundtrip stays visible to that caller.
+            -- Without these the INSERT fails outright ("no column named
+            -- classification"). Backfilled onto existing DBs by migration 305.
+            classification TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id      TEXT
         )
     """,
     # ── Forms ──────────────────────────────────────────────

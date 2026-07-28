@@ -4,7 +4,7 @@ A triggered run computes its inputs from the event (migration 304's
 input_mapping_json) but had nowhere to record them. This adds the column.
 
 Acceptance:
-  - Migration 305 exists and adds a nullable inputs_json to studio_workflow_runs.
+  - Migration 306 exists and adds a nullable inputs_json to studio_workflow_runs.
   - tools/studio/init_db.py::STUDIO_TABLES creates the column, defaulting NULL.
   - The icdev/ package mirror and the conftest schema carry it too.
 """
@@ -18,7 +18,7 @@ from tools.db.migration_runner import MigrationRunner
 from tools.studio.init_db import STUDIO_TABLES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = REPO_ROOT / "tools" / "db" / "migrations" / "305_studio_workflow_run_inputs.sql"
+MIGRATION = REPO_ROOT / "tools" / "db" / "migrations" / "306_studio_workflow_run_inputs.sql"
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> dict[str, tuple]:

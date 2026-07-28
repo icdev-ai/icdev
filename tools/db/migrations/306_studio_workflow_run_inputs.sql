@@ -1,5 +1,5 @@
 -- CUI // SP-CTI
--- Migration 305: inputs_json on studio_workflow_runs (dwo-evt-04).
+-- Migration 306: inputs_json on studio_workflow_runs (dwo-evt-04).
 --
 -- A triggered run (migration 304: studio_workflow_triggers.input_mapping_json)
 -- computes a set of inputs from the incoming event, but the run row had nowhere
