@@ -93,6 +93,14 @@ def _gate_deadline(step: dict, started_at: str | None) -> float:
     return time.time() + max(0.0, window - elapsed)
 
 
+# ── MCP steps (dwo-mcp-03) ─────────────────────────────────
+
+# A `node_type: mcp` step names a TOOL_REGISTRY tool in `mcp_tool` (with
+# optional `mcp_params`) instead of a script path in `tool`. Every such step
+# runs through this one executor, delivered by dwo-mcp-01.
+MCP_EXECUTOR = "tools/studio/executors/mcp_executor.py"
+
+
 # ── DAG helpers ────────────────────────────────────────────
 
 def _resolve_dag(steps: list) -> list:
@@ -103,7 +111,56 @@ def _resolve_dag(steps: list) -> list:
     return list(sorter.static_order())
 
 
+def _step_tool_path(step: dict) -> str:
+    """Repo-relative script this step runs ('' when it declares none).
+
+    An `mcp` node names a registry tool, not a script — every one of them runs
+    through the shared executor, so the path is fixed rather than authored.
+    """
+    if step.get("node_type") == "mcp":
+        return MCP_EXECUTOR
+    return step.get("tool", "") or ""
+
+
+def _mcp_params_json(step: dict) -> str:
+    """Serialize a step's `mcp_params` for the executor's --params flag.
+
+    A string is passed through untouched so a template may hand-author the JSON;
+    anything else is dumped. The executor rejects non-object JSON either way.
+    """
+    params = step.get("mcp_params")
+    if params is None:
+        return "{}"
+    if isinstance(params, str):
+        return params.strip() or "{}"
+    return json.dumps(params)
+
+
+def _build_mcp_command(step: dict, project_id: str, run_id: str = "") -> list:
+    """Command for a `node_type: mcp` step — dispatch via mcp_executor.py."""
+    mcp_tool = str(step.get("mcp_tool", "") or "").strip()
+    if not mcp_tool:
+        return []
+    cmd = [
+        sys.executable, str(_ROOT / MCP_EXECUTOR),
+        "--tool", mcp_tool,
+        "--params", _mcp_params_json(step),
+    ]
+    step_id = str(step.get("id", "") or "")
+    if step_id:
+        cmd.extend(["--step-id", step_id])
+    if step.get("inject_project_id", True):
+        cmd.extend(["--project-id", project_id])
+    if run_id and step.get("inject_run_id", True):
+        cmd.extend(["--run-id", run_id])
+    if step.get("json_output", True):
+        cmd.append("--json")
+    return cmd
+
+
 def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
+    if step.get("node_type") == "mcp":
+        return _build_mcp_command(step, project_id, run_id)
     tool_path = step.get("tool", "")
     if not tool_path:
         return []
@@ -129,7 +186,7 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     result: dict = {
         "step_id": step["id"],
         "step_name": step.get("name", step["id"]),
-        "tool": step.get("tool", ""),
+        "tool": _step_tool_path(step),
         "status": "pending",
         "stdout": None,
         "stderr": None,
@@ -146,13 +203,17 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     cmd = _build_command(step, project_id, run_id)
     if not cmd:
         result["status"] = "skipped"
-        result["stderr"] = "No tool path configured"
+        result["stderr"] = (
+            "node_type: mcp step declares no 'mcp_tool'"
+            if node_type == "mcp"
+            else "No tool path configured"
+        )
         return result
 
-    full_path = _ROOT / step.get("tool", "")
-    if not full_path.exists():
+    tool_path = _step_tool_path(step)
+    if not (_ROOT / tool_path).exists():
         result["status"] = "skipped"
-        result["stderr"] = f"Tool not found: {step.get('tool')}"
+        result["stderr"] = f"Tool not found: {tool_path}"
         return result
 
     timeout = step.get("timeout", 300)
@@ -500,7 +561,7 @@ def _worker(
                 result = {
                     "step_id": step["id"],
                     "step_name": step.get("name", step["id"]),
-                    "tool": step.get("tool", ""),
+                    "tool": _step_tool_path(step),
                     "status": prior_status,
                     "stdout": prior_row.get("stdout"),
                     "stderr": prior_row.get("stderr"),
@@ -516,7 +577,7 @@ def _worker(
                 result["status"] = "awaiting_approval"
             else:
                 step_run_id = _create_step_record(
-                    run_id, step["id"], step.get("name", step["id"]), step.get("tool", "")
+                    run_id, step["id"], step.get("name", step["id"]), _step_tool_path(step)
                 )
                 result = _exec_step(step, project_id, run_id)
 
@@ -1002,7 +1063,7 @@ def generate_python_script(workflow_id: str) -> str:
     ]
 
     for step in ordered:
-        tool = step.get("tool", "")
+        tool = _step_tool_path(step)
         sid = step["id"]
         sname = step.get("name", sid).replace('"', '\\"')
         timeout = step.get("timeout", 300)
@@ -1023,6 +1084,13 @@ def generate_python_script(workflow_id: str) -> str:
             lines.append(f"        results[{sid!r}] = False")
         else:
             cmd_parts = [f'sys.executable, str(BASE_DIR / "{tool}")', '"--json"']
+            if node_type == "mcp":
+                # The tool name and its params are flags on the shared executor,
+                # not free-form args.
+                cmd_parts.append(f'"--tool", {step.get("mcp_tool", "")!r}')
+                cmd_parts.append(f'"--params", {_mcp_params_json(step)!r}')
+                cmd_parts.append(f'"--step-id", {sid!r}')
+                step_args = {}
             for k, v in step_args.items():
                 if isinstance(v, bool) and v:
                     cmd_parts.append(f'"--{k}"')
