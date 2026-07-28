@@ -367,7 +367,7 @@ def _create_run_record(
     inputs: dict | None = None,
 ) -> None:
     # inputs None -> SQL NULL ("no inputs recorded"), which stays distinct from
-    # '{}' ("started with an empty input set"). See migration 305.
+    # '{}' ("started with an empty input set"). See migration 306.
     conn = get_connection()
     try:
         conn.execute(
