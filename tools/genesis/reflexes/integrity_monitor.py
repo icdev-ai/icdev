@@ -178,7 +178,13 @@ def _high_risk_signatures(conn: Any, assessment_id: int) -> Dict[str, Dict[str, 
     out: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         detail = _detail_of(r)
-        cap = detail.get("capability_type") or detail.get("rule") or ""
+        cap = (
+            detail.get("capability_type")
+            or detail.get("category")
+            or detail.get("rule")
+            or detail.get("rule_id")
+            or ""
+        )
         rel = _rel_path(r["file_path"], assessment_id)
         sig = _signature(r["finding_type"], rel, cap)
         out[sig] = {
@@ -216,8 +222,21 @@ def _baseline_signatures(conn: Any, assessment_ids: List[int]) -> set:
 
 
 def _card_title(info: Dict[str, Any]) -> str:
-    """Deterministic, signature-stable card title (drives open-card dedupe)."""
+    """Deterministic, signature-stable card title (drives open-card dedupe).
+
+    The two high-risk finding types are different claims and must not share a
+    sentence. ``unauthorized_capability`` means "this code can do X and no
+    requirement authorizes X". ``known_bad_signature`` means "a scanner rule
+    matched here" — which is not a capability claim at all.
+
+    Titling both as "Unauthorized capability '<x>'" produced cards reading
+    ``Unauthorized capability 'known_bad_signature'``: the finding *type* in the
+    slot where the capability name belongs, naming nothing that exists in the
+    file. A reviewer then greps for a capability that was never there.
+    """
     cap = info["capability_type"] or info["finding_type"]
+    if info.get("finding_type") == "known_bad_signature":
+        return f"[SIPA] Signature match '{cap}' in {info['rel_path']}"
     return f"[SIPA] Unauthorized capability '{cap}' in {info['rel_path']}"
 
 
