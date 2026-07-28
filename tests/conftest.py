@@ -89,7 +89,9 @@ CREATE TABLE IF NOT EXISTS studio_workflows (
     created_by    TEXT,
     version       INTEGER DEFAULT 1,
     created_at    TEXT,
-    updated_at    TEXT
+    updated_at    TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id      TEXT
 );
 CREATE TABLE IF NOT EXISTS studio_workflow_runs (
     run_id         TEXT PRIMARY KEY,
