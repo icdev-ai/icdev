@@ -28,8 +28,9 @@ steps:
 
 ## Extended fields — node type and routing
 
-Five optional fields extend each step node to support human-in-the-loop gates,
-approval workflows, documentation hooks, and team-member routing.
+Seven optional fields extend each step node to support human-in-the-loop gates,
+approval workflows, MCP tool dispatch, documentation hooks, and team-member
+routing.
 
 ### `node_type`
 
@@ -59,6 +60,11 @@ node_type: tool | human | approval | mcp   # default: tool
     path: tools/
 ```
 
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
+| `mcp_tool` | string | **yes** (for `node_type: mcp`) | Name of the MCP tool to dispatch.  Must be a `tools/mcp/tool_registry.py::TOOL_REGISTRY` key **and** allowlisted in `mcp_workflow_tools` (see below). |
+| `mcp_params` | dict | no | Arguments forwarded to the tool's handler.  Defaults to `{}` when omitted. |
+
 Only meaningful when `node_type: mcp`.  The engine ignores the step's `tool`
 field for these nodes and runs every one of them through the shared executor
 `tools/studio/executors/mcp_executor.py`:
@@ -76,6 +82,25 @@ with `node_type: mcp` and no `mcp_tool` is skipped rather than run.
 
 The step's per-run `args` are **not** forwarded — an MCP tool takes its
 arguments from `mcp_params` only.
+
+#### The workflow tool surface is default-deny
+
+Naming a tool that exists in `TOOL_REGISTRY` is **not** sufficient.  The registry
+exposes 500+ tools, many destructive or classification-sensitive, so the workflow
+surface is default-deny: a step may dispatch a tool only when that tool is listed
+in the `mcp_workflow_tools` block of `args/security_gates.yaml` (gate `MCP-WF-001`).
+
+| List | Behaviour |
+|------|-----------|
+| `allowed` | Dispatched unattended.  Read-only / advisory tools only — e.g. `rag_search`, `stig_check`, `scan_dependencies`, `kanban_list_tasks`. |
+| `requires_approval` | Dispatched **only** after an approved `node_type: human` gate in the same run.  State-changing, destructive, or egress-bearing — e.g. `terraform_apply`, `k8s_deploy`, `rollback`, `emass_sync`. |
+| anything else | Refused before import/dispatch, and audited. |
+
+A typo reads as "not allowlisted", so the step is refused at *runtime*, not at
+edit time — the template still lints clean.  IL and role limits are not restated
+in that block; they come from the tool's own registry metadata plus
+`args/component_registry.yaml` and are evaluated per-dispatch alongside the
+allowlist.  Refusals and approvals are both audited append-only.
 
 ---
 
@@ -202,13 +227,17 @@ steps:
 
 ## Field applicability matrix
 
-| Field | `tool` | `human` | `approval` |
-|-------|--------|---------|------------|
-| `node_type` | ✓ | ✓ | ✓ |
-| `role` | ignored | owner | approver group |
-| `human_required` | ignored | ✓ | ignored |
-| `approval_policy` | ignored | ignored | ✓ |
-| `doc_template` | optional | optional | optional |
+| Field | `tool` | `human` | `approval` | `mcp` |
+|-------|--------|---------|------------|-------|
+| `node_type` | ✓ | ✓ | ✓ | ✓ |
+| `tool` | required | required | required | ignored |
+| `mcp_tool` | ignored | ignored | ignored | **required** |
+| `mcp_params` | ignored | ignored | ignored | optional |
+| `args` | forwarded | forwarded | forwarded | **not forwarded** |
+| `role` | ignored | owner | approver group | ignored |
+| `human_required` | ignored | ✓ | ignored | ignored |
+| `approval_policy` | ignored | ignored | ✓ | ignored |
+| `doc_template` | optional | optional | optional | optional |
 
 ---
 
