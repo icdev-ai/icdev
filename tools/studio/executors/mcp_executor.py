@@ -35,10 +35,27 @@ The gate is fail-closed — a missing, unparseable, or non-default-deny policy
 refuses every tool rather than dispatching unchecked. There is deliberately no
 bypass argument: ``run()`` is the only dispatch path and it always gates.
 
-Still to land on top of this: IL/RBAC limits (dwo-mcp-02-d3), the human-approval
-path that makes ``requires_approval`` tools reachable (d4), and append-only
-audit of every attempt (d5). Until d4, a ``requires_approval`` tool is refused
-with its own reason rather than silently treated as unknown.
+IL and RBAC limits (dwo-mcp-02-d3)
+----------------------------------
+An allowlisted tool is then checked against the caller: the caller's impact
+level must meet the tool's ``min_il``, and the caller must hold a role the tool
+requires. Limits are **not** restated in the gates file — they come from
+``args/component_registry.yaml`` (``min_il`` / ``default_roles``) via the
+component that owns the tool's handler module, so the workflow surface and the
+HTTP canvas gate enforce one policy. Role checks fall back to an explicit
+``canvas_access`` grant before refusing. A tool no component owns runs at the
+platform baseline (IL4, no role limit).
+
+Scope of the RBAC half today: none of the 29 tools currently on the allowlist
+live inside a canvas package (they are all ``tools.mcp.*`` servers), so no role
+limit applies to them yet — the check goes live the moment a canvas-owned tool
+is allowlisted. The IL half is live now: a run whose caller context declares
+IL2 cannot dispatch an IL4 platform tool.
+
+Still to land on top of this: the human-approval path that makes
+``requires_approval`` tools reachable (d4), and append-only audit of every
+attempt (d5). Until d4, a ``requires_approval`` tool is refused with its own
+reason rather than silently treated as unknown.
 """
 from __future__ import annotations
 
@@ -46,6 +63,7 @@ import argparse
 import difflib
 import importlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -295,6 +313,310 @@ def validate_params(params: dict, schema: dict) -> list[str]:
     return errors
 
 
+# ── Caller IL and RBAC limits (dwo-mcp-02-d3) ──────────────────────────────
+
+#: Run-memory key holding the run's principal (see ``resolve_caller``).
+CALLER_KEY = "caller"
+
+#: Impact level assumed for a run that declares no caller. Matches the default
+#: in ``canvas_access._has_sufficient_il``: an undeclared principal operates at
+#: the deployment's own level, not at a privileged one.
+DEFAULT_CALLER_IL = "IL4"
+
+#: Impact level required by a tool that no registry component owns. ICDEV's
+#: platform baseline is CUI/IL4, so a platform tool is treated as IL4 rather
+#: than as unclassified.
+DEFAULT_TOOL_MIN_IL = "IL4"
+
+#: Environment fallbacks for the caller's IL, first match wins.
+CALLER_IL_ENV = ("ICDEV_MCP_CALLER_IL", "ICDEV_IMPACT_LEVEL")
+
+#: Environment fallback for the caller's roles (comma-separated).
+CALLER_ROLES_ENV = "ICDEV_MCP_CALLER_ROLES"
+
+
+def _il_order() -> dict:
+    """Return the platform's impact-level ordering.
+
+    Imported from ``canvas_access`` rather than restated: one ordering for the
+    HTTP canvas gate and the workflow gate, so raising a canvas to IL5 cannot
+    leave the workflow surface enforcing the old order.
+    """
+    try:
+        from tools.security.canvas_access import _IL_ORDER  # noqa: PLC0415
+    except ImportError as exc:
+        raise MCPWorkflowGateError(
+            f"Cannot evaluate impact-level limits: tools.security.canvas_access "
+            f"is unimportable ({exc}). Refusing to dispatch — the gate is "
+            f"fail-closed.",
+            reason="gate_policy_unavailable",
+        ) from exc
+    return _IL_ORDER
+
+
+def _normalize_roles(value) -> tuple[str, ...]:
+    """Coerce a roles value (list, tuple, or comma-separated string) to a tuple."""
+    if not value:
+        return ()
+    if isinstance(value, str):
+        parts = value.split(",")
+    else:
+        parts = list(value)
+    return tuple(str(p).strip() for p in parts if str(p).strip())
+
+
+def read_caller_context(run_id: str) -> dict:
+    """Return the run's declared caller from run memory, or ``{}``.
+
+    Soft dependency, like :func:`write_run_memory`: a run whose trigger surface
+    never wrote a ``caller`` key falls through to the environment defaults
+    rather than failing. Absence is not treated as an error because no trigger
+    surface writes this key yet.
+    """
+    if not run_id:
+        return {}
+    try:
+        from tools.studio import run_memory  # noqa: PLC0415
+    except ImportError:
+        return {}
+    try:
+        value = run_memory.get(run_id, CALLER_KEY, default=None)
+    except Exception:  # noqa: BLE001 — an unreadable memory must not fail open loudly
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def resolve_caller(run_id: str = "", overrides: dict | None = None) -> dict:
+    """Resolve the principal a dispatch runs as.
+
+    Resolution order, most specific first:
+
+    1. ``overrides`` — the executor's ``--caller-*`` flags.
+    2. Run memory's ``caller`` key — the workflow context (dwo-mem-01).
+    3. ``ICDEV_MCP_CALLER_IL`` / ``ICDEV_IMPACT_LEVEL`` and
+       ``ICDEV_MCP_CALLER_ROLES`` from the environment.
+    4. :data:`DEFAULT_CALLER_IL` with no roles.
+
+    Fields are resolved independently, so a run may declare an IL in memory and
+    have its roles come from the environment.
+
+    Returns:
+        ``{"principal_id", "tenant_id", "impact_level", "roles", "source"}``.
+        ``source`` names where the impact level came from, so a refusal can say
+        which layer decided it.
+    """
+    overrides = {k: v for k, v in (overrides or {}).items() if v}
+    context = read_caller_context(run_id)
+
+    impact_level, source = "", ""
+    for candidate, origin in (
+        (overrides.get("impact_level"), "argument"),
+        (context.get("impact_level"), f"run memory '{CALLER_KEY}'"),
+    ):
+        if candidate:
+            impact_level, source = str(candidate), origin
+            break
+    if not impact_level:
+        for name in CALLER_IL_ENV:
+            if os.environ.get(name):
+                impact_level, source = os.environ[name], f"${name}"
+                break
+    if not impact_level:
+        impact_level, source = DEFAULT_CALLER_IL, "default (no caller declared)"
+
+    roles = (
+        _normalize_roles(overrides.get("roles"))
+        or _normalize_roles(context.get("roles"))
+        or _normalize_roles(os.environ.get(CALLER_ROLES_ENV))
+    )
+
+    return {
+        "principal_id": str(
+            overrides.get("principal_id") or context.get("principal_id") or ""
+        ),
+        "tenant_id": str(overrides.get("tenant_id") or context.get("tenant_id") or ""),
+        "impact_level": impact_level.strip().upper(),
+        "roles": roles,
+        "source": source,
+    }
+
+
+def _owning_component(module_path: str, registry=None):
+    """Return the registry component whose package contains ``module_path``.
+
+    Ownership is by module package — ``tools.infra_canvas.foo`` is owned by the
+    component whose ``module`` is ``tools.infra_canvas.blueprint``. The tool's
+    ``category`` is deliberately *not* consulted: category names collide with
+    component ``cli_name``s by coincidence (category ``infra`` vs. the
+    Infrastructure canvas), and authorizing on a coincidental string match
+    would deny tools for reasons nobody declared.
+
+    Where several components share a package, the strictest (highest ``min_il``)
+    wins, so an ambiguous mapping cannot resolve to the weaker of two policies.
+    """
+    if not module_path:
+        return None
+    if registry is None:
+        from tools.config.component_registry import get_registry  # noqa: PLC0415
+
+        registry = get_registry()
+
+    order = _il_order()
+    best, best_len, best_il = None, -1, -1
+    for component in registry:
+        module = component.module or ""
+        if "." not in module:
+            continue
+        package = module.rsplit(".", 1)[0]
+        if module_path != package and not module_path.startswith(package + "."):
+            continue
+        il = order.get((component.min_il or "").upper(), -1)
+        if len(package) > best_len or (len(package) == best_len and il > best_il):
+            best, best_len, best_il = component, len(package), il
+    return best
+
+
+def tool_requirements(tool: str, entry: dict | None = None, registry=None) -> dict:
+    """Return the IL and role limits ``tool`` is dispatched under.
+
+    Limits come from ``args/component_registry.yaml`` — the same ``min_il`` and
+    ``default_roles`` the HTTP canvas gate enforces — resolved through the
+    component that owns the tool's handler module. A tool no component owns runs
+    at the platform baseline (:data:`DEFAULT_TOOL_MIN_IL`) with no role limit.
+
+    Returns:
+        ``{"min_il", "required_roles", "component", "component_name"}``.
+    """
+    entry = entry if entry is not None else resolve_entry(tool)
+    component = _owning_component(str(entry.get("module", "") or ""), registry)
+    if component is None:
+        return {
+            "min_il": DEFAULT_TOOL_MIN_IL,
+            "required_roles": (),
+            "component": "",
+            "component_name": "",
+        }
+    return {
+        "min_il": (component.min_il or DEFAULT_TOOL_MIN_IL).strip().upper(),
+        "required_roles": tuple(component.default_roles or ()),
+        "component": component.key,
+        "component_name": component.display_name or component.key,
+    }
+
+
+def _has_canvas_grant(caller: dict, canvas_name: str) -> bool:
+    """Return True if the caller holds an explicit grant on ``canvas_name``.
+
+    Consulted only after the caller's declared roles fail to match, and only
+    when the caller has an identity to look up: a direct or group grant is a
+    legitimate way to reach a canvas without holding its default role, but it
+    costs a DB round trip that an anonymous run cannot benefit from.
+    """
+    if not (caller.get("principal_id") and caller.get("tenant_id")):
+        return False
+    try:
+        from tools.security.canvas_access import check_access  # noqa: PLC0415
+
+        return bool(
+            check_access(
+                caller["principal_id"],
+                caller["tenant_id"],
+                canvas_name,
+                required_level="read",
+                user_role=(caller.get("roles") or ("",))[0],
+            )
+        )
+    except Exception:  # noqa: BLE001 — an unreachable grant store denies, never crashes
+        return False
+
+
+def check_caller_authorized(
+    tool: str,
+    caller: dict | None = None,
+    entry: dict | None = None,
+    registry=None,
+) -> dict:
+    """Refuse ``tool`` unless the caller clears its IL and role limits.
+
+    Args:
+        tool: Registry tool name, already past the allowlist.
+        caller: Resolved caller (see :func:`resolve_caller`). Defaults to a
+            caller resolved with no run context.
+        entry: The tool's registry entry, when already resolved.
+        registry: Component registry to read limits from. Injectable for tests.
+
+    Returns:
+        The requirements the caller cleared, for the step payload and d5 audit.
+
+    Raises:
+        MCPWorkflowGateError: ``mcp_tool_exceeds_caller_il`` when the caller's
+            impact level is below the tool's minimum (or is not a level this
+            platform knows), ``mcp_tool_missing_required_role`` when the tool's
+            owning component requires a role the caller neither holds nor has
+            been granted.
+    """
+    caller = caller if caller is not None else resolve_caller()
+    requirements = tool_requirements(tool, entry=entry, registry=registry)
+
+    order = _il_order()
+    required_il = str(requirements["min_il"]).upper()
+    caller_il = str(caller.get("impact_level") or "").upper()
+    required_rank = order.get(required_il)
+    caller_rank = order.get(caller_il)
+
+    if required_rank is None:
+        raise MCPWorkflowGateError(
+            f"MCP tool '{tool}' is owned by component "
+            f"'{requirements['component'] or '(none)'}', whose min_il "
+            f"{required_il!r} is not a known impact level "
+            f"({', '.join(sorted(order))}). Refusing to dispatch — the gate "
+            f"will not guess what an unrecognized level permits.",
+            tool=tool,
+            reason="mcp_tool_exceeds_caller_il",
+        )
+    if caller_rank is None or caller_rank < required_rank:
+        owner = (
+            f" (owned by {requirements['component_name']})"
+            if requirements["component"]
+            else " (platform baseline — no component owns it)"
+        )
+        detail = (
+            f"caller impact level {caller_il!r} is not a known level "
+            f"({', '.join(sorted(order))})"
+            if caller_rank is None
+            else f"caller is {caller_il}, tool requires {required_il}"
+        )
+        raise MCPWorkflowGateError(
+            f"MCP tool '{tool}' requires impact level {required_il}{owner}, "
+            f"but the caller cannot meet it: {detail}. Caller IL resolved from "
+            f"{caller.get('source') or 'unknown'}. Raise the run's caller "
+            f"context or dispatch this tool from an {required_il} run.",
+            tool=tool,
+            reason="mcp_tool_exceeds_caller_il",
+        )
+
+    required_roles = requirements["required_roles"]
+    if required_roles:
+        held = set(caller.get("roles") or ())
+        if not held & set(required_roles) and not _has_canvas_grant(
+            caller, requirements["component"]
+        ):
+            raise MCPWorkflowGateError(
+                f"MCP tool '{tool}' is owned by "
+                f"{requirements['component_name']} ({requirements['component']}), "
+                f"which requires one of these roles: "
+                f"{', '.join(sorted(required_roles))}. The caller holds "
+                f"{', '.join(sorted(held)) or '(no roles)'} and has no explicit "
+                f"canvas_access grant. Grant the principal access to "
+                f"'{requirements['component']}' or run the step as a principal "
+                f"that holds one of those roles.",
+                tool=tool,
+                reason="mcp_tool_missing_required_role",
+            )
+
+    return requirements
+
+
 # ── Run memory (dwo-mem-01) ────────────────────────────────────────────────
 
 def write_run_memory(run_id: str, step_id: str, value: dict) -> tuple[bool, str]:
@@ -327,18 +649,35 @@ def _jsonable(value):
         return {"repr": repr(value)[:4000]}
 
 
-def run(tool: str, params: dict, run_id: str = "", step_id: str = "") -> dict:
+def run(
+    tool: str,
+    params: dict,
+    run_id: str = "",
+    step_id: str = "",
+    caller: dict | None = None,
+) -> dict:
     """Authorize, look up, validate, and dispatch a registry tool.
+
+    Args:
+        caller: Principal to dispatch as. Resolved from the run's workflow
+            context when omitted (see :func:`resolve_caller`).
 
     Returns the step result payload.
 
     Raises:
-        MCPWorkflowGateError: ``tool`` is not on the workflow allowlist. Checked
-            first, so a refused tool is never resolved, imported, or called.
+        MCPWorkflowGateError: ``tool`` is not on the workflow allowlist, or the
+            caller does not clear its IL / role limits. The allowlist is checked
+            first, so a refused tool is never resolved, imported, or called;
+            IL and RBAC are checked after lookup (they read the tool's owning
+            component from its module) but before params and dispatch, so a
+            refused caller never reaches the handler either.
     """
     check_tool_allowed(tool)
 
     entry = resolve_entry(tool)
+
+    caller = caller if caller is not None else resolve_caller(run_id)
+    requirements = check_caller_authorized(tool, caller, entry=entry)
 
     violations = validate_params(params, entry.get("input_schema") or {})
     if violations:
@@ -367,6 +706,10 @@ def run(tool: str, params: dict, run_id: str = "", step_id: str = "") -> dict:
         "category": entry.get("category", ""),
         "handler": f"{module_path}.{handler_name}",
         "duration_ms": duration_ms,
+        # What the dispatch was authorized under — the record d5 audits.
+        "caller_il": caller.get("impact_level", ""),
+        "required_il": requirements["min_il"],
+        "component": requirements["component"],
         "result": _jsonable(result),
     }
     written, reason = write_run_memory(run_id, step_id, payload)
@@ -386,11 +729,23 @@ def main():
     parser.add_argument("--step-id", default="", help="Run-memory key suffix")
     parser.add_argument("--project-id", default="default")
     parser.add_argument("--json", action="store_true", help="Accepted for runner parity")
+    parser.add_argument("--caller-il", default="",
+                        help="Caller impact level (IL2|IL4|IL5|IL6); overrides run context")
+    parser.add_argument("--caller-roles", default="",
+                        help="Comma-separated caller roles; overrides run context")
+    parser.add_argument("--caller-id", default="", help="Caller principal id")
+    parser.add_argument("--tenant-id", default="", help="Caller tenant id")
     args = parser.parse_args()
 
     try:
         params = parse_params(args.params)
-        payload = run(args.tool, params, args.run_id, args.step_id)
+        caller = resolve_caller(args.run_id, {
+            "impact_level": args.caller_il,
+            "roles": args.caller_roles,
+            "principal_id": args.caller_id,
+            "tenant_id": args.tenant_id,
+        })
+        payload = run(args.tool, params, args.run_id, args.step_id, caller)
         print(json.dumps({"status": "success", **payload}))
         sys.exit(0)
     except MCPWorkflowGateError as exc:
