@@ -224,8 +224,8 @@ python tools/studio/template_linter.py --check --gate # CI exit-1 on failure
 python tools/studio/template_linter.py --fix          # auto-fix DAG issues
 ```
 
-Allowed `node_type` values: `tool`, `human`, `approval` (or omitted).  Any other
-value is reported as a lint error.
+Allowed `node_type` values: `tool`, `human`, `approval`, `mcp` (or omitted).  Any
+other value is reported as a lint error.
 
 ---
 
