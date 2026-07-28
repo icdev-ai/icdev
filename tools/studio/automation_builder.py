@@ -626,7 +626,7 @@ def simulate_automation(auto_id: str, test_event: dict | None = None) -> dict:
     event = test_event or _sample_event(auto)
     trigger_matched, trigger_reason = _trigger_matches(trigger, event)
 
-    condition_results = _evaluate_conditions(auto.get("conditions", []), event)
+    condition_results = evaluate_conditions(auto.get("conditions", []), event)
     conditions_met = all(c["met"] for c in condition_results)
     would_fire = trigger_matched and conditions_met
 
@@ -726,7 +726,7 @@ def trigger_automation(auto_id: str, event: dict | None = None) -> dict:
     if not matched:
         return _log("skipped", {"reason": reason, "trigger_matched": False})
 
-    condition_results = _evaluate_conditions(auto.get("conditions", []), event)
+    condition_results = evaluate_conditions(auto.get("conditions", []), event)
     if not all(c["met"] for c in condition_results):
         return _log(
             "skipped",
@@ -749,7 +749,7 @@ def trigger_automation(auto_id: str, event: dict | None = None) -> dict:
     )
 
 
-def _evaluate_conditions(conditions: list[dict], event: dict) -> list[dict]:
+def evaluate_conditions(conditions: list[dict], event: dict) -> list[dict]:
     """Evaluate every condition against an event — a per-condition trace."""
     results = []
     for cond in conditions or []:
@@ -763,13 +763,13 @@ def _evaluate_conditions(conditions: list[dict], event: dict) -> list[dict]:
                 "operator": op,
                 "expected": expected,
                 "actual": str(actual),
-                "met": _evaluate_condition(actual, op, expected),
+                "met": evaluate_condition(actual, op, expected),
             }
         )
     return results
 
 
-def _evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
+def evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
     """Evaluate a single condition."""
     actual_str = str(actual).lower()
     expected_lower = expected.lower()
@@ -798,6 +798,17 @@ def _evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
     elif operator == "is_not_empty":
         return bool(actual_str) and actual_str != "none"
     return False
+
+
+# ── Backward-compatible private aliases ───────────────────────────────
+#
+# The condition DSL lives here once, under public names, so other modules can
+# import it (`from tools.studio.automation_builder import evaluate_condition`)
+# instead of growing a second DSL. These aliases keep the older
+# underscore-prefixed spellings working.
+
+_evaluate_conditions = evaluate_conditions
+_evaluate_condition = evaluate_condition
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
