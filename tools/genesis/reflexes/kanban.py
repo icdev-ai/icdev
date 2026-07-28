@@ -1279,18 +1279,74 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
         except Exception:
             pass
         for branch_name in candidates:
-            log = _sp.run(
-                ["git", "log", f"origin/{default_branch}..{branch_name}", "--oneline"],
-                cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
+            if _branch_is_abandoned(branch_name, _repo_root):
+                continue
+            # `git cherry`, not `git log A..B`: the runner re-lands work under
+            # new SHAs constantly (rebases, cherry-picks onto a fresh base), and
+            # `git log` counts every one of those as unmerged even though the
+            # patch is already on origin. `git cherry` compares by patch-id and
+            # prefixes '-' when an equivalent commit is upstream, '+' when it is
+            # genuinely absent. Only '+' should block a completion.
+            cherry = _sp.run(
+                ["git", "cherry", f"origin/{default_branch}", branch_name],
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=15,
             )
-            if log.returncode != 0:
+            if cherry.returncode != 0:
                 continue  # this compare errored — fail-open for this ref
-            if log.stdout.strip():
+            if any(line.startswith("+") for line in cherry.stdout.splitlines()):
                 return True  # a branch for this task has work not on origin
         return False
     except Exception as exc:
         logger.warning("_branch_has_unmerged_commits(%s) errored (fail-open): %s", task_id, exc)
         return False
+
+
+#: branch name -> True when its PR is closed/merged. Populated per process;
+#: a branch's PR state does not change often enough to be worth re-asking.
+_ABANDONED_BRANCH_CACHE: dict = {}
+
+
+def _branch_is_abandoned(ref: str, repo_root) -> bool:
+    """True when this ref's pull request is already CLOSED or MERGED.
+
+    A superseded branch keeps its commits forever, so the merge gate would go on
+    refusing a task whose work actually landed under a *different* branch — the
+    re-land pattern. Observed 2026-07-28: every `kanban/dwo-*` branch was
+    re-landed, and 34 of them are still pinned by leftover runner worktrees, so
+    their refs cannot even be deleted.
+
+    OFFLINE-SAFE and FAIL-CLOSED **for this predicate**: no `gh`, no network, a
+    timeout or any error all answer False — "not known to be abandoned" — which
+    leaves the ref in the comparison and preserves the existing behaviour. This
+    check can only ever *remove* a false refusal, never create a new one.
+    """
+    if not ref:
+        return False
+    name = ref.split("origin/", 1)[-1] if ref.startswith("origin/") else ref
+    if name in _ABANDONED_BRANCH_CACHE:
+        return _ABANDONED_BRANCH_CACHE[name]
+
+    abandoned = False
+    import json as _json
+    import os as _os
+    if _os.environ.get("KANBAN_GATE_SKIP_CLOSED_PRS", "1").strip().lower() not in ("0", "false", "no"):
+        import subprocess as _sp
+        try:
+            out = _sp.run(
+                ["gh", "pr", "list", "--head", name, "--state", "all",
+                 "--limit", "5", "--json", "state"],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=15,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                states = {e.get("state") for e in _json.loads(out.stdout)}
+                # Abandoned only when EVERY PR for the branch is finished. An
+                # open PR means the work is still in flight and must block.
+                abandoned = bool(states) and states <= {"CLOSED", "MERGED"}
+        except Exception:
+            abandoned = False
+
+    _ABANDONED_BRANCH_CACHE[name] = abandoned
+    return abandoned
 
 
 def _branches_for_task(task_id: str, repo_root) -> list:

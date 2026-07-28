@@ -110,8 +110,12 @@ def test_branch_has_unmerged_commits(monkeypatch, verify_rc, log_rc, log_out, ex
             return _Fake(returncode=verify_rc)
         if "fetch" in argv:
             return _Fake(returncode=0)
-        if "log" in argv:
-            return _Fake(returncode=log_rc, stdout=log_out)
+        if "pr" in argv:
+            return _Fake(returncode=0, stdout="[]")   # no PR -> not abandoned
+        if "cherry" in argv:
+            # `git cherry` prefixes '+' for a patch that is NOT upstream.
+            out = "".join("+ " + line + "\n" for line in log_out.splitlines())
+            return _Fake(returncode=log_rc, stdout=out)
         return _Fake(returncode=0)
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(kb, "_default_branch", lambda: "main")
@@ -152,13 +156,19 @@ def _record_git_calls(monkeypatch, log_out=""):
     """Patch subprocess.run to record the (argv, cwd) of every git call."""
     calls = []
 
+    kb._ABANDONED_BRANCH_CACHE.clear()
+
     def fake_run(cmd, *a, **k):
         argv = cmd if isinstance(cmd, list) else [cmd]
         calls.append((argv, k.get("cwd")))
         if "for-each-ref" in argv:
             return _Fake(returncode=0, stdout="kanban/ext-thing-01\n")
-        if "log" in argv:
-            return _Fake(returncode=0, stdout=log_out)
+        if "pr" in argv:
+            return _Fake(returncode=0, stdout="[]")   # no PR -> not abandoned
+        if "cherry" in argv:
+            # `git cherry` prefixes '+' for a patch that is NOT upstream.
+            out = "".join("+ " + line + "\n" for line in log_out.splitlines())
+            return _Fake(returncode=0, stdout=out)
         return _Fake(returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -182,8 +192,9 @@ def test_unmerged_check_compares_against_the_external_base_branch(
 
     kb._branch_has_unmerged_commits("ext-thing-01")
 
-    compared = [arg for argv, _ in calls if "log" in argv for arg in argv if ".." in arg]
-    assert compared == ["origin/trunk..kanban/ext-thing-01"]
+    cherry = [argv for argv, _ in calls if "cherry" in argv]
+    assert cherry, "the unmerged check never ran git cherry"
+    assert cherry[0][2:] == ["origin/trunk", "kanban/ext-thing-01"]
 
 
 def test_unmerged_check_still_runs_in_BASE_DIR_for_an_icdev_task(
