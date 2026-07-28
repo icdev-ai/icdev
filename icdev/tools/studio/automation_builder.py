@@ -488,27 +488,8 @@ def simulate_automation(auto_id: str, test_event: dict | None = None) -> dict:
 
     event = test_event or {"type": auto["trigger"].get("type", "manual"), "test": True}
 
-    # Check conditions
-    conditions_met = True
-    condition_results = []
-    for cond in auto.get("conditions", []):
-        field = cond.get("field", "")
-        op = cond.get("operator", "equals")
-        expected = cond.get("value", "")
-        actual = event.get(field, "")
-
-        met = _evaluate_condition(actual, op, expected)
-        condition_results.append(
-            {
-                "field": field,
-                "operator": op,
-                "expected": expected,
-                "actual": str(actual),
-                "met": met,
-            }
-        )
-        if not met:
-            conditions_met = False
+    condition_results = evaluate_conditions(auto.get("conditions", []), event)
+    conditions_met = all(c["met"] for c in condition_results)
 
     # List actions that would fire
     actions_preview = []
@@ -532,8 +513,43 @@ def simulate_automation(auto_id: str, test_event: dict | None = None) -> dict:
     }
 
 
-def _evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
-    """Evaluate a single condition."""
+# ── Condition DSL (the single implementation) ────────────────────────
+#
+# Automations are not the only thing that filters an event by
+# ``{"field", "operator", "value"}`` — workflow triggers do too, and anything
+# else that grows an event filter should as well.  These two functions are the
+# one implementation of ``CONDITION_OPERATORS``; import them rather than
+# writing a second condition DSL that drifts from the operator list the UI
+# renders.
+
+
+def evaluate_conditions(conditions: list[dict] | None, event: dict) -> list[dict]:
+    """Evaluate every condition against an event, returning a per-condition trace.
+
+    Each result carries the field, operator, expected and actual values so a
+    non-match is explainable — callers decide whether all conditions must be
+    met by inspecting ``met``.
+    """
+    results = []
+    for cond in conditions or []:
+        field = cond.get("field", "")
+        op = cond.get("operator", "equals")
+        expected = cond.get("value", "")
+        actual = event.get(field, "")
+        results.append(
+            {
+                "field": field,
+                "operator": op,
+                "expected": expected,
+                "actual": str(actual),
+                "met": evaluate_condition(actual, op, expected),
+            }
+        )
+    return results
+
+
+def evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
+    """Evaluate a single condition. Unknown operators never match."""
     actual_str = str(actual).lower()
     expected_lower = expected.lower()
 
