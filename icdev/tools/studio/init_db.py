@@ -167,6 +167,45 @@ STUDIO_TABLES: dict[str, str] = {
             PRIMARY KEY (run_id, key)
         )
     """,
+    # ── Event sources & workflow triggers (dwo-evt-01) ─────
+    "studio_event_sources": """
+        CREATE TABLE IF NOT EXISTS studio_event_sources (
+            source_id   TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            kind        TEXT NOT NULL
+                        CHECK(kind IN ('gateway_channel','canvas_bus','schedule','manual')),
+            config_json TEXT,
+            enabled     INTEGER DEFAULT 1,
+            created_by  TEXT,
+            created_at  TEXT DEFAULT (datetime('now'))
+        )
+    """,
+    "studio_workflow_triggers": """
+        CREATE TABLE IF NOT EXISTS studio_workflow_triggers (
+            trigger_id        TEXT PRIMARY KEY,
+            source_id         TEXT NOT NULL REFERENCES studio_event_sources(source_id),
+            workflow_id       TEXT NOT NULL REFERENCES studio_workflows(workflow_id),
+            event_type        TEXT,
+            filter_json       TEXT,
+            input_mapping_json TEXT,
+            enabled           INTEGER DEFAULT 1,
+            created_at        TEXT DEFAULT (datetime('now'))
+        )
+    """,
+    # APPEND-ONLY — audit trail: why did this run start
+    "studio_trigger_events": """
+        CREATE TABLE IF NOT EXISTS studio_trigger_events (
+            event_id     TEXT PRIMARY KEY,
+            source_id    TEXT,
+            trigger_id   TEXT,
+            event_type   TEXT,
+            payload_json TEXT,
+            matched      INTEGER DEFAULT 0,
+            run_id       TEXT,
+            reason       TEXT,
+            received_at  TEXT DEFAULT (datetime('now'))
+        )
+    """,
     # ── Dashboards ─────────────────────────────────────────
     "studio_dashboards": """
         CREATE TABLE IF NOT EXISTS studio_dashboards (
@@ -188,6 +227,7 @@ APPEND_ONLY_TABLES = [
     "studio_automation_runs",
     "studio_workflow_runs",
     "studio_workflow_run_steps",
+    "studio_trigger_events",
 ]
 
 
