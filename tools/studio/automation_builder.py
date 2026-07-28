@@ -119,6 +119,20 @@ TRIGGER_TYPES: list[dict[str, Any]] = [
         "color": "#94a3b8",
         "category": "system",
     },
+    {
+        "id": "external_event",
+        "label": "External Event",
+        "description": "An event arrives on a registered Studio event source",
+        "icon": "E",
+        "color": "#0ea5e9",
+        "category": "system",
+        # Config names a studio_event_sources row (dwo-evt-01).  Rendered
+        # generically by the builder UI from these field descriptors.
+        "config_fields": [
+            {"name": "source_id", "label": "Event source ID", "placeholder": "src-…", "required": True},
+            {"name": "event_type", "label": "Event type (blank = any)", "placeholder": "push", "required": False},
+        ],
+    },
 ]
 
 CONDITION_OPERATORS: list[dict[str, str]] = [
@@ -172,11 +186,13 @@ ACTION_TYPES: list[dict[str, Any]] = [
     {
         "id": "run_workflow",
         "label": "Run Workflow",
-        "description": "Execute a saved Studio workflow",
+        "description": "Start a saved Studio workflow run",
         "icon": "W",
         "color": "#f59e0b",
         "category": "execute",
-        "params": ["workflow_id"],
+        # input_mapping: {"memory_key": "event.field"} — event fields copied
+        # into the run's memory store so workflow steps can read them.
+        "params": ["workflow_id", "input_mapping", "project_id"],
     },
     {
         "id": "update_field",
@@ -477,6 +493,126 @@ def list_automation_runs(
         conn.close()
 
 
+# ── External event sources (dwo-evt-01 registry) ─────────────────────
+
+
+def get_event_source(source_id: str) -> dict | None:
+    """Read one studio_event_sources row, or None if absent/unavailable.
+
+    Returns None rather than raising when the table has not been migrated
+    yet, so simulation still works on a fresh database.
+    """
+    if not source_id:
+        return None
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM studio_event_sources WHERE source_id = %s",
+            (source_id,),
+        ).fetchone()
+    except Exception:
+        return None
+    finally:
+        conn.close()
+    if not row:
+        return None
+    d = dict(row)
+    try:
+        d["config"] = json.loads(d.get("config_json") or "{}")
+    except (TypeError, ValueError):
+        d["config"] = {}
+    return d
+
+
+def _trigger_matches(trigger: dict, event: dict) -> tuple[bool, str]:
+    """Does `event` match this automation's trigger? Returns (matched, reason)."""
+    ttype = trigger.get("type", "manual")
+    etype = event.get("type", ttype)
+    if etype != ttype:
+        return False, f"event type '{etype}' does not match trigger '{ttype}'"
+
+    if ttype != "external_event":
+        return True, "trigger type matched"
+
+    cfg = trigger.get("config", {}) or {}
+    want_source = cfg.get("source_id") or ""
+    got_source = event.get("source_id") or ""
+    if want_source and got_source != want_source:
+        return False, f"event source '{got_source or '(none)'}' does not match '{want_source}'"
+
+    want_event = cfg.get("event_type") or ""
+    got_event = event.get("event_type") or ""
+    if want_event and got_event != want_event:
+        return False, f"event_type '{got_event or '(none)'}' does not match '{want_event}'"
+
+    return True, "source and event_type matched"
+
+
+def _sample_event(auto: dict) -> dict:
+    """Build a representative payload for a dry run.
+
+    For external_event we use the source's registered `sample_payload` when it
+    has one — otherwise the bare envelope the source would deliver.  Condition
+    fields are never back-filled: a simulation that invented values to make its
+    own conditions pass would be worthless.
+    """
+    trigger = auto.get("trigger", {}) or {}
+    ttype = trigger.get("type", "manual")
+    if ttype != "external_event":
+        return {"type": ttype, "test": True}
+
+    cfg = trigger.get("config", {}) or {}
+    event: dict[str, Any] = {
+        "type": "external_event",
+        "source_id": cfg.get("source_id", ""),
+        "event_type": cfg.get("event_type", ""),
+        "test": True,
+    }
+    source = get_event_source(cfg.get("source_id", ""))
+    if source:
+        event["source_name"] = source.get("name")
+        event["source_kind"] = source.get("kind")
+        sample = source.get("config", {}).get("sample_payload")
+        if isinstance(sample, dict):
+            event["payload"] = sample
+            # Top-level access so conditions can name payload fields directly.
+            for k, v in sample.items():
+                event.setdefault(k, v)
+    return event
+
+
+def _resolve_input_mapping(mapping: Any, event: dict) -> dict:
+    """Resolve {"memory_key": "event.field"} against an event payload.
+
+    A source string that names no event field is passed through as a literal,
+    so constants can be mapped without a second syntax.
+    """
+    if isinstance(mapping, str):
+        try:
+            mapping = json.loads(mapping)
+        except (TypeError, ValueError):
+            return {}
+    if not isinstance(mapping, dict):
+        return {}
+
+    resolved: dict[str, Any] = {}
+    for key, src in mapping.items():
+        if not isinstance(src, str):
+            resolved[key] = src
+            continue
+        path = src[6:] if src.startswith("event.") else src
+        cursor: Any = event
+        found = True
+        for part in path.split("."):
+            if isinstance(cursor, dict) and part in cursor:
+                cursor = cursor[part]
+            else:
+                found = False
+                break
+        resolved[key] = cursor if found else src
+    return resolved
+
+
 # ── Simulate execution (dry-run) ─────────────────────────────────────
 
 
@@ -486,31 +622,132 @@ def simulate_automation(auto_id: str, test_event: dict | None = None) -> dict:
     if not auto:
         return {"status": "error", "error": "Automation not found"}
 
-    event = test_event or {"type": auto["trigger"].get("type", "manual"), "test": True}
+    trigger = auto.get("trigger", {}) or {}
+    event = test_event or _sample_event(auto)
+    trigger_matched, trigger_reason = _trigger_matches(trigger, event)
 
     condition_results = evaluate_conditions(auto.get("conditions", []), event)
     conditions_met = all(c["met"] for c in condition_results)
+    would_fire = trigger_matched and conditions_met
 
     # List actions that would fire
     actions_preview = []
     for action in auto.get("actions", []):
-        actions_preview.append(
-            {
-                "type": action.get("type", ""),
-                "config": action.get("config", {}),
-                "would_execute": conditions_met,
-            }
-        )
+        preview = {
+            "type": action.get("type", ""),
+            "config": action.get("config", {}),
+            "would_execute": would_fire,
+        }
+        if action.get("type") == "run_workflow":
+            cfg = action.get("config", {}) or {}
+            preview["workflow_id"] = cfg.get("workflow_id", "")
+            preview["resolved_inputs"] = _resolve_input_mapping(cfg.get("input_mapping"), event)
+        actions_preview.append(preview)
 
     return {
         "status": "ok",
         "automation_id": auto_id,
-        "trigger_matched": True,
+        "trigger_type": trigger.get("type", ""),
+        "trigger_matched": trigger_matched,
+        "trigger_reason": trigger_reason,
+        "sample_event": event,
         "conditions_met": conditions_met,
         "condition_results": condition_results,
         "actions_preview": actions_preview,
         "dry_run": True,
     }
+
+
+# ── Live execution ───────────────────────────────────────────────────
+
+
+def _run_workflow_action(config: dict, event: dict) -> dict:
+    """Start a real Studio workflow run for a run_workflow action."""
+    from tools.studio import run_memory  # noqa: PLC0415
+    from tools.studio.workflow_runner import start_run  # noqa: PLC0415
+
+    workflow_id = (config or {}).get("workflow_id", "")
+    if not workflow_id:
+        return {"status": "failed", "error": "run_workflow action has no workflow_id"}
+
+    project_id = (config or {}).get("project_id") or "default"
+    try:
+        run_id = start_run(workflow_id, project_id)
+    except Exception as exc:
+        return {"status": "failed", "workflow_id": workflow_id, "error": str(exc)}
+
+    inputs = _resolve_input_mapping(config.get("input_mapping"), event)
+    for key, value in inputs.items():
+        # Best effort: the run thread is already live, so seed immediately.
+        try:
+            run_memory.set(run_id, key, value)
+        except Exception:  # noqa: S110 — a run must not die over one input
+            pass
+
+    return {"status": "success", "workflow_id": workflow_id, "run_id": run_id, "inputs": inputs}
+
+
+def _execute_action(action: dict, event: dict) -> dict:
+    atype = action.get("type", "")
+    if atype == "run_workflow":
+        result = _run_workflow_action(action.get("config", {}) or {}, event)
+    else:
+        # Every other action type is still declarative-only — no executor is
+        # registered.  Say so rather than reporting a success that never was.
+        result = {"status": "skipped", "reason": "no executor registered for this action type"}
+    result["type"] = atype
+    return result
+
+
+def trigger_automation(auto_id: str, event: dict | None = None) -> dict:
+    """Fire an automation for a real event, executing its actions.
+
+    Every outcome is written to the append-only studio_automation_runs log,
+    including non-matches — a non-firing automation must be diagnosable.
+    """
+    auto = get_automation(auto_id)
+    if not auto:
+        return {"status": "error", "error": "Automation not found"}
+
+    trigger = auto.get("trigger", {}) or {}
+    event = event or {"type": trigger.get("type", "manual")}
+    trigger_event = event.get("event_type") or event.get("type") or trigger.get("type", "manual")
+
+    def _log(status: str, payload: dict) -> dict:
+        logged = log_automation_run(auto_id, str(trigger_event), status, payload)
+        payload["status"] = status
+        payload["automation_id"] = auto_id
+        payload["run_log_id"] = logged.get("run_id")
+        return payload
+
+    if not auto.get("enabled", 1):
+        return _log("skipped", {"reason": "automation is disabled"})
+
+    matched, reason = _trigger_matches(trigger, event)
+    if not matched:
+        return _log("skipped", {"reason": reason, "trigger_matched": False})
+
+    condition_results = evaluate_conditions(auto.get("conditions", []), event)
+    if not all(c["met"] for c in condition_results):
+        return _log(
+            "skipped",
+            {
+                "reason": "conditions not met",
+                "trigger_matched": True,
+                "condition_results": condition_results,
+            },
+        )
+
+    action_results = [_execute_action(a, event) for a in auto.get("actions", [])]
+    status = "failed" if any(r.get("status") == "failed" for r in action_results) else "success"
+    return _log(
+        status,
+        {
+            "trigger_matched": True,
+            "condition_results": condition_results,
+            "action_results": action_results,
+        },
+    )
 
 
 # ── Condition DSL (the single implementation) ────────────────────────
@@ -633,6 +870,11 @@ def main() -> None:
 
     p_sim = sub.add_parser("simulate", help="Simulate an automation")
     p_sim.add_argument("automation_id")
+    p_sim.add_argument("--event", help="Test event as JSON (default: sample payload)")
+
+    p_trig = sub.add_parser("trigger", help="Fire an automation for a real event")
+    p_trig.add_argument("automation_id")
+    p_trig.add_argument("--event", help="Event as JSON")
 
     args = parser.parse_args()
     result: Any = None
@@ -650,7 +892,9 @@ def main() -> None:
     elif args.command == "runs":
         result = list_automation_runs()
     elif args.command == "simulate":
-        result = simulate_automation(args.automation_id)
+        result = simulate_automation(args.automation_id, json.loads(args.event) if args.event else None)
+    elif args.command == "trigger":
+        result = trigger_automation(args.automation_id, json.loads(args.event) if args.event else None)
     else:
         parser.print_help()
         return
