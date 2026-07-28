@@ -118,6 +118,13 @@ CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
     completed_at TEXT,
     FOREIGN KEY (run_id) REFERENCES studio_workflow_runs(run_id)
 );
+CREATE TABLE IF NOT EXISTS studio_run_memory (
+    run_id     TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, key)
+);
 CREATE TABLE IF NOT EXISTS kanban_tasks (
     id                    TEXT PRIMARY KEY,
     title                 TEXT NOT NULL,
