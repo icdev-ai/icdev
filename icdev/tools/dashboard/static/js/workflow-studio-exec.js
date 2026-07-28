@@ -569,6 +569,7 @@
           <div><strong>Status:</strong> ${_runStatusBadge(detailStatus)}</div>
           <div><strong>Started:</strong> ${run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</div>
           <div><strong>Completed:</strong> ${run.completed_at ? new Date(run.completed_at).toLocaleString() : '—'}</div>
+          ${_triggerBadge(run.trigger_event)}
           ${_resumeControl(runId, run.status)}
         </div>
         ${_artifactHtml(runArts)}
@@ -628,6 +629,36 @@
 
   // Mirrors RESUMABLE_RUN_STATUSES in tools/studio/workflow_runner.py.
   const _RESUMABLE_RUN_STATUSES = ['pending', 'running', 'awaiting_approval', 'failed'];
+
+  /**
+   * "Started by" line — the event that started this run (dwo-vv-03-d3).
+   *
+   * `run.trigger_event` is the `studio_trigger_events` row that
+   * GET /api/studio/workflows/runs/<id> resolves for the run. A manually
+   * started run has no such row, and this renders nothing at all — an empty
+   * "Started by: —" would claim a linkage that does not exist.
+   *
+   * The ids are rendered as text, not as links: there is no trigger-event
+   * detail route to link to, and a href that 404s reads as a feature.
+   */
+  function _triggerBadge(ev) {
+    if (!ev || !ev.event_id) return '';
+    const parts = [];
+    if (ev.source_name || ev.source_id) parts.push(_esc(ev.source_name || ev.source_id));
+    if (ev.event_type) parts.push(_esc(ev.event_type));
+    const label = parts.length ? ` ${parts.join(' · ')}` : '';
+    return `<div id="wf-run-trigger-badge" style="margin-top:6px;"
+                 data-event-id="${_esc(ev.event_id)}"
+                 data-trigger-id="${_esc(ev.trigger_id || '')}">
+      <strong>Started by:</strong>
+      <span class="studio-badge" title="This run was started by a workflow trigger, not by hand"
+            style="background:#1e3a5f;color:#93c5fd;padding:1px 6px;border-radius:4px;
+                   font-size:10px;font-weight:700;">&#9889; trigger${label}</span>
+      <code style="font-family:var(--studio-font-mono);font-size:10px;
+                   color:var(--studio-text-muted,#94a3b8);margin-left:4px;"
+            title="studio_trigger_events.event_id">${_esc(ev.event_id)}</code>
+    </div>`;
+  }
 
   function _resumeControl(runId, status) {
     if (!_RESUMABLE_RUN_STATUSES.includes(status)) return '';
