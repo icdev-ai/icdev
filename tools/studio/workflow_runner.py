@@ -31,6 +31,7 @@ if str(_ROOT) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.studio import run_memory  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -248,6 +249,45 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
         result["duration_ms"] = int((time.monotonic() - start) * 1000)
 
     return result
+
+
+# ── Run memory (dwo-mem-02) ────────────────────────────────
+
+def _step_artifacts(result: dict) -> list:
+    """Artifacts a step declared in its stdout JSON contract, or []."""
+    try:
+        return json.loads(result.get("stdout") or "").get("artifacts", []) or []
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return []
+
+
+def _remember_canvas(run_id: str, canvas: str) -> None:
+    """Record the template's declared canvas as this run's authoritative slug."""
+    if not run_id or not canvas:
+        return
+    try:
+        run_memory.set(run_id, run_memory.CANVAS_KEY, canvas)
+    except Exception as exc:
+        logger.warning("Could not record canvas for run %s: %s", run_id, exc)
+
+
+def _remember_artifacts(run_id: str, step_name: str, artifacts: list) -> None:
+    """Record a step's artifacts under run memory's ``artifacts`` key.
+
+    Executors read their inputs from here rather than re-parsing an earlier
+    step's stdout. A write failure is not fatal: `executors/_base.py` still
+    falls back to the stdout query.
+    """
+    if not run_id or not artifacts:
+        return
+    try:
+        current = run_memory.get(run_id, run_memory.ARTIFACTS_KEY, default={})
+        if not isinstance(current, dict):
+            current = {}
+        current[step_name] = artifacts
+        run_memory.set(run_id, run_memory.ARTIFACTS_KEY, current)
+    except Exception as exc:
+        logger.warning("Could not record artifacts for run %s: %s", run_id, exc)
 
 
 # ── DB helpers ─────────────────────────────────────────────
@@ -530,6 +570,11 @@ def _worker(
         step_map = {s["id"]: s for s in steps}
         ordered_steps = [step_map[sid] for sid in order if sid in step_map]
 
+        # The template's `canvas:` key is the authoritative slug for this run —
+        # publish it before any step runs so executors read it from memory
+        # rather than re-deriving it (dwo-mem-02).
+        _remember_canvas(run_id, str(data.get("canvas") or "").strip().lower())
+
         _update_run_status(run_id, "running")
         _push(run_queue, {
             "type": "run_started",
@@ -584,11 +629,9 @@ def _worker(
             if result["status"] in ("success", "approved", "skipped") and prior_status:
                 # Replayed step: emit its artifacts and move on without touching
                 # the append-only record again.
-                try:
-                    if result.get("stdout"):
-                        all_artifacts.extend(json.loads(result["stdout"]).get("artifacts", []))
-                except (json.JSONDecodeError, AttributeError, TypeError):
-                    pass
+                replayed_artifacts = _step_artifacts(result)
+                all_artifacts.extend(replayed_artifacts)
+                _remember_artifacts(run_id, result["step_name"], replayed_artifacts)
                 results.append(result)
                 _push(run_queue, {
                     "type": "step_done",
@@ -658,15 +701,11 @@ def _worker(
                 })
                 break
 
-            # Extract artifacts list from stdout JSON if present
-            artifacts = []
-            try:
-                if result.get("stdout"):
-                    parsed_out = json.loads(result["stdout"])
-                    artifacts = parsed_out.get("artifacts", [])
-                    all_artifacts.extend(artifacts)
-            except (json.JSONDecodeError, AttributeError):
-                pass
+            # Extract artifacts list from stdout JSON if present, and publish it
+            # to run memory so the next step reads it there (dwo-mem-02).
+            artifacts = _step_artifacts(result)
+            all_artifacts.extend(artifacts)
+            _remember_artifacts(run_id, step.get("name", step["id"]), artifacts)
 
             _push(run_queue, {
                 "type": "step_done",
