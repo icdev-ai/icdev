@@ -569,6 +569,7 @@
           <div><strong>Status:</strong> ${_runStatusBadge(detailStatus)}</div>
           <div><strong>Started:</strong> ${run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</div>
           <div><strong>Completed:</strong> ${run.completed_at ? new Date(run.completed_at).toLocaleString() : '—'}</div>
+          ${_triggerBadge(run.trigger_event)}
           ${_resumeControl(runId, run.status)}
         </div>
         ${_artifactHtml(runArts)}
@@ -624,6 +625,29 @@
     } catch (e) {
       body.innerHTML = '<div style="color:#ef4444; padding:16px;">Failed to load run detail</div>';
     }
+  }
+
+  // Why this run started (dwo-evt-04). `trigger_event` is what
+  // GET /api/studio/workflows/runs/<id> reports for an event-started run:
+  // the studio_trigger_events row whose event_id the run carries. It is null
+  // for a manual run and absent on a deployment where the trigger stack has
+  // not shipped — both render nothing, so the badge only ever appears when
+  // there is a real event to point at.
+  //
+  // The event id is exposed twice on purpose: as text a reviewer can read off
+  // the screen, and as data-trigger-event-id so an audit or an E2E assertion
+  // can read it without scraping formatted text.
+  function _triggerBadge(evt) {
+    if (!evt || !evt.event_id) return '';
+    const kind = evt.event_type ? ` <span style="color:var(--studio-text-muted,#94a3b8);">(${_esc(evt.event_type)})</span>` : '';
+    return `<div id="wf-run-trigger-badge" class="wf-run-trigger-badge"
+         data-trigger-event-id="${_esc(evt.event_id)}"
+         data-trigger-id="${_esc(evt.trigger_id || '')}"
+         style="margin-top:6px;"
+         title="This run was started by an event, not by a person. Event id: ${_esc(evt.event_id)}">
+      <strong>Triggered by event:</strong>
+      <code style="color:#60a5fa;font-family:var(--studio-font-mono);font-size:11px;">${_esc(evt.event_id)}</code>${kind}
+    </div>`;
   }
 
   // Mirrors RESUMABLE_RUN_STATUSES in tools/studio/workflow_runner.py.
