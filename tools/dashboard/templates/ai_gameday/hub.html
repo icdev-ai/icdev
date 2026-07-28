@@ -38,6 +38,13 @@
   <h1>🎮 AI GameDay</h1>
   <p>Competitive tabletop exercises where teams score points by <em>actually using AI</em> — not just knowing the answers.</p>
   <a href="/gameday/ai-league" class="gd-btn-outline" style="margin-top:.6rem;">🏆 AI League — autonomous 4-team tournament</a>
+  {# Both routes exist and are asserted live in tests, but the hub linked
+     neither, so the scenario manager and builder were reachable only by typing
+     the URL — the builder is linked solely from the manager, which was itself
+     orphaned (fga-gd-01). Both are @require_facilitator; the routes enforce
+     that, these links just stop the feature being invisible. #}
+  <a href="/gameday/scenarios" class="gd-btn-outline" style="margin-top:.6rem;">📋 Scenario Manager — browse and manage exercise packs</a>
+  <a href="/gameday/scenarios/builder" class="gd-btn-outline" style="margin-top:.6rem;">🛠️ Scenario Builder — author a new exercise</a>
 </div>
 
 <!-- Join a session -->
