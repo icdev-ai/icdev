@@ -184,12 +184,63 @@ def notes_status(version: str) -> dict:
     readme = REPO_ROOT / "README.md"
     changelog = REPO_ROOT / "CHANGELOG.md"
     esc = re.escape(version)
-    return {
+    out = {
         "readme": bool(readme.is_file() and re.search(
             rf"^##\s+What's New in {esc}\b", readme.read_text(encoding="utf-8"), re.M)),
         "changelog": bool(changelog.is_file() and re.search(
             rf"^##\s+\[{esc}\]", changelog.read_text(encoding="utf-8"), re.M)),
     }
+    out.update(updates_page_status(version))
+    return out
+
+
+def updates_page_status(version: str) -> dict:
+    """Will /updates actually RENDER this release, and lead with it?
+
+    The heading regex above proves a line exists. It does not prove the page
+    shows anything useful — and /updates is the surface users check to answer
+    "what changed?". It renders CHANGELOG.md through
+    ``tools.dashboard.changelog.parse_changelog``.
+
+    Three things can satisfy the regex and still be wrong on the page:
+
+      * the entry does not PARSE as a release (malformed heading or date), so
+        the page silently omits it;
+      * it is not the NEWEST entry, so the page leads with an older version —
+        exactly the state that had /updates advertising 1.2.37 while the
+        package shipped 1.2.39;
+      * it parses but is EMPTY, which is what an unedited ``--scaffold-notes``
+        stub looks like. Notes that are still a TODO are worse than none: they
+        read as though someone wrote them.
+
+    Validated with the page's OWN parser rather than a second implementation,
+    so this cannot drift from what /updates actually does.
+    """
+    result = {"updates_parses": False, "updates_is_newest": False,
+              "updates_has_content": False}
+    try:
+        sys.path.insert(0, str(REPO_ROOT))
+        from tools.dashboard.changelog import parse_changelog
+
+        releases = parse_changelog(str(REPO_ROOT / "CHANGELOG.md")) or []
+    except Exception:  # noqa: BLE001 - the gate reports; it does not crash
+        return result
+
+    if not releases:
+        return result
+    result["updates_is_newest"] = str(releases[0].get("version", "")) == version
+
+    entry = next((r for r in releases if str(r.get("version", "")) == version), None)
+    if entry is None:
+        return result
+    result["updates_parses"] = True
+
+    sections = entry.get("sections") or {}
+    items = [i for v in sections.values() for i in (v or [])]
+    # A lone "TODO: ..." bullet is the scaffold, not release notes.
+    result["updates_has_content"] = bool(
+        [i for i in items if "TODO" not in str(i).upper()])
+    return result
 
 
 def scaffold_notes(version: str, *, dry_run: bool = False) -> list:
@@ -676,11 +727,29 @@ def main(argv: list | None = None) -> int:
     # no-op you can simply re-run.
     notes = notes_status(version)
     report["steps"]["notes"] = notes
-    if not (notes["readme"] and notes["changelog"]) and not args.allow_missing_notes:
+    # Headings present AND the page can actually render them. Checking only the
+    # headings let /updates advertise a stale release while the package moved on.
+    notes_ok = (notes["readme"] and notes["changelog"]
+                and notes["updates_parses"] and notes["updates_is_newest"]
+                and notes["updates_has_content"])
+    if not notes_ok and not args.allow_missing_notes:
         report["ok"] = False
         report["failed_at"] = "notes"
-        report["hint"] = (f"no release notes for {version}. Write them, or run "
-                          f"--version {version} --scaffold-notes to stub them out.")
+        if not (notes["readme"] and notes["changelog"]):
+            report["hint"] = (f"no release notes for {version}. Write them, or run "
+                              f"--version {version} --scaffold-notes to stub them out.")
+        elif not notes["updates_parses"]:
+            report["hint"] = (f"the CHANGELOG entry for {version} does not parse — "
+                              "/updates would silently omit this release. Check the "
+                              "`## [X.Y.Z] - YYYY-MM-DD` heading format.")
+        elif not notes["updates_is_newest"]:
+            report["hint"] = (f"{version} is not the newest CHANGELOG entry, so "
+                              "/updates would lead with an older release. Move it "
+                              "to the top of the file.")
+        else:
+            report["hint"] = (f"the CHANGELOG entry for {version} is still the "
+                              "scaffold (TODO placeholders). Notes that read as "
+                              "written but say nothing are worse than none.")
         _emit(report, args.json)
         return 1
 

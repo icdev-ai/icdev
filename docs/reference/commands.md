@@ -3720,3 +3720,20 @@ opposite handling:
 
 Provisioning is non-destructive: it creates a database, role and extension, and
 never drops, alters or overwrites one that exists. `--dry-run` prints the plan.
+
+### Keeping `/updates` correct
+
+`http://localhost:5050/updates` renders `CHANGELOG.md` live, so the page updates
+the moment the file does. What `release.py` guarantees is that the file is
+*worth rendering* — the notes gate blocks a release unless, checked with the
+page's own parser:
+
+| Check | Blocks when |
+|---|---|
+| `updates_parses` | the entry doesn't parse — `/updates` would silently omit the release |
+| `updates_is_newest` | it isn't the top entry — the page would lead with an older version |
+| `updates_has_content` | it's still a `--scaffold-notes` TODO stub |
+
+The middle one is the state that had `/updates` advertising 1.2.37 while the
+package shipped 1.2.39. The last exists because notes that read as written but
+say nothing are worse than none.
