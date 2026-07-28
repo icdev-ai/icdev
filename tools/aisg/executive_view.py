@@ -9,12 +9,12 @@ render as a healthy executive dashboard.
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.aisg.executive_view")
 
 COST_PER_HOUR = 150.0
 

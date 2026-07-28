@@ -9,7 +9,7 @@ Set PC_STORAGE_BACKEND=postgresql + PC_PG_* env vars to use PostgreSQL.
 """
 
 import json
-import logging
+from tools.logging.icdev_logger import get_logger
 import os
 import sqlite3
 import uuid
@@ -44,7 +44,7 @@ def get_connection():
             # unavailable — do NOT fall back silently. A silent SQLite fallback
             # splits this canvas's data across two backends (some writes land in PG,
             # others in the local pipeline_canvas.db), which is very hard to diagnose.
-            logging.getLogger("icdev.pipeline.db").error(
+            get_logger("icdev.pipeline.db").error(
                 "PDC: postgresql requested but psycopg2/storage unavailable — "
                 "falling back to sqlite; data will split across backends"
             )

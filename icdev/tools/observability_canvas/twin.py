@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import copy
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -23,7 +22,8 @@ from tools.observability_canvas.observability_engine import (
     compute_mitre_detection_coverage,
 )
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.observability_canvas.twin")
 
 # ── Heuristic constants (planning ESTIMATES, NOT observed telemetry) ──────────
 # These translate a modeled *coverage delta* into rough error-budget / MTTR

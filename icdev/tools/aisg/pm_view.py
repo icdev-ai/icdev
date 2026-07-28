@@ -12,13 +12,13 @@ substitutes fabricated values presented as real project status.
 """
 from __future__ import annotations
 
-import logging
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.aisg.pm_view")
 
 _DONE = ("done", "completed")
 _TODO = ("todo", "pending", "scheduled", "backlog")

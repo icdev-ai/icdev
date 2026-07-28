@@ -12,11 +12,11 @@ state instead of fabricated maturity scores.
 from __future__ import annotations
 
 import json
-import logging
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.aisg.skills_tracker")
 
 # Legend only — maps an integer maturity level to its display label/badge.
 _MATURITY_LEVELS = {

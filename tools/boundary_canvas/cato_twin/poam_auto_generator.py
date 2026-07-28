@@ -22,7 +22,6 @@ Usage (programmatic):
 """
 
 import json
-import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -34,7 +33,8 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.boundary_canvas.poam_auto_generator")
 
 
 def _row_id(row: Any) -> Any:

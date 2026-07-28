@@ -1,6 +1,6 @@
 ---
 name: icdev-divergence
-description: "Run Divergent Ideation — a single isolated generative fan-out that produces many candidate ideas, then a separate critic scores them on novelty/viability/fit and flags seductive-but-broken traps. Use at a consequential decision point when a single-shot answer risks tunnel vision. OPT-IN and higher-cost than a direct answer."
+description: "Run Divergent Ideation — a single isolated generative fan-out that produces many candidate ideas, then a separate critic scores them on novelty/viability/fit and flags seductive-but-broken traps. Use when a single-shot answer risks tunnel vision at a consequential decision point. OPT-IN and higher-cost than a direct answer."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
