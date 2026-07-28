@@ -47,6 +47,18 @@
 // primitive than GitHub's X-Hub-Signature-256, and step 4 exists so a green run
 // means the check actually ran rather than that it was unconfigured.
 //
+// Running it
+// ----------
+// Opt-in via `ICDEV_E2E_DWO_TRIGGER=1` so the shared CI sweep skips it — see the
+// guard on the describe block below, which also records the current blocker:
+//
+//   ICDEV_E2E_DWO_TRIGGER=1 ICDEV_NO_SERVER=1 \
+//     npx playwright test tests/e2e/dwo_trigger_linkage.spec.ts --headed
+//
+// `ICDEV_NO_SERVER=1` stops Playwright booting a second dashboard on 5050 when
+// one is already running. Note `baseURL` honours `ICDEV_DASHBOARD_URL` if it is
+// exported — point it at the dashboard you actually mean to drive.
+//
 // Screenshots
 // -----------
 // `playwright.config.ts` wipes `outputDir` on every run. The screenshot below
@@ -283,6 +295,35 @@ async function openRunDetail(page: Page, runId: string): Promise<void> {
 // ── The test ───────────────────────────────────────────────────────────────
 
 test.describe.serial('DWO — a triggered run links back to the event that started it', () => {
+  // Opt-in, and deliberately out of the shared CI sweep — the same call made for
+  // tests/e2e/dwo_restart_durability.spec.ts, for the same reason.
+  //
+  // Today this spec skips anyway, one step in, because the trigger surface is
+  // not in the tree (see the probe below). But the moment dwo-evt-02/-04 land it
+  // would start spawning a gateway child inside the CI E2E job — a job that
+  // drives ONE long-lived dashboard shared by ~800 tests and exports
+  // ICDEV_STORAGE_BACKEND=postgresql, while the child inherits that env and must
+  // find the same provisioned database. Gating now means the surface landing
+  // turns this green-by-skip rather than red-by-surprise on an unrelated PR.
+  //
+  // Run it deliberately, on a host where you own the dashboard:
+  //
+  //   ICDEV_E2E_DWO_TRIGGER=1 ICDEV_NO_SERVER=1 \
+  //     npx playwright test tests/e2e/dwo_trigger_linkage.spec.ts --headed
+  //
+  // KNOWN BLOCKER (2026-07-28): even opted in, this cannot pass yet. The
+  // dispatch half of the feature does not exist. Migration 304 ships the three
+  // tables (studio_event_sources, studio_workflow_triggers,
+  // studio_trigger_events), but there is no tools/studio/event_dispatch.py, no
+  // hook in the gateway webhook handler, and GET /api/studio/event-sources and
+  // /api/studio/triggers both answer 404. Verified against origin/main d3aa89b9f.
+  // Those land with dwo-evt-02 and dwo-evt-04; re-run this then and drop this
+  // paragraph. Everything else the spec leans on was verified present.
+  test.skip(
+    !process.env.ICDEV_E2E_DWO_TRIGGER,
+    'opt-in: set ICDEV_E2E_DWO_TRIGGER=1 — this spec spawns a gateway process it owns',
+  );
+
   test.beforeAll(() => {
     fs.mkdirSync(SCREENSHOTS, { recursive: true });
   });
