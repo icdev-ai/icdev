@@ -59,6 +59,14 @@ jobs:
         # pages registered directly in app.py. It earns a slot because it caught
         # a real divergence that then sat red on main for a day while every
         # gated check stayed green (#636). ~6s, pure Python, no DB/LLM/network.
+        #
+        # test_init_goals_and_selective.py pins icdev/data/claude_bootstrap/
+        # CLAUDE.md byte-for-byte against the repo's CLAUDE.md. That copy is
+        # only refreshed when someone runs prebuild_bootstrap, so editing
+        # CLAUDE.md alone makes `icdev init` scaffold a stale instruction file
+        # for installed users -- which is exactly what shipped in #960. Off the
+        # gate the drift is invisible; on it, the fix is one prebuild run.
+        # ~13s, pure Python, no DB/LLM/network.
         run: |
           _abort() {
             echo "CI: abort signal received — terminating pytest children"
@@ -115,6 +123,7 @@ jobs:
             tests/browser/cdp/test_webdriver.py \
             tests/browser/cdp/test_ws_client.py \
             tests/test_context_budget.py \
+            tests/test_init_goals_and_selective.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
