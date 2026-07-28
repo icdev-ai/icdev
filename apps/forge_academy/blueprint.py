@@ -13,7 +13,7 @@ from .db import (
     migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     get_user_achievements, grant_achievement, update_user_xp,
-    create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
+    active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
     record_user_competency,
@@ -24,7 +24,7 @@ from .gamification import (
     check_step_achievements, award_daily_login, get_user_stats,
 )
 from .integrations import (
-    record_skill_usage, advance_learning_track, list_patterns,
+    record_skill_usage, advance_learning_track, patterns_status,
     detect_role_from_answers, create_workflow,
 )
 
@@ -185,6 +185,10 @@ def hub():
         daily_login=daily,
         roles=ROLES,
         role_filter=role_filter,
+        # Hide the Arena entry point while no challenge can exist. Seeding
+        # filler to populate the page was explicitly rejected — fabricated data
+        # presented as real is the failure mode PENTA removed from this surface.
+        has_challenges=active_challenge_count() > 0,
     )
 
 
@@ -357,11 +361,15 @@ def arena():
 def workflow_builder_page():
     _ensure_init()
     fa_user = _fa_user()
-    patterns = list_patterns()
+    # Distinguish "no patterns configured" from "pattern source unavailable"
+    # so the page cannot present a broken dependency as an empty catalogue.
+    pattern_state = patterns_status()
     return render_template(
         "forge_academy/workflow_builder.html",
         fa_user=fa_user,
-        patterns=patterns,
+        patterns=pattern_state["patterns"],
+        patterns_available=pattern_state["available"],
+        patterns_error=pattern_state["error"],
         level_ctx=_level_ctx(fa_user) if fa_user else {},
     )
 

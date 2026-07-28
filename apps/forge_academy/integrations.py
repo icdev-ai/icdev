@@ -50,13 +50,34 @@ def deploy_pattern(pattern_id: str, target_dir: str = None) -> dict:
         return {"status": "error", "message": str(e)}
 
 
-def list_patterns() -> list:
+def patterns_status() -> dict:
+    """Patterns plus WHY the list is empty when it is.
+
+    This used to be a bare try/except returning [] at warning level, which made
+    a broken pattern source indistinguishable from "no patterns configured" —
+    the Workflow Builder rendered "No patterns available." either way, and
+    nothing reached a health check (fga-fix-05). In the default environment the
+    real cause is `no such table: aisg_patterns`: the module imports fine, the
+    AISG table simply has not been created, so this was never an import failure.
+
+    Returns ``{"patterns": list, "available": bool, "error": str | None}``.
+    ``available`` False means the source could not be consulted; an empty list
+    with ``available`` True means there genuinely are none.
+    """
     try:
         from tools.aisg.pattern_registry import list_patterns as _list
-        return _list()
+        return {"patterns": _list() or [], "available": True, "error": None}
     except Exception as e:
-        _log.warning("pattern_registry.list_patterns failed: %s", e)
-        return []
+        _log.error(
+            "FORGE Academy: pattern registry unavailable — the Workflow Builder "
+            "palette will be empty: %s", e, exc_info=True,
+        )
+        return {"patterns": [], "available": False, "error": str(e)}
+
+
+def list_patterns() -> list:
+    """Back-compat wrapper. Prefer :func:`patterns_status` for new callers."""
+    return patterns_status()["patterns"]
 
 
 # ---------------------------------------------------------------------------
