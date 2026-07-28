@@ -175,6 +175,7 @@ STUDIO_TABLES: dict[str, str] = {
             kind        TEXT NOT NULL
                         CHECK(kind IN ('gateway_channel','canvas_bus','schedule','manual')),
             config_json TEXT,
+            max_il      TEXT DEFAULT 'IL2',
             enabled     INTEGER DEFAULT 1,
             created_by  TEXT,
             created_at  TEXT DEFAULT (datetime('now'))
@@ -188,22 +189,32 @@ STUDIO_TABLES: dict[str, str] = {
             event_type        TEXT,
             filter_json       TEXT,
             input_mapping_json TEXT,
+            workflow_il       TEXT DEFAULT 'IL6',
+            project_id        TEXT DEFAULT 'default',
             enabled           INTEGER DEFAULT 1,
             created_at        TEXT DEFAULT (datetime('now'))
         )
     """,
-    # APPEND-ONLY — audit trail: why did this run start
+    # APPEND-ONLY — audit trail: why did this run start (and why did it not).
+    # idempotency_key is UNIQUE — a replayed webhook delivery loses the INSERT
+    # and therefore never starts a second run (dwo-evt-02).
     "studio_trigger_events": """
         CREATE TABLE IF NOT EXISTS studio_trigger_events (
             event_id     TEXT PRIMARY KEY,
             source_id    TEXT,
             trigger_id   TEXT,
+            workflow_id  TEXT,
             event_type   TEXT,
             payload_json TEXT,
             matched      INTEGER DEFAULT 0,
+            outcome      TEXT,
+            classification TEXT,
+            idempotency_key TEXT UNIQUE,
+            envelope_id  TEXT,
             run_id       TEXT,
             reason       TEXT,
-            received_at  TEXT DEFAULT (datetime('now'))
+            received_at  TEXT DEFAULT (datetime('now')),
+            created_at   TEXT
         )
     """,
     # ── Dashboards ─────────────────────────────────────────

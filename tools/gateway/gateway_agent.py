@@ -295,6 +295,19 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             )
             return jsonify({"status": "rejected", "gate": failed.gate_name if failed else "unknown"}), 200
 
+        # 6b. Hand the cleared envelope to the Studio trigger registry
+        # (dwo-evt-02). Deliberately AFTER the eight gates and the allowlist
+        # check, and deliberately asynchronous — a bound workflow must not
+        # delay, or be able to fail, the webhook response. Nothing here
+        # weakens command_allowlist: an event rejected above has already
+        # returned before reaching this line, and starts nothing.
+        try:
+            from tools.studio.event_dispatch import dispatch_envelope_async  # noqa: PLC0415
+
+            dispatch_envelope_async(envelope, channel_config, data, headers)
+        except Exception as exc:  # noqa: BLE001 - dispatch is best-effort
+            logger.warning("Studio event dispatch unavailable: %s", exc)
+
         # 7. Check confirmation requirement
         if requires_confirmation(envelope.command, effective_allowlist):
             # For now, execute directly — confirmation flow can be added

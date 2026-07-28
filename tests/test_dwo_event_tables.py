@@ -16,6 +16,12 @@ from tools.studio.init_db import APPEND_ONLY_TABLES, STUDIO_TABLES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = REPO_ROOT / "tools" / "db" / "migrations" / "304_studio_event_tables.sql"
+# 305 (dwo-evt-02) ALTERs these tables. init_db creates the end state directly,
+# so the reference has to be the whole chain, not just the table's birth.
+MIGRATION_CHAIN = [
+    MIGRATION,
+    REPO_ROOT / "tools" / "db" / "migrations" / "305_studio_trigger_dispatch.sql",
+]
 
 EVENT_TABLES = [
     "studio_event_sources",
@@ -74,7 +80,8 @@ def test_init_db_ddl_matches_migration(table):
         ref = sqlite3.connect(":memory:")
         try:
             _apply(ref, STUDIO_TABLES["studio_workflows"])
-            _apply(ref, MIGRATION.read_text(encoding="utf-8"))
+            for migration in MIGRATION_CHAIN:
+                _apply(ref, migration.read_text(encoding="utf-8"))
             ref_cols = {r[1] for r in ref.execute(f"PRAGMA table_info({table})")}
         finally:
             ref.close()
