@@ -38,6 +38,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from tools.logging.icdev_logger import get_logger
+
 _ROOT = Path(__file__).resolve().parents[2]
 _FLAG = Path(os.environ.get("KANBAN_PAUSE_FLAG", str(_ROOT / "data" / "kanban_scheduler.paused")))
 
@@ -48,6 +50,9 @@ def _now() -> datetime:
 
 def _stamp() -> str:
     return _now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+logger = get_logger("icdev.kanban.scheduler_control")
 
 
 def _max_minutes() -> int:
@@ -82,12 +87,43 @@ def _flag_is_stale(meta: dict) -> bool:
     return (_now() - ts).total_seconds() / 60.0 > _max_minutes()
 
 
+def _minutes_remaining(meta: dict) -> float | None:
+    """Minutes before this manual pause auto-expires, or None if unknown."""
+    since = meta.get("since")
+    if not since:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(since).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    elapsed = (_now() - ts).total_seconds() / 60.0
+    return max(0.0, _max_minutes() - elapsed)
+
+
 def manual_paused() -> bool:
-    """True when the manual sentinel flag is set and not stale."""
+    """True when the manual sentinel flag is set and not stale.
+
+    A stale flag is cleared HERE, which means dispatch silently resumes the
+    first time anything asks. That auto-expiry is deliberate — a crashed
+    pipeline must not wedge the scheduler forever — but it used to happen
+    without a word: an operator who paused, checked, and was told "paused" had
+    no way to learn the pause had since lapsed. One overnight run was reported
+    as paused after it had already resumed and dispatched. The expiry stays;
+    the silence does not.
+    """
     meta = _flag_meta()
     if meta is None:
         return False
     if _flag_is_stale(meta):
+        logger.warning(
+            "kanban pause EXPIRED after %d min and has been cleared — dispatch "
+            "resumes. Paused by %r at %s%s. Re-pause if you still need it; the "
+            "ceiling is KANBAN_PAUSE_MAX_MINUTES.",
+            _max_minutes(),
+            meta.get("actor") or "unknown",
+            meta.get("since") or "unknown",
+            f" (reason: {meta['reason']})" if meta.get("reason") else "",
+        )
         try:
             _FLAG.unlink()
         except FileNotFoundError:
@@ -209,6 +245,12 @@ def status() -> dict:
         "session_lease": session_paused(),
         "auto_enabled": _auto_enabled(),
         "active_interactive_sessions": len(active_interactive_sessions()),
+        # How long this pause has left. A caller reporting "paused" without it
+        # cannot tell a pause that will hold from one about to lapse.
+        "manual_expires_in_minutes": (
+            _minutes_remaining(_flag_meta() or {}) if _flag_meta() is not None else None
+        ),
+        "manual_max_minutes": _max_minutes(),
         "detail": sp,
     }
 
