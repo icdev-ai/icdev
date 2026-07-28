@@ -19,9 +19,20 @@
 #     as stale and should be deleted from this file.
 #   - Paths are repo-relative, forward-slash.
 
+#   - Entries may be literal paths or glob patterns. Prefer a pattern for a
+#     whole doc surface so a file added later is covered by default.
+
 docs:
   - CLAUDE.md
   - docs/reference/commands.md
+  # Capability catalogue (ahx-doc-01). These files were outside the gate, and
+  # context/capabilities/harness.yaml consequently advertised three tools —
+  # maturity_assessor.py, trace_analyzer.py, exit_criteria_evaluator.py — that
+  # existed nowhere in the tree. tools/pulse/engine/capability_scanner.py reads
+  # this directory and feeds `article_hooks` into generated content, so an
+  # unbacked claim here is publishable. Adding the pattern surfaced no NEW
+  # unresolved paths: every one already appears in the grandfather list below.
+  - context/capabilities/*.yaml
 
 # Pre-existing broken references as of oss-fix-02 (2026-07-25).
 # 55 distinct paths — whole subsystems documented in commands.md that were

@@ -161,6 +161,28 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
             pass
         conn.commit()
         logger.info("pr_watcher: %s -> %s (%s)", task_id, status, reason)
+
+        # Harness co-learning: this is a TERMINAL transition, so the harness
+        # needs the outcome here. _move_task() in the kanban reflex carries the
+        # same hook, but under the PR flow it deliberately does NOT mark the
+        # task done — the work is not finished until the PR merges, and this
+        # watcher owns that edge. The result was that every task completing
+        # through the PR flow (the primary build path) recorded a codegen
+        # decision at dispatch and then never an outcome: harness_eval filled
+        # with rows whose actual_outcome stayed NULL, and compute_metrics
+        # derived precision/recall/ECE from the small minority of tasks that
+        # failed outright. Best-effort — a telemetry write must never stall the
+        # watch loop or undo a committed status change.
+        if status in ("done", "token_exhausted", "failed"):
+            try:
+                from tools.genesis.harness.eval_harness import record_outcome
+
+                record_outcome(task_id, "resolved" if status == "done" else "failed")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "pr_watcher: harness record_outcome skipped for %s: %s",
+                    task_id, exc,
+                )
         return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("pr_watcher: failed to set %s -> %s: %s", task_id, status, exc)

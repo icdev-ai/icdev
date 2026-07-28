@@ -43,6 +43,7 @@ from tools.genesis.harness.eval_harness import (
     NON_EVIDENCE_OUTCOMES,
     calibration_by_rule,
 )
+from tools.genesis.harness.eval_harness import SUCCESS_OUTCOMES as HARNESS_SUCCESS
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -52,6 +53,13 @@ logger = get_logger(__name__)
 # accurate — not wrong, just spelled differently. This is why the engine takes
 # the vocabulary as a parameter.
 VERIFICATION_SUCCESS = frozenset({"passed"})
+
+# ...and the sampled rows are read straight out of harness_eval, which speaks the
+# harness vocabulary (resolved/false_positive/...), not kanban_verifications'
+# passed/failed. Scoring them against VERIFICATION_SUCCESS meant a human who
+# correctly labelled a drawn sample produced a row counted as a miscalibration —
+# the same "spelled differently" bug the comment above warns about, one call site
+# further down. HARNESS_SUCCESS (imported above) is the vocabulary for that path.
 
 # 'bypassed' means verification was skipped. It is NOT a failure, and counting it
 # as one manufactures miscalibration out of missing data -- the exact mistake made
@@ -116,7 +124,7 @@ def build_report(conn) -> dict[str, Any]:
         "sampled": {
             "provenance": "UNBIASED -- drawn at random by confidence_sampler",
             "joined": len(sampled),
-            "rules": calibration_by_rule(sampled, success_outcomes=VERIFICATION_SUCCESS),
+            "rules": calibration_by_rule(sampled, success_outcomes=HARNESS_SUCCESS),
         },
         "min_samples": MIN_CALIBRATION_SAMPLES,
     }
