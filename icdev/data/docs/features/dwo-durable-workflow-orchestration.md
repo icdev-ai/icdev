@@ -1,0 +1,124 @@
+# Durable Workflow Orchestration — Studio Run Checkpoint & Resume
+
+**Card:** DWO (Durable Workflow Orchestration) — tasks `dwo-dur-01` … `dwo-dur-03`
+**Modules:** `tools/studio/workflow_runner.py`, `tools/dashboard/api/studio.py`,
+`tools/dashboard/static/js/workflow-studio-exec.js`
+
+CUI // SP-CTI
+
+---
+
+## What this delivers
+
+A Studio workflow run survives the process that started it. If the dashboard is
+restarted, killed, or crashes mid-run, the run can be picked back up from the
+step it reached instead of being re-executed from step 1.
+
+| Capability | Where |
+|---|---|
+| Approval gates persist across a restart | `_load_prior_steps()`, `_await_gate()` (dwo-dur-01/02) |
+| Completed steps are replayed, not re-run | `prior_status` branch in `_worker()` (dwo-dur-01/02) |
+| Per-step `retries` / `retry_backoff_seconds` | `_retry_policy()`, `_exec_step_with_retries()` |
+| `POST /api/studio/runs/<run_id>/resume` | `api_resume_run()` |
+| `▶ Resume Run` control on the run detail modal | `StudioWF.resumeRun()` |
+
+---
+
+## Decision: resume continues the run IN PLACE
+
+`resume_run()` re-attaches a worker to the **original** run row. It does not
+create a second run linked back by a `resumed_from_run_id`.
+
+`RESUME_MODE = "in_place"` in `tools/studio/workflow_runner.py` names this
+choice so callers (and the API response) can see which model is in force.
+
+**Why in place, and not a forked linked run**
+
+The alternative — insert a new run row carrying `resumed_from_run_id`, leaving
+the original immutable — was considered and rejected:
+
+1. **It would strand pending approvals.** A step parked at `awaiting_approval`
+   keeps its original `step_run_id`, and that step row is keyed to the original
+   `run_id`. An approval issued before the interruption (an email link, another
+   operator's browser tab, a cross-process approval already written to the DB)
+   resolves *that* `step_run_id`. Fork the run and the approval lands on a run
+   no worker is executing, while the new run parks a second gate that nobody
+   was told about. Continuing in place is what makes the dwo-dur-01/02 gate
+   re-attachment work at all.
+2. **The immutability it would buy is not actually at risk.** `_worker()` only
+   ever *inserts* into `studio_workflow_run_steps`; resume never rewrites a
+   prior step's record — replayed steps are re-emitted to the SSE queue and
+   skipped, explicitly "without touching the append-only record again". The run
+   row's `status` is mutated during any normal run (`pending → running →
+   success`), so a resume mutating it is not a new class of write.
+3. **Splitting the history costs more than it returns.** Every consumer of run
+   history — the run list, the detail modal, `summary_json`, artifact
+   aggregation — would need to walk a resume chain to answer "what happened in
+   this run?".
+
+**What is given up:** there is no separate row recording "a resume happened at
+T". The evidence is indirect — the run's steps span a gap in `started_at`, and
+the SSE stream marks replayed steps with `resumed: true`. If a hard audit
+requirement for resume events appears later, the right shape is an append-only
+`studio_workflow_run_resumes` table (one row per resume, same `run_id`), not a
+forked run.
+
+---
+
+## Per-step retries
+
+Declared on a step in the template YAML. Both default to `0`, so every existing
+template behaves exactly as it did before.
+
+```yaml
+steps:
+  - id: plan
+    name: Terraform Plan
+    tool: tools/deploy/terraform_plan.py
+    retries: 2                   # up to 2 extra attempts after the first
+    retry_backoff_seconds: 5     # linear: 5s before attempt 2, 10s before attempt 3
+```
+
+- Only `failed` and `timeout` are retried. A `skipped` step has nothing to
+  retry, and a human gate is decided by a person, not by re-execution.
+- Backoff is linear (`backoff * attempt`) and each sleep is capped at
+  `_MAX_RETRY_BACKOFF` (300s), so a typo cannot wedge a worker thread for a day.
+- The step's `step_done` SSE event carries `attempts`; the result payload gains
+  an `attempts` key only when more than one attempt was made.
+- Retries apply to freshly executed steps only. A replayed step is already
+  satisfied, and a re-attached gate is waiting on a human.
+
+---
+
+## Resume API
+
+```
+POST /api/studio/runs/<run_id>/resume
+POST /api/studio/workflows/runs/<run_id>/resume     (alias, groups with the other run routes)
+```
+
+| Response | Meaning |
+|---|---|
+| `202 {"status":"resuming","run_id":…,"mode":"in_place"}` | A worker was re-attached |
+| `404 {"error":"Run not found"}` | No such run |
+| `409 {"error":"Run is 'success' — only …"}` | Terminal run; nothing to resume |
+| `409 {"error":"Run could not be resumed …"}` | A live worker already owns it, or the workflow was deleted |
+
+Resumable statuses (`RESUMABLE_RUN_STATUSES`): `pending`, `running`,
+`awaiting_approval`, `failed`. `failed` is included deliberately — a run that
+died part-way is the case resume exists for.
+
+## Resume UI
+
+The run detail modal (Studio → Workflow Studio → Run History → **Details**)
+shows a **▶ Resume Run** button whenever the run's status is resumable. The
+JavaScript list `_RESUMABLE_RUN_STATUSES` mirrors the Python constant; a test
+asserts the two stay in step.
+
+---
+
+## Tests
+
+`tests/test_dwo_dur_03_resume_surface.py` — retry policy parsing and defaults,
+retry execution paths, resumable-status contract, the API's 202/404/409
+outcomes, and the UI control's presence and status parity.

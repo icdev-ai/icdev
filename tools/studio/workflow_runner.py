@@ -60,6 +60,19 @@ _approval_reasons: dict[str, str] = {}   # free-text reason from approver
 _GATE_DEFAULT_TIMEOUT = 86400
 
 
+# ── Resume ─────────────────────────────────────────────────
+
+# Resume continues the original run row rather than forking a linked one.
+# The decision and its rejected alternative are recorded in
+# docs/features/dwo-durable-workflow-orchestration.md.
+RESUME_MODE = "in_place"
+
+# Statuses a run can be resumed from. 'failed' is included: a run that died
+# part-way is exactly the case resume exists for, and steps already recorded
+# success/approved/skipped are replayed rather than re-executed.
+RESUMABLE_RUN_STATUSES = ("pending", "running", "awaiting_approval", "failed")
+
+
 def _parse_iso(value: str | None) -> datetime | None:
     """Parse an ISO-8601 timestamp, returning None if unusable."""
     if not value:
@@ -181,6 +194,53 @@ def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
 
 
 # ── Step execution ─────────────────────────────────────────
+
+# A single backoff sleep is capped here so a typo in a template
+# (`retry_backoff_seconds: 86400`) cannot wedge a worker thread for a day.
+_MAX_RETRY_BACKOFF = 300.0
+
+# Only these outcomes are worth re-running. A 'skipped' step has nothing to
+# retry, and a human gate is decided by a person, not by re-execution.
+_RETRYABLE_STATUSES = ("failed", "timeout")
+
+
+def _retry_policy(step: dict) -> tuple[int, float]:
+    """(retries, backoff_seconds) declared by a step.
+
+    Both default to 0, so a template that declares neither behaves exactly as
+    it did before per-step retries existed. Unparseable values degrade to the
+    default rather than raising mid-run.
+    """
+    try:
+        retries = max(0, int(step.get("retries", 0) or 0))
+    except (TypeError, ValueError):
+        retries = 0
+    try:
+        backoff = max(0.0, float(step.get("retry_backoff_seconds", 0) or 0))
+    except (TypeError, ValueError):
+        backoff = 0.0
+    return retries, min(backoff, _MAX_RETRY_BACKOFF)
+
+
+def _exec_step_with_retries(step: dict, project_id: str, run_id: str = "") -> dict:
+    """Run a step, re-running it up to `retries` times while it fails.
+
+    Backoff is linear (`backoff * attempt`) between attempts. The returned
+    result carries `attempts` only when more than one was made, so an
+    unretried step's payload is unchanged.
+    """
+    retries, backoff = _retry_policy(step)
+    result = _exec_step(step, project_id, run_id)
+    attempt = 0
+    while attempt < retries and result["status"] in _RETRYABLE_STATUSES:
+        attempt += 1
+        if backoff:
+            time.sleep(min(backoff * attempt, _MAX_RETRY_BACKOFF))
+        result = _exec_step(step, project_id, run_id)
+    if attempt:
+        result["attempts"] = attempt + 1
+    return result
+
 
 def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     result: dict = {
@@ -579,7 +639,7 @@ def _worker(
                 step_run_id = _create_step_record(
                     run_id, step["id"], step.get("name", step["id"]), _step_tool_path(step)
                 )
-                result = _exec_step(step, project_id, run_id)
+                result = _exec_step_with_retries(step, project_id, run_id)
 
             if result["status"] in ("success", "approved", "skipped") and prior_status:
                 # Replayed step: emit its artifacts and move on without touching
@@ -677,6 +737,7 @@ def _worker(
                 "duration_ms": result.get("duration_ms", 0),
                 "output_preview": (result.get("stdout") or "")[:500],
                 "error": result.get("stderr"),
+                "attempts": result.get("attempts", 1),
                 "artifacts": artifacts,
                 "index": i,
                 "total": len(ordered_steps),
@@ -752,13 +813,20 @@ def resume_run(run_id: str) -> bool:
     awaiting_approval keeps its original step_run_id, so an approval issued
     before the interruption still resolves it.
 
+    Resume continues the ORIGINAL run row (`RESUME_MODE == "in_place"`); it does
+    not fork a new run linked by a `resumed_from_run_id`. See
+    docs/features/dwo-durable-workflow-orchestration.md for why: a gate parked
+    at awaiting_approval keeps its step_run_id, and that step row is keyed to
+    this run_id — forking would strand every approval issued before the
+    interruption against a run nobody is executing.
+
     Returns False if the run does not exist, is already finished, or is already
     being executed by a live worker in this process.
     """
     from tools.studio.workflow_editor import get_workflow  # noqa: PLC0415
 
     run = get_run(run_id)
-    if not run or run.get("status") not in ("awaiting_approval", "running", "pending"):
+    if not run or run.get("status") not in RESUMABLE_RUN_STATUSES:
         return False
 
     with _run_queues_lock:
