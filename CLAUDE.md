@@ -388,7 +388,7 @@ This annotation documents why the bypass is safe and lets `tools/workflow/cohere
 - Audit trail is append-only — NEVER UPDATE/DELETE audit tables
 - Security gates block on: CAT1 STIG, critical/high vulns, failed tests, missing markings
 - When implementing NIST 800-53 control, call crosswalk engine for FedRAMP/CMMC auto-populate
-- Self-healing limited to confidence ≥ 0.7 and max 5/hour
+- Self-healing limited to confidence ≥ 0.7, max 3/hour **per pattern** and 5/hour **across all patterns**. All four thresholds live in `args/heal_constitution.yaml` under `rate_limits` — never hardcode them in a module
 - All A2A uses mutual TLS; never store secrets in code
 - SBOM regenerated on every build; containers non-root, read-only rootfs
 - IL6/SECRET: SIPR-only, NSA Type 1 encryption, air-gapped CI/CD

@@ -283,24 +283,39 @@ def handle_self_heal(args: dict) -> dict:
                 "solution": pattern["solution"],
             }
 
-        if pattern["confidence"] < 0.7:
+        # Thresholds come from args/heal_constitution.yaml :: rate_limits, the
+        # single home shared with tools/knowledge/self_heal_analyzer.py. They used
+        # to be literals in both files (ahx-heal-01). Values are unchanged.
+        from tools.knowledge.self_heal_analyzer import _heal_rate_limits
+
+        _limits = _heal_rate_limits()
+        _confidence_floor = _limits["confidence_threshold"]
+        _global_hourly_cap = _limits["max_heal_attempts_global_per_hour"]
+
+        if pattern["confidence"] < _confidence_floor:
             return {
                 "status": "low_confidence",
-                "message": f"Pattern confidence ({pattern['confidence']}) is below auto-heal threshold (0.7). Suggesting fix for manual review.",
+                "message": (
+                    f"Pattern confidence ({pattern['confidence']}) is below auto-heal "
+                    f"threshold ({_confidence_floor}). Suggesting fix for manual review."
+                ),
                 "pattern": pattern["name"],
                 "solution": pattern["solution"],
             }
 
-        # Check rate limits (max 5/hour)
+        # Rate limit across ALL patterns (the analyzer separately caps per-pattern).
         recent_heals = conn.execute(
             """SELECT COUNT(*) as cnt FROM self_healing_events
                WHERE created_at > datetime('now', '-1 hour')""",
         ).fetchone()
 
-        if recent_heals and recent_heals["cnt"] >= 5:
+        if recent_heals and recent_heals["cnt"] >= _global_hourly_cap:
             return {
                 "status": "rate_limited",
-                "message": "Self-healing rate limit reached (5/hour). Queuing for later execution.",
+                "message": (
+                    f"Self-healing rate limit reached ({_global_hourly_cap}/hour). "
+                    "Queuing for later execution."
+                ),
             }
 
         # Record the self-healing event
