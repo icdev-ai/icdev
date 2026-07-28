@@ -2080,6 +2080,23 @@ def _get_due_tasks() -> list:
         pending_prompts = _count_pending_prompts()
 
         available_slots = MAX_IN_PROGRESS - current_in_progress
+
+        # Flow control (clx-flow-01). MAX_IN_PROGRESS bounds tasks that are
+        # EXECUTING; it does not bound finished-but-unreviewed output. A task
+        # that moves to pr_opened stops being counted here, frees a slot, and
+        # the loop dispatches more — so open PRs can stack without limit,
+        # conflicting with each other and deferring the human review that is
+        # supposed to be this loop's feedback signal. OFF unless
+        # KANBAN_BACKPRESSURE_ENABLED is set: throttling autonomous throughput
+        # is an operator's call, and this returns available_slots untouched
+        # when disabled.
+        try:
+            from tools.kanban.backpressure import apply_backpressure
+
+            available_slots = apply_backpressure(available_slots)
+        except Exception as _bp_exc:  # noqa: BLE001 — never wedge dispatch
+            logger.warning("backpressure check skipped: %s", _bp_exc)
+
         if available_slots <= 0:
             return []  # At capacity — don't dispatch any scheduled or backlog tasks
 
