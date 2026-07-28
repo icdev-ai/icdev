@@ -6398,3 +6398,52 @@ projects:
   - key: gd
     title: GD - GameDay Defects
     priority: medium
+- key: dwo
+  name: DWO — Durable Workflow Orchestration
+  description: 'Adapt the four capabilities SuperPlane (github.com/superplanehq/superplane,
+    Apache-2.0) has that the ICDEV Studio workflow engine lacks, without porting its Go/RabbitMQ/React
+    stack. Studio already owns the DAG model, composer, editor, SSE runner and append-only run audit;
+    the gaps are durability (runs are force-failed on restart), event-to-workflow binding (the gateway
+    receives events, nothing routes them into a run), run-scoped shared state, and action breadth
+    (9 executors vs 444 MCP tools). Every slice extends an existing surface — no parallel engine,
+    no new runtime dependency, no second rules DSL.'
+  task_prefix: dwo-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/dwo-00-superplane-workflow-adaptation.md — full overlap map, the three options
+    considered, and why port and sidecar were both rejected'
+  - 'DUR: highest value and a real defect, not just a missing feature. workflow_runner._cleanup_orphaned_gates()
+    runs at import time and force-fails every awaiting_approval run on each dashboard start; gates block
+    on an in-memory threading.Event. A workflow parked on a human approver cannot survive a deploy
+    (dwo-dur-01..04)'
+  - 'EVT: the gateway already ingests external events through an HMAC envelope and an 8-gate security
+    chain — bind those to workflow triggers instead of opening a new ingress; reuse
+    automation_builder CONDITION_OPERATORS as the filter language (dwo-evt-01..04)'
+  - 'MEM: executors/_base.py reconstructs the canvas slug from artifact paths through four fallback
+    strategies because there is no shared run state; a run-scoped KV removes the guesswork
+    (dwo-mem-01..02)'
+  - 'MCP: one generic executor dispatching TOOL_REGISTRY module/handler pairs turns 444 registered
+    MCP tools into workflow actions — larger integration surface than SuperPlane 50, from one file
+    (dwo-mcp-01..03)'
+  - 'VV: manifest shards, feature doc, companion sync, coherence gate, pytest under the shared conftest
+    schema, and a Playwright restart-durability proof (dwo-vv-01..03)'
+  - 'Vocabulary: SuperPlane canvas means workflow graph; ICDEV canvas means domain module. Nothing here
+    reuses canvas for a graph — the words are workflow, run, trigger, event source'
+  - 'NOT in scope: porting Go code, RabbitMQ or any new broker, a React editor rewrite, or SuperPlane
+    Consoles (studio_dashboards already covers declarative panel grids)'
+  epics:
+  - key: dur
+    title: DUR — Durable Execution & Gate Persistence
+    priority: high
+  - key: evt
+    title: EVT — Event Sources & Workflow Triggers
+    priority: high
+  - key: mem
+    title: MEM — Run-Scoped Memory
+    priority: medium
+  - key: mcp
+    title: MCP — Universal MCP Tool Executor
+    priority: medium
+  - key: vv
+    title: VV — Integration, Docs & Verification
+    priority: high
