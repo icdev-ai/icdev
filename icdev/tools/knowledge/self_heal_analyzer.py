@@ -20,10 +20,41 @@ from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-# Thresholds
-CONFIDENCE_THRESHOLD = 0.7  # Auto-heal above this
-ESCALATION_THRESHOLD = 0.3  # Always escalate below this
-MAX_HEAL_ATTEMPTS = 3  # Max auto-heal attempts per hour per pattern
+
+def _heal_rate_limits() -> dict:
+    """Read the shared self-heal rate limits from args/heal_constitution.yaml.
+
+    These thresholds were hardcoded here and, with a different global-vs-
+    per-pattern scope, again in tools/mcp/knowledge_server.py's self_heal
+    fallback. The constitution is now the single home for both (ahx-heal-01).
+    Falls back to the historical literals if the file is unreadable, so a
+    malformed config cannot silently disable the limits.
+    """
+    defaults = {
+        "confidence_threshold": 0.7,
+        "escalation_threshold": 0.3,
+        "max_heal_attempts_per_pattern_per_hour": 3,
+        "max_heal_attempts_global_per_hour": 5,
+    }
+    try:
+        import yaml  # noqa: PLC0415
+
+        raw = yaml.safe_load(
+            (BASE_DIR / "args" / "heal_constitution.yaml").read_text(encoding="utf-8")
+        ) or {}
+        return {**defaults, **(raw.get("rate_limits") or {})}
+    except Exception:
+        return defaults
+
+
+_RATE_LIMITS = _heal_rate_limits()
+
+# Thresholds — see args/heal_constitution.yaml :: rate_limits
+CONFIDENCE_THRESHOLD = _RATE_LIMITS["confidence_threshold"]  # Auto-heal above this
+ESCALATION_THRESHOLD = _RATE_LIMITS["escalation_threshold"]  # Always escalate below this
+MAX_HEAL_ATTEMPTS = _RATE_LIMITS[
+    "max_heal_attempts_per_pattern_per_hour"
+]  # Max auto-heal attempts per hour per pattern
 
 # D-EVO-8: Per-project learning config (from args/evolution_config.yaml)
 _PER_PROJECT_ENABLED = False

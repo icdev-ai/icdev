@@ -120,3 +120,18 @@ agent:
 logging:
   level: INFO
   audit_enabled: true
+
+# cATO Digital Twin (tools/boundary_canvas/twin.py) — bdr-sec-4
+twin:
+  # Real LLM Chain-of-Debate for what-if simulation. OFF by default: the default
+  # simulate path is a deterministic heuristic (labelled method="heuristic").
+  # When enabled, simulate_delta(use_cod=True) calls the LLM router; on any LLM
+  # failure it falls back to the heuristic path.
+  chain_of_debate:
+    enabled: false
+    llm_function: reasoning
+  # Readiness rating-band thresholds (fraction of controls satisfied). Kept here
+  # so twin.py carries no magic compliance constants.
+  rating_bands:
+    green: 0.8
+    amber: 0.5

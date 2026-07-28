@@ -51,6 +51,28 @@ SOURCES: list[tuple[str, str, str]] = [
     (".claude/agents", "claude/agents", "dir"),
 ]
 
+# ICDEV is LLM-agnostic: the same guardrails ship for every major AI coding
+# tool, not just Claude Code. All ten of these were tracked in git and NONE of
+# them reached the wheel, so `pip install icdev && icdev init` produced a
+# Claude-only project. Sourced from tools/dx/ai_platforms.py so the generator,
+# the wheel and `icdev init` cannot drift apart.
+# REPO_ROOT must be on sys.path FIRST. Run as a script, `sys.path[0]` is
+# `tools/installer/`, not the repo root, so a bare `from tools.dx...` import
+# fails — and an earlier version swallowed that failure, silently dropping all
+# ten platform files from the wheel while reporting a successful build. The
+# import is load-bearing for packaging correctness, so it raises now.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tools.dx.ai_platforms import (  # noqa: E402
+    AI_PLATFORM_FILES,
+    bootstrap_name,
+)
+
+SOURCES.extend(
+    (rel, bootstrap_name(rel), "file") for _platform, rel in AI_PLATFORM_FILES
+)
+
 # Sources that may legitimately not exist yet. A missing OPTIONAL source is
 # recorded under `skipped_optional` and does NOT go to `errors`, so the
 # prebuild step (and the build that runs it) never fails just because an

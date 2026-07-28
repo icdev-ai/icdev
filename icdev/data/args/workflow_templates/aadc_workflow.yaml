@@ -15,7 +15,13 @@ steps:
     required: true
     timeout: 300
     depends_on: []
-    description: Audit AI governance posture — model risk, bias assessments, data provenance.
+    # penta-aadc-02: graph-driven. governance_scanner loads the AADC design
+    # (--project-id = design id, injected by workflow_runner) and derives the
+    # AI Risk Score and findings from agentic_engine.assess_design — no default
+    # posture. Reports assessment-unavailable (exit 2) if the design is absent.
+    description: >
+      Audit AI governance posture from the design graph (assess_design):
+      autonomy, HITL coverage, model/agent inventory, AI Risk Score.
 
   - id: step_2
     name: Compliance Check
@@ -24,7 +30,12 @@ steps:
     required: true
     timeout: 300
     depends_on: [step_1]
-    description: Evaluate ATO requirements, NIST AI RMF, Executive Order 13960 compliance.
+    # penta-aadc-02: graph-driven. compliance_checker derives the PASS/FAIL gate
+    # from agentic_engine.assess_design findings (blocking = CRITICAL/CAT1/HIGH)
+    # — no default checklist. Reports assessment-unavailable (exit 2) if absent.
+    description: >
+      Evaluate NIST AI RMF / OWASP LLM / OMB M-25-21 compliance from the design
+      assessment (assess_design); gate fails on any blocking-severity finding.
 
   - id: step_3
     name: Generate IaC

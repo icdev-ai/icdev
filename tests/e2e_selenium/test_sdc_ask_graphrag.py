@@ -8,7 +8,7 @@ replicates to a different domain/graph without code changes beyond
 a blueprint block + template.
 
 Prerequisites:
-  - Flask dashboard running on http://localhost:5000
+  - Flask dashboard running on http://localhost:5050
   - SDC KG populated (kg_nodes graph_id='sdc-kg-9acdfb94bea0')
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from tools.browser.driver_manager import get_driver  # noqa: E402
 
-BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000")
+BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050")
 
 
 @pytest.fixture(scope="module")

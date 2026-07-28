@@ -9,7 +9,6 @@ No LLM dependency — all checks are deterministic.
 """
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +20,8 @@ from tools.observability_canvas.constants import (
     SEVERITY_WEIGHTS,
 )
 
-_LOGGER = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+_LOGGER = get_logger("icdev.observability_canvas.observability_engine")
 
 try:
     import yaml as _yaml
@@ -928,7 +928,7 @@ def _load_ndc_topologies(canvas_project_id: str):
     # the canvas connection (RLS disabled) is required. '?' placeholders are
     # translated per-backend by StorageConnection.
     rows = conn.execute(
-        "SELECT id, name, design_json FROM ndc_topologies WHERE project_id = ?",
+        "SELECT id, name, design_json FROM ndc_topologies WHERE project_id = %s",
         (canvas_project_id,),
     ).fetchall()
     topologies = []
@@ -958,7 +958,7 @@ def _load_forwarded_topology_ids(odc_design_id: str):
     conn = get_connection()
     rows = conn.execute(
         "SELECT topology_id, forward_status FROM odc_sdc_verifications "
-        "WHERE design_id = ? AND forward_status IN ('forwarded', 'verified')",
+        "WHERE design_id = %s AND forward_status IN ('forwarded', 'verified')",
         (odc_design_id,),
     ).fetchall()
     covered = set()

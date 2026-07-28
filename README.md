@@ -28,7 +28,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1239--pip-install-fixes-registry-discovery--honest-framework-counts)
+- [What's New](#whats-new-in-1242--packaging-fix-the-sync-overwrote-real-modules-with-their-shims)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [13 Design Canvases](#13-design-canvases)
 - [Quick Start](#quick-start)
@@ -46,6 +46,38 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.42 — Packaging Fix: the Sync Overwrote Real Modules With Their Shims
+
+**If you installed 1.2.40 or 1.2.41 from PyPI, upgrade.**
+
+- **`import icdev.tools.llm.agent_loop` failed in the 1.2.41 wheel.** `sync_package_tree.py` mirrors `tools/` over `icdev/tools/`, but several `tools/*.py` files are the back-compat **shims** documented in CLAUDE.md — thin modules re-exporting from the canonical `icdev.tools.*`. Copying a shim over its own twin produced a module that imports from *itself*: `agent_loop.py` went from 1,825 lines to an 89-line stub raising `ImportError: cannot import name 'DONE' from partially initialized module`. Five modules were affected and are restored.
+- **The sync can no longer destroy an implementation.** A guard refuses to copy when the source is a shim *and* the target is substantially larger — narrow enough that a genuine module importing from `icdev.tools.*` still syncs. Verified by re-running the full sync against the restored files.
+
+---
+
+## What's New in 1.2.41 — Packaging Fix: the 1.2.40 Wheel Shipped a Stale Config Layer
+
+**If you installed 1.2.40 from PyPI, upgrade.** Its packaged FORGE configuration layer is incomplete.
+
+- **The pre-build package sync was not run for 1.2.40.** `tools/installer/sync_package_tree.py` mirrors `args/`, `goals/`, `context/`, `hardprompts/`, `docs/` and `tools/` into the packaged `icdev/` tree, and must run **before** `python -m build`. Skipping it meant the published wheel carried **29 differing and 53 missing** `args/` files — including `component_registry.yaml`, the file 1.2.39 had just fixed for `pip install` — and a `brand.yaml` still reading 1.2.30, so an installed dashboard showed a stale version badge. Re-synced here; the mirror now reports zero drift.
+
+---
+
+## What's New in 1.2.40 — TRUST Depth: Derivation Disclosure & Retrieval That Actually Returns Your Documents
+
+Grounding work aimed at one problem: **working with a corpus far larger than any available context window, without the answers quietly inventing things.** 1.2.35 introduced TRUST citations; this release makes the grounding underneath them work, and fixes two defects that were silently returning nothing.
+
+- **Derived content no longer looks like quoted content.** A cited answer used to present three different things identically: a quotation, a paraphrase, and a computed figure. The third is the dangerous one — *"Total obligated value is $4.15M [source: 3]"* reads as a quotation, carries a well-formed citation, and passes citation validation, because the cited chunk genuinely exists. But the number is not on the page. `tools/quality/derivation.py` classifies every claim as `verbatim` / `derived-text` / `derived-numeric` and, for computed figures, recovers the arithmetic — showing the formula, each operand's value, and each operand's source. Classification is deterministic (the D391 picker rule): the model is never asked whether it quoted or computed something, because a model that fabricated a number will equally happily report that it quoted one. The loud case is a computed figure with **no** recoverable derivation — a number grounded in nothing, which is exactly what citation validation cannot catch. Surfaced on `/document-intelligence` as a badge plus an expandable per-claim derivation, amber only when a derivation could not be recovered.
+- **DIC search returned zero results for every query in the browser.** RLS predicate injection was appending a `classification` filter to `SELECT 1 FROM pg_extension` — a PostgreSQL **system catalog**, which has no such column. The probe raised, `PgVectorStore` concluded pgvector was unavailable, and retrieval fell through to a path that returned nothing. A script has no Flask request context, so no RLS, so no injection: every reproduction outside the browser looked healthy, and nothing logged an error. Row predicates are no longer injected into system catalogs; application tables are unaffected (asserted in both directions, since exempting an application table would be a tenant-isolation hole).
+- **Collection-scoped search lost 85% of the corpus.** Scoping was pushed into the query correctly, but the result filter re-derived each chunk's collection from `dic_chunk_links` — a table written by only one ingest path, covering 168 of 559 live chunks. A scoped query against a 236-chunk collection returned **zero** while the retriever had correctly returned its chunks. The filter now reads the same column the retriever filtered on.
+- **Evidence is budgeted against the model's real context window.** `_llm_synthesize` sent a fixed `results[:5]` at 1,000 chars each — roughly 1.2k tokens — *regardless of the model*, after the retriever had already fetched 50 candidates and discarded 45. Claude Sonnet 4.5 saw exactly what an 8k local model saw. `tools/llm/context_budget.py` adds a real token account and a per-model window (`context_window` now declared for all 30 routed models), packs to the floor of the routed chain, and **reports what it dropped** — a partial view must never read as exhaustive.
+- **Per-claim grounding, wired and no longer a no-op.** Claim decomposition, span binding by token-F1, and an anchor guard (numbers, dates, currency, acronyms, proper nouns must appear in the bound span) now run on the DIC chat path, with the shipped CoVe guard enforced at the publish gate. The answer badge is driven from the response rather than hardcoded — it previously asserted "CoD-verified" on a path where the verifier never ran.
+- **Local embedding fallback is fast, and now honours the proxy.** The fallback chain already worked, but nothing remembered a failure, so every cold process re-probed both cloud providers first — ~12s ahead of a 0.06s local embed, paid again on every restart. Now a persisted, TTL'd circuit-breaker plus a bounded 5s probe timeout (the SDK default is 600s with retries, which air-gapped is a multi-minute stall, not a failover). Separately, `apply_gateway_to_provider_cfg` was applied only on the chat path, so with the LPX proxy enabled **embeddings still called the real endpoint with the real key**; the gateway now covers them.
+- **PostgreSQL-primary correctness.** More SQLite-dialect assumptions removed from live code: the BM25 keyword fallback could not execute on PG at all (mixed `?`/`%s` in one statement, silently returning `[]`), and all three security audit writers — RLS, column-mask and field-filter — bound `%s` on a raw `sqlite3` connection, so every insert raised, was swallowed, and **the audit tables stayed permanently empty while reporting as enabled**.
+- **Test-suite honesty.** ~150 failing tests repaired across DIC, router, workflow-HITL and pattern-classifier. Three classes of cause: fixtures injecting raw `sqlite3` connections into PG-dialect code (which also un-hid three tests that had been *passing on the empty list* a swallowed exception produced), a layout probe that imported the heavy backends it was only meant to detect, and 98 tests for `pattern_classifier` code that never reached main — landed by a bulk kanban merge whose implementation did not survive it.
 
 ---
 

@@ -7,7 +7,6 @@ Registered on the shared NDC blueprint via register_twin_migration_routes(bp).
 from __future__ import annotations
 
 import json
-import os
 import uuid as _uuid
 from flask import current_app, jsonify, render_template, request
 from tools.network.routes._common import _AI_MIGRATION_PLAN_PROMPT, logger
@@ -20,6 +19,33 @@ from tools.network.blueprint_helpers import (
     nc_login_required,
 )
 from tools.network.db.init_db import get_connection
+
+
+def _route_llm(function, system_prompt, messages, max_tokens, temperature=None):
+    """Invoke the configured LLM through LLMRouter (lpx-router-02).
+
+    Replaces the previous direct provider POST so provider selection, an optional
+    proxy ``base_url``, budgets and audit all flow through the router instead of
+    reading a provider API key from the environment and hardcoding a Claude
+    model. Returns ``(content, error)``.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+    except Exception as exc:  # pragma: no cover - import guard
+        return None, "LLM router unavailable: {}".format(exc)
+    kwargs = {
+        "messages": messages,
+        "system_prompt": system_prompt,
+        "max_tokens": max_tokens,
+    }
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    try:
+        resp = LLMRouter().invoke(function, LLMRequest(**kwargs))
+    except Exception as exc:
+        return None, str(exc)
+    return (resp.content or ""), None
 
 
 def register_twin_migration_routes(bp, nc_config=None):
@@ -1270,7 +1296,6 @@ Planning rules:
         Returns: {"phases_created": N, "phase_ids": [...]}
         """
         import uuid as _uuid
-        from tools.http.client import request as _req_request
 
         data = request.get_json(force=True, silent=True) or {}
         description = (data.get("description") or "").strip()
@@ -1278,32 +1303,16 @@ Planning rules:
         if not description:
             return jsonify({"error": "description is required"}), 400
 
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            return jsonify({"error": "No ANTHROPIC_API_KEY set"}), 503
-
         try:
-            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req_request(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": 2048,
-                    "system": _AI_MIGRATION_PLAN_PROMPT,
-                    "messages": [{"role": "user", "content": description}],
-                },
-                timeout=60,
+            raw_text, err = _route_llm(
+                "network_topology",
+                _AI_MIGRATION_PLAN_PROMPT,
+                [{"role": "user", "content": description}],
+                2048,
             )
-            if r.status_code != 200:
-                return jsonify({"error": f"LLM API error {r.status_code}"}), 503
-
-            raw_text = r.json()["content"][0]["text"].strip()
+            if err:
+                return jsonify({"error": f"LLM unavailable: {err}"}), 503
+            raw_text = (raw_text or "").strip()
             # Strip markdown fences if present
             if raw_text.startswith("```"):
                 raw_text = raw_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()

@@ -8,13 +8,13 @@ error payload so a broken database never renders as a healthy dashboard.
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 
 from tools.aisg.constants import ROI_RATES_MINUTES
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.aisg.roi_tracker")
 
 # Blended labor rate used to convert saved hours into avoided cost.
 COST_PER_HOUR = 150.0

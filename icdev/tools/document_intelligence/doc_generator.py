@@ -440,15 +440,30 @@ def _cod_compress(text: str, heading: str, *, function: str = "document_qna") ->
 
 
 def _compute_section_confidence(verdict) -> float:
-    """Compute a [0, 1] confidence score from a verifier VerifyResult."""
+    """Compute a [0, 1] confidence score from a verifier ``VerifyResult``.
+
+    Only *cited* claims count. An uncited sentence makes no attributed
+    assertion, so scoring it as supported inflates confidence — which is how
+    every section came to score 1.0 and sail through the CONF_INCLUDE /
+    CONF_ABSTAIN bands.
+
+    A scoring failure returns 0.0, not 1.0. If we cannot tell whether a section
+    is grounded, the safe reading is "not grounded"; the previous 1.0 meant an
+    exception here silently published an unverified section at full confidence.
+    """
+    if verdict is None or getattr(verdict, "abstained", False):
+        return 0.0
     try:
-        claims = getattr(verdict, "claims", [])
-        if not claims:
-            return 1.0 if not getattr(verdict, "abstained", False) else 0.0
-        supported = [c for c in claims if getattr(c, "supported", False)]
-        return len(supported) / len(claims)
-    except Exception:
-        return 1.0
+        claims = getattr(verdict, "claims", None) or []
+        cited = [c for c in claims if getattr(c, "method", "") != "uncited"]
+        if not cited:
+            # Nothing was actually checked against a source.
+            return 0.0
+        supported = [c for c in cited if getattr(c, "supported", False)]
+        return len(supported) / len(cited)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("doc_generator: confidence scoring failed: %s", exc)
+        return 0.0
 
 
 def _parse_outline(raw: str | None) -> dict:
@@ -617,9 +632,15 @@ def generate_document(
                     raw_text = "(Abstained — insufficient evidence to support this section.)"
                 else:
                     raw_text = vr.verified_text or raw_text
-                    verified = True
+                    # `verified` must reflect the verdict, not merely the fact
+                    # that verify() returned without raising.
+                    verified = vr.verified
             except Exception as exc:
+                # A verifier failure is not a pass. Leave verified False and
+                # drop confidence to 0 so the HITL bands below can act on it.
                 logger.warning("doc_generator: verifier error: %s", exc)
+                confidence = 0.0
+                verified = False
 
         # TRUST: scrub AFTER the verifier (which may reintroduce reasoning by
         # replacing raw_text with its verified_text) so the final stored/published

@@ -6114,3 +6114,287 @@ projects:
   - key: xcut
     title: Cross-Cutting — Attribution & Close-Out
     priority: low
+- key: cdp
+  name: CDP Air-Gap Browser Automation
+  description: 'Adapt browser-use''s transport decision: drive the browser over the Chrome DevTools
+    Protocol instead of a version-matched WebDriver binary, so browser automation works on air-gapped
+    hosts with no CDN access. Serves both deployment profiles (commercial, where enterprise policy is
+    ours to set; and air-gapped, where it is not) via one capability ladder: Tier 1 CDP, Tier 2
+    Selenium+driver for WebDriver-mandated audits, Tier 3 browser-free HTTP verification when policy
+    forbids remote debugging. Covers both consumers - the agent browser and the E2E Selenium estate.
+    Also fixes the false air-gap guarantee in driver_manager. Firecrawl evaluated and rejected
+    (AGPL-3.0, Docker + Redis + Playwright microservice, value already shipped as
+    page_extract/fetch_extract).'
+  task_prefix: cdp-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/cdp-00-browser-automation-airgap-adaptation.md'
+  - 'gate: held; both go/no-go questions answered 2026-07-26 - support BOTH deployment profiles and
+    BOTH consumers. Key correction recorded on the task: Selenium is NOT a fallback for a
+    policy-blocked CDP, because RemoteDebuggingAllowed kills chromedriver too (cdp-gate-00)'
+  - 'fix: air-gap guarantee is undefined - AirgapDriverMissingError does not exist and the real
+    fallthrough downloads via Selenium Manager (cdp-fix-01)'
+  - 'fix: vendored chromedriver 147 vs installed Chrome 150; msedgedriver empty vs Edge 150 (cdp-fix-02)'
+  - 'port: stdlib RFC 6455 WebSocket client, loopback only, zero new required deps (cdp-port-01)'
+  - 'port: shared network-free browser locator, Edge then Chrome then Chromium (cdp-port-02)'
+  - 'port: CDP driver - callFunctionOn wrapping, viewport-vs-page coords, launch lifecycle (cdp-port-03)'
+  - 'port: backend selection leaving scope.py and all 108 tests untouched (cdp-port-04)'
+  - 'port: sandbox-coverage Gap 36/38 revision plus attribution registry entries (cdp-port-05)'
+  - 'port: policy/tier preflight - read RemoteDebuggingAllowed from the registry, pick and report the
+    tier deterministically; unset means permitted (cdp-port-06)'
+  - 'port: document the Tier-3 degradation - what survives and what is lost when policy forbids
+    remote debugging (cdp-port-07)'
+  - 'wd: WebDriver-compatible CDP facade covering the ~22-operation E2E surface; the selenium PYTHON
+    package is pure-Python and offline-installable, so By/WebDriverWait/expected_conditions keep
+    working unchanged - only the driver binary is unobtainable (cdp-wd-01)'
+  - 'wd: cut tests/e2e_selenium + sharepoint fallback + tools/testing/e2e_* onto the facade and prove
+    driverless; report the pass/skip/fail split before and after (cdp-wd-02)'
+  - 'vv: reproduce an e2e script''s assertions on a machine with no vendored driver (cdp-vv-01)'
+  epics:
+  - key: gate
+    title: GATE — Held Pending Review
+    priority: high
+  - key: fix
+    title: FIX — Driver Path Defects (independent of the adaptation)
+    priority: high
+  - key: port
+    title: PORT — CDP Transport & Tier Selection
+    priority: high
+  - key: wd
+    title: WD — WebDriver-Compatible Facade (E2E estate)
+    priority: medium
+  - key: vv
+    title: VV — Driverless Proof
+    priority: high
+- key: oss2
+  name: OSS-02 Nine-Project Adaptation
+  description: 'Adopt/reject decision for anything-llm, DeepDoc, LocalAI, AutoGen, mem0, CrewAI,
+    agent-chief, watch-skill and rocketplaneIO. Result: six were already decided (NOTICE attributions,
+    ADRs D391/D67, spike oss-00) and the three obscure repos were the only ones never evaluated. Nine
+    projects yielded one narrow idea worth evaluating (agent-chief worthiness filter); mapping the rest
+    against the tree found more broken-in-place capability than missing capability - five of the seven
+    work tasks are defect fixes.'
+  task_prefix: oss2-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/oss-02-nine-project-adaptation.md'
+  - 'gate: held; records why 6 of 9 were already settled so nobody re-runs the analysis (oss2-gate-00)'
+  - 'fix: memory consolidation is DEAD CODE - bad import plus a column that does not exist; both
+    failures swallowed, so near-duplicate memories accumulate forever. Do this before oss2-meas-01
+    (oss2-fix-04)'
+  - 'fix: memory_read cannot render DB entries - selects 6 columns, unpacks 4; plus bare ? placeholders
+    on PostgreSQL. This is the Session Start Protocol command (oss2-fix-05)'
+  - 'fix: LocalAI unreachable by default - probe port conflicts with llama_cpp, no named provider entry
+    (oss2-fix-01)'
+  - 'fix: template chunking shipped but DIC ingest never passes template=, so every document gets the
+    general sliding window (oss2-fix-02)'
+  - 'fix: four skill cards describe AutoGen agents that nothing executes (oss2-fix-03)'
+  - 'meas: measure whether the memory tier earns its keep before building anything mem0-shaped;
+    blocked on oss2-fix-04 (oss2-meas-01)'
+  - 'triage: evaluate a worthiness stage in front of notification routing, adapted from agent-chief -
+    the one genuinely new idea (oss2-triage-01)'
+  - 'NOT in scope: DeepDoc table extraction - already live on the board as oss-table-01/02'
+  epics:
+  - key: gate
+    title: GATE — Held Pending Review
+    priority: high
+  - key: fix
+    title: FIX — Defects Found While Mapping
+    priority: high
+  - key: meas
+    title: MEAS — Measure Before Building
+    priority: medium
+  - key: triage
+    title: TRIAGE — Event Worthiness (agent-chief)
+    priority: medium
+- key: ahx
+  name: AHX — Agent Harness Truth & Measurement
+  description: 'Close the harness measurement loop, per the five audit docs in C:\AI\searches (icdev_agent_harness_audit.md,
+    icdev_optimization_audit_self_healing.md, icdev_loop_agent_youtube_adaptation.md, icdev_uber_agent_orchestration_adaptation.md,
+    icdev_phase_4_6_strategic_roadmap.md) — CORRECTED against the codebase; disposition recorded in docs/spikes/ahx-00-agent-audit-docs-disposition.md.
+    The audit''s headline claim is STALE: harness_eval is not "13 rows, all oracle_triage, zero codegen"
+    — it holds 129 rows including 65 codegen. The real defect is sharper and was missed: 123 of 129 rows
+    have actual_outcome IS NULL, so compute_metrics (which counts only resolved/false_positive/self_resolved/failed)
+    derives precision, recall and ECE from roughly six rows. Decisions are recorded; outcomes are not.
+    Root cause is record_outcome (tools/genesis/harness/eval_harness.py) issuing a bare UPDATE with no
+    rowcount check — when no decision row exists the update touches zero rows and returns silently, so
+    every caller believes it succeeded. Two further verified findings: context/capabilities/harness.yaml
+    advertises five CLI invocations across three tools that exist nowhere in the repo, and the Claude
+    auto-memory path is hardcoded per-machine in two modules while a dynamic derivation of the same slug
+    already exists in memory_write.py. This card fixes measurement only — it is the prerequisite for
+    the arr and clx cards, both of which are gated behind it.'
+  task_prefix: ahx-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/ahx-00-agent-audit-docs-disposition.md'
+  - 'gate: held so the kanban runner cannot race the human-driven worktree build (ahx-gate-00)'
+  - 'eval: record_outcome silently succeeds on a zero-row UPDATE — no rowcount check, no warning, no
+    audit. Return a status and warn instead (ahx-eval-01)'
+  - 'eval: close the open outcome loop — 123 of 129 harness_eval rows have actual_outcome IS NULL across
+    the codegen and sampled-oracle paths (ahx-eval-02)'
+  - 'eval: harness_eval has no numbered migration — schema exists only in pg_consolidated.sql and tests/conftest.py
+    (ahx-eval-03)'
+  - 'doc: context/capabilities/harness.yaml advertises maturity_assessor.py, trace_analyzer.py and exit_criteria_evaluator.py,
+    none of which exist anywhere in the repo (ahx-doc-01)'
+  - 'path: de-hardcode the .claude/projects/C--AI-ICDev/memory path in wiki_tool_query.py and ace/controller.py,
+    reusing the dynamic slug derivation already in memory_write.py (ahx-path-01)'
+  - 'heal: three divergent self-heal rate limits — 3/hr in self_heal_analyzer, 5/hr in the knowledge_server
+    fallback, 3/day in heal_constitution.yaml (ahx-heal-01)'
+  - 'vv: prove the NULL-outcome share falls on a real run (ahx-vv-01)'
+  - 'NOT in scope: install_dependency / runtime pip install — rejected, conflicts with the air-gap and
+    supply-chain posture. See the arr card for the declare-and-degrade replacement'
+  epics:
+  - key: gate
+    title: GATE — Held Pending Review
+    priority: high
+  - key: eval
+    title: EVAL — Close the Outcome Loop
+    priority: high
+  - key: doc
+    title: DOC — Phantom Tool Documentation
+    priority: medium
+  - key: path
+    title: PATH — Hardcoded Machine Paths
+    priority: medium
+  - key: heal
+    title: HEAL — Reconcile Rate Limits
+    priority: medium
+  - key: vv
+    title: VV — Verification
+    priority: high
+- key: arr
+  name: ARR — Agent Runtime Resilience (Air-Gap Safe)
+  description: 'Give the agent loop an error taxonomy, adapted from C:\AI\searches\icdev_optimization_audit_self_healing.md
+    — with its central recommendation REJECTED. The doc proposes an install_dependency tool that runs
+    pip install inside the agent loop. That is refused: ICDEV targets air-gapped IL4-IL6, args/security_gates.yaml
+    enforces sbom_max_age_days 30, min_slsa_level 2 and attestation presence, and tools/airgap/wheel_vendor.py
+    exists precisely so packages arrive as vetted vendored wheels. An agent that mutates its own runtime
+    from PyPI invalidates the SBOM and defeats the air-gap story. The doc''s motivating example is also
+    already solved: tools/airgap/pdf_fallback.py handles a missing PDF library by declaring a local fallback
+    chain (pypdf, then LLaVA via Ollama) rather than installing anything. Adopted instead is declare-and-degrade
+    — classify the error, name the missing capability as a structured actionable result, route it to
+    wheel vendoring plus HITL, never mutate the environment. Two further corrections to the doc: the agent
+    loop is not unguarded (it already has a consecutive-all-error circuit breaker, a duplicate-call guard,
+    a stall detector, per-tool timeouts and token/cost caps) and pass@K already ships as run_agent_loop_with_rubric.
+    Only the taxonomy and the structured tool result are genuinely missing. OVERLAPS the sag card (Phase
+    76, ADR D384-D390) — read tools/agent_runtime/ before writing anything and obey D384''s governing
+    rule, compose existing primitives rather than rebuilding them.'
+  task_prefix: arr-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/ahx-00-agent-audit-docs-disposition.md'
+  - 'gate: held pending ahx- landing; measurement must exist before resilience can be evaluated (arr-gate-00)'
+  - 'tax: error taxonomy mapping exception type to a remediation disposition (arr-tax-01)'
+  - 'res: structured tool result carrying success, error_type and remediation_hint, replacing the flat
+    stringified exception (arr-res-01)'
+  - 'res: inline single retry for genuinely safe remediations only — cache clear, reconnect, re-init
+    (arr-res-02)'
+  - 'deg: declare-and-degrade for missing capabilities, routed to wheel_vendor plus HITL (arr-deg-01)'
+  - 'esc: escalation path producing a kanban card carrying the full failure context (arr-esc-01)'
+  - 'NOT in scope: install_dependency, environment mutation, args/safe_packages.yaml — rejected above'
+  - 'NOT in scope: pass@K — already ships as run_agent_loop_with_rubric in icdev/tools/llm/agent_loop.py'
+  epics:
+  - key: gate
+    title: GATE — Held Pending AHX
+    priority: high
+  - key: tax
+    title: TAX — Error Taxonomy
+    priority: high
+  - key: res
+    title: RES — Structured Results & Retry
+    priority: high
+  - key: deg
+    title: DEG — Declare and Degrade
+    priority: medium
+  - key: esc
+    title: ESC — Escalation
+    priority: medium
+- key: clx
+  name: CLX — Control Loop Discipline
+  description: 'Adapt the control-loop framing from C:\AI\searches\icdev_loop_agent_youtube_adaptation.md
+    (Kyle, Human Layer — sense, set point, control, actuate, feedback) to ICDEV''s autonomous loops.
+    Verified genuinely absent: there is no .icdev/ directory, no versioned feedback file, no golden-pattern
+    directory and no backpressure gate on autonomous work — a repo-wide grep for golden_pattern, golden_dataset
+    and feedback.md returns nothing. The flow-control idea is the valuable one and maps onto known pain,
+    namely kanban churn and stranded branches. CORRECTIONS to the doc: the deterministic sensor it asks
+    for already exists as tools/quality/review_loop.py, which runs ruff, coherence_checker and SIPA over
+    a diff and emits a fix brief — wrap it, do not rebuild it; backpressure also already exists for a
+    different consumer in tools/databridge/scale/backpressure.py and is worth reading first. Do not re-propose
+    LangGraph-style orchestration, formally rejected in ADR D391. OVERLAPS the sag cron epic and the kanban
+    pipeline hardening work — check both before starting.'
+  task_prefix: clx-
+  default_open: true
+  briefs:
+  - 'spike: docs/spikes/ahx-00-agent-audit-docs-disposition.md'
+  - 'gate: held pending ahx- landing; a control loop needs a working sensor before it can be tuned (clx-gate-00)'
+  - 'fb: versioned feedback file loaded into loop context every run and updated from HITL decisions (clx-fb-01)'
+  - 'flow: backpressure — do not start new autonomous work while the previous output is unreviewed (clx-flow-01)'
+  - 'sense: deterministic sensor interface wrapping the existing review_loop.py, not a new scanner (clx-sense-01)'
+  - 'gold: golden-pattern directory of human-written reference implementations for high-frequency ICDEV
+    tasks (clx-gold-01)'
+  - 'NOT in scope: LangGraph or LangChain orchestration — rejected in ADR D391'
+  epics:
+  - key: gate
+    title: GATE — Held Pending AHX
+    priority: high
+  - key: fb
+    title: FB — Versioned Feedback
+    priority: high
+  - key: flow
+    title: FLOW — Backpressure
+    priority: high
+  - key: sense
+    title: SENSE — Deterministic Sensing
+    priority: medium
+  - key: gold
+    title: GOLD — Golden Patterns
+    priority: medium
+- key: fga
+  name: FORGE Academy + GameDay Content Wiring
+  description: 'Disposition and remediation of five external audit documents on /academy
+    and /gameday (C:\AI\searches\FORGE, 2026-07-26/27). About one quarter of the ~40
+    recommendations survived verification; see the spike for the full TRUE/FALSE/STALE
+    split. The headline correction: the reports prescribe authoring step content for
+    Tier-1 missions M01-M10 as High effort, but Tier 1 is not unwritten, it is unwired.
+    199 markdown step files across 43 mission directories sit on disk and are never
+    ingested, because content_loader.py seeds steps only from the hand-maintained
+    BUILTIN_STEPS dict and never scans the content/ tree (content_loader.py:1618).
+    53 of 89 missions have zero steps; 43 of those have authored content on disk. The
+    fix is a registration change, not an authoring project, plus the reverse-direction
+    test whose absence let 43 directories rot unnoticed. Also carded: guild creation
+    500s on every call (blueprint.py:586 passes invite_code= to a 3-arg db.create_guild);
+    27 of 27 watch steps render an identical fake Demo Output block that teaches a call
+    which would raise (_step_watch.html:20-34); profile save drops display_name and
+    writes a tenant_id IS NULL orphan row; fa_challenges has zero INSERTs repo-wide so
+    Arena is permanently empty; the Workflow Builder palette is emptied by a swallowed
+    import failure; GameDay scenario manager and builder are unreachable from the hub;
+    and 12 of 34 GameDay tool links are POST-only APIs rendered as GET anchors. REFUTED
+    and deliberately NOT carded: the Continue button (two-click by design), the code
+    runner (hardened sandbox, 14 tests), progress APIs (report probed /academy/api/*,
+    real prefix is /api/academy/*), Oracle and the GameDay responses API (both RBAC-gated,
+    401 read as breakage), and the GameDay scenario picker (9 distinct packs on disk).
+    Two GameDay findings were already fixed on 2026-07-18, eight days before the audit
+    ran. PRIOR ART: the penta card (epics gd + aca, 31 merged PRs, closed 2026-07-18)
+    covered code-runner hardening, the AI League repoint, ontology_tags_json, stored XSS,
+    the /forge-academy nav 404, and 10 new missions. This card covers only what PENTA
+    did not; do not reopen penta. Both apps ship default_enabled false and are opt-in
+    child apps. MANUAL-ONLY: all tasks gated behind fga-gate-00 (held in_progress) so
+    the kanban runner never dispatches them; worktree + push + PR, no auto-merge.'
+  task_prefix: fga-
+  default_open: true
+  briefs:
+  - label: Audit disposition - what survived verification (fga-00)
+    path: /docs/spikes/fga-00-academy-gameday-audit-disposition.md
+  epics:
+  - key: gate
+    title: Manual Gate (held)
+    priority: high
+  - key: wire
+    title: WIRE - Orphaned Mission Content Ingestion
+    priority: high
+  - key: fix
+    title: FIX - Academy Defects
+    priority: medium
+  - key: gd
+    title: GD - GameDay Defects
+    priority: medium

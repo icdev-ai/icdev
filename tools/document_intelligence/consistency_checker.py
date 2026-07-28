@@ -13,6 +13,7 @@ Public API:
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -347,3 +348,217 @@ def _r(row: Any, name: str, index: int) -> Any:
             return row[index]
         except Exception:
             return None
+
+
+# --------------------------------------------------------------------------- #
+# Citation publish gate (TRUST invariant)
+# --------------------------------------------------------------------------- #
+
+#: Section origins that make an AI-attributed claim and therefore must cite.
+#: `human_authored` prose and `template` boilerplate assert nothing on the
+#: model's behalf, so requiring `[source: ...]` of them would be noise.
+AI_ORIGINS: frozenset[str] = frozenset({"ai_generated", "ai_regenerated", "ai_assisted"})
+
+
+def _allowed_sources(citations_json: Any) -> set[str]:
+    """Chunk ids that actually backed a section, from its stored citations.
+
+    A section may only cite evidence that was recorded as retrieved for it; a
+    `[source: chunk X]` naming anything else is a hallucinated citation, which
+    is exactly what `validate_citations` is for.
+    """
+    if not citations_json:
+        return set()
+    try:
+        data = json.loads(citations_json) if isinstance(citations_json, str) else citations_json
+    except Exception:
+        return set()
+    if not isinstance(data, list):
+        return set()
+    out: set[str] = set()
+    for c in data:
+        if isinstance(c, dict):
+            for key in ("chunk_id", "id", "source_id"):
+                v = c.get(key)
+                if v:
+                    out.add(str(v))
+                    break
+        elif c:
+            out.add(str(c))
+    return out
+
+
+def check_version_citations(version_id: str) -> dict:
+    """Citation publish-gate report for a ``dic_versions`` version.
+
+    Mirrors :func:`check_version_consistency` in shape and failure posture so the
+    approve route can treat `citation_guard` and `placeholder_guard`
+    symmetrically (CLAUDE.md TRUST invariant).
+
+    Returns ``{findings: [{item_number, issue, detail}], ai_section_count,
+    section_count}``. Empty ``findings`` means the gate passes. ``issue`` is
+    ``missing_citations`` or ``hallucinated_citation``, produced by the shared
+    ``tools.quality.citation_grounding.citation_gate`` — citation parsing and
+    validation are NEVER re-implemented here.
+
+    Errors are reported under ``error`` with empty findings, so a DB hiccup
+    never hard-fails an approval; the route decides whether to proceed.
+    """
+    sections: list[dict] = []
+    total = 0
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT section_id, heading, content, citations_json, origin "
+                "FROM dic_sections WHERE version_id = %s ORDER BY created_at",
+                (version_id,),
+            ).fetchall()
+            for r in rows:
+                total += 1
+                origin = (_r(r, "origin", 4) or "").strip().lower()
+                if origin not in AI_ORIGINS:
+                    continue
+                content = _r(r, "content", 2) or ""
+                if not content.strip():
+                    continue
+                sections.append({
+                    "item_number": _r(r, "heading", 1) or _r(r, "section_id", 0),
+                    "content": content,
+                    "allowed_sources": _allowed_sources(_r(r, "citations_json", 3)),
+                })
+    except Exception as exc:
+        logger.warning("dic citation gate: could not load sections for %s: %s", version_id, exc)
+        return {"findings": [], "ai_section_count": 0, "section_count": 0, "error": str(exc)}
+
+    try:
+        from tools.quality.citation_grounding import citation_gate
+
+        findings = citation_gate(sections, require_citations=True)
+    except Exception as exc:
+        logger.warning("dic citation gate: gate error for %s: %s", version_id, exc)
+        return {"findings": [], "ai_section_count": len(sections),
+                "section_count": total, "error": str(exc)}
+
+    return {
+        "findings": findings,
+        "ai_section_count": len(sections),
+        "section_count": total,
+    }
+
+
+def cove_enabled() -> bool:
+    """Whether the CoVe publish gate is switched on for this deployment.
+
+    OFF by default. CoVe multiplies LLM calls per artifact, so it is opted into
+    deliberately rather than inherited.
+    """
+    import os
+
+    from tools.document_intelligence.constants import DIC_COVE_GATE_ENV
+
+    return os.environ.get(DIC_COVE_GATE_ENV, "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def check_version_cove(version_id: str, *, force: bool = False) -> dict:
+    """Chain-of-Verification publish gate for a ``dic_versions`` version.
+
+    Third sibling of :func:`check_version_consistency` (placeholders) and
+    :func:`check_version_citations` (citations), and deliberately the same
+    shape so the approve route treats all three alike.
+
+    Returns ``{enabled, blocked, findings, unrunnable, reason}``. ``findings``
+    uses the shared ``{item_number, issue, detail}`` shape.
+
+    Failure posture is the interesting part. ``cove_guard`` fails CLOSED: when
+    the CoVe architecture raises — no provider reachable, budget exhausted — it
+    reports ``blocked``. Correct for a connected deployment, wrong for an
+    air-gapped one, where every approval would be blocked by a check that never
+    actually ran. So a gate that RAN and found a defect always blocks, while a
+    gate that could not run is governed by ``ICDEV_DIC_COVE_ON_ERROR``
+    (``warn`` by default, ``block`` for deployments that want fail-closed).
+    """
+    import os
+
+    from tools.document_intelligence.constants import (
+        DIC_COVE_MAX_QUESTIONS_ENV,
+        DIC_COVE_ON_ERROR_ENV,
+    )
+
+    if not cove_enabled():
+        return {"enabled": False, "blocked": False, "findings": [],
+                "unrunnable": False, "reason": "disabled"}
+
+    # Reuse the citation gate's section loader: same population (AI-authored,
+    # non-empty) and same evidence resolution. No second source of truth for
+    # "which sections does a publish gate judge".
+    sections: list[dict] = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT section_id, heading, content, citations_json, origin "
+                "FROM dic_sections WHERE version_id = %s ORDER BY created_at",
+                (version_id,),
+            ).fetchall()
+            for r in rows:
+                if (_r(r, "origin", 4) or "").strip().lower() not in AI_ORIGINS:
+                    continue
+                content = _r(r, "content", 2) or ""
+                if content.strip():
+                    sections.append({
+                        "item_number": _r(r, "heading", 1) or _r(r, "section_id", 0),
+                        "content": content,
+                        "allowed_sources": _allowed_sources(_r(r, "citations_json", 3)),
+                    })
+    except Exception as exc:
+        logger.warning("dic cove gate: could not load sections for %s: %s", version_id, exc)
+        return {"enabled": True, "blocked": False, "findings": [],
+                "unrunnable": True, "reason": f"load_failed: {exc}"}
+
+    if not sections:
+        return {"enabled": True, "blocked": False, "findings": [],
+                "unrunnable": False, "reason": "no_ai_sections"}
+
+    try:
+        max_q = int(os.environ.get(DIC_COVE_MAX_QUESTIONS_ENV, "5"))
+    except ValueError:
+        max_q = 5
+    on_error = (os.environ.get(DIC_COVE_ON_ERROR_ENV, "warn") or "warn").strip().lower()
+
+    from tools.quality.cove_guard import cove_guard
+
+    findings: list[dict] = []
+    unrunnable = False
+    reasons: list[str] = []
+    for sec in sections:
+        res = cove_guard(
+            sec["content"],
+            available_sources=sorted(sec["allowed_sources"]),
+            force_override=force,
+            max_questions=max_q,
+        )
+        if res.get("method") == "error":
+            # The gate could not run. Do NOT report it as a content defect —
+            # conflating "unverifiable" with "wrong" is how a broken provider
+            # turns into a wall of false findings.
+            unrunnable = True
+            reasons.append(str((res.get("decision") or {}).get("error", "unknown")))
+            continue
+        if res.get("needs_revision"):
+            findings.append({
+                "item_number": sec["item_number"],
+                "issue": "cove_contradicted",
+                "detail": [c.get("question") or c.get("verdict", "")
+                           for c in (res.get("contradicted_claims") or [])][:5],
+            })
+
+    blocked = bool(findings) and not force
+    if unrunnable and not findings:
+        blocked = (on_error == "block") and not force
+
+    return {
+        "enabled": True,
+        "blocked": blocked,
+        "findings": findings,
+        "unrunnable": unrunnable,
+        "reason": "; ".join(reasons[:3]) if reasons else ("defects" if findings else "clean"),
+    }

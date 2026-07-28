@@ -1,0 +1,237 @@
+{
+  "classification": "CUI // SP-CTI",
+  "task": "oss-meas-01-d3",
+  "generated_at": "2026-07-26T10:00:00Z",
+  "environment": {
+    "rag_chunks": 4111,
+    "rag_chunk_summaries": 3830,
+    "raptor_levels": 2,
+    "golden_set_version": "v2 (48 queries, oss-meas-01-d1 / PR #817)",
+    "top_k": 5,
+    "backend": "postgresql"
+  },
+  "method": "tools/rag/rag_benchmark.py --sweep. One all-off control plus one arm per toggle, every toggle written explicitly on every arm. Quality verified deterministic across 3 consecutive control runs. Latency is a SINGLE sample per arm on a shared developer workstation \u2014 large deltas are real, small ones are unproven.",
+  "control": {
+    "aggregate": {
+      "recall_at_5": 0.7431,
+      "mrr": 0.7292,
+      "ndcg_at_5": 0.7639,
+      "citation_hit_rate": 0.8542
+    },
+    "latency": {
+      "n": 48,
+      "p50_ms": 424.13,
+      "p95_ms": 539.58,
+      "mean_ms": 745.01,
+      "total_ms": 35760.49
+    },
+    "queries_scored": 48
+  },
+  "arms": [
+    {
+      "toggle": "rerank",
+      "verdict": "WIRED",
+      "benchmarked": true,
+      "path": "rag.rerank.enabled",
+      "aggregate": {
+        "recall_at_5": 0.7639,
+        "mrr": 0.7396,
+        "ndcg_at_5": 0.7737,
+        "citation_hit_rate": 0.875
+      },
+      "deltas": {
+        "citation_hit_rate": {
+          "baseline": 0.8542,
+          "current": 0.875,
+          "delta": 0.0208
+        },
+        "mrr": {
+          "baseline": 0.7292,
+          "current": 0.7396,
+          "delta": 0.0104
+        },
+        "ndcg_at_5": {
+          "baseline": 0.7639,
+          "current": 0.7737,
+          "delta": 0.0098
+        },
+        "recall_at_5": {
+          "baseline": 0.7431,
+          "current": 0.7639,
+          "delta": 0.0208
+        }
+      },
+      "latency": {
+        "n": 48,
+        "p50_ms": 660.79,
+        "p95_ms": 2584.5,
+        "mean_ms": 1181.44,
+        "total_ms": 56709.23
+      },
+      "latency_delta": {
+        "p50_ms": {
+          "baseline": 424.13,
+          "current": 660.79,
+          "delta": 236.66
+        },
+        "p95_ms": {
+          "baseline": 539.58,
+          "current": 2584.5,
+          "delta": 2044.92
+        },
+        "mean_ms": {
+          "baseline": 745.01,
+          "current": 1181.44,
+          "delta": 436.43
+        }
+      }
+    },
+    {
+      "toggle": "reflective_rerank",
+      "verdict": "NOT-WIRED",
+      "benchmarked": false,
+      "reason": "tools.rag.reflective_reranker is not in the import closure of tools.rag.retriever; flipping this toggle cannot change retrieval. Benchmarking it would report a zero delta that means 'not connected', not 'no benefit'.",
+      "recommendation": "wire it or delete the config key \u2014 do NOT record a DROP based on an unmeasured zero"
+    },
+    {
+      "toggle": "adaptive_routing",
+      "verdict": "NOT-WIRED",
+      "benchmarked": false,
+      "reason": "tools.rag.adaptive_router is not in the import closure of tools.rag.retriever; flipping this toggle cannot change retrieval. Benchmarking it would report a zero delta that means 'not connected', not 'no benefit'.",
+      "recommendation": "wire it or delete the config key \u2014 do NOT record a DROP based on an unmeasured zero"
+    },
+    {
+      "toggle": "binary_prefilter",
+      "verdict": "WIRED",
+      "benchmarked": true,
+      "path": "rag.quantization.binary_prefilter.enabled",
+      "aggregate": {
+        "recall_at_5": 0.7431,
+        "mrr": 0.7292,
+        "ndcg_at_5": 0.7639,
+        "citation_hit_rate": 0.8542
+      },
+      "deltas": {
+        "citation_hit_rate": {
+          "baseline": 0.8542,
+          "current": 0.8542,
+          "delta": 0.0
+        },
+        "mrr": {
+          "baseline": 0.7292,
+          "current": 0.7292,
+          "delta": 0.0
+        },
+        "ndcg_at_5": {
+          "baseline": 0.7639,
+          "current": 0.7639,
+          "delta": 0.0
+        },
+        "recall_at_5": {
+          "baseline": 0.7431,
+          "current": 0.7431,
+          "delta": 0.0
+        }
+      },
+      "latency": {
+        "n": 48,
+        "p50_ms": 421.78,
+        "p95_ms": 447.88,
+        "mean_ms": 421.94,
+        "total_ms": 20253.31
+      },
+      "latency_delta": {
+        "p50_ms": {
+          "baseline": 424.13,
+          "current": 421.78,
+          "delta": -2.35
+        },
+        "p95_ms": {
+          "baseline": 539.58,
+          "current": 447.88,
+          "delta": -91.7
+        },
+        "mean_ms": {
+          "baseline": 745.01,
+          "current": 421.94,
+          "delta": -323.07
+        }
+      }
+    },
+    {
+      "toggle": "auto_indexer",
+      "verdict": "NOT-WIRED",
+      "benchmarked": false,
+      "reason": "tools.rag.auto_indexer is not in the import closure of tools.rag.retriever; flipping this toggle cannot change retrieval. Benchmarking it would report a zero delta that means 'not connected', not 'no benefit'.",
+      "recommendation": "wire it or delete the config key \u2014 do NOT record a DROP based on an unmeasured zero"
+    },
+    {
+      "toggle": "raptor",
+      "verdict": "WIRED",
+      "benchmarked": true,
+      "path": "rag.raptor.enabled",
+      "aggregate": {
+        "recall_at_5": 0.7639,
+        "mrr": 0.7385,
+        "ndcg_at_5": 0.7742,
+        "citation_hit_rate": 0.875
+      },
+      "deltas": {
+        "citation_hit_rate": {
+          "baseline": 0.8542,
+          "current": 0.875,
+          "delta": 0.0208
+        },
+        "mrr": {
+          "baseline": 0.7292,
+          "current": 0.7385,
+          "delta": 0.0093
+        },
+        "ndcg_at_5": {
+          "baseline": 0.7639,
+          "current": 0.7742,
+          "delta": 0.0103
+        },
+        "recall_at_5": {
+          "baseline": 0.7431,
+          "current": 0.7639,
+          "delta": 0.0208
+        }
+      },
+      "latency": {
+        "n": 48,
+        "p50_ms": 752.68,
+        "p95_ms": 852.46,
+        "mean_ms": 1046.8,
+        "total_ms": 50246.32
+      },
+      "latency_delta": {
+        "p50_ms": {
+          "baseline": 424.13,
+          "current": 752.68,
+          "delta": 328.55
+        },
+        "p95_ms": {
+          "baseline": 539.58,
+          "current": 852.46,
+          "delta": 312.88
+        },
+        "mean_ms": {
+          "baseline": 745.01,
+          "current": 1046.8,
+          "delta": 301.79
+        }
+      }
+    }
+  ],
+  "summary": {
+    "toggles_considered": 6,
+    "benchmarked": 3,
+    "not_wired": [
+      "reflective_rerank",
+      "adaptive_routing",
+      "auto_indexer"
+    ],
+    "ingest_only": []
+  }
+}

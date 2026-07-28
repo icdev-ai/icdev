@@ -206,22 +206,34 @@ class PgVectorStore(VectorStoreProvider):
         vec_str = _embedding_to_pg_vector(query_embedding)
         conn = get_connection()
         try:
-            # Build filter clause
+            # Build filter clause.
+            #
+            # `%s`, not `?`. This is the PostgreSQL store and the surrounding
+            # SELECT already uses `%s`; mixing the two produced a statement that
+            # only worked because `translate_sql` rewrote the strays — making it
+            # load-bearing, which CLAUDE.md explicitly forbids.
+            #
+            # It broke the moment RLS became involved. `StorageCursor._inject_rls`
+            # appends its tenant/classification predicate with `%s`, so under any
+            # Flask request context the statement carried BOTH dialects, psycopg2
+            # raised, and the caller's `except` returned an empty list. Net effect:
+            # DIC search returned ZERO results for every query in the browser while
+            # returning 10 from a script, with no error surfaced anywhere.
             where_parts = ["embedding_vec IS NOT NULL"]
             filter_params: list = []
 
             if filters:
                 if filters.get("source_type"):
-                    where_parts.append("source_type = ?")
+                    where_parts.append("source_type = %s")
                     filter_params.append(filters["source_type"])
                 if filters.get("tier"):
-                    where_parts.append("tier = ?")
+                    where_parts.append("tier = %s")
                     filter_params.append(filters["tier"])
                 if filters.get("project_id"):
-                    where_parts.append("project_id = ?")
+                    where_parts.append("project_id = %s")
                     filter_params.append(filters["project_id"])
                 if filters.get("tenant_id"):
-                    where_parts.append("tenant_id = ?")
+                    where_parts.append("tenant_id = %s")
                     filter_params.append(filters["tenant_id"])
 
             where_clause = " AND ".join(where_parts)
@@ -293,10 +305,10 @@ class PgVectorStore(VectorStoreProvider):
 
             if filters:
                 if filters.get("source_type"):
-                    where_parts.append("source_type = ?")
+                    where_parts.append("source_type = %s")
                     filter_params.append(filters["source_type"])
                 if filters.get("tier"):
-                    where_parts.append("tier = ?")
+                    where_parts.append("tier = %s")
                     filter_params.append(filters["tier"])
 
             where_clause = " AND ".join(where_parts)
@@ -395,10 +407,10 @@ class PgVectorStore(VectorStoreProvider):
             params = []
             if filters:
                 if filters.get("source_type"):
-                    where_parts.append("source_type = ?")
+                    where_parts.append("source_type = %s")
                     params.append(filters["source_type"])
                 if filters.get("tier"):
-                    where_parts.append("tier = ?")
+                    where_parts.append("tier = %s")
                     params.append(filters["tier"])
 
             where_clause = " AND ".join(where_parts)

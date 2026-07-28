@@ -14747,7 +14747,7 @@ def init_db():
         count = cur.fetchone()[0]
         added = 0
         for t in TEMPLATES:
-            cur.execute("SELECT 1 FROM nc_templates WHERE id=?", (t["id"],))
+            cur.execute("SELECT 1 FROM nc_templates WHERE id=%s", (t["id"],))
             if not cur.fetchone():
                 conn.execute(
                     "INSERT INTO nc_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",

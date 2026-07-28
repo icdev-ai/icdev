@@ -26,6 +26,7 @@ Checks:
  16. runtime_placeholder_style — bare ? in execute() SQL in ANY runtime tools/ file (use %s; translate_sql is not a fix)
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
  18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
+ 19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -360,6 +361,18 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 # ---------------------------------------------------------------------------
 
 
+#: Modules pinned to one backend, whose extra columns are created by that
+#: backend's own DDL and must NOT be added to the shared schema.
+#: `sqlite_vector_store` is the case in point: `sign_bits` is a SQLite-only
+#: quantisation column it ALTERs in itself, and the class pins `sqlite3.connect`
+#: precisely so it can never reach PostgreSQL. Declaring `sign_bits` in the
+#: shared schema to satisfy this check would create the column on PG, where it
+#: is inert — the opposite of what the pinning is for.
+_SCHEMA_CODE_BACKEND_PINNED = frozenset({
+    "tools/rag/sqlite_vector_store.py",
+})
+
+
 def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Verify CREATE TABLE columns match INSERT statements in tools."""
     schema_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
@@ -377,6 +390,13 @@ def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
                 scan_files.append(py)
 
     for py_path in scan_files:
+        try:
+            rel_key = str(py_path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+        except ValueError:
+            rel_key = py_path.name
+        if rel_key in _SCHEMA_CODE_BACKEND_PINNED:
+            continue
+
         source = _read_text(py_path)
         if "INSERT" not in source.upper():
             continue
@@ -1774,6 +1794,129 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "class, or method is copied. Concept-only citation."
         ),
     },
+    # oss-xcut-01: the four upstreams the OSS-adaptation card studied. Each is a
+    # CONCEPT adoption with an independent implementation and no runtime
+    # dependency — the wording precedent is tools/agent_toolkit/__init__.py. None
+    # is GPL/AGPL. The spike docs/spikes/oss-00-*.md carries the per-item verdict
+    # including everything deliberately REJECTED.
+    "ragflow": {
+        "url": "https://github.com/infiniflow/ragflow",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "Adopted GOALS, not stack. Template chunking (oss-chunk-01), position "
+            "breadcrumbs (oss-chunk-02), HITL chunk repair (oss-hitl-01) and real "
+            "table extraction (oss-table-01) pursue RAGFlow's 'visibility + "
+            "structural chunking' aims with pure-Python/pdfplumber implementations. "
+            "REJECTED: DeepDoc's VLM layout weights, Elasticsearch/Infinity. No "
+            "RAGFlow code, model, or dependency is used."
+        ),
+    },
+    "crawl4ai": {
+        "url": "https://github.com/unclecode/crawl4ai",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "fit_markdown's two-pass prune+BM25 idea (oss-filter-01, "
+            "tools/http/page_extract.py) was re-implemented on stdlib html.parser + "
+            "the already-pinned rank_bm25. REJECTED: a general web crawler, and any "
+            "headless-browser rendering path. No crawl4ai code or dependency."
+        ),
+    },
+    "browser-use": {
+        "url": "https://github.com/browser-use/browser-use",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "The load-bearing idea adopted is the indexed-element PAGE "
+            "REPRESENTATION (act via click(14)), not its agent loop — ICDEV has "
+            "several. Built on the existing vendored-Selenium driver_manager "
+            "(oss-browse-01..04). REJECTED: adding Python Playwright or a chromium "
+            "download. No browser-use code or dependency."
+        ),
+    },
+    "strix": {
+        "url": "https://github.com/usestrix/strix",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "Adopted the DISCIPLINE — a finding ships with a discriminating "
+            "reproduction or it is not a finding (oss-poc-01), and a scope-locked "
+            "self-test over HTTP (oss-redteam-01/02). REJECTED: STRIX's Docker "
+            "sandbox image, Caido, and nuclei. No STRIX code or dependency."
+        ),
+    },
+    # oss-fix-03 introduced tools/quality/review_loop.py, whose docstring cites
+    # greptileai/skills/greploop. Only the LOOP SHAPE (review -> fix -> re-review
+    # until a score clears or N iterations) was adopted; greploop's score is
+    # Greptile's 5/5 confidence, ICDEV's is its OWN existing gates (ruff,
+    # coherence, sipa) run over the local diff. No greploop code, class, or method
+    # is copied. Registered here to close the attribution warn that oss-fix-03's
+    # cherry-pick left open. License left honest-unknown (Greptile's skills repo
+    # license was not verifiable offline this session) — concept-only citations
+    # carry no derivative-work exposure regardless, and "unknown (audit pending)"
+    # is not a _BLOCKING_LICENSES value, matching the leanstral/nemoclaw precedent.
+    "greptileai/skills/greploop": {
+        "url": "https://github.com/greptileai/skills (skills/greploop)",
+        "license": "unknown (audit pending)",
+        "audit_status": (
+            "concept-only, clean-room 2026-07-26 (attribution follow-up to "
+            "oss-fix-03). tools/quality/review_loop.py adopts the review-until-green "
+            "LOOP SHAPE only; scoring is replaced entirely by ICDEV's own gates "
+            "(ruff / coherence_checker --all / sipa pr_gates over the branch diff). "
+            "Structural review confirms no greploop code, class, or method is "
+            "copied and there is no runtime dependency. Upstream repo license not "
+            "positively verified offline; treated as prose-only reference."
+        ),
+    },
+    # cdp-00 / cdp-port-*: the two upstreams the CDP air-gap browser card studied,
+    # registered proactively per the spike (§6) — before any file cites them.
+    "cdp-use": {
+        "url": "https://github.com/browser-use/cdp-use",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (cdp-port-01/03)",
+        "notes": (
+            "cdp-use showed that a browser can be driven over the DevTools Protocol "
+            "with a tiny pure-Python stack (httpx/websockets). ICDEV adopted the "
+            "TRANSPORT DECISION only and re-implemented it stdlib-only "
+            "(tools/browser/cdp/ws_client.py — a hand-rolled RFC 6455 client, no "
+            "third-party WS library) because the air-gap target has neither websockets "
+            "nor websocket-client declared. No cdp-use code, class, or dependency is "
+            "used; cdp-use also requires Python >=3.11 while ICDEV floors at 3.9."
+        ),
+    },
+    # firecrawl is REJECTED, recorded so the rejection is auditable. It is AGPL-3.0
+    # (a _BLOCKING_LICENSES value), but nothing here CITES it as an adaptation — no
+    # file adapts firecrawl code — so this entry documents the decision without
+    # creating a derivative-work exposure. Its value was already shipped
+    # (page_extract/fetch_extract, oss-00 A1/A1b); self-hosting needs Docker + Redis +
+    # a Playwright microservice, all standing non-goals. See spike cdp-00 §5.
+    "firecrawl": {
+        "url": "https://github.com/firecrawl/firecrawl",
+        "license": "AGPL-3.0 (main repo; SDKs/UI MIT) — REJECTED, not used",
+        "audit_status": "REJECTED 2026-07-26 (cdp-00 §5) — no code, no dependency, no adaptation",
+        "notes": (
+            "Copyleft-blocking and its runtime is the already-rejected shape (Docker + "
+            "Redis + PostgreSQL + a Playwright microservice, which reintroduces the very "
+            "browser download this card eliminates). Its non-duplicated idea (/map "
+            "sitemap discovery) stays deferred per oss-00 Gap C2. Recorded as a "
+            "rejection, not a citation of use."
+        ),
+    },
+    # oss-02 / oss2-triage-01: the one genuinely new idea from the nine-project sweep.
+    "agent-chief": {
+        "url": "https://github.com/(agent-chief)",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss2-triage-01)",
+        "notes": (
+            "Adopted the PATTERN only — a scored interrupt/dispatch/file worthiness "
+            "stage in front of notification routing (tools/notifications/worthiness.py). "
+            "NOT the package (Python 3.12+ against ICDEV's 3.9 floor) and NOT a new "
+            "notification system: it is one config-driven scored stage over the existing "
+            "tools/notifications/ subsystem, off by default. No agent-chief code or "
+            "dependency is used."
+        ),
+    },
 }
 
 # Licenses that block the gate if cited without an explicit audit exemption.
@@ -2487,6 +2630,84 @@ def check_karpathy_sync() -> CoherenceCheck:
     )
 
 
+def check_reflex_registry() -> CoherenceCheck:
+    """rri — every daemon.REFLEX_NAMES entry must resolve to a dispatchable reflex.
+
+    The daemon schedules reflexes by importing ``tools.genesis.reflexes.<name>``
+    and calling its ``run``. When the module is absent it silently marks the
+    entry ``missing`` / ``is_stub`` and skips it every cycle — a registered
+    capability that never fires, invisible unless someone reads the schedule.
+    This is the same class of defect as a TOOL_REGISTRY entry with no handler
+    (oss-fix-01): a registry that lists something it cannot dispatch.
+
+    Fails the gate on any REFLEX_NAMES entry whose module does not import, or
+    imports without a callable ``run``.
+    """
+    import importlib.util
+
+    try:
+        from tools.genesis.daemon import REFLEX_NAMES
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id="reflex_registry",
+            check_name="Reflex Registry Integrity",
+            status="warn",
+            expected=["daemon.REFLEX_NAMES importable"],
+            actual=[f"import failed: {exc}"],
+            missing=[],
+            extra=[],
+            message=f"could not import REFLEX_NAMES: {exc}",
+        )
+
+    missing: List[str] = []
+    no_run: List[str] = []
+    for name in REFLEX_NAMES:
+        spec = importlib.util.find_spec(f"tools.genesis.reflexes.{name}")
+        if spec is None:
+            missing.append(name)
+            continue
+        try:
+            mod = importlib.import_module(f"tools.genesis.reflexes.{name}")
+            if not callable(getattr(mod, "run", None)):
+                no_run.append(name)
+        except Exception:  # noqa: BLE001 - import error is a dispatch failure
+            no_run.append(name)
+
+    broken = missing + no_run
+    if broken:
+        detail = []
+        if missing:
+            detail.append(f"no module: {', '.join(missing)}")
+        if no_run:
+            detail.append(f"no callable run(): {', '.join(no_run)}")
+        return CoherenceCheck(
+            check_id="reflex_registry",
+            check_name="Reflex Registry Integrity",
+            status="fail",
+            expected=["every REFLEX_NAMES entry resolves to a reflex with run()"],
+            actual=[f"{len(REFLEX_NAMES)} registered, {len(broken)} undispatchable"],
+            missing=broken,
+            extra=[],
+            message=(
+                f"{len(broken)} REFLEX_NAMES entr(y/ies) cannot be dispatched "
+                f"({'; '.join(detail)}). Create the reflex module, correct the "
+                "name, or remove the entry — a registered reflex that never fires "
+                "is worse than an unregistered one."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="reflex_registry",
+        check_name="Reflex Registry Integrity",
+        status="pass",
+        expected=["every REFLEX_NAMES entry resolves to a reflex with run()"],
+        actual=[f"all {len(REFLEX_NAMES)} registered reflexes dispatch"],
+        missing=[],
+        extra=[],
+        message=f"all {len(REFLEX_NAMES)} REFLEX_NAMES entries resolve to a reflex with run()",
+    )
+
+
 def check_sandbox_coverage() -> CoherenceCheck:
     """OPT-58 — verify docs/security/sandbox-coverage.md exists and
     documents all 4 tracked ingress-point gap files.
@@ -2621,6 +2842,165 @@ def check_direct_anthropic_import() -> CoherenceCheck:
         missing=[],
         extra=[],
         message="No disallowed direct anthropic imports detected",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: AGX architecture LLM-agnosticism (agx-core-02)
+# ---------------------------------------------------------------------------
+
+# Vendor SDK / orchestration-framework module roots that architecture code must
+# never import directly — inference flows through LLMRouter, never a raw SDK.
+_AGX_VENDOR_SDK_ROOTS = frozenset({
+    "anthropic", "openai", "langchain", "langgraph", "langchain_core",
+    "langchain_community", "langchain_openai", "cohere", "mistralai", "groq",
+    "together", "fireworks", "ollama", "nebius", "tavily", "boto3", "botocore",
+    "google.generativeai", "vertexai", "azure",
+})
+
+# String literals shaped like a concrete provider model ID. Architecture code
+# must resolve models from args/llm_config.yaml, never hardcode an ID.
+_AGX_MODEL_ID_RE = re.compile(
+    r"\b("
+    r"claude-(?:3|4|opus|sonnet|haiku|instant)"
+    r"|gpt-4|gpt-3\.5|gpt-4o|o1-|o3-"
+    r"|gemini-(?:\d|pro|flash)"
+    r"|llama-?[23]|mixtral-|mistral-(?:large|small|medium)"
+    r"|qwen[\d-]|command-r|deepseek-|grok-\d"
+    r")",
+    re.IGNORECASE,
+)
+
+# Provider modules that bypass the router. `tools.llm.provider` (LLMRequest /
+# LLMResponse dataclasses) is allowed; concrete *_provider modules are not.
+_AGX_ALLOWED_LLM_MODULE_SUFFIXES = frozenset({"provider", "router", "config_path"})
+
+
+def _agx_docstring_node_ids(tree: ast.AST) -> set:
+    """Return id()s of string-constant nodes that are docstrings (module / class /
+    function), so a model-ID scan does not flag prose."""
+    ids: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, "body", None) or []
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                ids.add(id(body[0].value))
+    return ids
+
+
+def scan_architecture_agnosticism(source: str, rel: str) -> List[str]:
+    """AST-scan one architecture source file for LLM-agnosticism violations.
+
+    Returns a list of ``rel:lineno: reason`` violation strings. Detects:
+      1. vendor-SDK / langchain_* imports,
+      2. concrete-model-ID-shaped string literals (excluding docstrings),
+      3. direct provider instantiation / provider-module imports that bypass LLMRouter.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    violations: List[str] = []
+    doc_ids = _agx_docstring_node_ids(tree)
+
+    def _root(mod: str) -> str:
+        return mod.split(".")[0]
+
+    for node in ast.walk(tree):
+        # (1) + (3) imports
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.name
+                if _root(name) in _AGX_VENDOR_SDK_ROOTS or name in _AGX_VENDOR_SDK_ROOTS:
+                    violations.append(f"{rel}:{node.lineno}: vendor-SDK import `{name}`")
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            if _root(mod) in _AGX_VENDOR_SDK_ROOTS or mod in _AGX_VENDOR_SDK_ROOTS:
+                violations.append(f"{rel}:{node.lineno}: vendor-SDK import from `{mod}`")
+            # provider-module bypass: tools.llm.<x>_provider (x not in allowed)
+            elif mod.replace("icdev.", "").startswith("tools.llm."):
+                last = mod.rsplit(".", 1)[-1]
+                if last.endswith("_provider"):
+                    violations.append(
+                        f"{rel}:{node.lineno}: direct provider-module import `{mod}` bypasses LLMRouter"
+                    )
+        # (2) model-ID literals
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in doc_ids:
+                continue
+            m = _AGX_MODEL_ID_RE.search(node.value)
+            if m:
+                violations.append(
+                    f"{rel}:{node.lineno}: model-ID-shaped literal `{m.group(0)}` — resolve from llm_config.yaml"
+                )
+        # (3) direct provider instantiation: SomethingProvider(...)
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            fn_name = None
+            if isinstance(fn, ast.Name):
+                fn_name = fn.id
+            elif isinstance(fn, ast.Attribute):
+                fn_name = fn.attr
+            if fn_name and fn_name.endswith("Provider") and fn_name not in {"EmbeddingProvider"}:
+                violations.append(
+                    f"{rel}:{node.lineno}: direct provider instantiation `{fn_name}(...)` bypasses LLMRouter"
+                )
+    return violations
+
+
+def check_architecture_agnosticism() -> CoherenceCheck:
+    """agx-core-02 — enforce the LLM-agnostic contract on tools/llm/architectures/.
+
+    AGX reasoning architectures must resolve all inference through LLMRouter with
+    no vendor-SDK imports, no hardcoded model IDs, and no direct provider
+    instantiation. This is a hard, hard-won ICDEV property (9 providers, air-gap
+    Ollama routing, CUI egress) that must not drift as later AGX tasks add
+    architectures. Categorical outputs (agx-pick-*) are what MAKE portability
+    achievable, so this gate protects the whole card.
+    """
+    roots = [
+        Path("tools") / "llm" / "architectures",
+        Path("icdev") / "tools" / "llm" / "architectures",
+    ]
+    violations: List[str] = []
+    scanned = 0
+    for root in roots:
+        abs_root = PROJECT_ROOT / root
+        if not abs_root.exists():
+            continue
+        for py_file in sorted(abs_root.rglob("*.py")):
+            try:
+                rel = str(py_file.relative_to(PROJECT_ROOT))
+            except ValueError:
+                rel = str(py_file)
+            scanned += 1
+            violations.extend(scan_architecture_agnosticism(_read_text(py_file), rel))
+
+    if violations:
+        return CoherenceCheck(
+            check_id="architecture_agnosticism",
+            check_name="AGX Architecture LLM-Agnosticism (agx-core-02)",
+            status="fail",
+            expected=["tools/llm/architectures/ resolves all inference via LLMRouter; no vendor SDK / model IDs"],
+            actual=violations,
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} LLM-agnosticism violation(s) in AGX architecture code — "
+                "route through LLMRouter and resolve models from args/llm_config.yaml"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="architecture_agnosticism",
+        check_name="AGX Architecture LLM-Agnosticism (agx-core-02)",
+        status="pass",
+        expected=["tools/llm/architectures/ resolves all inference via LLMRouter; no vendor SDK / model IDs"],
+        actual=[f"{scanned} architecture file(s) scanned, 0 violations"],
+        missing=[],
+        extra=[],
+        message="AGX architecture code is LLM-agnostic (no vendor SDK / model IDs / provider bypass)",
     )
 
 
@@ -3128,7 +3508,15 @@ def check_security_context() -> CoherenceCheck:
         PROJECT_ROOT / "tools" / "security",
         PROJECT_ROOT / "tools" / "workflow",  # checker source contains pattern strings
     }
-    bypass_re = re.compile(r"set_security_context\(\s*None\s*\)")
+    # Must look like an actual CALL: a receiver (`conn.set_…`) or a bare call at
+    # statement position. Prose inside a docstring — "…already disables RLS via
+    # set_security_context(None) below" in tools/pipeline/db/init_db.py — is a
+    # description, not a bypass, and the leading-`#` skip below does not catch it
+    # because a docstring line starts with neither `#` nor a quote.
+    bypass_re = re.compile(
+        r"(?:\.\s*set_security_context\(\s*None\s*\)"
+        r"|^\s*set_security_context\(\s*None\s*\))"
+    )
     bypass_ok_re = re.compile(r"#\s*rls-bypass\s*:", re.IGNORECASE)
 
     undocumented: list[str] = []
@@ -3274,6 +3662,16 @@ def check_new_page_completeness() -> CoherenceCheck:
             canvas,
             (PROJECT_ROOT / "tools" / canvas / "blueprint.py", PROJECT_ROOT / "tools" / canvas),
         )
+        # Child apps live under apps/, not tools/ — and one (strategos) declares
+        # no `module:` because its registry entry exists only to register IQE
+        # collections, so the fallback above guesses tools/ and reports a
+        # blueprint that is present and routed as missing. apps/ is already a
+        # first-class registry location (`module: apps.innovation.blueprint`);
+        # the fallback simply never learned about it.
+        if not bp_file.exists():
+            apps_bp = PROJECT_ROOT / "apps" / canvas / "blueprint.py"
+            if apps_bp.exists():
+                bp_file, canvas_dir = apps_bp, apps_bp.parent
         if not bp_file.exists():
             missing.append(f"{bp_file.name} missing (expected at {bp_file.parent.name}/)")
         elif not _blueprint_has_route(bp_file):
@@ -3744,8 +4142,25 @@ def check_log_standard_compliance() -> CoherenceCheck:
             src = py_file.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        # Flag raw logging.getLogger() usage (allow in logging/ itself)
-        if re.search(r"\blogging\.getLogger\s*\(", src):
+        # Flag raw logging.getLogger() usage (allow in logging/ itself).
+        # AST, not regex: code GENERATORS embed `logging.getLogger(...)` inside
+        # string literals as part of the child app they emit. That is the child
+        # app's logger, not this module's, and no amount of migrating here would
+        # remove it — child_app_generator.py was reported for its own output.
+        if not re.search(r"\blogging\.getLogger\s*\(", src):
+            continue
+        try:
+            uses_raw = any(
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "getLogger"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "logging"
+                for node in ast.walk(ast.parse(src))
+            )
+        except SyntaxError:
+            uses_raw = True  # unparseable — fall back to the textual match
+        if uses_raw:
             violations.append(f"{rel}: uses logging.getLogger() — migrate to tools.logging.icdev_logger.get_logger()")
 
     status = "fail" if violations else "pass"
@@ -3768,6 +4183,21 @@ def check_log_standard_compliance() -> CoherenceCheck:
 # Check 15: canvas_placeholder_style — bare ? in canvas execute() SQL
 # Check 16: runtime_placeholder_style — bare ? in ANY runtime tools/ execute() SQL
 # ---------------------------------------------------------------------------
+
+
+#: Canvases whose ``get_connection()`` is a HYBRID: StorageConnection on the
+#: PostgreSQL branch, but a RAW ``sqlite3.connect`` handle on the SQLite one.
+#: Raw sqlite3 accepts ``?`` and rejects ``%s``, while the PG branch translates
+#: ``?`` → ``%s`` — so positional ``?`` is the only form valid on BOTH, and this
+#: check's advice is inverted for them.
+#:
+#: This is not a guess: ``tests/test_cvx_sql07_datacanvas_pct_s.py`` asserts the
+#: opposite of this check for these paths, and exists because ``%s`` here broke
+#: ``/data/lineage`` and ``check_ext_access`` in production. That test is the
+#: authority; without this exemption the two gates cannot both be satisfied.
+_HYBRID_RAW_SQLITE_CANVASES = (
+    "tools/data_canvas/",
+)
 
 
 def check_canvas_placeholder_style(
@@ -3808,6 +4238,9 @@ def check_canvas_placeholder_style(
     scanned = 0
 
     for py_path in candidates:
+        if any(part in py_path.as_posix() for part in _HYBRID_RAW_SQLITE_CANVASES):
+            continue
+
         try:
             source = py_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -3822,6 +4255,7 @@ def check_canvas_placeholder_style(
             continue
 
         scanned += 1
+        raw_sqlite_vars = _raw_sqlite3_receivers(tree)
         try:
             rel = py_path.relative_to(PROJECT_ROOT).as_posix()
         except ValueError:
@@ -3847,6 +4281,15 @@ def check_canvas_placeholder_style(
                     if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
                         parts.append(frag.value)
                 sql_text = "".join(parts)
+
+            # sqlite3.connect() handles never reach translate_sql, so `?` is
+            # the only placeholder they accept — `%s` raises there. See
+            # _raw_sqlite3_receivers.
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in raw_sqlite_vars
+            ):
+                continue
 
             if sql_text and "?" in sql_text:
                 lineno = getattr(node, "lineno", 0)
@@ -3896,6 +4339,33 @@ _PLACEHOLDER_EXEMPT_PATTERNS = (
     "conftest.py",
     "translate_sql",   # storage.py itself defines the translation
 )
+
+
+def _raw_sqlite3_receivers(tree: ast.AST) -> set:
+    """Names bound to a direct ``sqlite3.connect()`` handle in this module.
+
+    Such a handle is a real sqlite3 connection, not a StorageConnection, so it
+    never passes through ``translate_sql`` and ``?`` is the only placeholder it
+    accepts. Flagging those as "use %s for psycopg2" inverts the truth.
+    """
+    aliases = {"sqlite3"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name == "sqlite3" and a.asname:
+                    aliases.add(a.asname)
+
+    bound: set = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        fn = node.value.func
+        if (isinstance(fn, ast.Attribute) and fn.attr == "connect"
+                and isinstance(fn.value, ast.Name) and fn.value.id in aliases):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    bound.add(tgt.id)
+    return bound
 
 
 def check_runtime_placeholder_style(
@@ -3960,6 +4430,7 @@ def check_runtime_placeholder_style(
             continue
 
         scanned += 1
+        raw_sqlite_vars = _raw_sqlite3_receivers(tree)
         try:
             rel = py_path.relative_to(PROJECT_ROOT).as_posix()
         except ValueError:
@@ -3984,6 +4455,18 @@ def check_runtime_placeholder_style(
                     if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
                         parts.append(frag.value)
                 sql_text = "".join(parts)
+
+            # A connection opened directly with sqlite3.connect() is NOT psycopg2
+            # and `?` is the only placeholder it accepts — `%s` raises there. The
+            # audit writers in tools/db/storage.py are exactly this: they open
+            # their own sqlite3 handle so an RLS/field audit row still lands when
+            # the pooled connection is mid-transaction. "Fixing" those to %s would
+            # silently empty an append-only audit trail, which has happened before.
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in raw_sqlite_vars
+            ):
+                continue
 
             if sql_text and "?" in sql_text:
                 lineno = getattr(node, "lineno", 0)
@@ -5575,6 +6058,444 @@ def check_mirror_drift(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 
 # ---------------------------------------------------------------------------
+# Check: LLM provider bypass outside tools/llm/ (lpx-router-03)
+# ---------------------------------------------------------------------------
+
+# Cloud provider API host substrings. A runtime module outside tools/llm/ that
+# embeds one of these is talking to a provider directly instead of through the
+# router — which defeats the opt-in proxy (LPX) and air-gap/CUI routing.
+_LPX_PROVIDER_URL_SUBSTRINGS = (
+    "api.anthropic.com",
+    "api.openai.com",
+    "api.cohere.ai",
+    "api.mistral.ai",
+    "api.groq.com",
+    "api.deepseek.com",
+    "api.together.xyz",
+    "api.fireworks.ai",
+    "api.x.ai",
+    "generativelanguage.googleapis.com",
+)
+
+# Provider API-key environment variables. Reading one of these outside tools/llm/
+# means a module resolves a real provider credential itself rather than letting
+# the provider layer do it. Virtual/proxy/master keys are intentionally absent.
+_LPX_PROVIDER_KEY_ENV_VARS = frozenset({
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "COHERE_API_KEY",
+    "MISTRAL_API_KEY",
+    "GROQ_API_KEY",
+    "TOGETHER_API_KEY",
+    "FIREWORKS_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "XAI_API_KEY",
+    "PERPLEXITY_API_KEY",
+})
+
+# Documented, legitimate exceptions (see lpx-router-02):
+#   - the FathomDesk BYOK credential tester intentionally probes the real endpoint
+#   - the air-gap OpenAI-compatible local endpoints point at vLLM / LM Studio /
+#     llama.cpp, not a cloud provider
+#   - this checker itself necessarily embeds provider host/key literals in order
+#     to DETECT them (meta tool, not a runtime inference path)
+_LPX_BYPASS_EXEMPT_FILES = frozenset({
+    Path("tools") / "trading" / "credentials" / "tester.py",
+    Path("tools") / "airgap" / "pdf_fallback.py",
+    Path("tools") / "document_intelligence" / "extractors.py",
+    Path("tools") / "workflow" / "coherence_checker.py",
+})
+
+# Grandfathered pre-existing sites (signature = "<relpath>::<host-or-envvar>").
+# lpx-router-03's mandate is to FAIL on NEW direct-to-provider access; these
+# already existed when the gate landed and are out of this card's scope. Many are
+# legitimate (air-gap detectors that list cloud URLs precisely to BLOCK egress;
+# embedding/provider-adjacent modules). The gate ratchets: no NEW signature may
+# appear. Shrinking this set is welcome follow-up tech debt; growing it is not.
+_LPX_BYPASS_BASELINE = frozenset({
+    "tools/ai_augmentation/agent_readiness/pillars/_base.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/append_only_audit.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/nist_controls.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/stig_compliance.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/append_only_audit.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/nist_controls.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/stig_compliance.py::ANTHROPIC_API_KEY",
+    "tools/airgap/detector.py::api.anthropic.com",
+    "tools/airgap/ste_validator.py::api.anthropic.com",
+    "tools/airgap/ste_validator.py::api.cohere.ai",
+    "tools/airgap/ste_validator.py::api.openai.com",
+    "tools/ci/workflows/icdev_plan.py::ANTHROPIC_API_KEY",
+    # `icdev setup` probes TCP:443 reachability of these hosts to tell a user
+    # whether a provider is usable before they finish configuring one. It never
+    # sends a request, and it must work before any provider SDK is installed —
+    # so routing it through LLMRouter is not available to it. Same category as
+    # the airgap detectors above: names a cloud host without calling it.
+    "tools/cli/setup_wizard.py::api.anthropic.com",
+    "tools/cli/setup_wizard.py::api.openai.com",
+    "tools/cli/setup_wizard.py::generativelanguage.googleapis.com",
+    "tools/document_intelligence/blueprint.py::ANTHROPIC_API_KEY",
+    "tools/document_intelligence/blueprint.py::OPENAI_API_KEY",
+    "tools/document_intelligence/output_generators.py::ANTHROPIC_API_KEY",
+    "tools/document_intelligence/output_generators.py::OPENAI_API_KEY",
+    "tools/finetune/openai_provider.py::OPENAI_API_KEY",
+    "tools/govcon/reflex_sandbox.py::api.anthropic.com",
+    "tools/memory/embed_memory.py::OPENAI_API_KEY",
+    "tools/memory/hybrid_search.py::OPENAI_API_KEY",
+    "tools/memory/maintenance_cron.py::OPENAI_API_KEY",
+    "tools/memory/semantic_search.py::OPENAI_API_KEY",
+    "tools/pulse/config.py::OPENAI_API_KEY",
+    "tools/rag/pdf_provider.py::ANTHROPIC_API_KEY",
+    "tools/rag/pdf_provider.py::GOOGLE_API_KEY",
+    "tools/testing/e2e_runner.py::ANTHROPIC_API_KEY",
+    "tools/testing/health_check.py::ANTHROPIC_API_KEY",
+    "tools/testing/utils.py::ANTHROPIC_API_KEY",
+    "tools/viz/asset_generator.py::OPENAI_API_KEY",
+})
+
+
+def _lpx_scan_provider_bypass(source: str, rel: str) -> List[Tuple[int, str, str]]:
+    """AST-scan one runtime module for direct-to-provider access.
+
+    Returns ``(lineno, token, reason)`` tuples for (a) cloud provider base-URL
+    string literals (docstrings excluded) and (b) reads of a provider API-key env
+    var via os.environ[...] / os.environ.get(...) / os.getenv(...). ``token`` is
+    the host or env var — used to build a line-independent baseline signature.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    hits: List[Tuple[int, str, str]] = []
+    doc_ids = _agx_docstring_node_ids(tree)
+
+    for node in ast.walk(tree):
+        # (a) provider base-URL literals (skip docstrings)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in doc_ids:
+                continue
+            for host in _LPX_PROVIDER_URL_SUBSTRINGS:
+                if host in node.value:
+                    hits.append((node.lineno, host, f"cloud provider URL `{host}` — call via LLMRouter"))
+                    break
+        # (b) provider API-key env reads
+        elif isinstance(node, ast.Call):
+            key = _lpx_env_read_key(node)
+            if key and key in _LPX_PROVIDER_KEY_ENV_VARS:
+                hits.append((node.lineno, key, f"reads provider key env `{key}` — resolve credentials in tools/llm/"))
+        # os.environ["X"] subscript read
+        elif isinstance(node, ast.Subscript):
+            key = _lpx_environ_subscript_key(node)
+            if key and key in _LPX_PROVIDER_KEY_ENV_VARS:
+                hits.append((node.lineno, key, f"reads provider key env `{key}` — resolve credentials in tools/llm/"))
+    return hits
+
+
+def _lpx_const_str(node) -> Optional[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _lpx_env_read_key(call: ast.Call) -> Optional[str]:
+    """If ``call`` is os.getenv("X"...) or os.environ.get("X"...), return "X"."""
+    fn = call.func
+    if not isinstance(fn, ast.Attribute) or not call.args:
+        return None
+    first = _lpx_const_str(call.args[0])
+    if first is None:
+        return None
+    # os.getenv(...)
+    if fn.attr == "getenv":
+        return first
+    # os.environ.get(...)
+    if fn.attr == "get" and isinstance(fn.value, ast.Attribute) and fn.value.attr == "environ":
+        return first
+    return None
+
+
+def _lpx_environ_subscript_key(sub: ast.Subscript) -> Optional[str]:
+    """If ``sub`` is os.environ["X"], return "X"."""
+    val = sub.value
+    if isinstance(val, ast.Attribute) and val.attr == "environ":
+        return _lpx_const_str(sub.slice)
+    return None
+
+
+def check_provider_bypass() -> CoherenceCheck:
+    """lpx-router-03 — no direct-to-provider access outside tools/llm/.
+
+    Fails when a runtime module under ``tools/`` (excluding ``tools/llm/`` and the
+    documented BYOK / air-gap exceptions) either embeds a cloud provider base URL
+    literal or reads a provider API-key env var. All inference must flow through
+    ``LLMRouter`` so the opt-in proxy (LPX), air-gap, and CUI routing hold.
+    """
+    new_violations: List[str] = []
+    grandfathered = 0
+    tools_root = PROJECT_ROOT / "tools"
+    llm_dir = Path("tools") / "llm"
+    if tools_root.exists():
+        for py_file in sorted(tools_root.rglob("*.py")):
+            try:
+                rel_path = py_file.relative_to(PROJECT_ROOT)
+            except ValueError:
+                rel_path = py_file
+            # Skip the provider layer itself and documented exceptions.
+            if llm_dir in rel_path.parents or rel_path == llm_dir:
+                continue
+            if rel_path in _LPX_BYPASS_EXEMPT_FILES:
+                continue
+            # Skip test scaffolding that may reference provider vars intentionally.
+            if py_file.name.startswith("test_"):
+                continue
+            text = _read_text(py_file)
+            # Cheap prefilter before paying for an AST parse.
+            if "api." not in text and "generativelanguage" not in text and "_API_KEY" not in text:
+                continue
+            rel_str = str(rel_path).replace("\\", "/")
+            for lineno, token, reason in _lpx_scan_provider_bypass(text, rel_str):
+                signature = f"{rel_str}::{token}"
+                if signature in _LPX_BYPASS_BASELINE:
+                    grandfathered += 1
+                    continue
+                new_violations.append(f"{rel_str}:{lineno}: {reason}")
+
+    if new_violations:
+        return CoherenceCheck(
+            check_id="provider_bypass",
+            check_name="LLM Provider Bypass (lpx-router-03)",
+            status="fail",
+            expected=["no NEW cloud provider URL / API-key env read outside tools/llm/"],
+            actual=new_violations,
+            missing=[],
+            extra=new_violations,
+            message=(
+                f"{len(new_violations)} NEW direct-to-provider bypass(es) outside tools/llm/ "
+                f"({grandfathered} grandfathered) — route through LLMRouter; add a documented "
+                "exemption only for BYOK/air-gap"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="provider_bypass",
+        check_name="LLM Provider Bypass (lpx-router-03)",
+        status="pass",
+        expected=["no NEW cloud provider URL / API-key env read outside tools/llm/"],
+        actual=[f"0 new violations ({grandfathered} pre-existing sites grandfathered)"],
+        missing=[],
+        extra=[],
+        message=(
+            f"No NEW direct-to-provider bypass outside tools/llm/ "
+            f"({grandfathered} grandfathered legacy sites)"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check 19: Documented Command Paths (oss-fix-02)
+# ---------------------------------------------------------------------------
+#
+# A documented command that does not exist is worse than an undocumented one:
+# an agent reading CLAUDE.md will confidently run it, get an opaque
+# "can't open file" error, and burn a cycle deciding whether the tree is
+# broken or the doc is. This check resolves every `python tools/...py` and
+# `python -m tools...` invocation in the doc set against the filesystem.
+#
+# Grandfathering mirrors the args/ruff_gate.yaml pattern: pre-existing broken
+# references are listed in args/doc_command_gate.yaml and downgraded to WARN
+# so the backlog is enumerated and visible, while any NEW broken reference
+# fails the gate.
+
+_DOC_COMMAND_CONFIG = PROJECT_ROOT / "args" / "doc_command_gate.yaml"
+
+# Default doc set — overridable via the `docs:` key in the config file.
+_DOC_COMMAND_DEFAULT_DOCS = ("CLAUDE.md", "docs/reference/commands.md")
+
+# `python tools/foo/bar.py` / `python icdev/tools/foo/bar.py`
+_DOC_SCRIPT_RE = re.compile(r"python[0-9.]*\s+((?:icdev/)?tools/[A-Za-z0-9_./-]+\.py)")
+# `python -m tools.foo.bar` / `python -m icdev.tools.foo.bar`
+_DOC_MODULE_RE = re.compile(r"python[0-9.]*\s+-m\s+((?:icdev\.)?tools(?:\.[A-Za-z0-9_]+)*)")
+
+
+def _load_doc_command_config() -> Tuple[List[str], Dict[str, str]]:
+    """Load the doc set and grandfathered-reference map from args/doc_command_gate.yaml.
+
+    Schema:
+        docs:
+          - CLAUDE.md
+          - docs/reference/commands.md
+        grandfathered:
+          tools/dochub/doc_generator.py: "DocHub subsystem never built (oss-fix-02)"
+
+    Returns ``(docs, grandfathered)``. A missing file, malformed YAML, or
+    missing pyyaml yields the default doc set and an EMPTY grandfather map
+    (fail-safe closed: if the allowlist can't be read, nothing is excused and
+    the gate is stricter, not looser).
+    """
+    docs = list(_DOC_COMMAND_DEFAULT_DOCS)
+    if not _DOC_COMMAND_CONFIG.exists() or not _HAS_YAML:
+        return docs, {}
+    try:
+        raw = yaml.safe_load(_DOC_COMMAND_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return docs, {}
+    if not isinstance(raw, dict):
+        return docs, {}
+
+    cfg_docs = raw.get("docs")
+    if isinstance(cfg_docs, list) and cfg_docs:
+        docs = [str(d).replace("\\", "/") for d in cfg_docs if isinstance(d, (str, Path))]
+
+    grandfathered: Dict[str, str] = {}
+    gf = raw.get("grandfathered") or {}
+    if isinstance(gf, dict):
+        for ref, reason in gf.items():
+            if isinstance(ref, str):
+                grandfathered[ref.replace("\\", "/").lstrip("./")] = str(reason or "")
+    elif isinstance(gf, list):  # tolerate a bare list of paths
+        for ref in gf:
+            if isinstance(ref, str):
+                grandfathered[ref.replace("\\", "/").lstrip("./")] = ""
+    return docs, grandfathered
+
+
+def _doc_reference_exists(ref: str) -> bool:
+    """Resolve a documented reference (script path or dotted module) to a file."""
+    if ref.endswith(".py"):
+        return (PROJECT_ROOT / ref).is_file()
+    # Dotted module: `tools.airgap` -> tools/airgap.py or tools/airgap/__init__.py
+    rel = Path(*ref.split("."))
+    return (PROJECT_ROOT / rel).with_suffix(".py").is_file() or (PROJECT_ROOT / rel / "__init__.py").is_file()
+
+
+def _expand_doc_entries(docs: List[str]) -> List[str]:
+    """Expand wildcard entries in the doc set to concrete repo-relative paths.
+
+    Listing files one by one means a doc surface added later silently escapes
+    the gate — which is how context/capabilities/harness.yaml came to advertise
+    three tools that were never written (ahx-doc-01). A pattern entry keeps new
+    files covered by default. Non-wildcard entries pass through untouched, so
+    existing configs behave exactly as before.
+    """
+    expanded: List[str] = []
+    for doc in docs:
+        if "*" not in doc and "?" not in doc:
+            expanded.append(doc)
+            continue
+        for match in sorted(PROJECT_ROOT.glob(doc)):
+            if match.is_file():
+                expanded.append(match.relative_to(PROJECT_ROOT).as_posix())
+    # Preserve order, drop duplicates (a file may match a pattern and be listed).
+    seen: set = set()
+    return [d for d in expanded if not (d in seen or seen.add(d))]
+
+
+def _scan_doc_commands(docs: List[str]) -> List[Tuple[str, int, str]]:
+    """Return ``(doc, lineno, reference)`` for every documented python invocation."""
+    found: List[Tuple[str, int, str]] = []
+    for doc in _expand_doc_entries(docs):
+        path = PROJECT_ROOT / doc
+        if not path.is_file():
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            for match in _DOC_SCRIPT_RE.finditer(line):
+                found.append((doc, lineno, match.group(1)))
+            for match in _DOC_MODULE_RE.finditer(line):
+                found.append((doc, lineno, match.group(1)))
+    return found
+
+
+def check_doc_command_paths(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Check 19: every documented `python tools/...` invocation resolves to a real file."""
+    check_id = "doc_command_paths"
+    check_name = "Documented Command Paths"
+
+    docs, grandfathered = _load_doc_command_config()
+    references = _scan_doc_commands(docs)
+
+    if not references:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=[f"documented commands in {', '.join(docs)}"],
+            actual=[],
+            missing=[],
+            extra=[],
+            message=f"No documented python invocations found in {len(docs)} doc file(s) — check doc set",
+        )
+
+    # Resolve each distinct reference once; docs repeat the same tool many times.
+    resolved: Dict[str, bool] = {}
+    new_broken: List[str] = []
+    excused: Set[str] = set()
+    for doc, lineno, ref in references:
+        if ref not in resolved:
+            resolved[ref] = _doc_reference_exists(ref)
+        if resolved[ref]:
+            continue
+        if ref in grandfathered:
+            excused.add(ref)
+        else:
+            new_broken.append(f"{doc}:{lineno}: {ref}")
+
+    # A grandfather entry whose target now exists (or is no longer cited) is
+    # stale — surface it so the allowlist shrinks instead of rotting.
+    cited = {ref for _, _, ref in references}
+    stale = sorted(
+        ref
+        for ref in grandfathered
+        if ref not in cited or _doc_reference_exists(ref)
+    )
+
+    total = len(resolved)
+    if new_broken:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=["every documented `python tools/...` command resolves to an existing file"],
+            actual=new_broken[:40],
+            missing=sorted({line.rsplit(": ", 1)[1] for line in new_broken}),
+            extra=stale,
+            message=(
+                f"{len(new_broken)} documented command(s) reference a file that does not exist "
+                f"({len(excused)} grandfathered). Create the tool, fix the path, or — only if the "
+                f"capability is genuinely deferred — add it to args/doc_command_gate.yaml with a reason."
+            ),
+        )
+
+    if excused or stale:
+        bits = []
+        if excused:
+            bits.append(f"{len(excused)} grandfathered broken reference(s) remain")
+        if stale:
+            bits.append(f"{len(stale)} stale allowlist entry(ies) can be removed")
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=["every documented `python tools/...` command resolves to an existing file"],
+            actual=[f"{total} distinct reference(s) checked; 0 new breakage"],
+            missing=sorted(excused),
+            extra=stale,
+            message="No NEW broken documented commands — " + "; ".join(bits),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=["every documented `python tools/...` command resolves to an existing file"],
+        actual=[f"{total} distinct reference(s) checked across {len(docs)} doc file(s)"],
+        missing=[],
+        extra=[],
+        message=f"All {total} documented command path(s) resolve",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -5594,7 +6515,10 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "reflex_registry": check_reflex_registry,
     "direct_anthropic_import": check_direct_anthropic_import,
+    "provider_bypass": check_provider_bypass,
+    "architecture_agnosticism": check_architecture_agnosticism,
     "llm_router_api": check_llm_router_api,
     "karpathy_sync": check_karpathy_sync,
     "openapi_parity": check_openapi_parity,
@@ -5622,6 +6546,7 @@ CHECK_REGISTRY = {
     "migration_numbering": check_migration_numbering,
     "icdev_mirror_parity": check_icdev_mirror_parity,
     "mirror_drift": check_mirror_drift,
+    "doc_command_paths": check_doc_command_paths,
 }
 
 
@@ -5664,6 +6589,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "iqe_map_sync": "skip",  # adapter wiring requires human review
     "profile_sync": "skip",  # profile YAML changes require human review
     "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
+    "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
 }
 
 

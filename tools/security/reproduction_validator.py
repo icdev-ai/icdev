@@ -55,7 +55,7 @@ loopback out of the box). A non-allowlisted host is ``refused``, not attempted.
 Storage
 -------
 ``dynamic_findings`` (mutable status) + ``finding_replay_attempts``
-(append-only evidence trail), migration 295. Persistence is best-effort: an
+(append-only evidence trail), migration 303. Persistence is best-effort: an
 un-migrated checkout degrades to in-memory classification rather than raising,
 because the *rule* must hold even where the tables do not exist yet.
 

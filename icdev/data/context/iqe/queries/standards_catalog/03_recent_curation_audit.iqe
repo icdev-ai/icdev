@@ -1,0 +1,5 @@
+# IQE-SCAT-003: Recent catalog curation activity (append-only audit)
+# Who created, imported, deprecated, or promoted entries and when.
+
+foreach a in standards_catalog.audit
+select a.entry_id, a.event_type, a.actor, a.recorded_at

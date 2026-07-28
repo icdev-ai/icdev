@@ -5,6 +5,13 @@
 Compares the last-modified timestamp of each profiled table against
 configurable freshness thresholds and produces a staleness report.
 
+"Stale" means: the newest data timestamp in the table is older than
+``stale_hours`` (or ``critical_hours``) relative to now.  Since data_profiler
+emits no per-table last-modified field, the signal is derived (in order) from
+an explicit ``last_modified``/``updated_at`` on the table, else the newest
+value across the table's datetime columns (the profiler's per-column ``max``).
+When no real timestamp exists the table is reported "unknown", never "fresh".
+
 Thresholds (configurable via args/data_canvas_config.yaml):
   stale_hours: 24      # warn if last_modified > 24h ago
   critical_hours: 168  # critical if > 7 days ago
@@ -21,6 +28,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.data_canvas.freshness_guardian")
 
 _DB_PATH = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
 _CONFIG_PATH = Path(__file__).resolve().parents[2] / "args" / "data_canvas_config.yaml"
@@ -59,16 +69,41 @@ def _parse_ts(ts_str: str | None) -> datetime | None:
     return None
 
 
-def _sqlite_last_modified(db_path: str, table: str) -> datetime | None:
-    try:
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        # SQLite has no native last-modified per table; use file mtime as proxy
-        conn.close()
-        mtime = Path(db_path).stat().st_mtime
-        return datetime.fromtimestamp(mtime, tz=timezone.utc)
-    except Exception:
-        return None
+def _derive_last_modified(tbl: dict) -> str | None:
+    """Derive a real last-modified signal from a data_profiler table result.
+
+    data_profiler emits no per-table ``last_modified`` field, and its
+    ``profiled_at`` is always "now" — using it would make every table look
+    fresh regardless of the underlying data.  Instead we use an honest signal:
+
+    1. An explicit ``last_modified`` / ``updated_at`` on the table, if present.
+    2. Otherwise the newest value across the table's datetime columns — i.e.
+       the ``max`` the profiler computed for any column whose ``inferred_type``
+       is ``datetime``.  This is the timestamp of the newest row of data.
+
+    Returns an ISO-8601 / parseable timestamp string, or ``None`` when no
+    real timestamp can be determined (the caller reports such tables as
+    "unknown", never "fresh").
+    """
+    explicit = tbl.get("last_modified") or tbl.get("updated_at")
+    if explicit:
+        return str(explicit)
+
+    newest: datetime | None = None
+    newest_raw: str | None = None
+    for col in tbl.get("columns", []) or []:
+        if col.get("inferred_type") != "datetime":
+            continue
+        candidate = col.get("max")
+        if candidate is None:
+            continue
+        dt = _parse_ts(str(candidate))
+        if dt is None:
+            continue
+        if newest is None or dt > newest:
+            newest = dt
+            newest_raw = str(candidate)
+    return newest_raw
 
 
 def check_table_freshness(
@@ -150,8 +185,11 @@ def check_profile_freshness(profile: dict, stale_hours: int | None = None, criti
     tables = profile.get("tables", [])
     results = []
     for tbl in tables:
-        tname = tbl.get("table_name", "?")
-        last_mod = tbl.get("last_modified") or tbl.get("profiled_at")
+        # data_profiler emits the table name under "name" (not "table_name").
+        tname = tbl.get("name") or tbl.get("table_name") or "?"
+        # Derive a real last-modified signal; do NOT fall back to profiled_at,
+        # which is always "now" and would make every table look fresh.
+        last_mod = _derive_last_modified(tbl)
         row_count = tbl.get("row_count", 0)
         results.append(check_table_freshness(tname, last_mod, row_count, sh, ch))
 
@@ -186,29 +224,20 @@ def save_freshness_run(result: dict, design_id: str | None = None) -> str:
     now = datetime.now(timezone.utc).isoformat()
     payload = json.dumps(result)
 
+    # dd_freshness_runs is a canvas table (no classification/tenant_id columns),
+    # so it must use get_canvas_connection() — get_connection() would attach the
+    # global RLS predicate and raise UndefinedColumn on every query.
+    from tools.db.storage import get_canvas_connection
+    conn = get_canvas_connection()
     try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
-    except Exception:
-        import sqlite3
-        conn = sqlite3.connect(str(_DB_PATH))
-
-    try:
-        try:
-            conn.execute(
-                "INSERT INTO dd_freshness_runs (run_id, design_id, overall_status, result_json, run_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (run_id, design_id, result.get("overall_status", "unknown"), payload, now),
-            )
-        except Exception:
-            conn.execute(
-                "INSERT INTO dd_freshness_runs (run_id, design_id, overall_status, result_json, run_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (run_id, design_id, result.get("overall_status", "unknown"), payload, now),
-            )
+        conn.execute(
+            "INSERT INTO dd_freshness_runs (run_id, design_id, overall_status, result_json, run_at) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (run_id, design_id, result.get("overall_status", "unknown"), payload, now),
+        )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to persist freshness run %s to dd_freshness_runs: %s", run_id, exc)
     finally:
         conn.close()
 

@@ -9,7 +9,7 @@ Verify the Knowledge Search page at `/knowledge-search` renders correctly, displ
 ## Steps
 
 ### Login
-1. Navigate to `http://localhost:5000/login`
+1. Navigate to `http://localhost:5050/login`
 2. Fill in the API key field with the test API key
 3. Click "Login" button
 4. Assert redirect to home page
@@ -20,7 +20,7 @@ Verify the Knowledge Search page at `/knowledge-search` renders correctly, displ
 7. Assert the CUI banner is visible at the bottom of the page
 
 ### Navigate to Knowledge Search
-8. Navigate to `http://localhost:5000/knowledge-search`
+8. Navigate to `http://localhost:5050/knowledge-search`
 9. Assert the page title contains "Knowledge Search"
 10. Assert the heading "Knowledge Search" is visible
 11. Assert the subtitle mentions "RAG-powered search"

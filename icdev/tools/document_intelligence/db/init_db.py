@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
     source_event    TEXT        DEFAULT '',
     score           FLOAT       DEFAULT 0.0,
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    last_notified_at TIMESTAMPTZ,
     tenant_id       TEXT        DEFAULT 'default',
     classification  TEXT        DEFAULT 'CUI'
 );
@@ -245,6 +246,7 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
     source_event    TEXT    DEFAULT '',
     score           REAL    DEFAULT 0.0,
     updated_at      TEXT    DEFAULT (datetime('now')),
+    last_notified_at TEXT,
     tenant_id       TEXT    DEFAULT 'default',
     classification  TEXT    DEFAULT 'CUI'
 );
@@ -387,6 +389,18 @@ def init_db() -> None:
             if stmt:
                 cur.execute(stmt)
         conn.commit()
+        # dmx-loop-01: idempotent column add so pre-existing DBs gain the
+        # freshness-notification cooldown store (last_notified_at). ADD COLUMN
+        # raises if it already exists (PG + SQLite) — swallow + roll back so
+        # init stays clean and re-runnable.
+        try:
+            cur.execute("ALTER TABLE dic_doc_freshness ADD COLUMN last_notified_at TEXT")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         conn.close()
         _INIT_DONE = True
         logger.info("DIC schema initialized")

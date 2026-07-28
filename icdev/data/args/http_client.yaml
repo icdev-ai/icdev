@@ -8,6 +8,18 @@ max_redirects: 10
 content_chunk_size: 10240   # bytes per chunk when iterating response content (requests CONTENT_CHUNK_SIZE)
 iter_chunk_size: 512        # default chunk size passed to Response.iter_content()
 
+# tools/http/fetch_extract.py — untrusted-page fetch → page_extract → injection scan.
+# This is a transport-level ceiling on how much of a hostile page we will read into
+# memory, NOT a content budget: relevance selection is page_extract's job, so nothing
+# downstream re-truncates positionally.
+fetch:
+  max_bytes: 2097152          # 2 MiB hard read cap per response body
+  user_agent: "ICDEV-Fetch/1.0 (+https://icdev.local)"
+  # Content that trips a *critical* injection finding is dropped rather than
+  # forwarded to a model. Set false only for forensic/scanning callers that must
+  # see the payload; findings are always reported either way.
+  block_on_critical_injection: true
+
 # Default well-known ports (mirrors requests.utils.DEFAULT_PORTS but configurable)
 default_ports:
   http: 80

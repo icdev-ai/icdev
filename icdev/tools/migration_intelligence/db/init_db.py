@@ -278,7 +278,7 @@ def get_connection(db_path: str | None = None):
     else:
         # PG-primary: shared icdev database (mi_* tables namespaced by prefix).
         conn = _storage_get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: canvas tables have no tenant_id/classification columns, so RLS injection would raise UndefinedColumn on every query
     return conn
 
 

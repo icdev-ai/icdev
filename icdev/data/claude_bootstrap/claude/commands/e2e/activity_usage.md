@@ -3,13 +3,13 @@
 Verify the ICDEV™ dashboard activity page loads with SSE connection indicator and activity entries, and the usage page displays cost breakdowns with period selection.
 
 ## Prerequisites
-- Flask dashboard running on http://localhost:5000
+- Flask dashboard running on http://localhost:5050
 - Database initialized with audit trail and usage records
 
 ## Steps
 
 ### Activity Page
-1. Navigate to http://localhost:5000/activity
+1. Navigate to http://localhost:5050/activity
 2. Wait for the page to fully load
 3. Screenshot the activity page
 4. Assert the CUI banner "CUI // SP-CTI" is visible at top and bottom
@@ -27,7 +27,7 @@ Verify the ICDEV™ dashboard activity page loads with SSE connection indicator 
 12. Screenshot the activity entries
 
 ### Activity Navigation
-13. Navigate to http://localhost:5000/
+13. Navigate to http://localhost:5050/
 14. Click on the "Activity" navigation link
 15. Wait for the activity page to load
 16. Assert the URL contains /activity
@@ -35,7 +35,7 @@ Verify the ICDEV™ dashboard activity page loads with SSE connection indicator 
 18. Assert CUI banner is present
 
 ### Usage Page
-19. Navigate to http://localhost:5000/usage
+19. Navigate to http://localhost:5050/usage
 20. Wait for the page to fully load
 21. Screenshot the usage page
 22. Assert the CUI banner "CUI // SP-CTI" is visible at top and bottom
@@ -55,7 +55,7 @@ Verify the ICDEV™ dashboard activity page loads with SSE connection indicator 
 32. Screenshot the period selector
 
 ### Usage Navigation
-33. Navigate to http://localhost:5000/
+33. Navigate to http://localhost:5050/
 34. Click on the "Usage" navigation link
 35. Wait for the usage page to load
 36. Assert the URL contains /usage

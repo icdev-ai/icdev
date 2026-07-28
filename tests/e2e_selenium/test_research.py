@@ -6,7 +6,7 @@ grid, vertical dropdown, session creation form, and sessions table.
 Ported from .claude/commands/e2e/research.md.
 
 Prerequisites:
-  - Flask dashboard running on http://localhost:5000
+  - Flask dashboard running on http://localhost:5050
   - Database initialized with research tables
   - Verticals loaded via `python tools/research/vertical_loader.py --load`
 """
@@ -26,7 +26,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from tools.browser.driver_manager import get_driver  # noqa: E402
 from tests.e2e_selenium.pages.base import BasePage  # noqa: E402
 
-BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000")
+BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050")
 CUI_BANNER = "CUI // SP-CTI"
 
 EXPECTED_VERTICALS = [

@@ -5156,6 +5156,80 @@ TOOL_REGISTRY = {
             "required": ["query"],
         },
     },
+    # ── Browser agent tools (oss-browse-03) ────────────────────────────────
+    # Every navigation is allowlist-gated and every action budgeted + audited by
+    # tools/browser/scope.py; these entries add no policy of their own.
+    "browser_navigate": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_navigate",
+        "description": "Navigate an audited, scope-limited browser to a URL and return the page as indexed interactive elements. Refused unless the host is on the allowlist in args/browser_scope.yaml (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL to open. Must clear the domain and scheme allowlist."},
+                "run_id": {"type": "string", "description": "Correlation id stamped on every audit row."},
+            },
+            "required": ["url"],
+        },
+    },
+    "browser_read_state": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_read_state",
+        "description": "Return the current page as indexed interactive elements so a model can act via click(14) instead of inventing a CSS selector (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "screenshot": {"type": "boolean", "default": False, "description": "Also capture a PNG."},
+                "run_id": {"type": "string"},
+            },
+        },
+    },
+    "browser_click": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_click",
+        "description": "Click the element carrying the given index from the latest browser_read_state (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "description": "Element index from the latest read_state."},
+                "run_id": {"type": "string"},
+            },
+            "required": ["index"],
+        },
+    },
+    "browser_type": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_type",
+        "description": "Type text into the element at the given index. Credentials are written as <secret>NAME</secret> and resolved at the driver, never appearing in the prompt or audit row (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "text": {"type": "string", "description": "Text to type. May contain <secret>NAME</secret> placeholders."},
+                "clear": {"type": "boolean", "default": True},
+                "enter": {"type": "boolean", "default": False},
+                "run_id": {"type": "string"},
+            },
+            "required": ["index", "text"],
+        },
+    },
+    "browser_screenshot": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_screenshot",
+        "description": "Capture a screenshot of the current page under playwright/screenshots/ (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Filename stem."},
+                "run_id": {"type": "string"},
+            },
+        },
+    },
     "sandbox_execute": {
         "category": "security",
         "module": "tools.mcp.gap_handlers",

@@ -17,6 +17,42 @@ from tools.network.blueprint_helpers import _audit, nc_login_required
 from tools.network.db.init_db import get_connection
 
 
+def _route_llm(function, system_prompt, messages, max_tokens, temperature=None):
+    """Invoke the configured LLM through LLMRouter (lpx-router-01).
+
+    Replaces the previous direct provider POSTs so that provider selection, an
+    optional proxy ``base_url``, budgets and audit all flow through the router
+    instead of reading a provider API key from the environment and hardcoding a
+    Claude model.
+
+    The retired per-site model override is gone: the model now
+    comes from the routing chains (``network_topology`` / ``network_qa`` /
+    ``network_chat_prep``) in ``args/llm_config.yaml``. When no proxy is
+    configured the ``claude-sonnet`` chain entry resolves to the real Anthropic
+    API with the same key, preserving prior behaviour.
+
+    Returns ``(content, error)`` — ``error`` is a string when the router could
+    not serve the request, mirroring the old helpers' contract.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+    except Exception as exc:  # pragma: no cover - import guard
+        return None, "LLM router unavailable: {}".format(exc)
+    kwargs = {
+        "messages": messages,
+        "system_prompt": system_prompt,
+        "max_tokens": max_tokens,
+    }
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    try:
+        resp = LLMRouter().invoke(function, LLMRequest(**kwargs))
+    except Exception as exc:
+        return None, str(exc)
+    return (resp.content or ""), None
+
+
 def register_ai_routes(bp):
     """Register ai routes on the NDC blueprint."""
 
@@ -262,31 +298,19 @@ Output ONLY the JSON object. No other text."""
             )
 
         def _call_claude(desc, max_tokens=4096):
-            """Call Anthropic Claude API."""
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                return None, "No ANTHROPIC_API_KEY set"
-            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req_request(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "temperature": 0.3,
-                    "system": _AI_TOPO_SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": desc}],
-                },
-                timeout=120,
+            """Generate a topology via the configured LLM (router-mediated).
+
+            Kept its historical name to minimise the diff; it is the
+            cloud/router branch (as opposed to the explicit ``_call_ollama``
+            air-gap branch selected by ``NC_AI_PROVIDER``).
+            """
+            return _route_llm(
+                "network_topology",
+                _AI_TOPO_SYSTEM_PROMPT,
+                [{"role": "user", "content": desc}],
+                max_tokens,
+                temperature=0.3,
             )
-            r.raise_for_status()
-            content = r.json().get("content", [{}])[0].get("text", "")
-            return content, None
 
         def _call_ollama(desc, max_tokens=4096):
             """Call Ollama local LLM."""
@@ -335,7 +359,7 @@ Output ONLY the JSON object. No other text."""
                     return jsonify({"error": f"Ollama failed: {err}"}), 503
 
             if not content:
-                return jsonify({"error": "No LLM provider available. Set ANTHROPIC_API_KEY or start Ollama."}), 503
+                return jsonify({"error": "No LLM provider available. Configure a provider in args/llm_config.yaml or start Ollama."}), 503
 
             graph_json, raw = _parse_llm_response(content)
             if graph_json is None:
@@ -510,13 +534,7 @@ Output ONLY the JSON object. No other text."""
             resp_data["mode"] = "topology"
             return jsonify(resp_data), resp.status_code
 
-        # Q&A mode — call Anthropic with conversation history
-        from tools.http.client import request as _req_request  # noqa: PLC0415
-
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            return jsonify({"error": "No ANTHROPIC_API_KEY set"}), 503
-
+        # Q&A mode — answer via the configured LLM (router-mediated) with history
         try:
             history_messages = []
             if context_id:
@@ -533,26 +551,9 @@ Output ONLY the JSON object. No other text."""
                     logger.warning("qa history load failed: %s", exc)
 
             messages = history_messages + [{"role": "user", "content": description}]
-            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req_request(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": 1024,
-                    "system": qa_system,
-                    "messages": messages,
-                },
-                timeout=45,
-            )
-            if r.status_code != 200:
-                return jsonify({"error": f"Claude API error {r.status_code}"}), 503
-            answer = r.json()["content"][0]["text"]
+            answer, err = _route_llm("network_qa", qa_system, messages, 1024)
+            if err:
+                return jsonify({"error": f"LLM unavailable: {err}"}), 503
         except Exception as exc:
             logger.exception("Q&A chat failed")
             return jsonify({"error": str(exc)}), 500
@@ -588,37 +589,22 @@ Respond with ONLY this JSON (no other text):
     def nc_api_ai_chat_prep():
         """Assess description completeness and return clarifying questions."""
         import re as _re2
-        from tools.http.client import request as _req_prep
         data = request.get_json(force=True, silent=True) or {}
         description = data.get("description", "").strip()
         if not description:
             return jsonify({"needs_more_info": False}), 200
 
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            return jsonify({"needs_more_info": False}), 200
-
         try:
-            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req_prep(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": 512,
-                    "temperature": 0.1,
-                    "system": _CHAT_PREP_SYSTEM,
-                    "messages": [{"role": "user", "content": description}],
-                },
-                timeout=20,
+            text, err = _route_llm(
+                "network_chat_prep",
+                _CHAT_PREP_SYSTEM,
+                [{"role": "user", "content": description}],
+                512,
+                temperature=0.1,
             )
-            r.raise_for_status()
-            text = r.json().get("content", [{}])[0].get("text", "")
+            if err:
+                # Non-fatal: proceed without clarifying questions.
+                return jsonify({"needs_more_info": False}), 200
             # Parse the JSON response
             text = _re2.sub(r"<think>.*?</think>", "", text, flags=_re2.DOTALL).strip()
             start = text.find("{")

@@ -18,6 +18,9 @@ from typing import Any, Dict, List
 #   pk:             Primary key column
 #   content_cols:   Columns to index (concatenated for chunking)
 #   metadata_cols:  Columns to include as metadata on VectorChunk
+#   chunking:       Optional chunking template name, resolved against
+#                   args/chunking_templates.yaml (e.g. 'oscal_catalog',
+#                   'stig_checklist'). Omitted = configured default.
 #   priority:       Ingestion priority (1=highest)
 #   mode:           'realtime' or 'batch'
 #   description:    Human-readable description
@@ -211,6 +214,57 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "mode": "batch",
         "filter": "status = 'ingested'",
         "description": "PDF documents ingested into RAG",
+    },
+    # --- GovCon evidence corpus (the approve -> index -> retrieve -> cite flywheel) ---
+    # Approved content is placeholder-free and citation-validated by construction:
+    # the RFI export gate and response_drafter.approve_draft() both enforce that
+    # before a section can reach these statuses. That is the quality bar for reuse.
+    #
+    # Chunks carry evidence_tier in metadata: 'primary' for documents we actually
+    # submitted, 'derived' for prose this system generated and a human approved.
+    # Retrieval ranks primary first, and a numeric claim may not rest on derived
+    # evidence alone — otherwise approved prose feeds the next draft, is approved
+    # again, and claims propagate without ever touching ground truth.
+    # The sources_json clause is the depth cap: a section that was itself written
+    # from the evidence corpus must not re-enter it, or a claim would recycle
+    # indefinitely without ever resting on a submitted document.
+    "rfi_approved_sections": {
+        "table": "rfi_workbench_sections",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["title", "content"],
+        "metadata_cols": ["session_id", "part", "item_number", "status"],
+        "priority": 1,
+        "mode": "realtime",
+        "filter": (
+            "status IN ('hitl_approved', 'accepted') "
+            "AND (sources_json IS NULL OR sources_json NOT LIKE '%prior_submissions%')"
+        ),
+        "description": "Approved RFI response sections — reusable derived evidence",
+    },
+    "proposal_approved_drafts": {
+        "table": "proposal_section_drafts",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["draft_content"],
+        "metadata_cols": [
+            "opportunity_id", "shall_statement_id", "confidence_score", "draft_method", "status",
+        ],
+        "priority": 1,
+        "mode": "realtime",
+        "filter": "status = 'approved'",
+        "description": "Approved proposal section drafts — reusable derived evidence",
+    },
+    "prior_submissions": {
+        "table": "govcon_prior_submissions",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["title", "extracted_text"],
+        "metadata_cols": ["doc_type", "outcome", "file_hash", "classification"],
+        "priority": 1,
+        "mode": "batch",
+        "filter": "status = 'ingested'",
+        "description": "Uploaded prior RFIs, proposals, awards and CPARS — primary evidence",
     },
     # --- Design Canvases (Task 17: Canvas-to-RAG Indexing) ---
     # IDC — Infrastructure Design Canvas
@@ -740,6 +794,23 @@ def get_source_config(source_type: str) -> dict:
         Source configuration dict, or empty dict if not found.
     """
     return SOURCE_REGISTRY.get(source_type, {})
+
+
+def get_chunking_template(source_type: str) -> str:
+    """Get the chunking template name for a source type (oss-chunk-01).
+
+    The ``chunking`` key on a registry entry names a template defined in
+    ``args/chunking_templates.yaml``. ``tools/rag/ingestion_manager.py`` passes
+    the result to ``chunk_fields(template=...)``.
+
+    Args:
+        source_type: Source type key.
+
+    Returns:
+        Template name, or "" when the entry declares none (chunker then uses
+        the configured default, i.e. today's sliding window).
+    """
+    return SOURCE_REGISTRY.get(source_type, {}).get("chunking", "") or ""
 
 
 def get_realtime_sources() -> List[str]:

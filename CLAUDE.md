@@ -65,11 +65,9 @@ python tools/dx/companion.py --sync --write --json
 # Coherence check
 python tools/workflow/coherence_checker.py --all --fix --gate
 
-# Showcase
-python tools/showcase/generate_app.py --slug <name> --category <cat>
-python tools/showcase/osint_engine.py --source cve --fetch --json
-python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
-python tools/showcase/validator.py --app <slug> --json
+# Showcase / Demo Runner
+python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json
+# synthetic_data_engine.py is a library (SyntheticDataEngine, DOMAINS) — import it, no CLI
 
 # Internal Awareness Engine (Phase 1-6, D-AWARE)
 python tools/awareness/component_indexer.py --scan --json        # Refresh kg-icdev-self-awareness nodes
@@ -305,6 +303,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 - **Runtime SQL is authored for PostgreSQL; `translate_sql` is a thin SQLite init-fallback ONLY, never load-bearing.** PostgreSQL is the primary backend. Do NOT write SQLite-dialect JSON SQL (`json_extract`, `json_array_length`, `json_each`) in runtime call sites and rely on `tools/db/storage.py::translate_sql` to rewrite it for PG. Instead either (a) **compute in Python** — read the raw JSON column and parse with `json.loads()` (preferred for filters, grouping, existence checks, NOT-IN subqueries; see `tools/cloud/csp_monitor.py::get_status`, `tools/creative/creative_engine.py`, `tools/research/trend_detector.py`, `tools/dashboard/app.py::api_chat_sources`), or (b) **author PG-native `jsonb`** behind an explicit `is_pg` branch with a SQLite fallback alongside (see `tools/network/network_ingester.py` node-id lookup and `tools/dashboard/app.py::components_map_page`). `translate_sql` JSON rules exist solely so init/seed/migrate paths still work when PG is unreachable at startup. The `pg_portability_linter` (pgp-tx-03) gates this — runtime modules (excluding init/seed/migrate/tests) must report zero high-severity JSON findings.
 - **Canvas DB connections MUST use `get_canvas_connection()`** — Canvas-specific tables (e.g. `aac_*`, `dsoc_*`, `ccc_*`) have no `classification`/`tenant_id` columns. Using `get_connection()` directly in a canvas `db/init_db.py` attaches the global RLS predicate and raises `UndefinedColumn` on every query. Always use `from tools.db.storage import get_canvas_connection` in canvas init files. See `tools/ai_augmentation/db/init_db.py` for the canonical pattern.
 - Always grep `tools/manifest/` shards before writing a new script
+- **Never document a command whose file does not exist.** A documented command that does not exist is worse than an undocumented one: an agent reading CLAUDE.md will confidently run it and burn a cycle deciding whether the tree is broken or the doc is. Before adding a `python tools/...` line to CLAUDE.md or `docs/reference/commands.md`, verify the file is committed. If a tool is a library with no `argparse`/`__main__`, document the import, not a CLI. Enforced by `coherence_checker.py:check_doc_command_paths` (grandfather list: `args/doc_command_gate.yaml`).
 - Verify tool output format before chaining into another tool
 - Don't assume APIs support batch operations — check first
 - When a workflow fails mid-execution, preserve intermediate outputs before retrying
@@ -389,7 +388,7 @@ This annotation documents why the bypass is safe and lets `tools/workflow/cohere
 - Audit trail is append-only — NEVER UPDATE/DELETE audit tables
 - Security gates block on: CAT1 STIG, critical/high vulns, failed tests, missing markings
 - When implementing NIST 800-53 control, call crosswalk engine for FedRAMP/CMMC auto-populate
-- Self-healing limited to confidence ≥ 0.7 and max 5/hour
+- Self-healing limited to confidence ≥ 0.7, max 3/hour **per pattern** and 5/hour **across all patterns**. All four thresholds live in `args/heal_constitution.yaml` under `rate_limits` — never hardcode them in a module
 - All A2A uses mutual TLS; never store secrets in code
 - SBOM regenerated on every build; containers non-root, read-only rootfs
 - IL6/SECRET: SIPR-only, NSA Type 1 encryption, air-gapped CI/CD

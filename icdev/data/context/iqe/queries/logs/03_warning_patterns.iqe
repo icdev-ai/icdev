@@ -1,0 +1,3 @@
+foreach e in logs.entries
+  where e.level == "WARNING"
+  select e.component, e.message, e.ts, e.session_id

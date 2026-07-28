@@ -10,8 +10,12 @@ SQLite is the default for dev, air-gap, and single-user deployments.
 
 import json
 import os
+import re
 import uuid
 from pathlib import Path
+
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.data_canvas.db.init_db")
 
 # When integrated into ICDEV, DB lives in data/ directory
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]  # tools/data_canvas/db -> ICDev root
@@ -19,6 +23,142 @@ DB_PATH = _ICDEV_ROOT / "data" / "data_canvas.db"
 
 # Backend detection
 _DDC_BACKEND = os.environ.get("DDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
+
+
+_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_DOLLAR_RE = re.compile(r"\$[A-Za-z0-9_]*\$")
+
+# Errors that are tolerable during init/seed on the primary (PG) backend:
+# the object already exists from a prior run or a migration. These must be
+# swallowed so a re-init is idempotent — but any OTHER error is a real defect
+# and must be surfaced (logged), never silently discarded.
+_BENIGN_DDL_MARKERS = (
+    "already exists",
+    "duplicate column",
+    "duplicate object",
+    "duplicate table",
+    "duplicate key",
+)
+
+
+def _split_sql_statements(sql):
+    """Split a SQL script into individual statements.
+
+    A naive ``sql.split(';')`` fragments SQLite ``CREATE TRIGGER ... BEGIN
+    ... END;`` bodies (which contain embedded semicolons) into invalid pieces
+    that fail one-by-one — historically swallowed by a blanket ``except: pass``,
+    hiding real DDL errors. This splitter only breaks on a semicolon that is at
+    the *top level* — i.e. not inside a ``BEGIN..END`` block, not inside a
+    ``$tag$..$tag$`` dollar-quoted body, and not inside a ``'...'`` string
+    literal or a ``--`` line comment.
+
+    Returns a list of trimmed, non-empty statements. Leading full-line ``--``
+    comments are stripped from each statement so it begins at its first real
+    token (keeping the ``CREATE TRIGGER``/``CREATE TABLE`` prefix detectable);
+    comments embedded inside a statement body are preserved verbatim.
+    """
+
+    def _emit(text):
+        # Drop leading blank / comment-only lines so the statement starts at
+        # its first executable token.
+        lines = text.splitlines()
+        while lines and (not lines[0].strip() or lines[0].lstrip().startswith("--")):
+            lines.pop(0)
+        stmt = "\n".join(lines).strip()
+        if stmt:
+            statements.append(stmt)
+
+    statements = []
+    buf = []
+    depth = 0            # BEGIN..END nesting depth
+    in_single = False    # inside a '...' string literal
+    dollar_tag = None    # active $tag$ dollar-quote delimiter, or None
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+
+        # Inside a dollar-quoted body: consume until the matching close tag.
+        if dollar_tag is not None:
+            if sql.startswith(dollar_tag, i):
+                buf.append(dollar_tag)
+                i += len(dollar_tag)
+                dollar_tag = None
+            else:
+                buf.append(ch)
+                i += 1
+            continue
+
+        # Inside a single-quoted string literal.
+        if in_single:
+            buf.append(ch)
+            if ch == "'":
+                if i + 1 < n and sql[i + 1] == "'":  # escaped ''
+                    buf.append("'")
+                    i += 2
+                    continue
+                in_single = False
+            i += 1
+            continue
+
+        # Line comment: consume to end of line (keeps embedded ';' harmless).
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            j = sql.find("\n", i)
+            if j == -1:
+                buf.append(sql[i:])
+                i = n
+            else:
+                buf.append(sql[i:j])
+                i = j
+            continue
+
+        # Enter a string literal.
+        if ch == "'":
+            in_single = True
+            buf.append(ch)
+            i += 1
+            continue
+
+        # Enter a dollar-quoted body ($$ or $tag$).
+        if ch == "$":
+            m = _DOLLAR_RE.match(sql, i)
+            if m:
+                dollar_tag = m.group(0)
+                buf.append(dollar_tag)
+                i += len(dollar_tag)
+                continue
+
+        # Word: track BEGIN..END nesting on word boundaries.
+        if ch.isalpha() or ch == "_":
+            m = _WORD_RE.match(sql, i)
+            word = m.group(0)
+            up = word.upper()
+            if up == "BEGIN":
+                depth += 1
+            elif up == "END" and depth > 0:
+                depth -= 1
+            buf.append(word)
+            i = m.end()
+            continue
+
+        # Top-level statement terminator.
+        if ch == ";" and depth == 0:
+            _emit("".join(buf))
+            buf = []
+            i += 1
+            continue
+
+        buf.append(ch)
+        i += 1
+
+    _emit("".join(buf))
+    return statements
+
+
+def _is_benign_ddl_error(exc):
+    """True if a DDL error is a tolerable 'already exists' during re-init."""
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _BENIGN_DDL_MARKERS)
 
 
 def get_connection():
@@ -2557,15 +2697,33 @@ def init_db():
     conn = get_connection()
     try:
         if _DDC_BACKEND == "postgresql":
-            for stmt in SCHEMA.split(";"):
-                stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
-                    try:
-                        conn.execute(stmt)
-                    except Exception:
-                        pass  # table/index already exists
+            # Use a BEGIN..END-aware splitter instead of a naive split on
+            # semicolons: SQLite CREATE TRIGGER bodies contain embedded
+            # semicolons that a naive split fragments into invalid pieces
+            # (dcpr-db-02). SQLite
+            # trigger DDL is not valid on PG anyway — real immutability is
+            # rebuilt via the plpgsql trigger blocks below — so those specific
+            # statements are expected to fail and are logged at debug level.
+            # Any *other* non-benign error is surfaced as a warning instead of
+            # being silently swallowed.
+            for stmt in _split_sql_statements(SCHEMA):
+                if stmt.startswith("--"):
+                    continue
+                try:
+                    conn.execute(stmt)
+                except Exception as _e:  # noqa: BLE001 — init-fallback tolerance
+                    _head = " ".join(stmt.split())[:120]
+                    if _is_benign_ddl_error(_e):
+                        continue  # object already exists — idempotent re-init
+                    if stmt.upper().lstrip().startswith("CREATE TRIGGER"):
+                        # SQLite trigger syntax; PG equivalents built below.
+                        logger.debug("[init_db] Skipping SQLite trigger DDL on PG: %s", _head)
+                        continue
+                    logger.warning("[init_db] DDL statement failed on PG: %s | %s", _head, _e)
             conn.commit()
-            # PG audit immutability triggers
+            # PG audit immutability triggers — rebuild the append-only guards
+            # that the SQLite trigger DDL above cannot provide on PostgreSQL.
+            # Covers dd_audit, dm_audit, and dd_mapping_transforms (dcpr-db-02).
             try:
                 conn.execute("""
                     CREATE OR REPLACE FUNCTION dd_audit_immutable()
@@ -2588,8 +2746,52 @@ def init_db():
                         BEFORE DELETE ON dd_audit
                         FOR EACH ROW EXECUTE FUNCTION dd_audit_immutable();
                 """)
-            except Exception:
-                pass
+                # dm_audit — data-model audit trail (NIST AU-6)
+                conn.execute("""
+                    CREATE OR REPLACE FUNCTION dm_audit_immutable()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        RAISE EXCEPTION 'dm_audit records are immutable — NIST AU-6';
+                        RETURN NULL;
+                    END;
+                    $$ LANGUAGE plpgsql;
+                """)
+                conn.execute("""
+                    DROP TRIGGER IF EXISTS dm_audit_no_update ON dm_audit;
+                    CREATE TRIGGER dm_audit_no_update
+                        BEFORE UPDATE ON dm_audit
+                        FOR EACH ROW EXECUTE FUNCTION dm_audit_immutable();
+                """)
+                conn.execute("""
+                    DROP TRIGGER IF EXISTS dm_audit_no_delete ON dm_audit;
+                    CREATE TRIGGER dm_audit_no_delete
+                        BEFORE DELETE ON dm_audit
+                        FOR EACH ROW EXECUTE FUNCTION dm_audit_immutable();
+                """)
+                # dd_mapping_transforms — append-only transform ledger (NIST AU-9)
+                conn.execute("""
+                    CREATE OR REPLACE FUNCTION dd_mapping_transforms_immutable()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        RAISE EXCEPTION 'dd_mapping_transforms is append-only — NIST AU-9';
+                        RETURN NULL;
+                    END;
+                    $$ LANGUAGE plpgsql;
+                """)
+                conn.execute("""
+                    DROP TRIGGER IF EXISTS dd_mapping_transforms_no_update ON dd_mapping_transforms;
+                    CREATE TRIGGER dd_mapping_transforms_no_update
+                        BEFORE UPDATE ON dd_mapping_transforms
+                        FOR EACH ROW EXECUTE FUNCTION dd_mapping_transforms_immutable();
+                """)
+                conn.execute("""
+                    DROP TRIGGER IF EXISTS dd_mapping_transforms_no_delete ON dd_mapping_transforms;
+                    CREATE TRIGGER dd_mapping_transforms_no_delete
+                        BEFORE DELETE ON dd_mapping_transforms
+                        FOR EACH ROW EXECUTE FUNCTION dd_mapping_transforms_immutable();
+                """)
+            except Exception as _e:  # noqa: BLE001 — init-fallback tolerance
+                logger.warning("[init_db] Failed to build PG immutability triggers: %s", _e)
             conn.commit()
         else:
             conn.executescript(SCHEMA)

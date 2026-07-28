@@ -97,7 +97,7 @@ Supporting controls: retries are disabled per replay
 (`HTTPAdapter(max_retries=0)`) so a reproduction is exactly-once; redirects are
 not followed unless a step opts in (a 302 to a login page *is* the authz
 signal); proxies are cleared for loopback targets so an operator-configured
-egress proxy cannot answer in place of the target. Sandbox decision: Gap 36,
+egress proxy cannot answer in place of the target. Sandbox decision: Gap 41,
 `docs/security/sandbox-coverage.md` (**bypass-documented** — reproductions are
 interpreted, never executed).
 
@@ -111,7 +111,7 @@ asserts the seeded secret marker never appears in a serialized observation.
 
 ## Storage
 
-Migration `295_dynamic_finding_reproductions.sql`, two tables with deliberately
+Migration `303_dynamic_finding_reproductions.sql`, two tables with deliberately
 different mutability:
 
 | Table | Mutability | Role |

@@ -11511,19 +11511,30 @@ CREATE TABLE public.dic_acoic_regen_queue (
 -- Name: dic_chat_memory; Type: TABLE; Schema: public; Owner: -
 --
 
+-- Turn-based schema, kept in sync with
+-- tools/document_intelligence/chat_memory.py::_TURN_TABLE_DDL.
+--
+-- This consolidation previously carried the legacy message-log shape from
+-- migration 191 (memory_id/role/content/token_count), which NO code consumes.
+-- chat_memory.record_turn() writes the turn shape below, so every write failed
+-- and was swallowed. Migration 264 fixed that for migrated databases but was
+-- never folded in here, so a FRESH bootstrap still produced the broken table.
 CREATE TABLE public.dic_chat_memory (
-    memory_id text NOT NULL,
+    turn_id text NOT NULL,
     session_id text NOT NULL,
-    collection_id text DEFAULT 'default'::text NOT NULL,
-    user_id text DEFAULT ''::text NOT NULL,
-    role text DEFAULT 'user'::text NOT NULL,
-    content text DEFAULT ''::text NOT NULL,
+    collection_id text DEFAULT ''::text NOT NULL,
+    turn_index integer DEFAULT 0 NOT NULL,
+    query text DEFAULT ''::text NOT NULL,
+    answer text DEFAULT ''::text NOT NULL,
+    subject text DEFAULT ''::text NOT NULL,
+    subject_doc_id text DEFAULT ''::text NOT NULL,
+    entities_json text DEFAULT '[]'::text NOT NULL,
+    doc_ids_json text DEFAULT '[]'::text NOT NULL,
     citations_json text DEFAULT '[]'::text NOT NULL,
-    token_count integer DEFAULT 0 NOT NULL,
+    mode text DEFAULT 'grounded'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     tenant_id text DEFAULT 'default'::text NOT NULL,
-    classification text DEFAULT 'CUI'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT dic_chat_memory_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text, 'system'::text])))
+    classification text DEFAULT 'CUI'::text NOT NULL
 );
 
 
@@ -19621,7 +19632,7 @@ CREATE TABLE public.memory_entries (
     content text NOT NULL,
     type text DEFAULT 'event'::text,
     importance integer DEFAULT 5,
-    embedding public.vector(1536),
+    embedding public.vector(768),
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     content_hash text,
@@ -29762,7 +29773,7 @@ CREATE TABLE public.source_citation_registry (
     project_id text,
     trust_score real DEFAULT 0.0,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text])))
+    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text])))
 );
 
 
@@ -39663,7 +39674,7 @@ ALTER TABLE ONLY public.dic_acoic_regen_queue
 --
 
 ALTER TABLE ONLY public.dic_chat_memory
-    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (memory_id);
+    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (turn_id);
 
 
 --
@@ -63866,8 +63877,10 @@ CREATE TABLE IF NOT EXISTS public.idr_artifacts (
 CREATE TABLE IF NOT EXISTS public.idr_publish_audit (
     id          TEXT PRIMARY KEY,
     session_id  TEXT NOT NULL,
+    -- Values derived from tools.quality.citation_grounding.PUBLISH_GATES;
+    -- kept in sync by tests/test_publish_gates.py. Widened by migration 300.
     gate        TEXT NOT NULL
-                    CHECK (gate IN ('citation_guard','placeholder_guard')),
+                    CHECK (gate IN ('citation_guard','cove_guard','placeholder_guard')),
     reviewer    TEXT,
     findings    TEXT,
     tenant_id   TEXT,

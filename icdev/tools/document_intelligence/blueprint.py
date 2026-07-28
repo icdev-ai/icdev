@@ -997,6 +997,20 @@ def api_import_from_docgen():
         else:
             section_pairs = [(h, "") for h in template_headings]
 
+        # TRUST: scrub leaked CoT/CoD scaffolding before persisting, exactly as
+        # doc_generator does on its own write path (doc_generator.py:933). This
+        # bridge is a SECOND path into dic_sections and did not scrub, so model
+        # reasoning ("Step 1: Analyze the Source Material...") was being stored
+        # verbatim as published document content. A live audit found it in 20 of
+        # 49 AI-authored sections.
+        if ai_content:
+            from tools.document_intelligence.doc_generator import (
+                _strip_reasoning_artifacts,
+            )
+            section_pairs = [
+                (h, _strip_reasoning_artifacts(c) if c else c) for h, c in section_pairs
+            ]
+
         for i, (heading, content) in enumerate(section_pairs):
             # section_id carries a sortable index — section listings ORDER BY section_id.
             s_id = f"{doc_id[:8]}-s{i:03d}-{_uuid.uuid4().hex[:8]}"
@@ -1968,6 +1982,154 @@ def _compile_grounded_answer(results: list, query: str) -> dict:
     return {"answer": answer, "sources": sources}
 
 
+#: DIC chat's own citation dialect: a bare ``[3]`` ordinal.
+#:
+#: `_llm_synthesize` instructs the model to "cite supporting facts with [N]
+#: markers", but `citation_grounding.parse_citations` recognises only
+#: `[source: ...]` and `[SOURCE-N]` — so chat citations returned []. They have
+#: never been machine-checkable by the TRUST module.
+#:
+#: Normalised HERE rather than by widening the shared parser: a global bare-[N]
+#: rule would also match markdown footnotes, array indices and enumerated list
+#: references in every other drafting surface, trading a silent miss for silent
+#: false positives. Bounded to 1-2 digits, since evidence sets are capped at 5.
+_CHAT_ORDINAL_CITE_RE = re.compile(r"\[(\d{1,2})\]")
+
+
+def _normalise_chat_citations(text: str) -> str:
+    """Rewrite DIC chat's ``[N]`` markers into the shared ``[SOURCE-N]`` form."""
+    return _CHAT_ORDINAL_CITE_RE.sub(lambda m: f"[SOURCE-{m.group(1)}]", text or "")
+
+
+def _claim_grounding(answer: str, results: list) -> dict | None:
+    """Per-claim grounding report for a chat answer, or None if unavailable.
+
+    Binds every claim to the span of the cited source that supports it
+    (token-F1 window) and checks that each concrete anchor — numbers, dates,
+    proper nouns — actually appears in that span. Deterministic: no LLM, so it
+    behaves identically air-gapped, which is the whole point of the
+    ``judge=None`` path in ``ground_claims``.
+
+    Source ids are keyed BOTH by chunk id and by the ``[N]`` ordinal the
+    synthesis prompt tells the model to emit, because DIC chat answers cite
+    ``[1]`` while ``citations_json`` records chunk ids. Keying only one way
+    would report every claim as citing an unavailable source.
+
+    Best-effort by design — a grounding failure must not cost the user their
+    answer, so this returns None and the caller simply omits the field.
+    """
+    try:
+        from tools.quality.citation_grounding import ground_claims
+
+        sources = _chat_claim_sources(results)
+        if not sources:
+            return None
+        return ground_claims(_normalise_chat_citations(answer), sources)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: claim grounding unavailable: %s", exc)
+        return None
+
+
+def _chat_claim_sources(results: list) -> dict:
+    """``source_id -> text`` for a chat answer, keyed both ways.
+
+    Keyed BOTH by chunk id and by the ``[N]`` ordinal the synthesis prompt tells
+    the model to emit, because DIC chat answers cite ``[1]`` while
+    ``citations_json`` records chunk ids. Keying only one way would report every
+    claim as citing an unavailable source.
+    """
+    sources: dict = {}
+    for i, r in enumerate(results[:5], start=1):
+        content = getattr(r, "content", "") or ""
+        if not content:
+            continue
+        sources[str(i)] = content                      # "[1]" ordinal form
+        cid = _r_attr(r, "chunk_id") or _r_attr(r, "id")
+        if cid:
+            sources[str(cid)] = content                # "[source: chunk X]"
+    return sources
+
+
+def _derivation_disclosure(answer: str, results: list) -> dict | None:
+    """Which spans of the answer are quoted, restated, or computed.
+
+    A cited answer presents all three identically today. The computed case is
+    the one that matters: a figure appearing in NO source still passes citation
+    validation, because the chunk it cites genuinely exists.
+
+    Deterministic — the model is never asked whether it quoted or computed
+    something, since a model that fabricated a number will equally happily
+    report that it quoted one (the D391 deterministic-picker rule).
+
+    Best-effort, like ``_claim_grounding``: a disclosure failure must not cost
+    the user their answer.
+    """
+    try:
+        from tools.quality.derivation import disclose_derivations
+
+        sources = _chat_claim_sources(results)
+        if not sources:
+            return None
+        return disclose_derivations(_normalise_chat_citations(answer), sources)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: derivation disclosure unavailable: %s", exc)
+        return None
+
+
+def _r_attr(obj, name):
+    """Read an attribute or mapping key off a heterogeneous result object."""
+    v = getattr(obj, name, None)
+    if v is None and isinstance(obj, dict):
+        v = obj.get(name)
+    return v
+
+
+#: Per-passage extract size. Unchanged from the original 1000 so a passage
+#: still reads as a focused quote rather than a wall; the budget now governs
+#: HOW MANY passages, which is where the old cap actually hurt.
+_PASSAGE_CHARS = 1000
+
+#: Floor on evidence passages, so even a tiny window gets something to cite.
+_MIN_EVIDENCE = 3
+
+#: Ceiling regardless of window. A 1M-token model could swallow the whole
+#: candidate set, but the retriever only ranks ~50 and precision falls off well
+#: before that — more evidence past this point buys noise and latency, not
+#: accuracy. Raise only with a measured recall@k curve behind it.
+_MAX_EVIDENCE = 25
+
+
+def _budgeted_evidence(results: list, message: str) -> tuple:
+    """Pick as many retrieved passages as the model's real window affords.
+
+    Returns ``(kept, dropped_count)``. Falls back to the historical fixed 5 on
+    any failure — a budgeting error must never cost the user their answer.
+    """
+    try:
+        from tools.llm.context_budget import available_input_tokens, estimate_tokens
+
+        budget = available_input_tokens(
+            "question_answering", question=message, reserved_output=1024,
+        )
+        kept, used = [], 0
+        for r in (results or [])[:_MAX_EVIDENCE]:
+            passage = _extract_passage(
+                getattr(r, "content", "") or "", message, max_chars=_PASSAGE_CHARS
+            )
+            cost = estimate_tokens(passage)
+            if len(kept) >= _MIN_EVIDENCE and used + cost > budget:
+                break
+            kept.append(r)
+            used += cost
+        if not kept:
+            kept = list((results or [])[:5])
+        return kept, max(len(results or []) - len(kept), 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: context budgeting unavailable, using fixed slice: %s", exc)
+        head = list((results or [])[:5])
+        return head, max(len(results or []) - len(head), 0)
+
+
 def _llm_synthesize(
     message: str, results: list, community_summaries: list[str] | None = None
 ) -> str | None:
@@ -1980,18 +2142,33 @@ def _llm_synthesize(
     For global/thematic questions, ``community_summaries`` carries the GraphRAG
     whole-corpus themes so the model can answer a question no single chunk covers.
     """
-    evidence_results = results[:5]
+    # Budget the evidence against the model's REAL window instead of a fixed
+    # results[:5] x 1000 chars (~1.2k tokens). The retriever already fetched 50
+    # candidates and the old slice discarded 45 of them before the model was
+    # asked — on a 200k-window model that threw away the answer to save nothing.
+    #
+    # Degrades safely: with no config the floor window applies and the pack is
+    # roughly the old size, so a small local model is not asked to swallow more
+    # than it can hold.
+    evidence_results, dropped_count = _budgeted_evidence(results, message)
     sources = _build_sources(evidence_results)
     source_map = {(s["doc_id"], s["page"]): s["num"] for s in sources}
     evidence_lines = []
     for r in evidence_results:
         num = source_map.get((r.doc_id, r.page), "?")
-        passage = _extract_passage(r.content or "", message, max_chars=1000)
+        passage = _extract_passage(r.content or "", message, max_chars=_PASSAGE_CHARS)
         evidence_lines.append(
             f"[{num}] {r.doc_title or r.doc_id or 'Document'} "
             f"(p.{r.page or '?'})\n{passage}"
         )
     evidence = "\n\n".join(evidence_lines)
+    if dropped_count:
+        # Never drop silently. The model is told what it is NOT seeing, so it
+        # cannot present a partial view as exhaustive.
+        evidence += (
+            f"\n\n[NOTE: {dropped_count} further retrieved passage(s) did not fit "
+            "the context budget and are not shown. Do not claim completeness.]"
+        )
     graph_overview = ""
     if community_summaries:
         overview_lines = "\n".join(f"- {s}" for s in community_summaries[:5])
@@ -2077,12 +2254,24 @@ def api_chat():
         """Attach memory fields to a response payload and best-effort record the turn."""
         payload["memory"] = mem_on
         payload["resolved_subject"] = resolved_subject
+        # Report WHY memory is off. record_turn swallows write failures, so
+        # without this a broken table is indistinguishable from an idle one —
+        # which is how dic_chat_memory sat at 0 rows unnoticed.
+        if mem_on and session_id:
+            try:
+                payload["memory_health"] = _cm.memory_health()
+            except Exception:  # noqa: BLE001
+                payload["memory_health"] = {"available": False, "reason": "probe_failed"}
+        elif mem_on and not session_id:
+            payload["memory_health"] = {"available": False, "reason": "no_session_id"}
+        else:
+            payload["memory_health"] = {"available": False, "reason": "disabled"}
         if mem_on and session_id and record_results:
             try:
                 _cm.record_turn(session_id, message, answer, record_results,
                                 tenant_id=tenant_id, collection_id=collection_id or "")
             except Exception as _rexc:  # noqa: BLE001
-                logger.debug("dic chat memory record failed: %s", _rexc)
+                logger.warning("dic chat memory record failed: %s", _rexc)
         return payload
 
     try:
@@ -2114,12 +2303,25 @@ def api_chat():
         # ── Path 1: High-confidence direct lookup — NO LLM ──────────────────
         if best_result and top_match_score >= 0.7 and not _needs_synthesis(message):
             grounded = _compile_grounded_answer([best_result], message)
+            # Disclose on THIS path too. It is the one that most often returns a
+            # near-verbatim extract, so "quoted vs restated" is exactly the
+            # distinction a reader needs here — and an answer surface that
+            # silently omits the disclosure is indistinguishable from one that
+            # checked and found nothing derived.
+            p1_derivation = _derivation_disclosure(grounded["answer"], [best_result])
             return jsonify(_mem({
                 "answer": grounded["answer"],
                 "sources": grounded["sources"],
                 "citations": citations,
                 "abstained": False,
                 "mode": "grounded",
+                "derivation": p1_derivation,
+                "derivation_summary": {
+                    "counts": (p1_derivation or {}).get("counts", {}),
+                    "has_derived": (p1_derivation or {}).get("has_derived", False),
+                    "has_unexplained_numeric": (p1_derivation or {}).get(
+                        "has_unexplained_numeric", False),
+                } if p1_derivation else None,
             }, answer=grounded["answer"], record_results=scored_results))
 
         # ── Path 2: Grounded answer from top chunks — NO LLM ────────────────
@@ -2130,6 +2332,12 @@ def api_chat():
         # ── Path 3: LLM synthesis if query warrants it ───────────────────────
         mode = "grounded"
         abstained = False
+        # Whether the verifier actually ran AND every cited claim held. The UI
+        # badge is driven from this — it must never assert verification that did
+        # not happen. The deterministic Path-2 answer is cited but unverified.
+        verified = False
+        # Per-claim grounding report (None when unavailable). Reporting only.
+        claim_report = None
 
         if _needs_synthesis(message):
             # Global/thematic questions get the GraphRAG community summaries fed in
@@ -2148,15 +2356,53 @@ def api_chat():
                     else:
                         answer = vr.verified_text or llm_answer
                         mode = "graphrag" if community_summaries else "ai_assisted"
-                except Exception:
-                    answer = llm_answer
-                    mode = "graphrag" if community_summaries else "ai_assisted"
+                    verified = vr.verified
+                    # Per-claim grounding (trust-halluc): bind each claim to the
+                    # SPAN of the source that supports it, so the UI can show
+                    # which words back which sentence instead of only "this
+                    # answer cites [1]". Deterministic — span F1 + anchor guard,
+                    # no LLM — so it runs on the air-gap path too.
+                    #
+                    # Reporting only. It does not gate the chat answer: a
+                    # corpus audit found 61% of AI-authored sections carry no
+                    # citation at all, so blocking here would reject most
+                    # content for a defect upstream in generation. The verdicts
+                    # make that visible; the approve gate is where it blocks.
+                    claim_report = _claim_grounding(answer, scored_results)
+                except Exception as verr:
+                    # Never publish an unverified draft as if it had passed. A
+                    # verifier failure means we do not know whether the answer is
+                    # grounded, so fall back to the deterministic cited answer and
+                    # say so. A bare `except` that returned `llm_answer` here is
+                    # what kept this gate silently dead.
+                    logger.warning("dic: verifier failed, falling back to grounded: %s", verr)
+                    abstained = True
+                    answer = grounded["answer"]
+                    mode = "grounded"
+
+        # Computed on the FINAL answer, deliberately outside the LLM branch, so
+        # the grounded-fallback and abstention paths are disclosed too. An
+        # abstention that still surfaces a computed figure needs the same badge.
+        derivation_report = _derivation_disclosure(answer, scored_results)
 
         return jsonify(_mem({
             "answer": answer,
             "sources": sources,
             "citations": citations,
             "abstained": abstained,
+            "verified": verified,
+            "derivation": derivation_report,
+            "derivation_summary": {
+                "counts": (derivation_report or {}).get("counts", {}),
+                "has_derived": (derivation_report or {}).get("has_derived", False),
+                "has_unexplained_numeric": (derivation_report or {}).get(
+                    "has_unexplained_numeric", False),
+            } if derivation_report else None,
+            "claims": (claim_report or {}).get("claims", []),
+            "claim_summary": {
+                k: (claim_report or {}).get(k, 0)
+                for k in ("supported", "partial", "unsupported", "uncited")
+            } if claim_report else None,
             "mode": mode,
         }, answer=answer, record_results=scored_results))
     except Exception as exc:
@@ -2325,6 +2571,36 @@ def _record_review_note(item_id: str, item_type: str, note_text: str, reviewer_i
         pass
 
 
+def _record_publish_override(item_id: str, gate: str, findings: list,
+                             reviewer: str, tenant_id: str = "") -> None:
+    """Append a HITL force-override of a publish gate to ``idr_publish_audit``.
+
+    APPEND-ONLY (NIST AU) — never UPDATE or DELETE these rows; the table is
+    registered in ``APPEND_ONLY_TABLES`` in ``.claude/hooks/pre_tool_use.py``.
+    ``gate`` must be one of the values allowed by the table CHECK constraint:
+    ``citation_guard`` or ``placeholder_guard``.
+
+    Best-effort by design: an audit-write failure must not roll back an approval
+    the reviewer already authorised. It is logged at WARNING rather than
+    swallowed, because a silently missing audit row is the failure mode that
+    makes an override untraceable.
+    """
+    try:
+        conn = _conn()
+        audit_id = f"pub_{hashlib.sha256(f'{item_id}:{gate}:{_now()}'.encode()).hexdigest()[:16]}"
+        conn.execute(
+            "INSERT INTO idr_publish_audit (id, session_id, gate, reviewer, findings, tenant_id, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (audit_id, item_id, gate, reviewer,
+             json.dumps(findings, default=str)[:8000], tenant_id or "default", _now()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic approve: could not record %s override audit for %s: %s",
+                       gate, item_id, exc)
+
+
 @dic_bp.route("/api/review/<item_id>/assign", methods=["POST"])
 def api_review_assign(item_id):
     data = request.get_json(silent=True) or {}
@@ -2412,6 +2688,7 @@ def api_review_approve(item_id):
         cid = "default"
     if not _require_role(cid, "reviewer"):
         return _forbid("reviewer")
+    tenant_id, _cls = _security_context()
     conn = _conn()
     try:
         resp = {"status": "approved", "item_id": item_id}
@@ -2431,6 +2708,22 @@ def api_review_approve(item_id):
                 logger.warning("dic approve: consistency gate error: %s", exc)
             placeholder_hits = gate.get("placeholders") or []
             numeric_conflicts = gate.get("numeric_conflicts") or []
+
+            # citation_guard (TRUST invariant): an AI-authored section may not be
+            # published while it makes uncited claims, or cites evidence that was
+            # never retrieved for it. Mirrors placeholder_guard above and the
+            # docmod regeneration gate — same findings shape, same force+audit
+            # override — so the two gates behave identically to a reviewer.
+            citation_gate_report: dict = {}
+            try:
+                from tools.document_intelligence.consistency_checker import (
+                    check_version_citations,
+                )
+                citation_gate_report = check_version_citations(item_id)
+            except Exception as exc:
+                logger.warning("dic approve: citation gate error: %s", exc)
+            citation_hits = citation_gate_report.get("findings") or []
+
             if placeholder_hits and not force:
                 return jsonify({
                     "error": "unresolved_placeholders",
@@ -2439,10 +2732,69 @@ def api_review_approve(item_id):
                         "placeholder tokens. Resolve them or resubmit with "
                         "force=true to override."
                     ),
+                    "gate": "placeholder_guard",
                     "placeholders": placeholder_hits,
                     "numeric_conflicts": numeric_conflicts,
                     "item_id": item_id,
                 }), 409
+            if citation_hits and not force:
+                missing = sum(1 for f in citation_hits if f.get("issue") == "missing_citations")
+                bad = sum(1 for f in citation_hits if f.get("issue") == "hallucinated_citation")
+                parts = []
+                if missing:
+                    parts.append(f"{missing} AI-authored section(s) make uncited claims")
+                if bad:
+                    parts.append(f"{bad} section(s) cite evidence that was never retrieved for them")
+                return jsonify({
+                    "error": "citation_defects",
+                    "gate": "citation_guard",
+                    "message": (
+                        f"{'; '.join(parts)}. Add citations or correct them, or "
+                        "resubmit with force=true to override (the override is audited)."
+                    ),
+                    "citation_findings": citation_hits,
+                    "ai_section_count": citation_gate_report.get("ai_section_count", 0),
+                    "item_id": item_id,
+                }), 409
+
+            # cove_guard (agx-verify-01) — third and last gate, opt-in because
+            # CoVe multiplies LLM calls per artifact. Runs only after the two
+            # cheap deterministic gates pass, so an expensive verification is
+            # never spent on a draft that was going to be rejected anyway.
+            cove_report: dict = {}
+            try:
+                from tools.document_intelligence.consistency_checker import (
+                    check_version_cove,
+                )
+                cove_report = check_version_cove(item_id, force=force)
+            except Exception as exc:
+                logger.warning("dic approve: cove gate error: %s", exc)
+            cove_hits = cove_report.get("findings") or []
+            if cove_report.get("blocked"):
+                return jsonify({
+                    "error": "cove_contradictions",
+                    "gate": "cove_guard",
+                    "message": (
+                        f"Chain-of-Verification flagged {len(cove_hits)} section(s) "
+                        "whose claims did not survive independent interrogation. "
+                        "Revise them, or resubmit with force=true to override "
+                        "(the override is audited)."
+                    ) if cove_hits else (
+                        "Chain-of-Verification could not run and this deployment "
+                        "is configured to fail closed "
+                        f"({cove_report.get('reason', '')}). Resubmit with "
+                        "force=true to override, or set "
+                        "ICDEV_DIC_COVE_ON_ERROR=warn."
+                    ),
+                    "cove_findings": cove_hits,
+                    "unrunnable": bool(cove_report.get("unrunnable")),
+                    "item_id": item_id,
+                }), 409
+            if cove_report.get("unrunnable"):
+                # Surfaced, never silent: a verification that did not run must
+                # not look like one that passed.
+                resp["cove_unrunnable"] = True
+                resp["cove_reason"] = cove_report.get("reason", "")
             conn.execute(
                 "UPDATE dic_versions SET status='approved' WHERE version_id=%s", (item_id,)
             )
@@ -2457,6 +2809,33 @@ def api_review_approve(item_id):
                     f"FORCE-APPROVED with unresolved placeholders in "
                     f"{len(placeholder_hits)} section(s): {summary}"
                 )
+                _record_publish_override(item_id, "placeholder_guard",
+                                         placeholder_hits, reviewer, tenant_id)
+            if citation_hits and force:
+                resp["forced"] = True
+                resp["citation_findings"] = citation_hits
+                csummary = "; ".join(
+                    f"{f.get('item_number')}: {f.get('issue')}" for f in citation_hits[:5]
+                )
+                cnote = (
+                    f"FORCE-APPROVED over citation_guard — {len(citation_hits)} "
+                    f"defect(s): {csummary}"
+                )
+                force_note = f"{force_note}. {cnote}" if force_note else cnote
+                _record_publish_override(item_id, "citation_guard",
+                                         citation_hits, reviewer, tenant_id)
+            if cove_hits and force:
+                resp["forced"] = True
+                resp["cove_findings"] = cove_hits
+                vnote = (
+                    f"FORCE-APPROVED over cove_guard — {len(cove_hits)} section(s) "
+                    "failed Chain-of-Verification"
+                )
+                force_note = f"{force_note}. {vnote}" if force_note else vnote
+                # Recording this needs migration 300; before it, the INSERT
+                # raised CheckViolation at exactly this moment.
+                _record_publish_override(item_id, "cove_guard",
+                                         cove_hits, reviewer, tenant_id)
         else:
             # Try ACOIC approve helper first.
             try:
@@ -2472,6 +2851,23 @@ def api_review_approve(item_id):
             _record_review_note(item_id, "version", force_note, reviewer)
         if note:
             _record_review_note(item_id, item_type, note, reviewer)
+        # Cross-reference cascade (dmx-ref-01, best-effort): a version just moved
+        # to approved — raise findings on documents whose inbound references point
+        # at a section that changed. HITL-preserving (findings only, no edits) and
+        # non-blocking (an approval must never fail because a cascade could not run).
+        if item_type == "version":
+            try:
+                from tools.document_intelligence.cross_reference_tracker import (
+                    cascade_on_version_approval,
+                )
+
+                casc = cascade_on_version_approval(item_id)
+                resp["cross_reference_cascade"] = {
+                    "cascaded": casc.get("cascaded", 0),
+                    "inbound": casc.get("inbound", 0),
+                }
+            except Exception as exc:
+                logger.warning("dic approve: cross-reference cascade error: %s", exc)
         return jsonify(resp)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -4612,3 +5008,61 @@ def api_attach_coworker(collection_id):
 # Kept in a separate module so this file stops growing; import has side effects
 # (route registration) and must stay at the bottom after dic_bp is fully built.
 from tools.document_intelligence import modernization_routes  # noqa: E402,F401
+
+
+# ── Chunk inspect & repair (oss-hitl-01) ─────────────────────────────────────
+#
+# Reuses the section-review HITL shape (RBAC via _require_role, _conn, review
+# notes) applied to rag_chunks. A repair is a reviewer-gated mutation, not an
+# autonomous rewrite, and every repair re-baselines dic_chunk_links so the
+# evidence baseline stays honest. The engine (tools/document_intelligence/
+# chunk_repair.py) does the work; these routes are the reviewer-gated seam.
+
+
+def _chunk_repair_engine():
+    from tools.document_intelligence.chunk_repair import ChunkRepairEngine
+    from tools.rag.vector_store_factory import VectorStoreFactory
+
+    return ChunkRepairEngine(
+        store=VectorStoreFactory.create(),
+        conn_factory=_conn,
+        actor=_current_user(),
+    )
+
+
+@dic_bp.route("/api/chunks/<collection_id>/repair", methods=["POST"])
+def api_chunk_repair(collection_id):
+    """Apply a HITL chunk repair. Reviewer role required.
+
+    Body: {operation: merge|split|rechunk|reembed, chunk_ids|chunk_id, texts|text,
+           offset?, template?}. The operator supplies the current text so the
+           engine does not have to re-read it under the reviewer's lock.
+    """
+    from tools.document_intelligence.chunk_repair import (
+        MERGE, RECHUNK, REEMBED, SPLIT,
+    )
+
+    if not _require_role(collection_id, "reviewer"):
+        return _forbid("reviewer")
+
+    data = request.get_json(silent=True) or {}
+    op = (data.get("operation") or "").strip()
+    engine = _chunk_repair_engine()
+    try:
+        if op == MERGE:
+            result = engine.merge(data.get("chunk_ids") or [], data.get("texts") or [])
+        elif op == SPLIT:
+            result = engine.split(data.get("chunk_id", ""), data.get("text", ""),
+                                   int(data.get("offset", 0)))
+        elif op == RECHUNK:
+            result = engine.rechunk(data.get("chunk_id", ""), data.get("text", ""),
+                                    template=data.get("template", "general"))
+        elif op == REEMBED:
+            result = engine.reembed(data.get("chunk_id", ""), data.get("text", ""))
+        else:
+            return jsonify({"error": f"unknown operation {op!r}"}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+
+    status = 200 if result.ok else 422
+    return jsonify(result.to_dict()), status

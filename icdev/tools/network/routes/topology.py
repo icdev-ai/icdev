@@ -30,6 +30,33 @@ from tools.network.simulation import _add_narrative, _run_simulation
 from tools.network.visio_export import export_ops_csvs, export_vsdx
 
 
+def _route_llm(function, system_prompt, messages, max_tokens, temperature=None):
+    """Invoke the configured LLM through LLMRouter (lpx-router-02).
+
+    Replaces the previous direct provider POSTs so provider selection, an
+    optional proxy ``base_url``, budgets and audit all flow through the router
+    instead of reading a provider API key from the environment and hardcoding a
+    Claude model. Returns ``(content, error)``.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+    except Exception as exc:  # pragma: no cover - import guard
+        return None, "LLM router unavailable: {}".format(exc)
+    kwargs = {
+        "messages": messages,
+        "system_prompt": system_prompt,
+        "max_tokens": max_tokens,
+    }
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    try:
+        resp = LLMRouter().invoke(function, LLMRequest(**kwargs))
+    except Exception as exc:
+        return None, str(exc)
+    return (resp.content or ""), None
+
+
 def register_topology_routes(bp):
     """Register topology routes on the NDC blueprint."""
 
@@ -502,29 +529,14 @@ def register_topology_routes(bp):
         user_msg = f"Generate an executive briefing for this network topology:\n\n{graph_summary}"
 
         def _call_claude_briefing():
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                return None, "No ANTHROPIC_API_KEY set"
-            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req_request(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": 2048,
-                    "temperature": 0.4,
-                    "system": _BRIEFING_SYSTEM,
-                    "messages": [{"role": "user", "content": user_msg}],
-                },
-                timeout=60,
+            """Cloud/router branch (vs the explicit _call_ollama_briefing)."""
+            return _route_llm(
+                "network_qa",
+                _BRIEFING_SYSTEM,
+                [{"role": "user", "content": user_msg}],
+                2048,
+                temperature=0.4,
             )
-            r.raise_for_status()
-            return r.json().get("content", [{}])[0].get("text", ""), None
 
         def _call_ollama_briefing():
             ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -561,7 +573,7 @@ def register_topology_routes(bp):
                     return jsonify({"error": f"Ollama failed: {err}"}), 503
 
             if not content:
-                return jsonify({"error": "No LLM provider available. Set ANTHROPIC_API_KEY or start Ollama."}), 503
+                return jsonify({"error": "No LLM provider available. Configure a provider in args/llm_config.yaml or start Ollama."}), 503
 
             # Strip any <think> blocks from reasoning models
             markdown = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
@@ -794,29 +806,14 @@ def register_topology_routes(bp):
         )
 
         def _call_claude_runbook():
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                return None, "No ANTHROPIC_API_KEY"
-            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req_request(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": 3000,
-                    "temperature": 0.3,
-                    "system": _RUNBOOK_SYSTEM,
-                    "messages": [{"role": "user", "content": _runbook_user_msg}],
-                },
-                timeout=90,
+            """Cloud/router branch (vs the explicit _call_ollama_runbook)."""
+            return _route_llm(
+                "network_qa",
+                _RUNBOOK_SYSTEM,
+                [{"role": "user", "content": _runbook_user_msg}],
+                3000,
+                temperature=0.3,
             )
-            r.raise_for_status()
-            return r.json().get("content", [{}])[0].get("text", ""), None
 
         def _call_ollama_runbook():
             ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -850,7 +847,7 @@ def register_topology_routes(bp):
                 lines.append(ts_content)
             else:
                 lines += [
-                    "*No LLM provider available — set `ANTHROPIC_API_KEY` or start Ollama for AI-generated procedures.*",
+                    "*No LLM provider available — configure a provider in `args/llm_config.yaml` or start Ollama for AI-generated procedures.*",
                     "",
                     "**Generic network troubleshooting checklist:**",
                     "",

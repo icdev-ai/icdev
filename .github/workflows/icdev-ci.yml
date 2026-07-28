@@ -82,6 +82,39 @@ jobs:
             tests/test_session_context_builder.py \
             tests/test_code_analyzer.py \
             tests/test_component_registry.py \
+            tests/test_migration_version_uniqueness.py \
+            tests/test_verifier_contract.py \
+            tests/test_dic_chat_memory_schema.py \
+            tests/test_dic_chat_surfaces_send_session_id.py \
+            tests/test_dic_citation_publish_gate.py \
+            tests/test_migration_engine_detection.py \
+            tests/test_claim_grounding.py \
+            tests/test_docgen_bridge_scrub.py \
+            tests/test_publish_gates.py \
+            tests/test_dic_cove_gate.py \
+            tests/test_mirror_drift_baseline.py \
+            tests/test_freshness_guardian_parity.py \
+            tests/test_data_canvas_mirror_parity.py \
+            tests/test_quality_monitor_parity.py \
+            tests/test_no_direct_provider_calls.py \
+            tests/test_coordination_lease_namespaces.py \
+            tests/test_dic_claim_grounding_wiring.py \
+            tests/test_reflex_registry_integrity.py \
+            tests/test_memory_maintenance_reflex.py \
+            tests/test_memory_read_db.py \
+            tests/test_memory_tier_measure.py \
+            tests/test_notification_worthiness.py \
+            tests/test_localai_provider.py \
+            tests/browser/test_backend.py \
+            tests/browser/test_driver_manager_airgap.py \
+            tests/browser/test_driver_staleness.py \
+            tests/browser/test_browser_locator.py \
+            tests/browser/cdp/test_preflight.py \
+            tests/browser/cdp/test_session.py \
+            tests/browser/cdp/test_driver.py \
+            tests/browser/cdp/test_webdriver.py \
+            tests/browser/cdp/test_ws_client.py \
+            tests/test_context_budget.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries

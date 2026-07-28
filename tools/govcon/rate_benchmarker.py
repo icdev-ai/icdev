@@ -26,7 +26,6 @@ Usage:
 
 import argparse
 import json
-import logging
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -39,7 +38,8 @@ if str(_ROOT) not in sys.path:
 from tools.db.storage import get_connection  # noqa: E402
 
 # Default indirect rates (DCAA-typical for mid-tier GovCon)
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.govcon.rate_benchmarker")
 
 DEFAULT_RATES = {
     "fringe_pct": 0.32,

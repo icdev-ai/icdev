@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -164,6 +166,33 @@ def score_query(
 # ---------------------------------------------------------------------------
 
 
+def latency_stats(samples: List[float]) -> Dict[str, Any]:
+    """Summarise per-query wall-clock in milliseconds.
+
+    p50/p95 rather than the mean alone: retrieval latency is long-tailed (a cold
+    cache or one slow embed dominates an average over ~48 queries), and a toggle
+    that helps the median while wrecking the tail is a regression a mean hides.
+
+    Nearest-rank percentiles — no interpolation, so a reported p95 is always an
+    observed measurement rather than a synthesised value.
+    """
+    if not samples:
+        return {"n": 0, "p50_ms": None, "p95_ms": None, "mean_ms": None, "total_ms": None}
+    ordered = sorted(samples)
+
+    def _pct(p: float) -> float:
+        idx = max(0, min(len(ordered) - 1, math.ceil(p / 100.0 * len(ordered)) - 1))
+        return round(ordered[idx], 2)
+
+    return {
+        "n": len(ordered),
+        "p50_ms": _pct(50),
+        "p95_ms": _pct(95),
+        "mean_ms": round(sum(ordered) / len(ordered), 2),
+        "total_ms": round(sum(ordered), 2),
+    }
+
+
 class RAGBenchmark:
     """Runs the golden query set through a retriever and aggregates metrics."""
 
@@ -229,6 +258,7 @@ class RAGBenchmark:
         agg_recall: List[float] = []
         agg_mrr: List[float] = []
         agg_ndcg: List[float] = []
+        latencies: List[float] = []
         hits = 0
         scored = 0
 
@@ -238,15 +268,22 @@ class RAGBenchmark:
             expect = q.get("expect", {}) or {}
             if not query or not _query_targets(expect):
                 continue
+            # Wall-clock per query. Some toggles are SPEED optimisations whose
+            # correct outcome is a zero quality delta (binary_prefilter shrinks
+            # the candidate set without changing what comes back), so a sweep
+            # that reports only quality cannot decide them at all.
+            started = time.perf_counter()
             try:
                 results = do_search(query, self._top_k) or []
             except Exception as exc:  # a broken retriever must not abort the run
                 per_query.append({"id": qid, "query": query, "error": str(exc)})
                 continue
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
 
             scores = score_query(results, expect, top_k=self._top_k)
-            scores.update({"id": qid, "query": query})
+            scores.update({"id": qid, "query": query, "latency_ms": round(elapsed_ms, 2)})
             per_query.append(scores)
+            latencies.append(elapsed_ms)
 
             agg_recall.append(scores["recall_at_k"])
             agg_mrr.append(scores["mrr"])
@@ -270,6 +307,12 @@ class RAGBenchmark:
                 f"ndcg_at_{self._top_k}": _avg(agg_ndcg),
                 "citation_hit_rate": round(hits / scored, _SCORE_PRECISION) if scored else None,
             },
+            # Kept OUT of `aggregate` on purpose: everything in there is a
+            # quality score in [0, 1] that a comparison can subtract blindly.
+            # Latency is milliseconds and lower-is-better, so mixing it in would
+            # make `compare_to_baseline`'s per-key delta loop report a slowdown
+            # as a positive number alongside genuine quality gains.
+            "latency": latency_stats(latencies),
             "results": per_query,
         }
 
@@ -312,6 +355,112 @@ def compare_to_baseline(current: Dict[str, Any], baseline_path: str | Path) -> D
 # ---------------------------------------------------------------------------
 
 
+def run_toggle_sweep(
+    golden_set: Optional[str] = None,
+    top_k: Optional[int] = None,
+    only: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Measure each retrieval toggle in isolation against a common baseline.
+
+    One control arm plus one arm per *wired* toggle, every arm through the same
+    code path (the baseline also runs under a temp config, so the control is not
+    quietly different from the variants).
+
+    Toggles whose consumer is unreachable from the retriever are reported as
+    ``NOT-WIRED`` and **not** benchmarked. Emitting a zero delta for dead code
+    would read as "measured, no benefit" and produce a DROP decision on a module
+    that was simply never connected — the opposite of what the evidence says.
+    """
+    from tools.rag.toggle_harness import TOGGLES, isolated_config, load_base_config, probe_all
+
+    base_cfg = load_base_config()
+    probes = {p.toggle: p for p in probe_all()}
+    names = [n for n in (only or list(TOGGLES)) if n in TOGGLES]
+
+    with isolated_config(None, base=base_cfg):
+        control = RAGBenchmark(golden_set_path=golden_set, top_k=top_k).run()
+    control_agg = control.get("aggregate", {})
+    control_lat = control.get("latency", {})
+
+    arms: List[Dict[str, Any]] = []
+    for name in names:
+        probe = probes[name]
+        if not probe.measurable:
+            arms.append({
+                "toggle": name,
+                "verdict": probe.verdict,
+                "benchmarked": False,
+                "reason": probe.reason,
+                "recommendation": (
+                    "wire it or delete the config key — do NOT record a DROP "
+                    "based on an unmeasured zero"
+                ),
+            })
+            continue
+
+        with isolated_config(name, True, base=base_cfg):
+            run = RAGBenchmark(golden_set_path=golden_set, top_k=top_k).run()
+        agg = run.get("aggregate", {})
+        deltas = {
+            metric: _delta(control_agg.get(metric), agg.get(metric))
+            for metric in sorted(set(control_agg) | set(agg))
+        }
+        lat = run.get("latency", {})
+        arms.append({
+            "toggle": name,
+            "verdict": probe.verdict,
+            "benchmarked": True,
+            "path": TOGGLES[name].path,
+            "aggregate": agg,
+            "deltas": deltas,
+            "latency": lat,
+            # Reported separately from `deltas` because lower is better here.
+            # A toggle can be a KEEP on quality and a DROP on cost; collapsing
+            # the two into one signed number hides exactly that trade.
+            "latency_delta": {
+                stat: _delta(control_lat.get(stat), lat.get(stat))
+                for stat in ("p50_ms", "p95_ms", "mean_ms")
+            },
+        })
+
+    measured = [a for a in arms if a["benchmarked"]]
+
+    def _with(verdict: str) -> List[str]:
+        return [a["toggle"] for a in arms if a["verdict"] == verdict]
+
+    return {
+        "control": {
+            "aggregate": control_agg,
+            "latency": control_lat,
+            "queries_scored": control.get("queries_scored"),
+        },
+        "arms": arms,
+        "summary": {
+            "toggles_considered": len(names),
+            "benchmarked": len(measured),
+            # Bucketed by WHY, because each state needs a different fix:
+            # delete the key, give it a caller, or schedule the CLI.
+            "not_wired": _with("NOT-WIRED"),
+            "inert_on_backend": _with("INERT-ON-BACKEND"),
+            "wrapper_unadopted": _with("WRAPPER-UNADOPTED"),
+            "cli_unscheduled": _with("CLI-UNSCHEDULED"),
+            "ingest_only": _with("WIRED-INGEST-ONLY"),
+            "unmeasurable": [a["toggle"] for a in arms if not a["benchmarked"]],
+        },
+    }
+
+
+def _delta(baseline: Any, current: Any) -> Dict[str, Any]:
+    """Signed delta, tolerant of None metrics (a zeroed or partial run)."""
+    if isinstance(baseline, (int, float)) and isinstance(current, (int, float)):
+        return {
+            "baseline": baseline,
+            "current": current,
+            "delta": round(current - baseline, _SCORE_PRECISION),
+        }
+    return {"baseline": baseline, "current": current, "delta": None}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="RAG retrieval-quality baseline harness (rce-eval-01).")
     parser.add_argument("--golden-set", help="Path to golden query set YAML.")
@@ -319,7 +468,71 @@ def main() -> None:
     parser.add_argument("--baseline-out", help="Write full run to this JSON path (baseline artifact).")
     parser.add_argument("--compare", help="Compare current run against a saved baseline JSON.")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output.")
+    parser.add_argument(
+        "--toggle", metavar="NAME",
+        help="Run once with only this retrieval toggle ON (oss-meas-01-d2). "
+             "Refuses toggles whose consumer is unreachable from the retriever.",
+    )
+    parser.add_argument(
+        "--sweep", action="store_true",
+        help="Baseline + one isolated arm per wired toggle, with per-metric deltas.",
+    )
+    parser.add_argument(
+        "--only", metavar="A,B",
+        help="Restrict --sweep to these toggles (comma-separated).",
+    )
     args = parser.parse_args()
+
+    if args.sweep:
+        only = [s.strip() for s in args.only.split(",")] if args.only else None
+        sweep = run_toggle_sweep(args.golden_set, args.top_k, only)
+        if args.json_output:
+            print(json.dumps(sweep, indent=2))
+        else:
+            print(f"Control: {sweep['control']['aggregate']}\n")
+            for arm in sweep["arms"]:
+                if not arm["benchmarked"]:
+                    print(f"  {arm['verdict']:18s} {arm['toggle']:18s} NOT BENCHMARKED — {arm['reason'][:90]}")
+                    continue
+                deltas = ", ".join(
+                    f"{m} {d['delta']:+.4f}" for m, d in arm["deltas"].items()
+                    if isinstance(d.get("delta"), (int, float))
+                )
+                print(f"  {arm['verdict']:18s} {arm['toggle']:18s} {deltas or '(no numeric metrics)'}")
+                ld = arm.get("latency_delta", {})
+                cost = ", ".join(
+                    f"{s.replace('_ms','')} {d['delta']:+.1f}ms" for s, d in ld.items()
+                    if isinstance(d.get("delta"), (int, float))
+                )
+                if cost:
+                    print(f"  {'':18s} {'':18s} cost: {cost}")
+            s = sweep["summary"]
+            print(f"\n{s['benchmarked']}/{s['toggles_considered']} benchmarked; "
+                  f"not wired: {', '.join(s['not_wired']) or 'none'}")
+        sys.exit(0)
+
+    if args.toggle:
+        from tools.rag.toggle_harness import TOGGLES, isolated_config, probe_reachability
+
+        if args.toggle not in TOGGLES:
+            print(json.dumps({"error": f"unknown toggle {args.toggle!r}",
+                              "known": sorted(TOGGLES)}, indent=2))
+            sys.exit(2)
+        probe = probe_reachability(args.toggle)
+        if not probe.measurable:
+            # Refusing is the point: a number here would be indistinguishable
+            # from a real measurement and would licence a false DROP.
+            print(json.dumps({"error": "toggle is not measurable by a retrieval benchmark",
+                              **probe.to_dict()}, indent=2))
+            sys.exit(3)
+        with isolated_config(args.toggle, True):
+            _emit_single_run(args)
+        sys.exit(0)
+
+    _emit_single_run(args)
+
+
+def _emit_single_run(args: Any) -> None:
 
     try:
         bench = RAGBenchmark(golden_set_path=args.golden_set, top_k=args.top_k)

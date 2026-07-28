@@ -81,6 +81,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
     validator to detect drift: python tools/testing/claude_dir_validator.py --json
     """
     APPEND_ONLY_TABLES = [
+    "web_fetch_provenance",   # oss-cite-01: a fetch is an observation; re-fetch appends
         # === CHILD-INHERITABLE (copied to child apps via step_09c) ===
         # Core audit
         "audit_trail",

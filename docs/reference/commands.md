@@ -178,6 +178,35 @@ python tools/db/storage.py --info --json           # Show backend configuration
 
 ---
 
+## Untrusted HTML Extraction (oss-filter-01)
+```bash
+# Two-pass fit_markdown filter: prune site chrome, then BM25-rank against a query.
+python tools/http/page_extract.py --file page.html                      # prune only
+python tools/http/page_extract.py --file page.html --query "rate limits"  # + relevance
+python tools/http/page_extract.py --file page.html --query "rate limits" --json
+cat page.html | python tools/http/page_extract.py --query "rate limits"
+
+# Thresholds (prune threshold/type, min_word_threshold, BM25 threshold, stopwords,
+# stemming, section propagation, markdown rendering): args/page_extract.yaml
+```
+
+## Untrusted URL Fetch → Extract → Scan (oss-filter-02)
+```bash
+# One hardened path: central HTTP client (mTLS/proxy/retry) → two-pass page_extract
+# → prompt-injection scan. Use this instead of adding a urllib/requests call site.
+python tools/http/fetch_extract.py --url https://example.gov/spec
+python tools/http/fetch_extract.py --url https://example.gov/spec --query "key rotation"
+python tools/http/fetch_extract.py --url https://example.gov/spec --json
+
+# In Python — never raises; a hostile or dead URL comes back as data:
+# from tools.http.fetch_extract import fetch_page
+# page = fetch_page(url, query="key rotation")
+# page.text      # fit_markdown, already injection-scanned
+# page.blocked   # True when a critical finding dropped the content
+
+# Read cap, User-Agent, block_on_critical_injection: `fetch:` in args/http_client.yaml
+```
+
 ## Security Commands
 ```bash
 python tools/security/sast_runner.py --project-dir "/path"
@@ -201,6 +230,40 @@ python tools/security/audit_posture.py --json
 python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
 python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)
 python tools/integrity/pr_gates.py --base origin/main --gate            # CI gate: exit 1 on a blocking (QUARANTINE) verdict
+```
+
+---
+
+## Browser Automation & Agent Scope Controls
+```bash
+# Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
+python tools/browser/driver_manager.py --probe            # Resolved browser + driver path
+python tools/browser/driver_manager.py --smoke            # Launch, visit about:blank, quit
+
+# Agent browser scope controls (oss-browse-02) — config: args/browser_scope.yaml
+python tools/browser/scope.py --show --json               # Print the active policy
+python tools/browser/scope.py --check-url http://localhost:5050/ --json   # exit 0 = allowed
+python tools/browser/scope.py --check-url https://example.com/ --json     # exit 1 = denied
+# Override the config path with ICDEV_BROWSER_SCOPE_CONFIG.
+```
+
+Any **agent-driven** browser session must go through `GuardedDriver`, never a raw
+WebDriver. It enforces the domain allowlist (loopback only by default; a routable
+host needs to be allowlisted **and** `allow_non_local: true` **and** cleared by
+`egress_guard`), the per-run action cap, the per-step timeout, `<secret>name</secret>`
+placeholder substitution at the driver, and an `audit_trail` row per action.
+
+```python
+from tools.browser import get_driver, GuardedDriver
+
+driver = get_driver(headless=True)
+try:
+    session = GuardedDriver(driver, run_id="vv-001")
+    session.navigate("http://localhost:5050/")        # allowed
+    session.type_text(field, "<secret>dashboard_password</secret>")
+    session.navigate("https://example.com/")          # raises NavigationDenied
+finally:
+    driver.quit()
 ```
 
 ---
@@ -863,10 +926,20 @@ python tools/workflow/coherence_checker.py --all --gate                         
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
 
+# Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
+# CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
+# grandfathered in args/doc_command_gate.yaml; NEW broken references fail the gate.
+python tools/workflow/coherence_checker.py --check doc_command_paths --json                         # List unresolved documented commands
+python tools/workflow/coherence_checker.py --check doc_command_paths --gate                         # Fail on any NEW broken reference
+
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout
 python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
 python tools/quality/completion_auditor.py --md                                                      # Write docs/quality/completion-scorecard.md (sorted least->most complete)
+# Local "review-until-green" loop (greploop-adapted) — gates as a score function over the diff
+python tools/quality/review_loop.py --json                            # Working-tree mode: ruff + coherence + SIPA, autofix, iterate
+python tools/quality/review_loop.py --base origin/main --max 3 --gate # Branch diff vs base; exit 0=green / 1=not green
+python tools/quality/review_loop.py --no-autofix --json               # Report only (no edits); emit fix_brief for the agent
 ```
 
 ---
@@ -1854,6 +1927,16 @@ python tools/rag/reindex_contextual.py --reindex --source compliance_reference -
 python tools/rag/reindex_contextual.py --reindex --source compliance_reference --limit 500 --offset 0 --execute --json  # Resumable window (next_offset/has_more)
 python tools/rag/reindex_contextual.py --benchmark --baseline data/rag/rce_baseline.json --json          # Measure retrieval vs baseline
 
+# Chunking Templates (oss-chunk-01) — document-type chunking driven by the source_registry 'chunking' key
+python tools/rag/chunking_templates.py --list --json                                 # All templates + the default
+python tools/rag/chunking_templates.py --show oscal_catalog --json                   # One template definition
+python tools/rag/chunking_templates.py --suggest docs/catalog.md --json              # ADVISORY suggestion — never auto-applied
+python tools/rag/chunking_templates.py --preview docs/catalog.md --template oscal_catalog --json  # Chunks a template would produce
+# Templates: oscal_catalog (1 chunk/control, never split) · stig_checklist (1 chunk/rule) · rfp_sow (Section L/M)
+#            contract (numbered clauses) · sop_runbook (numbered steps) · slide_deck (1 chunk/slide)
+#            spreadsheet (row groups + header repeat) · general (default sliding window, unchanged)
+# Wire a source: set "chunking": "<template>" on its entry in tools/rag/source_registry.py
+
 # Fine-Tuning (Phase 64 Extension)
 python tools/finetune/dataset_manager.py --create --name "my-dataset" --purpose general --json   # Create dataset
 python tools/finetune/dataset_manager.py --list --json                                            # List datasets
@@ -2512,6 +2595,43 @@ Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_cl
 (4-label taxonomy: fact_single/summary/reasoning/unanswerable), `crag_benchmark_run`
 (CRAG evaluation campaign with hallucination-penalizing scoring).
 
+### Retrieval toggle measurement (oss-meas-01-d2)
+
+```bash
+# Which toggles can a retrieval benchmark actually score?
+python tools/rag/toggle_harness.py --probe
+python tools/rag/toggle_harness.py --probe --json
+python tools/rag/toggle_harness.py --list
+
+# Prove the isolation reaches the loader the retriever calls (and restores after)
+python tools/rag/toggle_harness.py --verify rerank --json
+
+# Benchmark ONE toggle in isolation. Exits 3 if the toggle is NOT-WIRED.
+python tools/rag/rag_benchmark.py --toggle rerank --json
+
+# Control arm + one isolated arm per wired toggle, with per-metric deltas
+python tools/rag/rag_benchmark.py --sweep
+python tools/rag/rag_benchmark.py --sweep --only rerank,binary_prefilter --json
+```
+
+```
+# Why the probe exists: an UNWIRED toggle and a wired-but-useless toggle both
+# measure as a zero delta. Reporting a number for the first turns "never
+# connected" into an evidence-backed "DROP". So --toggle/--sweep refuse to
+# benchmark a toggle whose consumer is not in the import closure of
+# tools/rag/retriever.py, and say NOT-WIRED instead.
+#
+# As of oss-meas-01-d2, of the five toggles oss-meas-01 names:
+#   WIRED     rerank, binary_prefilter        (measurable)
+#   NOT-WIRED reflective_rerank (agx-rag-02), adaptive_routing (agx-rag-01),
+#             auto_indexer — 0 non-test import sites; auto_indexer is also
+#             ingest-side, so it cannot move a retrieval metric even once wired.
+#
+# Isolation never writes args/rag_config.yaml. It writes a temp config and sets
+# ICDEV_RAG_CONFIG (tools/rag/config_path.py), because this checkout is shared
+# with other agent sessions and the kanban scheduler.
+```
+
 ---
 
 ## Ops Hub Canvas (OHC) — Phase 71
@@ -2792,10 +2912,16 @@ python tools/data_canvas/sync/openmetadata_sync.py --all --gate --json
 
 ## Showcase Commands
 ```bash
-python tools/showcase/generate_app.py --slug <name> --category <cat>
-python tools/showcase/osint_engine.py --source cve --fetch --json
-python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
-python tools/showcase/validator.py --app <slug> --json
+# AI Canvas Demo Runner — 5-act DoD/IC demo across live canvas DBs
+python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json
+python tools/showcase/ai_canvas_demo_runner.py --scenario 5 --audience tech
+```
+
+`tools/showcase/synthetic_data_engine.py` is a **library, not a CLI** — import
+`SyntheticDataEngine` / `DOMAINS` from it:
+
+```python
+from icdev.tools.showcase.synthetic_data_engine import DOMAINS, SyntheticDataEngine
 ```
 
 
@@ -3375,3 +3501,315 @@ python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"
 # Config/registry: adapters self-register from tools/twin_core/adapters/*.py
 # Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
 ```
+
+## Agent Browser — Indexed-Element Page Representation (tools/browser/)
+
+```bash
+# Probe which WebDriver resolves (vendored msedgedriver → chromedriver → Selenium Manager)
+python tools/browser/driver_manager.py --probe
+python tools/browser/driver_manager.py --smoke
+
+# Index a page — prints exactly what a model sees:
+#   [24] <button> + Add Task
+#   [20] <input> role=text Filter tasks (id=kanban-filter-input, type=text)
+python tools/browser/agent_browser.py --url http://localhost:5050/kanban --text
+
+# JSON state (index, role, text, allowlisted attributes, bounds, in_viewport, disabled)
+python tools/browser/agent_browser.py --url http://localhost:5050 --json
+
+# State + screenshot (always lands under playwright/screenshots/)
+python tools/browser/agent_browser.py --url http://localhost:5050 --text --screenshot --name home
+
+# Show the resolved config
+python tools/browser/agent_browser.py --config --json
+
+# In a git worktree use the module form — a script path does not put the repo
+# root on sys.path, so tools.* resolves to the shared checkout's vendor/drivers.
+python -m tools.browser.agent_browser --url http://localhost:5050 --text
+```
+
+```python
+# Library API — act by index, never by an invented CSS selector
+from tools.browser.agent_browser import AgentBrowser
+
+with AgentBrowser() as b:
+    state = b.navigate("http://localhost:5050/kanban")
+    print(state.to_text())              # model-facing rendering
+    b.type_text(20, "oss-browse")       # index from the state above
+    b.click(24)
+    b.press("Escape")
+    b.select(19, "Engineering")         # matches option value, then visible text
+    state = b.read_state(screenshot=True)
+    print(b.validate("The CUI banner is visible"))   # reuses screenshot_validator
+
+# Agent-loop wiring (same convention as tools/ace/agent_tools.py)
+from tools.browser.agent_tools import BrowserToolRegistry
+tools, handlers = BrowserToolRegistry(browser).build()
+```
+
+```
+# Config: args/agent_browser.yaml — page representation only
+#   include_attributes  — DOM verbosity allowlist (the main prompt-size knob)
+#   max_elements / max_text_length / max_attr_length — hard caps (state.truncated)
+#   viewport_only / occlusion_check — geometry filters
+#   navigation.settle_ms — post-action pause before re-reading state
+#
+# Config: args/browser_scope.yaml — the enforced policy (tools/browser/scope.py)
+#   allowed_domains / denied_domains / allowed_schemes — default-deny nav gate
+#   allow_non_local + require_egress_guard — the two extra switches a routable host needs
+#   limits.max_actions_per_run / max_failures / step_timeout_seconds — per-run budget
+#   AgentBrowser holds a GuardedDriver, so all of the above applies to every method.
+#   There is no navigation policy in agent_browser.yaml — one policy, one file.
+# Tests: tests/test_agent_browser.py (56 tests; real-browser test auto-skips with no driver)
+#        tests/browser/test_scope.py (52 tests; the policy decision table)
+```
+
+## Release & PyPI Packaging
+
+One command from version bump to publish. The middle of the pipeline (sync,
+validate, build, wheel inspection, throwaway-venv smoke, air-gap install) is
+delegated to `build_release.py` — never reimplemented.
+
+```bash
+# Dry run — bump, build, verify everything. Uploads NOTHING. Start here.
+python tools/installer/release.py --version 1.2.43
+
+# Let it pick the number
+python tools/installer/release.py --bump patch
+
+# Stub out the README + CHANGELOG sections, then stop so you can write them
+python tools/installer/release.py --version 1.2.43 --scaffold-notes
+
+# Publish for real (irreversible — a version number can never be reused)
+python tools/installer/release.py --version 1.2.43 --publish
+
+# Only reconcile the version declarations
+python tools/installer/release.py --version 1.2.43 --bump-only
+
+# Machine-readable report
+python tools/installer/release.py --bump patch --json
+```
+
+Credentials are read from `.env` (`TWINE_USERNAME`/`TWINE_PASSWORD`, or
+`PYPI_API_TOKEN`) and never printed.
+
+**Refusals, each traceable to a release that shipped broken:**
+
+| Refusal | Why |
+|---|---|
+| `--publish` with `--skip-smoke` | The throwaway-venv smoke test is the only step that catches a wheel which builds, passes `twine check`, and cannot import. 1.2.41 shipped exactly that. |
+| `--publish` with `--allow-missing-notes` | `/updates` renders `CHANGELOG.md`; a release with no entry leaves the dashboard advertising an older version. 1.2.38 and 1.2.39 shipped with no entry. |
+| Publishing by default | Uploads are irreversible. The default run builds and verifies, then tells you the command to publish. |
+
+The notes gate runs **before** the version bump, so a missing-notes run writes
+nothing. Re-running the current version is treated as resuming a half-finished
+release, not an error — otherwise a failure after the bump would wedge the retry.
+
+> Do not call `python -m build` directly. That skips `sync_package_tree.py`,
+> which is what made the 1.2.40 wheel ship 29 differing and 53 missing `args/`
+> files — including the `component_registry.yaml` that 1.2.39 had just fixed.
+
+
+## Getting ICDEV files WITHOUT a full scaffold
+
+`pip install icdev` installs the package; it does not write into your project.
+`icdev init` copies the payload out. If you don't want a full scaffold, take
+only what you need:
+
+```bash
+icdev init --list                      # dry run: show what WOULD be copied
+icdev init --only CLAUDE.md            # just the master instruction file
+icdev init --only CLAUDE.md goals      # CLAUDE.md + the FORGE Goals layer
+icdev init --only AGENTS.md            # a single AI-platform instruction file
+icdev init --minimal                   # CLAUDE.md + .claude/ + platform files + goals/
+```
+
+The packaged `CLAUDE.md` is the repo's file **byte-for-byte** — no template
+substitution, no stripped-down variant. A test pins that
+(`test_packaged_claude_md_is_not_a_stripped_template`).
+
+`goals/` is copied even under `--minimal`. It is the Goals layer of FORGE and
+the entry point of ANVIL, and CLAUDE.md instructs the agent to read
+`goals/manifest.md` before starting any task — a scaffold without it produces a
+project that contradicts its own first instruction.
+
+## Guided setup after `pip install icdev`
+
+`pip install` installs the package; `icdev init` copies the project payload out;
+`icdev setup` configures it. The wizard is OS-aware (Windows, WSL, Linux, macOS)
+and writes everything to `.env`.
+
+```bash
+icdev setup                    # guided: OS → LLM → database → RAG+KG → Docker
+icdev setup --components       # skip to the component enable/disable TUI
+icdev setup --non-interactive  # accept detected defaults, ask nothing
+icdev setup --no-probe         # skip LLM reachability checks (air-gapped)
+icdev setup --docker-only      # only (re)generate docker-compose.yml
+icdev setup --postgres         # assume PostgreSQL rather than SQLite
+icdev setup --dry-run          # show what would change; write nothing
+icdev setup --json             # machine-readable environment report
+```
+
+**What it configures**
+
+| Step | Detail |
+|---|---|
+| Environment | OS + release, Python, Docker, local PostgreSQL (:5432), local Ollama (:11434), WSL |
+| LLM | primary + fallback provider, API keys, bounded reachability probe |
+| Database | SQLite (zero-config) or PostgreSQL; writes DSN or DB path |
+| RAG + KG | enable flags and embedding dimension (768 — the air-gap-safe default) |
+| Docker | generates a `docker-compose.yml` matched to the answers |
+| Components | hands off to the existing registry-driven TUI |
+
+**Why the compose file is generated rather than documented**
+
+Volume paths are where setup actually fails, and the failure is silent — the
+container starts and the mount is empty:
+
+| Host | Bind-mount source |
+|---|---|
+| Windows | `C:/ai/proj/data` — forward slashes, not what `os.path` produces |
+| WSL | `./data` — **Linux** rules, even though users think of it as Windows |
+| Linux / macOS | `./data` |
+
+The generated file also uses `pgvector/pgvector:pg16` rather than stock
+`postgres:16` (ICDEV stores embeddings in a `vector` column, so plain postgres
+cannot host the RAG schema), points the app at the `postgres` **service name**
+rather than `localhost`, and gates startup on a healthcheck so the first
+migration doesn't race the database.
+
+**The LLM probe** is bounded and skippable. A key that is present but rejected
+is worse than one that is absent — it fails over silently at runtime, which is
+how a stale key can degrade retrieval for weeks before anyone notices.
+
+### Kubernetes (Helm)
+
+```bash
+helm install icdev deploy/helm/                       # defaults: RAG on, pgvector
+helm install icdev deploy/helm/ -f deploy/helm/values-aws.yaml
+helm install icdev deploy/helm/ --set rag.enabled=false   # no vector DB needed
+```
+
+`rag.enabled` (default **true**) selects `pgvector/pgvector:pg16` for the
+platform database and runs `CREATE EXTENSION IF NOT EXISTS vector` on first
+start. With RAG off, the hardened base image is used instead.
+
+This matters: ICDEV stores embeddings in a `vector` column, so a stock postgres
+image cannot host the RAG schema — the extension fails to create and every
+embedding write raises. Override `rag.vectorImage` with your own mirrored build
+in air-gapped or registry-restricted clusters.
+
+`Chart.yaml`'s `appVersion` tracks `icdev/_version.py` and is bumped by
+`release.py`. The chart's own `version:` is deliberately independent — it moves
+when the templates change, not when the application does.
+
+### Provisioning the database and vector store
+
+`icdev setup` writes a DSN; it does not make a database exist. `--provision-db`
+creates whatever is missing, in dependency order:
+
+```bash
+icdev setup --provision-db                 # create what's missing
+python -m tools.cli.provision_db --check   # report only, change nothing
+python -m tools.cli.provision_db --provision --docker --dry-run
+python -m tools.cli.provision_db --sqlite --provision
+```
+
+Four things must exist before RAG works, and each fails differently:
+
+| Layer | Failure when absent |
+|---|---|
+| PostgreSQL **server** | connection refused |
+| **database + role** | `FATAL: database "icdev" does not exist` |
+| **pgvector extension** | `ERROR: type "vector" does not exist` |
+| **schema** | `relation "rag_chunks" does not exist` |
+
+The third bites hardest: the extension is only *installable* if the running
+image ships pgvector. On stock `postgres:16` the `CREATE EXTENSION` in migration
+044 fails and every embedding write raises afterwards — so availability is
+checked, not just whether it's enabled.
+
+**Greenfield options**
+
+| Option | Notes |
+|---|---|
+| **SQLite** | Zero install. File created on first connect; vector store is `rag_chunks` with a BLOB column. Always works, air-gap safe. Brute-force cosine rather than an indexed scan. |
+| **Docker** | Starts `pgvector/pgvector:pg16` from the generated compose file and **waits for the server to accept connections** — `compose up -d` returns when the container is created, not when Postgres is ready. |
+| **Native** | Per-OS install commands are printed, not executed: that needs elevation and changes the machine outside your project. |
+| **Existing server** | Provisions the database, role, extension and schema into a server that's already running (RDS, Cloud SQL, a shared box) without touching its install. |
+
+**Port conflicts** are detected and distinguished, because the three cases need
+opposite handling:
+
+- **free** — start a container here
+- **an existing PostgreSQL** — do *not* start a second one; provision into it. Two servers is a silent second source of truth.
+- **something else** — republish on 5433+, rewriting the DSN and the compose file's host port together. Only the host side moves; Postgres inside the container always listens on 5432.
+
+Provisioning is non-destructive: it creates a database, role and extension, and
+never drops, alters or overwrites one that exists. `--dry-run` prints the plan.
+
+### Corporate proxies and LLM gateways
+
+Most enterprises reach the model through a proxy or an internal gateway, and in
+that world **there is no API key to configure** — the gateway holds the real
+credentials and authenticates upstream on your behalf.
+
+```bash
+python -m tools.cli.proxy_detect          # what proxy is this machine using?
+python -m tools.cli.proxy_detect --json
+```
+
+`icdev setup` runs this automatically, reports what it found, and adopts it.
+Detection order — ICDEV's own settings first, because an explicitly configured
+rotator is a decision and must not be overwritten by a staler OS value:
+
+| Source | Where |
+|---|---|
+| `ICDEV_LLM_PROXY_CMD` / `ICDEV_LLM_PROXY` | already configured |
+| `HTTPS_PROXY`, `ALL_PROXY`, `HTTP_PROXY` | environment |
+| WinINET registry (incl. PAC / `AutoConfigURL`) | Windows |
+| `scutil --proxy` (incl. PAC) | macOS |
+
+Pick the `gateway` provider in the wizard and leave the key blank; set
+`ICDEV_LLM_GATEWAY_URL` to its OpenAI-compatible base URL. The provider sends
+the placeholder `not-needed`, which is what an unauthenticated OpenAI-compatible
+endpoint expects.
+
+**Rotation is the part that bites.** A rotating proxy written into `.env` as a
+literal URL works until the pool moves, then presents as the LLM being down. So
+setup deliberately records the *source*, not the value:
+
+| Config | Behaviour |
+|---|---|
+| `ICDEV_LLM_PROXY_CMD` | a command printing the **current** proxy; re-run per call, TTL-cached via `ICDEV_LLM_PROXY_CMD_TTL` (default 2 s). Correct under any rotation. |
+| nothing written | the SDKs read `HTTPS_PROXY` on every call — correct when the rotator updates the environment |
+| `ICDEV_LLM_PROXY` | a fixed URL. Only written when the detected source is **not** rotating. |
+
+`tools/llm/proxy_resolver.py` re-resolves on every invoke and calls
+`provider.reset_client()` when the value changed, so an SDK client that captured
+the old proxy at construction is rebuilt rather than silently reused.
+
+Note this is a *different* thing from `proxy_gateway.py`: that is ICDEV's own
+LiteLLM proxy issuing virtual keys to callers. This is your organisation's
+egress path out to the vendor. They compose — ICDEV's proxy can itself sit
+behind a corporate one.
+
+Behind a proxy, a direct connection to `api.anthropic.com` is *supposed* to
+fail, so the setup probe reports that as expected rather than as a fault.
+
+### Keeping `/updates` correct
+
+`http://localhost:5050/updates` renders `CHANGELOG.md` live, so the page updates
+the moment the file does. What `release.py` guarantees is that the file is
+*worth rendering* — the notes gate blocks a release unless, checked with the
+page's own parser:
+
+| Check | Blocks when |
+|---|---|
+| `updates_parses` | the entry doesn't parse — `/updates` would silently omit the release |
+| `updates_is_newest` | it isn't the top entry — the page would lead with an older version |
+| `updates_has_content` | it's still a `--scaffold-notes` TODO stub |
+
+The middle one is the state that had `/updates` advertising 1.2.37 while the
+package shipped 1.2.39. The last exists because notes that read as written but
+say nothing are worse than none.

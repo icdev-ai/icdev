@@ -407,7 +407,15 @@ def test_readiness_route_wiring(bdc_client, monkeypatch):
 # ===========================================================================
 
 _IMPACT_DDL = """
-CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT);
+-- Matches the `projects` shape used by the other fixture in this file and by
+-- the real table. The two-column version worked only because these tests never
+-- read past `name`; the first query that did would have failed here and not in
+-- the suite above, for no reason a reader could see.
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY, name TEXT, description TEXT,
+    impact_level TEXT DEFAULT 'IL5', classification TEXT DEFAULT 'CUI',
+    status TEXT DEFAULT 'under-development'
+);
 CREATE TABLE IF NOT EXISTS ato_system_registry (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL, system_name TEXT NOT NULL, system_acronym TEXT,
     ato_type TEXT, ato_date TEXT, ato_expiry TEXT, authorizing_official TEXT, accreditation_boundary TEXT,

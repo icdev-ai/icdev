@@ -1,0 +1,34 @@
+# ACE — Confidence-Gate Trust Overrides
+#
+# Consulted by the ACE co-worker confidence gate (tools/ace/coworker_thread.py).
+# Both keys are optional; the shipped defaults preserve today's behavior — every
+# role starts at 0.5 (INITIAL_TRUST), which is < TRUST_SUPERVISED (0.6), so every
+# fresh co-worker enters the human-in-the-loop confidence gate and waits for
+# approval before it begins work.
+#
+# ---------------------------------------------------------------------------
+# TRADE-OFF (read before editing):
+#   The confidence gate exists so a human vets a low-trust co-worker BEFORE it
+#   acts. Both overrides below relax that safety in exchange for velocity:
+#
+#   * auto_approve_roles — listed roles SKIP the gate entirely. A fresh co-worker
+#     of such a role starts working with no human sign-off. Only add roles whose
+#     action surface is read-only / low-risk, or whose trustworthiness you have
+#     independently established.
+#
+#   * initial_trust — seeds the gate's trust decision for a role. A value >= 0.6
+#     places the role in the "trusted" band, so its fresh co-workers bypass the
+#     supervised gate. A value < 0.6 still gates (useful to make the seed
+#     explicit). This override takes precedence over the learned trust score for
+#     the gate decision only.
+#
+# Leaving both empty = maximum safety = current behavior.
+# ---------------------------------------------------------------------------
+
+# {role_id: float in [0.0, 1.0]} — seed trust consulted by the confidence gate.
+initial_trust: {}
+  # ai_developer: 0.7
+
+# [role_id, ...] — roles whose fresh co-workers skip the confidence gate.
+auto_approve_roles: []
+  # - research_analyst

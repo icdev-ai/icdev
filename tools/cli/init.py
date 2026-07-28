@@ -100,6 +100,21 @@ BOOTSTRAP_MAP: list[tuple[str, str]] = [
     ("data/claude_bootstrap/claude/agents", ".claude/agents"),
 ]
 
+# The non-Claude AI platform instruction files. ICDEV publishes the same
+# guardrails to every major coding tool; without these, an installed project is
+# Claude-only and the LLM-agnostic claim is false at the point it matters most
+# — in the user's project. Restored from their flattened bootstrap names back
+# to real paths (`platforms/cursor__rules__icdev.mdc` -> `.cursor/rules/icdev.mdc`).
+try:
+    from tools.dx.ai_platforms import AI_PLATFORM_FILES, bootstrap_name
+
+    BOOTSTRAP_MAP.extend(
+        (f"data/claude_bootstrap/{bootstrap_name(rel)}", rel)
+        for _platform, rel in AI_PLATFORM_FILES
+    )
+except Exception:  # noqa: BLE001 - a missing platform list must not break init
+    AI_PLATFORM_FILES = ()
+
 # Bootstrap sources that may legitimately be absent from the package (e.g.
 # `.claude/agents` ships zero files today but will the day agents are added).
 # A missing OPTIONAL source is reported as "optional_missing" and does NOT
@@ -109,6 +124,17 @@ OPTIONAL_SOURCES: set[str] = {
     "data/claude_bootstrap/claude/agents",
 }
 
+# A wheel built before the platform files were packaged simply will not have
+# them; init should degrade to a Claude-only project, not fail.
+try:
+    from tools.dx.ai_platforms import bootstrap_name as _bn
+
+    OPTIONAL_SOURCES.update(
+        f"data/claude_bootstrap/{_bn(rel)}" for _p, rel in AI_PLATFORM_FILES
+    )
+except Exception:  # noqa: BLE001
+    pass
+
 # FORGE data (editable project config, copied from package defaults)
 FORGE_MAP: list[tuple[str, str]] = [
     ("data/args", "args"),
@@ -116,6 +142,18 @@ FORGE_MAP: list[tuple[str, str]] = [
     ("data/hardprompts", "hardprompts"),
     ("data/context", "context"),
 ]
+
+#: FORGE layers that are NOT optional, even under `--minimal`.
+#:
+#: `goals/` is the Goals layer of FORGE and the entry point of ANVIL: CLAUDE.md
+#: opens with "Check `goals/manifest.md` before starting any task" and repeats it
+#: under How to Operate. `--minimal` used to skip the whole FORGE_MAP, so it
+#: produced a project whose own instructions pointed at a file that was not
+#: there — the agent's first action failed, silently, on a fresh install.
+#:
+#: args/, hardprompts/ and context/ stay optional under --minimal: they are
+#: configuration and reference material, and a project can start without them.
+REQUIRED_FORGE: tuple[str, ...] = ("data/goals",)
 
 # Install-profile defaults. Profiles themselves are read dynamically from
 # args/core_profiles.yaml (never hard-coded here) so this list never drifts.
@@ -287,6 +325,7 @@ def init_project(
     target_dir: Path,
     force: bool = False,
     minimal: bool = False,
+    only: list | None = None,
     list_only: bool = False,
     profile: str | None = None,
 ) -> dict:
@@ -295,7 +334,11 @@ def init_project(
     Args:
         target_dir: Where to create the project (must exist or will be created).
         force: Overwrite existing files.
-        minimal: Only copy CLAUDE.md + .claude/ (skip FORGE data).
+        minimal: Skip the optional FORGE layers (args/, hardprompts/,
+            context/). goals/ is always copied — CLAUDE.md depends on it.
+        only: Restrict to these project-relative targets, e.g.
+            ``["CLAUDE.md"]`` or ``["goals"]``. Lets a user pull one artifact
+            into an existing project without scaffolding around it.
         list_only: Don't copy — just report what would happen.
         profile: Install-profile name (from args/core_profiles.yaml) whose
             ``default_enabled_components`` and env defaults shape the generated
@@ -307,8 +350,21 @@ def init_project(
     actions: list = []
 
     sources = list(BOOTSTRAP_MAP)
-    if not minimal:
+    if minimal:
+        # Even a minimal scaffold needs the Goals layer — CLAUDE.md instructs
+        # the agent to read goals/manifest.md before doing anything.
+        sources.extend((pkg, proj) for pkg, proj in FORGE_MAP
+                       if pkg in REQUIRED_FORGE)
+    else:
         sources.extend(FORGE_MAP)
+
+    # `--only` narrows to specific project-relative targets, so a user can pull
+    # exactly CLAUDE.md (or goals/) into an existing project without scaffolding
+    # everything around it.
+    if only:
+        wanted = {o.strip().rstrip("/\\") for o in only}
+        sources = [(pkg, proj) for pkg, proj in sources
+                   if str(proj).rstrip("/\\") in wanted]
 
     for pkg_rel, proj_rel in sources:
         src = _package_resource_path(pkg_rel)
@@ -377,6 +433,7 @@ def init_project(
     summary = {
         "target": str(target_dir.resolve()),
         "minimal": minimal,
+        "only": list(only) if only else [],
         "force": force,
         "list_only": list_only,
         "profile": profile_applied,
@@ -415,7 +472,12 @@ def main() -> int:
     parser.add_argument("--force", action="store_true",
                         help="Overwrite existing files")
     parser.add_argument("--minimal", action="store_true",
-                        help="Only scaffold CLAUDE.md + .claude/ (skip FORGE data)")
+                        help="Skip optional FORGE layers (args/, hardprompts/, "
+                             "context/). goals/ is always included — CLAUDE.md "
+                             "instructs the agent to read goals/manifest.md.")
+    parser.add_argument("--only", nargs="+", metavar="TARGET", default=None,
+                        help="Copy ONLY these targets, e.g. --only CLAUDE.md "
+                             "goals. Use --list to see available names.")
     parser.add_argument("--list", dest="list_only", action="store_true",
                         help="Show what would be copied without copying")
     parser.add_argument(
@@ -447,6 +509,7 @@ def main() -> int:
         target,
         force=args.force,
         minimal=args.minimal,
+        only=args.only,
         list_only=args.list_only,
         profile=profile_name,
     )

@@ -22,6 +22,26 @@ providers:
     api_key_env: OPENAI_API_KEY
     base_url: https://api.openai.com/v1
 
+  # Corporate LLM gateway / egress proxy.
+  #
+  # Many enterprises front all model traffic with their own gateway, which
+  # authenticates UPSTREAM — the client presents no API key at all. Set
+  # ICDEV_LLM_GATEWAY_URL and leave the key unset; the OpenAI-compatible
+  # provider sends the placeholder "not-needed" and the gateway supplies real
+  # credentials on the way out.
+  #
+  # Distinct from the LPX proxy (proxy_gateway.py): that is OUR LiteLLM proxy
+  # with virtual keys. This is THEIR infrastructure, and ICDEV is just a client.
+  gateway:
+    type: openai_compatible
+    # No default on purpose. A corporate gateway URL is site-specific, and any
+    # value invented here would be wrong everywhere — :4000 in particular is
+    # ICDEV's OWN LiteLLM proxy, a different service entirely. Unset means
+    # unconfigured, which the setup probe reports plainly.
+    base_url: ${ICDEV_LLM_GATEWAY_URL:-}
+    # Optional. Most gateways need nothing; some want a team/tenant token.
+    api_key_env: ICDEV_LLM_GATEWAY_KEY
+
   ollama:
     type: ollama
     base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
@@ -34,6 +54,15 @@ providers:
     type: openai_compatible
     base_url: ${VLLM_BASE_URL:-http://localhost:8000/v1}
     api_key_env: VLLM_API_KEY
+
+  # LocalAI — OpenAI-compatible local inference AND embeddings, air-gap friendly
+  # (Go binary, no Python deps). Upstream default port is 8080; set LOCALAI_BASE_URL
+  # to override. Named provider added by oss2-fix-01 (D1) so a LocalAI deployment is
+  # selectable, not just probe-detectable.
+  localai:
+    type: openai_compatible
+    base_url: ${LOCALAI_BASE_URL:-http://localhost:8080/v1}
+    api_key_env: LOCALAI_API_KEY
 
   ibm_watsonx:
     type: ibm_watsonx
@@ -97,6 +126,7 @@ models:
   claude-opus:
     provider: anthropic
     model_id: claude-opus-4-8
+    context_window: 200000
     max_output_tokens: 128000
     supports_thinking: true
     supports_tools: true
@@ -107,6 +137,7 @@ models:
   claude-sonnet:
     provider: anthropic
     model_id: claude-sonnet-4-6
+    context_window: 200000
     max_output_tokens: 64000
     supports_thinking: true
     supports_tools: true
@@ -119,6 +150,7 @@ models:
   claude-sonnet-cli:
     provider: claude-cli
     model_id: claude-sonnet-4-6
+    context_window: 200000
     max_output_tokens: 64000
     supports_thinking: true
     supports_tools: true
@@ -129,6 +161,7 @@ models:
   claude-haiku:
     provider: anthropic
     model_id: claude-haiku-4-5-20251001
+    context_window: 200000
     max_output_tokens: 8192
     supports_thinking: false
     supports_tools: true
@@ -158,6 +191,7 @@ models:
   gpt-4o:
     provider: openai
     model_id: "${OPENAI_MODEL:-gpt-4o}"
+    context_window: 128000
     max_output_tokens: 16384
     supports_thinking: false
     supports_tools: true
@@ -168,6 +202,7 @@ models:
   gpt-4o-mini:
     provider: openai
     model_id: gpt-4o-mini
+    context_window: 128000
     max_output_tokens: 16384
     supports_thinking: false
     supports_tools: true
@@ -177,6 +212,7 @@ models:
   o3:
     provider: openai
     model_id: o3
+    context_window: 200000
     max_output_tokens: 100000
     supports_thinking: true
     supports_tools: true
@@ -187,6 +223,7 @@ models:
   gemini-2.5-pro:
     provider: gemini
     model_id: gemini-2.5-pro-preview-05-06
+    context_window: 1000000
     max_output_tokens: 65536
     supports_thinking: true
     supports_tools: true
@@ -197,6 +234,7 @@ models:
   gemini-2.5-flash:
     provider: gemini
     model_id: "${GOOGLE_MODEL:-gemini-2.5-flash-preview-04-17}"
+    context_window: 1000000
     max_output_tokens: 65536
     supports_thinking: true
     supports_tools: true
@@ -207,6 +245,7 @@ models:
   gemini-2.0-flash:
     provider: gemini
     model_id: gemini-2.0-flash
+    context_window: 1000000
     max_output_tokens: 8192
     supports_thinking: false
     supports_tools: true
@@ -231,6 +270,7 @@ models:
   llama-local:
     provider: ollama
     model_id: qwen3:4b
+    context_window: 32768
     max_output_tokens: 8192
     supports_thinking: false
     disable_thinking: true
@@ -241,6 +281,7 @@ models:
   codestral-local:
     provider: ollama
     model_id: qwen3:4b
+    context_window: 32768
     max_output_tokens: 8192
     supports_thinking: false
     disable_thinking: true
@@ -253,6 +294,7 @@ models:
   deepseek-local:
     provider: ollama
     model_id: "qwen3.5:latest"
+    context_window: 32768
     max_output_tokens: 8192
     supports_thinking: false
     disable_thinking: true
@@ -263,6 +305,7 @@ models:
   qwen3-local:
     provider: ollama
     model_id: "qwen3.5:latest"
+    context_window: 32768
     max_output_tokens: 32768
     supports_thinking: false
     disable_thinking: true
@@ -276,6 +319,7 @@ models:
   kimi-cloud:
     provider: ollama_cloud
     model_id: "kimi-k2.6:cloud"
+    context_window: 128000
     max_output_tokens: 32768
     supports_thinking: false
     disable_thinking: false
@@ -288,6 +332,7 @@ models:
   minimax-cloud:
     provider: ollama_cloud
     model_id: "minimax-m3"
+    context_window: 1000000
     max_output_tokens: 32768
     supports_thinking: false
     disable_thinking: false
@@ -312,6 +357,7 @@ models:
   kimi-local:
     provider: ollama
     model_id: "qwen3.5:latest"
+    context_window: 32768
     max_output_tokens: 32768
     supports_thinking: false
     disable_thinking: true
@@ -323,6 +369,7 @@ models:
   deepseek-cloud:
     provider: ollama_cloud
     model_id: "deepseek-v3.2"
+    context_window: 128000
     max_output_tokens: 32768
     supports_thinking: false
     disable_thinking: true
@@ -344,6 +391,7 @@ models:
   gpt-oss-cloud:
     provider: ollama_cloud
     model_id: "gpt-oss:120b"
+    context_window: 128000
     max_output_tokens: 32768
     supports_thinking: false
     supports_tools: true
@@ -372,6 +420,7 @@ models:
   gemma3-local:
     provider: ollama
     model_id: gemma4:e4b
+    context_window: 32768
     max_output_tokens: 4096
     supports_thinking: false
     supports_tools: false
@@ -382,6 +431,7 @@ models:
   llava-local:
     provider: ollama
     model_id: gemma4:e4b
+    context_window: 32768
     max_output_tokens: 4096
     supports_thinking: false
     supports_tools: false
@@ -419,6 +469,7 @@ models:
   leanstral:
     provider: mistral
     model_id: labs-leanstral-2603
+    context_window: 128000
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -429,6 +480,7 @@ models:
   leanstral-local:
     provider: mistral_vllm
     model_id: mistralai/Leanstral-2603
+    context_window: 32768
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -466,6 +518,7 @@ models:
   claude-cli:
     provider: cli
     model_id: claude-cli
+    context_window: 200000
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: false
@@ -475,6 +528,7 @@ models:
   cogito-cloud:
     provider: ollama_cloud
     model_id: "cogito-2.1:671b"
+    context_window: 32768
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -484,6 +538,7 @@ models:
   gemini3-cloud:
     provider: ollama_cloud
     model_id: "gemini-3-flash-preview"
+    context_window: 1000000
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -496,6 +551,7 @@ models:
   glm5-cloud:
     provider: ollama_cloud
     model_id: "glm-5"
+    context_window: 128000
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -517,6 +573,7 @@ models:
   mistral-large-cloud:
     provider: ollama_cloud
     model_id: "mistral-large-3:675b"
+    context_window: 128000
     max_output_tokens: 32768
     supports_thinking: false
     supports_tools: true
@@ -526,6 +583,7 @@ models:
   nemotron-cloud:
     provider: ollama_cloud
     model_id: "nemotron-3-super"
+    context_window: 128000
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -535,6 +593,7 @@ models:
   qwen3next-cloud:
     provider: ollama_cloud
     model_id: "qwen3-next:80b"
+    context_window: 128000
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -663,6 +722,13 @@ routing:
 
   collaboration:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  # Security Canvas (tools/security_canvas) — agent reasoning + NL query.
+  # Local-first utility chain routed through the governed LLMRouter (shx-llm-01);
+  # replaces the canvas's hardcoded direct-to-Ollama calls.
+  security_canvas:
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
   # INTaaS / FathomDesk intelligence functions (Phase INT-COT)
@@ -1001,6 +1067,27 @@ routing:
     chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
     effort: high
 
+  # -----------------------------------------------------------------------
+  # Divergence role chains (single isolated generative fan-out that produces a
+  # raw idea pool -- see tools.llm.chain_orchestrator.invoke_divergence).
+  # divergence_branch_pool: same diverse-model-pool idea as council_advisor_pool,
+  #   but each slot is paired with a GENERATIVE frame (First-Principles Rebuild,
+  #   Analogical Transfer, ...) and told to produce candidates, not critique.
+  # divergence_critic: reserved for the SEPARATE dvg-critic-* scoring pass
+  #   (categorical scorer), never used inside the generative fan-out itself --
+  #   the generator/critic split is deliberately mechanical.
+  # NOTE: a LOCAL-ONLY function inherits its own routing constraints unchanged;
+  #   divergence opens no new egress path. When a function is pinned local, its
+  #   per-function routing keeps every branch on local models.
+  # -----------------------------------------------------------------------
+  divergence_branch_pool:
+    chain: [qwen3-local, llama-local, deepseek-local, claude-haiku, claude-sonnet, gpt-4o, gpt-4o-mini, gemini-2.5-flash, kimi-cloud]
+    effort: medium
+
+  divergence_critic:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
+    effort: high
+
   # Slide Deck Generator functions
   slides_outline_planning:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
@@ -1021,6 +1108,19 @@ routing:
   slides_topic_research:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
+
+  # Network Canvas AI routes (tools/network/routes/ai.py). Migrated off a
+  # hardcoded api.anthropic.com POST onto the router (lpx-router-01). Claude-first
+  # to preserve prior behaviour, with local fallback for air-gap.
+  network_topology:
+    chain: [claude-sonnet, kimi-cloud, qwen3-local, gpt-4o, llama-local]
+    effort: medium
+  network_qa:
+    chain: [claude-sonnet, kimi-cloud, qwen3-local, gpt-4o, llama-local]
+    effort: medium
+  network_chat_prep:
+    chain: [claude-sonnet, kimi-cloud, qwen3-local, gpt-4o, llama-local]
+    effort: low
 
   default:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
@@ -1109,6 +1209,19 @@ routing:
 
   dic_anomaly_severity:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  # KG entity + relationship extraction from chunk text (rag_to_kg_ingester).
+  # Extracts entities and infers edges among them; structured JSON output. Chain
+  # leads with kimi-cloud (the configured primary) so it actually runs.
+  kg_relationship_extraction:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
+    effort: low
+
+  # GraphRAG community summarisation (community_engine). Writes a theme summary
+  # for one KG community from its entities + relationships.
+  kg_community_summary:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
     effort: low
 
   harness_anomaly_detection:
@@ -1597,6 +1710,72 @@ chain_orchestration:
       # default 5-advisor panel + medium cost cap is appropriate as-is.
       idealab_council_query:
         num_advisors: 5
+  # -----------------------------------------------------------------------
+  # Divergence: a single isolated generative fan-out that yields a raw idea pool
+  # (tools.llm.chain_orchestrator.invoke_divergence). OPT-IN ONLY.
+  #
+  # Cost is the headline risk: upstream reports ~10 agent calls and 5-10x the
+  # spend of a direct answer, and its guidance is to reserve the method for
+  # decision points where being wrong has real consequences. Therefore:
+  #   * enabled DEFAULT FALSE at the mode level -- divergence never runs unless a
+  #     caller opts a function in via per_function.<fn>.enabled: true.
+  #   * cost_cap_usd / timeout_seconds are declared HERE at the mode level rather
+  #     than inherited: this mode is an N-way parallel fan-out, so the outer
+  #     single-call backstop (0.50 / 120s) would under-reserve the module budget
+  #     by ~num_branches and let a run start that cannot afford to finish. The
+  #     cap is the PRE-FLIGHT ESTIMATE handed to _check_module_budget, which
+  #     trips BEFORE any branch model call.
+  #   * excluded_functions is honored by _is_excluded -- a hard block that wins
+  #     even over a per_function enable.
+  #
+  # CUI: a divergence run over CUI-bearing input inherits the function's existing
+  # LOCAL-ONLY routing and redaction obligations unchanged. The generative frame
+  # prompts add no content that could defeat routing, and LOCAL-ONLY functions
+  # stay on local models across every branch (each branch flows through the same
+  # router pipeline as any other call). Divergence opens no new egress path.
+  # -----------------------------------------------------------------------
+  divergence:
+    enabled: false            # OPT-IN: never a default generation path
+    num_branches: 6           # capped by the frame-set size at runtime
+    frame_set: generative     # resolves via args/ideation_frames.yaml (dvg-frames-01)
+    deepen_top_k: 3           # dvg-critic-03: only the top-K clusters are deepened (expensive)
+    branch_pool_role: divergence_branch_pool  # get_diverse_models() picks N distinct models
+    critic_role: divergence_critic            # reserved for the SEPARATE dvg-critic-* pass
+    # Fan-out-aware backstops (mode rung; see the cost note above). Sized off
+    # num_branches, NOT off a single call: 6 branches x the 0.50 outer per-call
+    # cap. Raising num_branches without raising cost_cap_usd re-introduces the
+    # under-reservation this exists to prevent (pinned by the config tests).
+    cost_cap_usd: 3.00        # >= num_branches * chain_orchestration.cost_cap_usd
+    timeout_seconds: 180      # branches run in parallel; slowest branch + pool contention
+    # Legacy direct model names — fallback when the pool role resolves to nothing
+    branch_models:
+      - qwen3-local
+      - claude-sonnet
+      - gpt-4o
+    excluded_functions: []
+    per_function: {}          # callers opt a function in here with `enabled: true`
+
+# -----------------------------------------------------------------------
+# AGX architecture selection (agx-core-03)
+# Config-driven choice of reasoning architecture from the agx-core-01 registry
+# (tools/llm/architectures/), so a canvas or router function can change
+# reasoning strategy by config rather than code. Kept in THIS file (not a
+# sibling args/architectures.yaml) to respect the single-source rule of
+# resolve_llm_config_path() — one file every component already reads.
+#
+# Resolution precedence (tools/llm/architectures/selection.py):
+#   explicit call arg > functions.<fn> > roles.<role> > default
+# A value of null (the shipped default everywhere) means "no architecture
+# indirection" — the caller keeps its current behavior unchanged. Enabling a
+# named architecture is therefore always an explicit opt-in; omitting the key
+# changes nothing. Names must be registered (registry.list_architectures()):
+# chain_of_thought, chain_of_debate, council, react (+ agx-verify/rag/search).
+# -----------------------------------------------------------------------
+architectures:
+  default: null            # null = current behavior; do not set globally without bench evidence (agx-bench-02)
+  functions: {}            # e.g. {code_review: chain_of_debate}
+  roles: {}                # e.g. {cot_reasoner: chain_of_thought}
+  log_selections: true     # structured logging of which architecture served each request (agx-bench-01 consumes)
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)

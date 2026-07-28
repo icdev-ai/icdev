@@ -50,6 +50,14 @@ class DocModernizationSweepReflex:
         except Exception as exc:
             logger.debug("docmod sweep: migration-canvas eol sync unavailable: %s", exc)
             result["mc_eol_sync"] = {"skipped": str(exc)}
+        # NIST publication revision feed -> docmod_nist_pubs (policy_refs evidence).
+        # Scheduled pull only; cadence-gated and https-only, self-skips offline.
+        try:
+            from tools.doc_modernization.nist_pubs_sync import sync as nist_sync
+            result["nist_pubs_sync"] = nist_sync()
+        except Exception as exc:
+            logger.warning("docmod sweep: nist_pubs_sync failed: %s", exc)
+            result["nist_pubs_sync"] = {"error": str(exc)}
 
         # 2. De facto learner
         try:
@@ -83,6 +91,23 @@ class DocModernizationSweepReflex:
         except Exception as exc:
             logger.warning("docmod sweep: link-rot check failed: %s", exc)
             result["link_rot"] = {"error": str(exc)}
+
+        # 3c. CVE → docmod bridge. Products CITED in documents that have a known
+        # CVE in the supply-chain cve_triage store raise HITL compliance drift
+        # (via acoic, the same sink as step 6). Local read only — no egress; a
+        # missing/empty cve_triage degrades to zero emissions and never raises.
+        try:
+            from tools.doc_modernization.pack_loader import load_config
+            if load_config().get("cve_bridge_enabled", True):
+                from tools.doc_modernization.cve_bridge import bridge_cves
+                result["cve_bridge"] = bridge_cves(
+                    project_id=load_config().get("cve_bridge_project_id")
+                )
+            else:
+                result["cve_bridge"] = {"skipped": "cve_bridge_enabled=false"}
+        except Exception as exc:
+            logger.warning("docmod sweep: cve bridge failed: %s", exc)
+            result["cve_bridge"] = {"error": str(exc)}
 
         # 4. Capped TRUST-gated redline drafting
         try:

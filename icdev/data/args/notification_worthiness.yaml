@@ -1,0 +1,36 @@
+# CUI // SP-CTI
+# Notification worthiness gate (oss2-triage-01) — a scored interrupt/dispatch/file
+# decision in front of tools/notifications routing. Adapts agent-chief's pattern.
+#
+# OFF BY DEFAULT: with enabled=false the gate is inert and notification routing
+# behaves exactly as today. Set enabled=true to filter event volume down to the
+# few worth a human's attention. Tune the weights/thresholds against a real event
+# stream via `python tools/notifications/worthiness.py` + evaluate_stream(), not by
+# guesswork — the point is "evaluated, not asserted".
+enabled: false
+
+# Base worthiness from severity.
+severity_weights:
+  critical: 1.0
+  high: 0.8
+  medium: 0.5
+  low: 0.25
+  info: 0.1
+
+# Per-event-type nudges. Actionable/urgent types boost; routine/scheduled types damp.
+event_type_modifiers:
+  pir_alert: 0.25
+  security_alert: 0.2
+  ci_failure: 0.15
+  compliance_alert: 0.15
+  deploy_failure: 0.15
+  kanban_blocked: 0.1
+  digest: -0.35
+  heartbeat: -0.45
+  awareness_scan: -0.25
+  routine: -0.25
+
+# Score cutoffs. score >= interrupt -> interrupt; >= dispatch -> dispatch; else file.
+thresholds:
+  interrupt: 0.75
+  dispatch: 0.4

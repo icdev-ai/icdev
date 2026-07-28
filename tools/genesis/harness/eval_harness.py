@@ -34,6 +34,34 @@ from typing import Any
 
 LOG = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Canonical outcome vocabulary for harness_eval.actual_outcome
+# ---------------------------------------------------------------------------
+# This column had three writers speaking three different languages: the kanban
+# path wrote resolved/failed, the confidence sampler wrote correct/incorrect,
+# and calibration_report scored its sampled rows against {"passed"} (the
+# vocabulary of kanban_verifications.result, which is the right answer for the
+# *organic* join but not for rows read straight out of harness_eval). The net
+# effect was that a human who correctly labelled a drawn sample produced a row
+# that scored as a miscalibration. Everything that writes or interprets this
+# column must go through the names below.
+OUTCOME_RESOLVED = "resolved"
+OUTCOME_FALSE_POSITIVE = "false_positive"
+OUTCOME_SELF_RESOLVED = "self_resolved"
+OUTCOME_FAILED = "failed"
+OUTCOME_PENDING = "pending"
+
+VALID_OUTCOMES = frozenset({
+    OUTCOME_RESOLVED,
+    OUTCOME_FALSE_POSITIVE,
+    OUTCOME_SELF_RESOLVED,
+    OUTCOME_FAILED,
+    OUTCOME_PENDING,
+})
+
+#: Outcomes that mean "the reflex's decision was borne out".
+SUCCESS_OUTCOMES = frozenset({OUTCOME_RESOLVED})
+
 # Static fallback values — active when anomaly detector lacks sufficient history
 # or when args/genesis_config.yaml (harness.gates) is absent.
 _DEFAULT_GATES = {
@@ -320,15 +348,59 @@ def record_decision(
 def record_outcome(
     task_id: str,
     actual_outcome: str,
-) -> None:
+) -> dict[str, Any]:
     """Update harness_eval rows for task_id with the actual outcome.
 
     actual_outcome: resolved | false_positive | self_resolved | failed | pending
+
+    The UPDATE only matches rows a reflex previously wrote via
+    :func:`record_decision`. When no such row exists — because the decision was
+    never recorded, or the task_id used at decision time differs from the one
+    used here — the statement matches zero rows. That used to return silently,
+    so every caller believed the outcome had been stored while ``harness_eval``
+    kept accumulating rows with ``actual_outcome IS NULL`` and
+    :func:`compute_metrics` quietly derived precision, recall and ECE from a
+    fraction of the table.
+
+    This function therefore reports what actually happened instead of assuming
+    success. It deliberately does **not** insert a synthetic decision row on a
+    miss: an outcome with no matching decision is not evidence a reflex decided
+    anything, and fabricating one would corrupt precision rather than fix it.
+    Callers that hit ``no_decision_row`` should fix the pairing upstream.
+
+    Returns
+    -------
+    dict with keys:
+        status:         recorded | no_decision_row | unknown | error
+        rows:           number of rows updated (-1 when the driver cannot say)
+        task_id:        echoed back for log correlation
+        actual_outcome: echoed back
+        error:          present only when status == "error"
+
+    Never raises — callers treat this as fire-and-forget telemetry.
     """
+    result: dict[str, Any] = {
+        "status": "error",
+        "rows": 0,
+        "task_id": task_id,
+        "actual_outcome": actual_outcome,
+    }
+    if actual_outcome not in VALID_OUTCOMES:
+        # Not fatal — the row is still worth storing — but an off-vocabulary
+        # value is invisible to compute_metrics and calibration scoring, so it
+        # must not pass unremarked.
+        LOG.warning(
+            "[harness] record_outcome called with off-vocabulary outcome %r for "
+            "task_id=%r; metrics recognise only %s",
+            actual_outcome,
+            task_id,
+            sorted(VALID_OUTCOMES),
+        )
+
     conn = None
     try:
         conn = _conn()
-        conn.execute(
+        cur = conn.execute(
             """
             UPDATE harness_eval
                SET actual_outcome = %s,
@@ -339,10 +411,33 @@ def record_outcome(
             (actual_outcome, _utcnow(), task_id),
         )
         conn.commit()
+
+        rows = getattr(cur, "rowcount", -1)
+        rows = -1 if rows is None else int(rows)
+        result["rows"] = rows
+
+        if rows > 0:
+            result["status"] = "recorded"
+        elif rows == 0:
+            result["status"] = "no_decision_row"
+            LOG.warning(
+                "[harness] record_outcome matched no decision row for task_id=%r "
+                "(outcome=%r) — the outcome was NOT recorded. Either the reflex "
+                "never called record_decision for this task, the task_id differs "
+                "between the decision and outcome call sites, or an outcome was "
+                "already set.",
+                task_id,
+                actual_outcome,
+            )
+        else:
+            # Driver could not report an affected-row count; do not cry wolf.
+            result["status"] = "unknown"
     except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
         LOG.warning("[harness] record_outcome failed for %s: %s", task_id, exc)
     finally:
         _safe_close(conn)
+    return result
 
 
 def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:

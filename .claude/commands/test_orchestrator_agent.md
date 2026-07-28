@@ -17,6 +17,14 @@ tags:
 
 CUI // SP-CTI
 
+> **⚠️ Reference seed — NOT an executable capability (oss2-fix-03 / D3).**
+> This card embeds an AutoGen agent definition, but **AutoGen is not an ICDEV
+> dependency and nothing executes it** — `autogen` is imported nowhere in `tools/`.
+> It is retained as a design reference from the SkillHub seed, not a wired agent.
+> For the capability it describes, use ICDEV's actual implementation: the `/test`
+> command (`.claude/commands/test.md`) or the test orchestrator
+> (`tools/testing/test_orchestrator.py`).
+
 ## Overview
 
 AutoGen multi-agent orchestrator that generates, runs, and iteratively fixes failing tests.

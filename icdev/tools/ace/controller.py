@@ -253,14 +253,11 @@ class ACEController:
         Best-effort: never raises.
         """
         try:
-            import os
             import re
-            from pathlib import Path
 
-            auto_dir = (
-                Path(os.environ.get("USERPROFILE", Path.home()))
-                / ".claude/projects/C--AI-ICDev/memory"
-            )
+            from tools.memory.claude_memory_path import claude_memory_dir
+
+            auto_dir = claude_memory_dir()
             if not auto_dir.is_dir():
                 return ""
 
@@ -308,16 +305,13 @@ class ACEController:
         Best-effort: never raises.
         """
         try:
-            import os
             import hashlib
-            from pathlib import Path
             from datetime import datetime, timezone
+
+            from tools.memory.claude_memory_path import claude_memory_dir
             from tools.memory.memory_write import update_crossrefs
 
-            auto_dir = (
-                Path(os.environ.get("USERPROFILE", Path.home()))
-                / ".claude/projects/C--AI-ICDev/memory"
-            )
+            auto_dir = claude_memory_dir()
             if not auto_dir.is_dir():
                 return
 

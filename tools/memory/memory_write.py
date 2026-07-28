@@ -84,8 +84,12 @@ def write_to_db(
         )
     existing = c.fetchone()
     if existing:
-        # Merge: bump updated_at to record the re-encounter
-        # decay_weight intentionally not reset on update — managed by hybrid_search decay pass
+        # Merge: bump updated_at to record the re-encounter.
+        # D7: decay_weight is NOT actively managed — there is no "hybrid_search decay
+        # pass" (grep confirms none in hybrid_search.py / time_decay.py). Effective
+        # relevance decay is computed on the fly from created_at (tools/memory/
+        # time_decay.py), so this column stays at its insert-time 1.0 and is not read
+        # by retrieval. Its only writer is reset_decay() below, which has no callers.
         c.execute(
             "UPDATE memory_entries SET updated_at = datetime('now') WHERE id = %s",
             (existing[0],),
@@ -218,19 +222,14 @@ def update_crossrefs(new_slug: str, new_content: str, memory_dir: Path | None = 
     Returns:
         List of file paths that were updated with a back-link.
     """
-    import os
     import re
 
     if memory_dir is None:
-        userprofile = Path(os.environ.get("USERPROFILE", Path.home()))
-        project_slug = (
-            str(BASE_DIR)
-            .replace("\\", "-")
-            .replace("/", "-")
-            .replace(":", "-")
-            .lstrip("-")
-        )
-        memory_dir = userprofile / ".claude" / "projects" / project_slug / "memory"
+        # This derivation used to live here and was duplicated as a hardcoded
+        # literal in wiki_tool_query and ace/controller. One definition now.
+        from tools.memory.claude_memory_path import claude_memory_dir
+
+        memory_dir = claude_memory_dir(BASE_DIR)
 
     if not memory_dir.is_dir():
         return []
@@ -274,7 +273,13 @@ def update_crossrefs(new_slug: str, new_content: str, memory_dir: Path | None = 
 
 
 def reset_decay(memory_id: str, conn=None) -> None:
-    """Reset a memory's decay weight to 1.0 (called after retrieval strengthening)."""
+    """Reset a memory's decay weight to 1.0.
+
+    D7: currently has NO callers — retrieval strengthening is not wired, and actual
+    decay is computed on the fly from created_at (time_decay.py), so decay_weight is
+    a dead column. Retained (not dropped) to avoid a migration; wire this from the
+    retrieval path if strengthening is ever implemented, or drop the column then.
+    """
     close = conn is None
     if conn is None:
         from tools.db.storage import get_connection

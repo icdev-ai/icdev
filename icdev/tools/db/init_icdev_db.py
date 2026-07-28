@@ -2167,6 +2167,13 @@ CREATE TABLE IF NOT EXISTS agent_token_usage (
     thinking_tokens INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,
     cost_estimate_usd REAL DEFAULT 0.0,
+    -- nav-sec-09 attribution. token_tracker.py has always INSERTed these and
+    -- ALTERs them in at runtime as a best-effort guarded by `except: pass`, so
+    -- a fresh bootstrap that hit any error got a table its own writer could not
+    -- use. Declaring them here makes the ALTER a no-op rather than the only
+    -- thing standing between the schema and a broken INSERT.
+    user_id TEXT DEFAULT NULL,
+    api_key_source TEXT DEFAULT 'config',
     classification TEXT DEFAULT 'CUI',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

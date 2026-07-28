@@ -45,6 +45,25 @@ os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+CREATE TABLE IF NOT EXISTS web_fetch_provenance (
+    id TEXT PRIMARY KEY,
+    citation_id TEXT,
+    requested_url TEXT NOT NULL,
+    final_url TEXT,
+    http_status INTEGER,
+    content_hash TEXT NOT NULL,
+    content_type TEXT,
+    content_length INTEGER,
+    etag TEXT,
+    last_modified TEXT,
+    fetched_at TEXT NOT NULL,
+    fetcher TEXT,
+    classification TEXT DEFAULT 'CUI',
+    project_id TEXT,
+    tenant_id TEXT DEFAULT '',
+    metadata TEXT DEFAULT '{}'
+);
+
 -- Dashboard auth: the before_request hook validates session user_id against
 -- dashboard_users; route tests set session["user_id"]="test-admin".
 CREATE TABLE IF NOT EXISTS dashboard_users (

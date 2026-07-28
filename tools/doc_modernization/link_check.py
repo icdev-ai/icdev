@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import functools
 import hashlib
-import ipaddress
 import json
 import re
 import socket
@@ -186,90 +185,13 @@ def extract_urls(text: str) -> list[str]:
 
 # ── egress guard ──────────────────────────────────────────────────────────────
 
-def _ip_is_denied(ip: ipaddress._BaseAddress) -> bool:
-    """True for any address that is not globally routable public space.
-
-    The union below covers loopback, private/unique-local, link-local (incl. the
-    instance-metadata address), multicast, unspecified and reserved ranges for
-    both IPv4 and IPv6.
-    """
-    return bool(
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
-
-
-def egress_guard(url: str, cfg: dict, resolver=None) -> tuple[bool, str, list[str]]:
-    """Decide whether ``url`` may be contacted. Returns (allowed, reason, ips).
-
-    Enforced before any outbound connection. ``resolver`` defaults to
-    ``socket.getaddrinfo`` and is injectable for testing.
-    """
-    resolver = resolver or socket.getaddrinfo
-    try:
-        parts = urllib.parse.urlsplit(url)
-    except Exception:
-        return (False, "malformed", [])
-
-    if (parts.scheme or "").lower() != "https":
-        return (False, "scheme_not_https", [])
-    host = parts.hostname
-    if not host:
-        return (False, "no_host", [])
-    host_l = host.lower()
-
-    # Denylist beats allowlist. Suffix match so "example.com" covers subdomains.
-    denylist = [str(h).lower() for h in (cfg.get("denylist") or [])]
-    if any(host_l == d or host_l.endswith("." + d) for d in denylist):
-        return (False, "denylisted", [])
-    allowlist = [str(h).lower() for h in (cfg.get("allowlist") or [])]
-    if allowlist and not any(host_l == a or host_l.endswith("." + a) for a in allowlist):
-        return (False, "not_allowlisted", [])
-
-    # A literal-IP host skips DNS but is still range-checked.
-    try:
-        lit = ipaddress.ip_address(host)
-    except ValueError:
-        lit = None
-    if lit is not None:
-        if _ip_is_denied(lit):
-            return (False, "denied_ip_range", [str(lit)])
-        return (True, "ok", [str(lit)])
-
-    # Resolve, then check EVERY answer. One non-public address anywhere in the
-    # answer set fails the whole URL — the resolve-then-check step.
-    port = parts.port or 443
-    try:
-        infos = resolver(host, port, proto=socket.IPPROTO_TCP)
-    except socket.gaierror:
-        # Unresolvable: a dead domain and a missing network are indistinguishable
-        # here, so we refuse to call it rotted — mapped to 'not_checked' upstream.
-        return (False, "unresolved", [])
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("link_check: resolver error for %s: %s", host, exc)
-        return (False, "unresolved", [])
-
-    ips: list[str] = []
-    for info in infos:
-        try:
-            ip_str = info[4][0]
-        except (IndexError, TypeError):
-            continue
-        ips.append(ip_str)
-        try:
-            ip_obj = ipaddress.ip_address(ip_str)
-        except ValueError:
-            return (False, "denied_ip_range", ips)
-        if _ip_is_denied(ip_obj):
-            return (False, "denied_ip_range", ips)
-    if not ips:
-        return (False, "unresolved", [])
-    return (True, "ok", ips)
-
+# ── Egress gate (moved to tools/http/egress_guard.py by oss-filter-03) ────────
+#
+# The implementation now lives with the rest of the fetch code. It was here only
+# because this link-rot checker happened to be the first caller — which is
+# exactly why nothing else found it. Re-exported so this module's own callers,
+# and tools/browser/scope.py, are unaffected.
+from tools.http.egress_guard import _ip_is_denied, egress_guard  # noqa: E402,F401
 
 # ── HTTP probe ────────────────────────────────────────────────────────────────
 

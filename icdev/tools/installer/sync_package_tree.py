@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -133,11 +134,23 @@ EXCLUDE_PATTERNS = (
     "*.orig",
 )
 
-# Directories to exclude wholesale (path suffix match)
+# Directories to exclude wholesale, matched on ANY path component.
+#
+# "logs" is deliberately NOT here. It was, and because the match is by component
+# at any depth it also swallowed `context/iqe/queries/logs/` — the /logs canvas's
+# IQE seed queries — so that canvas shipped with an empty Ask-Any-Canvas widget.
+# .gitignore carries a comment about this exact directory being lost the same
+# way. Runtime log directories are excluded by ROOT-ANCHORED path below instead.
 EXCLUDE_DIRS = (
     "screenshots",       # dashboard test screenshots (1.2 MB)
-    "logs",              # runtime logs
     "__pycache__",
+)
+
+#: Repo-root-relative directories excluded wholesale. Anchored, so a source
+#: directory that merely SHARES a name is unaffected.
+EXCLUDE_ROOT_DIRS = (
+    "logs",
+    ".logs",
 )
 
 
@@ -157,7 +170,52 @@ def _should_skip(path: Path) -> bool:
     for part in path.parts:
         if part in EXCLUDE_DIRS:
             return True
+    # Root-anchored excludes: only the repo's own top-level runtime dirs.
+    try:
+        rel = path.resolve().relative_to(REPO_ROOT)
+        if rel.parts and rel.parts[0] in EXCLUDE_ROOT_DIRS:
+            return True
+    except (ValueError, OSError):
+        pass
     return False
+
+
+#: A `tools/x.py` that only re-exports from `icdev.tools.x` — the back-compat
+#: shim documented in CLAUDE.md. `icdev.tools.*` is the CANONICAL namespace, so
+#: for these modules the real implementation lives in the mirror and the source
+#: file is the stub.
+_SHIM_RE = re.compile(r"^\s*from\s+icdev\.tools\.[\w.]+\s+import\b", re.M)
+
+
+def _is_backcompat_shim(src_file: Path, target: Path) -> bool:
+    """True when copying ``src_file`` would DESTROY a real implementation.
+
+    Copying a shim over its own twin produces a module that imports from
+    itself — `from icdev.tools.llm.agent_loop import DONE` inside
+    `icdev/tools/llm/agent_loop.py` — which raises ImportError on a partially
+    initialized module the first time anything imports it.
+
+    That is not hypothetical: a sync run replaced the 1,825-line
+    `icdev/tools/llm/agent_loop.py` with its 89-line shim and the result was
+    published to PyPI, where `import icdev.tools.llm.agent_loop` failed outright.
+
+    The guard is deliberately narrow — it only refuses when the source really is
+    a shim (small, and importing from the canonical package) AND a substantially
+    larger implementation already exists at the target. A genuine module that
+    merely happens to import from `icdev.tools.*` still syncs.
+    """
+    if src_file.suffix != ".py" or not target.exists():
+        return False
+    try:
+        src_text = src_file.read_text(encoding="utf-8", errors="replace")
+        dst_text = target.read_text(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - unreadable file is not a shim decision
+        return False
+    if not _SHIM_RE.search(src_text):
+        return False
+    # A shim is a stub. If the target is not meaningfully bigger, the source is
+    # the implementation and must win as usual.
+    return len(dst_text.splitlines()) > len(src_text.splitlines()) * 2
 
 
 def _copy_tree(src: Path, dst: Path, dry_run: bool = False) -> dict:
@@ -176,6 +234,9 @@ def _copy_tree(src: Path, dst: Path, dry_run: bool = False) -> dict:
         if p.is_file():
             rel = p.relative_to(src)
             target = dst / rel
+            if _is_backcompat_shim(p, target):
+                skipped += 1
+                continue
             if not dry_run:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(p, target)
@@ -195,7 +256,33 @@ def sync_tools(dry_run: bool = False, clean: bool = False) -> list:
         return [{"error": f"{src_root} missing"}]
 
     if clean and not dry_run and PKG_TOOLS.exists():
+        # `--clean` removes stale build residue. It must NOT destroy tracked
+        # mirror content, because much of icdev/tools/ has no regenerable
+        # source: where `tools/x.py` is a back-compat SHIM, the REAL
+        # implementation lives only in `icdev/tools/x.py` and in git.
+        #
+        # Deleting the tree also defeats the shim guard, which can only refuse a
+        # copy when a target exists to protect. So a --clean sync overwrote every
+        # real implementation with its 89-line stub — and `--clean` is exactly
+        # what build_release.py runs. Every release built the documented way
+        # would have shipped `icdev.tools.llm.agent_loop` importing from itself.
+        #
+        # Restore the tracked state from git immediately after wiping: stale
+        # untracked files stay gone, tracked content comes back, and the guard
+        # has something to protect. If git cannot restore, the wipe is skipped
+        # entirely rather than left half-done.
         shutil.rmtree(PKG_TOOLS)
+        restored = subprocess.run(
+            ["git", "checkout", "--", str(PKG_TOOLS.relative_to(REPO_ROOT))],
+            cwd=REPO_ROOT, capture_output=True, text=True,
+        )
+        if restored.returncode != 0 or not PKG_TOOLS.exists():
+            raise RuntimeError(
+                "--clean wiped icdev/tools but git could not restore the tracked "
+                f"content ({restored.stderr.strip()[:160]}). Refusing to continue: "
+                "syncing now would overwrite real implementations with their "
+                "back-compat shims. Restore icdev/tools and re-run."
+            )
 
     PKG_TOOLS.mkdir(parents=True, exist_ok=True)
 

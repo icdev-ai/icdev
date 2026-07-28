@@ -44,6 +44,9 @@ Subcommands:
                            List / export (JSONL) / full-text search conversations.
   skills list|search|install|update
                            Manage skills via the local registry + marketplace.
+  cron create|list|pause|resume|remove|run|runs
+                           Schedule standalone-agent prompts or allowlisted
+                           scripts (interval or 5-field cron).
   audit export             Export SOC 2 (and future framework) evidence reports.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
@@ -79,8 +82,17 @@ def main(argv: list[str] | None = None) -> int:
         return enable_main([sub] + rest)
 
     if sub == "setup":
-        from icdev.tools.cli.setup import main as setup_main
-        return setup_main(rest)
+        # `icdev setup` is the GUIDED wizard (OS -> LLM -> database -> RAG ->
+        # Docker -> components). The original component-toggle TUI is still one
+        # flag away as `--components`; the wizard hands off to it directly.
+        #
+        # Flags the old TUI owns (--plain/--json on components) still reach it,
+        # so existing scripted usage does not break.
+        if any(a in rest for a in ("--components", "--plain")):
+            from icdev.tools.cli.setup import main as setup_main
+            return setup_main([a for a in rest if a != "--components"])
+        from icdev.tools.cli.setup_wizard import main as wizard_main
+        return wizard_main(rest)
 
     if sub == "scaffold":
         from icdev.tools.cli.scaffold import main as scaffold_main
