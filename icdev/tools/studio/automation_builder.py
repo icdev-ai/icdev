@@ -579,6 +579,43 @@ def evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
     return False
 
 
+def resolve_input_mapping(mapping: Any, event: dict) -> dict:
+    """Resolve ``{"memory_key": "event.field"}`` against an event payload.
+
+    Lives beside the condition DSL for the same reason it does: an automation
+    action and a workflow trigger both turn an event into workflow inputs, and
+    two implementations of that would drift.  ``tools/studio/event_sources.py``
+    imports this rather than reimplementing it.
+
+    A source string that names no event field is passed through as a literal,
+    so a constant can be mapped without inventing a second syntax.
+    """
+    if isinstance(mapping, str):
+        try:
+            mapping = json.loads(mapping)
+        except (TypeError, ValueError):
+            return {}
+    if not isinstance(mapping, dict):
+        return {}
+
+    resolved: dict[str, Any] = {}
+    for key, src in mapping.items():
+        if not isinstance(src, str):
+            resolved[key] = src
+            continue
+        path = src[6:] if src.startswith("event.") else src
+        cursor: Any = event
+        found = True
+        for part in path.split("."):
+            if isinstance(cursor, dict) and part in cursor:
+                cursor = cursor[part]
+            else:
+                found = False
+                break
+        resolved[key] = cursor if found else src
+    return resolved
+
+
 # ── CLI ───────────────────────────────────────────────────────────────
 
 

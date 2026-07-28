@@ -283,6 +283,14 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.studio import studio_api
     _mount(studio_api, v1_prefix="/api/v1/studio")
 
+    # Wire canvas_bus event sources onto the cross-canvas bus (dwo-evt-01-d5)
+    try:
+        from tools.studio.bus_subscriber import register as _register_studio_bus
+
+        _register_studio_bus()
+    except Exception as exc:
+        logger.warning("studio bus subscriber registration skipped: %s", exc)
+
     try:
         from tools.dashboard.api.news import news_api
         _mount_inline(news_api)   # inline routes: /api/news/*
