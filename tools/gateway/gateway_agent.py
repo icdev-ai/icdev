@@ -295,6 +295,19 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             )
             return jsonify({"status": "rejected", "gate": failed.gate_name if failed else "unknown"}), 200
 
+        # 6b. Studio workflow triggers (dwo-evt-02). The envelope has cleared
+        # all eight gates at this point — this hop deliberately sits AFTER the
+        # chain and opens no route of its own, so an event that failed a gate
+        # has already returned above and starts nothing. Fire-and-forget: the
+        # webhook response must not wait on a workflow run.
+        try:
+            from tools.studio.event_dispatch import dispatch_envelope_async
+            dispatch_envelope_async(envelope, channel_config, dict(data or {}), headers)
+        except Exception as _disp_exc:  # noqa: BLE001
+            # A trigger-registry problem must never turn a delivered webhook
+            # into a 500 or block the command the user actually sent.
+            logger.warning("studio event dispatch skipped: %s", _disp_exc)
+
         # 7. Check confirmation requirement
         if requires_confirmation(envelope.command, effective_allowlist):
             # For now, execute directly — confirmation flow can be added

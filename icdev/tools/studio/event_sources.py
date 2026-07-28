@@ -36,10 +36,8 @@ Input mapping
     {"branch": "event.payload.branch", "env": "staging"}
 
 A source string that names no event field is passed through as a literal, so
-constants need no second syntax.  The resolved dict is seeded into the run's
-``run_memory`` immediately after ``start_run`` returns — ``start_run`` does not
-yet take an ``inputs`` argument (that is dwo-evt-04-d2), so a step that reads a
-trigger input races the seeding.  See the note in :func:`dispatch_event`.
+constants need no second syntax.  The resolved dict is handed to ``start_run``
+as ``inputs=`` (dwo-evt-04-d2), so it is present before the first step runs.
 
 CLI::
 
@@ -76,6 +74,34 @@ logger = get_logger(__name__)
 
 #: Source kinds accepted by the studio_event_sources CHECK constraint.
 SOURCE_KINDS = ("gateway_channel", "canvas_bus", "schedule", "manual")
+
+#: Impact levels in increasing order of sensitivity (dwo-evt-02). An unknown
+#: label sorts to 0 — the most permissive rank — so ``classification_allows``
+#: below compares only labels it recognises and never *silently* refuses on a
+#: typo. The refusal path logs the labels it compared for exactly that reason.
+IL_ORDER = {"IL2": 2, "IL4": 4, "IL5": 5, "IL6": 6}
+
+#: Outcomes recorded on a studio_trigger_events row. The audit has to say what
+#: happened, not merely that something did.
+TRIGGER_OUTCOMES = (
+    "no_match",                # event reached no enabled trigger
+    "matched",                 # trigger matched; this row is the idempotency claim
+    "run_started",             # a run was started (second row, references the claim)
+    "refused_classification",  # event IL exceeds the target workflow's IL
+    "error",                   # start_run raised
+)
+
+#: Outcomes that count as a match for the legacy ``matched`` column.
+_MATCHED_OUTCOMES = ("matched", "run_started")
+
+
+def classification_allows(event_il: str, workflow_il: str) -> bool:
+    """True when an event at ``event_il`` may start a workflow rated ``workflow_il``.
+
+    A workflow may only be started by an event at or below its own IL. The
+    event's classification is never downgraded to make it fit.
+    """
+    return IL_ORDER.get(event_il, 0) <= IL_ORDER.get(workflow_il, 0)
 
 
 def _now_iso() -> str:
@@ -205,6 +231,16 @@ def _row_to_trigger(row) -> dict:
     trig["filter"] = _loads(trig.get("filter_json"), [])
     trig["input_mapping"] = _loads(trig.get("input_mapping_json"), {})
     trig["enabled"] = bool(trig.get("enabled", 1))
+    # dwo-evt-02 columns. Defaulted here rather than assumed present, so a
+    # database that has not run migration 308 still lists triggers — and
+    # defaults to the *most restrictive* posture: IL6 admits any event IL, so
+    # an unmigrated row is not accidentally treated as refusing everything.
+    trig.setdefault("workflow_il", "IL6")
+    trig.setdefault("project_id", "default")
+    if not trig.get("workflow_il"):
+        trig["workflow_il"] = "IL6"
+    if not trig.get("project_id"):
+        trig["project_id"] = "default"
     return trig
 
 
@@ -434,6 +470,29 @@ def match_event(event: dict) -> list[dict]:
 # ── Append-only audit ──────────────────────────────────────
 
 
+def _is_unique_violation(exc: Exception) -> bool:
+    """True when the exception is a duplicate-key error on either backend."""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return "unique" in text or "duplicate key" in text
+
+
+def _is_missing_column(exc: Exception) -> bool:
+    """True when the failure is an absent column on either backend.
+
+    SQLite phrases this differently per statement: a SELECT says "no such
+    column: x" but an INSERT says "table T has no column named x" — matching
+    only the first form silently drops every audit row on an unmigrated
+    database. PostgreSQL raises UndefinedColumn / "column ... does not exist".
+    """
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return (
+        "no such column" in text
+        or "has no column named" in text
+        or "undefinedcolumn" in text
+        or "does not exist" in text
+    )
+
+
 def log_trigger_event(
     source_id: str,
     trigger_id: str | None,
@@ -443,11 +502,26 @@ def log_trigger_event(
     matched: bool,
     run_id: str | None = None,
     reason: str = "",
-) -> str:
+    outcome: str = "",
+    workflow_id: str | None = None,
+    classification: str = "",
+    idempotency_key: str | None = None,
+    envelope_id: str = "",
+) -> str | None:
     """Record one evaluated event.  APPEND-ONLY — never updated or deleted.
 
     Events that matched nothing are logged too (``matched = 0``, ``run_id``
     NULL), so "my trigger never fires" is a question the board can answer.
+
+    ``idempotency_key`` (dwo-evt-02) makes this INSERT the replay guard: the
+    column carries a UNIQUE index, so a webhook retry loses the insert and this
+    returns **None**, and the caller MUST NOT start a run in that case. That is
+    why the claim row is written *before* ``start_run`` — a SELECT-then-INSERT
+    check would let two concurrent deliveries both pass.
+
+    Returns the event_id, ``None`` on a lost idempotency race, or ``""`` when
+    the row could not be written at all (an unmigrated table must not break
+    ingest).
     """
     event_id = f"evt-{uuid.uuid4().hex[:12]}"
     conn = get_connection()
@@ -455,16 +529,60 @@ def log_trigger_event(
         conn.execute(
             "INSERT INTO studio_trigger_events "
             "(event_id, source_id, trigger_id, event_type, payload_json, "
-            " matched, run_id, reason, received_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            " matched, run_id, reason, outcome, workflow_id, classification, "
+            " idempotency_key, envelope_id, received_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 event_id, source_id or None, trigger_id, event_type or "",
                 json.dumps(payload or {}, default=str),
-                1 if matched else 0, run_id, reason, _now_iso(),
+                1 if matched else 0, run_id, reason,
+                outcome or ("matched" if matched else "no_match"),
+                workflow_id, classification, idempotency_key, envelope_id,
+                _now_iso(),
             ),
         )
         conn.commit()
     except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:  # noqa: S110 - rollback failure must not mask the cause
+            pass
+        if idempotency_key and _is_unique_violation(exc):
+            logger.info(
+                "trigger event: duplicate delivery, key=%s — no run will start",
+                idempotency_key,
+            )
+            return None
+        if _is_missing_column(exc):
+            # Database has not run migration 308. Fall back to the pre-dispatch
+            # column set rather than losing the audit row entirely — an
+            # unmigrated deployment must keep answering "why did this run
+            # start", even if it cannot answer "at what classification".
+            if idempotency_key:
+                logger.warning(
+                    "trigger event: idempotency_key column missing — replay "
+                    "protection is NOT active until migration 308 runs. "
+                    "A retried delivery can start a second run.",
+                )
+            try:
+                conn.execute(
+                    "INSERT INTO studio_trigger_events "
+                    "(event_id, source_id, trigger_id, event_type, payload_json, "
+                    " matched, run_id, reason, received_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        event_id, source_id or None, trigger_id, event_type or "",
+                        json.dumps(payload or {}, default=str),
+                        1 if matched else 0, run_id, reason, _now_iso(),
+                    ),
+                )
+                conn.commit()
+                return event_id
+            except Exception as legacy_exc:
+                logger.warning(
+                    "Could not record trigger event for source %s: %s", source_id, legacy_exc
+                )
+                return ""
         logger.warning("Could not record trigger event for source %s: %s", source_id, exc)
         return ""
     finally:
@@ -570,7 +688,6 @@ def dispatch_event(
         )
         return {"status": "ok", "source_id": source_id, "matched": 0, "runs": [], "results": []}
 
-    from tools.studio import run_memory  # noqa: PLC0415
     from tools.studio.workflow_runner import start_run  # noqa: PLC0415
 
     results, runs = [], []
@@ -589,21 +706,14 @@ def dispatch_event(
             continue
 
         try:
-            run_id = start_run(trigger["workflow_id"], project_id)
-            # start_run does not yet accept inputs (that is dwo-evt-04-d2), so
-            # the mapped inputs are seeded into run memory immediately after.
-            # The worker thread is already live, so this races the first step:
-            # a step that reads a trigger input may not see it yet.  When
-            # start_run grows an ``inputs=`` parameter, pass match["inputs"]
-            # there and delete this loop rather than keeping both.
-            for key, value in (match["inputs"] or {}).items():
-                try:
-                    run_memory.set(run_id, key, value)
-                except Exception as mem_exc:  # noqa: BLE001
-                    logger.warning(
-                        "studio.events: could not seed input %s on run %s: %s",
-                        key, run_id, mem_exc,
-                    )
+            # dwo-evt-04-d2 gave start_run an ``inputs=`` parameter, so the
+            # mapped inputs go in with the run rather than being seeded into
+            # run memory immediately afterwards. The old seeding raced the
+            # worker thread: a first step reading a trigger input could run
+            # before the seed landed. Passing them here closes that race.
+            run_id = start_run(
+                trigger["workflow_id"], project_id, inputs=match["inputs"] or {}
+            )
         except Exception as exc:
             event_id = log_trigger_event(
                 source_id, trigger_id, event_type, event["payload"],
