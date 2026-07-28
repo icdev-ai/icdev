@@ -13,9 +13,8 @@ import yaml
 from flask import Blueprint, jsonify, render_template, request
 
 from .constants import (
-    APP_NAME, SCENARIO_SLUG, AI_TOOLS_CATALOG, INJECT_TYPES, LEVELS,
-    EVENT_ONTOLOGY_TYPES, SCOREBOARD_ONTOLOGY_FILTERS,
-)
+    APP_NAME, SCENARIO_SLUG, INJECT_TYPES, LEVELS,
+    EVENT_ONTOLOGY_TYPES, SCOREBOARD_ONTOLOGY_FILTERS, catalog_for_render)
 from .db import migrate
 from tools.ai_game_engine.ontology import (
     resolve_scenario_ontology, resolve_role_ontology, filter_by_ontology_class,
@@ -118,7 +117,7 @@ def player_console(session_id: int):
         session=session,
         teams=teams,
         roles=roles,
-        ai_tools=AI_TOOLS_CATALOG,
+        ai_tools=catalog_for_render(),
         levels=LEVELS,
         event_ontology_types=EVENT_ONTOLOGY_TYPES,
     )
@@ -213,7 +212,7 @@ def scenario_manager():
 def scenario_builder():
     _ensure_init()
     inject_types = INJECT_TYPES
-    ai_tools = AI_TOOLS_CATALOG
+    ai_tools = catalog_for_render()
     # Load rubric names from DB inject templates
     conn = get_connection()
     templates = conn.execute(
