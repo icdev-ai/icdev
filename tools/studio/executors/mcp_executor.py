@@ -52,10 +52,31 @@ limit applies to them yet — the check goes live the moment a canvas-owned tool
 is allowlisted. The IL half is live now: a run whose caller context declares
 IL2 cannot dispatch an IL4 platform tool.
 
-Still to land on top of this: the human-approval path that makes
-``requires_approval`` tools reachable (d4), and append-only audit of every
-attempt (d5). Until d4, a ``requires_approval`` tool is refused with its own
-reason rather than silently treated as unknown.
+Human approval gate (dwo-mcp-02-d4)
+-----------------------------------
+A tool on the ``requires_approval`` list is dispatchable, but only behind an
+approved human gate in the same run. Immediately before dispatch — after the
+allowlist, the caller's IL/roles and the parameter schema, so nobody is woken
+to approve a call that would have been refused anyway — the executor parks a
+gate and blocks on it.
+
+The gate reuses the HITL infrastructure as-is: it is a
+``studio_workflow_run_steps`` row with no tool path and status
+``awaiting_approval``, which is exactly what an authored ``node_type: human``
+step writes. ``workflow_runner.approve_step()`` / ``reject_step()`` /
+``get_pending_approvals()``, the workflow Details modal, the Telegram listener
+and the resume surface therefore all act on it unchanged — no new flag, no new
+table, no second approval vocabulary.
+
+One gate per (run, tool), found-or-created: a resumed run re-attaches to the
+gate an approver was already shown rather than opening a second one beside it.
+Approval dispatches; rejection refuses with ``mcp_tool_approval_rejected``;
+an undecided gate refuses with ``mcp_tool_awaiting_human_approval`` and stays
+parked, so resuming the run picks the decision up. A dispatch with no run to
+park a gate on, or an unreachable gate store, refuses with
+``mcp_tool_approval_gate_unavailable`` — fail-closed in every direction.
+
+Still to land on top of this: append-only audit of every attempt (d5).
 """
 from __future__ import annotations
 
@@ -95,10 +116,20 @@ class MCPWorkflowGateError(RuntimeError):
     as ``error_type`` and d5 can audit it without re-parsing the message.
     """
 
-    def __init__(self, message: str, *, tool: str = "", reason: str = ""):
+    def __init__(
+        self,
+        message: str,
+        *,
+        tool: str = "",
+        reason: str = "",
+        step_run_id: str = "",
+    ):
         super().__init__(message)
         self.tool = tool
         self.reason = reason
+        #: Gate this refusal is parked on, when there is one (d4). Carried so an
+        #: operator can approve it from the step's stdout alone.
+        self.step_run_id = step_run_id
 
 
 def _candidate_gate_paths() -> list[Path]:
@@ -201,8 +232,22 @@ def approval_tools(policy: dict | None = None) -> frozenset[str]:
     )
 
 
-def check_tool_allowed(tool: str, policy: dict | None = None) -> None:
-    """Refuse ``tool`` unless the allowlist names it. Returns None when allowed.
+#: Disposition returned by :func:`check_tool_allowed` for a tool that
+#: dispatches unattended.
+DISPOSITION_ALLOWED = "allowed"
+
+#: Disposition for a tool that dispatches only behind an approved human gate.
+DISPOSITION_REQUIRES_APPROVAL = "requires_approval"
+
+
+def check_tool_allowed(tool: str, policy: dict | None = None) -> str:
+    """Refuse ``tool`` unless the allowlist names it; return how it dispatches.
+
+    Returns ``'allowed'`` (dispatch unattended) or ``'requires_approval'``
+    (dispatch only after :func:`await_approval` clears a human gate). Passing
+    this check is therefore necessary but not sufficient — a
+    ``requires_approval`` tool is still undispatchable until its gate is
+    approved, and ``run()`` is the only path that dispatches at all.
 
     Raises:
         MCPWorkflowGateError: always names the tool, so the refusal is
@@ -211,17 +256,10 @@ def check_tool_allowed(tool: str, policy: dict | None = None) -> None:
     policy = policy if policy is not None else load_gate_policy()
 
     if tool in allowed_tools(policy):
-        return
+        return DISPOSITION_ALLOWED
 
     if tool in approval_tools(policy):
-        raise MCPWorkflowGateError(
-            f"MCP tool '{tool}' is state-changing and requires an approved "
-            f"human gate in the same run before it can be dispatched "
-            f"({GATE_POLICY_KEY}.requires_approval). Workflow approval gates "
-            f"are not wired yet (dwo-mcp-02-d4), so it is refused.",
-            tool=tool,
-            reason="mcp_tool_awaiting_human_approval",
-        )
+        return DISPOSITION_REQUIRES_APPROVAL
 
     # Suggest from the allowlist, not the registry: a typo of an allowlisted
     # tool is the common case, and naming it costs no registry import.
@@ -235,6 +273,252 @@ def check_tool_allowed(tool: str, policy: dict | None = None) -> None:
         + hint,
         tool=tool,
         reason="mcp_tool_not_allowlisted",
+    )
+
+
+# ── Human approval gate (dwo-mcp-02-d4, gate MCP-WF-001) ───────────────────
+#
+# A `requires_approval` tool parks on the *existing* HITL representation: a
+# `studio_workflow_run_steps` row with no tool path and status
+# `awaiting_approval` is exactly what a `node_type: human` step already writes.
+# So `workflow_runner.approve_step()` / `reject_step()` /
+# `get_pending_approvals()`, the Details modal, the Telegram listener and the
+# resume surface all act on this gate unchanged — no new flag, no new table, no
+# second approval vocabulary.
+
+#: Step id prefix of the gate a ``requires_approval`` tool parks on. One gate
+#: per (run, tool): the same tool dispatched twice in a run reuses the decision
+#: rather than asking a second approver the same question.
+APPROVAL_STEP_PREFIX = "approval:"
+
+#: Seconds the executor waits for a decision before giving up. A gate that
+#: outlives the wait stays parked in the database, so resuming the run
+#: re-attaches to it (and dispatches immediately if it was decided meanwhile)
+#: rather than opening a fresh one.
+DEFAULT_APPROVAL_WAIT = 900.0
+
+#: Seconds between re-reads of the gate row while waiting.
+APPROVAL_POLL_SECONDS = 1.0
+
+#: Env override for the wait window, for a deployment whose approvers are
+#: slower (or a test that wants no wait at all).
+APPROVAL_WAIT_ENV = "ICDEV_MCP_APPROVAL_WAIT"
+
+#: The shared HITL vocabulary's terminal gate statuses.
+_DECIDED = ("approved", "rejected")
+
+
+def approval_step_id(tool: str) -> str:
+    """Step id of ``tool``'s gate within a run. Stable, so a resume re-attaches."""
+    return f"{APPROVAL_STEP_PREFIX}{tool}"
+
+
+def approval_wait_seconds(policy: dict | None = None) -> float:
+    """How long to wait for a decision: env, then policy, then the default.
+
+    Zero is legitimate and means "park the gate and do not block" — the gate is
+    still created and still visible to approvers, the dispatch just fails now
+    instead of later. Unparseable values fall through to the next source rather
+    than raising, because a typo in an operational knob must not make a
+    state-changing tool undispatchable in a way that reads as a policy refusal.
+    """
+    for raw in (
+        os.environ.get(APPROVAL_WAIT_ENV),
+        (policy or {}).get("approval_wait_seconds"),
+    ):
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            continue
+    return DEFAULT_APPROVAL_WAIT
+
+
+def _gate_connection():
+    """Open the Studio database. Import is lazy so a refused tool never pays it."""
+    from tools.db.storage import get_connection  # noqa: PLC0415
+
+    return get_connection()
+
+
+def _read_gate(conn, run_id: str, step_id: str) -> dict | None:
+    """Latest gate row for (run, tool), or None when no gate has been opened."""
+    row = conn.execute(
+        "SELECT step_run_id, status, stderr FROM studio_workflow_run_steps "
+        "WHERE run_id = %s AND step_id = %s ORDER BY started_at DESC LIMIT 1",
+        (run_id, step_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _set_run_status(run_id: str, status: str) -> None:
+    """Reflect the gate on the run row so it shows up as parked in the UI.
+
+    Best-effort: this is visibility, not authorization, and a failure here must
+    not decide the gate. The run's own worker rewrites this row when the run
+    finishes either way.
+    """
+    try:
+        conn = _gate_connection()
+        try:
+            conn.execute(
+                "UPDATE studio_workflow_runs SET status = %s WHERE run_id = %s",
+                (status, run_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — see docstring
+        pass
+
+
+def open_approval_gate(run_id: str, tool: str) -> dict:
+    """Return ``tool``'s gate in ``run_id``, creating a pending one if absent.
+
+    Find-or-create, not create: a run resumed after a restart, or a tool
+    dispatched twice, must re-attach to the gate an approver has already been
+    shown rather than silently opening a second one beside it.
+    """
+    import uuid  # noqa: PLC0415
+
+    step_id = approval_step_id(tool)
+    conn = _gate_connection()
+    try:
+        existing = _read_gate(conn, run_id, step_id)
+        if existing and existing["status"] in (*_DECIDED, "awaiting_approval"):
+            return existing
+
+        step_run_id = f"sr-{uuid.uuid4().hex[:12]}"
+        conn.execute(
+            """INSERT INTO studio_workflow_run_steps
+               (step_run_id, run_id, step_id, step_name, tool, status, started_at)
+               VALUES (%s, %s, %s, %s, '', 'awaiting_approval', %s)""",
+            (
+                step_run_id,
+                run_id,
+                step_id,
+                f"Approve MCP tool: {tool}",
+                _utcnow(),
+            ),
+        )
+        conn.commit()
+        return {"step_run_id": step_run_id, "status": "awaiting_approval", "stderr": ""}
+    finally:
+        conn.close()
+
+
+def _utcnow() -> str:
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _poll_gate(
+    run_id: str, step_id: str, wait_seconds: float, poll_seconds: float
+) -> tuple[str, str]:
+    """Block until the gate is decided or the window closes.
+
+    Returns ``(status, reason)``; status is ``''`` on expiry. Polls the database
+    rather than an in-process Event because the approver is in another process
+    (the dashboard, the Telegram listener, the CLI) — the executor is a
+    subprocess of the run, not of whoever approves.
+    """
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            conn = _gate_connection()
+            try:
+                row = _read_gate(conn, run_id, step_id)
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001 — a blip must not decide the gate
+            row = None
+        if row and row["status"] in _DECIDED:
+            return row["status"], row.get("stderr") or ""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return "", ""
+        time.sleep(min(poll_seconds, remaining))
+
+
+def await_approval(
+    tool: str,
+    run_id: str,
+    *,
+    wait_seconds: float | None = None,
+    poll_seconds: float = APPROVAL_POLL_SECONDS,
+    policy: dict | None = None,
+) -> dict:
+    """Block dispatch of ``tool`` until a human approves its gate in ``run_id``.
+
+    Returns the approval record on approval. Raises on rejection, on expiry,
+    and when there is no run to park a gate on — the gate is fail-closed in
+    every direction, including an unreachable gate store.
+    """
+    step_id = approval_step_id(tool)
+    if not run_id:
+        raise MCPWorkflowGateError(
+            f"MCP tool '{tool}' is state-changing and dispatches only behind an "
+            f"approved human gate ({GATE_POLICY_KEY}.requires_approval), but "
+            f"this dispatch has no run to park one on (no --run-id / "
+            f"ICDEV_RUN_ID). Run it as a workflow step so an approver can see "
+            f"and decide the gate. Refusing — the gate is fail-closed.",
+            tool=tool,
+            reason="mcp_tool_approval_gate_unavailable",
+        )
+
+    try:
+        gate = open_approval_gate(run_id, tool)
+    except Exception as exc:  # noqa: BLE001
+        raise MCPWorkflowGateError(
+            f"MCP tool '{tool}' requires a human gate, but the gate store is "
+            f"unreachable ({type(exc).__name__}: {exc}). Refusing to dispatch "
+            f"an unapproved state-changing tool — the gate is fail-closed.",
+            tool=tool,
+            reason="mcp_tool_approval_gate_unavailable",
+        ) from exc
+
+    step_run_id = gate["step_run_id"]
+    status, reason = gate["status"], gate.get("stderr") or ""
+
+    if status not in _DECIDED:
+        wait = approval_wait_seconds(policy) if wait_seconds is None else max(0.0, wait_seconds)
+        # Show the run as parked while a person decides, the same way the runner
+        # does for an authored human node.
+        _set_run_status(run_id, "awaiting_approval")
+        status, reason = _poll_gate(run_id, step_id, wait, poll_seconds)
+        if status == "approved":
+            _set_run_status(run_id, "running")
+
+    if status == "approved":
+        return {
+            "step_run_id": step_run_id,
+            "step_id": step_id,
+            "status": "approved",
+            "decision_note": reason,
+        }
+
+    if status == "rejected":
+        raise MCPWorkflowGateError(
+            f"MCP tool '{tool}' was refused by its human gate: "
+            f"{reason or '(no reason given)'}. The step is denied, not failed — "
+            f"re-running it will re-read this decision.",
+            tool=tool,
+            reason="mcp_tool_approval_rejected",
+            step_run_id=step_run_id,
+        )
+
+    raise MCPWorkflowGateError(
+        f"MCP tool '{tool}' is waiting on human approval and nobody decided its "
+        f"gate in time. The gate stays parked as step_run_id "
+        f"'{step_run_id}' — approve or reject it (workflow Details modal, or "
+        f"workflow_runner.approve_step/reject_step) and resume the run; the "
+        f"resumed dispatch re-attaches to this gate rather than opening a new "
+        f"one.",
+        tool=tool,
+        reason="mcp_tool_awaiting_human_approval",
+        step_run_id=step_run_id,
     )
 
 
@@ -655,24 +939,29 @@ def run(
     run_id: str = "",
     step_id: str = "",
     caller: dict | None = None,
+    approval_wait: float | None = None,
 ) -> dict:
-    """Authorize, look up, validate, and dispatch a registry tool.
+    """Authorize, look up, validate, gate, and dispatch a registry tool.
 
     Args:
         caller: Principal to dispatch as. Resolved from the run's workflow
             context when omitted (see :func:`resolve_caller`).
+        approval_wait: Seconds to wait on a human gate, overriding
+            :func:`approval_wait_seconds`. Only consulted for a
+            ``requires_approval`` tool.
 
     Returns the step result payload.
 
     Raises:
-        MCPWorkflowGateError: ``tool`` is not on the workflow allowlist, or the
-            caller does not clear its IL / role limits. The allowlist is checked
-            first, so a refused tool is never resolved, imported, or called;
-            IL and RBAC are checked after lookup (they read the tool's owning
-            component from its module) but before params and dispatch, so a
-            refused caller never reaches the handler either.
+        MCPWorkflowGateError: ``tool`` is not on the workflow allowlist, the
+            caller does not clear its IL / role limits, or the tool's human gate
+            was rejected or left undecided. The allowlist is checked first, so a
+            refused tool is never resolved, imported, or called; IL and RBAC are
+            checked after lookup (they read the tool's owning component from its
+            module) but before params and dispatch, so a refused caller never
+            reaches the handler either.
     """
-    check_tool_allowed(tool)
+    disposition = check_tool_allowed(tool)
 
     entry = resolve_entry(tool)
 
@@ -686,6 +975,13 @@ def run(
             + "; ".join(violations[:10])
             + (f" (+{len(violations) - 10} more)" if len(violations) > 10 else "")
         )
+
+    # Last check before dispatch, deliberately: a person should not be woken to
+    # approve a call that the allowlist, the caller's IL, or its own parameters
+    # would have refused anyway.
+    approval: dict = {}
+    if disposition == DISPOSITION_REQUIRES_APPROVAL:
+        approval = await_approval(tool, run_id, wait_seconds=approval_wait)
 
     module_path, handler_name = entry["module"], entry["handler"]
     try:
@@ -712,6 +1008,9 @@ def run(
         "component": requirements["component"],
         "result": _jsonable(result),
     }
+    if approval:
+        # Which gate authorized this dispatch — the record d5 audits.
+        payload["approval"] = approval
     written, reason = write_run_memory(run_id, step_id, payload)
     payload["step_id"] = step_id
     payload["memory_key"] = f"{MEMORY_KEY_PREFIX}{step_id}"
@@ -735,6 +1034,9 @@ def main():
                         help="Comma-separated caller roles; overrides run context")
     parser.add_argument("--caller-id", default="", help="Caller principal id")
     parser.add_argument("--tenant-id", default="", help="Caller tenant id")
+    parser.add_argument("--approval-wait", default="",
+                        help="Seconds to wait on a human gate (requires_approval "
+                             "tools only); 0 parks the gate without blocking")
     args = parser.parse_args()
 
     try:
@@ -745,15 +1047,19 @@ def main():
             "principal_id": args.caller_id,
             "tenant_id": args.tenant_id,
         })
-        payload = run(args.tool, params, args.run_id, args.step_id, caller)
+        wait = float(args.approval_wait) if str(args.approval_wait).strip() else None
+        payload = run(args.tool, params, args.run_id, args.step_id, caller, wait)
         print(json.dumps({"status": "success", **payload}))
         sys.exit(0)
     except MCPWorkflowGateError as exc:
         # Before LookupError/Exception: this is a RuntimeError and must not be
         # reported as a generic dispatch failure — the step was refused, not run.
-        print(json.dumps({"status": "failed",
-                          "error_type": exc.reason or "mcp_tool_not_allowlisted",
-                          "tool": args.tool, "error": str(exc)}))
+        refusal = {"status": "failed",
+                   "error_type": exc.reason or "mcp_tool_not_allowlisted",
+                   "tool": args.tool, "error": str(exc)}
+        if exc.step_run_id:
+            refusal["step_run_id"] = exc.step_run_id
+        print(json.dumps(refusal))
         sys.exit(1)
     except LookupError as exc:
         print(json.dumps({"status": "failed", "error_type": "unknown_tool",
