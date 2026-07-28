@@ -1448,7 +1448,7 @@ def init_db():
                 conn.execute(
                     "INSERT INTO idc_templates "
                     "(id, name, category, description, graph_json, tags) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (
                         tpl["id"],
                         tpl["name"],
@@ -1464,10 +1464,10 @@ def init_db():
         # Seed snippets (upsert)
         added = 0
         for snp in _build_snippets():
-            existing_snp = conn.execute("SELECT 1 FROM idc_snippets WHERE id=?", (snp["id"],)).fetchone()
+            existing_snp = conn.execute("SELECT 1 FROM idc_snippets WHERE id=%s", (snp["id"],)).fetchone()
             if not existing_snp:
                 conn.execute(
-                    "INSERT INTO idc_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO idc_snippets (id, name, category, description, graph_json, tags) VALUES (%s,%s,%s,%s,%s,%s)",
                     (snp["id"], snp["name"], snp["category"], snp["description"], snp["graph_json"], snp["tags"]),
                 )
                 added += 1

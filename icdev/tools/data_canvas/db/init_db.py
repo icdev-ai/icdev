@@ -9,13 +9,13 @@ SQLite is the default for dev, air-gap, and single-user deployments.
 """
 
 import json
-import logging
 import os
 import re
 import uuid
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.data_canvas.db.init_db")
 
 # When integrated into ICDEV, DB lives in data/ directory
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]  # tools/data_canvas/db -> ICDev root

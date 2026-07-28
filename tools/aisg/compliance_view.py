@@ -12,12 +12,12 @@ Any widget without a real backing source renders an explicit empty state
 """
 from __future__ import annotations
 
-import logging
 from collections import OrderedDict
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.aisg.compliance_view")
 
 # Display labels for NIST 800-53 control-family codes. These are reference
 # labels only (not posture data) — the counts/coverage below come from the DB.

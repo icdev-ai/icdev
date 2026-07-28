@@ -378,7 +378,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         # so no security context auto-attaches; we clear it explicitly so an
         # in-request invocation cannot scope DELETE/INSERT to a subset of rows.
         if hasattr(db, "set_security_context"):
-            db.set_security_context(None)
+            db.set_security_context(None)  # rls-bypass: runs in the Genesis daemon outside any Flask request; a caller-scoped predicate would silently leave other-classification rows unprocessed
 
         engine = apply_retention(
             db,

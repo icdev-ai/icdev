@@ -81,8 +81,46 @@ def _sql_literal(node: ast.AST):
     return None
 
 
+def _shared_helper_receivers(scope: ast.AST) -> set:
+    """Names bound to ``get_canvas_connection(...)`` within ONE function.
+
+    That helper is NOT the data_canvas hybrid: it returns a StorageConnection on
+    both backends, so its SQL is translated either way and ``%s`` is correct.
+    Only ``data_canvas.db.init_db.get_connection`` has the raw-sqlite3 branch
+    this guard exists for — see the module docstring.
+
+    Scoped per function, never per module: `conn` is bound to the shared helper
+    in one function and to the hybrid ``get_connection`` in another throughout
+    this package. A module-wide name set conflates the two and silently disarms
+    the guard — verified by injecting a hybrid-connection ``%s`` call, which a
+    module-wide version failed to catch.
+    """
+    bound = set()
+    for node in ast.walk(scope):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        fn = node.value.func
+        name = getattr(fn, "id", None) or getattr(fn, "attr", None)
+        if name == "get_canvas_connection":
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    bound.add(tgt.id)
+    return bound
+
+
 def _iter_execute_sql(source: str):
     tree = ast.parse(source)
+    scopes = [n for n in ast.walk(tree)
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+    def innermost(lineno):
+        best = None
+        for fn in scopes:
+            if fn.lineno <= lineno <= (fn.end_lineno or fn.lineno):
+                if best is None or fn.lineno > best.lineno:
+                    best = fn
+        return best
+
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -90,6 +128,11 @@ def _iter_execute_sql(source: str):
             and node.func.attr in ("execute", "executemany")
             and node.args
         ):
+            recv = node.func.value
+            if isinstance(recv, ast.Name):
+                scope = innermost(node.lineno)
+                if scope is not None and recv.id in _shared_helper_receivers(scope):
+                    continue
             sql = _sql_literal(node.args[0])
             if sql is not None:
                 yield node.lineno, sql
