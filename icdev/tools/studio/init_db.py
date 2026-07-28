@@ -187,6 +187,7 @@ STUDIO_TABLES: dict[str, str] = {
                         CHECK(kind IN ('gateway_channel','canvas_bus','schedule','manual')),
             config_json TEXT,
             enabled     INTEGER DEFAULT 1,
+            max_il      TEXT DEFAULT 'IL2',
             created_by  TEXT,
             created_at  TEXT DEFAULT (datetime('now'))
         )
@@ -200,6 +201,8 @@ STUDIO_TABLES: dict[str, str] = {
             filter_json       TEXT,
             input_mapping_json TEXT,
             enabled           INTEGER DEFAULT 1,
+            workflow_il       TEXT DEFAULT 'IL6',
+            project_id        TEXT DEFAULT 'default',
             created_at        TEXT DEFAULT (datetime('now'))
         )
     """,
@@ -214,6 +217,11 @@ STUDIO_TABLES: dict[str, str] = {
             matched      INTEGER DEFAULT 0,
             run_id       TEXT,
             reason       TEXT,
+            workflow_id  TEXT,
+            outcome      TEXT,
+            classification TEXT,
+            idempotency_key TEXT UNIQUE,
+            envelope_id  TEXT,
             received_at  TEXT DEFAULT (datetime('now'))
         )
     """,

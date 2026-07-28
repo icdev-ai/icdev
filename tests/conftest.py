@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS studio_event_sources (
     kind        TEXT NOT NULL,
     config_json TEXT,
     enabled     INTEGER DEFAULT 1,
+    max_il      TEXT DEFAULT 'IL2',
     created_by  TEXT,
     created_at  TEXT DEFAULT (datetime('now'))
 );
@@ -145,6 +146,8 @@ CREATE TABLE IF NOT EXISTS studio_workflow_triggers (
     filter_json       TEXT,
     input_mapping_json TEXT,
     enabled           INTEGER DEFAULT 1,
+    workflow_il       TEXT DEFAULT 'IL6',
+    project_id        TEXT DEFAULT 'default',
     created_at        TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS studio_trigger_events (
@@ -156,8 +159,15 @@ CREATE TABLE IF NOT EXISTS studio_trigger_events (
     matched      INTEGER DEFAULT 0,
     run_id       TEXT,
     reason       TEXT,
+    workflow_id  TEXT,
+    outcome      TEXT,
+    classification TEXT,
+    idempotency_key TEXT UNIQUE,
+    envelope_id  TEXT,
     received_at  TEXT DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS ux_studio_trigger_events_idem
+    ON studio_trigger_events (idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS studio_mcp_dispatch_audit (
     audit_id       TEXT PRIMARY KEY,
     run_id         TEXT,

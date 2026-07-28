@@ -16,6 +16,13 @@ from tools.studio.init_db import APPEND_ONLY_TABLES, STUDIO_TABLES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = REPO_ROOT / "tools" / "db" / "migrations" / "304_studio_event_tables.sql"
+#: dwo-evt-02 adds the dispatch columns (classification ceilings, the UNIQUE
+#: replay key, the audit outcome) on top of 304. A fresh install gets both
+#: from STUDIO_TABLES, so the parity check has to apply both to the
+#: reference database or it compares a fresh install against a stale schema.
+MIGRATION_DISPATCH = (
+    REPO_ROOT / "tools" / "db" / "migrations" / "308_studio_trigger_dispatch.sql"
+)
 
 EVENT_TABLES = [
     "studio_event_sources",
@@ -75,6 +82,7 @@ def test_init_db_ddl_matches_migration(table):
         try:
             _apply(ref, STUDIO_TABLES["studio_workflows"])
             _apply(ref, MIGRATION.read_text(encoding="utf-8"))
+            _apply(ref, MIGRATION_DISPATCH.read_text(encoding="utf-8"))
             ref_cols = {r[1] for r in ref.execute(f"PRAGMA table_info({table})")}
         finally:
             ref.close()
