@@ -2717,6 +2717,52 @@ python tools/studio/run_memory.py --run-id <run_id> --get artifact              
 python tools/studio/run_memory.py --run-id <run_id> --all                              # Dump every key
 python tools/studio/run_memory.py --run-id <run_id> --delete artifact                  # Delete a key
 
+# Workflow Runner — durable runs, resume, approvals (LIBRARY — no CLI, import it)
+# Runs execute on a background thread inside the dashboard process; there is no
+# standalone entry point. Step rows are the source of truth, so a run survives a
+# restart (dwo-dur-01..03).
+python -c "from tools.studio.workflow_runner import start_run; print(start_run('<workflow_id>', project_id='default'))"
+python -c "from tools.studio.workflow_runner import resume_run; print(resume_run('<run_id>'))"        # Re-attach a run left mid-flight
+python -c "from tools.studio.workflow_runner import reconcile_runs_on_boot as r; print(r())"          # Call ONCE from app startup, not at import
+python -c "from tools.studio.workflow_runner import get_pending_approvals; print(get_pending_approvals())"
+python -c "from tools.studio.workflow_runner import approve_step; print(approve_step('<step_run_id>', actor='approver'))"
+python -c "from tools.studio.workflow_runner import reject_step; print(reject_step('<step_run_id>', reason='...', actor='approver'))"
+python -c "from tools.studio.workflow_runner import list_runs; print(list_runs(limit=10))"
+python -c "from tools.studio.workflow_runner import get_run, get_run_steps; print(get_run('<run_id>'), get_run_steps('<run_id>'))"
+
+# Gate Bridge — Studio gate → the workflow_hitl reviewer inbox (LIBRARY — no CLI, dwo-dur-04)
+# A paused Studio gate is published as a wf_external_steps row so /wf/external
+# stays the single reviewer inbox. open_gate() returns None when workflow_hitl
+# is unavailable; Studio then falls back to its own Details-modal gate.
+python -c "from tools.studio.gate_bridge import open_gate; print(open_gate('<run_id>', '<step_run_id>', '<step_name>', role='approver'))"
+python -c "from tools.studio.gate_bridge import find_external_step; print(find_external_step('<step_run_id>'))"
+python -c "from tools.studio.gate_bridge import complete_external_step; print(complete_external_step('<step_run_id>', 'approved', 'actor'))"
+python -c "from tools.studio.gate_bridge import is_studio_step, release_studio_gate; print(is_studio_step({}))"
+
+# Step Executors — what a workflow step shells out to (each takes the same flags)
+# Normally invoked by the runner, which passes --run-id/--project-id; runnable
+# standalone for debugging. --canvas is auto-detected when omitted.
+python tools/studio/executors/terraform_plan.py --project-id <id> --run-id <run_id> --json
+python tools/studio/executors/terraform_apply.py --project-id <id> --run-id <run_id> --json
+python tools/studio/executors/terraform_destroy.py --project-id <id> --run-id <run_id> --json
+python tools/studio/executors/ansible_executor.py --project-id <id> --run-id <run_id> --json
+python tools/studio/executors/aws_config_executor.py --project-id <id> --run-id <run_id> --json
+python tools/studio/executors/validation_runner.py --project-id <id> --run-id <run_id> --json
+python tools/studio/executors/migration_reporter.py --project-id <id> --run-id <run_id> --json
+python tools/studio/executors/gns3_sim.py --project-id <id> --run-id <run_id> --canvas ndc --json
+
+# Template Linter — DAG lint/fix over the built-in workflow templates
+python tools/studio/template_linter.py --check --json                                  # Report only, no writes
+python tools/studio/template_linter.py --fix                                           # Auto-fix in place
+python tools/studio/template_linter.py --gate                                          # Exit 1 if problems found (CI)
+
+# Canvas Bridge — per-canvas workflow templates (LIBRARY — no CLI)
+python -c "from tools.studio.canvas_bridge import list_canvas_ids; print(list_canvas_ids())"
+python -c "from tools.studio.canvas_bridge import get_canvas_workflow_template as g; print(g('ndc'))"
+
+# Workflow Chat — natural language → workflow YAML (LIBRARY — no CLI)
+python -c "from tools.studio.workflow_chat import generate_workflow_yaml; print(generate_workflow_yaml('plan then apply terraform'))"
+
 # Form Builder — create custom forms with JSON Schema output
 python tools/studio/form_builder.py --json field-types                                     # List field types
 python tools/studio/form_builder.py --json templates                                       # List form templates
