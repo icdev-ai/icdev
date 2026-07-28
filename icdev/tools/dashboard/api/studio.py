@@ -941,6 +941,37 @@ def api_reject_step(run_id: str, step_run_id: str):
     return jsonify({"status": "rejected", "step_run_id": step_run_id})
 
 
+@studio_api.route("/runs/<run_id>/resume", methods=["POST"])
+@studio_api.route("/workflows/runs/<run_id>/resume", methods=["POST"])
+def api_resume_run(run_id: str):
+    """Continue a run left mid-flight (dwo-dur-03).
+
+    Steps already recorded success/approved/skipped are replayed, not
+    re-executed, and the run continues in place rather than forking a new row.
+    """
+    from tools.studio.workflow_runner import (
+        RESUMABLE_RUN_STATUSES,
+        RESUME_MODE,
+        get_run,
+        resume_run,
+    )
+
+    run = get_run(run_id)
+    if not run:
+        return jsonify({"error": "Run not found"}), 404
+    status = run.get("status")
+    if status not in RESUMABLE_RUN_STATUSES:
+        return jsonify({
+            "error": f"Run is '{status}' — only {', '.join(RESUMABLE_RUN_STATUSES)} runs can be resumed"
+        }), 409
+    if not resume_run(run_id):
+        return jsonify({
+            "error": "Run could not be resumed — a live worker may already own it, "
+                     "or its workflow no longer exists"
+        }), 409
+    return jsonify({"status": "resuming", "run_id": run_id, "mode": RESUME_MODE}), 202
+
+
 @studio_api.route("/workflows/runs/<run_id>", methods=["DELETE"])
 def api_delete_run(run_id: str):
     from tools.studio.workflow_runner import delete_run
