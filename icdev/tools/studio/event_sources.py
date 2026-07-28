@@ -155,6 +155,20 @@ def create_event_source(
         return {"status": "error", "error": str(exc)}
     finally:
         conn.close()
+
+    if kind == "canvas_bus":
+        # Wire it onto the canvas event bus now.  Without this a source created
+        # from the Triggers panel would stay inert until the next restart.
+        try:
+            from tools.studio.bus_subscriber import register_source  # noqa: PLC0415
+
+            register_source({
+                "source_id": source_id, "kind": kind,
+                "enabled": 1, "config": config or {}, "name": name,
+            })
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not subscribe canvas_bus source %s: %s", source_id, exc)
+
     return {"status": "ok", "source_id": source_id, "name": name, "kind": kind}
 
 
