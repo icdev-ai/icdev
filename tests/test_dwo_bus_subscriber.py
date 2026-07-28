@@ -32,7 +32,7 @@ import uuid
 import pytest
 
 from tools.db.storage import get_connection
-from tools.studio import bus_subscriber, event_sources
+from tools.studio import bus_subscriber, event_sources, run_memory
 
 _BUS_DDL = """
 CREATE TABLE IF NOT EXISTS canvas_events (
@@ -92,13 +92,18 @@ def started_runs(monkeypatch):
     Patched through ``importlib`` because ``tools`` is a shim over
     ``icdev.tools`` — a string path could bind a different module object than
     the one ``dispatch_event`` imports.
+
+    ``start_run`` does not take an ``inputs`` argument on this branch — that is
+    dwo-evt-04-d2 — so the mapped trigger inputs are not visible here.
+    ``dispatch_event`` seeds them into run memory instead, which is where the
+    assertions below read them from.
     """
     runner = importlib.import_module("tools.studio.workflow_runner")
     started: list[tuple] = []
 
     def _start(workflow_id, project_id="default", **kwargs):
         run_id = f"run-{uuid.uuid4().hex[:12]}"
-        started.append((workflow_id, project_id, kwargs.get("inputs"), run_id))
+        started.append((workflow_id, project_id, run_id))
         return run_id
 
     monkeypatch.setattr(runner, "start_run", _start)
@@ -165,10 +170,11 @@ def test_published_canvas_event_starts_the_matching_workflow(bus, started_runs):
     # on the same event, so assertions here are scoped to this test's workflow.
     mine = [r for r in started_runs if r[0] == workflow_id]
     assert len(mine) == 1
-    _workflow_id, _project, inputs, run_id = mine[0]
+    _workflow_id, _project, run_id = mine[0]
     # The input mapping resolved against the canvas payload; the literal passed
-    # through unchanged.
-    assert inputs == {"gate": "stig-cat1", "env": "staging"}
+    # through unchanged.  Seeded into run memory rather than handed to
+    # start_run, per the note in dispatch_event.
+    assert run_memory.all(run_id) == {"gate": "stig-cat1", "env": "staging"}
 
     rows = event_sources.list_trigger_events(source_id=source_id)
     assert len(rows) == 1
