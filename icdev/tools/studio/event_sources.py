@@ -1,4 +1,4 @@
-"""ICDEV™ Studio — event sources, workflow triggers, and event dispatch (dwo-evt-04).
+"""ICDEV™ Studio — event sources, workflow triggers, and event dispatch (dwo-evt-01-d3).
 
 dwo-evt-01 created three tables and nothing used them.  This module is the code
 that does:
@@ -36,9 +36,10 @@ Input mapping
     {"branch": "event.payload.branch", "env": "staging"}
 
 A source string that names no event field is passed through as a literal, so
-constants need no second syntax.  The resolved dict is handed to
-``start_run(..., inputs=…)``, which persists it on the run row and seeds it into
-run memory under ``_inputs`` *before the first step executes*.
+constants need no second syntax.  The resolved dict is seeded into the run's
+``run_memory`` immediately after ``start_run`` returns — ``start_run`` does not
+yet take an ``inputs`` argument (that is dwo-evt-04-d2), so a step that reads a
+trigger input races the seeding.  See the note in :func:`dispatch_event`.
 
 CLI::
 
@@ -68,7 +69,6 @@ from tools.db.storage import get_connection  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.studio.automation_builder import (  # noqa: E402
     evaluate_conditions,
-    get_event_source,
     resolve_input_mapping,
 )
 
@@ -123,6 +123,31 @@ def list_event_sources(*, enabled_only: bool = False) -> list[dict]:
     return out
 
 
+def get_event_source(source_id: str) -> dict | None:
+    """Read one ``studio_event_sources`` row, or None if absent/unavailable.
+
+    Returns None rather than raising when the table has not been migrated yet,
+    so dispatch and simulation still answer on a fresh database.
+    """
+    if not source_id:
+        return None
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM studio_event_sources WHERE source_id = %s",
+            (source_id,),
+        ).fetchone()
+    except Exception:
+        return None
+    finally:
+        conn.close()
+    if not row:
+        return None
+    src = dict(row)
+    src["config"] = _loads(src.get("config_json"), {})
+    return src
+
+
 def create_event_source(
     name: str,
     kind: str,
@@ -155,6 +180,20 @@ def create_event_source(
         return {"status": "error", "error": str(exc)}
     finally:
         conn.close()
+
+    if kind == "canvas_bus":
+        # Wire it onto the canvas event bus now.  Without this a source created
+        # from the Triggers panel would stay inert until the next restart.
+        try:
+            from tools.studio.bus_subscriber import register_source  # noqa: PLC0415
+
+            register_source({
+                "source_id": source_id, "kind": kind,
+                "enabled": 1, "config": config or {}, "name": name,
+            })
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not subscribe canvas_bus source %s: %s", source_id, exc)
+
     return {"status": "ok", "source_id": source_id, "name": name, "kind": kind}
 
 
