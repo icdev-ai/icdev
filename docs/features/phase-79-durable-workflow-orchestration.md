@@ -38,7 +38,7 @@ SuperPlane's primitives against what ICDEV™ already owned at the start of the 
 
 | SuperPlane primitive | Meaning upstream | ICDEV™ equivalent | State before DWO |
 |---|---|---|---|
-| **Canvas** (`canvas.yaml`) | Graph of steps + dependencies | `args/workflow_templates/*.yaml` — 33 templates with `steps`, `depends_on`, `node_type`, `timeout`, `role` | Solid |
+| **Canvas** (`canvas.yaml`) | Graph of steps + dependencies | `args/workflow_templates/*.yaml` — 41 templates with `steps`, `depends_on`, `node_type`, `timeout`, `role` | Solid |
 | DAG resolution | Dependency ordering | `tools/orchestration/workflow_composer.py` (`graphlib.TopologicalSorter`; D26, D40, D343) | Solid |
 | **Run** | Durable execution, resumable steps | `tools/studio/workflow_runner.py` + `studio_workflow_runs` / `studio_workflow_run_steps` | Ran, but **not durable** → G1 |
 | **Component** (action) | Integration-backed task | `tools/studio/executors/` — terraform plan/apply/destroy, ansible, aws-config, gns3, validation, migration reporter | Thin (9) → G4 |
@@ -160,8 +160,9 @@ This is Studio run state — **not** `tools/memory/` (long-term session memory).
 
 SuperPlane's leverage is ~50 integration adapters; ICDEV had 9, all infrastructure-facing.
 The fix was **not** to hand-write 50 more: `tools/mcp/tool_registry.py` already declares
-444+ tools, each with a `module` + `handler` pair that can be imported and called. One
-generic executor turns the whole MCP surface into workflow actions.
+455 tools (`len(TOOL_REGISTRY)` at the close of this phase; the spike counted 444), each
+with a `module` + `handler` pair that can be imported and called. One generic executor
+turns the whole MCP surface into workflow actions.
 
 **Delivered**
 
