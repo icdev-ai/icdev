@@ -1645,12 +1645,13 @@ gates:
 
   - id: MCP-WF-001
     name: MCP Workflow Tool Allowlist Gate
-    description: Refuses a workflow step that dispatches an MCP tool absent from mcp_workflow_tools.allowed, and blocks a mcp_workflow_tools.requires_approval tool until its human gate is approved. Policy lives in the mcp_workflow_tools section of this file.
+    description: Refuses a workflow step that dispatches an MCP tool absent from mcp_workflow_tools.allowed, blocks a mcp_workflow_tools.requires_approval tool until its human gate is approved, and refuses a caller whose impact level or roles do not meet the limits the tool's owning component declares in args/component_registry.yaml. Policy lives in the mcp_workflow_tools section of this file.
     severity: HIGH
     block_on:
       - mcp_tool_not_allowlisted
       - mcp_tool_awaiting_human_approval
       - mcp_tool_exceeds_caller_il
+      - mcp_tool_missing_required_role
     warn_on:
       - mcp_tool_unknown_to_registry
     policy: mcp_workflow_tools

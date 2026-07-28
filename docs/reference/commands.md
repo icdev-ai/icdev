@@ -878,8 +878,13 @@ python tools/intelligence/bayesian_teacher.py --health --json                   
 python tools/studio/executors/mcp_executor.py --tool health_check --params '{}'
 python tools/studio/executors/mcp_executor.py --tool kg_search --params '{"query":"NIST AC-2"}'
 python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' --run-id "run-xxx" --step-id "probe"
+# Dispatch as a specific principal (default: the run's `caller` memory key, else
+# $ICDEV_MCP_CALLER_IL / $ICDEV_IMPACT_LEVEL, else IL4 with no roles)
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' \
+  --caller-il IL5 --caller-roles isso,compliance_officer --caller-id u1 --tenant-id t1
 # Exit 0 = handler returned; exit 1 = unknown tool (suggests closest matches),
-# params failing the entry's input_schema, or the handler raised.
+# params failing the entry's input_schema, the handler raised, or gate MCP-WF-001
+# refused it (not allowlisted / awaiting approval / caller IL too low / missing role).
 ```
 
 ---
