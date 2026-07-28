@@ -85,6 +85,16 @@
   {% endif %}
 </section>
 
+{% set iqe_canvas = "security" %}
+{% set iqe_api_route = "/security/api/iqe-query" %}
+{% set iqe_title = "Ask the Security Canvas" %}
+{% set iqe_examples = [
+  {"label": "Critical attack paths", "query": "show all critical attack paths"},
+  {"label": "Open CAT I STIGs", "query": "show open CAT I STIG findings"},
+  {"label": "High-risk designs", "query": "show security designs with the highest risk"},
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>

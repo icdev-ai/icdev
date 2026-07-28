@@ -81,7 +81,7 @@ def _sqlite_storage_connection():
     """
     from tools.db.storage import StorageConnection
     conn = StorageConnection(_sqlite_connection(), "sqlite")
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: canvas tables have no tenant_id/classification columns, so RLS injection would raise UndefinedColumn on every query
     return conn
 
 

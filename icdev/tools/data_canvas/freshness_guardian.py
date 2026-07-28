@@ -24,13 +24,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.data_canvas.freshness_guardian")
 
 _DB_PATH = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
 _CONFIG_PATH = Path(__file__).resolve().parents[2] / "args" / "data_canvas_config.yaml"

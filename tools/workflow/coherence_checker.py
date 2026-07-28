@@ -361,6 +361,18 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 # ---------------------------------------------------------------------------
 
 
+#: Modules pinned to one backend, whose extra columns are created by that
+#: backend's own DDL and must NOT be added to the shared schema.
+#: `sqlite_vector_store` is the case in point: `sign_bits` is a SQLite-only
+#: quantisation column it ALTERs in itself, and the class pins `sqlite3.connect`
+#: precisely so it can never reach PostgreSQL. Declaring `sign_bits` in the
+#: shared schema to satisfy this check would create the column on PG, where it
+#: is inert — the opposite of what the pinning is for.
+_SCHEMA_CODE_BACKEND_PINNED = frozenset({
+    "tools/rag/sqlite_vector_store.py",
+})
+
+
 def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Verify CREATE TABLE columns match INSERT statements in tools."""
     schema_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
@@ -378,6 +390,13 @@ def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
                 scan_files.append(py)
 
     for py_path in scan_files:
+        try:
+            rel_key = str(py_path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+        except ValueError:
+            rel_key = py_path.name
+        if rel_key in _SCHEMA_CODE_BACKEND_PINNED:
+            continue
+
         source = _read_text(py_path)
         if "INSERT" not in source.upper():
             continue
@@ -3489,7 +3508,15 @@ def check_security_context() -> CoherenceCheck:
         PROJECT_ROOT / "tools" / "security",
         PROJECT_ROOT / "tools" / "workflow",  # checker source contains pattern strings
     }
-    bypass_re = re.compile(r"set_security_context\(\s*None\s*\)")
+    # Must look like an actual CALL: a receiver (`conn.set_…`) or a bare call at
+    # statement position. Prose inside a docstring — "…already disables RLS via
+    # set_security_context(None) below" in tools/pipeline/db/init_db.py — is a
+    # description, not a bypass, and the leading-`#` skip below does not catch it
+    # because a docstring line starts with neither `#` nor a quote.
+    bypass_re = re.compile(
+        r"(?:\.\s*set_security_context\(\s*None\s*\)"
+        r"|^\s*set_security_context\(\s*None\s*\))"
+    )
     bypass_ok_re = re.compile(r"#\s*rls-bypass\s*:", re.IGNORECASE)
 
     undocumented: list[str] = []
@@ -3635,6 +3662,16 @@ def check_new_page_completeness() -> CoherenceCheck:
             canvas,
             (PROJECT_ROOT / "tools" / canvas / "blueprint.py", PROJECT_ROOT / "tools" / canvas),
         )
+        # Child apps live under apps/, not tools/ — and one (strategos) declares
+        # no `module:` because its registry entry exists only to register IQE
+        # collections, so the fallback above guesses tools/ and reports a
+        # blueprint that is present and routed as missing. apps/ is already a
+        # first-class registry location (`module: apps.innovation.blueprint`);
+        # the fallback simply never learned about it.
+        if not bp_file.exists():
+            apps_bp = PROJECT_ROOT / "apps" / canvas / "blueprint.py"
+            if apps_bp.exists():
+                bp_file, canvas_dir = apps_bp, apps_bp.parent
         if not bp_file.exists():
             missing.append(f"{bp_file.name} missing (expected at {bp_file.parent.name}/)")
         elif not _blueprint_has_route(bp_file):
@@ -4105,8 +4142,25 @@ def check_log_standard_compliance() -> CoherenceCheck:
             src = py_file.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        # Flag raw logging.getLogger() usage (allow in logging/ itself)
-        if re.search(r"\blogging\.getLogger\s*\(", src):
+        # Flag raw logging.getLogger() usage (allow in logging/ itself).
+        # AST, not regex: code GENERATORS embed `logging.getLogger(...)` inside
+        # string literals as part of the child app they emit. That is the child
+        # app's logger, not this module's, and no amount of migrating here would
+        # remove it — child_app_generator.py was reported for its own output.
+        if not re.search(r"\blogging\.getLogger\s*\(", src):
+            continue
+        try:
+            uses_raw = any(
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "getLogger"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "logging"
+                for node in ast.walk(ast.parse(src))
+            )
+        except SyntaxError:
+            uses_raw = True  # unparseable — fall back to the textual match
+        if uses_raw:
             violations.append(f"{rel}: uses logging.getLogger() — migrate to tools.logging.icdev_logger.get_logger()")
 
     status = "fail" if violations else "pass"
@@ -4129,6 +4183,21 @@ def check_log_standard_compliance() -> CoherenceCheck:
 # Check 15: canvas_placeholder_style — bare ? in canvas execute() SQL
 # Check 16: runtime_placeholder_style — bare ? in ANY runtime tools/ execute() SQL
 # ---------------------------------------------------------------------------
+
+
+#: Canvases whose ``get_connection()`` is a HYBRID: StorageConnection on the
+#: PostgreSQL branch, but a RAW ``sqlite3.connect`` handle on the SQLite one.
+#: Raw sqlite3 accepts ``?`` and rejects ``%s``, while the PG branch translates
+#: ``?`` → ``%s`` — so positional ``?`` is the only form valid on BOTH, and this
+#: check's advice is inverted for them.
+#:
+#: This is not a guess: ``tests/test_cvx_sql07_datacanvas_pct_s.py`` asserts the
+#: opposite of this check for these paths, and exists because ``%s`` here broke
+#: ``/data/lineage`` and ``check_ext_access`` in production. That test is the
+#: authority; without this exemption the two gates cannot both be satisfied.
+_HYBRID_RAW_SQLITE_CANVASES = (
+    "tools/data_canvas/",
+)
 
 
 def check_canvas_placeholder_style(
@@ -4169,6 +4238,9 @@ def check_canvas_placeholder_style(
     scanned = 0
 
     for py_path in candidates:
+        if any(part in py_path.as_posix() for part in _HYBRID_RAW_SQLITE_CANVASES):
+            continue
+
         try:
             source = py_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -4183,6 +4255,7 @@ def check_canvas_placeholder_style(
             continue
 
         scanned += 1
+        raw_sqlite_vars = _raw_sqlite3_receivers(tree)
         try:
             rel = py_path.relative_to(PROJECT_ROOT).as_posix()
         except ValueError:
@@ -4208,6 +4281,15 @@ def check_canvas_placeholder_style(
                     if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
                         parts.append(frag.value)
                 sql_text = "".join(parts)
+
+            # sqlite3.connect() handles never reach translate_sql, so `?` is
+            # the only placeholder they accept — `%s` raises there. See
+            # _raw_sqlite3_receivers.
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in raw_sqlite_vars
+            ):
+                continue
 
             if sql_text and "?" in sql_text:
                 lineno = getattr(node, "lineno", 0)
@@ -4257,6 +4339,33 @@ _PLACEHOLDER_EXEMPT_PATTERNS = (
     "conftest.py",
     "translate_sql",   # storage.py itself defines the translation
 )
+
+
+def _raw_sqlite3_receivers(tree: ast.AST) -> set:
+    """Names bound to a direct ``sqlite3.connect()`` handle in this module.
+
+    Such a handle is a real sqlite3 connection, not a StorageConnection, so it
+    never passes through ``translate_sql`` and ``?`` is the only placeholder it
+    accepts. Flagging those as "use %s for psycopg2" inverts the truth.
+    """
+    aliases = {"sqlite3"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name == "sqlite3" and a.asname:
+                    aliases.add(a.asname)
+
+    bound: set = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        fn = node.value.func
+        if (isinstance(fn, ast.Attribute) and fn.attr == "connect"
+                and isinstance(fn.value, ast.Name) and fn.value.id in aliases):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    bound.add(tgt.id)
+    return bound
 
 
 def check_runtime_placeholder_style(
@@ -4321,6 +4430,7 @@ def check_runtime_placeholder_style(
             continue
 
         scanned += 1
+        raw_sqlite_vars = _raw_sqlite3_receivers(tree)
         try:
             rel = py_path.relative_to(PROJECT_ROOT).as_posix()
         except ValueError:
@@ -4345,6 +4455,18 @@ def check_runtime_placeholder_style(
                     if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
                         parts.append(frag.value)
                 sql_text = "".join(parts)
+
+            # A connection opened directly with sqlite3.connect() is NOT psycopg2
+            # and `?` is the only placeholder it accepts — `%s` raises there. The
+            # audit writers in tools/db/storage.py are exactly this: they open
+            # their own sqlite3 handle so an RLS/field audit row still lands when
+            # the pooled connection is mid-transaction. "Fixing" those to %s would
+            # silently empty an append-only audit trail, which has happened before.
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in raw_sqlite_vars
+            ):
+                continue
 
             if sql_text and "?" in sql_text:
                 lineno = getattr(node, "lineno", 0)
