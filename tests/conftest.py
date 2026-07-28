@@ -125,6 +125,36 @@ CREATE TABLE IF NOT EXISTS studio_run_memory (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (run_id, key)
 );
+CREATE TABLE IF NOT EXISTS studio_event_sources (
+    source_id   TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    config_json TEXT,
+    enabled     INTEGER DEFAULT 1,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS studio_workflow_triggers (
+    trigger_id        TEXT PRIMARY KEY,
+    source_id         TEXT NOT NULL,
+    workflow_id       TEXT NOT NULL,
+    event_type        TEXT,
+    filter_json       TEXT,
+    input_mapping_json TEXT,
+    enabled           INTEGER DEFAULT 1,
+    created_at        TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS studio_trigger_events (
+    event_id     TEXT PRIMARY KEY,
+    source_id    TEXT,
+    trigger_id   TEXT,
+    event_type   TEXT,
+    payload_json TEXT,
+    matched      INTEGER DEFAULT 0,
+    run_id       TEXT,
+    reason       TEXT,
+    received_at  TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS kanban_tasks (
     id                    TEXT PRIMARY KEY,
     title                 TEXT NOT NULL,
