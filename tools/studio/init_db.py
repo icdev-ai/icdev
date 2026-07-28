@@ -137,7 +137,11 @@ STUDIO_TABLES: dict[str, str] = {
             completed_at   TEXT,
             triggered_by   TEXT,
             project_id     TEXT DEFAULT 'default',
-            summary_json   TEXT
+            summary_json   TEXT,
+            -- dwo-evt-04: inputs the run started with (trigger input_mapping_json
+            -- output, or manual inputs).  NULL = none recorded, distinct from
+            -- '{}' = started with an empty input set.
+            inputs_json    TEXT
         )
     """,
     "studio_workflow_run_steps": """
