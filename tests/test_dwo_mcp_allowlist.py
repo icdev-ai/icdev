@@ -91,3 +91,51 @@ def test_gate_registry_entry_points_at_the_policy():
 
 def test_package_mirror_matches_the_root_copy():
     assert GATES_MIRROR.read_text(encoding="utf-8") == GATES.read_text(encoding="utf-8")
+
+
+# ── dwo-mcp-03-d5: shipped templates must obey the policy ──────────────────
+#
+# A typo in a template's `mcp_tool` reads as "not allowlisted" and only
+# surfaces when someone runs the workflow, so pin it at author time instead.
+
+TEMPLATES = REPO_ROOT / "args" / "workflow_templates"
+EXAMPLE = TEMPLATES / "mcp_posture_review.yaml"
+
+
+def _mcp_steps(path: Path) -> list:
+    doc = _load(path) or {}
+    return [s for s in (doc.get("steps") or []) if s.get("node_type") == "mcp"]
+
+
+def test_worked_example_ships_and_is_all_mcp_but_the_rollup():
+    steps = _load(EXAMPLE)["steps"]
+    assert len(_mcp_steps(EXAMPLE)) == 4
+    assert [s for s in steps if s.get("node_type") != "mcp"], "needs a plain tool node too"
+
+
+def test_every_template_mcp_step_names_a_tool(registry_tool_names):
+    for path in sorted(TEMPLATES.glob("*.yaml")):
+        for step in _mcp_steps(path):
+            name = step.get("mcp_tool")
+            assert name, f"{path.name}:{step['id']} — node_type: mcp with no mcp_tool"
+            assert name in registry_tool_names, f"{path.name}:{step['id']} — unknown tool {name!r}"
+
+
+def test_template_mcp_steps_are_allowlisted_or_gated(policy):
+    allowed = set(policy["allowed"])
+    gated = set(policy["requires_approval"])
+    for path in sorted(TEMPLATES.glob("*.yaml")):
+        for step in _mcp_steps(path):
+            name = step["mcp_tool"]
+            assert name in allowed or name in gated, (
+                f"{path.name}:{step['id']} — {name!r} is in neither tier, so it is denied"
+            )
+
+
+def test_template_mcp_steps_do_not_hand_author_project_id():
+    """The runner passes --project-id; duplicating it in mcp_params drifts."""
+    for path in sorted(TEMPLATES.glob("*.yaml")):
+        for step in _mcp_steps(path):
+            params = step.get("mcp_params") or {}
+            if isinstance(params, dict):
+                assert "project_id" not in params, f"{path.name}:{step['id']}"

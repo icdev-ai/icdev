@@ -77,6 +77,30 @@ with `node_type: mcp` and no `mcp_tool` is skipped rather than run.
 The step's per-run `args` are **not** forwarded — an MCP tool takes its
 arguments from `mcp_params` only.
 
+`inject_project_id`, `inject_run_id`, and `json_output` still apply, and all
+three default to `true`.  So do **not** author `project_id` in `mcp_params` —
+the runner already passes the run's project as `--project-id`.  Set
+`inject_project_id: false` on the step to suppress it.
+
+#### Which tools a step may dispatch
+
+`mcp_workflow_tools` in `args/security_gates.yaml` is default-deny and splits
+registry tools into two tiers:
+
+| Tier | Meaning |
+|------|---------|
+| `allowed` | Read-only — query, inspect, report.  Dispatched unattended. |
+| `requires_approval` | State-changing, destructive, or egress-bearing.  An `approval` node must be approved earlier in the same run before the executor will dispatch it. |
+
+A tool in neither list is refused.
+
+#### Worked example
+
+[`mcp_posture_review.yaml`](mcp_posture_review.yaml) is a runnable
+five-step template: four `mcp` nodes (`health_check`, `scan_dependencies`,
+`code_analyze`, `stig_check` — all in the `allowed` tier) fanning out from a
+health probe into an ordinary `tool` rollup node.
+
 ---
 
 ### `role`
@@ -202,13 +226,17 @@ steps:
 
 ## Field applicability matrix
 
-| Field | `tool` | `human` | `approval` |
-|-------|--------|---------|------------|
-| `node_type` | ✓ | ✓ | ✓ |
-| `role` | ignored | owner | approver group |
-| `human_required` | ignored | ✓ | ignored |
-| `approval_policy` | ignored | ignored | ✓ |
-| `doc_template` | optional | optional | optional |
+| Field | `tool` | `human` | `approval` | `mcp` |
+|-------|--------|---------|------------|-------|
+| `node_type` | ✓ | ✓ | ✓ | ✓ |
+| `tool` | ✓ | ✓ | ✓ | ignored |
+| `args` | ✓ | ✓ | ✓ | ignored |
+| `mcp_tool` | ignored | ignored | ignored | **required** |
+| `mcp_params` | ignored | ignored | ignored | optional |
+| `role` | ignored | owner | approver group | ignored |
+| `human_required` | ignored | ✓ | ignored | ignored |
+| `approval_policy` | ignored | ignored | ✓ | ignored |
+| `doc_template` | optional | optional | optional | optional |
 
 ---
 
