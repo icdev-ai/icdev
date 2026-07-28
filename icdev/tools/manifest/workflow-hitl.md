@@ -35,6 +35,58 @@ per-stage document conformance, AI citation/sourcing, and external step integrat
 
 ---
 
+## Unified Approval Surface (dwo-dur-04)
+
+`wf_external_steps` is the **single reviewer inbox** for the platform. Other subsystems that
+pause for a human decision register their gate here rather than standing up a second approval
+surface — they are *producers* of `wf_external_steps` rows, and `tools/workflow_hitl` keeps
+ownership of notification routing, teams, templates and the webhook-token completion path.
+
+**Registered producer: ICDEV Studio** (`node_type: human` workflow gates).
+
+| Direction | Path |
+|-----------|------|
+| Studio → HITL | `workflow_runner._notify_approval_gate()` → `tools/studio/gate_bridge.py:open_gate()` → `external_steps.create()`, then `external_ref=<step_run_id>`, `status='sent'` |
+| Studio decision → HITL | `workflow_runner.approve_step()` / `reject_step()` → `gate_bridge.complete_external_step()` → `external_steps.mark_complete()` |
+| HITL decision → Studio | `external_steps.mark_complete()` → `gate_bridge.is_studio_step()` → `gate_bridge.release_studio_gate()` → `workflow_runner.approve_step()` |
+| Telegram decision → HITL | `tools/notifications/adapters/telegram_listener.py` writes the gate decision straight to `studio_workflow_run_steps`, so it calls `gate_bridge.complete_external_step()` itself — otherwise a Telegram approval leaves an orphan row in the inbox |
+
+**Linkage carries no new schema.** A Studio-produced step is identified by
+`external_system='studio'` with `external_ref` holding the Studio `step_run_id` — lookup works
+in both directions off columns that already exist. `step_type` is `'manual'` (a human decision),
+so the CHECK constraint on `wf_external_steps.step_type` is not widened.
+
+**FK satisfaction:** one shared system template `wft-studio-gate` (`canvas_type='studio'`) plus a
+per-run shadow instance `wfi-studio-<run_id>`, created idempotently by `gate_bridge._ensure_instance()`.
+
+**Exactly-once, enforced two ways** — the reviewer inbox and the Studio Details modal are two
+doors onto the same gate:
+1. A `_bridging` re-entrancy guard (module-level set + lock in `gate_bridge`) keyed by
+   `step_run_id`, so releasing one surface never loops back into the surface that initiated the
+   decision.
+2. Terminal-status checks on **both** sides. `external_steps.mark_complete()` refuses a step
+   already in `('completed','failed','timed_out')`; `gate_bridge.complete_external_step()`
+   makes the same check and writes a `studio_gate_duplicate_decision_rejected` audit event.
+   Every bridge decision lands in the shared append-only audit trail via
+   `tools/audit/audit_logger.py:log_event()`.
+
+**Studio steps do not advance wf_ stages.** A Studio-produced gate has no `stages_json` to walk,
+so `mark_complete()` releases the Studio run and sets its shadow instance to `approved` instead
+of calling `WorkflowEngine.advance_stage()`.
+
+**Degradation:** `open_gate()` returns `None` when the `wf_` tables are unavailable, and Studio
+falls back to its own Details-modal gate unchanged. The bridge is imported lazily on both sides,
+so neither module hard-depends on the other.
+
+**Poller interaction:** `check_all_pending()` selects `status IN ('sent','waiting')`, which
+includes bridged Studio gates. `get_adapter('manual', …)` raises `ValueError` — caught and
+logged — so the poller never auto-completes a Studio gate; the timeout branch still applies, and
+a gate older than `polling.max_wait_hours` (default 72) is marked `timed_out` and escalated.
+
+Studio-side detail (functions, run-state effects): `tools/manifest/icdev-studio-low-code-no-code-platform.md` → *Gate Bridge*.
+
+---
+
 ## Module: `tools/idr/` — IDR Conflict Gate (HITL)
 
 Intelligent Dispatch Retry: blocks `MERGE_CONFLICT → IN_PROGRESS` state-machine
