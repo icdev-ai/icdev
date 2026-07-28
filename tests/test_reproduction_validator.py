@@ -25,7 +25,7 @@ MIGRATION = (
     / "tools"
     / "db"
     / "migrations"
-    / "295_dynamic_finding_reproductions.sql"
+    / "303_dynamic_finding_reproductions.sql"
 )
 
 
@@ -609,7 +609,7 @@ class TestSchemaConstantSync:
     def test_status_check_matches_finding_status_constants(self):
         sql = MIGRATION.read_text(encoding="utf-8")
         match = re.search(r"CHECK \(status IN \(([^)]*)\)\)", sql)
-        assert match, "migration 295 must constrain dynamic_findings.status"
+        assert match, "migration 303 must constrain dynamic_findings.status"
         in_sql = {v.strip().strip("'") for v in match.group(1).split(",")}
         in_python = {
             getattr(rv.FindingStatus, name)
