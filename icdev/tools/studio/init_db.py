@@ -157,6 +157,16 @@ STUDIO_TABLES: dict[str, str] = {
             completed_at TEXT
         )
     """,
+    # ── Run-scoped memory (dwo-mem-01) — mutable, per-run step state ──
+    "studio_run_memory": """
+        CREATE TABLE IF NOT EXISTS studio_run_memory (
+            run_id     TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (run_id, key)
+        )
+    """,
     # ── Dashboards ─────────────────────────────────────────
     "studio_dashboards": """
         CREATE TABLE IF NOT EXISTS studio_dashboards (
