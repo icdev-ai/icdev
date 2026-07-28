@@ -661,8 +661,12 @@ def simulate_automation(auto_id: str, test_event: dict | None = None) -> dict:
 
 
 def _run_workflow_action(config: dict, event: dict) -> dict:
-    """Start a real Studio workflow run for a run_workflow action."""
-    from tools.studio import run_memory  # noqa: PLC0415
+    """Start a real Studio workflow run for a run_workflow action.
+
+    The resolved inputs are handed to ``start_run`` rather than written after
+    it returns: the worker thread is live the moment start_run returns, so a
+    post-hoc write raced the first step (dwo-evt-04).
+    """
     from tools.studio.workflow_runner import start_run  # noqa: PLC0415
 
     workflow_id = (config or {}).get("workflow_id", "")
@@ -670,18 +674,11 @@ def _run_workflow_action(config: dict, event: dict) -> dict:
         return {"status": "failed", "error": "run_workflow action has no workflow_id"}
 
     project_id = (config or {}).get("project_id") or "default"
+    inputs = _resolve_input_mapping(config.get("input_mapping"), event)
     try:
-        run_id = start_run(workflow_id, project_id)
+        run_id = start_run(workflow_id, project_id, inputs=inputs)
     except Exception as exc:
         return {"status": "failed", "workflow_id": workflow_id, "error": str(exc)}
-
-    inputs = _resolve_input_mapping(config.get("input_mapping"), event)
-    for key, value in inputs.items():
-        # Best effort: the run thread is already live, so seed immediately.
-        try:
-            run_memory.set(run_id, key, value)
-        except Exception:  # noqa: S110 — a run must not die over one input
-            pass
 
     return {"status": "success", "workflow_id": workflow_id, "run_id": run_id, "inputs": inputs}
 
@@ -800,15 +797,16 @@ def evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
     return False
 
 
-# ── Backward-compatible private aliases ───────────────────────────────
+# ── Backward-compatible private aliases ────────────────────────
 #
-# The condition DSL lives here once, under public names, so other modules can
-# import it (`from tools.studio.automation_builder import evaluate_condition`)
-# instead of growing a second DSL. These aliases keep the older
+# The condition DSL is defined once, above, under public names so other modules
+# (`tools/studio/event_sources.py` filters events with the SAME operators) can
+# import it instead of growing a second DSL. These aliases keep the older
 # underscore-prefixed spellings working.
 
 _evaluate_conditions = evaluate_conditions
 _evaluate_condition = evaluate_condition
+resolve_input_mapping = _resolve_input_mapping
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
