@@ -302,22 +302,56 @@ def test_memory_path_honours_the_env_override(monkeypatch, tmp_path):
     assert claude_memory_path.claude_memory_dir() == tmp_path
 
 
+#: Files allowed to mention the literal — they document or seed it.
+_SLUG_LITERAL_EXEMPT = {"claude_memory_path.py", "seed_ahx_arr_clx.py"}
+
+
+def _grep_repo(needle: str, pathspecs: list[str]) -> list[str] | None:
+    """Fast repo search via git grep. Returns None if git is unusable."""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            # --untracked matters: without it git grep sees only tracked files,
+            # so a newly-added module reintroducing the literal would slip past
+            # this guard until the moment it was committed.
+            ["git", "grep", "--fixed-strings", "--files-with-matches", "--untracked",
+             needle, "--", *pathspecs],
+            cwd=REPO_ROOT, capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # 0 = matches found, 1 = none found; anything else means git could not answer.
+    if proc.returncode not in (0, 1):
+        return None
+    return [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
+
+
 def test_no_module_hardcodes_the_project_slug():
-    """Regression guard: the literal must not come back."""
-    offenders: list[str] = []
-    for root in ("tools", "icdev/tools"):
-        base = REPO_ROOT / root
-        if not base.is_dir():
-            continue
-        for py in base.rglob("*.py"):
-            if py.name in {"claude_memory_path.py", "seed_ahx_arr_clx.py"}:
+    """Regression guard: the literal must not come back.
+
+    Uses ``git grep`` rather than reading every file — the naive walk over
+    ``tools/`` plus ``icdev/tools/`` is 7k files and ~104MB, which took about
+    12s against a 30s pytest timeout and made this test a flake waiting to
+    happen.
+    """
+    needle = "projects/C--AI-ICDev"
+    hits = _grep_repo(needle, ["tools/**/*.py", "icdev/tools/**/*.py"])
+
+    if hits is None:  # git unavailable — fall back to the direct walk
+        hits = []
+        for root in ("tools", "icdev/tools"):
+            base = REPO_ROOT / root
+            if not base.is_dir():
                 continue
-            try:
-                text = py.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            if "projects/C--AI-ICDev" in text:
-                offenders.append(str(py.relative_to(REPO_ROOT)))
+            for py in base.rglob("*.py"):
+                try:
+                    if needle in py.read_text(encoding="utf-8", errors="replace"):
+                        hits.append(py.relative_to(REPO_ROOT).as_posix())
+                except OSError:
+                    continue
+
+    offenders = [h for h in hits if Path(h).name not in _SLUG_LITERAL_EXEMPT]
     assert not offenders, f"hardcoded Claude memory slug found in: {offenders}"
 
 
