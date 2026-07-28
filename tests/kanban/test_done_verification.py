@@ -99,6 +99,13 @@ def test_merge_returns_false_when_push_fails(monkeypatch):
 def test_branch_has_unmerged_commits(monkeypatch, verify_rc, log_rc, log_out, expected):
     def fake_run(cmd, *a, **k):
         argv = cmd if isinstance(cmd, list) else [cmd]
+        # Branch discovery replaced the old `rev-parse --verify` probe: an empty
+        # ref list is the "branch does not exist" case the verify_rc==1 arm models.
+        if "for-each-ref" in argv:
+            return _Fake(
+                returncode=0,
+                stdout="" if verify_rc else "kanban/t-1\norigin/kanban/t-1\n",
+            )
         if "rev-parse" in argv:
             return _Fake(returncode=verify_rc)
         if "fetch" in argv:
@@ -148,6 +155,8 @@ def _record_git_calls(monkeypatch, log_out=""):
     def fake_run(cmd, *a, **k):
         argv = cmd if isinstance(cmd, list) else [cmd]
         calls.append((argv, k.get("cwd")))
+        if "for-each-ref" in argv:
+            return _Fake(returncode=0, stdout="kanban/ext-thing-01\n")
         if "log" in argv:
             return _Fake(returncode=0, stdout=log_out)
         return _Fake(returncode=0)

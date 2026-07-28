@@ -1258,16 +1258,17 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
     _repo_root = _task_repo_root(task_id)
     _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
-    branch_name = f"kanban/{task_id}"
     default_branch = _base_branch
     try:
-        # Does the branch exist locally? If not, nothing to verify (fail-open).
-        exists = _sp.run(
-            ["git", "rev-parse", "--verify", "--quiet", branch_name],
-            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
-        )
-        if exists.returncode != 0:
-            return False
+        # Which branches carry this task's work? `kanban/<task_id>` is the
+        # convention, but workers routinely add a descriptive suffix
+        # (kanban/dwo-mcp-02-d5-audit) or use another prefix
+        # (test/dwo-vv-03-d3-trigger-link, fix/dwo-mcp-03-d5-d4-r3). Matching
+        # only the exact name made the gate fail open on precisely those
+        # branches, which is how work sitting in an open PR reached 'done'.
+        candidates = _branches_for_task(task_id, _repo_root)
+        if not candidates:
+            return False  # nothing to verify (fail-open)
         # Best-effort refresh of the origin ref so the compare is current; the
         # check still works against the stale local origin ref if fetch fails.
         try:
@@ -1277,16 +1278,65 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
             )
         except Exception:
             pass
-        log = _sp.run(
-            ["git", "log", f"origin/{default_branch}..{branch_name}", "--oneline"],
-            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
-        )
-        if log.returncode != 0:
-            return False  # compare errored — fail-open
-        return bool(log.stdout.strip())
+        for branch_name in candidates:
+            log = _sp.run(
+                ["git", "log", f"origin/{default_branch}..{branch_name}", "--oneline"],
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
+            )
+            if log.returncode != 0:
+                continue  # this compare errored — fail-open for this ref
+            if log.stdout.strip():
+                return True  # a branch for this task has work not on origin
+        return False
     except Exception as exc:
         logger.warning("_branch_has_unmerged_commits(%s) errored (fail-open): %s", task_id, exc)
         return False
+
+
+def _branches_for_task(task_id: str, repo_root) -> list:
+    """Local + remote branch refs whose name contains ``task_id``.
+
+    Ordered so the canonical ``kanban/<task_id>`` is checked first. Matching is
+    on a name boundary, so ``dwo-mcp-01`` does not match ``dwo-mcp-01x``.
+
+    A parent id DOES match its decomposed children's refs: ``dwo-mcp-03-d5``
+    matches ``kanban/dwo-mcp-03-d5-d1``. That is deliberate — a parent whose
+    subtask branch has not merged is not done either — but it means the parent
+    is gated on its children's branches as well as its own. If that ever proves
+    too strict, tighten the trailing group rather than dropping the boundary.
+
+    FAIL-OPEN: returns [] on any git error.
+    """
+    import re
+    import subprocess as _sp
+    try:
+        out = _sp.run(
+            ["git", "for-each-ref", "--format=%(refname:short)",
+             "refs/heads", "refs/remotes/origin"],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode != 0:
+            return []
+    except Exception:
+        return []
+
+    # <task_id> at a name boundary: end of ref, or followed by '-'/'_'/'.'/'/'.
+    pat = re.compile(rf"(^|[/_-]){re.escape(task_id)}([/_.-]|$)")
+    canonical = f"kanban/{task_id}"
+    seen, matches = set(), []
+    for ref in out.stdout.splitlines():
+        ref = ref.strip()
+        if not ref or ref.endswith("/HEAD"):
+            continue
+        name = ref.split("origin/", 1)[-1] if ref.startswith("origin/") else ref
+        if not pat.search(name):
+            continue
+        if ref in seen:
+            continue
+        seen.add(ref)
+        matches.append(ref)
+    matches.sort(key=lambda r: (r not in (canonical, f"origin/{canonical}"), r))
+    return matches
 
 
 def _push_main(cwd: str) -> bool:
