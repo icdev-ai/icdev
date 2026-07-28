@@ -67,6 +67,14 @@ CADENCE_HOURS = 24
 # the combined average would inherit the bias while looking like more evidence.
 SAMPLE_REFLEX_PREFIX = "sampled:"
 
+# The reviewer says "was this prediction correct?"; harness_eval stores the
+# shared outcome vocabulary defined in eval_harness. Translate at the boundary
+# rather than leaking either word into the other layer.
+_CLI_OUTCOME_TO_CANONICAL = {
+    "correct": "resolved",          # eval_harness.OUTCOME_RESOLVED
+    "incorrect": "false_positive",  # eval_harness.OUTCOME_FALSE_POSITIVE
+}
+
 _DEFAULT_BANDS = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 _DEFAULT_PER_BAND = 3          # reviewer time is the scarce resource
 _DEFAULT_BAND_WIDTH = 0.1
@@ -337,8 +345,22 @@ def main(argv: list[str] | None = None) -> int:
             print("--verdict requires --outcome correct|incorrect")
             return 2
         from tools.genesis.harness.eval_harness import record_outcome
-        record_outcome(args.verdict, args.outcome)
-        print(f"recorded {args.verdict} -> {args.outcome}")
+
+        # 'correct'/'incorrect' is the natural phrasing for a human judging a
+        # prediction, but harness_eval.actual_outcome has one canonical
+        # vocabulary shared with the kanban path and the calibration scorer.
+        # Writing the raw CLI word here produced rows that no consumer counted
+        # as a success, so a correctly-labelled sample scored as a
+        # miscalibration. Map at the boundary; keep the friendly CLI words.
+        canonical = _CLI_OUTCOME_TO_CANONICAL[args.outcome]
+        result = record_outcome(args.verdict, canonical)
+        if result.get("status") == "no_decision_row":
+            print(
+                f"NOT recorded: no pending sample row for {args.verdict!r}. "
+                f"Run --pending to list samples awaiting a verdict."
+            )
+            return 1
+        print(f"recorded {args.verdict} -> {args.outcome} ({canonical})")
         return 0
 
     if args.pending:
