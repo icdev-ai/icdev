@@ -1148,6 +1148,12 @@ def run(
 
     Returns the step result payload.
 
+    Every path through this function — dispatch, refusal, and a gate parked
+    awaiting a human — appends exactly one row to :data:`AUDIT_TABLE` before
+    returning or re-raising (dwo-mcp-02-d5). The audit write never changes the
+    outcome; ``audit_written`` / ``audit_skipped`` in the payload report whether
+    it landed.
+
     Raises:
         MCPWorkflowGateError: ``tool`` is not on the workflow allowlist, the
             caller does not clear its IL / role limits, or the tool's human gate
