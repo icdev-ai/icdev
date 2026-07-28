@@ -60,7 +60,7 @@ def get_connection():
     raw_conn = _get_sqlite_connection(str(DB_PATH))
     conn = StorageConnection(raw_conn, "sqlite")
     # Canvas tables have no tenant_id/classification columns — no RLS.
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: canvas tables have no tenant_id/classification columns, so RLS injection would raise UndefinedColumn on every query
     return conn
 
 

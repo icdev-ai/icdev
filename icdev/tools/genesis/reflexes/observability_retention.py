@@ -227,7 +227,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         # auto-attaches (tools/db/storage.py::_attach_flask_security_context);
         # we clear it explicitly to stay correct even if invoked in-request.
         if hasattr(db, "set_security_context"):
-            db.set_security_context(None)
+            db.set_security_context(None)  # rls-bypass: runs in the Genesis daemon outside any Flask request; a caller-scoped predicate would silently leave other-classification rows unprocessed
 
         for src, ts_col, id_col, window_key in _TABLE_SPECS:
             cutoff_iso = (now - timedelta(days=windows[window_key])).isoformat()

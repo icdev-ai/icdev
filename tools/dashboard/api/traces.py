@@ -71,7 +71,7 @@ def _get_db() -> sqlite3.Connection:
     # documented in tools/observability/health_blueprint.py and used by
     # get_canvas_connection().
     try:
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: observability tables have no tenant_id; injection produced 500s on authenticated /api/traces, /api/provenance and /api/xai
     except AttributeError:
         pass
     return _PGCompatConn(conn)

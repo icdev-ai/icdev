@@ -22,7 +22,6 @@ Usage:
 
 import argparse
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -32,7 +31,8 @@ import yaml
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.govcon.portfolio_manager")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
