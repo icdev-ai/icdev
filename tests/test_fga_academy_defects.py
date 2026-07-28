@@ -278,3 +278,49 @@ def test_no_fabricated_challenges_were_seeded():
     assert not out.stdout.strip(), (
         f"challenge rows are being seeded: {out.stdout.strip()}"
     )
+
+
+# ---------------------------------------------------------------------------
+# fga-wire-06 — a catalogue card must not lead to a dead page
+# ---------------------------------------------------------------------------
+
+def test_list_missions_derives_availability():
+    import inspect
+
+    from apps.forge_academy import db as fadb
+
+    src = inspect.getsource(fadb.list_missions)
+    assert "is_available" in src and "step_count" in src
+
+
+def test_availability_survives_a_missing_steps_table(monkeypatch):
+    """A badge is not worth a 500."""
+    import sqlite3
+
+    from apps.forge_academy import db as fadb
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        "CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT, title TEXT,"
+        " tier INT, order_idx INT, is_active INT DEFAULT 1, role_filter TEXT,"
+        " mission_type TEXT, tenant_id TEXT);"
+        "INSERT INTO fa_missions (id, slug, title, tier, order_idx) VALUES (1,'s','T',1,1);"
+    )
+    monkeypatch.setattr(fadb, "get_connection", lambda: conn)
+    missions = fadb.list_missions()
+    assert missions[0]["is_available"] is False
+    assert missions[0]["step_count"] == 0
+
+
+def test_browse_grid_marks_unavailable_missions():
+    src = (TEMPLATES / "missions.html").read_text(encoding="utf-8")
+    assert "coming soon" in src.lower()
+    assert "m.is_available" in src
+
+
+def test_mission_page_no_longer_claims_content_is_being_authored():
+    """The raw message read as a bug to a student; make the state explicit."""
+    src = (TEMPLATES / "mission.html").read_text(encoding="utf-8")
+    assert "No steps found for this mission. Content is being authored." not in src
+    assert "Coming soon" in src

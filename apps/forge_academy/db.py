@@ -569,6 +569,25 @@ def list_missions(tier: int = None, role: str = None,
     q += " ORDER BY tier, order_idx"
     rows = conn.execute(q, params).fetchall()
     missions = [dict(r) for r in rows]
+
+    # is_available: does this mission have any steps? A catalogue card leading
+    # to "No steps found for this mission" is a dead end the student cannot
+    # tell apart from a playable one until they click it (fga-wire-06). Ten
+    # missions have no content on disk at all; they are catalogued deliberately,
+    # so mark them rather than hide them.
+    try:
+        counts = {
+            r[0]: r[1] for r in conn.execute(
+                "SELECT mission_id, COUNT(*) FROM fa_mission_steps GROUP BY mission_id"
+            ).fetchall()
+        }
+    except Exception as exc:  # noqa: BLE001 — a badge is not worth a 500
+        _log.debug("list_missions: step counts unavailable: %s", exc)
+        counts = {}
+    for m in missions:
+        m["step_count"] = int(counts.get(m.get("id"), 0))
+        m["is_available"] = m["step_count"] > 0
+
     if role:
         missions = [
             m for m in missions
