@@ -55,6 +55,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tools.cli import proxy_detect
+
 # --------------------------------------------------------------------------- #
 # Environment detection
 # --------------------------------------------------------------------------- #
@@ -149,6 +151,10 @@ class ProviderChoice:
     label: str
     env_key: str = ""          # API-key env var; empty for local providers
     local: bool = False
+    #: Reaches the model through something that authenticates on our behalf —
+    #: a corporate gateway or egress proxy. There is NO key to configure, so a
+    #: missing key must not be reported as a misconfiguration.
+    keyless: bool = False
     note: str = ""
 
 
@@ -162,6 +168,9 @@ PROVIDERS: tuple[ProviderChoice, ...] = (
     ProviderChoice("bedrock", "AWS Bedrock (GovCloud/CUI)", "",
                    note="uses AWS credentials, not an API key"),
     ProviderChoice("ollama", "Ollama (local, air-gap safe)", "", local=True),
+    ProviderChoice("gateway", "Corporate LLM gateway / proxy", "",
+                   keyless=True,
+                   note="no API key — the gateway authenticates upstream"),
 )
 
 
@@ -195,7 +204,21 @@ def probe_provider(choice: ProviderChoice, env: dict, timeout: float = 6.0) -> d
         ok = _port_open("127.0.0.1", port, timeout=min(timeout, 1.0))
         return {"ok": ok, "detail": "listening" if ok else f"nothing on :{port}"}
 
-    if choice.env_key and not env.get(choice.env_key):
+    if choice.key == "gateway":
+        url = env.get("ICDEV_LLM_GATEWAY_URL", "")
+        if not url:
+            return {"ok": False, "detail": "ICDEV_LLM_GATEWAY_URL not set"}
+        host, port = _split_host_port(url)
+        if not host:
+            return {"ok": False, "detail": f"cannot parse {url}"}
+        ok = _port_open(host, port, timeout=timeout)
+        return {"ok": ok, "detail": f"{'reachable' if ok else 'unreachable'} "
+                                    f"at {host}:{port}"}
+
+    # A keyless provider is reached through a gateway or proxy that supplies
+    # credentials upstream. Reporting "key not set" there would be reporting
+    # the intended configuration as a fault.
+    if choice.env_key and not env.get(choice.env_key) and not choice.keyless:
         return {"ok": False, "detail": f"{choice.env_key} not set"}
 
     # Deliberately does not import provider SDKs: this must work before the
@@ -211,7 +234,35 @@ def probe_provider(choice: ProviderChoice, env: dict, timeout: float = 6.0) -> d
     if not host:
         return {"ok": True, "detail": "no probe available"}
     ok = _port_open(host, 443, timeout=timeout)
-    return {"ok": ok, "detail": "reachable" if ok else "unreachable"}
+    if ok:
+        return {"ok": True, "detail": "reachable"}
+
+    # Behind a corporate proxy a direct connection to the vendor is SUPPOSED to
+    # fail — that is the whole point of the proxy. Calling that FAIL sends the
+    # user chasing a network problem they do not have.
+    if _proxy_configured(env):
+        return {"ok": True,
+                "detail": "no direct route (expected — traffic goes via proxy)"}
+    return {"ok": False, "detail": "unreachable"}
+
+
+def _split_host_port(url: str, default_port: int = 443) -> tuple:
+    """Host and port from a URL, tolerating a bare `host:port`."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url if "//" in url else f"//{url}", scheme="https")
+    host = parsed.hostname or ""
+    port = parsed.port or (80 if parsed.scheme == "http" else default_port)
+    return host, port
+
+
+def _proxy_configured(env: dict) -> bool:
+    """True when this machine routes egress through a proxy."""
+    keys = ("ICDEV_LLM_PROXY", "ICDEV_LLM_PROXY_CMD", "HTTPS_PROXY",
+            "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY")
+    if any((env.get(k) or "").strip() for k in keys):
+        return True
+    return proxy_detect.detect_proxy().found
 
 
 # --------------------------------------------------------------------------- #
@@ -558,6 +609,54 @@ def main(argv: list | None = None) -> int:
                     keys[ch.env_key] = val
 
     updates = llm_env_updates(primary, fallback, keys)
+
+    # ── Gateway ────────────────────────────────────────────────────────────
+    if "gateway" in (primary, fallback):
+        url = existing.get("ICDEV_LLM_GATEWAY_URL", "")
+        if not url and not args.non_interactive:
+            url = _ask("  Gateway base URL (OpenAI-compatible, e.g. "
+                       "https://llm.corp.example/v1)", "")
+        if url:
+            updates["ICDEV_LLM_GATEWAY_URL"] = url
+        print("  Gateway providers need no API key — ICDEV sends the "
+              "placeholder 'not-needed' and the gateway authenticates upstream.")
+
+    # ── Proxy ──────────────────────────────────────────────────────────────
+    # Adopting the proxy the machine already uses, rather than asking the user
+    # to retype it, is the difference between setup working first try in an
+    # enterprise and appearing to hang on an unreachable API host.
+    proxy = proxy_detect.detect_proxy()
+    print()
+    if proxy.found:
+        shown = proxy.url or proxy.pac_url or "(resolved per call)"
+        print(f"Proxy detected: {shown}  [{proxy.source}]")
+    else:
+        print("Proxy: none detected")
+    for tip in proxy_detect.guidance(proxy):
+        print(f"  - {tip}")
+
+    proxy_cmd = ""
+    if not args.non_interactive:
+        if not proxy.found:
+            manual = _ask("Proxy URL (blank for direct connection)", "")
+            if manual:
+                proxy = proxy_detect.ProxyInfo(
+                    url=manual, source="manual", detail="entered at setup")
+        if proxy.found or proxy.source == "manual":
+            # The single question that decides whether this config survives the
+            # next rotation. A command is re-run per call; a URL is not.
+            rotates = _ask("  Does this proxy rotate or change? (y/n)",
+                           "y" if proxy.rotating else "n", ["y", "n"]) == "y"
+            if rotates and proxy.source not in ("env", "icdev-command"):
+                proxy_cmd = _ask(
+                    "  Command that prints the CURRENT proxy URL "
+                    "(blank to re-read the OS environment each call)", "")
+
+    updates.update(proxy_detect.proxy_env_updates(proxy, command=proxy_cmd,
+                                                  ttl_seconds=60 if proxy_cmd else 0))
+    report.steps.append({"step": "proxy", "source": proxy.source,
+                         "found": proxy.found, "rotating": proxy.rotating,
+                         "command": bool(proxy_cmd)})
 
     if not args.no_probe:
         merged = {**existing, **updates}

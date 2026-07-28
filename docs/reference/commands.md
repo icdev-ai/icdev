@@ -3721,6 +3721,55 @@ opposite handling:
 Provisioning is non-destructive: it creates a database, role and extension, and
 never drops, alters or overwrites one that exists. `--dry-run` prints the plan.
 
+### Corporate proxies and LLM gateways
+
+Most enterprises reach the model through a proxy or an internal gateway, and in
+that world **there is no API key to configure** — the gateway holds the real
+credentials and authenticates upstream on your behalf.
+
+```bash
+python -m tools.cli.proxy_detect          # what proxy is this machine using?
+python -m tools.cli.proxy_detect --json
+```
+
+`icdev setup` runs this automatically, reports what it found, and adopts it.
+Detection order — ICDEV's own settings first, because an explicitly configured
+rotator is a decision and must not be overwritten by a staler OS value:
+
+| Source | Where |
+|---|---|
+| `ICDEV_LLM_PROXY_CMD` / `ICDEV_LLM_PROXY` | already configured |
+| `HTTPS_PROXY`, `ALL_PROXY`, `HTTP_PROXY` | environment |
+| WinINET registry (incl. PAC / `AutoConfigURL`) | Windows |
+| `scutil --proxy` (incl. PAC) | macOS |
+
+Pick the `gateway` provider in the wizard and leave the key blank; set
+`ICDEV_LLM_GATEWAY_URL` to its OpenAI-compatible base URL. The provider sends
+the placeholder `not-needed`, which is what an unauthenticated OpenAI-compatible
+endpoint expects.
+
+**Rotation is the part that bites.** A rotating proxy written into `.env` as a
+literal URL works until the pool moves, then presents as the LLM being down. So
+setup deliberately records the *source*, not the value:
+
+| Config | Behaviour |
+|---|---|
+| `ICDEV_LLM_PROXY_CMD` | a command printing the **current** proxy; re-run per call, TTL-cached via `ICDEV_LLM_PROXY_CMD_TTL` (default 2 s). Correct under any rotation. |
+| nothing written | the SDKs read `HTTPS_PROXY` on every call — correct when the rotator updates the environment |
+| `ICDEV_LLM_PROXY` | a fixed URL. Only written when the detected source is **not** rotating. |
+
+`tools/llm/proxy_resolver.py` re-resolves on every invoke and calls
+`provider.reset_client()` when the value changed, so an SDK client that captured
+the old proxy at construction is rebuilt rather than silently reused.
+
+Note this is a *different* thing from `proxy_gateway.py`: that is ICDEV's own
+LiteLLM proxy issuing virtual keys to callers. This is your organisation's
+egress path out to the vendor. They compose — ICDEV's proxy can itself sit
+behind a corporate one.
+
+Behind a proxy, a direct connection to `api.anthropic.com` is *supposed* to
+fail, so the setup probe reports that as expected rather than as a fault.
+
 ### Keeping `/updates` correct
 
 `http://localhost:5050/updates` renders `CHANGELOG.md` live, so the page updates
