@@ -872,6 +872,28 @@ python tools/intelligence/bayesian_teacher.py --health --json                   
 
 ---
 
+## Studio Workflow Executor Commands
+```bash
+# Generic MCP tool executor — dispatch any tool_registry.TOOL_REGISTRY entry as a workflow step
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}'
+python tools/studio/executors/mcp_executor.py --tool kg_search --params '{"query":"NIST AC-2"}'
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' --run-id "run-xxx" --step-id "probe"
+# Dispatch as a specific principal (default: the run's `caller` memory key, else
+# $ICDEV_MCP_CALLER_IL / $ICDEV_IMPACT_LEVEL, else IL4 with no roles)
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' \
+  --caller-il IL5 --caller-roles isso,compliance_officer --caller-id u1 --tenant-id t1
+# A `requires_approval` tool parks a pending human gate on the run and blocks on it
+# (dwo-mcp-02-d4). Approve/reject it like any HITL node — workflow Details modal, or
+# workflow_runner.approve_step(step_run_id) — the refusal payload names the step_run_id.
+python tools/studio/executors/mcp_executor.py --tool terraform_apply   --params '{"terraform_dir":"infra"}' --run-id "run-xxx" --approval-wait 3600
+# --approval-wait 0 parks the gate without blocking; the run resumes into the decision.
+# Exit 0 = handler returned; exit 1 = unknown tool (suggests closest matches),
+# params failing the entry's input_schema, the handler raised, or gate MCP-WF-001
+# refused it (not allowlisted / awaiting approval / caller IL too low / missing role).
+```
+
+---
+
 ## Workflow Discipline Engine Commands
 ```bash
 # PLAN-APPLY-UNIFY Lifecycle (Phase 66, D-WF-1 through D-WF-7)
