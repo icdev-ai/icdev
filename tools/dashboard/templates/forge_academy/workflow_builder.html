@@ -86,7 +86,15 @@
           🔷 {{ (p.name | default(p.id))[:22] }}
         </div>
         {% else %}
-        <div style="font-size:.7rem;color:var(--text-secondary);">No patterns available.</div>
+        {% if patterns_available is defined and not patterns_available %}
+        <div style="font-size:.7rem;color:#ffce7a;">
+          Pattern library unavailable &mdash; the builder cannot load its palette.
+          This is a configuration problem, not an empty catalogue; an administrator
+          should check the Academy logs.
+        </div>
+        {% else %}
+        <div style="font-size:.7rem;color:var(--text-secondary);">No patterns configured yet.</div>
+        {% endif %}
         {% endfor %}
       </div>
     </div>

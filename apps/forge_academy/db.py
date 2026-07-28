@@ -439,6 +439,42 @@ def get_or_create_user(username: str, display_name: str = "", email: str = "", t
     return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
 
 
+def active_challenge_count() -> int:
+    """How many challenges are currently running.
+
+    fa_challenges has never had an INSERT anywhere in the repo — no seeder, no
+    admin-create route — so the Arena has always rendered "No Active
+    Challenges" and the entry API was unreachable (fga-fix-04). This lets the
+    nav hide a feature that cannot work rather than advertising a dead end.
+    Returns 0 on any error: a nav link is not worth an exception.
+    """
+    try:
+        row = get_connection().execute(
+            "SELECT COUNT(*) FROM fa_challenges WHERE ends_at > datetime('now')"
+        ).fetchone()
+        return int(row[0]) if row else 0
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("active_challenge_count failed: %s", exc)
+        return 0
+
+
+def update_user_display_name(user_id: int, display_name: str) -> None:
+    """Persist a display name for an EXISTING user.
+
+    get_or_create_user() only sets display_name on INSERT, so a returning user
+    who changed their name had it silently discarded by the setup route
+    (fga-fix-03). Blank input is ignored rather than wiping the stored name.
+    """
+    display_name = (display_name or "").strip()
+    if not display_name:
+        return
+    conn = get_connection()
+    conn.execute(
+        "UPDATE fa_users SET display_name=? WHERE id=?", (display_name, user_id)
+    )
+    conn.commit()
+
+
 def update_user_role(user_id: int, role: str) -> None:
     from .constants import ROLES
     role_type = ROLES.get(role, {}).get("type", "guided")
@@ -533,6 +569,25 @@ def list_missions(tier: int = None, role: str = None,
     q += " ORDER BY tier, order_idx"
     rows = conn.execute(q, params).fetchall()
     missions = [dict(r) for r in rows]
+
+    # is_available: does this mission have any steps? A catalogue card leading
+    # to "No steps found for this mission" is a dead end the student cannot
+    # tell apart from a playable one until they click it (fga-wire-06). Ten
+    # missions have no content on disk at all; they are catalogued deliberately,
+    # so mark them rather than hide them.
+    try:
+        counts = {
+            r[0]: r[1] for r in conn.execute(
+                "SELECT mission_id, COUNT(*) FROM fa_mission_steps GROUP BY mission_id"
+            ).fetchall()
+        }
+    except Exception as exc:  # noqa: BLE001 — a badge is not worth a 500
+        _log.debug("list_missions: step counts unavailable: %s", exc)
+        counts = {}
+    for m in missions:
+        m["step_count"] = int(counts.get(m.get("id"), 0))
+        m["is_available"] = m["step_count"] > 0
+
     if role:
         missions = [
             m for m in missions
@@ -785,9 +840,22 @@ def grant_achievement(user_id: int, slug: str) -> dict | None:
 # Guilds
 # ---------------------------------------------------------------------------
 
-def create_guild(name: str, description: str, created_by: int) -> dict:
+def create_guild(
+    name: str, description: str, created_by: int, invite_code: str | None = None
+) -> dict:
+    """Create a guild and make ``created_by`` its leader.
+
+    ``invite_code`` is accepted so the caller can mint the code it shows the
+    user. The route already generated one and passed it, which raised TypeError
+    on every request because this signature did not take it (fga-fix-01) — and
+    had the signature matched, the route would have shown the user its own code
+    while the row stored a different one, so the invite would never resolve.
+
+    Codes are stored uppercased because ``join_guild`` uppercases before
+    lookup; a lowercase code would be unjoinable.
+    """
     conn = get_connection()
-    code = secrets.token_urlsafe(6).upper()
+    code = (invite_code or secrets.token_urlsafe(6)).upper()
     conn.execute(
         "INSERT INTO fa_guilds (name,description,invite_code,created_by) VALUES (?,?,?,?)",
         (name, description, code, created_by),

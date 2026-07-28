@@ -10,10 +10,10 @@ from flask import Blueprint, g, jsonify, redirect, render_template, request, url
 from .auth import require_org_intel
 from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
-    migrate, get_or_create_user, get_user, update_user_role, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
+    migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     get_user_achievements, grant_achievement, update_user_xp,
-    create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
+    active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
     record_user_competency,
@@ -24,7 +24,7 @@ from .gamification import (
     check_step_achievements, award_daily_login, get_user_stats,
 )
 from .integrations import (
-    record_skill_usage, advance_learning_track, list_patterns,
+    record_skill_usage, advance_learning_track, patterns_status,
     detect_role_from_answers, create_workflow,
 )
 
@@ -168,7 +168,13 @@ def hub():
         return redirect(url_for("forge_academy.profile"))
     daily = award_daily_login(fa_user["id"])
     stats = get_user_stats(fa_user["id"])
-    missions = list_missions(role=fa_user.get("role"), tier=None)[:6]
+    # Honour ?role= like the browser, leaderboard and leaderboard API already
+    # do. The hub was the only page ignoring it, so the "View as:" persona
+    # dropdown appeared to do nothing here (fga-fix-06). Falling back to the
+    # user's own role keeps the default view unchanged.
+    role_filter = request.args.get("role", "")
+    effective_role = role_filter or fa_user.get("role")
+    missions = list_missions(role=effective_role, tier=None)[:6]
     level_ctx = _level_ctx(fa_user)
     return render_template(
         "forge_academy/page.html",
@@ -178,6 +184,11 @@ def hub():
         level_ctx=level_ctx,
         daily_login=daily,
         roles=ROLES,
+        role_filter=role_filter,
+        # Hide the Arena entry point while no challenge can exist. Seeding
+        # filler to populate the page was explicitly rejected — fabricated data
+        # presented as real is the failure mode PENTA removed from this surface.
+        has_challenges=active_challenge_count() > 0,
     )
 
 
@@ -350,11 +361,15 @@ def arena():
 def workflow_builder_page():
     _ensure_init()
     fa_user = _fa_user()
-    patterns = list_patterns()
+    # Distinguish "no patterns configured" from "pattern source unavailable"
+    # so the page cannot present a broken dependency as an empty catalogue.
+    pattern_state = patterns_status()
     return render_template(
         "forge_academy/workflow_builder.html",
         fa_user=fa_user,
-        patterns=patterns,
+        patterns=pattern_state["patterns"],
+        patterns_available=pattern_state["available"],
+        patterns_error=pattern_state["error"],
         level_ctx=_level_ctx(fa_user) if fa_user else {},
     )
 
@@ -370,7 +385,14 @@ def api_user_setup():
     email = _fa_email()
     display_name = data.get("display_name", email.split("@")[0])
     role = data.get("role", "devops")
-    fa_user = get_or_create_user(email, display_name=display_name)
+    # tenant_id MUST match what _fa_user() reads with, or setup writes a row in
+    # one tenant while every page reads another — the saved profile appears to
+    # vanish and an orphan row accumulates (fga-fix-03).
+    fa_user = get_or_create_user(email, display_name=display_name,
+                                 tenant_id=_fa_tenant_id())
+    # get_or_create_user only applies display_name on INSERT; persist it
+    # explicitly so a returning user's change is not dropped.
+    update_user_display_name(fa_user["id"], display_name)
     if role:
         update_user_role(fa_user["id"], role)
     wizard_result = {}
@@ -582,10 +604,14 @@ def api_guild_create():
     description = data.get("description", "")
     if not name:
         return jsonify({"error": "name required"}), 400
-    invite_code = secrets.token_urlsafe(6)
     guild = create_guild(name=name, description=description,
-                         invite_code=invite_code, created_by=fa_user["id"])
-    return jsonify({"ok": True, "guild": guild, "invite_code": invite_code})
+                         invite_code=secrets.token_urlsafe(6),
+                         created_by=fa_user["id"])
+    # Report the code that was actually STORED, not the one we proposed —
+    # create_guild uppercases it to match join_guild's lookup, so echoing the
+    # local variable would hand the user an invite that never resolves.
+    return jsonify({"ok": True, "guild": guild,
+                    "invite_code": guild.get("invite_code")})
 
 
 @bp.route("/api/academy/guild/join", methods=["POST"])

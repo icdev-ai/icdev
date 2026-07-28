@@ -182,7 +182,7 @@
     {% endfor %}
     {% else %}
     <div style="padding:3rem;text-align:center;color:var(--text-secondary);">
-      No steps found for this mission. Content is being authored.
+      <strong>Coming soon.</strong><br>This mission is on the roadmap but its content has not been authored yet. Nothing here is broken — there is simply nothing to do on it yet.
     </div>
     {% endif %}
   </div>
@@ -245,8 +245,26 @@ function showXPToast(xp, label) {
   setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(),400); }, 2800);
 }
 
+// An unenrolled visitor used to get a silent no-op here: the button appeared to
+// work, no XP was recorded, and nothing said why (fga-fix-07). Tell them, and
+// give them the way out.
+function faEnrolNotice() {
+  let el = document.getElementById('fa-enrol-notice');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fa-enrol-notice';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;left:50%;bottom:1.5rem;transform:translateX(-50%);' +
+      'background:#1a1206;border:1px solid #d98b12;color:#ffce7a;border-radius:8px;' +
+      'padding:.75rem 1.1rem;font-size:.85rem;z-index:9999;max-width:32rem;';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = 'Your progress is not being saved — you are not enrolled in the Academy. ' +
+    '<a href="/academy/profile" style="color:#ffce7a;text-decoration:underline;">Set up your profile</a> to earn XP.';
+}
+
 async function submitStep(stepIdx, submission, passed) {
-  if (!FA_USER_ID) return;
+  if (!FA_USER_ID) { faEnrolNotice(); return; }
   const step = STEPS[stepIdx];
   const elapsed = Math.round((Date.now() - startTime) / 1000);
   const isLast = stepIdx === STEPS.length - 1;
