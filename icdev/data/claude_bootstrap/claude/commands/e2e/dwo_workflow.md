@@ -123,7 +123,7 @@ process; everything before it is setup.
     - the Approve / Reject controls are still rendered.
     Screenshot as `playwright/screenshots/dwo-e2e-2-post-restart.png`.
 13. Approve the gate:
-    `POST /api/studio/workflows/<run_id>/steps/<step_run_id>/approve` with
+    `POST /api/studio/workflows/runs/<run_id>/steps/<step_run_id>/approve` with
     `{"actor": "e2e"}`. Assert `200 {"status": "approved"}`. A `404` here means
     the approval was already resolved or the gate timed out — treat it as a
     FAIL of this scenario and capture the run row, because it is exactly the
