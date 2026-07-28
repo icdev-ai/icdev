@@ -34,7 +34,7 @@ approval workflows, documentation hooks, and team-member routing.
 ### `node_type`
 
 ```yaml
-node_type: tool | human | approval   # default: tool
+node_type: tool | human | approval | mcp   # default: tool
 ```
 
 | Value | Meaning |
@@ -42,8 +42,48 @@ node_type: tool | human | approval   # default: tool
 | `tool` | (default) Automated step.  The engine executes `tool` directly.  No human interaction required. |
 | `human` | A person must perform or confirm this step before the DAG may proceed. |
 | `approval` | One or more named approvers must sign off before the DAG may proceed. |
+| `mcp` | Automated step that dispatches a registered MCP tool.  The step names the tool in `mcp_tool`, not a script path in `tool`. |
 
 > Omitting `node_type` is identical to `node_type: tool`.
+
+---
+
+### `mcp_tool` / `mcp_params`
+
+```yaml
+- id: scan
+  name: Scan Dependencies
+  node_type: mcp
+  mcp_tool: scan_dependencies        # a name in tools/mcp/tool_registry.py::TOOL_REGISTRY
+  mcp_params:                        # forwarded to the tool's handler as its arguments
+    path: tools/
+```
+
+Only meaningful when `node_type: mcp`.  The engine ignores the step's `tool`
+field for these nodes and runs every one of them through the shared executor
+`tools/studio/executors/mcp_executor.py`:
+
+```
+python tools/studio/executors/mcp_executor.py \
+    --tool scan_dependencies --params '{"path": "tools/"}' \
+    --step-id scan --project-id <id> --run-id <id> --json
+```
+
+`mcp_params` is normally a mapping and is serialized to JSON for `--params`.
+A string is passed through verbatim, so a template may hand-author the JSON;
+either way the executor rejects anything that is not a JSON object.  A step
+with `node_type: mcp` and no `mcp_tool` is skipped rather than run.
+
+The step's per-run `args` are **not** forwarded — an MCP tool takes its
+arguments from `mcp_params` only.  This holds for the composer's per-step
+argument overrides too, which apply to `args` and so never reach an mcp step.
+
+Both engines build that invocation identically: Studio's
+`tools/studio/workflow_runner.py` and the headless
+`tools/orchestration/workflow_composer.py` (which takes the run ID as
+`--run-id`).  A template with an mcp step therefore runs the same way from the
+UI, from cron, and from an air-gapped shell —
+`tests/test_dwo_mcp_composer_parity.py` asserts the two builders agree.
 
 ---
 
