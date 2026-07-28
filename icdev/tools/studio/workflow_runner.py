@@ -428,7 +428,24 @@ def _update_step_record(step_run_id: str, result: dict) -> None:
 
 # ── HITL helpers ───────────────────────────────────────────
 
-def _notify_approval_gate(run_id: str, step_run_id: str, step_name: str, role: str) -> None:
+def _notify_approval_gate(
+    run_id: str, step_run_id: str, step_name: str, role: str,
+    project_id: str = "default",
+) -> None:
+    """Publish a paused gate to the single reviewer inbox, then notify.
+
+    dwo-dur-04: workflow_hitl owns the reviewer inbox, notification routing and
+    the webhook-token completion path. Studio registers the gate there rather
+    than standing up a second approval surface. Telegram's
+    ``/approve <step_run_id>`` keeps working either way — the step_run_id in the
+    message body is unchanged.
+    """
+    try:
+        from tools.studio import gate_bridge  # noqa: PLC0415
+        gate_bridge.open_gate(run_id, step_run_id, step_name, role, project_id)
+    except Exception:
+        pass
+
     try:
         from tools.notifications.adapters.telegram import send  # noqa: PLC0415
         send(
@@ -442,8 +459,8 @@ def _notify_approval_gate(run_id: str, step_run_id: str, step_name: str, role: s
         pass
 
 
-def approve_step(step_run_id: str, actor: str = "approver") -> bool:
-    """Signal approval for a paused HITL step. Returns False if no pending gate."""
+def _approve_step_local(step_run_id: str, actor: str = "approver") -> bool:
+    """Release the Studio-side gate only. See approve_step for the bridged form."""
     # First try in-memory Event (same process — immediate)
     with _approval_lock:
         ev = _approval_events.get(step_run_id)
@@ -476,8 +493,8 @@ def approve_step(step_run_id: str, actor: str = "approver") -> bool:
         return False
 
 
-def reject_step(step_run_id: str, reason: str = "", actor: str = "approver") -> bool:
-    """Signal rejection for a paused HITL step. Returns False if no pending gate."""
+def _reject_step_local(step_run_id: str, reason: str = "", actor: str = "approver") -> bool:
+    """Release the Studio-side gate only. See reject_step for the bridged form."""
     with _approval_lock:
         ev = _approval_events.get(step_run_id)
         if ev:
@@ -503,6 +520,35 @@ def reject_step(step_run_id: str, reason: str = "", actor: str = "approver") -> 
     except Exception:
         logger.exception("reject_step failed for %s", step_run_id)
         return False
+
+
+def approve_step(step_run_id: str, actor: str = "approver") -> bool:
+    """Approve a paused HITL step and close out its workflow_hitl external step.
+
+    dwo-dur-04: a decision taken in either surface releases the other, exactly
+    once. When the decision arrived *from* workflow_hitl the bridge suppresses
+    the callback, so the external step is not completed twice.
+    """
+    released = _approve_step_local(step_run_id, actor)
+    if released:
+        try:
+            from tools.studio import gate_bridge  # noqa: PLC0415
+            gate_bridge.complete_external_step(step_run_id, "approved", actor)
+        except Exception:
+            logger.exception("external step sync failed for %s", step_run_id)
+    return released
+
+
+def reject_step(step_run_id: str, reason: str = "", actor: str = "approver") -> bool:
+    """Reject a paused HITL step and close out its workflow_hitl external step."""
+    released = _reject_step_local(step_run_id, reason, actor)
+    if released:
+        try:
+            from tools.studio import gate_bridge  # noqa: PLC0415
+            gate_bridge.complete_external_step(step_run_id, "rejected", actor)
+        except Exception:
+            logger.exception("external step sync failed for %s", step_run_id)
+    return released
 
 
 def get_pending_approvals() -> list[str]:
@@ -722,7 +768,7 @@ def _worker(
                     # Only notify on the first park, not on every resume.
                     _notify_approval_gate(
                         run_id, step_run_id, step.get("name", step["id"]),
-                        step.get("role", "approver"),
+                        step.get("role", "approver"), project_id,
                     )
 
                 decision, reason = _await_gate(

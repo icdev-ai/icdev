@@ -105,7 +105,39 @@ def mark_complete(step_id: str, completed_by: str) -> bool:
     finally:
         conn.close()
 
+    # A step that has already been decided must not be decided twice — the
+    # reviewer inbox and the Studio Details modal are two doors onto the same
+    # gate (dwo-dur-04).
+    if step.get("status") in ("completed", "failed", "timed_out"):
+        logger.warning(
+            "Rejected duplicate decision on external step %s (status=%s)",
+            step_id, step.get("status"),
+        )
+        return False
+
     _update_step(step_id, status="completed", completed_at=_now(), completed_by=completed_by)
+
+    # A Studio-produced gate has no wf_ stages to advance — release the paused
+    # Studio run instead, then close out its shadow instance.
+    try:
+        from tools.studio import gate_bridge
+        if gate_bridge.is_studio_step(step):
+            gate_bridge.release_studio_gate(step, completed_by)
+            conn = get_connection()
+            try:
+                conn.execute(
+                    "UPDATE wf_instances SET status='approved', updated_at=%s WHERE id=%s",
+                    (_now(), instance_id),
+                )
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+            finally:
+                conn.close()
+            return True
+    except Exception as exc:
+        logger.warning("Studio gate release failed for %s: %s", step_id, exc)
 
     # Restore instance status to active and advance
     conn = get_connection()
