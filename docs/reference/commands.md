@@ -2743,6 +2743,8 @@ python tools/studio/automation_builder.py --json templates                      
 python tools/studio/automation_builder.py --json list                                       # List saved automations
 python tools/studio/automation_builder.py --json runs                                       # List recent runs
 python tools/studio/automation_builder.py --json simulate <automation_id>                   # Dry-run simulation
+python tools/studio/automation_builder.py --json simulate <automation_id> --event '{...}'   # Dry-run against a specific event
+python tools/studio/automation_builder.py --json trigger <automation_id> --event '{...}'    # Fire for real (run_workflow starts a run)
 
 # NL App Builder — describe what you want, get a working app
 python tools/studio/nl_app_builder.py --json extract "description of app"                  # Extract capabilities

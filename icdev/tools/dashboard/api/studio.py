@@ -687,6 +687,18 @@ def api_simulate_automation(auto_id: str):
     return jsonify(simulate_automation(auto_id, data.get("test_event")))
 
 
+@studio_api.route("/automations/<auto_id>/trigger", methods=["POST"])
+def api_trigger_automation(auto_id: str):
+    """Fire an automation for a real event — actions execute for real."""
+    from tools.studio.automation_builder import trigger_automation
+
+    data = request.get_json(silent=True) or {}
+    result = trigger_automation(auto_id, data.get("event"))
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
 @studio_api.route("/automations/runs", methods=["GET"])
 def api_automation_runs():
     from tools.studio.automation_builder import list_automation_runs
