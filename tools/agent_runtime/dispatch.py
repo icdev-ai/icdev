@@ -27,6 +27,7 @@ import inspect
 import json
 import os
 import threading
+import time
 from typing import Any, Callable, Optional
 
 from tools.agent_runtime.discovery import ToolSpec
@@ -141,6 +142,94 @@ def _invoke_decorated(
 
 
 # ---------------------------------------------------------------------------
+# Failure policy (arr-tax-01, arr-res-01, arr-res-02, arr-deg-01, arr-esc-01)
+# ---------------------------------------------------------------------------
+def _handle_failure(
+    spec: ToolSpec,
+    exc: Exception,
+    tool_input: dict[str, Any],
+    stop: "threading.Event | None",
+    execute: Callable[[dict[str, Any], "threading.Event | None"], str],
+    task_id: Optional[str],
+) -> str:
+    """Classify a tool failure and act on it, returning the string the loop sees.
+
+    Every failure used to arrive at the model as ``error executing X: <exc>``,
+    so a network blip, an absent library, a denied permission and a genuine bug
+    were indistinguishable. Now each carries its disposition.
+
+    **A retry is only ever attempted for a read-only tool.** A mutating tool
+    that failed part-way may already have applied its side effect; replaying it
+    could write a file twice or re-run a command whose first attempt actually
+    succeeded before erroring. Transience is not a licence to duplicate a
+    mutation, so mutating tools are classified and reported but never replayed.
+    """
+    from tools.agent_runtime.error_recovery import (
+        DEGRADE,
+        ESCALATE,
+        RETRY_SAFE,
+        ToolResult,
+        classify,
+        file_escalation_card,
+        retry_delay_seconds,
+    )
+
+    classification = classify(exc)
+    retried = False
+
+    stop_requested = bool(stop is not None and stop.is_set())
+    if (
+        classification.disposition == RETRY_SAFE
+        and spec.read_only
+        and not stop_requested
+    ):
+        delay = retry_delay_seconds()
+        logger.info(
+            "dispatch: %s failed with %s (transient); retrying once after %.2fs",
+            spec.name, classification.error_type, delay,
+        )
+        time.sleep(delay)
+        try:
+            return execute(tool_input, stop)
+        except Exception as retry_exc:  # noqa: BLE001
+            logger.warning("dispatch: %s retry also failed: %s", spec.name, retry_exc)
+            exc = retry_exc
+            classification = classify(retry_exc)
+            retried = True
+    elif classification.disposition == RETRY_SAFE and not spec.read_only:
+        logger.info(
+            "dispatch: %s failed with %s (transient) but is a mutating tool — "
+            "not replayed; a partial side effect must not be duplicated",
+            spec.name, classification.error_type,
+        )
+
+    if classification.disposition == ESCALATE:
+        file_escalation_card(
+            tool_name=spec.name,
+            classification=classification,
+            error_message=str(exc),
+            tool_input=tool_input,
+            task_id=task_id,
+        )
+
+    result = ToolResult(
+        success=False,
+        output=f"{spec.name}: {exc}",
+        error_type=classification.error_type,
+        disposition=classification.disposition,
+        remediation_hint=classification.remediation_hint,
+        missing_capability=classification.missing_capability,
+        retried=retried,
+    )
+    if classification.disposition == DEGRADE:
+        logger.info(
+            "dispatch: %s degraded — capability %r unavailable (no install attempted)",
+            spec.name, classification.missing_capability,
+        )
+    return result.render()
+
+
+# ---------------------------------------------------------------------------
 # Handler construction
 # ---------------------------------------------------------------------------
 def make_handler(
@@ -152,6 +241,32 @@ def make_handler(
 ) -> ToolHandler:
     """Build one agent-loop handler for ``spec``, wrapping it in the safety gate."""
 
+    def _execute(tool_input: dict[str, Any], stop: "threading.Event | None") -> str:
+        """Run the tool once. Raises — the caller owns failure policy."""
+        if spec.source == "builtin":
+            bh = (builtin_handlers or {}).get(spec.name)
+            if bh is None:
+                return f"error: no built-in handler for {spec.name!r}"
+            return bh(tool_input, stop)
+
+        if spec.source == "decorated":
+            fn = spec.callable or (
+                _resolve(spec.module, spec.handler)
+                if spec.module and spec.handler
+                else None
+            )
+            if fn is None:
+                return f"error: cannot resolve decorated tool {spec.name!r}"
+            return _stringify(_invoke_decorated(fn, tool_input, stop, task_id))
+
+        # default: MCP-registry tool
+        if not (spec.module and spec.handler):
+            return f"error: {spec.name!r} has no dispatch coordinates"
+        fn = _resolve(spec.module, spec.handler)
+        if fn is None:
+            return f"error: handler unavailable for {spec.name!r}"
+        return _stringify(_invoke_mcp(fn, tool_input, stop, task_id))
+
     def _handler(tool_input: dict[str, Any], stop: "threading.Event | None") -> str:
         if not isinstance(tool_input, dict):
             tool_input = {}
@@ -159,32 +274,10 @@ def make_handler(
         if not allowed:
             return f"blocked: {reason}"
         try:
-            if spec.source == "builtin":
-                bh = (builtin_handlers or {}).get(spec.name)
-                if bh is None:
-                    return f"error: no built-in handler for {spec.name!r}"
-                return bh(tool_input, stop)
-
-            if spec.source == "decorated":
-                fn = spec.callable or (
-                    _resolve(spec.module, spec.handler)
-                    if spec.module and spec.handler
-                    else None
-                )
-                if fn is None:
-                    return f"error: cannot resolve decorated tool {spec.name!r}"
-                return _stringify(_invoke_decorated(fn, tool_input, stop, task_id))
-
-            # default: MCP-registry tool
-            if not (spec.module and spec.handler):
-                return f"error: {spec.name!r} has no dispatch coordinates"
-            fn = _resolve(spec.module, spec.handler)
-            if fn is None:
-                return f"error: handler unavailable for {spec.name!r}"
-            return _stringify(_invoke_mcp(fn, tool_input, stop, task_id))
+            return _execute(tool_input, stop)
         except Exception as exc:  # noqa: BLE001 — never crash the agent loop
             logger.exception("dispatch: %s failed", spec.name)
-            return f"error executing {spec.name}: {exc}"
+            return _handle_failure(spec, exc, tool_input, stop, _execute, task_id)
 
     return _handler
 

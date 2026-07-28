@@ -135,7 +135,14 @@ def test_handler_never_raises_on_exception(monkeypatch):
                     module="m", handler="h")
     h = make_handler(spec, gate=_always_allow)
     out = h({}, None)
-    assert out.startswith("error executing get_x")
+    # The contract this test guards is "a raising handler never propagates".
+    # The reported shape changed with arr-tax-01: a failure now carries its
+    # disposition and type instead of the flat "error executing X: <exc>" that
+    # made a network blip and a code bug indistinguishable. RuntimeError is a
+    # code-level fault, so it is terminal — not retried.
+    assert "error [terminal]" in out
+    assert "type=RuntimeError" in out
+    assert "get_x" in out and "kaboom" in out
 
 
 def test_build_handlers_covers_all_specs(monkeypatch):
