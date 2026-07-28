@@ -117,8 +117,85 @@ asserts the two stay in step.
 
 ---
 
+## Decision: ONE reviewer inbox — Studio gates produce `wf_external_steps` (dwo-dur-04)
+
+There were two human-approval surfaces that did not know about each other:
+
+- Studio gates — `node_type: human` steps parked as `studio_workflow_run_steps`
+  rows with `status='awaiting_approval'`, released by an in-process
+  `threading.Event` or by a DB poll (Telegram `/approve`);
+- workflow_hitl external steps — `wf_external_steps`, completed via the
+  webhook-token path, with notifier/teams/templates behind them.
+
+An approver had two inboxes and a reviewer could not see one from the other.
+
+**Direction (a) was taken: Studio is a *producer* of `wf_external_steps`, and
+workflow_hitl remains the single reviewer inbox.** workflow_hitl already owns
+notification routing, teams, templates and the webhook-token completion path;
+Studio reimplements none of it. Direction (b) — a foreign key from
+`wf_external_steps` back to the Studio gate, with the HITL blueprint rendering
+both — was rejected because it leaves two inboxes and asks the blueprint to
+special-case a second row shape.
+
+`tools/studio/gate_bridge.py` is the whole of the seam.
+
+### Linkage carries no new schema
+
+`wf_external_steps.external_ref` holds the Studio `step_run_id` and
+`external_system` is `'studio'`. That gives lookup in both directions off
+columns that already exist — no migration, no bridge table, no new column.
+
+`wf_external_steps.step_type` is CHECK-constrained, so a Studio gate rides the
+existing `'manual'` type rather than widening the constraint. The
+`instance_id`/`template_id` foreign keys are satisfied by one shared system
+template (`wft-studio-gate`) and one shadow instance per run
+(`wfi-studio-<run_id>`), both created idempotently.
+
+### Exactly once, in either direction
+
+Approving in either surface releases the other, once:
+
+| Decision taken in | Path |
+|---|---|
+| workflow_hitl (`POST /wf/external/<id>/complete`, webhook token) | `external_steps.mark_complete()` → `gate_bridge.release_studio_gate()` → `workflow_runner.approve_step()` |
+| Studio (Details modal, `POST /api/studio/.../approve`) | `workflow_runner.approve_step()` → `gate_bridge.complete_external_step()` → `external_steps.mark_complete()` |
+| Telegram `/approve <step_run_id>` | `telegram_listener._write_hitl_decision_to_db()` → `gate_bridge.complete_external_step()` |
+
+Two guards keep that from looping or double-firing:
+
+1. **Re-entrancy** — `gate_bridge._bridging` holds the `step_run_id` currently
+   being bridged, so the callback into the originating surface is suppressed.
+2. **Terminal status** — `mark_complete()` now refuses a step already in
+   `completed`/`failed`/`timed_out`, and the Studio DB update is still scoped
+   `WHERE status='awaiting_approval'`. A second decision on a decided gate is
+   rejected and audited, not applied.
+
+Telegram keeps working unchanged: the `/approve <step_run_id>` command router
+resolves the same `step_run_id`, which is still what the notification body
+carries. That path wrote its decision straight to the DB, bypassing
+`approve_step()`, so it now closes the mirrored external step itself — otherwise
+a Telegram approval left an orphan in the reviewer inbox.
+
+### One audit trail
+
+Gate decisions go to the shared append-only audit via
+`tools.audit.audit_logger.log_event` — `studio_gate_opened`,
+`studio_gate_approved`, `studio_gate_rejected`, and
+`studio_gate_duplicate_decision_rejected` — regardless of which surface the
+decision came from. Audit failure never breaks the gate.
+
+If workflow_hitl is unavailable (tables absent, feature disabled), `open_gate()`
+returns `None` and Studio falls back to its own Details-modal gate, unchanged.
+
 ## Tests
 
 `tests/test_dwo_dur_03_resume_surface.py` — retry policy parsing and defaults,
 retry execution paths, resumable-status contract, the API's 202/404/409
 outcomes, and the UI control's presence and status parity.
+
+`tests/test_dwo_gate_bridge.py` — one parked gate produces exactly one
+reviewer-inbox row (and re-parking does not duplicate it); approving from
+workflow_hitl releases the Studio run gate; approving from Studio completes the
+external step; a Telegram approval closes the external step; rejection
+propagates; and a second decision on a decided gate is refused without
+overwriting the first decider.

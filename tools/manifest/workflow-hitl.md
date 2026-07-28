@@ -23,7 +23,7 @@ per-stage document conformance, AI citation/sourcing, and external step integrat
 | `tools/workflow_hitl/notifier.py` | `send_review_request()`, `send_kickback_notice()`, `send_approval_granted()`, `send_escalation_notice()` |
 | `tools/workflow_hitl/document_manager.py` | Document template CRUD; `submit_document()`; `all_required_submitted(approval_id, stage_config)` gate; `get_applicable_standards(canvas_type, stage)` for AI |
 | `tools/workflow_hitl/citation_manager.py` | `add_citation()`, `get_by_instance()`, `format_citation_ref()` (MLA-style), `format_citation_block()` |
-| `tools/workflow_hitl/external_steps.py` | External step lifecycle: `create()`, `send()`, `mark_complete()`, `check_all_pending()`, `verify_webhook_token()` |
+| `tools/workflow_hitl/external_steps.py` | External step lifecycle: `create()`, `send()`, `mark_complete()`, `check_all_pending()`, `verify_webhook_token()`. `mark_complete()` rejects a second decision on an already-decided step, and releases the paused Studio run when the step is Studio-produced (`external_system='studio'`) |
 | `tools/workflow_hitl/canvas_hooks.py` | `CANVAS_DEFAULT_TEMPLATES`; `auto_create_instance_if_assigned()` |
 | `tools/workflow_hitl/childapp_hooks.py` | `get_inherited_template(canvas_type, childapp_key)` — child app inherits parent canvas default |
 | `tools/workflow_hitl/blueprint.py` | Flask blueprint factory `create_wf_blueprint()`; 42 routes at `/api/v1/wf/` |
@@ -99,7 +99,7 @@ No schema migration required.
 | `wf_approvals` | Active approval gate per stage (pending / approved / kickback) |
 | `wf_feedback` | **Append-only** reviewer submissions with ratings, tags, citations |
 | `wf_feedback_insights` | Aggregated insights written by Genesis 6h reflex |
-| `wf_external_steps` | External step state (email / Jira / SNOW / GitHub / Confluence / SharePoint) |
+| `wf_external_steps` | External step state (email / Jira / SNOW / GitHub / Confluence / SharePoint). Also the **single reviewer inbox for ICDEV Studio approval gates** — a Studio gate lands here with `external_system='studio'` and `external_ref=<studio step_run_id>` (dwo-dur-04); see `tools/studio/gate_bridge.py` |
 | `wf_document_templates` | Checklists, forms, SOP references, AI standards — dual-use |
 | `wf_document_submissions` | **Append-only** human-submitted document completions |
 | `wf_citations` | **Append-only** citation records linked to any stage output |
