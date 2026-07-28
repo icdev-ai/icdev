@@ -439,6 +439,23 @@ def get_or_create_user(username: str, display_name: str = "", email: str = "", t
     return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
 
 
+def update_user_display_name(user_id: int, display_name: str) -> None:
+    """Persist a display name for an EXISTING user.
+
+    get_or_create_user() only sets display_name on INSERT, so a returning user
+    who changed their name had it silently discarded by the setup route
+    (fga-fix-03). Blank input is ignored rather than wiping the stored name.
+    """
+    display_name = (display_name or "").strip()
+    if not display_name:
+        return
+    conn = get_connection()
+    conn.execute(
+        "UPDATE fa_users SET display_name=? WHERE id=?", (display_name, user_id)
+    )
+    conn.commit()
+
+
 def update_user_role(user_id: int, role: str) -> None:
     from .constants import ROLES
     role_type = ROLES.get(role, {}).get("type", "guided")
@@ -785,9 +802,22 @@ def grant_achievement(user_id: int, slug: str) -> dict | None:
 # Guilds
 # ---------------------------------------------------------------------------
 
-def create_guild(name: str, description: str, created_by: int) -> dict:
+def create_guild(
+    name: str, description: str, created_by: int, invite_code: str | None = None
+) -> dict:
+    """Create a guild and make ``created_by`` its leader.
+
+    ``invite_code`` is accepted so the caller can mint the code it shows the
+    user. The route already generated one and passed it, which raised TypeError
+    on every request because this signature did not take it (fga-fix-01) — and
+    had the signature matched, the route would have shown the user its own code
+    while the row stored a different one, so the invite would never resolve.
+
+    Codes are stored uppercased because ``join_guild`` uppercases before
+    lookup; a lowercase code would be unjoinable.
+    """
     conn = get_connection()
-    code = secrets.token_urlsafe(6).upper()
+    code = (invite_code or secrets.token_urlsafe(6)).upper()
     conn.execute(
         "INSERT INTO fa_guilds (name,description,invite_code,created_by) VALUES (?,?,?,?)",
         (name, description, code, created_by),
