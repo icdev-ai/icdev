@@ -67,6 +67,25 @@ def test_builder_js_offers_and_persists_mcp_nodes():
     assert "mcp_params" in js
 
 
+def test_execution_view_labels_mcp_nodes_by_their_tool():
+    """The run view read only `tool`, which an mcp node never sets.
+
+    An mcp step names its tool in `mcp_tool`, so both the DAG node's sub-label
+    and the detail drawer's Tool row rendered blank for every mcp step.
+    """
+    html = (
+        REPO_ROOT / "tools" / "dashboard" / "templates" / "studio" / "execution.html"
+    ).read_text(encoding="utf-8")
+
+    assert "function nodeTool(n)" in html, "no accessor covering both tool fields"
+    assert "n.tool || n.mcp_tool" in html
+
+    # Neither render site may go back to reading `tool` on its own.
+    assert "const toolShort = nt ?" in html
+    assert "nodeTool(node) ||" in html
+    assert "node.tool ||" not in html
+
+
 def test_icdev_mirror_matches_root_for_touched_files():
     """A stale mirror ships the old vocabulary to pip-installed users."""
     pairs = [
@@ -78,6 +97,10 @@ def test_icdev_mirror_matches_root_for_touched_files():
         (
             "args/workflow_templates/README.md",
             "icdev/data/args/workflow_templates/README.md",
+        ),
+        (
+            "tools/dashboard/templates/studio/execution.html",
+            "icdev/tools/dashboard/templates/studio/execution.html",
         ),
     ]
     for root_rel, mirror_rel in pairs:

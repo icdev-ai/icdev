@@ -579,6 +579,8 @@ function layoutDag(nodes, edges) {
 }
 
 function isHuman(n) { return n.node_type === 'human' || n.node_type === 'approval'; }
+// node_type 'mcp' names its tool in `mcp_tool`, not `tool` — see tools/studio/workflow_runner.py
+function nodeTool(n) { return n.tool || n.mcp_tool || ''; }
 
 /* ── SVG helpers ─────────────────────────────────────────────── */
 function svgEl(tag, attrs) {
@@ -719,7 +721,8 @@ window.ExecView = {
           x: pos.x - pos.w/2, y: pos.y - pos.h/2,
           width: pos.w, height: pos.h, rx: 8
         }));
-        const toolShort = n.tool ? n.tool.split('/').pop().replace('.py','') : '';
+        const nt = nodeTool(n);
+        const toolShort = nt ? nt.split('/').pop().replace('.py','') : '';
         g.appendChild(svgText(truncate(n.name, 20), pos.x, pos.y - 10, 'node-name'));
         g.appendChild(svgText(truncate(toolShort, 22), pos.x, pos.y + 5, 'node-sub'));
         // Duration / elapsed text
@@ -806,7 +809,7 @@ window.ExecView = {
     const dur = node.duration_ms >= 1000
       ? (node.duration_ms/1000).toFixed(2)+'s' : (node.duration_ms||0)+'ms';
     document.getElementById('dd-dur').textContent = node.duration_ms ? dur : '';
-    document.getElementById('dd-tool').textContent = node.tool || (node.node_type === 'human' ? 'Human approval gate' : '');
+    document.getElementById('dd-tool').textContent = nodeTool(node) || (isHuman(node) ? 'Human approval gate' : '');
 
     const body = document.getElementById('dd-body');
     let html = '';
