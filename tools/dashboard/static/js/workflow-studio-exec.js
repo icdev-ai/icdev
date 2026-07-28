@@ -569,6 +569,7 @@
           <div><strong>Status:</strong> ${_runStatusBadge(detailStatus)}</div>
           <div><strong>Started:</strong> ${run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</div>
           <div><strong>Completed:</strong> ${run.completed_at ? new Date(run.completed_at).toLocaleString() : '—'}</div>
+          ${_resumeControl(runId, run.status)}
         </div>
         ${_artifactHtml(runArts)}
         <table class="studio-table" style="font-size:0.8rem;margin-top:12px;">
@@ -624,6 +625,47 @@
       body.innerHTML = '<div style="color:#ef4444; padding:16px;">Failed to load run detail</div>';
     }
   }
+
+  // Mirrors RESUMABLE_RUN_STATUSES in tools/studio/workflow_runner.py.
+  const _RESUMABLE_RUN_STATUSES = ['pending', 'running', 'awaiting_approval', 'failed'];
+
+  function _resumeControl(runId, status) {
+    if (!_RESUMABLE_RUN_STATUSES.includes(status)) return '';
+    return `<div style="margin-top:10px;">
+      <button class="studio-btn studio-btn--sm" id="wf-resume-btn"
+              title="Continue this run — steps that already succeeded are replayed, not re-executed"
+              onclick="StudioWF.resumeRun('${_esc(runId)}')">&#9654; Resume Run</button>
+    </div>`;
+  }
+
+  StudioWF.resumeRun = async function(runId) {
+    if (!confirm('Resume this run?\n\nSteps that already succeeded are replayed, not re-executed. '
+                 + 'Failed steps run again.')) return;
+    const btn = document.getElementById('wf-resume-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Resuming…'; }
+    let data = {};
+    let resp;
+    try {
+      resp = await fetch(`/api/studio/runs/${encodeURIComponent(runId)}/resume`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+      });
+      data = await resp.json().catch(() => ({}));
+    } catch (e) {
+      alert('Resume failed: ' + e);
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Resume Run'; }
+      return;
+    }
+    if (!resp.ok) {
+      alert('Resume failed: ' + (data.error || resp.status));
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Resume Run'; }
+      return;
+    }
+    const body = $('wf-run-detail-body');
+    if (body) {
+      body.innerHTML = '<div class="studio-spinner" style="margin:24px auto;"></div>';
+      setTimeout(() => _renderRunDetail(runId, body), 1200);
+    }
+  };
 
   StudioWF.approveStep = async function(runId, stepRunId) {
     if (!confirm('Approve this step and continue the workflow?')) return;
