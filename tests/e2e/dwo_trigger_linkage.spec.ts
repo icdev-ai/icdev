@@ -75,16 +75,22 @@ const CHANNEL = 'telegram';
 const WEBHOOK_PATH = '/gateway/telegram';
 const SECRET_HEADER = 'X-Telegram-Bot-Api-Secret-Token';
 
-// `parse_command_text` turns this into command `icdev-status`, which the
-// shipped `command_allowlist` grants on every channel at IL5 — comfortably
-// above telegram's IL4 ceiling, so gate 5 passes. A read-only command is also
-// the right choice for a test that fires a real one.
-const COMMAND = '/icdev-status';
+// `parse_command_text` strips the slash, so this is command `icdev-knowledge`.
+//
+// The command is chosen to clear gate 5, which rejects when the command's
+// `max_il` is ABOVE the channel's (`security_chain.gate_5_classification`:
+// `il_order[cmd_max_il] > il_order[channel_max_il]` → reject). Telegram is
+// capped at IL4. `icdev-knowledge` is the read-only entry in the shipped
+// `command_allowlist` with `channels: "*"` and `max_il: IL4`, so IL4 <= IL4
+// passes. The obvious pick, `icdev-status`, is IL5 and would be REFUSED here —
+// the ceiling is a maximum the channel may carry, not a clearance to exceed.
+// Its category is `read`, which gate 6 grants to the default `viewer` role.
+const COMMAND = '/icdev-knowledge';
 
 // The event type triggers match on. A telegram Update carries no `event_type` /
-// `type` / `action` key, so `_event_type()` falls back to the envelope's
-// command — this must equal that, or the trigger never fires.
-const EVENT_TYPE = 'icdev-status';
+// `type` / `action` key, so the dispatcher is expected to fall back to the
+// envelope's command — this must equal that, or the trigger never fires.
+const EVENT_TYPE = 'icdev-knowledge';
 
 // Non-gate steps declare an empty `tool` on purpose: `_exec_step` records them
 // `skipped` without spawning a subprocess, which is deterministic on any host
@@ -229,10 +235,12 @@ function telegramUpdate(userId: string, nonce: number): Record<string, unknown> 
  *
  * `signed: false` omits the secret header, which gate 1 must refuse.
  *
- * The response is not awaited for long: dispatch is fire-and-forget at step 6b
- * of the handler, well before the command executes and the adapter tries to
- * post a reply to a bot token that does not exist. A timeout here says nothing
- * about whether the run started — that is what the poll below is for.
+ * The response status is deliberately not treated as the verdict. The handler
+ * runs the gate chain, executes the command, and only then tries to post a
+ * reply to a bot token that does not exist here — so a slow or failed response
+ * is expected and says nothing about whether a run started. Dispatch to
+ * `studio_trigger_events` is dwo-evt-02's hook into this handler; wherever it
+ * ends up sitting in the sequence, the poll below is what decides the verdict.
  */
 async function deliver(
   gw: Gateway,
@@ -394,7 +402,7 @@ test.describe.serial('DWO — a triggered run links back to the event that start
           event_type: EVENT_TYPE,
           // One condition DSL: these are automation_builder conditions with a
           // dotted field path, not a second filter language.
-          conditions: [{ field: 'message.text', operator: 'contains', value: 'icdev-status' }],
+          conditions: [{ field: 'message.text', operator: 'contains', value: EVENT_TYPE }],
           input_mapping: { sender: 'message.from.username' },
           enabled: true,
         },
