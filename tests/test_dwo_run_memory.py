@@ -91,10 +91,49 @@ def test_copy_snapshots_parent_and_leaves_it_immutable():
     assert run_memory.get("parent-run", "carried") == {"step": "a"}
 
 
-def test_same_run_id_resume_keeps_memory():
-    """resume_run() re-enters the same run id, so memory survives unchanged."""
+def test_resume_run_reenters_the_same_run_id_so_memory_survives(monkeypatch):
+    """Acceptance: memory survives a resume.
+
+    This holds only because ``resume_run()`` re-enters the *same* run id
+    rather than minting a new one — assert that directly instead of assuming
+    it, since the whole no-copy-on-resume design rests on it.
+    """
+    from tools.studio import workflow_editor, workflow_runner
+
     run_memory.set("resumed-run", "progress", 3)
-    # Nothing happens to memory across a same-id resume.
+
+    monkeypatch.setattr(
+        workflow_runner,
+        "get_run",
+        lambda rid: {
+            "run_id": rid,
+            "workflow_id": "wf-1",
+            "project_id": "proj-1",
+            "status": "awaiting_approval",
+        },
+    )
+    monkeypatch.setattr(workflow_editor, "get_workflow", lambda wid: {"id": wid, "steps": []})
+
+    started: dict = {}
+
+    class _CapturedThread:
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            started["args"] = args
+            started["kwargs"] = kwargs or {}
+
+        def start(self):  # never actually run the worker
+            pass
+
+    monkeypatch.setattr(workflow_runner.threading, "Thread", _CapturedThread)
+    monkeypatch.setattr(workflow_runner, "_run_queues", {})
+
+    assert workflow_runner.resume_run("resumed-run") is True
+
+    # The worker is handed the original run id — no new id is minted.
+    assert started["args"][0] == "resumed-run"
+    assert started["kwargs"].get("resume") is True
+
+    # So the run's memory is still reachable, with nothing copied.
     assert run_memory.get("resumed-run", "progress") == 3
 
 
