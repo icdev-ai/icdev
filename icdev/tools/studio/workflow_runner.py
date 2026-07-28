@@ -30,6 +30,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+
+logger = get_logger(__name__)
 
 # ── Per-run SSE queues ─────────────────────────────────────
 # run_id → queue.Queue[dict]
@@ -44,36 +47,50 @@ _approval_results: dict[str, str] = {}   # "approved" | "rejected"
 _approval_reasons: dict[str, str] = {}   # free-text reason from approver
 
 
-def _cleanup_orphaned_gates() -> None:
-    """Mark any awaiting_approval runs/steps as failed on startup.
+# Runs left mid-flight by a dead process are handled by
+# reconcile_runs_on_boot() — called explicitly from the app startup path, NOT
+# at import time. Importing this module must not write to the database.
 
-    These are left over from a previous process that died while blocked on
-    ev.wait() — there is no live thread to resume them, so they must be
-    timed-out so the UI and DB reflect reality.
-    """
+
+# ── Gate deadlines ─────────────────────────────────────────
+
+# A parked approval gate expires this long after the step started, unless the
+# step declares `approval_timeout`. The window is anchored to the step's
+# started_at in the DB, so it does not restart when the process does.
+_GATE_DEFAULT_TIMEOUT = 86400
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp, returning None if unusable."""
+    if not value:
+        return None
     try:
-        conn = get_connection()
-        try:
-            conn.execute(
-                "UPDATE studio_workflow_run_steps "
-                "SET status='timeout', stderr='Approval timed out: server restarted' "
-                "WHERE status='awaiting_approval'"
-            )
-            conn.execute(
-                "UPDATE studio_workflow_runs "
-                "SET status='failed', "
-                "summary_json='{\"error\": \"Orphaned: server restarted while awaiting approval\"}' "
-                "WHERE status='awaiting_approval'"
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception:
-        pass
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-# Run cleanup once at import time (i.e., when the dashboard starts)
-_cleanup_orphaned_gates()
+def _gate_timeout_seconds(step: dict) -> int:
+    """Approval window for a human step, in seconds."""
+    try:
+        return int(step.get("approval_timeout") or _GATE_DEFAULT_TIMEOUT)
+    except (TypeError, ValueError):
+        return _GATE_DEFAULT_TIMEOUT
+
+
+def _gate_deadline(step: dict, started_at: str | None) -> float:
+    """Absolute epoch deadline for a gate, anchored to the step's started_at.
+
+    Falls back to "now + window" when started_at is missing or unparseable, so
+    a malformed row degrades to the old behaviour rather than expiring instantly.
+    """
+    window = _gate_timeout_seconds(step)
+    started = _parse_iso(started_at)
+    if started is None:
+        return time.time() + window
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    return time.time() + max(0.0, window - elapsed)
 
 
 # ── DAG helpers ────────────────────────────────────────────
@@ -277,16 +294,21 @@ def approve_step(step_run_id: str, actor: str = "approver") -> bool:
     try:
         conn = get_connection()
         try:
-            conn.execute(
+            # rowcount lives on the cursor, not the connection — reading it from
+            # the connection raised AttributeError into the bare except below,
+            # so this path always reported failure even though it committed.
+            cur = conn.execute(
                 "UPDATE studio_workflow_run_steps SET status='approved', stderr=%s, completed_at=%s "
                 "WHERE step_run_id=%s AND status='awaiting_approval'",
                 (f"Approved by {actor}", datetime.now(timezone.utc).isoformat(), step_run_id),
             )
+            affected = getattr(cur, "rowcount", 0) or 0
             conn.commit()
-            return conn.rowcount > 0  # type: ignore[attr-defined]
+            return affected > 0
         finally:
             conn.close()
     except Exception:
+        logger.exception("approve_step failed for %s", step_run_id)
         return False
 
 
@@ -303,28 +325,124 @@ def reject_step(step_run_id: str, reason: str = "", actor: str = "approver") -> 
     try:
         conn = get_connection()
         try:
-            conn.execute(
+            # See approve_step: rowcount is a cursor property, not a connection one.
+            cur = conn.execute(
                 "UPDATE studio_workflow_run_steps SET status='rejected', stderr=%s, completed_at=%s "
                 "WHERE step_run_id=%s AND status='awaiting_approval'",
                 (reason or f"Rejected by {actor}", datetime.now(timezone.utc).isoformat(), step_run_id),
             )
+            affected = getattr(cur, "rowcount", 0) or 0
             conn.commit()
-            return conn.rowcount > 0  # type: ignore[attr-defined]
+            return affected > 0
         finally:
             conn.close()
     except Exception:
+        logger.exception("reject_step failed for %s", step_run_id)
         return False
 
 
 def get_pending_approvals() -> list[str]:
-    """Return list of step_run_ids currently awaiting approval."""
+    """Return step_run_ids currently awaiting approval.
+
+    Reads the database, not the in-process `_approval_events` dict — a gate
+    parked by a previous process is still pending, and a gate parked by this
+    one is visible to every other process.
+    """
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT step_run_id FROM studio_workflow_run_steps "
+                "WHERE status = 'awaiting_approval' ORDER BY started_at"
+            ).fetchall()
+            return [r["step_run_id"] for r in rows]
+        finally:
+            conn.close()
+    except Exception:
+        with _approval_lock:
+            return list(_approval_events.keys())
+
+
+def _await_gate(step: dict, step_run_id: str, started_at: str | None) -> tuple[str | None, str]:
+    """Block until a gate is decided or expires.
+
+    Returns (decision, reason) where decision is 'approved', 'rejected' or None
+    for expiry. Waits on the in-process Event (fast path, same process) and
+    polls the DB (any process) — either can release the gate.
+    """
+    ev = threading.Event()
     with _approval_lock:
-        return list(_approval_events.keys())
+        _approval_events[step_run_id] = ev
+
+    deadline = _gate_deadline(step, started_at)
+    decision: str | None = None
+    reason = ""
+    try:
+        while time.time() < deadline:
+            # 1. In-process signal (fast path).
+            if ev.wait(timeout=min(10, max(1, deadline - time.time()))):
+                with _approval_lock:
+                    decision = _approval_results.pop(step_run_id, None)
+                    reason = _approval_reasons.pop(step_run_id, "")
+                break
+            # 2. Cross-process decision recorded in the DB.
+            try:
+                conn = get_connection()
+                try:
+                    row = conn.execute(
+                        "SELECT status, stderr FROM studio_workflow_run_steps "
+                        "WHERE step_run_id = %s", (step_run_id,)
+                    ).fetchone()
+                    if row and row["status"] in ("approved", "rejected"):
+                        decision = row["status"]
+                        reason = row["stderr"] or ""
+                        break
+                finally:
+                    conn.close()
+            except Exception:
+                pass
+    finally:
+        with _approval_lock:
+            _approval_results.pop(step_run_id, None)
+            _approval_reasons.pop(step_run_id, None)
+            _approval_events.pop(step_run_id, None)
+
+    return decision, reason
 
 
 # ── Worker thread ──────────────────────────────────────────
 
-def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue: queue.Queue) -> None:
+def _load_prior_steps(run_id: str) -> dict[str, dict]:
+    """Return {step_id: row} for steps already recorded against this run.
+
+    Used when resuming: a step already recorded success/approved is satisfied
+    and must not run again (terraform apply is not idempotent), and a step still
+    parked at awaiting_approval keeps its original step_run_id so approvals
+    issued before the restart still resolve it.
+    """
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT step_run_id, step_id, status, started_at, stdout, stderr, "
+                "exit_code, duration_ms FROM studio_workflow_run_steps "
+                "WHERE run_id = %s ORDER BY started_at", (run_id,)
+            ).fetchall()
+            return {r["step_id"]: dict(r) for r in rows}
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+
+def _worker(
+    run_id: str,
+    workflow_id: str,
+    wf: dict,
+    project_id: str,
+    run_queue: queue.Queue,
+    resume: bool = False,
+) -> None:
     try:
         template_yaml = wf.get("template_yaml", "")
         data = yaml.safe_load(template_yaml)
@@ -359,6 +477,7 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
         results: list[dict] = []
         overall_ok = True
         all_artifacts: list[dict] = []
+        prior = _load_prior_steps(run_id) if resume else {}
 
         for i, step in enumerate(ordered_steps):
             _push(run_queue, {
@@ -370,10 +489,55 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
                 "total": len(ordered_steps),
             })
 
-            step_run_id = _create_step_record(
-                run_id, step["id"], step.get("name", step["id"]), step.get("tool", "")
-            )
-            result = _exec_step(step, project_id, run_id)
+            prior_row = prior.get(step["id"]) or {}
+            prior_status = prior_row.get("status")
+
+            if prior_status in ("success", "approved", "skipped"):
+                # Already satisfied before the restart — replay it, don't re-run.
+                result = {
+                    "step_id": step["id"],
+                    "step_name": step.get("name", step["id"]),
+                    "tool": step.get("tool", ""),
+                    "status": prior_status,
+                    "stdout": prior_row.get("stdout"),
+                    "stderr": prior_row.get("stderr"),
+                    "exit_code": prior_row.get("exit_code"),
+                    "duration_ms": prior_row.get("duration_ms") or 0,
+                }
+                step_run_id = prior_row.get("step_run_id", "")
+            elif prior_status == "awaiting_approval":
+                # Re-attach to the existing gate; keep its step_run_id so an
+                # approval issued before the restart still resolves it.
+                step_run_id = prior_row.get("step_run_id", "")
+                result = _exec_step(step, project_id, run_id)
+                result["status"] = "awaiting_approval"
+            else:
+                step_run_id = _create_step_record(
+                    run_id, step["id"], step.get("name", step["id"]), step.get("tool", "")
+                )
+                result = _exec_step(step, project_id, run_id)
+
+            if result["status"] in ("success", "approved", "skipped") and prior_status:
+                # Replayed step: emit its artifacts and move on without touching
+                # the append-only record again.
+                try:
+                    if result.get("stdout"):
+                        all_artifacts.extend(json.loads(result["stdout"]).get("artifacts", []))
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    pass
+                results.append(result)
+                _push(run_queue, {
+                    "type": "step_done",
+                    "run_id": run_id,
+                    "step_id": step["id"],
+                    "step_name": step.get("name", step["id"]),
+                    "status": result["status"],
+                    "duration_ms": result.get("duration_ms", 0),
+                    "resumed": True,
+                    "index": i,
+                    "total": len(ordered_steps),
+                })
+                continue
 
             if result["status"] == "awaiting_approval":
                 # Persist the gate state and pause the run
@@ -387,45 +551,16 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
                     "step_run_id": step_run_id,
                     "role": step.get("role", "approver"),
                 })
-                _notify_approval_gate(run_id, step_run_id, step.get("name", step["id"]), step.get("role", "approver"))
+                if not prior_status:
+                    # Only notify on the first park, not on every resume.
+                    _notify_approval_gate(
+                        run_id, step_run_id, step.get("name", step["id"]),
+                        step.get("role", "approver"),
+                    )
 
-                ev = threading.Event()
-                with _approval_lock:
-                    _approval_events[step_run_id] = ev
-
-                # Wait for in-memory signal (same process) OR DB change (any process)
-                deadline = time.time() + 86400
-                decision = None
-                reason = ""
-                while time.time() < deadline:
-                    # 1. Check if in-memory Event was signaled (fast path)
-                    if ev.wait(timeout=10):
-                        with _approval_lock:
-                            decision = _approval_results.pop(step_run_id, None)
-                            reason = _approval_reasons.pop(step_run_id, "")
-                        break
-                    # 2. Poll DB for cross-process approvals (e.g. from Telegram listener)
-                    try:
-                        _conn = get_connection()
-                        try:
-                            _row = _conn.execute(
-                                "SELECT status, stderr FROM studio_workflow_run_steps "
-                                "WHERE step_run_id=%s", (step_run_id,)
-                            ).fetchone()
-                            if _row and _row["status"] in ("approved", "rejected"):
-                                decision = _row["status"]
-                                reason = _row.get("stderr") or ""
-                                break
-                        finally:
-                            _conn.close()
-                    except Exception:
-                        pass
-
-                with _approval_lock:
-                    _approval_results.pop(step_run_id, None)
-                    _approval_reasons.pop(step_run_id, None)
-                    _approval_events.pop(step_run_id, None)
-
+                decision, reason = _await_gate(
+                    step, step_run_id, prior_row.get("started_at"),
+                )
                 signaled = decision is not None
                 if signaled and decision == "approved":
                     result["status"] = "approved"
@@ -543,6 +678,166 @@ def start_run(workflow_id: str, project_id: str = "default") -> str:
     )
     t.start()
     return run_id
+
+
+def resume_run(run_id: str) -> bool:
+    """Re-attach a worker to a run left mid-flight, and continue it.
+
+    Steps already recorded success/approved/skipped are replayed, not re-executed
+    — terraform apply is not idempotent. A step still parked at
+    awaiting_approval keeps its original step_run_id, so an approval issued
+    before the interruption still resolves it.
+
+    Returns False if the run does not exist, is already finished, or is already
+    being executed by a live worker in this process.
+    """
+    from tools.studio.workflow_editor import get_workflow  # noqa: PLC0415
+
+    run = get_run(run_id)
+    if not run or run.get("status") not in ("awaiting_approval", "running", "pending"):
+        return False
+
+    with _run_queues_lock:
+        if run_id in _run_queues:
+            return False  # a live worker already owns this run
+        run_queue: queue.Queue = queue.Queue(maxsize=500)
+        _run_queues[run_id] = run_queue
+
+    wf = get_workflow(run.get("workflow_id", ""))
+    if not wf:
+        with _run_queues_lock:
+            _run_queues.pop(run_id, None)
+        return False
+
+    threading.Thread(
+        target=_worker,
+        args=(run_id, run.get("workflow_id", ""), wf,
+              run.get("project_id") or "default", run_queue),
+        kwargs={"resume": True},
+        daemon=True,
+    ).start()
+    return True
+
+
+def _expire_gate(run_id: str, step_run_id: str, reason: str) -> None:
+    """Fail a gate whose approval window has closed, and fail its run."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE studio_workflow_run_steps SET status='timeout', stderr=%s, completed_at=%s "
+            "WHERE step_run_id=%s AND status='awaiting_approval'",
+            (reason, datetime.now(timezone.utc).isoformat(), step_run_id),
+        )
+        conn.execute(
+            "UPDATE studio_workflow_runs SET status='failed', completed_at=%s, summary_json=%s "
+            "WHERE run_id=%s",
+            (datetime.now(timezone.utc).isoformat(), json.dumps({"error": reason}), run_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def reconcile_runs_on_boot() -> dict:
+    """Re-attach or expire runs left mid-flight by a process that died.
+
+    Call once from the app startup path — NOT at import time.
+
+    This replaces the previous behaviour, which force-failed every
+    `awaiting_approval` run on every import (i.e. every dashboard start), so no
+    approval could survive a restart or a deploy:
+
+      - gate still inside its approval window -> resume the run;
+      - gate past its window                  -> expire it and fail the run;
+      - step stuck at `running`               -> its subprocess died with the
+        old process and cannot be re-attached, so fail that step. The run is
+        then resumable from the failed step.
+
+    Returns a summary dict; never raises.
+    """
+    summary = {"resumed": [], "expired": [], "orphaned_steps": []}
+    try:
+        conn = get_connection()
+        try:
+            parked = conn.execute(
+                "SELECT r.run_id, r.workflow_id, s.step_run_id, s.step_id, s.started_at "
+                "FROM studio_workflow_runs r "
+                "JOIN studio_workflow_run_steps s ON s.run_id = r.run_id "
+                "WHERE r.status = 'awaiting_approval' AND s.status = 'awaiting_approval'"
+            ).fetchall()
+            orphaned = conn.execute(
+                "SELECT step_run_id, run_id FROM studio_workflow_run_steps "
+                "WHERE status = 'running'"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as exc:  # pragma: no cover - DB unavailable at boot
+        logger.warning("Studio run reconciliation skipped: %s", exc)
+        return summary
+
+    # A 'running' step's subprocess died with the previous process.
+    for row in orphaned:
+        try:
+            conn = get_connection()
+            try:
+                conn.execute(
+                    "UPDATE studio_workflow_run_steps SET status='failed', stderr=%s, completed_at=%s "
+                    "WHERE step_run_id=%s AND status='running'",
+                    (
+                        "Interrupted: the process executing this step exited. "
+                        "Resume the run to retry from this step.",
+                        datetime.now(timezone.utc).isoformat(),
+                        row["step_run_id"],
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            summary["orphaned_steps"].append(row["step_run_id"])
+        except Exception:
+            continue
+
+    for row in parked:
+        step = _find_step(row["workflow_id"], row["step_id"])
+        deadline = _gate_deadline(step or {}, row["started_at"])
+        if deadline <= time.time():
+            try:
+                _expire_gate(
+                    row["run_id"], row["step_run_id"],
+                    "Approval window expired while no worker was running.",
+                )
+                summary["expired"].append(row["run_id"])
+            except Exception:
+                pass
+            continue
+        try:
+            if resume_run(row["run_id"]):
+                summary["resumed"].append(row["run_id"])
+        except Exception:
+            continue
+
+    if summary["resumed"] or summary["expired"] or summary["orphaned_steps"]:
+        logger.info(
+            "Studio run reconciliation: resumed=%d expired=%d orphaned_steps=%d",
+            len(summary["resumed"]), len(summary["expired"]), len(summary["orphaned_steps"]),
+        )
+    return summary
+
+
+def _find_step(workflow_id: str, step_id: str) -> dict | None:
+    """Return a step definition from a workflow's template, or None."""
+    try:
+        from tools.studio.workflow_editor import get_workflow  # noqa: PLC0415
+        wf = get_workflow(workflow_id)
+        if not wf:
+            return None
+        data = yaml.safe_load(wf.get("template_yaml", "")) or {}
+        for step in data.get("steps", []) or []:
+            if step.get("id") == step_id:
+                return step
+    except Exception:
+        pass
+    return None
 
 
 def stream_run(run_id: str):
