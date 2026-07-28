@@ -118,6 +118,41 @@ _SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 # --------------------------------------------------------------------------- #
 
 
+def is_source_checkout() -> bool:
+    """True when running from a git checkout rather than an installed wheel.
+
+    `tools/installer/` is not in PARENT_ONLY_DIRS — correctly, because it also
+    holds installer.py, module_registry.py and platform_setup.py, which end
+    users need. This module comes along as a neighbour, so `pip install icdev`
+    delivers a release tool that cannot possibly work: REPO_ROOT resolves to
+    `site-packages/icdev`, where pyproject.toml, args/brand.yaml and
+    deploy/helm/Chart.yaml do not exist, and preflight shells out to git in a
+    directory that is not a repository.
+
+    Detected by the presence of the files this script EDITS, rather than by
+    looking for `.git`: a source tarball or an exported tree is still a valid
+    place to cut a release, and a checkout with the version files missing is
+    not one regardless of its git status.
+    """
+    return (REPO_ROOT / "pyproject.toml").is_file()
+
+
+def _refuse_outside_checkout() -> int:
+    print(
+        "icdev release: this is a MAINTAINER tool for building and publishing "
+        "ICDEV itself.\n"
+        f"It is running from an installed package ({REPO_ROOT}), where the files "
+        "it edits\n"
+        "(pyproject.toml, args/brand.yaml, deploy/helm/Chart.yaml) do not exist.\n\n"
+        "Run it from a source checkout of the icdev repository instead.\n\n"
+        "If you are looking to set up an INSTALLED ICDEV, you want:\n"
+        "  icdev init      # scaffold the project payload\n"
+        "  icdev setup     # configure LLM, database, RAG and Docker",
+        file=sys.stderr,
+    )
+    return 2
+
+
 def read_versions() -> dict:
     """Current version as declared by each file (None when the file/pattern is absent)."""
     out: dict[str, str | None] = {}
@@ -688,6 +723,10 @@ def main(argv: list | None = None) -> int:
                     help="Build without release notes. Refused with --publish.")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
+
+    # Refuse before touching anything. Every later step assumes a checkout.
+    if not is_source_checkout():
+        return _refuse_outside_checkout()
 
     # The two combinations that produced broken releases.
     if args.publish and args.skip_smoke:

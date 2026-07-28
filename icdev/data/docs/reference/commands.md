@@ -3605,3 +3605,184 @@ substitution, no stripped-down variant. A test pins that
 the entry point of ANVIL, and CLAUDE.md instructs the agent to read
 `goals/manifest.md` before starting any task — a scaffold without it produces a
 project that contradicts its own first instruction.
+
+## Guided setup after `pip install icdev`
+
+`pip install` installs the package; `icdev init` copies the project payload out;
+`icdev setup` configures it. The wizard is OS-aware (Windows, WSL, Linux, macOS)
+and writes everything to `.env`.
+
+```bash
+icdev setup                    # guided: OS → LLM → database → RAG+KG → Docker
+icdev setup --components       # skip to the component enable/disable TUI
+icdev setup --non-interactive  # accept detected defaults, ask nothing
+icdev setup --no-probe         # skip LLM reachability checks (air-gapped)
+icdev setup --docker-only      # only (re)generate docker-compose.yml
+icdev setup --postgres         # assume PostgreSQL rather than SQLite
+icdev setup --dry-run          # show what would change; write nothing
+icdev setup --json             # machine-readable environment report
+```
+
+**What it configures**
+
+| Step | Detail |
+|---|---|
+| Environment | OS + release, Python, Docker, local PostgreSQL (:5432), local Ollama (:11434), WSL |
+| LLM | primary + fallback provider, API keys, bounded reachability probe |
+| Database | SQLite (zero-config) or PostgreSQL; writes DSN or DB path |
+| RAG + KG | enable flags and embedding dimension (768 — the air-gap-safe default) |
+| Docker | generates a `docker-compose.yml` matched to the answers |
+| Components | hands off to the existing registry-driven TUI |
+
+**Why the compose file is generated rather than documented**
+
+Volume paths are where setup actually fails, and the failure is silent — the
+container starts and the mount is empty:
+
+| Host | Bind-mount source |
+|---|---|
+| Windows | `C:/ai/proj/data` — forward slashes, not what `os.path` produces |
+| WSL | `./data` — **Linux** rules, even though users think of it as Windows |
+| Linux / macOS | `./data` |
+
+The generated file also uses `pgvector/pgvector:pg16` rather than stock
+`postgres:16` (ICDEV stores embeddings in a `vector` column, so plain postgres
+cannot host the RAG schema), points the app at the `postgres` **service name**
+rather than `localhost`, and gates startup on a healthcheck so the first
+migration doesn't race the database.
+
+**The LLM probe** is bounded and skippable. A key that is present but rejected
+is worse than one that is absent — it fails over silently at runtime, which is
+how a stale key can degrade retrieval for weeks before anyone notices.
+
+### Kubernetes (Helm)
+
+```bash
+helm install icdev deploy/helm/                       # defaults: RAG on, pgvector
+helm install icdev deploy/helm/ -f deploy/helm/values-aws.yaml
+helm install icdev deploy/helm/ --set rag.enabled=false   # no vector DB needed
+```
+
+`rag.enabled` (default **true**) selects `pgvector/pgvector:pg16` for the
+platform database and runs `CREATE EXTENSION IF NOT EXISTS vector` on first
+start. With RAG off, the hardened base image is used instead.
+
+This matters: ICDEV stores embeddings in a `vector` column, so a stock postgres
+image cannot host the RAG schema — the extension fails to create and every
+embedding write raises. Override `rag.vectorImage` with your own mirrored build
+in air-gapped or registry-restricted clusters.
+
+`Chart.yaml`'s `appVersion` tracks `icdev/_version.py` and is bumped by
+`release.py`. The chart's own `version:` is deliberately independent — it moves
+when the templates change, not when the application does.
+
+### Provisioning the database and vector store
+
+`icdev setup` writes a DSN; it does not make a database exist. `--provision-db`
+creates whatever is missing, in dependency order:
+
+```bash
+icdev setup --provision-db                 # create what's missing
+python -m tools.cli.provision_db --check   # report only, change nothing
+python -m tools.cli.provision_db --provision --docker --dry-run
+python -m tools.cli.provision_db --sqlite --provision
+```
+
+Four things must exist before RAG works, and each fails differently:
+
+| Layer | Failure when absent |
+|---|---|
+| PostgreSQL **server** | connection refused |
+| **database + role** | `FATAL: database "icdev" does not exist` |
+| **pgvector extension** | `ERROR: type "vector" does not exist` |
+| **schema** | `relation "rag_chunks" does not exist` |
+
+The third bites hardest: the extension is only *installable* if the running
+image ships pgvector. On stock `postgres:16` the `CREATE EXTENSION` in migration
+044 fails and every embedding write raises afterwards — so availability is
+checked, not just whether it's enabled.
+
+**Greenfield options**
+
+| Option | Notes |
+|---|---|
+| **SQLite** | Zero install. File created on first connect; vector store is `rag_chunks` with a BLOB column. Always works, air-gap safe. Brute-force cosine rather than an indexed scan. |
+| **Docker** | Starts `pgvector/pgvector:pg16` from the generated compose file and **waits for the server to accept connections** — `compose up -d` returns when the container is created, not when Postgres is ready. |
+| **Native** | Per-OS install commands are printed, not executed: that needs elevation and changes the machine outside your project. |
+| **Existing server** | Provisions the database, role, extension and schema into a server that's already running (RDS, Cloud SQL, a shared box) without touching its install. |
+
+**Port conflicts** are detected and distinguished, because the three cases need
+opposite handling:
+
+- **free** — start a container here
+- **an existing PostgreSQL** — do *not* start a second one; provision into it. Two servers is a silent second source of truth.
+- **something else** — republish on 5433+, rewriting the DSN and the compose file's host port together. Only the host side moves; Postgres inside the container always listens on 5432.
+
+Provisioning is non-destructive: it creates a database, role and extension, and
+never drops, alters or overwrites one that exists. `--dry-run` prints the plan.
+
+### Corporate proxies and LLM gateways
+
+Most enterprises reach the model through a proxy or an internal gateway, and in
+that world **there is no API key to configure** — the gateway holds the real
+credentials and authenticates upstream on your behalf.
+
+```bash
+python -m tools.cli.proxy_detect          # what proxy is this machine using?
+python -m tools.cli.proxy_detect --json
+```
+
+`icdev setup` runs this automatically, reports what it found, and adopts it.
+Detection order — ICDEV's own settings first, because an explicitly configured
+rotator is a decision and must not be overwritten by a staler OS value:
+
+| Source | Where |
+|---|---|
+| `ICDEV_LLM_PROXY_CMD` / `ICDEV_LLM_PROXY` | already configured |
+| `HTTPS_PROXY`, `ALL_PROXY`, `HTTP_PROXY` | environment |
+| WinINET registry (incl. PAC / `AutoConfigURL`) | Windows |
+| `scutil --proxy` (incl. PAC) | macOS |
+
+Pick the `gateway` provider in the wizard and leave the key blank; set
+`ICDEV_LLM_GATEWAY_URL` to its OpenAI-compatible base URL. The provider sends
+the placeholder `not-needed`, which is what an unauthenticated OpenAI-compatible
+endpoint expects.
+
+**Rotation is the part that bites.** A rotating proxy written into `.env` as a
+literal URL works until the pool moves, then presents as the LLM being down. So
+setup deliberately records the *source*, not the value:
+
+| Config | Behaviour |
+|---|---|
+| `ICDEV_LLM_PROXY_CMD` | a command printing the **current** proxy; re-run per call, TTL-cached via `ICDEV_LLM_PROXY_CMD_TTL` (default 2 s). Correct under any rotation. |
+| nothing written | the SDKs read `HTTPS_PROXY` on every call — correct when the rotator updates the environment |
+| `ICDEV_LLM_PROXY` | a fixed URL. Only written when the detected source is **not** rotating. |
+
+`tools/llm/proxy_resolver.py` re-resolves on every invoke and calls
+`provider.reset_client()` when the value changed, so an SDK client that captured
+the old proxy at construction is rebuilt rather than silently reused.
+
+Note this is a *different* thing from `proxy_gateway.py`: that is ICDEV's own
+LiteLLM proxy issuing virtual keys to callers. This is your organisation's
+egress path out to the vendor. They compose — ICDEV's proxy can itself sit
+behind a corporate one.
+
+Behind a proxy, a direct connection to `api.anthropic.com` is *supposed* to
+fail, so the setup probe reports that as expected rather than as a fault.
+
+### Keeping `/updates` correct
+
+`http://localhost:5050/updates` renders `CHANGELOG.md` live, so the page updates
+the moment the file does. What `release.py` guarantees is that the file is
+*worth rendering* — the notes gate blocks a release unless, checked with the
+page's own parser:
+
+| Check | Blocks when |
+|---|---|
+| `updates_parses` | the entry doesn't parse — `/updates` would silently omit the release |
+| `updates_is_newest` | it isn't the top entry — the page would lead with an older version |
+| `updates_has_content` | it's still a `--scaffold-notes` TODO stub |
+
+The middle one is the state that had `/updates` advertising 1.2.37 while the
+package shipped 1.2.39. The last exists because notes that read as written but
+say nothing are worse than none.

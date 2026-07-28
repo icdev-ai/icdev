@@ -22,6 +22,26 @@ providers:
     api_key_env: OPENAI_API_KEY
     base_url: https://api.openai.com/v1
 
+  # Corporate LLM gateway / egress proxy.
+  #
+  # Many enterprises front all model traffic with their own gateway, which
+  # authenticates UPSTREAM — the client presents no API key at all. Set
+  # ICDEV_LLM_GATEWAY_URL and leave the key unset; the OpenAI-compatible
+  # provider sends the placeholder "not-needed" and the gateway supplies real
+  # credentials on the way out.
+  #
+  # Distinct from the LPX proxy (proxy_gateway.py): that is OUR LiteLLM proxy
+  # with virtual keys. This is THEIR infrastructure, and ICDEV is just a client.
+  gateway:
+    type: openai_compatible
+    # No default on purpose. A corporate gateway URL is site-specific, and any
+    # value invented here would be wrong everywhere — :4000 in particular is
+    # ICDEV's OWN LiteLLM proxy, a different service entirely. Unset means
+    # unconfigured, which the setup probe reports plainly.
+    base_url: ${ICDEV_LLM_GATEWAY_URL:-}
+    # Optional. Most gateways need nothing; some want a team/tenant token.
+    api_key_env: ICDEV_LLM_GATEWAY_KEY
+
   ollama:
     type: ollama
     base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}

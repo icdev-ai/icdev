@@ -6005,6 +6005,14 @@ _LPX_BYPASS_BASELINE = frozenset({
     "tools/airgap/ste_validator.py::api.cohere.ai",
     "tools/airgap/ste_validator.py::api.openai.com",
     "tools/ci/workflows/icdev_plan.py::ANTHROPIC_API_KEY",
+    # `icdev setup` probes TCP:443 reachability of these hosts to tell a user
+    # whether a provider is usable before they finish configuring one. It never
+    # sends a request, and it must work before any provider SDK is installed —
+    # so routing it through LLMRouter is not available to it. Same category as
+    # the airgap detectors above: names a cloud host without calling it.
+    "tools/cli/setup_wizard.py::api.anthropic.com",
+    "tools/cli/setup_wizard.py::api.openai.com",
+    "tools/cli/setup_wizard.py::generativelanguage.googleapis.com",
     "tools/document_intelligence/blueprint.py::ANTHROPIC_API_KEY",
     "tools/document_intelligence/blueprint.py::OPENAI_API_KEY",
     "tools/document_intelligence/output_generators.py::ANTHROPIC_API_KEY",
