@@ -69,11 +69,14 @@ def test_suffixed_branch_now_blocks_done(monkeypatch):
         argv = cmd if isinstance(cmd, list) else [cmd]
         if "for-each-ref" in argv:
             return _Fake(returncode=0, stdout="kanban/t-1-descriptive-suffix\n")
-        if "log" in argv:
-            return _Fake(returncode=0, stdout="abc123 unmerged work\n")
+        if "pr" in argv:
+            return _Fake(returncode=0, stdout="[]")   # no PR -> not abandoned
+        if "cherry" in argv:
+            return _Fake(returncode=0, stdout="+ abc123 unmerged work\n")
         return _Fake(returncode=0)
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(kb, "_default_branch", lambda: "main")
+    kb._ABANDONED_BRANCH_CACHE.clear()
     assert kb._branch_has_unmerged_commits("t-1") is True
 
 
@@ -144,3 +147,111 @@ def test_non_done_statuses_are_never_gated(monkeypatch):
 
     assert rc == 0
     assert called == [], "the merge gate ran for a non-done transition"
+
+
+# ── Hole 3: a superseded branch refused a task whose work had landed ────────
+#
+# Widening branch resolution (above) fixed the blindness to non-canonical
+# names, but introduced the opposite failure: an abandoned branch keeps its
+# commits forever, so a task re-landed under a *different* branch was refused
+# permanently. On 2026-07-28 every kanban/dwo-* branch was re-landed, and 34 of
+# them are still pinned by leftover runner worktrees, so their refs cannot even
+# be deleted to clear the refusal.
+
+def test_abandoned_branch_is_skipped(monkeypatch, tmp_path):
+    """A branch whose PRs are all CLOSED/MERGED must not block a completion."""
+    kb._ABANDONED_BRANCH_CACHE.clear()
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: _Fake(returncode=0, stdout='[{"state":"CLOSED"}]'))
+    assert kb._branch_is_abandoned("kanban/t-1", tmp_path) is True
+
+
+def test_open_pr_branch_is_not_abandoned(monkeypatch, tmp_path):
+    """Work still in flight must keep blocking — the guard's whole point."""
+    kb._ABANDONED_BRANCH_CACHE.clear()
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: _Fake(returncode=0, stdout='[{"state":"OPEN"}]'))
+    assert kb._branch_is_abandoned("kanban/t-1", tmp_path) is False
+
+
+def test_mixed_pr_states_are_not_abandoned(monkeypatch, tmp_path):
+    """One open PR among closed ones still means in-flight."""
+    kb._ABANDONED_BRANCH_CACHE.clear()
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: _Fake(
+            returncode=0, stdout='[{"state":"MERGED"},{"state":"OPEN"}]'))
+    assert kb._branch_is_abandoned("kanban/t-1", tmp_path) is False
+
+
+def test_branch_with_no_pr_is_not_abandoned(monkeypatch, tmp_path):
+    """No PR at all — unpushed local work — must still block."""
+    kb._ABANDONED_BRANCH_CACHE.clear()
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Fake(returncode=0, stdout="[]"))
+    assert kb._branch_is_abandoned("kanban/t-1", tmp_path) is False
+
+
+def test_abandoned_check_is_offline_safe(monkeypatch, tmp_path):
+    """No gh, no network, a timeout: answer False and leave the ref in place.
+
+    This predicate can only ever REMOVE a false refusal. If it cannot reach gh
+    it must not start silently approving completions.
+    """
+    kb._ABANDONED_BRANCH_CACHE.clear()
+
+    def _boom(*_a, **_kw):
+        raise FileNotFoundError("gh: not found")
+
+    monkeypatch.setattr(subprocess, "run", _boom)
+    assert kb._branch_is_abandoned("kanban/t-1", tmp_path) is False
+
+
+def test_abandoned_check_can_be_disabled(monkeypatch, tmp_path):
+    kb._ABANDONED_BRANCH_CACHE.clear()
+    monkeypatch.setenv("KANBAN_GATE_SKIP_CLOSED_PRS", "0")
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: _Fake(returncode=0, stdout='[{"state":"CLOSED"}]'))
+    assert kb._branch_is_abandoned("kanban/t-1", tmp_path) is False
+
+
+def test_relanded_commits_do_not_block(monkeypatch):
+    """`git cherry` marks an equivalent-upstream patch '-'; only '+' blocks.
+
+    git log A..B counts a cherry-picked commit as unmerged because the SHA
+    differs; the runner re-lands constantly, so that read is wrong.
+    """
+    def fake_run(cmd, *a, **k):
+        argv = cmd if isinstance(cmd, list) else [cmd]
+        if "for-each-ref" in argv:
+            return _Fake(returncode=0, stdout="kanban/t-1\n")
+        if "pr" in argv:
+            return _Fake(returncode=0, stdout="[]")   # no PR -> not abandoned
+        if "cherry" in argv:
+            return _Fake(returncode=0, stdout="- abc123 relanded\n- def456 relanded\n")
+        return _Fake(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(kb, "_default_branch", lambda: "main")
+    kb._ABANDONED_BRANCH_CACHE.clear()
+    assert kb._branch_has_unmerged_commits("t-1") is False
+
+
+def test_genuinely_absent_commits_still_block(monkeypatch):
+    """A '+' line is work that is not upstream in any form — must refuse."""
+    def fake_run(cmd, *a, **k):
+        argv = cmd if isinstance(cmd, list) else [cmd]
+        if "for-each-ref" in argv:
+            return _Fake(returncode=0, stdout="kanban/t-1\n")
+        if "pr" in argv:
+            return _Fake(returncode=0, stdout="[]")
+        if "cherry" in argv:
+            return _Fake(returncode=0, stdout="- abc123 relanded\n+ def456 never landed\n")
+        return _Fake(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(kb, "_default_branch", lambda: "main")
+    kb._ABANDONED_BRANCH_CACHE.clear()
+    assert kb._branch_has_unmerged_commits("t-1") is True
