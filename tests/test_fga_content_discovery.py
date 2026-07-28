@@ -182,3 +182,92 @@ def test_content_root_has_no_step_file_without_an_ontology_id():
                          p.read_text(encoding="utf-8", errors="replace"))
     ]
     assert not missing, f"markdown that discovery cannot attach to a mission: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# fga-wire-07 — authored content with no catalog entry at all
+# ---------------------------------------------------------------------------
+
+def test_no_authored_mission_is_left_uncatalogued(discovered, catalog_slugs):
+    """The second gap, one level up from steps.
+
+    Step discovery only reaches missions the catalog knows about. 37 mission
+    directories carried authored steps and appeared in no catalog, so no amount
+    of step discovery could surface them — whole track continuations
+    (tier3/m-t3-02..07, m-pm-02..06) where content was written and the catalog
+    stopped short.
+    """
+    from apps.forge_academy.content_loader import all_missions
+
+    known = {m["slug"] for m in all_missions(discovered)}
+    unreachable = sorted(
+        slug for slug in discovered
+        if slug not in known and discovered[slug]
+    )
+    # Anything left must be a deliberate exclusion (a contested track slot),
+    # never an oversight.
+    from apps.forge_academy.content_loader import _MISSION_SLUG_RE
+
+    for slug in unreachable:
+        m = _MISSION_SLUG_RE.match(slug)
+        assert m, f"{slug} is unreachable and not an excluded track collision"
+        collision = any(
+            other != slug
+            and (om := _MISSION_SLUG_RE.match(other))
+            and (om.group("family"), om.group("num")) == (m.group("family"), m.group("num"))
+            for other in catalog_slugs
+        )
+        assert collision, f"{slug} has content, no catalog entry, and no reason to be skipped"
+
+
+def test_derived_missions_are_marked_as_derived(discovered):
+    """A reviewer must be able to tell a derived entry from a curated one."""
+    from apps.forge_academy.content_loader import discover_missions
+
+    derived = discover_missions(discovered)
+    assert derived, "expected authored-but-uncatalogued missions"
+    assert all("derived" in m["source_credit"] for m in derived)
+
+
+def test_derived_missions_never_collide_with_a_catalogued_track_slot(discovered, catalog_slugs):
+    """Two missions at the same family+number would duplicate a track position."""
+    from apps.forge_academy.content_loader import _MISSION_SLUG_RE, discover_missions
+
+    def slot(slug):
+        m = _MISSION_SLUG_RE.match(slug)
+        return (m.group("family"), m.group("num")) if m else None
+
+    taken = {s for s in (slot(x) for x in catalog_slugs) if s}
+    for m in discover_missions(discovered):
+        assert slot(m["slug"]) not in taken, (
+            f"{m['slug']} would occupy a track slot already held by a catalogued mission"
+        )
+
+
+def test_derived_missions_carry_the_fields_the_insert_requires(discovered):
+    from apps.forge_academy.content_loader import discover_missions
+
+    required = ("slug", "title", "tagline", "tier", "topic", "role_filter",
+                "mission_type", "xp_reward", "order_idx", "difficulty",
+                "estimated_minutes", "prereqs", "source_credit")
+    for m in discover_missions(discovered):
+        for field in required:
+            assert field in m, f"{m['slug']} is missing {field} for the fa_missions insert"
+        assert m["tier"] in (1, 2, 3)
+        assert m["mission_type"] in VALID_STEP_TYPES
+
+
+def test_all_missions_is_a_superset_of_the_hand_written_catalog(discovered):
+    from apps.forge_academy.content_loader import all_missions
+
+    combined = {m["slug"] for m in all_missions(discovered)}
+    assert combined >= {m["slug"] for m in BUILTIN_MISSIONS}
+    assert len(combined) == len(all_missions(discovered)), "duplicate slug in the catalog"
+
+
+def test_every_derived_mission_actually_renders_steps(discovered):
+    from apps.forge_academy.content_loader import discover_missions
+
+    for m in discover_missions(discovered):
+        steps = steps_for(m["slug"], discovered)
+        assert steps, f"{m['slug']} was catalogued but renders no steps"
