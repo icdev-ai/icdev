@@ -187,7 +187,99 @@ decision came from. Audit failure never breaks the gate.
 If workflow_hitl is unavailable (tables absent, feature disabled), `open_gate()`
 returns `None` and Studio falls back to its own Details-modal gate, unchanged.
 
+## MCP human approval gate (dwo-mcp-02-d4)
+
+A tool on `mcp_workflow_tools.requires_approval` (terraform_apply, k8s_deploy,
+rollback, …) is dispatchable from a workflow step, but only behind an approved
+human gate in the same run.
+
+**No new approval mechanism.** The gate *is* the existing HITL representation:
+a `studio_workflow_run_steps` row with no tool path and status
+`awaiting_approval` — byte-for-byte what an authored `node_type: human` step
+writes. So `workflow_runner.approve_step()` / `reject_step()` /
+`get_pending_approvals()`, the Details modal, the Telegram approver and the
+resume surface all drive it unchanged. There is no d4-only flag, table, column
+or approval call.
+
+Ordering inside `mcp_executor.run()`: allowlist → registry lookup → caller
+IL/roles → parameter schema → **gate** → dispatch. The gate is last on purpose
+— nobody should be woken to approve a call that would have been refused anyway.
+
+| Outcome | Result |
+|---|---|
+| Approved | Handler dispatches; the payload carries `approval.step_run_id` |
+| Rejected | Refused, `mcp_tool_approval_rejected`, handler never loaded |
+| Undecided within the wait window | Refused, `mcp_tool_awaiting_human_approval`; **the gate stays parked** |
+| No run to park a gate on, or gate store unreachable | Refused, `mcp_tool_approval_gate_unavailable` |
+
+One gate per `(run, tool)`, found-or-created. That is what makes the undecided
+case durable rather than lossy: the parked gate outlives the executor process,
+so resuming the run re-attaches to the gate the approver was already shown and
+dispatches immediately if it was decided meanwhile — it never opens a second
+gate beside the first, and never asks a second approver the same question.
+
+The wait window resolves env (`ICDEV_MCP_APPROVAL_WAIT`) → policy
+(`approval_wait_seconds`) → 900s, with `--approval-wait` overriding per
+dispatch. `0` parks the gate without blocking.
+
+---
+
+## MCP dispatch audit (dwo-mcp-02-d5)
+
+d1–d4 decide; d5 records. Every attempt writes exactly one row to the
+append-only `studio_mcp_dispatch_audit` table (migration 307), on all three
+paths, before `run()` returns or re-raises.
+
+| Path | `decision` | `reason` |
+|---|---|---|
+| Handler dispatched | `allowed` | `dispatched` |
+| Not on the allowlist | `refused` | `mcp_tool_not_allowlisted` |
+| Caller below the tool's IL | `refused` | `mcp_tool_exceeds_caller_il` |
+| Caller lacks the owning component's role | `refused` | `mcp_tool_missing_required_role` |
+| Human gate rejected / unavailable | `refused` | `mcp_tool_approval_rejected` / `…_gate_unavailable` |
+| Human gate parked, undecided | `pending_approval` | `mcp_tool_awaiting_human_approval` |
+| Unknown tool, bad params, raising handler | `refused` | `unknown_tool` / `invalid_params` / `dispatch_error` |
+
+`reason` is the same string the CLI reports as `error_type`, so a row and the
+step's stdout name one cause and neither has to be re-parsed to correlate.
+
+Each row carries the tool, run, step, the actor (`principal_id`, `tenant_id`,
+`caller_il`, `caller_roles`, and `caller_source` — *where* that identity came
+from), the decision, the reason, and a UTC timestamp. The caller is resolved
+before the allowlist check specifically so a refusal is attributed rather than
+anonymous; resolving it reads run memory and the environment only, so a refused
+tool's registry entry is still never touched.
+
+**Parameters are digested, never stored.** `params_sha256` is SHA-256 over
+canonical (sorted-key) JSON, so the same arguments in a different order digest
+identically and "were these the arguments the approver saw" is answerable —
+without copying credentials and CUI into the audit store.
+
+**No hardcoded banner.** `classification` per row comes from
+`classification_manager.get_classification_for_il()` applied to the caller's
+impact level, so an IL6 dispatch is marked SECRET. An unrecognized level falls
+back to the platform IL4 marking, still via the manager.
+
+**The audit never decides the dispatch.** The write is best-effort: an
+unreachable audit store must not turn an approved deployment into a failure,
+nor a refusal into a pass. The outcome surfaces as `audit_written` /
+`audit_skipped` in the step payload, so an audit outage is visible rather than
+assumed. Read rows back with `mcp_executor.query_dispatch_audit(run_id=…,
+tool=…, decision=…)`.
+
+---
+
 ## Tests
+
+`tests/studio/test_mcp_executor_approval.py` — the gate parks a pending human
+node and blocks, approval dispatches, rejection refuses, an undecided gate
+survives for resume without duplicating, and every fail-closed edge.
+
+`tests/studio/test_mcp_executor_audit.py` — one correct row per attempt across
+all four acceptance paths (allowed, allowlist refusal, IL refusal, parked
+approval), read back through `query_dispatch_audit`; params digested not
+stored; the marking tracks the caller's IL; the `decision` CHECK list matches
+the Python constants; and an audit outage does not change the dispatch.
 
 `tests/test_dwo_dur_03_resume_surface.py` — retry policy parsing and defaults,
 retry execution paths, resumable-status contract, the API's 202/404/409
