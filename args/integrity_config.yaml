@@ -350,6 +350,14 @@ known_safe_colocation_files:
   - trading/dashboard/app.py
 
 known_safe_dynamic_import_modules:
+  # ── Added for the 2026-07-28 dynamic_import triage (task-c0ea701b37 / task-e07ee87d73) ──
+  # Both were surfaced as known_bad_signature 'dynamic_import' findings. Both
+  # import from a module-level literal collection, not from user input, network
+  # data or decoded bytes — the pattern already authorized above.
+  - tools/workflow/coherence_checker.py  # check_reflex_dispatch(): importlib.import_module(f"tools.genesis.reflexes.{name}") where name iterates REFLEX_NAMES, a module-level constant list. Guarded by find_spec and try/except. The second hit, __import__("os") at ~5278, is a string literal. Authorized by REQ-COHERENCE-REFLEX-DISPATCH-01.
+  - workflow/coherence_checker.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/rag/toggle_harness.py  # importlib.import_module("tools." + suffix) where suffix iterates _PATCH_TARGETS, a 3-entry module-level literal tuple of RAG config-loader targets. Wrapped in contextlib.suppress. Authorized by REQ-RAG-TOGGLE-HARNESS-IMPORT-01.
+  - rag/toggle_harness.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/config/component_registry.py  # Loads Flask blueprints declared in args/component_registry.yaml (a trusted FORGE config — not user-controlled); dynamic dispatch is the registry-driven canvas/child-app loading pattern. Authorized by REQ-REGISTRY-DYNAMIC-IMPORT-01.
   - config/component_registry.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/genesis/kanban_scheduler.py  # Startup inbox replay: loads notification adapter listeners (telegram/teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_startup_replay_listeners); _module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-INBOX-REPLAY-01.
