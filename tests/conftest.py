@@ -158,6 +158,24 @@ CREATE TABLE IF NOT EXISTS studio_trigger_events (
     reason       TEXT,
     received_at  TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS studio_mcp_dispatch_audit (
+    audit_id       TEXT PRIMARY KEY,
+    run_id         TEXT,
+    step_id        TEXT,
+    tool           TEXT NOT NULL,
+    params_sha256  TEXT NOT NULL,
+    principal_id   TEXT,
+    tenant_id      TEXT,
+    caller_il      TEXT,
+    caller_roles   TEXT,
+    caller_source  TEXT,
+    decision       TEXT NOT NULL
+                   CHECK(decision IN ('allowed','refused','pending_approval')),
+    reason         TEXT NOT NULL,
+    detail         TEXT,
+    classification TEXT NOT NULL,
+    recorded_at    TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS kanban_tasks (
     id                    TEXT PRIMARY KEY,
     title                 TEXT NOT NULL,
