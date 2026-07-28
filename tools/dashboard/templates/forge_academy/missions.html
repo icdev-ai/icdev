@@ -140,7 +140,14 @@
       <div class="fa-tier-stripe"></div>
       <div class="fa-card-hdr">
         <div class="fa-card-title">{{ m.title }}</div>
+        {# A mission with no steps is a dead end; say so on the card rather than
+           after the click (fga-wire-06). is_available is derived from step
+           count in list_missions. #}
+        {% if m.is_available is defined and not m.is_available %}
+        <span class="fa-type-badge" style="background:#2a2118;color:#ffce7a;border:1px solid #d98b12;">coming soon</span>
+        {% else %}
         <span class="fa-type-badge {{ m.mission_type|default('coding') }}">{{ m.mission_type|default('coding') }}</span>
+        {% endif %}
       </div>
       <p class="fa-card-tag">{{ m.tagline|default('') }}</p>
       <div class="fa-card-ft">
