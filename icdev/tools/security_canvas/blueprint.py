@@ -2061,7 +2061,11 @@ def create_security_blueprint():
         if not question:
             return jsonify({"error": "question is required"}), 400
 
-        collections = ["attack.nodes", "attack.edges", "attack.paths"]
+        # Must match `iqe.collections` for key `sdc` in component_registry.yaml —
+        # security.ai_decisions was declared there but never offered here, so the
+        # adapter registered a collection no question could reach.
+        collections = ["attack.nodes", "attack.edges", "attack.paths",
+                       "security.ai_decisions"]
         translation = nl_to_iqe(question, collections)
         iqe_str = translation.get("iqe", "")
         explanation = translation.get("explanation", "")

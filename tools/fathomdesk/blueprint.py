@@ -26,7 +26,6 @@ Returns: BacktestResult JSON + persists row to ad_backtest_runs (append-only).
 
 from __future__ import annotations
 
-import logging
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -42,7 +41,8 @@ from tools.db.storage import get_connection  # noqa: E402
 
 fathomdesk_api = Blueprint("fathomdesk_api", __name__)
 
-_logger = logging.getLogger("icdev.fathomdesk.blueprint")
+from tools.logging.icdev_logger import get_logger
+_logger = get_logger("icdev.fathomdesk.blueprint")
 
 _MAX_LIMIT = 200
 

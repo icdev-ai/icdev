@@ -245,7 +245,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         # explicitly to stay correct even if invoked in-request — coverage drift
         # must be evaluated across ALL designs regardless of caller scope.
         if hasattr(db, "set_security_context"):
-            db.set_security_context(None)
+            db.set_security_context(None)  # rls-bypass: runs in the Genesis daemon outside any Flask request; a caller-scoped predicate would silently leave other-classification rows unprocessed
 
         rows = db.execute(
             "SELECT id, name, graph_json FROM observability_designs "
@@ -337,7 +337,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         try:
             audit_db = get_connection()
             if hasattr(audit_db, "set_security_context"):
-                audit_db.set_security_context(None)
+                audit_db.set_security_context(None)  # rls-bypass: runs in the Genesis daemon outside any Flask request; a caller-scoped predicate would silently leave other-classification rows unprocessed
             for dr in drifted:
                 detail = (
                     f"coverage {dr['prev_coverage_pct']:.1f}% -> {dr['new_coverage_pct']:.1f}% "
