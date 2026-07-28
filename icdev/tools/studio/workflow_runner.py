@@ -359,14 +359,24 @@ def _push(run_queue: queue.Queue, event: dict) -> None:
         pass
 
 
-def _create_run_record(run_id: str, workflow_id: str, workflow_name: str, project_id: str) -> None:
+def _create_run_record(
+    run_id: str,
+    workflow_id: str,
+    workflow_name: str,
+    project_id: str,
+    inputs: dict | None = None,
+) -> None:
+    # inputs None -> SQL NULL ("no inputs recorded"), which stays distinct from
+    # '{}' ("started with an empty input set"). See migration 306.
     conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO studio_workflow_runs
-               (run_id, workflow_id, workflow_name, status, started_at, project_id)
-               VALUES (%s, %s, %s, 'pending', %s, %s)""",
-            (run_id, workflow_id, workflow_name, datetime.now(timezone.utc).isoformat(), project_id),
+               (run_id, workflow_id, workflow_name, status, started_at, project_id,
+                inputs_json)
+               VALUES (%s, %s, %s, 'pending', %s, %s, %s)""",
+            (run_id, workflow_id, workflow_name, datetime.now(timezone.utc).isoformat(),
+             project_id, None if inputs is None else json.dumps(inputs)),
         )
         conn.commit()
     finally:
@@ -865,13 +875,35 @@ def _worker(
 
 # ── Public API ─────────────────────────────────────────────
 
-def start_run(workflow_id: str, project_id: str = "default") -> str:
-    """Load a studio workflow from DB, spawn execution thread, return run_id."""
+def start_run(
+    workflow_id: str,
+    project_id: str = "default",
+    inputs: dict | None = None,
+) -> str:
+    """Load a studio workflow from DB, spawn execution thread, return run_id.
+
+    ``inputs`` (dwo-evt-04) is the payload the run was started with: for a
+    triggered run, the event fields the trigger's ``input_mapping_json``
+    selected; for a manual run, whatever the caller passed. It is recorded on
+    the run row as ``inputs_json``, so "what was this run started with" is
+    answerable from the run itself rather than by re-reading the trigger event
+    and re-applying its mapping.
+
+    The default ``None`` records SQL NULL — "no inputs" — which stays distinct
+    from ``{}``, "started with an empty input set". Every caller that predates
+    inputs therefore behaves exactly as it did before.
+    """
     from tools.studio.workflow_editor import get_workflow  # noqa: PLC0415
 
     wf = get_workflow(workflow_id)
     if not wf:
         raise ValueError(f"Workflow not found: {workflow_id}")
+
+    # Rejected before the run row exists, so a bad payload leaves no orphan run.
+    if inputs is not None and not isinstance(inputs, dict):
+        raise ValueError(
+            f"inputs must be a JSON object (dict), not {type(inputs).__name__}"
+        )
 
     run_id = f"run-{uuid.uuid4().hex[:12]}"
     run_queue: queue.Queue = queue.Queue(maxsize=500)
@@ -879,7 +911,9 @@ def start_run(workflow_id: str, project_id: str = "default") -> str:
     with _run_queues_lock:
         _run_queues[run_id] = run_queue
 
-    _create_run_record(run_id, workflow_id, wf.get("name", workflow_id), project_id)
+    _create_run_record(
+        run_id, workflow_id, wf.get("name", workflow_id), project_id, inputs=inputs,
+    )
 
     t = threading.Thread(
         target=_worker,
