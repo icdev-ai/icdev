@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS studio_workflow_runs (
     triggered_by   TEXT,
     project_id     TEXT DEFAULT 'default',
     summary_json   TEXT,
+    inputs_json      TEXT,
+    trigger_event_id TEXT,
     FOREIGN KEY (workflow_id) REFERENCES studio_workflows(workflow_id)
 );
 CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (

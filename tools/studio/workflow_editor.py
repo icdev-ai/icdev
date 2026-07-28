@@ -1945,6 +1945,377 @@ def get_builtin_template(template_id: str) -> dict | None:
         return None
 
 
+# ── Triggers panel (dwo-evt-04) ────────────────────────────
+#
+# Binds an event source + filter + input mapping to a workflow, and lets the
+# editor test that binding against a sample payload before enabling it.
+#
+# Deliberate non-goals, per the DWO ground rule:
+#   * No second condition DSL — filters are automation_builder conditions and
+#     are evaluated by automation_builder.evaluate_conditions().
+#   * No second event ingress — there is no listener here.  simulate_trigger()
+#     is the editor's "test" button; a real dispatcher reuses match_trigger()
+#     and apply_input_mapping() rather than reimplementing them.
+
+
+def list_event_sources(*, enabled_only: bool = False) -> list[dict]:
+    """Return the event sources a trigger can be bound to."""
+    sql = "SELECT * FROM studio_event_sources"
+    if enabled_only:
+        sql += " WHERE enabled = 1"
+    sql += " ORDER BY name ASC"
+    conn = get_connection()
+    try:
+        return [dict(r) for r in conn.execute(sql).fetchall()]
+    finally:
+        conn.close()
+
+
+def create_event_source(
+    name: str, kind: str, config: dict | None = None, created_by: str | None = None
+) -> dict:
+    """Register an event source. ``kind`` must match the table's CHECK list."""
+    valid = {"gateway_channel", "canvas_bus", "schedule", "manual"}
+    if kind not in valid:
+        raise ValueError(f"Unknown event source kind: {kind} (expected one of {sorted(valid)})")
+    source_id = f"src-{uuid.uuid4().hex[:12]}"
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO studio_event_sources
+               (source_id, name, kind, config_json, enabled, created_by, created_at)
+               VALUES (%s, %s, %s, %s, 1, %s, %s)""",
+            (source_id, name, kind, json.dumps(config or {}), created_by, _now_iso()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"source_id": source_id, "name": name, "kind": kind, "enabled": 1}
+
+
+def list_triggers(workflow_id: str | None = None) -> list[dict]:
+    """Return triggers, newest first — all of them, or one workflow's.
+
+    ``filter_json`` and ``input_mapping_json`` are parsed here into ``filter``
+    and ``input_mapping`` so the panel never parses JSON in a template.
+    """
+    sql = "SELECT * FROM studio_workflow_triggers"
+    params: tuple = ()
+    if workflow_id:
+        sql += " WHERE workflow_id = %s"
+        params = (workflow_id,)
+    sql += " ORDER BY created_at DESC"
+    conn = get_connection()
+    try:
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+    for row in rows:
+        row["filter"] = _loads(row.get("filter_json"), [])
+        row["input_mapping"] = _loads(row.get("input_mapping_json"), {})
+        row["enabled"] = bool(row.get("enabled"))
+    return rows
+
+
+def get_trigger(trigger_id: str) -> dict | None:
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM studio_workflow_triggers WHERE trigger_id = %s", (trigger_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    trigger = dict(row)
+    trigger["filter"] = _loads(trigger.get("filter_json"), [])
+    trigger["input_mapping"] = _loads(trigger.get("input_mapping_json"), {})
+    trigger["enabled"] = bool(trigger.get("enabled"))
+    return trigger
+
+
+def create_trigger(
+    source_id: str,
+    workflow_id: str,
+    event_type: str | None = None,
+    conditions: list[dict] | None = None,
+    input_mapping: dict | None = None,
+    enabled: bool = True,
+) -> dict:
+    """Bind an event source to a workflow.
+
+    ``conditions`` are automation_builder conditions; ``input_mapping`` maps a
+    run input name to a dotted path into the event (see apply_input_mapping).
+    """
+    trigger_id = f"trg-{uuid.uuid4().hex[:12]}"
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO studio_workflow_triggers
+               (trigger_id, source_id, workflow_id, event_type, filter_json,
+                input_mapping_json, enabled, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                trigger_id,
+                source_id,
+                workflow_id,
+                event_type,
+                json.dumps(conditions or []),
+                json.dumps(input_mapping or {}),
+                1 if enabled else 0,
+                _now_iso(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_trigger(trigger_id) or {"trigger_id": trigger_id}
+
+
+def update_trigger(
+    trigger_id: str,
+    event_type: str | None = None,
+    conditions: list[dict] | None = None,
+    input_mapping: dict | None = None,
+    enabled: bool | None = None,
+) -> dict | None:
+    """Patch a trigger. Only the arguments actually supplied are written."""
+    sets: list[str] = []
+    params: list[Any] = []
+    if event_type is not None:
+        sets.append("event_type = %s")
+        params.append(event_type)
+    if conditions is not None:
+        sets.append("filter_json = %s")
+        params.append(json.dumps(conditions))
+    if input_mapping is not None:
+        sets.append("input_mapping_json = %s")
+        params.append(json.dumps(input_mapping))
+    if enabled is not None:
+        sets.append("enabled = %s")
+        params.append(1 if enabled else 0)
+    if not sets:
+        return get_trigger(trigger_id)
+
+    params.append(trigger_id)
+    conn = get_connection()
+    try:
+        conn.execute(
+            f"UPDATE studio_workflow_triggers SET {', '.join(sets)} WHERE trigger_id = %s",
+            tuple(params),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_trigger(trigger_id)
+
+
+def set_trigger_enabled(trigger_id: str, enabled: bool) -> dict | None:
+    """Enable or disable a trigger — the panel's on/off switch."""
+    return update_trigger(trigger_id, enabled=enabled)
+
+
+def delete_trigger(trigger_id: str) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "DELETE FROM studio_workflow_triggers WHERE trigger_id = %s", (trigger_id,)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def _loads(raw: Any, default: Any) -> Any:
+    """Parse a TEXT JSON column in Python — never with SQL JSON functions."""
+    if not raw:
+        return default
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed is not None else default
+
+
+def resolve_path(event: dict, path: str) -> Any:
+    """Resolve a dotted ``path`` into ``event``, returning None if absent.
+
+    Supports dict keys and list indices, e.g. ``payload.files.0.name``.
+    """
+    current: Any = event
+    for part in str(path).split("."):
+        if isinstance(current, dict):
+            if part not in current:
+                return None
+            current = current[part]
+        elif isinstance(current, list):
+            try:
+                current = current[int(part)]
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+    return current
+
+
+def apply_input_mapping(input_mapping: dict | None, event: dict) -> dict:
+    """Turn an event into run inputs using the trigger's mapping.
+
+    The mapping is ``{run_input_name: "dotted.path.into.event"}``.  A path that
+    does not resolve is omitted rather than passed through as None, so a step
+    can tell "field absent" from "field explicitly null".  An empty mapping
+    yields ``{}`` — the run then behaves like a manual one.
+    """
+    resolved: dict = {}
+    for target, path in (input_mapping or {}).items():
+        value = resolve_path(event, str(path))
+        if value is not None:
+            resolved[str(target)] = value
+    return resolved
+
+
+def match_trigger(trigger: dict, event_type: str | None, event: dict) -> tuple[bool, str]:
+    """Does this event fire this trigger? Returns (matched, reason).
+
+    The reason is recorded on the audit row so a trigger that silently never
+    fires stays diagnosable — that is the whole point of studio_trigger_events.
+    """
+    from tools.studio.automation_builder import evaluate_conditions  # noqa: PLC0415
+
+    if not trigger.get("enabled", True):
+        return False, "trigger disabled"
+
+    want = trigger.get("event_type")
+    if want and want != event_type:
+        return False, f"event_type {event_type!r} != {want!r}"
+
+    results = evaluate_conditions(trigger.get("filter") or [], event)
+    unmet = [r for r in results if not r["met"]]
+    if unmet:
+        first = unmet[0]
+        return False, (
+            f"condition not met: {first['field']} {first['operator']} "
+            f"{first['expected']!r} (actual {first['actual']!r})"
+        )
+    return True, "matched"
+
+
+def record_trigger_event(
+    source_id: str | None,
+    trigger_id: str | None,
+    event_type: str | None,
+    payload: dict,
+    matched: bool,
+    run_id: str | None,
+    reason: str,
+) -> str:
+    """Append one row to the APPEND-ONLY trigger audit. Never updated."""
+    event_id = f"evt-{uuid.uuid4().hex[:12]}"
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO studio_trigger_events
+               (event_id, source_id, trigger_id, event_type, payload_json,
+                matched, run_id, reason, received_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                event_id,
+                source_id,
+                trigger_id,
+                event_type,
+                json.dumps(payload, default=str),
+                1 if matched else 0,
+                run_id,
+                reason,
+                _now_iso(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return event_id
+
+
+def simulate_trigger(trigger_id: str, payload: dict, *, execute: bool = False) -> dict:
+    """The panel's "test" button: would this payload fire this trigger?
+
+    Evaluates the filter and resolves the input mapping without starting
+    anything.  Pass ``execute=True`` to actually start the run — that path
+    records the audit row first, then hands its ``event_id`` to ``start_run``
+    so the run-detail badge can link back to the event.
+    """
+    trigger = get_trigger(trigger_id)
+    if not trigger:
+        return {"error": f"Trigger not found: {trigger_id}"}
+
+    event_type = payload.get("event_type") or trigger.get("event_type")
+    matched, reason = match_trigger(trigger, event_type, payload)
+    inputs = apply_input_mapping(trigger.get("input_mapping"), payload) if matched else {}
+
+    result = {
+        "trigger_id": trigger_id,
+        "workflow_id": trigger.get("workflow_id"),
+        "matched": matched,
+        "reason": reason,
+        "inputs": inputs,
+        "executed": False,
+        "run_id": None,
+        "event_id": None,
+    }
+    if not (matched and execute):
+        return result
+
+    event_id = record_trigger_event(
+        trigger.get("source_id"), trigger_id, event_type, payload, True, None, reason
+    )
+    from tools.studio.workflow_runner import start_run  # noqa: PLC0415
+
+    run_id = start_run(
+        trigger["workflow_id"], inputs=inputs, trigger_event_id=event_id
+    )
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE studio_trigger_events SET run_id = %s WHERE event_id = %s",
+            (run_id, event_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    result.update({"executed": True, "run_id": run_id, "event_id": event_id})
+    return result
+
+
+def get_run_trigger_event(run_id: str) -> dict | None:
+    """The event that started ``run_id``, for the run-detail badge.
+
+    Returns None for a manually started run, which is what the badge tests to
+    decide whether to render at all.
+    """
+    conn = get_connection()
+    try:
+        run = conn.execute(
+            "SELECT trigger_event_id FROM studio_workflow_runs WHERE run_id = %s", (run_id,)
+        ).fetchone()
+        if not run:
+            return None
+        event_id = run[0] if not isinstance(run, dict) else run["trigger_event_id"]
+        if not event_id:
+            return None
+        row = conn.execute(
+            "SELECT * FROM studio_trigger_events WHERE event_id = %s", (event_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    event = dict(row)
+    event["payload"] = _loads(event.get("payload_json"), {})
+    event["matched"] = bool(event.get("matched"))
+    return event
+
+
 # ── CLI ────────────────────────────────────────────────────
 
 

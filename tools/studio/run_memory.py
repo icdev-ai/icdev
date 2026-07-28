@@ -120,6 +120,23 @@ def get(run_id: str, key: str, default=None):
         return default
 
 
+def get_inputs(run_id: str | None = None) -> dict:
+    """Return the inputs the run was started with (dwo-evt-04).
+
+    This is the contract a workflow step uses to see the event that triggered
+    it.  ``run_id`` defaults to ``ICDEV_RUN_ID``, which the runner exports into
+    every step's environment, so inside a step this is simply::
+
+        from tools.studio import run_memory
+        payload = run_memory.get_inputs()
+
+    Returns ``{}`` for a manually started run with no inputs, so callers never
+    need to branch on None.
+    """
+    value = get(_require_run_id(run_id), INPUTS_KEY, default={})
+    return value if isinstance(value, dict) else {}
+
+
 def set(run_id: str, key: str, value) -> dict:  # noqa: A001 — documented API name
     """Store ``value`` (any JSON-serializable object) under ``key``."""
     rid = _require_run_id(run_id)
