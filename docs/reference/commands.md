@@ -872,6 +872,18 @@ python tools/intelligence/bayesian_teacher.py --health --json                   
 
 ---
 
+## Studio Workflow Executor Commands
+```bash
+# Generic MCP tool executor — dispatch any tool_registry.TOOL_REGISTRY entry as a workflow step
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}'
+python tools/studio/executors/mcp_executor.py --tool kg_search --params '{"query":"NIST AC-2"}'
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' --run-id "run-xxx" --step-id "probe"
+# Exit 0 = handler returned; exit 1 = unknown tool (suggests closest matches),
+# params failing the entry's input_schema, or the handler raised.
+```
+
+---
+
 ## Workflow Discipline Engine Commands
 ```bash
 # PLAN-APPLY-UNIFY Lifecycle (Phase 66, D-WF-1 through D-WF-7)
