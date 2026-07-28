@@ -1650,6 +1650,8 @@ gates:
     block_on:
       - mcp_tool_not_allowlisted
       - mcp_tool_awaiting_human_approval
+      - mcp_tool_approval_rejected
+      - mcp_tool_approval_gate_unavailable
       - mcp_tool_exceeds_caller_il
       - mcp_tool_missing_required_role
     warn_on:

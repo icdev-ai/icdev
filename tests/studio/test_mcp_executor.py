@@ -106,7 +106,7 @@ def test_policy_loads_from_the_shipped_gates_file():
 
 
 def test_allowlisted_tool_passes_the_gate():
-    assert mcp_executor.check_tool_allowed("health_check") is None
+    assert mcp_executor.check_tool_allowed("health_check") == "allowed"
 
 
 def test_non_allowlisted_tool_raises_gate_error_naming_the_tool():
@@ -117,11 +117,9 @@ def test_non_allowlisted_tool_raises_gate_error_naming_the_tool():
     assert exc.value.reason == "mcp_tool_not_allowlisted"
 
 
-def test_requires_approval_tool_is_refused_with_its_own_reason():
-    with pytest.raises(mcp_executor.MCPWorkflowGateError) as exc:
-        mcp_executor.check_tool_allowed("terraform_apply")
-    assert "terraform_apply" in str(exc.value)
-    assert exc.value.reason == "mcp_tool_awaiting_human_approval"
+def test_requires_approval_tool_passes_the_allowlist_with_its_own_disposition():
+    """d4: it is allowlisted, but only dispatchable behind an approved gate."""
+    assert mcp_executor.check_tool_allowed("terraform_apply") == "requires_approval"
 
 
 def test_run_refuses_denied_tool_without_calling_the_handler(denied_tool):
@@ -409,10 +407,19 @@ def test_cli_refused_tool_exits_nonzero_with_gate_reason():
     assert "sbom_generate" in out["error"]
 
 
-def test_cli_requires_approval_tool_is_blocked():
+def test_cli_requires_approval_tool_without_a_run_is_blocked():
+    """No --run-id means no run to park a gate on, so nothing to approve."""
+    rc, out = _cli("--tool", "terraform_apply",
+                   "--params", '{"terraform_dir": "."}')
+    assert rc == 1
+    assert out["error_type"] == "mcp_tool_approval_gate_unavailable"
+
+
+def test_cli_gate_is_checked_after_params_so_nobody_is_woken_for_a_bad_call():
+    """terraform_apply's schema requires terraform_dir; omitting it never gates."""
     rc, out = _cli("--tool", "terraform_apply", "--params", "{}")
     assert rc == 1
-    assert out["error_type"] == "mcp_tool_awaiting_human_approval"
+    assert out["error_type"] == "invalid_params"
 
 
 def test_cli_accepts_runner_injected_flags():
