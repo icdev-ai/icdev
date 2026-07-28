@@ -76,12 +76,33 @@ parked, so resuming the run picks the decision up. A dispatch with no run to
 park a gate on, or an unreachable gate store, refuses with
 ``mcp_tool_approval_gate_unavailable`` — fail-closed in every direction.
 
-Still to land on top of this: append-only audit of every attempt (d5).
+Append-only audit (dwo-mcp-02-d5)
+---------------------------------
+Every attempt writes exactly one row to ``studio_mcp_dispatch_audit``, on all
+three dispatch paths — allowed, refused (by any gate, by an unknown tool, by
+bad params, or by a handler that blew up) and parked awaiting a human decision.
+Each row carries the tool, a SHA-256 digest of the parameters, the run and step,
+the actor (principal, tenant, IL, roles, and where that identity came from), the
+decision, the machine-readable reason, and a timestamp.
+
+Parameters are digested, never stored verbatim: tool arguments routinely carry
+CUI and credentials, and the audit question — "were these the same arguments the
+approver saw" — a digest answers without widening the audit store's blast
+radius. The row's classification comes from
+``classification_manager.get_classification_for_il`` applied to the caller's
+impact level, so an IL6 dispatch is marked SECRET rather than banner-stamped CUI.
+
+The write is best-effort and never decides the dispatch: an unreachable audit
+store must not turn a legitimately approved deployment into a failure, and it
+must certainly not turn a *refusal* into a pass. The outcome is reported in the
+step payload (``audit_written`` / ``audit_skipped``) so a silent audit outage is
+visible rather than assumed.
 """
 from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import importlib
 import json
 import os
@@ -901,6 +922,181 @@ def check_caller_authorized(
     return requirements
 
 
+# ── Append-only dispatch audit (dwo-mcp-02-d5) ─────────────────────────────
+
+#: Append-only table every attempt lands in. Created by migration 305 and by
+#: ``tools/studio/init_db.py``; registered in APPEND_ONLY_TABLES in
+#: ``.claude/hooks/pre_tool_use.py``.
+AUDIT_TABLE = "studio_mcp_dispatch_audit"
+
+#: The handler ran.
+DECISION_ALLOWED = "allowed"
+
+#: A gate, an unknown tool, bad params, or a raising handler stopped the call.
+DECISION_REFUSED = "refused"
+
+#: A ``requires_approval`` tool parked on a human gate nobody has decided.
+DECISION_PENDING_APPROVAL = "pending_approval"
+
+#: The closed decision vocabulary. The ``decision`` CHECK constraint in
+#: migration 305 and ``init_db.py`` mirrors this tuple; the audit tests assert
+#: the two have not drifted.
+DECISIONS = (DECISION_ALLOWED, DECISION_REFUSED, DECISION_PENDING_APPROVAL)
+
+#: Gate refusal reasons that mean "parked, not denied" — the attempt is still
+#: live and a human decision will settle it, so it is audited as pending rather
+#: than as a refusal.
+_PENDING_REASONS = frozenset({"mcp_tool_awaiting_human_approval"})
+
+#: Reason recorded for a dispatch that completed.
+REASON_DISPATCHED = "dispatched"
+
+
+def params_digest(params) -> str:
+    """Return the SHA-256 digest of ``params``, canonicalised.
+
+    Sorted keys and separator-normalised JSON, so two dispatches with the same
+    arguments in a different order digest the same — otherwise "did the approver
+    see these arguments" could not be answered by comparing digests. Values JSON
+    cannot encode fall back to their repr rather than raising: an audit row with
+    a weaker digest beats no audit row.
+    """
+    try:
+        canonical = json.dumps(params or {}, sort_keys=True, separators=(",", ":"),
+                               default=repr)
+    except (TypeError, ValueError):
+        canonical = repr(params)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def audit_classification(caller_il: str = "") -> str:
+    """Marking for an audit row, derived from the caller's impact level.
+
+    Delegates to ``classification_manager.get_classification_for_il`` rather
+    than stamping a banner here: an IL6 dispatch is SECRET and must be marked
+    SECRET. Falls back to the platform's IL4 marking when the level is unknown
+    or the manager is unimportable — never to a hardcoded literal.
+    """
+    from tools.compliance.classification_manager import (  # noqa: PLC0415
+        get_classification_for_il,
+    )
+
+    for level in ((caller_il or "").strip().upper(), DEFAULT_CALLER_IL):
+        if not level:
+            continue
+        try:
+            marking = get_classification_for_il(level)
+        except Exception:  # noqa: BLE001 — an unknown level falls through to the baseline
+            continue
+        if marking:
+            return str(marking)
+    return get_classification_for_il(DEFAULT_CALLER_IL)
+
+
+def record_dispatch_audit(
+    tool: str,
+    params,
+    decision: str,
+    reason: str,
+    *,
+    run_id: str = "",
+    step_id: str = "",
+    caller: dict | None = None,
+    detail: str = "",
+) -> tuple[bool, str]:
+    """Append one row describing this attempt. Returns ``(written, why_not)``.
+
+    Best-effort by design: the caller's dispatch has already been decided by the
+    gates, and an unreachable audit store must not overturn that decision in
+    either direction. The failure reason is returned so the step payload can say
+    the audit did not land instead of implying it did.
+    """
+    import uuid  # noqa: PLC0415
+
+    if decision not in DECISIONS:
+        raise ValueError(
+            f"Unknown audit decision {decision!r}; expected one of {', '.join(DECISIONS)}"
+        )
+
+    caller = caller or {}
+    try:
+        conn = _gate_connection()
+        try:
+            conn.execute(
+                f"""INSERT INTO {AUDIT_TABLE}
+                    (audit_id, run_id, step_id, tool, params_sha256,
+                     principal_id, tenant_id, caller_il, caller_roles,
+                     caller_source, decision, reason, detail, classification,
+                     recorded_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s)""",
+                (
+                    f"aud-{uuid.uuid4().hex[:16]}",
+                    run_id,
+                    step_id,
+                    tool,
+                    params_digest(params),
+                    str(caller.get("principal_id") or ""),
+                    str(caller.get("tenant_id") or ""),
+                    str(caller.get("impact_level") or ""),
+                    ",".join(caller.get("roles") or ()),
+                    str(caller.get("source") or ""),
+                    decision,
+                    reason,
+                    detail[:2000],
+                    audit_classification(str(caller.get("impact_level") or "")),
+                    _utcnow(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return True, ""
+    except Exception as exc:  # noqa: BLE001 — see docstring
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def query_dispatch_audit(
+    run_id: str = "", tool: str = "", decision: str = "", limit: int = 200
+) -> list[dict]:
+    """Read audit rows back, newest first. Filters are ANDed; empty means "any"."""
+    where, params = [], []
+    for column, value in (("run_id", run_id), ("tool", tool), ("decision", decision)):
+        if value:
+            where.append(f"{column} = %s")
+            params.append(value)
+    clause = f" WHERE {' AND '.join(where)}" if where else ""
+    conn = _gate_connection()
+    try:
+        rows = conn.execute(
+            f"SELECT * FROM {AUDIT_TABLE}{clause} ORDER BY recorded_at DESC, "
+            f"audit_id DESC LIMIT %s",
+            (*params, int(limit)),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def _audit_outcome(exc: BaseException) -> tuple[str, str]:
+    """Map a failed attempt onto ``(decision, reason)``.
+
+    The reasons are the same strings the CLI reports as ``error_type``, so an
+    audit row and the step's stdout name the same cause and neither has to be
+    re-parsed to correlate with the other.
+    """
+    if isinstance(exc, MCPWorkflowGateError):
+        reason = exc.reason or "mcp_tool_not_allowlisted"
+        if reason in _PENDING_REASONS:
+            return DECISION_PENDING_APPROVAL, reason
+        return DECISION_REFUSED, reason
+    if isinstance(exc, LookupError):
+        return DECISION_REFUSED, "unknown_tool"
+    if isinstance(exc, ValueError):
+        return DECISION_REFUSED, "invalid_params"
+    return DECISION_REFUSED, "dispatch_error"
+
+
 # ── Run memory (dwo-mem-01) ────────────────────────────────────────────────
 
 def write_run_memory(run_id: str, step_id: str, value: dict) -> tuple[bool, str]:
@@ -961,42 +1157,59 @@ def run(
             module) but before params and dispatch, so a refused caller never
             reaches the handler either.
     """
-    disposition = check_tool_allowed(tool)
+    # Resolved before the allowlist so a refusal is audited with an actor rather
+    # than anonymously. Touches run memory and the environment only — the tool's
+    # registry entry is still not read until it has cleared the gate.
+    if caller is None:
+        try:
+            caller = resolve_caller(run_id)
+        except Exception:  # noqa: BLE001 — identity is for the record, not the decision
+            caller = {}
+    audit_step_id = step_id or f"mcp-{tool}"
 
-    entry = resolve_entry(tool)
-
-    caller = caller if caller is not None else resolve_caller(run_id)
-    requirements = check_caller_authorized(tool, caller, entry=entry)
-
-    violations = validate_params(params, entry.get("input_schema") or {})
-    if violations:
-        raise ValueError(
-            f"Invalid params for '{tool}' — "
-            + "; ".join(violations[:10])
-            + (f" (+{len(violations) - 10} more)" if len(violations) > 10 else "")
-        )
-
-    # Last check before dispatch, deliberately: a person should not be woken to
-    # approve a call that the allowlist, the caller's IL, or its own parameters
-    # would have refused anyway.
-    approval: dict = {}
-    if disposition == DISPOSITION_REQUIRES_APPROVAL:
-        approval = await_approval(tool, run_id, wait_seconds=approval_wait)
-
-    module_path, handler_name = entry["module"], entry["handler"]
     try:
-        mod = importlib.import_module(module_path)
-        handler = getattr(mod, handler_name)
-    except (ImportError, AttributeError) as exc:
-        raise RuntimeError(
-            f"Cannot load handler {module_path}.{handler_name} for '{tool}': {exc}"
-        ) from exc
+        disposition = check_tool_allowed(tool)
 
-    start = time.monotonic()
-    result = handler(params)
-    duration_ms = int((time.monotonic() - start) * 1000)
+        entry = resolve_entry(tool)
 
-    step_id = step_id or f"mcp-{tool}"
+        requirements = check_caller_authorized(tool, caller, entry=entry)
+
+        violations = validate_params(params, entry.get("input_schema") or {})
+        if violations:
+            raise ValueError(
+                f"Invalid params for '{tool}' — "
+                + "; ".join(violations[:10])
+                + (f" (+{len(violations) - 10} more)" if len(violations) > 10 else "")
+            )
+
+        # Last check before dispatch, deliberately: a person should not be woken
+        # to approve a call that the allowlist, the caller's IL, or its own
+        # parameters would have refused anyway.
+        approval: dict = {}
+        if disposition == DISPOSITION_REQUIRES_APPROVAL:
+            approval = await_approval(tool, run_id, wait_seconds=approval_wait)
+
+        module_path, handler_name = entry["module"], entry["handler"]
+        try:
+            mod = importlib.import_module(module_path)
+            handler = getattr(mod, handler_name)
+        except (ImportError, AttributeError) as exc:
+            raise RuntimeError(
+                f"Cannot load handler {module_path}.{handler_name} for '{tool}': {exc}"
+            ) from exc
+
+        start = time.monotonic()
+        result = handler(params)
+        duration_ms = int((time.monotonic() - start) * 1000)
+    except BaseException as exc:
+        decision, reason = _audit_outcome(exc)
+        record_dispatch_audit(
+            tool, params, decision, reason,
+            run_id=run_id, step_id=audit_step_id, caller=caller, detail=str(exc),
+        )
+        raise
+
+    step_id = audit_step_id
     payload = {
         "tool": tool,
         "category": entry.get("category", ""),
@@ -1009,14 +1222,24 @@ def run(
         "result": _jsonable(result),
     }
     if approval:
-        # Which gate authorized this dispatch — the record d5 audits.
+        # Which gate authorized this dispatch — audited alongside it below.
         payload["approval"] = approval
+
+    audited, audit_error = record_dispatch_audit(
+        tool, params, DECISION_ALLOWED, REASON_DISPATCHED,
+        run_id=run_id, step_id=step_id, caller=caller,
+        detail=f"{module_path}.{handler_name} in {duration_ms}ms",
+    )
+
     written, reason = write_run_memory(run_id, step_id, payload)
     payload["step_id"] = step_id
     payload["memory_key"] = f"{MEMORY_KEY_PREFIX}{step_id}"
     payload["memory_written"] = written
     if not written:
         payload["memory_skipped"] = reason
+    payload["audit_written"] = audited
+    if not audited:
+        payload["audit_skipped"] = audit_error
     return payload
 
 
