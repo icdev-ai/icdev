@@ -13,7 +13,7 @@ both directions, plus the field resolution that feeds them. It deliberately
 does not restate the dispatch scenarios that file already owns.
 
 The vocabulary is not new: `evaluate_filters` delegates to
-`automation_builder._evaluate_condition`, so these cases also pin the promise
+`automation_builder.evaluate_condition`, so these cases also pin the promise
 in the spike that Studio has exactly one condition DSL.
 
 That delegation is what lets most of this file run *now*. The operator
@@ -38,7 +38,7 @@ import pytest
 
 from tools.studio.automation_builder import (
     CONDITION_OPERATORS,
-    _evaluate_condition,
+    evaluate_condition,
 )
 
 try:
@@ -95,12 +95,12 @@ _REJECTS = [
 
 @pytest.mark.parametrize(("field", "operator", "value"), _MATCHES)
 def test_operator_matches(field, operator, value):
-    assert _evaluate_condition(_PAYLOAD[field], operator, value) is True
+    assert evaluate_condition(_PAYLOAD[field], operator, value) is True
 
 
 @pytest.mark.parametrize(("field", "operator", "value"), _REJECTS)
 def test_operator_rejects(field, operator, value):
-    assert _evaluate_condition(_PAYLOAD[field], operator, value) is False
+    assert evaluate_condition(_PAYLOAD[field], operator, value) is False
 
 
 def test_every_registry_operator_is_covered_in_both_directions():
@@ -114,12 +114,12 @@ def test_every_registry_operator_is_covered_in_both_directions():
 def test_comparison_is_case_insensitive():
     """`severity` arrives as `HIGH` from one platform and `high` from the next;
     a trigger must not depend on which."""
-    assert _evaluate_condition(_PAYLOAD["severity"], "equals", "high") is True
+    assert evaluate_condition(_PAYLOAD["severity"], "equals", "high") is True
 
 
 def test_an_unknown_operator_rejects_rather_than_matching():
     """Fail closed: a typo in a filter must stop the trigger, not open it."""
-    assert _evaluate_condition(_PAYLOAD["action"], "starts_with", "open") is False
+    assert evaluate_condition(_PAYLOAD["action"], "starts_with", "open") is False
 
 
 # ── The trigger surface reuses that DSL rather than restating it ───────────
@@ -132,7 +132,7 @@ def test_evaluate_filters_agrees_with_the_shared_dsl(field, operator, value):
     on some operator, which is precisely the drift worth catching."""
     assert event_sources.evaluate_filters(
         _PAYLOAD, _filter(field, operator, value)
-    ) is _evaluate_condition(_PAYLOAD[field], operator, value)
+    ) is evaluate_condition(_PAYLOAD[field], operator, value)
 
 
 # ── Conditions combine as AND ──────────────────────────────────────────────
