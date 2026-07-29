@@ -34,9 +34,13 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
+
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
+// Declared by tools/dashboard/static/js/workflow-studio.js as a top-level
+// `const` in a classic script: a global lexical binding, not a window property.
+declare const StudioWF: unknown;
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCREENSHOTS = path.resolve(ROOT, 'playwright/screenshots');
@@ -52,10 +56,26 @@ const PYTHON = process.env.ICDEV_PYTHON || 'python';
 const BOOT_TIMEOUT_MS = 120_000;
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 
-// Env the spawned dashboard needs, mirroring playwright.config.ts's webServer
-// block: dev auto-login so the browser reaches /studio/workflows without a key.
+// Env the spawned dashboard needs: dev auto-login so the browser reaches
+// /studio/workflows without a key.
+//
+// ICDEV_STORAGE_BACKEND is deliberately NOT set. This spec used to force
+// 'sqlite', which is what kept it permanently red: CLAUDE.md makes PostgreSQL
+// the primary backend and `translate_sql` "a thin SQLite init-fallback ONLY,
+// never load-bearing", so data/icdev.db is nobody's maintained database. It had
+// drifted — no RLS columns on studio_workflows or the run tables, and a pile of
+// migration checksum mismatches — so the child dashboard 500'd on
+// POST /api/studio/workflows and again on starting a run, neither of which has
+// anything to do with durability.
+//
+// It is set explicitly from the ambient value, defaulting to PostgreSQL, rather
+// than left to the dashboard's own load_dotenv: ROOT is a git worktree in most
+// runs, and a worktree has no .env, so load_dotenv finds nothing there and the
+// backend silently falls back to sqlite — the very thing this is avoiding.
+// Against PostgreSQL the identical flow answers 201 / 202 and the run parks at
+// awaiting_approval, which is what this spec is here to observe.
 const DASHBOARD_ENV: Record<string, string> = {
-  ICDEV_STORAGE_BACKEND: 'sqlite',
+  ICDEV_STORAGE_BACKEND: process.env.ICDEV_STORAGE_BACKEND || 'postgresql',
   ICDEV_AUTH_BYPASS: 'true',
   ICDEV_DASHBOARD_DEV_AUTOLOGIN: 'true',
   ICDEV_CUI_BANNER_ENABLED: 'true',
@@ -263,9 +283,17 @@ async function openStudio(page: Page, base: string): Promise<void> {
   await expect(page.locator('#wf-canvas')).toBeAttached();
 }
 
-/** Open the run-detail modal for `runId` and wait for it to render. */
+/** Open the run-detail modal for `runId` and wait for it to render.
+ *
+ * Called as a bare `StudioWF`, not `window.StudioWF`. workflow-studio.js
+ * declares it `const StudioWF = (() => {...})()` at the top level of a classic
+ * script, so the binding lives in the global *lexical* environment: inline
+ * `onclick="StudioWF.showRunDetail(...)"` handlers resolve it fine, but it is
+ * never a property of `window`. Reaching for `window.StudioWF` therefore throws
+ * "Cannot read properties of undefined" even though the Details button works.
+ */
 async function openRunDetail(page: Page, runId: string): Promise<void> {
-  await page.evaluate((id) => (window as any).StudioWF.showRunDetail(id), runId);
+  await page.evaluate((id) => (StudioWF as any).showRunDetail(id), runId);
   await expect(page.locator('#wf-run-detail-modal')).toBeVisible();
   await expect(page.locator('#wf-run-detail-body table.studio-table')).toBeVisible({
     timeout: 15_000,
@@ -277,32 +305,28 @@ async function openRunDetail(page: Page, runId: string): Promise<void> {
 test.describe('DWO — a parked approval gate survives a dashboard restart', () => {
   // Opt-in, and deliberately out of the shared CI sweep.
   //
-  // This spec spawns a dashboard, kills it, and starts it again. The CI E2E job
-  // drives ONE long-lived dashboard that ~800 other tests share, and it exports
-  // ICDEV_STORAGE_BACKEND=postgresql while this spec's child runs on sqlite — so
-  // in the sweep the child comes up without a provisioned DB and /studio/workflows
-  // never renders. Left ungated it is the single red test in an otherwise green
-  // run, which reddens main for a reason that has nothing to do with durability.
+  // This spec spawns a dashboard, kills it, and starts it again, while the CI
+  // E2E job drives ONE long-lived dashboard that ~800 other tests share. Those
+  // two do not mix: restarting a process the sweep depends on would break every
+  // test running beside it. That is the reason it stays opt-in — it is about
+  // process ownership, not about the backend.
+  //
+  // (An earlier version of this comment claimed the CI job exports
+  // ICDEV_STORAGE_BACKEND=postgresql. It does not — playwright.config.ts sets
+  // 'sqlite' for the shared webServer, so the whole suite runs on the fallback
+  // backend rather than the primary one. That is tracked separately; it is why
+  // the other two DWO specs, which use the shared server, are still held out.)
   //
   // Run it deliberately, on a host where you own the dashboard:
   //
   //   ICDEV_E2E_DWO_RESTART=1 ICDEV_NO_SERVER=1 \
   //     npx playwright test tests/e2e/dwo_restart_durability.spec.ts --headed
   //
-  // KNOWN BLOCKER (2026-07-28): even opted in, this currently fails at
-  // `the run parks at awaiting_approval` with a 500 from
-  // GET /api/studio/workflows/runs/<run_id>:
-  //
-  //   sqlite3.OperationalError: no such column: classification
-  //     tools/studio/workflow_runner.py::get_run
-  //
-  // studio_workflow_runs and studio_workflow_run_steps have no classification /
-  // tenant_id columns (studio_workflows does), so the global RLS predicate that
-  // get_connection() attaches under a request context cannot be satisfied. It is
-  // a product defect, not a defect in this spec — the same read succeeds outside
-  // a request context, which is why the pytest layer never caught it. The fix
-  // belongs to the studio-RLS-columns migration, not here; re-run this spec once
-  // that lands and drop this paragraph.
+  // The former KNOWN BLOCKER — a 500 from GET /api/studio/workflows/runs/<id>
+  // with "no such column: classification" — had two causes, both now fixed:
+  // the run tables genuinely lacked the RLS columns in init_db.py and in every
+  // migration (migration 309), and this spec was pointing its child at the
+  // unmaintained sqlite fallback (see DASHBOARD_ENV above).
   test.skip(
     !process.env.ICDEV_E2E_DWO_RESTART,
     'opt-in: set ICDEV_E2E_DWO_RESTART=1 — this spec restarts a dashboard process it owns',
