@@ -1,6 +1,6 @@
 {
-  "through_version": "312",
-  "generated_commit": "23fad57af",
-  "generated": "2026-07-29",
+  "through_version": "301",
+  "generated_commit": "2f99f81aa",
+  "generated": "2026-07-26",
   "note": "The highest migration version whose DDL is guaranteed present in pg_consolidated.sql. bootstrap_pg.py marks versions <= this as applied WITHOUT running them (the historical chain is not replayable) and RUNS everything above it. Bump this ONLY when the snapshot is regenerated, and set it to the highest migration that existed at that moment. A value that is too LOW is safe -- the extra migrations re-run and every post-snapshot migration is written to be idempotent on PostgreSQL. A value that is too HIGH silently skips schema changes, which is the failure this file exists to prevent."
 }
