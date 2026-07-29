@@ -41,18 +41,29 @@ from tools.studio.automation_builder import (
     evaluate_condition,
 )
 
-try:
-    from tools.studio import event_sources
-except ImportError:  # pragma: no cover - exercised only before dwo-evt-02 merges
-    event_sources = None
+from tools.studio import event_sources
 
-#: Applied to the cases that call `event_sources` itself. Everything else runs
-#: against the shared DSL and must not be gated behind an unmerged branch.
-needs_event_sources = pytest.mark.skipif(
-    event_sources is None,
-    reason="tools.studio.event_sources is not present in this checkout "
-    "(dwo-evt-02, unmerged). This test activates when it lands.",
-)
+#: dwo-evt-02 has merged, so the import above is unconditional and this marker is
+#: a no-op kept only so the decorated cases below read unchanged.
+#:
+#: It used to be a skipif on `event_sources is None`, set by an ImportError
+#: guard. That guard is how this file's failures stayed invisible: once
+#: dwo-evt-02 landed the import succeeded, the tests stopped skipping, and 28 of
+#: them began failing against a different API surface than the one specified —
+#: `evaluate_filters` and `resolve_field` did not exist at all, and the audit
+#: vocabulary had merged under different names. Nothing reported it, because the
+#: CI Test job is a 12-file allowlist that does not include this file.
+#:
+#: A guard that silently converts "not built yet" into "built wrong" is worse
+#: than no guard. If `event_sources` is ever absent again, the import fails loudly
+#: at collection — which is the correct signal for a module this repo ships.
+#:
+#: Kept as an identity decorator so the cases below read unchanged; an empty
+#: `pytest.mark.usefixtures()` would warn on every use.
+
+
+def needs_event_sources(func):
+    return func
 
 _PAYLOAD = {
     "action": "opened",
