@@ -10,7 +10,7 @@ from flask import Blueprint, g, jsonify, redirect, render_template, request, url
 from .auth import require_org_intel
 from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
-    migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, start_mission, complete_mission,
+    migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     get_user_achievements, grant_achievement, update_user_xp,
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
@@ -239,7 +239,11 @@ def mission_runner(slug):
                                fa_user=fa_user, missions=[], progress_map={},
                                level_ctx=_level_ctx(fa_user), roles=ROLES,
                                active_tier=None, active_topic="", active_type=""), 404
-    start_mission(fa_user["id"], mission["id"])
+    # aca-int-04: this GET used to record a mission start, bumping `attempts` and
+    # forcing status back to 'in_progress' — so merely opening a page counted as
+    # an attempt, and revisiting a completed mission withdrew the completion.
+    # Reading a page is not progress; progress is recorded when work is submitted.
+    # Tests assert no progress-mutating call appears in this function.
     progress = get_mission_progress(fa_user["id"], mission["id"])
     step_states = {}
     for step in mission.get("steps", []):
@@ -469,6 +473,9 @@ def api_step_submit():
     step_type = (step.get("step_type") or "coding").strip().lower()
     passed = verdict["passed"]
 
+    # aca-int-04: submitting work is what puts a mission in progress and what
+    # counts as an attempt — not opening its page.
+    record_mission_attempt(fa_user["id"], mission_id)
     status = complete_step(fa_user["id"], step_id, submission=submission,
                            passed=passed, hints_used=hints_used)
 

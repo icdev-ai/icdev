@@ -97,6 +97,15 @@ STEP_STATUS_ATTEMPTED   = "attempted"
 STEP_STATUS_COMPLETED   = "completed"
 STEP_STATUSES = (STEP_STATUS_NOT_STARTED, STEP_STATUS_ATTEMPTED, STEP_STATUS_COMPLETED)
 
+# fa_mission_progress.status. Same rule as above: if a CHECK is ever added to the
+# column, derive it from MISSION_STATUSES.
+MISSION_STATUS_NOT_STARTED = "not_started"
+MISSION_STATUS_IN_PROGRESS = "in_progress"
+MISSION_STATUS_COMPLETED   = "completed"
+MISSION_STATUSES = (
+    MISSION_STATUS_NOT_STARTED, MISSION_STATUS_IN_PROGRESS, MISSION_STATUS_COMPLETED,
+)
+
 # ---------------------------------------------------------------------------
 # XP multipliers
 # ---------------------------------------------------------------------------

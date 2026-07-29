@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from tools.db.storage import get_connection
 from .constants import (
     ACHIEVEMENTS,
+    MISSION_STATUS_COMPLETED,
+    MISSION_STATUS_IN_PROGRESS,
     SKILL_NODES,
     STEP_STATUS_ATTEMPTED,
     STEP_STATUS_COMPLETED,
@@ -674,24 +676,50 @@ def get_mission_progress(user_id: int, mission_id: int, tenant_id: str | None = 
     return {"status": "not_started", "xp_earned": 0, "attempts": 0, "score": 0}
 
 
-def start_mission(user_id: int, mission_id: int) -> None:
+def record_mission_attempt(user_id: int, mission_id: int) -> None:
+    """Record that the learner submitted work against this mission.
+
+    aca-int-04: this was `start_mission` and the mission GET handler called it on
+    every page load, with `SET status='in_progress', attempts=attempts+1` applied
+    unconditionally. Two consequences:
+
+      * `attempts` counted page views. Production showed 39 rows in_progress with
+        352 attempts while fa_step_progress was entirely empty — every one of
+        those "attempts" was somebody opening a page.
+      * revisiting a COMPLETED mission reverted it to in_progress, withdrawing a
+        completion that check_cert_eligibility counts. Certificate eligibility
+        oscillated with browsing.
+
+    It is now called from the submit path only, so progress is a consequence of
+    work, and a completed mission is never moved backwards — a learner must be
+    able to reopen and tinker with something they have already passed.
+    """
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     existing = conn.execute(
-        "SELECT id FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
+        "SELECT id, status FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
         (user_id, mission_id),
     ).fetchone()
     if existing:
-        conn.execute(
-            "UPDATE fa_mission_progress SET status='in_progress', attempts=attempts+1 "
-            "WHERE user_id=? AND mission_id=?",
-            (user_id, mission_id),
-        )
+        status = existing["status"] if hasattr(existing, "keys") else existing[1]
+        if status == MISSION_STATUS_COMPLETED:
+            # Count the attempt, keep the completion.
+            conn.execute(
+                "UPDATE fa_mission_progress SET attempts=attempts+1 "
+                "WHERE user_id=? AND mission_id=?",
+                (user_id, mission_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE fa_mission_progress SET status=?, attempts=attempts+1 "
+                "WHERE user_id=? AND mission_id=?",
+                (MISSION_STATUS_IN_PROGRESS, user_id, mission_id),
+            )
     else:
         conn.execute(
             "INSERT INTO fa_mission_progress (user_id,mission_id,status,attempts,started_at) "
-            "VALUES (?,?,'in_progress',1,?)",
-            (user_id, mission_id, now),
+            "VALUES (?,?,?,1,?)",
+            (user_id, mission_id, MISSION_STATUS_IN_PROGRESS, now),
         )
     conn.commit()
 
