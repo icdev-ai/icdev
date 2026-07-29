@@ -10,6 +10,8 @@
 
 import { test, expect } from '@playwright/test';
 
+import { deleteKanbanTasks } from './fixtures/kanban_cleanup';
+
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 
 // The canonical 9 stages, in order — mirrors args/pipeline.yaml.
@@ -21,6 +23,15 @@ const STAGES = [
 let taskId: string | null = null;
 
 test.describe('Governed Delivery Pipeline — full lifecycle', () => {
+  // Delete the proof task. Without this it stays on the real board as a backlog
+  // item the scheduler can promote and dispatch an agent against — see the
+  // matching note in kanban_api.spec.ts. `request` is test-scoped, so afterAll
+  // builds its own context from the worker-scoped `playwright` fixture.
+  test.afterAll(async ({ playwright }, testInfo) => {
+    await deleteKanbanTasks(playwright, testInfo, [taskId], 'kanban_pipeline.spec');
+    taskId = null;
+  });
+
   test('create a task for the pipeline proof', async ({ request }) => {
     const resp = await request.post('/api/kanban/tasks', {
       data: {
