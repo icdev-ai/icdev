@@ -22,10 +22,18 @@ from tools.kanban import scheduler_control as sc
 
 @pytest.fixture
 def isolated_flag(tmp_path, monkeypatch):
-    """Point the sentinel at a temp path so tests never touch the real one."""
+    """Point the sentinel at a temp path so tests never touch the real one.
+
+    The module-level ``_FLAG`` constant became ``_flag_path()`` when the sentinel
+    was re-anchored to the canonical repo root (a worktree resolved it to its own
+    root and so could not see the pause). It is cached, so the cache is cleared
+    around the override.
+    """
     flag = tmp_path / "kanban_scheduler.paused"
-    monkeypatch.setattr(sc, "_FLAG", flag)
-    return flag
+    monkeypatch.setenv("KANBAN_PAUSE_FLAG", str(flag))
+    sc._flag_path.cache_clear()
+    yield flag
+    sc._flag_path.cache_clear()
 
 
 @pytest.fixture
