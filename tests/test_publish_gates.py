@@ -29,9 +29,19 @@ _MIGRATION = _ROOT / "tools" / "db" / "migrations" / "300_idr_publish_audit_cove
 
 
 def _gates_in(sql: str) -> set[str]:
-    """Extract the gate values from a `gate IN (...)` CHECK body."""
+    """Extract the gate values from the CHECK body, in either spelling.
+
+    The migration file is authored as ``gate IN ('a', 'b')``. PostgreSQL stores
+    that normalised, so ``pg_dump`` renders the identical constraint as
+    ``gate = ANY (ARRAY['a'::text, 'b'::text])`` — which means a regenerated
+    consolidated snapshot never contains the ``IN`` form and an ``IN``-only
+    reader fails on every regeneration. Both spellings denote the same set, so
+    both are parsed here rather than constraining how the snapshot is produced.
+    """
     m = re.search(r"gate\s+IN\s*\(([^)]*)\)", sql, re.IGNORECASE)
-    assert m, "no `gate IN (...)` CHECK found"
+    if not m:
+        m = re.search(r"gate\s*=\s*ANY\s*\(\s*ARRAY\s*\[([^\]]*)\]", sql, re.IGNORECASE)
+    assert m, "no `gate IN (...)` or `gate = ANY (ARRAY[...])` CHECK found"
     return set(re.findall(r"'([^']+)'", m.group(1)))
 
 
@@ -78,8 +88,16 @@ def test_sql_matches_the_python_constant(path: pathlib.Path):
     text = path.read_text(encoding="utf-8", errors="replace")
     if path is _CONSOLIDATED:
         # Scope to the idr_publish_audit table — the file has many CHECKs.
+        #
+        # Both DDL spellings are accepted because the snapshot contains both:
+        # pg_dump emits a plain `CREATE TABLE public.x (`, while the tables
+        # hand-carried into the snapshot (declared by init_db/migrations but
+        # absent from the canonical database) use `IF NOT EXISTS`. Matching only
+        # the latter made this test fail the moment the snapshot was regenerated,
+        # reporting "not found" for a table that was present the whole time. The
+        # gate list is what this asserts; the CREATE spelling is incidental.
         block = re.search(
-            r"CREATE TABLE IF NOT EXISTS public\.idr_publish_audit \((.*?)\);",
+            r"CREATE TABLE (?:IF NOT EXISTS )?public\.idr_publish_audit \((.*?)\n\);",
             text, re.S,
         )
         assert block, "idr_publish_audit not found in pg_consolidated.sql"
