@@ -1711,6 +1711,29 @@ def _title_from_body(body: str, fallback: str) -> str:
     return fallback
 
 
+def _code_assets_for(md_path: Path, step_num: int) -> tuple[str, str]:
+    """Find the authored ``stepN_starter.py`` / ``stepN_test.py`` beside a step.
+
+    aca-hon-05: discovery globbed ``*.md`` only, so the Python assets authored next
+    to the prose were never attached — 124 files across 60 mission directories,
+    including all ten Tier-1 missions. Every m01 step was step_type='watch' with
+    empty asset paths while step1_starter.py and step1_test.py sat unused in the
+    same folder. That is why the onboarding path advertised CODING and had nothing
+    to grade.
+
+    Returns ``(starter_rel, test_rel)``, each '' when absent. Paths are relative to
+    CONTENT_ROOT, matching every other path in a step record.
+    """
+    out = []
+    for suffix in ("starter", "test"):
+        candidate = md_path.parent / f"step{step_num}_{suffix}.py"
+        out.append(
+            candidate.relative_to(CONTENT_ROOT).as_posix()
+            if candidate.is_file() else ""
+        )
+    return out[0], out[1]
+
+
 def discover_steps() -> dict:
     """Scan CONTENT_ROOT and return ``{mission_slug: [step-record, ...]}``.
 
@@ -1718,6 +1741,13 @@ def discover_steps() -> dict:
     whose frontmatter carries no parsable ontology_id are skipped rather than
     guessed at — a step attached to the wrong mission is worse than one that is
     visibly absent.
+
+    Authored ``stepN_starter.py`` / ``stepN_test.py`` siblings are attached where
+    they exist (see ``_code_assets_for``). A sibling TEST promotes the step to
+    'coding', because the test is what makes it gradeable; a starter on its own is
+    attached for the editor but does not change the declared step type. Promoting
+    without a test would manufacture a 'coding' step that aca-int-02 can never
+    credit, which is worse than leaving it as the lesson its frontmatter declares.
     """
     found: dict = {}
     if not CONTENT_ROOT.is_dir():
@@ -1733,11 +1763,18 @@ def discover_steps() -> dict:
         if not match:
             continue
         rel = path.relative_to(CONTENT_ROOT).as_posix()
+        step_num = int(match.group("num"))
+        starter_rel, test_rel = _code_assets_for(path, step_num)
+        step_type = _step_type_from_class(fm.get("step_class"))
+        if test_rel:
+            step_type = "coding"
         found.setdefault(match.group("slug"), []).append({
-            "step_num": int(match.group("num")),
+            "step_num": step_num,
             "title": _title_from_body(body, path.stem.replace("_", " ").title()),
-            "step_type": _step_type_from_class(fm.get("step_class")),
+            "step_type": step_type,
             "content_path": rel,
+            "starter_code_path": starter_rel,
+            "test_code_path": test_rel,
             "config_schema": {},
             "xp_partial": _DEFAULT_XP,
             "skill_tag": str(fm.get("skill_tag") or ""),
@@ -1907,6 +1944,71 @@ def _seed_steps(conn, mission_id: int, mission_slug: str, steps: list | None = N
             )
         except Exception as exc:
             _log.debug("Step seed %s step %s: %s", mission_slug, step.get("step_num"), exc)
+
+    _reconcile_step_assets(conn, mission_id, mission_slug, steps)
+
+
+def _reconcile_step_assets(conn, mission_id: int, mission_slug: str, steps: list) -> None:
+    """Attach newly-discovered code assets to steps that were already seeded.
+
+    ``_seed_steps`` uses INSERT OR IGNORE, so a step row written before
+    ``discover_steps`` learned about ``stepN_starter.py``/``stepN_test.py``
+    (aca-hon-05) keeps its original values forever. Every one of the 212 steps in
+    production was seeded that way — all with step_type='watch' and empty asset
+    paths — so without this pass the discovery fix would be inert against any
+    existing database and Tier 1 would stay ungradeable.
+
+    Deliberately conservative, because seeding runs on every dashboard start:
+
+      * only fills an asset path that is currently empty — never overwrites a
+        path already recorded (BUILTIN_STEPS entries stay authoritative);
+      * only promotes step_type to 'coding', and only when a test is attached, so
+        it can never demote an authored type or create an ungradeable coding step
+        (which aca-int-02 would refuse to credit anyway);
+      * idempotent — a second run matches nothing and writes nothing.
+    """
+    for step in steps:
+        test_path = step.get("test_code_path") or ""
+        starter_path = step.get("starter_code_path") or ""
+        if not (test_path or starter_path):
+            continue
+        try:
+            row = conn.execute(
+                "SELECT id, step_type, starter_code_path, test_code_path "
+                "FROM fa_mission_steps WHERE mission_id=? AND step_num=?",
+                (mission_id, step["step_num"]),
+            ).fetchone()
+            if not row:
+                continue
+            stored = dict(row) if hasattr(row, "keys") else {
+                "id": row[0], "step_type": row[1],
+                "starter_code_path": row[2], "test_code_path": row[3],
+            }
+            updates: dict = {}
+            if test_path and not (stored.get("test_code_path") or ""):
+                updates["test_code_path"] = test_path
+            if starter_path and not (stored.get("starter_code_path") or ""):
+                updates["starter_code_path"] = starter_path
+            # Promote only once a test is actually present on the row.
+            will_have_test = updates.get("test_code_path") or stored.get("test_code_path")
+            if will_have_test and stored.get("step_type") != "coding":
+                updates["step_type"] = "coding"
+            if not updates:
+                continue
+            assignments = ", ".join(f"{col}=?" for col in updates)
+            conn.execute(
+                f"UPDATE fa_mission_steps SET {assignments} WHERE id=?",  # noqa: S608
+                (*updates.values(), stored["id"]),
+            )
+            _log.info(
+                "FORGE Academy: attached code assets to %s step %s (%s)",
+                mission_slug, step["step_num"], ", ".join(sorted(updates)),
+            )
+        except Exception as exc:
+            _log.warning(
+                "Step asset reconcile %s step %s: %s",
+                mission_slug, step.get("step_num"), exc,
+            )
 
 
 # ---------------------------------------------------------------------------
