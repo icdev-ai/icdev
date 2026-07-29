@@ -189,8 +189,15 @@
 </div>
 
 <script>
-const STEPS = {{ mission.steps | tojson }};
-const MISSION = {{ mission | tojson }};
+// aca-int-01/02/03: this payload used to be `mission.steps | tojson`, which
+// shipped every step's grading test AND the multiple-choice answer key to the
+// person being graded. `steps_client` is the sanitised projection built by
+// grading.client_safe_steps; the server holds the test and the key.
+const STEPS = {{ steps_client | tojson }};
+// Minimal projection — `mission | tojson` re-serialised mission.steps (tests and
+// answer keys included) right back into the page.
+const MISSION = {id: {{ mission.id | tojson }}, slug: {{ mission.slug | tojson }},
+                 tier: {{ mission.tier | tojson }}};
 const FA_USER_ID = {{ fa_user.id if fa_user else 'null' }};
 let currentStep = 0;
 let hintsUsed = 0;
@@ -218,16 +225,21 @@ async function runCode(stepIdx) {
   out.className = 'fa-output-panel';
   out.textContent = 'Executing...';
   try {
+    // Only the step id travels — the server loads that step's own test.
     const resp = await fetch('/api/academy/code/run', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({code, test_code: STEPS[stepIdx].test_code || ''})
+      body: JSON.stringify({code, step_id: STEPS[stepIdx].id})
     });
     const d = await resp.json();
     out.textContent = (d.stdout || '') + (d.stderr ? '\n\nSTDERR:\n' + d.stderr : '');
     out.className = 'fa-output-panel ' + (d.passed ? 'passed' : 'failed');
     if (d.passed) {
-      await submitStep(stepIdx, code, true);
-      document.getElementById('next-btn-' + stepIdx).style.display = 'inline-block';
+      // The server re-grades on submit; this call records the attempt and is the
+      // only thing that can award XP.
+      const verdict = await submitStep(stepIdx, code);
+      if (!verdict || verdict.passed) {
+        document.getElementById('next-btn-' + stepIdx).style.display = 'inline-block';
+      }
     }
   } catch(e) {
     out.textContent = 'Error: ' + e.message;
@@ -263,41 +275,45 @@ function faEnrolNotice() {
     '<a href="/academy/profile" style="color:#ffce7a;text-decoration:underline;">Set up your profile</a> to earn XP.';
 }
 
-async function submitStep(stepIdx, submission, passed) {
-  if (!FA_USER_ID) { faEnrolNotice(); return; }
+// Submits an attempt and returns the SERVER's verdict. The caller no longer says
+// whether it passed: `passed`, `score`, `base_xp`, `mission_xp` and
+// `mission_complete` were all read from this body and all were forgeable
+// (aca-int-01). Only the step id, the submission and the chosen option travel.
+async function submitStep(stepIdx, submission, chosenOption) {
+  if (!FA_USER_ID) { faEnrolNotice(); return null; }
   const step = STEPS[stepIdx];
   const elapsed = Math.round((Date.now() - startTime) / 1000);
-  const isLast = stepIdx === STEPS.length - 1;
   try {
+    const payload = {
+      step_id: step.id,
+      submission: submission,
+      hints_used: hintsUsed,
+      elapsed_seconds: elapsed,
+    };
+    if (chosenOption !== undefined && chosenOption !== null) {
+      payload.chosen_option = chosenOption;
+    }
     const resp = await fetch('/api/academy/step/submit', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        step_id: step.id,
-        mission_id: MISSION.id,
-        mission_slug: MISSION.slug,
-        submission: submission,
-        passed: passed,
-        hints_used: hintsUsed,
-        elapsed_seconds: elapsed,
-        base_xp: step.xp_partial || 50,
-        step_type: step.step_type || 'coding',
-        skill_tag: step.skill_tag || '',
-        mission_complete: isLast,
-        mission_xp: MISSION.xp_reward || 100,
-      })
+      body: JSON.stringify(payload)
     });
     const d = await resp.json();
-    if (d.ok && d.xp_event) {
-      const xp = d.xp_event.xp_awarded || d.xp_event.xp || (step.xp_partial || 50);
-      showXPToast(xp, elapsed < 90 ? '⚡ Speed Bonus!' : 'Step Complete');
-      if (d.xp_event.level_up) {
-        setTimeout(() => showXPToast(0, '🎖 Rank Up: ' + d.xp_event.level_up), 1000);
+    if (d.ok && d.passed && d.xp_event) {
+      const xp = d.xp_event.xp_earned || d.xp_event.xp_awarded || 0;
+      showXPToast(xp, d.xp_event.speed_bonus ? '⚡ Speed Bonus!' : 'Step Complete');
+      if (d.xp_event.leveled_up) {
+        setTimeout(() => showXPToast(0, '🎖 Rank Up: ' + d.xp_event.new_level), 1000);
       }
     }
-  } catch(e) { /* non-blocking */ }
-  // Mark nav item done
-  const navItems = document.querySelectorAll('#step-nav li');
-  if (navItems[stepIdx]) navItems[stepIdx].classList.add('done');
+    // Only a real pass marks the step done in the sidebar.
+    if (d.passed) {
+      const navItems = document.querySelectorAll('#step-nav li');
+      if (navItems[stepIdx]) navItems[stepIdx].classList.add('done');
+    }
+    return d;
+  } catch(e) {
+    return null;
+  }
 }
 
 async function getHint(stepIdx) {

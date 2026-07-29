@@ -4,6 +4,111 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: aca
+  name: ACA - FORGE Academy Assessment Integrity and Learner Experience
+  description: 'Remediation of the /academy audit run 2026-07-29 against the live
+    PostgreSQL instance (17 pages + 8 APIs probed, all HTTP 200, no crashes). The
+    Academy shell is large and well built - 124 missions, 212 steps, 18 templates,
+    certificates, guilds, leaderboards, Oracle - but almost nothing a learner does
+    is verified. Headline: the single enrolled learner reached rank Operative with
+    1430 XP, and fa_daily_logins sums to exactly 1430, so 100 percent of that rank
+    came from logging in 40 times. fa_step_progress is completely EMPTY while
+    fa_mission_progress holds 39 in_progress rows and 352 attempts - every one of
+    those attempts is a page view, because blueprint.py:242 calls start_mission()
+    on GET and db.py:666 does SET status=''in_progress'', attempts=attempts+1. That
+    same write also downgrades a completed mission on revisit, so certificate
+    eligibility oscillates with browsing. Grading is client-authoritative:
+    blueprint.py:436 reads passed = bool(data.get(''passed'', True)) - defaulting
+    to True - then completes the step and awards XP with no server-side check, and
+    calls complete_mission() on the client''s own mission_complete flag; certificate
+    gates read fa_mission_progress.status=''completed'' (db.py:1049), so one crafted
+    POST per mission yields a certificate that /academy/verify/<token> then publicly
+    vouches for. _step_reflect.html:76 submits passed=true on a WRONG answer and the
+    key sits in the DOM as data-correct. mission.html:223 ships the test code to the
+    browser and grades against the copy posted back, and code_runner.py:253 passes
+    any script that exits 0, so a step with no test file is passed by print(1). Net
+    effect: at most 10 of 212 steps (4.7 percent) have any verification - 118 watch
+    steps are click-through, 42 configure steps auto-pass on fabricated output, 36
+    reflect steps pass either way, and 6 of 16 coding steps have no test. SCOPE
+    BOUNDARY - prior art is closed and must not be reopened: all 17 fga-* tasks and
+    all 7 penta-aca-* tasks are done. PENTA hardened the code_runner sandbox
+    (genuinely solid - AST allowlist, scrubbed env, -I isolation, rlimits), fixed the
+    nav 404, oracle wiring and coach sanitisation. FGA fixed guild 500s, the fake
+    watch-step Demo Output, profile save, Arena, the workflow-builder palette, and
+    wired content discovery onto frontmatter ontology_id with a real reverse-direction
+    test (tests/test_fga_content_discovery.py). RETRACTED during this audit: the
+    19 content directories with no matching DB slug are NOT orphans - discovery is
+    frontmatter-keyed by design and that test proves coverage. Also NOT carded: the
+    10 zero-step missions are the deliberate outcome of fga-wire-06 and are tested.
+    What survives is what nobody has looked at yet - assessment integrity, XP
+    provenance, and the honesty of the configure handlers. MANUAL-ONLY: every task
+    is gated behind aca-gate-00 held in_progress so the kanban runner never
+    dispatches them; worktree + push + PR, no auto-merge.'
+  task_prefix: aca-
+  default_open: true
+  briefs:
+  - 'INT: the core. Grading must move server-side before anything else matters -
+    ignore client passed/score/base_xp/mission_complete, re-verify against the
+    stored test_code_path, never the request body. The correct pattern already
+    exists in the same file: /api/academy/step/design-assess calls verify_step()
+    server-side (blueprint.py:512). Also stop the GET-write, gate XP on passed, and
+    give XP a provenance ledger so a certificate can name its evidence
+    (aca-int-01..07)'
+  - 'HON: configurator.py returns invented constants presented as live ICDEV output
+    on 5 of 7 actions - ai_inventory hardcodes systems_found 7, govcon_scan returns
+    a 4.2M dollar opportunity closing in 18 days, ato_timeline claims 68 percent
+    automation coverage - and all return status ok, which is also what auto-passes
+    the 42 configure steps. This is the exact defect class already fixed for watch
+    steps in fga-fix-02, and rag_search in the same file already shows the honest
+    pattern with its demo-mode note. Also: 35 derived missions display mechanical
+    titles (Ciso Capstone, Chromadb Rag) while the good human title sits in the
+    tagline, and m11-multimodal (derived, fga-wire-07) collides with the catalogued
+    m-t1-11-multimodal and carries the literal tagline CUI // SP-CTI
+    (aca-hon-01..05)'
+  - 'UX: static/vendor/codemirror/ does not exist, so every coding step throws four
+    console errors and silently degrades to a bare textarea. The hint button prices
+    itself at -10 XP when the real first-hint cost on a 50 XP step is -48 (1.5x
+    multiplier lost, 0.75x applied, then -10), and hintsUsed plus startTime both
+    reset in goStep() so the penalty and the speed bonus launder on navigation
+    (aca-ux-01..06)'
+  - 'HYG: small verified defects - get_gameday_seed_bonus is dead code (wrong
+    namespace, literal %s, swallowed exception), role gates use LIKE %role% so swe
+    matches swe_arch and inflates the certificate denominator, the guild API 200s on
+    a nonexistent guild, learning-path leaks internal columns, and db.py uses ?
+    placeholders throughout on a PG-primary backend so every academy query trips the
+    translate_sql init-fallback warning (aca-hyg-01..05)'
+  - 'TRN: what is missing structurally as a training product rather than a web app -
+    no assessment model (no pass thresholds, attempt limits or item randomisation),
+    no competency evidence chain despite the ontology tables existing and being
+    empty, no learning objectives surfaced, no instructor or cohort assignment
+    workflow, no xAPI/SCORM export, and colour-only status with no keyboard step
+    navigation (aca-trn-01..06)'
+  - 'VV: the reverse-direction test that would have caught all of INT - a test that
+    asserts a forged submission cannot earn credit - plus a Playwright proof of one
+    genuinely graded journey, manifest shards, feature doc, companion sync and the
+    coherence gate (aca-vv-01..03)'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: int
+    title: Assessment and Credential Integrity
+    priority: critical
+  - key: hon
+    title: Content Honesty and TRUST
+    priority: high
+  - key: ux
+    title: Learner Experience
+    priority: high
+  - key: hyg
+    title: Hygiene
+    priority: medium
+  - key: trn
+    title: Training Model Foundations
+    priority: medium
+  - key: vv
+    title: Verification and Validation
+    priority: high
 - key: kanban_pr_base
   name: Kanban Pr Base Project
   description: Auto-registered project for tasks with prefix 'kanban-pr-base-'. Update

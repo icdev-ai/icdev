@@ -10,7 +10,7 @@ from flask import Blueprint, g, jsonify, redirect, render_template, request, url
 from .auth import require_org_intel
 from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
-    migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
+    migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, start_mission, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     get_user_achievements, grant_achievement, update_user_xp,
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
@@ -246,10 +246,16 @@ def mission_runner(slug):
         sp = get_step_progress(fa_user["id"], step["id"])
         step_states[step["id"]] = sp["status"] if sp else "pending"
     level_ctx = _level_ctx(fa_user)
+    from .grading import client_safe_steps
+
     return render_template(
         "forge_academy/mission.html",
         fa_user=fa_user,
         mission=mission,
+        # aca-int-02/03: the template serialises this into page JavaScript. The
+        # raw step rows carry the grading test and the answer key, so only the
+        # sanitised projection may go into the page.
+        steps_client=client_safe_steps(mission.get("steps", [])),
         progress=progress,
         step_states=step_states,
         level_ctx=level_ctx,
@@ -414,12 +420,22 @@ def api_progress():
 
 @bp.route("/api/academy/code/run", methods=["POST"])
 def api_code_run():
-    from .code_runner import run_code
+    """Run a learner's code against the step's OWN stored test.
+
+    aca-int-02: this used to take `test_code` straight from the request body,
+    which mission.html helpfully posted back from the step payload — so the
+    person being graded supplied the test. The step id is now the only thing the
+    caller controls; the test comes from test_code_path on the step row.
+    """
+    from .grading import run_step_code
+
     data = request.get_json(silent=True) or {}
     code = data.get("code", "")
-    test_code = data.get("test_code", "")
-    result = run_code(code, test_code=test_code)
-    return jsonify(result)
+    step_id = data.get("step_id")
+    if not step_id:
+        return jsonify({"error": "step_id required", "passed": False,
+                        "stdout": "", "stderr": "step_id required"}), 400
+    return jsonify(run_step_code(step_id, code))
 
 
 @bp.route("/api/academy/step/submit", methods=["POST"])
@@ -427,61 +443,96 @@ def api_step_submit():
     fa_user = _fa_user()
     if not fa_user:
         return jsonify({"error": "not configured"}), 400
+    from .grading import grade_step, mission_is_complete, mission_xp_reward
+
     data = request.get_json(silent=True) or {}
     step_id = data.get("step_id")
-    mission_id = data.get("mission_id")
-    submission = data.get("submission", "")
-    hints_used = int(data.get("hints_used", 0))
-    elapsed_s = data.get("elapsed_seconds")
-    passed = bool(data.get("passed", True))
-
     if not step_id:
         return jsonify({"error": "step_id required"}), 400
 
-    complete_step(fa_user["id"], step_id, submission=submission,
-                  passed=passed, hints_used=hints_used)
+    # aca-int-01: the ONLY things the client may influence are which step it is
+    # answering and what it submitted. The verdict, the payout and whether the
+    # mission is finished are all derived server-side. `passed`, `score`,
+    # `base_xp`, `mission_xp`, `mission_complete`, `mission_id`, `step_type` and
+    # `skill_tag` used to be read from this body; every one of them was forgeable.
+    submission = data.get("submission", "")
+    chosen_option = data.get("chosen_option")
+    hints_used = max(0, int(data.get("hints_used", 0) or 0))
+    elapsed_s = data.get("elapsed_seconds")
+
+    verdict = grade_step(step_id, submission, chosen_option=chosen_option)
+    step = verdict.get("step")
+    if step is None:
+        return jsonify({"error": "unknown step", "passed": False}), 404
+
+    mission_id = step["mission_id"]
+    step_type = (step.get("step_type") or "coding").strip().lower()
+    passed = verdict["passed"]
+
+    status = complete_step(fa_user["id"], step_id, submission=submission,
+                           passed=passed, hints_used=hints_used)
+
+    resp = {
+        "ok": True,
+        "passed": passed,
+        "assessed": verdict["assessed"],
+        "status": status,
+        "reason": verdict.get("reason", ""),
+        "stdout": verdict.get("stdout", ""),
+        "stderr": verdict.get("stderr", ""),
+        "explanation": verdict.get("explanation", ""),
+        "correct_option": verdict.get("correct_option"),
+    }
+    if not passed:
+        # No credit for a failed or ungradeable submission. The learner keeps the
+        # feedback and can try again.
+        return jsonify(resp)
 
     summary = user_progress_summary(fa_user["id"])
-    base_xp = int(data.get("base_xp", 50))
-    step_type = data.get("step_type", "coding")
-    xp_event = award_step_xp(fa_user["id"], base_xp, hints_used=hints_used,
+    xp_event = award_step_xp(fa_user["id"], verdict["xp_base"], hints_used=hints_used,
                               elapsed_seconds=elapsed_s, step_type=step_type)
     step_ach = check_step_achievements(fa_user["id"], summary.get("steps_completed", 0))
     xp_event["achievements"] = xp_event.get("achievements", []) + step_ach
+    resp["xp_event"] = xp_event
 
     email = _fa_email()
-    skill_tag = data.get("skill_tag", "")
+    skill_tag = (step.get("skill_tag") or "").strip()
     if skill_tag:
         record_skill_usage(email, skill_tag)
         unlock_skill(fa_user["id"], skill_tag)
 
-    mission_complete_data = {}
-    if mission_id and data.get("mission_complete"):
-        complete_mission(fa_user["id"], mission_id, score=int(data.get("score", 100)))
-        mission_xp_event = award_mission_xp(fa_user["id"], int(data.get("mission_xp", 100)),
+    # aca-int-01: completion is derived from recorded step progress, not from the
+    # client's "this was the last step".
+    if mission_is_complete(fa_user["id"], mission_id):
+        complete_mission(fa_user["id"], mission_id, score=100)
+        mission_xp_event = award_mission_xp(fa_user["id"], mission_xp_reward(mission_id),
                                              perfect=(hints_used == 0))
-        mission_ach = check_mission_achievements(fa_user["id"],
-                                                  data.get("mission_slug", ""), hints_used)
+        mission = get_mission_by_id(mission_id)
+        mission_slug = (mission or {}).get("slug", "")
+        mission_ach = check_mission_achievements(fa_user["id"], mission_slug, hints_used)
         advance_learning_track(email)
-        mission_complete_data = {
-            "mission_xp": mission_xp_event,
-            "mission_achievements": mission_ach,
-        }
+        resp["mission_complete"] = True
+        resp["mission_xp"] = mission_xp_event
+        resp["mission_achievements"] = mission_ach
         # Record competency ontology edges
         try:
-            mission = get_mission(data.get("mission_slug", "")) if data.get("mission_slug") else None
             if mission:
                 from .ontology import get_tier_competency
                 record_user_competency(
                     user_id=fa_user["id"],
                     competency_class=get_tier_competency(mission.get("tier", 1)),
                     source_mission_id=mission_id,
-                    evidence={"mission_slug": mission["slug"], "score": data.get("score", 100)},
+                    evidence={"mission_slug": mission_slug, "score": 100},
                 )
         except Exception:
-            pass
+            # fga-fix-05 precedent: a swallowed warning never reaches a health
+            # check. Competency recording has never produced a row in production
+            # (aca-trn-02) — log loudly enough to find out why.
+            import logging
+            logging.getLogger(__name__).exception(
+                "competency recording failed for mission %s", mission_id)
 
-    return jsonify({"ok": True, "xp_event": xp_event, **mission_complete_data})
+    return jsonify(resp)
 
 
 @bp.route("/api/academy/step/design-assess", methods=["POST"])
