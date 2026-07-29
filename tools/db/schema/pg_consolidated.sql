@@ -83466,3 +83466,186 @@ ALTER TABLE ONLY public.zig_capabilities
 
 \unrestrict ReentM3QCRfXBfNKj2J6b4aDUpE09x8UuPJe2V933azKFsEbusGMzxw80fXUUPN
 
+
+--
+-- Tables carried forward from the previous consolidated snapshot.
+--
+-- These are declared by init_db/migrations but are NOT present in the
+-- canonical database, so pg_dump does not emit them. They were preserved
+-- by hand in the previous snapshot; dropping them here would remove them
+-- from every fresh install. IF NOT EXISTS throughout, so this section is a
+-- no-op on a database that already has them.
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_queries (
+    id text PRIMARY KEY,
+    query_text text NOT NULL,
+    lens text DEFAULT 'default'::text,
+    status text DEFAULT 'pending'::text,
+    agent_id text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    completed_at timestamp without time zone,
+    CONSTRAINT rag_queries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
+);
+CREATE INDEX IF NOT EXISTS idx_rag_queries_status ON public.rag_queries(status);
+CREATE INDEX IF NOT EXISTS idx_rag_queries_agent ON public.rag_queries(agent_id);
+
+CREATE TABLE IF NOT EXISTS public.rag_citations (
+    id BIGSERIAL PRIMARY KEY,
+    query_id text NOT NULL REFERENCES public.rag_queries(id),
+    source_doc text NOT NULL,
+    citation_text text,
+    confidence real DEFAULT 0.0,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_rag_citations_query ON public.rag_citations(query_id);
+
+CREATE TABLE public.teams_inbox (
+    message_id   text NOT NULL,
+    message_json text NOT NULL,
+    channel_id   text,
+    sender_id    text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+CREATE TABLE public.mattermost_inbox (
+    post_id      text NOT NULL,
+    message_json text NOT NULL,
+    channel_id   text,
+    user_id      text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+CREATE TABLE public.github_inbox (
+    comment_id   integer NOT NULL,
+    message_json text NOT NULL,
+    issue_number integer,
+    user_login   text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+CREATE TABLE public.gitlab_inbox (
+    note_id          integer NOT NULL,
+    message_json     text NOT NULL,
+    issue_iid        integer,
+    author_username  text,
+    text             text,
+    processed_at     text,
+    error            text,
+    created_at       text DEFAULT now()
+);
+
+CREATE TABLE public.skype_inbox (
+    activity_id     text NOT NULL,
+    message_json    text NOT NULL,
+    conversation_id text,
+    service_url     text,
+    sender_id       text,
+    text            text,
+    processed_at    text,
+    error           text,
+    created_at      text DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.pipeline_snapshots (
+    id             TEXT PRIMARY KEY,
+    pipeline_id    TEXT NOT NULL,
+    snapshot_type  TEXT NOT NULL DEFAULT 'baseline',
+    label          TEXT,
+    nodes_json     TEXT NOT NULL DEFAULT '[]',
+    edges_json     TEXT NOT NULL DEFAULT '[]',
+    meta_json      TEXT NOT NULL DEFAULT '{}',
+    created_by     TEXT,
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ps_pipeline ON public.pipeline_snapshots(pipeline_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ps_type ON public.pipeline_snapshots(snapshot_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.dm_policy_audit_log (
+    id              TEXT PRIMARY KEY,
+    policy_id       TEXT,
+    "user"          TEXT DEFAULT 'system',
+    resource        TEXT DEFAULT '{}',
+    decision        INTEGER DEFAULT 0,
+    reason          TEXT DEFAULT '',
+    method          TEXT DEFAULT 'local',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_policy_audit_created ON public.dm_policy_audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.dd_mapping_sessions (
+    id                  TEXT PRIMARY KEY,
+    name                TEXT NOT NULL DEFAULT 'Untitled Mapping',
+    source_format       TEXT NOT NULL DEFAULT 'json_schema',
+    target_format       TEXT NOT NULL DEFAULT 'sql_ddl',
+    source_schema_json  TEXT DEFAULT '{}',
+    target_schema_json  TEXT DEFAULT '{}',
+    status              TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','ingested','suggested','complete','error')),
+    field_count         INTEGER DEFAULT 0,
+    confirmed_count     INTEGER DEFAULT 0,
+    rejected_count      INTEGER DEFAULT 0,
+    classification      TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id           TEXT NOT NULL DEFAULT 'default',
+    created_by          TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_ms_tenant  ON public.dd_mapping_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dd_ms_status  ON public.dd_mapping_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_dd_ms_created ON public.dd_mapping_sessions(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.dd_field_mappings (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.dd_mapping_sessions(id) ON DELETE CASCADE,
+    source_field    TEXT NOT NULL,
+    source_type     TEXT DEFAULT '',
+    source_path     TEXT DEFAULT '',
+    target_field    TEXT NOT NULL,
+    target_type     TEXT DEFAULT '',
+    target_path     TEXT DEFAULT '',
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    match_method    TEXT DEFAULT 'name'
+                    CHECK (match_method IN ('name','semantic','type','combined','manual')),
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','confirmed','rejected','needs_review')),
+    transform_expr  TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_fm_session    ON public.dd_field_mappings(session_id);
+CREATE INDEX IF NOT EXISTS idx_dd_fm_status     ON public.dd_field_mappings(status);
+CREATE INDEX IF NOT EXISTS idx_dd_fm_confidence ON public.dd_field_mappings(confidence DESC);
+
+CREATE TABLE IF NOT EXISTS public.dd_mapping_transforms (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.dd_mapping_sessions(id),
+    artifact_type   TEXT NOT NULL DEFAULT 'sql'
+                    CHECK (artifact_type IN ('sql','python','dbt','xslt')),
+    artifact_text   TEXT NOT NULL DEFAULT '',
+    field_count     INTEGER DEFAULT 0,
+    generated_by    TEXT DEFAULT 'ai',
+    model_used      TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_mt_session ON public.dd_mapping_transforms(session_id);
+CREATE INDEX IF NOT EXISTS idx_dd_mt_created ON public.dd_mapping_transforms(created_at DESC);

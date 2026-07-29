@@ -104,6 +104,58 @@ def test_baseline_split_is_a_pure_boundary(version):
 # ── The concrete regression ───────────────────────────────────────────────────
 
 
+#: Declared by init_db/migrations but NOT present in the canonical database, so
+#: pg_dump does not emit them. They survive only because the snapshot carries
+#: them explicitly — a straight re-dump drops them from every fresh install.
+_CARRIED_FORWARD = (
+    "rag_queries", "rag_citations", "teams_inbox", "mattermost_inbox",
+    "github_inbox", "gitlab_inbox", "skype_inbox", "pipeline_snapshots",
+    "dm_policy_audit_log", "dd_mapping_sessions", "dd_field_mappings",
+    "dd_mapping_transforms",
+)
+
+
+@pytest.mark.parametrize("table", _CARRIED_FORWARD)
+def test_regenerating_the_snapshot_does_not_drop_carried_forward_tables(table):
+    """Regenerating the snapshot silently deleted these once. Never again.
+
+    The snapshot is *mostly* a pg_dump of the canonical database, but not only
+    that: a dozen tables are declared by init_db/migrations and absent from the
+    canonical database, so a straight re-dump does not contain them. The first
+    regeneration dropped all twelve — no error, no failing query, just twelve
+    tables missing from every future fresh install.
+    """
+    snapshot = bootstrap_pg.SCHEMA_FILE.read_text(encoding="utf-8-sig", errors="replace")
+    assert re.search(
+        rf"CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?\"?{table}\"?\s*\(",
+        snapshot,
+    ), (
+        f"{table} is not in the snapshot. If you regenerated it with pg_dump, "
+        f"re-append the carried-forward section — pg_dump cannot emit a table "
+        f"the canonical database does not have."
+    )
+
+
+def test_carried_forward_tables_are_ordered_for_their_foreign_keys():
+    """dd_field_mappings references dd_mapping_sessions; order is not cosmetic.
+
+    Appending these alphabetically produced a snapshot that failed to load with
+    UndefinedTable partway through, leaving a half-built database.
+    """
+    snapshot = bootstrap_pg.SCHEMA_FILE.read_text(encoding="utf-8-sig", errors="replace")
+
+    def pos(table: str) -> int:
+        m = re.search(
+            rf"CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?\"?{table}\"?\s*\(", snapshot
+        )
+        assert m, f"{table} missing from snapshot"
+        return m.start()
+
+    assert pos("dd_mapping_sessions") < pos("dd_field_mappings"), (
+        "dd_mapping_sessions must be created before the table that references it"
+    )
+
+
 def test_every_column_migration_308_adds_is_reachable_by_some_path():
     """The gap the regenerated snapshot exposed, and why it was invisible.
 
