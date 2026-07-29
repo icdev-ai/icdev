@@ -63,7 +63,20 @@ export default defineConfig({
     cwd: ROOT,
     env: {
       ICDEV_GOVCON_ENABLED: 'true',
+      // TECHNICAL DEBT (e2p-back-03): the suite still runs on the SQLite
+      // fallback while PostgreSQL is the platform's primary backend, so ~800
+      // E2E tests never exercise the backend production uses and any PG-only
+      // defect is invisible here. It also means the suite depends on
+      // data/icdev.db, which nothing maintains and which has drifted before
+      // (missing RLS columns, migration checksum mismatches) — costing hours
+      // chasing 500s that looked like product defects.
+      //
+      // ICDEV_ALLOW_SQLITE_SERVER opts past the boot guard in
+      // tools/db/backend_guard.py that otherwise refuses to serve from the
+      // fallback. Both lines come out together in e2p-back-03; the escape
+      // hatch is greppable so the debt stays visible until then.
       ICDEV_STORAGE_BACKEND: 'sqlite',
+      ICDEV_ALLOW_SQLITE_SERVER: '1',
       ICDEV_AAC_ENABLED: 'true',
       ICDEV_CUI_BANNER_ENABLED: 'true',
       ICDEV_MISSION_CANVAS_ENABLED: 'true',
