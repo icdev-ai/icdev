@@ -1,0 +1,7 @@
+{
+  "id": "311_studio_event_tables_rls_columns",
+  "description": "RLS columns (classification, tenant_id) on studio_event_sources, studio_workflow_triggers and studio_trigger_events. Migrations 305 and 309 added them to studio_workflows and the run tables; the event tables from migration 304 were missed, so get_connection()'s request-context predicate produced 'no such column: classification' on every dashboard read. The list helpers catch broadly and return [], so the trigger subsystem rendered as empty rather than erroring — silently unreachable in the UI while every unit test, which runs outside a request context, stayed green",
+  "created": "2026-07-29",
+  "targets": ["icdev.db"],
+  "adrs": []
+}

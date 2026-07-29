@@ -198,7 +198,13 @@ STUDIO_TABLES: dict[str, str] = {
             enabled     INTEGER DEFAULT 1,
             max_il      TEXT DEFAULT 'IL2',
             created_by  TEXT,
-            created_at  TEXT DEFAULT (datetime('now'))
+            created_at  TEXT DEFAULT (datetime('now')),
+            -- RLS (migration 311). get_connection() attaches a
+            -- tenant/classification predicate inside a request context, so a
+            -- table without these columns is not merely unfiltered — every
+            -- dashboard read of it raises "no such column: classification".
+            classification TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id      TEXT
         )
     """,
     "studio_workflow_triggers": """
@@ -212,7 +218,10 @@ STUDIO_TABLES: dict[str, str] = {
             enabled           INTEGER DEFAULT 1,
             workflow_il       TEXT DEFAULT 'IL6',
             project_id        TEXT DEFAULT 'default',
-            created_at        TEXT DEFAULT (datetime('now'))
+            created_at        TEXT DEFAULT (datetime('now')),
+            -- RLS (migration 311) — see studio_event_sources above.
+            classification    TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id         TEXT
         )
     """,
     # APPEND-ONLY — audit trail: why did this run start
@@ -231,7 +240,11 @@ STUDIO_TABLES: dict[str, str] = {
             classification TEXT,
             idempotency_key TEXT UNIQUE,
             envelope_id  TEXT,
-            received_at  TEXT DEFAULT (datetime('now'))
+            received_at  TEXT DEFAULT (datetime('now')),
+            -- RLS (migration 311). `classification` already exists above as the
+            -- event's own IL marking and doubles as the RLS predicate column;
+            -- only tenant_id was missing.
+            tenant_id    TEXT
         )
     """,
     # APPEND-ONLY — audit trail: every MCP dispatch attempt (dwo-mcp-02-d5).
