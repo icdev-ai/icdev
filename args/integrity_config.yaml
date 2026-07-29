@@ -362,6 +362,11 @@ known_safe_dynamic_import_modules:
   - config/component_registry.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/genesis/kanban_scheduler.py  # Startup inbox replay: loads notification adapter listeners (telegram/teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_startup_replay_listeners); _module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-INBOX-REPLAY-01.
   - genesis/kanban_scheduler.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  # ── Added for the 2026-07-28 dynamic_import triage (task-b3c493df46) ──
+  # Same already-authorized pattern: the import target comes from a module-level
+  # literal collection, never from user input.
+  - tools/studio/executors/mcp_executor.py  # run(): importlib.import_module(module_path) where module_path is entry["module"] read from tools/mcp/tool_registry.py::TOOL_REGISTRY — a module-level literal dict of 455 code-defined tools. The tool NAME is caller-supplied but is validated against that registry AND against the default-deny mcp_workflow_tools allowlist (dwo-mcp-02), the caller's IL/roles, the tool's input_schema and, for state-changing tools, an approved human gate — all before this line. A name absent from the registry is refused with mcp_tool_not_allowlisted / unknown_tool and never reaches the import. Authorized by REQ-STUDIO-MCP-DISPATCH-01.
+  - studio/executors/mcp_executor.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/genesis/reflexes/kanban.py  # Channel-listener poll: loads notification adapter listeners (teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_channel_listeners); module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-CHANNEL-LISTENER-01.
   - genesis/reflexes/kanban.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/network/routes/pna.py  # pna_predict_all(): importlib.import_module(module_path) iterates a hardcoded FORGE-internal tuple list of 6 predictor module names (eol_predictor, bgp_predictor, compliance_drift_predictor, capacity_predictor, change_failure_predictor, supply_chain_risk_scorer); module_path is not user-controlled — values are string literals defined 2 lines above the import call. Authorized by REQ-PNA-DYNAMIC-IMPORT-01 (assessment-115 review, 2026-06-27).
@@ -487,6 +492,9 @@ known_safe_dynamic_import_modules:
 # known_bad_signature finding in Mode A self-scans only.
 # ---------------------------------------------------------------------------
 known_safe_persistence_modules:
+  # ── Added for the 2026-07-28 persistence triage (task-e74c6d806f) ──
+  - tools/cli/provision_db.py  # sipa-persistence-generic fired on line 483: the match is "sudo systemctl enable --now postgresql" inside the list of strings returned by install_guidance(), whose docstring says "Deliberately printed rather than executed." Its only caller is line 640 — `for line in install_guidance(_p.system()): print(f"  {line}")` — so the text is operator guidance for installing PostgreSQL by hand, never executed by the platform. Same false-positive class as tools/network/seed_sops.py below. Authorized by REQ-PROVISION-DB-PERSISTENCE-FP-01.
+  - cli/provision_db.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/network/seed_sops.py  # sipa-persistence-generic fired on line 2313: the match is "systemctl enable --now named" inside a static Python dict containing a SOP step's "command" string — a human-readable instruction for an operator, never executed by the platform. Authorized as a false-positive data-string match by REQ-NETWORK-SEED-SOPS-PERSISTENCE-FP-01 (assessment-115 review, 2026-06-27).
   - network/seed_sops.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
