@@ -188,13 +188,25 @@ test.describe('DWO — a node_type: mcp step dispatches a registry tool', () => 
   //     layer is green and the browser is not — the defect is reachable only over
   //     HTTP. Its sibling dwo-vv-03-d2 is parked on the identical blocker.
   //
-  // Both were verified against this checkout, not assumed. Drop the guard once
-  // the executor merges and the run tables get their RLS columns; the spec was
-  // proven green against a rig with both applied (see the commit message).
+  // BOTH OF THOSE ARE NOW FIXED (2026-07-28). The executor merged with
+  // dwo-mcp-01 (#976) and its authorization layer with dwo-mcp-02 (#978/#979);
+  // the run tables got classification/tenant_id in migration 309 (#989).
+  // Verified: this spec passes end to end against a PostgreSQL dashboard.
+  //
+  // It stays opt-in for a different, narrower reason. It uses the SHARED
+  // webServer, and playwright.config.ts pins that to sqlite — while PostgreSQL
+  // is the platform's primary backend (CLAUDE.md) and data/icdev.db is an
+  // unmaintained fallback that drifts. The pass above was against PG, so
+  // un-gating this now would put a spec into the sweep on a backend it has not
+  // been shown green on.
+  //
+  // Drop the guard in e2p-back-03, which moves the suite to PostgreSQL. That
+  // task exists precisely because ~800 E2E tests currently never touch the
+  // primary backend.
   test.skip(
     !process.env.ICDEV_E2E_DWO_MCP,
-    'opt-in: needs mcp_executor.py (dwo-mcp-01/02, unmerged) and RLS columns on '
-      + 'the studio run tables — set ICDEV_E2E_DWO_MCP=1',
+    'opt-in until e2p-back-03 moves the E2E suite to PostgreSQL: proven green on '
+      + 'PG, not yet on the sqlite the shared webServer pins — set ICDEV_E2E_DWO_MCP=1',
   );
 
   test.beforeAll(() => {
