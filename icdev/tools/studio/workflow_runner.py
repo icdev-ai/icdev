@@ -173,6 +173,10 @@ def _build_mcp_command(step: dict, project_id: str, run_id: str = "") -> list:
 
 
 def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
+    # argv only. The run's inputs reach the step through the environment
+    # instead — see RUN_INPUTS_ENV_VAR / _build_step_env — because an inputs
+    # payload is an arbitrarily large JSON object and Windows caps a command
+    # line at ~32k characters.
     if step.get("node_type") == "mcp":
         return _build_mcp_command(step, project_id, run_id)
     tool_path = step.get("tool", "")
@@ -192,6 +196,66 @@ def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
         elif not isinstance(value, bool):
             cmd.extend([f"--{key}", str(value)])
     return cmd
+
+
+# ── Run inputs exposed to steps (dwo-evt-04) ───────────────
+
+# The contract a step process — and the dwo-mem-02 run-memory layer built on
+# top of it — can rely on:
+#
+#   * When the run was started with inputs (`start_run(..., inputs={...})`,
+#     recorded on the run row as `inputs_json`), every step subprocess is
+#     handed DWF_RUN_INPUTS_JSON holding that JSON object.
+#   * The value is the run row's stored text verbatim, NOT a re-serialization,
+#     so a step reads exactly what start_run persisted.
+#   * The variable is ABSENT when the run recorded no inputs (SQL NULL — the
+#     `inputs=None` default). Absent means "no inputs", which stays distinct
+#     from the value "{}", "started with an empty input set". A stale value
+#     inherited from this process's own environment is stripped rather than
+#     passed through, so absent always means absent.
+#   * It is read-only from a step's point of view: the payload the run STARTED
+#     with never changes mid-run. A step that wants to publish something for a
+#     later step writes run memory (`tools/studio/run_memory.py`) instead.
+RUN_INPUTS_ENV_VAR = "DWF_RUN_INPUTS_JSON"
+
+
+def _run_inputs_json(run_id: str) -> str | None:
+    """The run row's ``inputs_json`` as stored, or None when it has none.
+
+    A lookup failure degrades to None: a step losing its inputs variable is a
+    better outcome than a run dying because one SELECT failed.
+    """
+    if not run_id:
+        return None
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT inputs_json FROM studio_workflow_runs WHERE run_id = %s",
+                (run_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("Could not read inputs for run %s: %s", run_id, exc)
+        return None
+    return dict(row).get("inputs_json") if row else None
+
+
+def _build_step_env(run_id: str = "") -> dict:
+    """Environment handed to a step subprocess."""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    # dwo-mem-01: the step reads/writes run-scoped memory through this id.
+    if run_id:
+        env["ICDEV_RUN_ID"] = run_id
+    # dwo-evt-04: see RUN_INPUTS_ENV_VAR for the contract.
+    inputs_json = _run_inputs_json(run_id)
+    if inputs_json is None:
+        env.pop(RUN_INPUTS_ENV_VAR, None)
+    else:
+        env[RUN_INPUTS_ENV_VAR] = inputs_json
+    return env
 
 
 # ── Step execution ─────────────────────────────────────────
@@ -280,11 +344,7 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     timeout = step.get("timeout", 300)
     start = time.monotonic()
     try:
-        _env = os.environ.copy()
-        _env["PYTHONPATH"] = str(_ROOT) + os.pathsep + _env.get("PYTHONPATH", "")
-        # dwo-mem-01: the step reads/writes run-scoped memory through this id.
-        if run_id:
-            _env["ICDEV_RUN_ID"] = run_id
+        _env = _build_step_env(run_id)
         proc = subprocess.run(
             cmd,
             capture_output=True,
