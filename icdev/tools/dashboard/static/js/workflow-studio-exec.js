@@ -1106,6 +1106,190 @@
     StudioWF._toast(`Template "${t.name}" loaded — edit and save to run.`, 'success');
   };
 
+  // ── Triggers panel (dwo-evt-04-d5) ───────────────────────
+
+  // Parse a textarea that is allowed to be blank. Returns the sentinel on bad
+  // JSON so the caller can tell "user left it empty" (valid, means none) from
+  // "user typed something broken" (must not be sent as null and silently
+  // become a trigger that matches everything).
+  const _BAD_JSON = Symbol('bad-json');
+  function _optionalJson(text) {
+    const raw = (text || '').trim();
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return _BAD_JSON; }
+  }
+
+  function _triggerSourceOptions(sources) {
+    return ['<option value="">Select a source…</option>'].concat(
+      sources.map(s => {
+        const label = s.name || s.source_id;
+        const kind = s.channel || s.kind ? ` (${_esc(s.channel || s.kind)})` : '';
+        return `<option value="${_esc(s.source_id)}">${_esc(label)}${kind}</option>`;
+      })
+    ).join('');
+  }
+
+  StudioWF.loadTriggers = async function() {
+    const unsaved = $('wf-triggers-unsaved');
+    const main    = $('wf-triggers-main');
+    const countEl = $('wf-triggers-count');
+
+    // A trigger references a stored workflow id, so there is nothing to bind
+    // to until the workflow has been saved at least once.
+    if (!_currentWorkflowId) {
+      if (unsaved) unsaved.style.display = '';
+      if (main) main.style.display = 'none';
+      if (countEl) countEl.textContent = '0';
+      return;
+    }
+    if (unsaved) unsaved.style.display = 'none';
+    if (main) main.style.display = '';
+
+    let data;
+    try {
+      const resp = await fetch('/api/studio/workflows/' + _currentWorkflowId + '/triggers');
+      data = await resp.json();
+    } catch (e) {
+      StudioWF._toast('Could not load triggers: ' + e, 'error');
+      return;
+    }
+
+    const sources  = data.sources  || [];
+    const triggers = data.triggers || [];
+
+    ['wf-trigger-source', 'wf-sim-source'].forEach(id => {
+      const sel = $(id);
+      if (!sel) return;
+      const keep = sel.value;
+      sel.innerHTML = _triggerSourceOptions(sources);
+      if (keep) sel.value = keep;
+    });
+
+    if (countEl) countEl.textContent = String(triggers.length);
+
+    const body = $('wf-triggers-body');
+    if (!body) return;
+    if (!triggers.length) {
+      const msg = data.available === false
+        ? 'Event sources are unavailable — run the database migrations to enable triggers.'
+        : 'No triggers bound to this workflow';
+      body.innerHTML = `<tr><td colspan="5" class="studio-text-muted"
+        style="text-align:center; padding:32px;">${msg}</td></tr>`;
+      return;
+    }
+    body.innerHTML = triggers.map(t => {
+      const filter  = (t.event_filter && t.event_filter.length) ? JSON.stringify(t.event_filter) : '—';
+      const mapping = (t.input_mapping && Object.keys(t.input_mapping).length)
+        ? JSON.stringify(t.input_mapping) : '—';
+      return `<tr data-trigger-id="${_esc(t.trigger_id)}">
+        <td>${_esc(t.source_name || t.source_id)}</td>
+        <td>${_esc(t.event_type || 'any')}</td>
+        <td><code style="font-size:10px;">${_esc(filter)}</code></td>
+        <td><code style="font-size:10px;">${_esc(mapping)}</code></td>
+        <td>${t.enabled ? '&#10003;' : '&#10005;'}</td>
+      </tr>`;
+    }).join('');
+  };
+
+  StudioWF.createTrigger = async function() {
+    if (!_currentWorkflowId) {
+      StudioWF._toast('Save the workflow first.', 'error');
+      return;
+    }
+    const sourceId = ($('wf-trigger-source') || {}).value || '';
+    if (!sourceId) {
+      StudioWF._toast('Choose an event source.', 'error');
+      return;
+    }
+    const filter  = _optionalJson(($('wf-trigger-filter')  || {}).value);
+    const mapping = _optionalJson(($('wf-trigger-mapping') || {}).value);
+    if (filter === _BAD_JSON)  { StudioWF._toast('Event filter is not valid JSON.', 'error');  return; }
+    if (mapping === _BAD_JSON) { StudioWF._toast('Input mapping is not valid JSON.', 'error'); return; }
+
+    const btn = $('wf-trigger-create-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const resp = await fetch('/api/studio/workflows/' + _currentWorkflowId + '/triggers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_id: sourceId,
+          event_type: ($('wf-trigger-event-type') || {}).value || '',
+          event_filter: filter,
+          input_mapping: mapping,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        StudioWF._toast(data.error || 'Could not create trigger.', 'error');
+        return;
+      }
+      StudioWF._toast('Trigger created.', 'success');
+      await StudioWF.loadTriggers();
+    } catch (e) {
+      StudioWF._toast('Could not create trigger: ' + e, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  StudioWF.simulateTrigger = async function() {
+    if (!_currentWorkflowId) {
+      StudioWF._toast('Save the workflow first.', 'error');
+      return;
+    }
+    const sourceId = ($('wf-sim-source') || {}).value || '';
+    if (!sourceId) {
+      StudioWF._toast('Choose an event source to simulate.', 'error');
+      return;
+    }
+    const payload = _optionalJson(($('wf-sim-payload') || {}).value) || {};
+    if (payload === _BAD_JSON) { StudioWF._toast('Payload is not valid JSON.', 'error'); return; }
+
+    const out = $('wf-sim-result');
+    const btn = $('wf-trigger-simulate-btn');
+    if (btn) btn.disabled = true;
+    if (out) out.innerHTML = '<span class="studio-text-muted">Dispatching…</span>';
+    try {
+      const resp = await fetch(
+        '/api/studio/workflows/' + _currentWorkflowId + '/triggers/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source_id: sourceId,
+            event_type: ($('wf-sim-event-type') || {}).value || '',
+            payload: payload,
+          }),
+        });
+      const data = await resp.json();
+      if (!resp.ok) {
+        if (out) out.innerHTML = `<span style="color:#fca5a5;">${_esc(data.error || 'Simulate failed.')}</span>`;
+        return;
+      }
+      const runs = data.runs || [];
+      // A simulate that matches nothing is a result, not a failure — it is the
+      // most common thing a user is trying to debug here, so it says why.
+      if (!runs.length) {
+        const why = (data.results || []).map(r => r.reason).filter(Boolean)[0]
+          || 'no trigger on this source matched the event';
+        if (out) out.innerHTML = `<div id="wf-sim-no-match" style="color:#fbbf24;">
+          &#9888; No run started — ${_esc(why)}</div>`;
+        return;
+      }
+      if (out) {
+        out.innerHTML = `<div id="wf-sim-started" style="color:#86efac;">
+          &#9889; Started ${runs.length} run${runs.length === 1 ? '' : 's'}:
+          ${runs.map(r => `<a href="#" onclick="StudioWF.showRunDetail('${_esc(r)}');return false;"
+             style="color:#60a5fa;">${_esc(r)}</a>`).join(', ')}</div>`;
+      }
+      StudioWF._toast(`Simulate started ${runs.length} run(s).`, 'success');
+    } catch (e) {
+      if (out) out.innerHTML = `<span style="color:#fca5a5;">${_esc(String(e))}</span>`;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
   // ── Hook into switchTab for auto-load per tab ────────────
   const _origSwitchTab = StudioWF.switchTab;
   StudioWF.switchTab = function(el) {
@@ -1113,6 +1297,7 @@
     if (el && el.dataset) {
       if (el.dataset.tab === 'runs')  StudioWF.loadRunHistory();
       if (el.dataset.tab === 'saved') StudioWF.loadSavedWorkflows();
+      if (el.dataset.tab === 'triggers') StudioWF.loadTriggers();
       if (el.dataset.tab === 'templates' && !_templatesLoaded) {
         _templatesLoaded = true;
         StudioWF.loadTemplates();

@@ -2170,6 +2170,61 @@ def get_builtin_template(template_id: str) -> dict | None:
         return None
 
 
+# ── Triggers panel (dwo-evt-04-d5) ─────────────────────────
+
+
+def build_triggers_panel(workflow_id: str) -> dict:
+    """Everything the editor's Triggers tab needs, in one call.
+
+    Sources and triggers are fetched together because the panel is useless with
+    either half missing: binding a trigger requires choosing a source, and the
+    bound list has to name its source rather than show a bare id.
+
+    Degrades to empty lists rather than raising. The event tables arrive with
+    migration 304, so an editor opened against a database that has not been
+    migrated yet should render an empty panel, not a 500 that looks like the
+    workflow itself is broken.
+    """
+    try:
+        from tools.studio.event_sources import list_event_sources, list_workflow_triggers
+    except Exception as exc:
+        return {
+            "workflow_id": workflow_id, "sources": [], "triggers": [],
+            "available": False, "error": f"event sources unavailable: {exc}",
+        }
+
+    # Failures degrade to an empty panel but are *reported*. An empty list and a
+    # broken query look identical in the UI, and a panel that silently shows
+    # "no sources" when the query actually raised sends you looking for missing
+    # data instead of the exception.
+    errors: list[str] = []
+    try:
+        sources = list_event_sources()
+    except Exception as exc:
+        sources, _ = [], errors.append(f"sources: {exc}")
+    try:
+        triggers = list_workflow_triggers(workflow_id)
+    except Exception as exc:
+        triggers, _ = [], errors.append(f"triggers: {exc}")
+
+    by_id = {s.get("source_id"): s for s in sources}
+    for trig in triggers:
+        source = by_id.get(trig.get("source_id")) or {}
+        trig["source_name"] = source.get("name") or trig.get("source_id") or ""
+        trig["source_channel"] = source.get("channel") or ""
+
+    return {
+        "workflow_id": workflow_id,
+        "sources": sources,
+        "triggers": triggers,
+        # False only when the module itself is unavailable — an empty but
+        # working panel is a different state from a missing subsystem, and the
+        # UI says so rather than showing "no triggers" for both.
+        "available": True,
+        "error": "; ".join(errors),
+    }
+
+
 # ── CLI ────────────────────────────────────────────────────
 
 
