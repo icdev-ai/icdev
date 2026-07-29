@@ -99,7 +99,7 @@ async function submitConfigure(idx) {
     resultPanel.textContent = JSON.stringify(d, null, 2);
     if (d.status === 'ok' || d.status === 'partial') {
       resultPanel.style.borderColor = 'var(--fa-green)';
-      await submitStep(idx, JSON.stringify(config), true);
+      await submitStep(idx, JSON.stringify(config));
       document.getElementById('next-btn-' + idx).style.display = 'inline-block';
     }
   } catch(e) {

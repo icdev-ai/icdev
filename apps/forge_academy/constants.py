@@ -86,6 +86,18 @@ STEP_TYPES = [
 ]
 
 # ---------------------------------------------------------------------------
+# Step progress vocabulary
+# ---------------------------------------------------------------------------
+# fa_step_progress.status. 'attempted' exists because a failed submission used to
+# be filed as 'completed' with score 0 (aca-int-05) — a failure is now visibly a
+# failure. If a CHECK constraint is ever added to the column, derive it from
+# STEP_STATUSES rather than hardcoding the list in SQL.
+STEP_STATUS_NOT_STARTED = "not_started"
+STEP_STATUS_ATTEMPTED   = "attempted"
+STEP_STATUS_COMPLETED   = "completed"
+STEP_STATUSES = (STEP_STATUS_NOT_STARTED, STEP_STATUS_ATTEMPTED, STEP_STATUS_COMPLETED)
+
+# ---------------------------------------------------------------------------
 # XP multipliers
 # ---------------------------------------------------------------------------
 XP_MULT_FIRST_TRY_NO_HINTS = 1.5

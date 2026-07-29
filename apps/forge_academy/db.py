@@ -8,7 +8,13 @@ import secrets
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
-from .constants import ACHIEVEMENTS, SKILL_NODES, xp_to_level
+from .constants import (
+    ACHIEVEMENTS,
+    SKILL_NODES,
+    STEP_STATUS_ATTEMPTED,
+    STEP_STATUS_COMPLETED,
+    xp_to_level,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -604,6 +610,18 @@ def get_mission(slug: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_mission_by_id(mission_id: int) -> dict | None:
+    """Look a mission up by id.
+
+    The submit route derives the mission from the step row rather than trusting a
+    client-supplied slug (aca-int-01), so it needs an id-keyed lookup.
+    """
+    row = get_connection().execute(
+        "SELECT * FROM fa_missions WHERE id=?", (mission_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def get_mission_steps(mission_id: int) -> list[dict]:
     rows = get_connection().execute(
         "SELECT * FROM fa_mission_steps WHERE mission_id=? ORDER BY step_num",
@@ -708,29 +726,61 @@ def get_step_progress(user_id: int, step_id: int) -> dict:
     return dict(row) if row else {"status": "not_started", "hints_used": 0, "score": 0}
 
 
-def complete_step(user_id: int, step_id: int, submission: str = "",
-                  passed: bool = True, hints_used: int = 0) -> None:
+def record_step_attempt(user_id: int, step_id: int, submission: str = "",
+                        passed: bool = True, hints_used: int = 0) -> str:
+    """Record a submission against a step. Returns the resulting status.
+
+    aca-int-05: this used to hardcode status='completed' in BOTH branches, so a
+    FAILED submission was filed as a completed step (only `score` recorded the
+    failure) and `steps_completed` counted it. A failure is now stored as
+    STEP_STATUS_ATTEMPTED, and only a pass sets completed_at.
+
+    Mastery is never withdrawn: once a step is completed, a later failed
+    experiment records the submission but does not downgrade the status or the
+    score. Learners must be able to keep tinkering after they have passed.
+    """
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
+    status = STEP_STATUS_COMPLETED if passed else STEP_STATUS_ATTEMPTED
     score = 100 if passed else 0
     existing = conn.execute(
-        "SELECT id FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        "SELECT id, status, score FROM fa_step_progress WHERE user_id=? AND step_id=?",
         (user_id, step_id),
     ).fetchone()
     if existing:
+        already_done = (existing["status"] if hasattr(existing, "keys") else existing[1])
+        if already_done == STEP_STATUS_COMPLETED and not passed:
+            # Keep the pass; still record what was tried.
+            conn.execute(
+                "UPDATE fa_step_progress SET submission=?, hints_used=? "
+                "WHERE user_id=? AND step_id=?",
+                (submission, hints_used, user_id, step_id),
+            )
+            conn.commit()
+            return STEP_STATUS_COMPLETED
         conn.execute(
-            "UPDATE fa_step_progress SET status='completed', submission=?, score=?, "
+            "UPDATE fa_step_progress SET status=?, submission=?, score=?, "
             "hints_used=?, completed_at=? WHERE user_id=? AND step_id=?",
-            (submission, score, hints_used, now, user_id, step_id),
+            (status, submission, score, hints_used, now if passed else None,
+             user_id, step_id),
         )
     else:
         conn.execute(
             "INSERT INTO fa_step_progress "
             "(user_id,step_id,status,submission,score,hints_used,completed_at) "
-            "VALUES (?,?,'completed',?,?,?,?)",
-            (user_id, step_id, submission, score, hints_used, now),
+            "VALUES (?,?,?,?,?,?,?)",
+            (user_id, step_id, status, submission, score, hints_used,
+             now if passed else None),
         )
     conn.commit()
+    return status
+
+
+# Back-compat alias: `complete_step` is the historical name and is still what the
+# blueprint and the existing tests import. It no longer implies completion — the
+# `passed` argument decides — so new call sites should prefer
+# `record_step_attempt`, which says what it does.
+complete_step = record_step_attempt
 
 
 def user_progress_summary(user_id: int, tenant_id: str | None = None) -> dict:
