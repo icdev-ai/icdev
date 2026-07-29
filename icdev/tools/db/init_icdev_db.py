@@ -11600,12 +11600,24 @@ def init_db(db_path=None):
         print(f"Warning: workflow template seed skipped — {_exc}")
 
     # Seed E2E demo session (ME conflict intelligence) — idempotent INSERT OR IGNORE
+    #
+    # Two bugs used to live in this block. It bound `%s` placeholders on a RAW
+    # sqlite3 connection, which does not go through storage.translate_sql, so every
+    # run raised `near "%": syntax error` and the seed has never once been written —
+    # the failure was invisible because it printed a warning and moved on. And
+    # because the raise happened at .execute(), the `close()` below it was never
+    # reached, leaking the handle: on Windows that leaked handle makes the
+    # subsequent `--reset` unlink fail with WinError 32 (which is what broke
+    # tests/test_init_icdev_db.py::TestMainFunction::test_main_with_reset_flag).
+    # This is the SQLite-only monolithic init path, so `?` is the correct
+    # placeholder here; the close now happens in a finally.
+    _seed_conn = None
     try:
         _seed_conn = sqlite3.connect(str(path))
         _seed_conn.execute(
             "INSERT OR IGNORE INTO intake_sessions "
             "(id, customer_name, customer_org, session_status, classification, context_summary) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 "sess-9cc6891cb548",
                 "E2E Test User",
@@ -11616,9 +11628,11 @@ def init_db(db_path=None):
             ),
         )
         _seed_conn.commit()
-        _seed_conn.close()
     except Exception as _exc:
         print(f"Warning: demo session seed skipped — {_exc}")
+    finally:
+        if _seed_conn is not None:
+            _seed_conn.close()
 
     # Verify tables
     conn = sqlite3.connect(str(path))
