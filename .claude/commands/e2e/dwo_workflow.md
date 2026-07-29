@@ -153,20 +153,46 @@ process; everything before it is setup.
 21. Check the browser console — assert no JavaScript errors accumulated across
     the session.
 
-## Not covered by this spec (yet)
+## The three DWO V&V specs, and how CI runs them (dwo-vv-03-d5)
 
-Stated explicitly so a runner does not read a green pass as broader coverage
-than it is. Both gaps are code that has not merged, not scenarios that were
-skipped:
+The scenarios above are implemented by three specs in `tests/e2e/`. Each is
+opt-in behind its own env var, and `.github/workflows/icdev-ci.yml` runs all
+three in the **"Run DWO V&V specs (dwo-vv-03-d5)"** step of the `e2e` job —
+a separate `npx playwright test` invocation from the main sweep, because
+`dwo_restart_durability` restarts a dashboard and the sweep drives one shared
+long-lived server for ~800 tests.
 
-| Behaviour | Blocked on | Lands with |
+| Spec | Opt-in var | Status on `main` (verified at `eabdde92d`, 2026-07-28) |
 |---|---|---|
-| Event source → trigger → run linkage | `studio_event_sources` / `studio_workflow_triggers` / `studio_trigger_events` are **schema only** (migration 304). The CRUD + `match_event()` routing that consumes them is not in the tree. | `dwo-vv-03-d3` |
-| `node_type: mcp` step executes and shows a result | `tools/studio/executors/mcp_executor.py` is not in the tree. `_build_mcp_command()` compiles the argv, but with no executor on disk the step degrades to a `skipped` with reason "Tool not found" — the honest current behaviour, not a run failure. | `dwo-vv-03-d4` |
+| `dwo_restart_durability.spec.ts` | `ICDEV_E2E_DWO_RESTART` | **passes** — needed migration 309's RLS columns on the run tables, and the spec pointing its child at PostgreSQL rather than the unmaintained sqlite fallback |
+| `dwo_mcp_step_execution.spec.ts` | `ICDEV_E2E_DWO_MCP` | **passes** — `tools/studio/executors/mcp_executor.py` has merged, and migration 309 cleared the 500 from `GET /api/studio/workflows/runs/<id>` |
+| `dwo_trigger_linkage.spec.ts` | `ICDEV_E2E_DWO_TRIGGER` | **skips at its probe** — see below |
 
-Until those merge, an `mcp` step or a bound trigger asserted here would fail for
-the absence of the feature rather than for a regression. `dwo-vv-03-d5` wires
-the completed set into CI.
+Only the trigger spec is still blocked, and only on half of what it once was:
+`tools/studio/event_dispatch.py` and the gateway's `dispatch_envelope_async`
+hook have landed (dwo-evt-02), but `/api/studio/event-sources` and
+`/api/studio/triggers` are still not registered in
+`tools/dashboard/api/studio.py`, and `run.trigger_event` is not on the
+run-detail payload. Those are **dwo-evt-04**. The spec probes for the surface
+and skips precisely rather than reporting an unbuilt feature as a regression,
+so the CI step is green today and starts exercising the trigger path for real
+the moment dwo-evt-04 merges — with no edit to the workflow.
+
+Run them locally against a dashboard you own:
+
+```bash
+ICDEV_E2E_DWO_RESTART=1 ICDEV_E2E_DWO_MCP=1 ICDEV_E2E_DWO_TRIGGER=1 \
+ICDEV_NO_SERVER=1 ICDEV_STORAGE_BACKEND=postgresql \
+  npx playwright test tests/e2e/dwo_restart_durability.spec.ts \
+                      tests/e2e/dwo_mcp_step_execution.spec.ts \
+                      tests/e2e/dwo_trigger_linkage.spec.ts
+```
+
+`ICDEV_STORAGE_BACKEND=postgresql` is not optional from a git worktree: a
+worktree has no `.env`, so `load_dotenv` finds nothing and the backend falls
+back to sqlite — a database nothing maintains, which is what kept the restart
+spec red before. Set `ICDEV_PW_RUN_TAG=dwo` to keep this run's report and
+artifacts out of the main sweep's paths.
 
 ## Expected Results
 
@@ -200,59 +226,3 @@ the completed set into CI.
 - `playwright/screenshots/dwo-e2e-2-post-restart.png`
 - `playwright/screenshots/dwo-e2e-2-complete.png`
 - `playwright/screenshots/dwo-e2e-3-resume.png`
-
----
-
-## The three DWO specs, and how to run them as a set (dwo-vv-03-d5)
-
-The card ships three Playwright specs. All of them are **opt-in**, each for its
-own reason, and the reasons are not interchangeable — read them before assuming
-a skip is a failure.
-
-| Spec | Flag | Owns a process? | Status |
-|---|---|---|---|
-| `tests/e2e/dwo_restart_durability.spec.ts` | `ICDEV_E2E_DWO_RESTART=1` | its own dashboard | **passes** |
-| `tests/e2e/dwo_mcp_step_execution.spec.ts` | `ICDEV_E2E_DWO_MCP=1` | no — shared webServer | **passes** (on PostgreSQL) |
-| `tests/e2e/dwo_trigger_linkage.spec.ts` | `ICDEV_E2E_DWO_TRIGGER=1` | its own gateway | **skips** — feature not built |
-
-Run all three in one pass:
-
-```bash
-ICDEV_E2E_DWO_RESTART=1 ICDEV_E2E_DWO_MCP=1 ICDEV_E2E_DWO_TRIGGER=1 \
-  npx playwright test tests/e2e/dwo_restart_durability.spec.ts \
-                      tests/e2e/dwo_mcp_step_execution.spec.ts \
-                      tests/e2e/dwo_trigger_linkage.spec.ts --reporter=line
-```
-
-Expected today: **2 passed, 1 skipped**.
-
-### Why each is opt-in — these are not the same reason
-
-- **restart** — it stops and starts a dashboard process. The CI sweep drives ONE
-  long-lived dashboard shared by ~800 tests; restarting it would break every
-  test running alongside. This is about **process ownership** and will not
-  change. Run it where you own the dashboard.
-- **mcp** — its original blockers (the unmerged `mcp_executor.py`, and the run
-  tables' missing RLS columns) are **both fixed** — #976/#978/#979 and migration
-  309 (#989). It is proven green against PostgreSQL. It stays gated only because
-  it uses the shared webServer, which `playwright.config.ts` pins to **sqlite**
-  while PostgreSQL is the primary backend. Un-gate it in **e2p-back-03**, which
-  moves the suite to PG.
-- **trigger** — skips on a *precise probe*, not a flag: it asks
-  `GET /api/studio/event-sources` and skips when that is not 200. That route
-  does not exist in the tree yet; it ships with **dwo-evt-04** (the triggers API
-  and `run.trigger_event`, tasks `d3`/`d4`/`d5`). The spec is right to skip —
-  asserting against an unbuilt feature would report it as a regression.
-
-### What "all three pass in a single run" needs
-
-Two things that are **not** this task:
-
-1. `dwo-evt-04-d4`/`d5` — build the triggers API so the trigger spec has a
-   surface to assert against.
-2. `e2p-back-03` — move the E2E suite to PostgreSQL so the mcp spec can be
-   un-gated and join the sweep.
-
-Until both land, 2 passed / 1 skipped is the correct and complete result. A
-green run here is not the same as three specs in CI, and this file should not
-be read as claiming otherwise.

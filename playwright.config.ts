@@ -8,6 +8,17 @@ import path from 'path';
 // Root is always the directory that contains this config file — immune to cwd changes.
 const ROOT = __dirname;
 
+// Suffix for this invocation's report + artifact paths (dwo-vv-03-d5).
+//
+// The reporter's outputFile / outputFolder and `outputDir` are fixed paths, and
+// Playwright CLEARS outputDir on every run. So two `npx playwright test` calls in
+// one CI job — the shared sweep, then the opt-in DWO V&V specs — silently
+// overwrite each other's results.json and wipe each other's traces, and the
+// uploaded artifact ends up describing only whichever ran last. Setting
+// ICDEV_PW_RUN_TAG gives an invocation its own set of paths; unset (the default,
+// and every local run) the paths are exactly what they were.
+const RUN_TAG = process.env.ICDEV_PW_RUN_TAG ? `-${process.env.ICDEV_PW_RUN_TAG}` : '';
+
 /**
  * ICDEV™ Playwright Test Configuration
  *
@@ -27,10 +38,10 @@ export default defineConfig({
   workers: 1, // Single worker for deterministic execution order
   reporter: [
     ['list'],
-    ['json', { outputFile: path.resolve(ROOT, '.tmp/test_runs/playwright-results.json') }],
-    ['html', { outputFolder: path.resolve(ROOT, '.tmp/test_runs/playwright-report'), open: 'never' }],
+    ['json', { outputFile: path.resolve(ROOT, `.tmp/test_runs/playwright-results${RUN_TAG}.json`) }],
+    ['html', { outputFolder: path.resolve(ROOT, `.tmp/test_runs/playwright-report${RUN_TAG}`), open: 'never' }],
   ],
-  outputDir: path.resolve(ROOT, '.tmp/test_runs/playwright-artifacts'),
+  outputDir: path.resolve(ROOT, `.tmp/test_runs/playwright-artifacts${RUN_TAG}`),
 
   use: {
     baseURL: process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050',
@@ -63,10 +74,14 @@ export default defineConfig({
     cwd: ROOT,
     env: {
       ICDEV_GOVCON_ENABLED: 'true',
-      // TECHNICAL DEBT (e2p-back-03): the suite still runs on the SQLite
-      // fallback while PostgreSQL is the platform's primary backend, so ~800
-      // E2E tests never exercise the backend production uses and any PG-only
-      // defect is invisible here. It also means the suite depends on
+      // TECHNICAL DEBT (e2p-back-03), scoped to LOCAL runs: this env applies
+      // only when Playwright starts the dashboard itself. CI sets
+      // ICDEV_NO_SERVER=1, so `webServer` above is undefined there and the CI
+      // job's own ICDEV_STORAGE_BACKEND=postgresql governs instead — CI does
+      // exercise the primary backend.
+      //
+      // A local `npx playwright test` does not: it runs ~800 E2E tests against
+      // the SQLite fallback, so no PG-only defect is visible, and it depends on
       // data/icdev.db, which nothing maintains and which has drifted before
       // (missing RLS columns, migration checksum mismatches) — costing hours
       // chasing 500s that looked like product defects.

@@ -283,9 +283,21 @@ async function studioGet(page: Page, url: string): Promise<{ status: number; bod
   return { status: resp.status(), body };
 }
 
-/** Open the run-detail modal for `runId` and wait for its step table. */
+/**
+ * Open the run-detail modal for `runId` and wait for its step table.
+ *
+ * Evaluated as a STRING so `StudioWF` resolves as a bare global reference.
+ * workflow-studio.js declares it `const StudioWF = (() => {…})()` at the top
+ * level of a classic script, which binds it in the global *lexical*
+ * environment — never as a property of `window`. The inline
+ * `onclick="StudioWF.showRunDetail(…)"` handlers reach it through that scope,
+ * but `window.StudioWF` is `undefined`, so the function-form evaluate this
+ * used to do threw "Cannot read properties of undefined" while the Details
+ * button worked fine. Same defect dwo_restart_durability.spec.ts hit; it is
+ * latent here only because the spec currently skips at the probe below.
+ */
 async function openRunDetail(page: Page, runId: string): Promise<void> {
-  await page.evaluate((id) => (window as any).StudioWF.showRunDetail(id), runId);
+  await page.evaluate(`StudioWF.showRunDetail(${JSON.stringify(runId)})`);
   await expect(page.locator('#wf-run-detail-modal')).toBeVisible();
   await expect(page.locator('#wf-run-detail-body table.studio-table')).toBeVisible({
     timeout: 15_000,
@@ -311,14 +323,24 @@ test.describe.serial('DWO — a triggered run links back to the event that start
   //   ICDEV_E2E_DWO_TRIGGER=1 ICDEV_NO_SERVER=1 \
   //     npx playwright test tests/e2e/dwo_trigger_linkage.spec.ts --headed
   //
-  // KNOWN BLOCKER (2026-07-28): even opted in, this cannot pass yet. The
-  // dispatch half of the feature does not exist. Migration 304 ships the three
-  // tables (studio_event_sources, studio_workflow_triggers,
-  // studio_trigger_events), but there is no tools/studio/event_dispatch.py, no
-  // hook in the gateway webhook handler, and GET /api/studio/event-sources and
-  // /api/studio/triggers both answer 404. Verified against origin/main d3aa89b9f.
-  // Those land with dwo-evt-02 and dwo-evt-04; re-run this then and drop this
-  // paragraph. Everything else the spec leans on was verified present.
+  // KNOWN BLOCKER (2026-07-28, re-verified against origin/main eabdde92d by
+  // dwo-vv-03-d5): even opted in, this still cannot pass — but HALF the earlier
+  // blocker is now gone, so the note is narrowed rather than dropped.
+  //
+  //   LANDED (dwo-evt-02): tools/studio/event_dispatch.py exists and the
+  //   gateway webhook handler calls dispatch_envelope_async
+  //   (tools/gateway/gateway_agent.py:304). The dispatch half is real.
+  //
+  //   STILL MISSING (dwo-evt-04): the CRUD surface this spec drives.
+  //   /api/studio/event-sources and /api/studio/triggers are not registered in
+  //   tools/dashboard/api/studio.py — the nearest route is /automations/triggers,
+  //   which is the automation builder, a different feature. `run.trigger_event`
+  //   is likewise not on the run-detail payload.
+  //
+  // So the probe below skips on GET /api/studio/event-sources answering 404, and
+  // the CI step added by dwo-vv-03-d5 records that skip instead of a red run.
+  // When dwo-evt-04 merges this spec starts exercising for real with no edit to
+  // the workflow — re-run it then and drop this paragraph.
   test.skip(
     !process.env.ICDEV_E2E_DWO_TRIGGER,
     'opt-in: set ICDEV_E2E_DWO_TRIGGER=1 — this spec spawns a gateway process it owns',
