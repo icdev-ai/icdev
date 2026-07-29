@@ -70,20 +70,42 @@ from tools.studio.automation_builder import (  # noqa: E402
     resolve_input_mapping,
 )
 
+# Re-exported, not used here: callers resolve a field through the trigger
+# surface (``event_sources.resolve_field``) without needing to know the DSL
+# lives in automation_builder. Re-bound explicitly so it is an intentional part
+# of this module's API rather than an import ruff would strip as unused.
+from tools.studio.automation_builder import resolve_field as resolve_field  # noqa: E402
+
 logger = get_logger(__name__)
 
 #: Source kinds accepted by the studio_event_sources CHECK constraint.
 SOURCE_KINDS = ("gateway_channel", "canvas_bus", "schedule", "manual")
 
-#: Impact levels in increasing order of sensitivity (dwo-evt-02). An unknown
-#: label sorts to 0 — the most permissive rank — so ``classification_allows``
-#: below compares only labels it recognises and never *silently* refuses on a
-#: typo. The refusal path logs the labels it compared for exactly that reason.
-IL_ORDER = {"IL2": 2, "IL4": 4, "IL5": 5, "IL6": 6}
+#: Impact levels in increasing order of sensitivity (dwo-evt-02).
+#:
+#: Imported, not redefined. This module previously declared its own
+#: ``{"IL2": 2, "IL4": 4, "IL5": 5, "IL6": 6}`` — the same ordering as the
+#: gateway's but different numbers — so raising a canvas to IL5 in one place
+#: would have left the trigger surface enforcing the other. Only the relative
+#: order is ever used, so the absolute values were free to drift apart
+#: unnoticed, which is precisely what the dwo-vv-02 spec pins against.
+from tools.gateway.response_filter import IL_ORDER  # noqa: E402
+
+#: The rank an unrecognised label is compared at. Named rather than hardcoded to
+#: 0: with the gateway's numbering IL2 *is* 0, so a literal would silently mean
+#: "unknown == IL2" if the scale were ever rebased.
+_MOST_PERMISSIVE_IL = min(IL_ORDER.values())
 
 #: Outcomes recorded on a studio_trigger_events row. The audit has to say what
 #: happened, not merely that something did.
-TRIGGER_OUTCOMES = (
+#:
+#: Named ``OUTCOMES``/``MATCHED_OUTCOMES`` to match the dwo-vv-02 V&V contract.
+#: dwo-evt-02 merged them as ``TRIGGER_OUTCOMES``/``_MATCHED_OUTCOMES``, which
+#: left the verification spec asserting against names that did not exist. The
+#: spec's names win here for two reasons: nothing outside this module referenced
+#: the old ones, and the matched set has to be public anyway — a V&V test forced
+#: to read a single-underscore private is the smell, not the test.
+OUTCOMES = (
     "no_match",                # event reached no enabled trigger
     "matched",                 # trigger matched; this row is the idempotency claim
     "run_started",             # a run was started (second row, references the claim)
@@ -92,7 +114,23 @@ TRIGGER_OUTCOMES = (
 )
 
 #: Outcomes that count as a match for the legacy ``matched`` column.
-_MATCHED_OUTCOMES = ("matched", "run_started")
+MATCHED_OUTCOMES = ("matched", "run_started")
+
+
+def evaluate_filters(payload: dict, filters: list | None) -> bool:
+    """True when every filter condition holds against ``payload``.
+
+    The boolean face of ``evaluate_conditions``, which returns a per-condition
+    trace. ``match_event`` needs the trace to explain *why* a trigger did not
+    fire; a caller asking only "does this pass" should not have to know that.
+
+    An empty or absent filter list passes: a trigger with no conditions is
+    unconditional, not unsatisfiable. Getting that backwards would silently
+    disable every trigger that filters on event_type alone.
+    """
+    if not filters:
+        return True
+    return all(c["met"] for c in evaluate_conditions(filters, payload))
 
 
 def classification_allows(event_il: str, workflow_il: str) -> bool:
@@ -100,8 +138,17 @@ def classification_allows(event_il: str, workflow_il: str) -> bool:
 
     A workflow may only be started by an event at or below its own IL. The
     event's classification is never downgraded to make it fit.
+
+    An unrecognised label compares at the most permissive rank, so a typo does
+    not *silently* refuse; the refusal path logs the labels it compared for
+    exactly that reason. That is this module's documented, deliberate choice —
+    unlike a missing column defaulting to IL6, which is the accidental kind
+    (see migration 312).
     """
-    return IL_ORDER.get(event_il, 0) <= IL_ORDER.get(workflow_il, 0)
+    return (
+        IL_ORDER.get(event_il, _MOST_PERMISSIVE_IL)
+        <= IL_ORDER.get(workflow_il, _MOST_PERMISSIVE_IL)
+    )
 
 
 def _now_iso() -> str:

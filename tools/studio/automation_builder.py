@@ -581,6 +581,59 @@ def _sample_event(auto: dict) -> dict:
     return event
 
 
+_MISSING = object()
+
+
+def resolve_field(obj: Any, path: str, default: Any = None) -> Any:
+    """Walk a dotted path into nested dicts and lists. Missing → ``default``.
+
+    The single field resolver for this DSL. Both halves of a trigger use it, so
+    ``filter_json`` and ``input_mapping_json`` cannot disagree about what a
+    field name means — which they did (dwo-evt-05): ``input_mapping`` walked
+    dotted paths while filters resolved with a flat ``event.get(field, "")``, so
+    ``payload.repo.name`` read as empty in a filter and as the real value in a
+    mapping. An ``is_empty`` condition on a field that exists therefore matched,
+    silently inverting a narrowing filter into one that always fires.
+
+    A purely numeric segment indexes a sequence, so ``labels.0`` reaches the
+    first label. Strings are not treated as sequences: ``name.0`` on a string
+    field is a missing path, not its first character.
+
+    Missing returns ``default`` (``None``) rather than raising — a filter naming
+    a field the payload lacks is a normal non-match, not an error.
+    """
+    if not path:
+        return default
+    cursor: Any = obj
+    for part in str(path).split("."):
+        if isinstance(cursor, dict):
+            if part not in cursor:
+                return default
+            cursor = cursor[part]
+        elif isinstance(cursor, (list, tuple)) and part.lstrip("-").isdigit():
+            index = int(part)
+            if not -len(cursor) <= index < len(cursor):
+                return default
+            cursor = cursor[index]
+        else:
+            return default
+    return cursor
+
+
+def _resolve_event_path(event: dict, path: str, default: Any = None) -> Any:
+    """``resolve_field`` with the ``event.`` prefix the DSL documents.
+
+    ``event.payload.branch`` and ``payload.branch`` name the same thing; the
+    prefix is optional sugar, stripped once here rather than at each call site.
+    """
+    if isinstance(path, str) and path.startswith("event."):
+        stripped = resolve_field(event, path[6:], _MISSING)
+        if stripped is not _MISSING:
+            return stripped
+        # Fall through: a payload may genuinely carry a key called "event".
+    return resolve_field(event, path, default)
+
+
 def _resolve_input_mapping(mapping: Any, event: dict) -> dict:
     """Resolve {"memory_key": "event.field"} against an event payload.
 
@@ -600,16 +653,9 @@ def _resolve_input_mapping(mapping: Any, event: dict) -> dict:
         if not isinstance(src, str):
             resolved[key] = src
             continue
-        path = src[6:] if src.startswith("event.") else src
-        cursor: Any = event
-        found = True
-        for part in path.split("."):
-            if isinstance(cursor, dict) and part in cursor:
-                cursor = cursor[part]
-            else:
-                found = False
-                break
-        resolved[key] = cursor if found else src
+        value = _resolve_event_path(event, src, _MISSING)
+        # An unresolvable source is a literal, so constants need no second syntax.
+        resolved[key] = src if value is _MISSING else value
     return resolved
 
 
@@ -772,7 +818,19 @@ def evaluate_conditions(conditions: list[dict] | None, event: dict) -> list[dict
         field = cond.get("field", "")
         op = cond.get("operator", "equals")
         expected = cond.get("value", "")
-        actual = event.get(field, "")
+
+        # Flat key first, dotted path second. Deliberately in that order: this
+        # DSL is shared with the automation surface, so a stored condition whose
+        # field name literally contains a dot must keep resolving to that key
+        # rather than being reinterpreted as a path into nested data. Only a
+        # name that is NOT a literal key is walked, which makes nested access
+        # strictly additive — no existing automation changes meaning.
+        if isinstance(event, dict) and field in event:
+            actual = event[field]
+        else:
+            actual = _resolve_event_path(event, field, _MISSING)
+            if actual is _MISSING:
+                actual = ""  # unresolvable reads as empty, as it always has
         results.append(
             {
                 "field": field,
