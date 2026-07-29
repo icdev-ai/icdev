@@ -2510,6 +2510,14 @@ def create_app(testing: bool = False) -> Flask:
     # See tools/dashboard/api/__init__.py for the full registration sequence.
     register_api_blueprints(app)
 
+    # ---- Backend guard (e2p-back-04) ----
+    # Refuse to serve from the SQLite fallback when this install declares
+    # ICDEV_PG_NO_FALLBACK. Deliberately NOT wrapped in a broad try/except that
+    # swallows it: the whole point is to fail loudly at boot instead of serving
+    # 500s from a database nothing maintains. See tools/db/backend_guard.py.
+    from tools.db.backend_guard import assert_primary_backend
+    assert_primary_backend("ICDEV dashboard")
+
     # ---- Studio DB init (kanban/ci-fix-26594490171) ----
     try:
         from tools.studio.init_db import init_studio_tables
