@@ -8,6 +8,17 @@ import path from 'path';
 // Root is always the directory that contains this config file — immune to cwd changes.
 const ROOT = __dirname;
 
+// Suffix for this invocation's report + artifact paths (dwo-vv-03-d5).
+//
+// The reporter's outputFile / outputFolder and `outputDir` are fixed paths, and
+// Playwright CLEARS outputDir on every run. So two `npx playwright test` calls in
+// one CI job — the shared sweep, then the opt-in DWO V&V specs — silently
+// overwrite each other's results.json and wipe each other's traces, and the
+// uploaded artifact ends up describing only whichever ran last. Setting
+// ICDEV_PW_RUN_TAG gives an invocation its own set of paths; unset (the default,
+// and every local run) the paths are exactly what they were.
+const RUN_TAG = process.env.ICDEV_PW_RUN_TAG ? `-${process.env.ICDEV_PW_RUN_TAG}` : '';
+
 /**
  * ICDEV™ Playwright Test Configuration
  *
@@ -27,10 +38,10 @@ export default defineConfig({
   workers: 1, // Single worker for deterministic execution order
   reporter: [
     ['list'],
-    ['json', { outputFile: path.resolve(ROOT, '.tmp/test_runs/playwright-results.json') }],
-    ['html', { outputFolder: path.resolve(ROOT, '.tmp/test_runs/playwright-report'), open: 'never' }],
+    ['json', { outputFile: path.resolve(ROOT, `.tmp/test_runs/playwright-results${RUN_TAG}.json`) }],
+    ['html', { outputFolder: path.resolve(ROOT, `.tmp/test_runs/playwright-report${RUN_TAG}`), open: 'never' }],
   ],
-  outputDir: path.resolve(ROOT, '.tmp/test_runs/playwright-artifacts'),
+  outputDir: path.resolve(ROOT, `.tmp/test_runs/playwright-artifacts${RUN_TAG}`),
 
   use: {
     baseURL: process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050',

@@ -153,20 +153,46 @@ process; everything before it is setup.
 21. Check the browser console — assert no JavaScript errors accumulated across
     the session.
 
-## Not covered by this spec (yet)
+## The three DWO V&V specs, and how CI runs them (dwo-vv-03-d5)
 
-Stated explicitly so a runner does not read a green pass as broader coverage
-than it is. Both gaps are code that has not merged, not scenarios that were
-skipped:
+The scenarios above are implemented by three specs in `tests/e2e/`. Each is
+opt-in behind its own env var, and `.github/workflows/icdev-ci.yml` runs all
+three in the **"Run DWO V&V specs (dwo-vv-03-d5)"** step of the `e2e` job —
+a separate `npx playwright test` invocation from the main sweep, because
+`dwo_restart_durability` restarts a dashboard and the sweep drives one shared
+long-lived server for ~800 tests.
 
-| Behaviour | Blocked on | Lands with |
+| Spec | Opt-in var | Status on `main` (verified at `eabdde92d`, 2026-07-28) |
 |---|---|---|
-| Event source → trigger → run linkage | `studio_event_sources` / `studio_workflow_triggers` / `studio_trigger_events` are **schema only** (migration 304). The CRUD + `match_event()` routing that consumes them is not in the tree. | `dwo-vv-03-d3` |
-| `node_type: mcp` step executes and shows a result | `tools/studio/executors/mcp_executor.py` is not in the tree. `_build_mcp_command()` compiles the argv, but with no executor on disk the step degrades to a `skipped` with reason "Tool not found" — the honest current behaviour, not a run failure. | `dwo-vv-03-d4` |
+| `dwo_restart_durability.spec.ts` | `ICDEV_E2E_DWO_RESTART` | **passes** — needed migration 309's RLS columns on the run tables, and the spec pointing its child at PostgreSQL rather than the unmaintained sqlite fallback |
+| `dwo_mcp_step_execution.spec.ts` | `ICDEV_E2E_DWO_MCP` | **passes** — `tools/studio/executors/mcp_executor.py` has merged, and migration 309 cleared the 500 from `GET /api/studio/workflows/runs/<id>` |
+| `dwo_trigger_linkage.spec.ts` | `ICDEV_E2E_DWO_TRIGGER` | **skips at its probe** — see below |
 
-Until those merge, an `mcp` step or a bound trigger asserted here would fail for
-the absence of the feature rather than for a regression. `dwo-vv-03-d5` wires
-the completed set into CI.
+Only the trigger spec is still blocked, and only on half of what it once was:
+`tools/studio/event_dispatch.py` and the gateway's `dispatch_envelope_async`
+hook have landed (dwo-evt-02), but `/api/studio/event-sources` and
+`/api/studio/triggers` are still not registered in
+`tools/dashboard/api/studio.py`, and `run.trigger_event` is not on the
+run-detail payload. Those are **dwo-evt-04**. The spec probes for the surface
+and skips precisely rather than reporting an unbuilt feature as a regression,
+so the CI step is green today and starts exercising the trigger path for real
+the moment dwo-evt-04 merges — with no edit to the workflow.
+
+Run them locally against a dashboard you own:
+
+```bash
+ICDEV_E2E_DWO_RESTART=1 ICDEV_E2E_DWO_MCP=1 ICDEV_E2E_DWO_TRIGGER=1 \
+ICDEV_NO_SERVER=1 ICDEV_STORAGE_BACKEND=postgresql \
+  npx playwright test tests/e2e/dwo_restart_durability.spec.ts \
+                      tests/e2e/dwo_mcp_step_execution.spec.ts \
+                      tests/e2e/dwo_trigger_linkage.spec.ts
+```
+
+`ICDEV_STORAGE_BACKEND=postgresql` is not optional from a git worktree: a
+worktree has no `.env`, so `load_dotenv` finds nothing and the backend falls
+back to sqlite — a database nothing maintains, which is what kept the restart
+spec red before. Set `ICDEV_PW_RUN_TAG=dwo` to keep this run's report and
+artifacts out of the main sweep's paths.
 
 ## Expected Results
 
