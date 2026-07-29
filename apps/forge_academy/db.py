@@ -15,6 +15,7 @@ from .constants import (
     SKILL_NODES,
     STEP_STATUS_ATTEMPTED,
     STEP_STATUS_COMPLETED,
+    STEP_STATUS_NOT_STARTED,
     xp_to_level,
 )
 
@@ -809,6 +810,46 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
 # `passed` argument decides — so new call sites should prefer
 # `record_step_attempt`, which says what it does.
 complete_step = record_step_attempt
+
+
+def record_hint(user_id: int, step_id: int) -> int:
+    """Count a hint against a step and return the new total.
+
+    aca-int-06: `hintsUsed` used to live only in the browser, and goStep() reset it
+    to 0 on every sidebar click - so three hints followed by a click away and back
+    erased the penalty entirely, restoring both the 1.5x "perfect" mission
+    multiplier and the no_hints_needed achievement. A counter the learner's own
+    navigation can zero is not a counter.
+
+    Creates the progress row if the learner has not submitted anything yet, and
+    leaves status/score untouched so recording a hint can never disturb a step that
+    is already completed.
+    """
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT id FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        (user_id, step_id),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE fa_step_progress SET hints_used=hints_used+1 "
+            "WHERE user_id=? AND step_id=?",
+            (user_id, step_id),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO fa_step_progress (user_id, step_id, status, hints_used) "
+            "VALUES (?,?,?,1)",
+            (user_id, step_id, STEP_STATUS_NOT_STARTED),
+        )
+    conn.commit()
+    row = conn.execute(
+        "SELECT hints_used FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        (user_id, step_id),
+    ).fetchone()
+    if not row:
+        return 0
+    return int((row["hints_used"] if hasattr(row, "keys") else row[0]) or 0)
 
 
 def user_progress_summary(user_id: int, tenant_id: str | None = None) -> dict:

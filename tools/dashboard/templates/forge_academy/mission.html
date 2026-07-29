@@ -316,12 +316,14 @@ async function submitStep(stepIdx, submission, chosenOption) {
   }
 }
 
+// The server counts the hint (against fa_step_progress) and quotes the real cost.
+// `hintsUsed` here is display-only now: it used to be the authoritative count and
+// goStep() reset it to 0, so hints were laundered by navigating away (aca-int-06).
 async function getHint(stepIdx) {
   const step = STEPS[stepIdx];
   const panel = document.getElementById('hint-panel-' + stepIdx);
   panel.style.display = 'block';
   panel.textContent = '⚙ FORGE Sensei is analyzing...';
-  hintsUsed++;
   const code = (window.editors && window.editors[stepIdx])
     ? window.editors[stepIdx].getValue()
     : '';
@@ -331,6 +333,7 @@ async function getHint(stepIdx) {
     const resp = await fetch('/api/academy/coach/hint', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
+        step_id: step.id,
         mission_slug: MISSION.slug,
         question: 'I need a hint for: ' + step.title,
         context: code.substring(0, 300),
@@ -338,7 +341,16 @@ async function getHint(stepIdx) {
       })
     });
     const d = await resp.json();
-    panel.innerHTML = '<strong style="color:var(--fa-orange)">FORGE Sensei</strong> (−10 XP)<br><br>' + (d.hint || 'Keep analyzing the requirements.');
+    if (typeof d.hints_used === 'number') { hintsUsed = d.hints_used; }
+    let cost = '';
+    if (d.projected) {
+      const p = d.projected;
+      cost = ' — this step now pays <strong>' + p.xp_if_you_stop_now
+           + ' XP</strong> instead of ' + p.xp_without_hints
+           + ' (' + p.hints_used + ' hint' + (p.hints_used === 1 ? '' : 's') + ')';
+    }
+    panel.innerHTML = '<strong style="color:var(--fa-orange)">FORGE Sensei</strong>'
+      + cost + '<br><br>' + (d.hint || 'Keep analyzing the requirements.');
   } catch(e) {
     panel.textContent = 'Hint unavailable. Trust your training.';
   }

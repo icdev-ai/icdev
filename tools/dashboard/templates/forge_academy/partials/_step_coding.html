@@ -11,7 +11,11 @@
   <div class="fa-controls">
     <button class="fa-btn-run" id="run-btn-{{ sidx }}" onclick="runCode({{ sidx }})">▶ Run Code</button>
     <button class="fa-btn-next" id="next-btn-{{ sidx }}" onclick="nextStep({{ sidx }})">✓ Next Step →</button>
-    <button class="fa-btn-hint" onclick="getHint({{ sidx }})">💡 Ask Sensei (−10 XP)</button>
+    {# The cost is quoted by the server (see getHint) rather than hardcoded here:
+       this button used to advertise only the flat penalty, while a first hint
+       really costs 48 XP on a 50 XP step because it also forfeits the no-hints
+       multiplier (aca-ux-02). #}
+    <button class="fa-btn-hint" onclick="getHint({{ sidx }})">💡 Ask Sensei (costs XP)</button>
   </div>
 
   <div class="fa-output-panel" id="output-{{ sidx }}">// Output will appear here after Run</div>
