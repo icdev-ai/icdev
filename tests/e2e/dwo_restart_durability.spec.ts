@@ -311,11 +311,14 @@ test.describe('DWO — a parked approval gate survives a dashboard restart', () 
   // test running beside it. That is the reason it stays opt-in — it is about
   // process ownership, not about the backend.
   //
-  // (An earlier version of this comment claimed the CI job exports
-  // ICDEV_STORAGE_BACKEND=postgresql. It does not — playwright.config.ts sets
-  // 'sqlite' for the shared webServer, so the whole suite runs on the fallback
-  // backend rather than the primary one. That is tracked separately; it is why
-  // the other two DWO specs, which use the shared server, are still held out.)
+  // On the backend, CI and a local run differ, and an earlier version of this
+  // comment got it backwards. The CI E2E job sets ICDEV_STORAGE_BACKEND=
+  // postgresql at job level, runs its own PostgreSQL container, and sets
+  // ICDEV_NO_SERVER=1 — which makes playwright.config.ts's `webServer` undefined,
+  // so the config's 'sqlite' env never applies there. In CI the suite runs on
+  // PostgreSQL. It is a *local* `npx playwright test` that gets the fallback,
+  // because then Playwright does start the webServer and does apply that env.
+  // The e2p-back-* work is therefore about local runs only.
   //
   // Run it deliberately, on a host where you own the dashboard:
   //

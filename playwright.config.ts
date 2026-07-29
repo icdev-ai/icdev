@@ -74,10 +74,14 @@ export default defineConfig({
     cwd: ROOT,
     env: {
       ICDEV_GOVCON_ENABLED: 'true',
-      // TECHNICAL DEBT (e2p-back-03): the suite still runs on the SQLite
-      // fallback while PostgreSQL is the platform's primary backend, so ~800
-      // E2E tests never exercise the backend production uses and any PG-only
-      // defect is invisible here. It also means the suite depends on
+      // TECHNICAL DEBT (e2p-back-03), scoped to LOCAL runs: this env applies
+      // only when Playwright starts the dashboard itself. CI sets
+      // ICDEV_NO_SERVER=1, so `webServer` above is undefined there and the CI
+      // job's own ICDEV_STORAGE_BACKEND=postgresql governs instead — CI does
+      // exercise the primary backend.
+      //
+      // A local `npx playwright test` does not: it runs ~800 E2E tests against
+      // the SQLite fallback, so no PG-only defect is visible, and it depends on
       // data/icdev.db, which nothing maintains and which has drifted before
       // (missing RLS columns, migration checksum mismatches) — costing hours
       // chasing 500s that looked like product defects.
