@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS studio_workflow_runs (
     completed_at   TEXT,
     triggered_by   TEXT,
     project_id     TEXT DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id      TEXT,
     summary_json   TEXT,
     inputs_json    TEXT,
     FOREIGN KEY (workflow_id) REFERENCES studio_workflows(workflow_id)
@@ -117,6 +119,8 @@ CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
     stdout       TEXT DEFAULT '',
     stderr       TEXT DEFAULT '',
     duration_ms  INTEGER DEFAULT 0,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id    TEXT,
     started_at   TEXT,
     completed_at TEXT,
     FOREIGN KEY (run_id) REFERENCES studio_workflow_runs(run_id)
