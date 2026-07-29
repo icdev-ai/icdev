@@ -33,15 +33,63 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from functools import lru_cache
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from tools.logging.icdev_logger import get_logger
 
 _ROOT = Path(__file__).resolve().parents[2]
-_FLAG = Path(os.environ.get("KANBAN_PAUSE_FLAG", str(_ROOT / "data" / "kanban_scheduler.paused")))
+
+
+def _canonical_repo_root() -> Path:
+    """The repo root every worktree shares, not this checkout's root.
+
+    ``Path(__file__).parents[2]`` is the root of whatever tree this module was
+    loaded from. In a git worktree that is the WORKTREE root, so the pause
+    sentinel resolved to a `data/` directory that has no sentinel — and a
+    scheduler started from a worktree reported ``paused: False`` and dispatched
+    while the main checkout reported ``paused: True`` and everyone believed the
+    board was frozen. The dashboard spawns a scheduler child on every start, so
+    restarting a dashboard from a worktree was enough to make that happen
+    (observed 2026-07-28: four tasks dispatched two hours into a verified pause).
+
+    ``git rev-parse --git-common-dir`` answers with the MAIN repository's .git
+    directory even when called from inside a linked worktree, which is exactly
+    the shared anchor needed. Falls back to this tree's root when git is
+    unavailable — a non-git install has no worktrees, so the two agree there.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=str(_ROOT), capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            common = Path(out.stdout.strip())
+            if not common.is_absolute():
+                common = (_ROOT / common).resolve()
+            # <root>/.git -> <root>; a bare/odd layout falls through to _ROOT.
+            if common.name == ".git" and common.parent.exists():
+                return common.parent
+    except Exception:  # noqa: BLE001 - git missing or unhappy: use this tree
+        pass
+    return _ROOT
+
+
+@lru_cache(maxsize=1)
+def _flag_path() -> Path:
+    """Sentinel path, resolved once per process.
+
+    ``KANBAN_PAUSE_FLAG`` still wins: it is the escape hatch for anyone who
+    needs to point a process at a specific sentinel.
+    """
+    override = os.environ.get("KANBAN_PAUSE_FLAG")
+    if override:
+        return Path(override)
+    return _canonical_repo_root() / "data" / "kanban_scheduler.paused"
 
 
 def _now() -> datetime:
@@ -68,15 +116,37 @@ def _auto_enabled() -> bool:
 
 # ── Manual flag ────────────────────────────────────────────────────────────────
 def _flag_meta() -> dict | None:
-    if not _FLAG.exists():
+    if not _flag_path().exists():
         return None
     try:
-        return json.loads(_FLAG.read_text(encoding="utf-8"))
+        return json.loads(_flag_path().read_text(encoding="utf-8"))
     except Exception:
         return {}
 
 
 def _flag_is_stale(meta: dict) -> bool:
+    """Has this pause outlived the ceiling THE PAUSER chose?
+
+    The deadline is read from the sentinel (``expires_at``), not recomputed from
+    the reader's own ``KANBAN_PAUSE_MAX_MINUTES``. That variable lives in
+    ``.env``, and a git worktree has no ``.env`` — so a worktree process fell
+    back to the 120-minute default, judged a pause set under a 1440-minute
+    ceiling to be stale, and DELETED it. A reader silently expiring someone
+    else's pause is worse than not seeing it at all: the board looks paused,
+    then quietly is not.
+
+    Sentinels written before ``expires_at`` existed fall back to the old
+    behaviour so an in-flight pause is not invalidated by this change.
+    """
+    expires_at = meta.get("expires_at")
+    if expires_at:
+        try:
+            deadline = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+        except Exception:
+            deadline = None
+        if deadline is not None:
+            return _now() > deadline
+
     since = meta.get("since")
     if not since:
         return False
@@ -88,7 +158,22 @@ def _flag_is_stale(meta: dict) -> bool:
 
 
 def _minutes_remaining(meta: dict) -> float | None:
-    """Minutes before this manual pause auto-expires, or None if unknown."""
+    """Minutes before this manual pause auto-expires, or None if unknown.
+
+    Prefers the sentinel's own ``expires_at`` for the same reason
+    :func:`_flag_is_stale` does: a reader whose environment lacks
+    ``KANBAN_PAUSE_MAX_MINUTES`` would otherwise report a remaining time
+    computed from its own default, telling an operator the pause has minutes
+    left when it has hours, or vice versa.
+    """
+    expires_at = meta.get("expires_at")
+    if expires_at:
+        try:
+            deadline = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+            return max(0.0, (deadline - _now()).total_seconds() / 60.0)
+        except Exception:
+            pass
+
     since = meta.get("since")
     if not since:
         return None
@@ -125,7 +210,7 @@ def manual_paused() -> bool:
             f" (reason: {meta['reason']})" if meta.get("reason") else "",
         )
         try:
-            _FLAG.unlink()
+            _flag_path().unlink()
         except FileNotFoundError:
             pass
         return False
@@ -133,17 +218,31 @@ def manual_paused() -> bool:
 
 
 def pause(actor: str = "dashboard", reason: str = "") -> dict:
-    """Create the manual pause flag. Idempotent."""
-    _FLAG.parent.mkdir(parents=True, exist_ok=True)
-    meta = {"actor": actor, "reason": reason, "since": _stamp()}
-    _FLAG.write_text(json.dumps(meta), encoding="utf-8")
+    """Create the manual pause flag. Idempotent.
+
+    The deadline is stamped into the sentinel at pause time, so every reader
+    honours the ceiling the PAUSER was configured with. Without it, a process
+    whose environment lacks ``KANBAN_PAUSE_MAX_MINUTES`` (a git worktree has no
+    ``.env``) would apply its own 120-minute default and expire — and delete —
+    a pause taken under a longer one.
+    """
+    _flag_path().parent.mkdir(parents=True, exist_ok=True)
+    now = _now()
+    meta = {
+        "actor": actor,
+        "reason": reason,
+        "since": _stamp(),
+        "max_minutes": _max_minutes(),
+        "expires_at": (now + timedelta(minutes=_max_minutes())).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    _flag_path().write_text(json.dumps(meta), encoding="utf-8")
     return {"paused": True, "mode": "manual", **meta}
 
 
 def resume(actor: str = "dashboard") -> dict:
     """Remove the manual pause flag. Idempotent."""
     try:
-        _FLAG.unlink()
+        _flag_path().unlink()
     except FileNotFoundError:
         pass
     return {"paused": False, "resumed_by": actor}
