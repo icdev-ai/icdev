@@ -3,6 +3,7 @@ from __future__ import annotations
 """FORGE Academy gamification engine — XP, level-ups, achievements."""
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from .constants import (
@@ -14,6 +15,8 @@ from .constants import (
 from .db import (
     update_user_xp, grant_achievement, get_user_achievements, get_user,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
@@ -207,19 +210,28 @@ def get_gameday_seed_bonus(user_id: int) -> float:
     L4+ (5000+ XP) earns the maximum bonus of 0.25.
     Used by GameDay team_runner to give higher-XP learners slightly better starting stats.
     """
+    # aca-hyg-01: this had three faults that combined into dead code. It imported
+    # get_connection from `icdev.tools.db.storage` while every other query in this
+    # module uses `tools.db.storage` — a different module object under the shim, so
+    # a test patching one never affected the other. It passed a literal `%s`
+    # placeholder where the rest of the app uses `?` and lets the storage layer
+    # translate. And the whole body sat under `except Exception: pass`, so either
+    # fault silently returned 0.0 and the bonus was never applied to anyone.
+    from tools.db.storage import get_connection
+
     try:
-        from icdev.tools.db.storage import get_connection
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT xp FROM fa_users WHERE id = %s",
+        row = get_connection().execute(
+            "SELECT xp FROM fa_users WHERE id = ?",
             (user_id,),
         ).fetchone()
-        if row:
-            xp = row[0] or 0
-            return min(0.25, xp / 20000.0)
     except Exception:
-        pass
-    return 0.0
+        # fga-fix-05 precedent: a swallowed warning never reaches a health check.
+        _log.exception("gameday seed bonus lookup failed for user %s", user_id)
+        return 0.0
+    if not row:
+        return 0.0
+    xp = row[0] or 0
+    return min(0.25, xp / 20000.0)
 
 
 def get_user_stats(user_id: int) -> dict:
