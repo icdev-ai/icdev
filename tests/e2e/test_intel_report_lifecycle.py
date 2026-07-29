@@ -191,6 +191,28 @@ class TestCanvasRegistry:
         assert dic["min_il"] in ("IL4", "IL5", "IL6"), "DIC must require at least IL4"
 
 
+@pytest.fixture(autouse=True)
+def _no_live_llm(monkeypatch):
+    """Stop the classifier reaching a real LLM provider during the unit suite.
+
+    `ProblemClassifierLens.run()` calls `_llm_suggest_roles`, which builds an
+    LLMRouter and invokes it for real. Nothing in this file mocked it, so
+    `test_non_ic_domain_routes_to_full_team` made four live provider calls — and
+    hung the ENTIRE local pytest run there, mid-way through writing the response
+    to the LLM cache. That is a large part of why the CI Test job is a 12-file
+    allowlist rather than the suite: the suite could not finish.
+
+    Stubbing it cannot weaken any assertion here. `_llm_suggest_roles` is
+    additive and already best-effort — its body is wrapped in a bare `except`
+    that returns [] on any provider, network or parse error, so "no LLM
+    available" is a supported outcome the production path handles. These tests
+    assert the DETERMINISTIC rule-based routing, which is exactly what remains.
+    """
+    import icdev.tools.ace.problem_classifier as pc
+
+    monkeypatch.setattr(pc.ProblemClassifierLens, "_llm_suggest_roles", lambda self: [])
+
+
 class TestProblemClassifier:
     """Validate that document-flavored problems route to the five generic roles."""
 
