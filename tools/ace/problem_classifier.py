@@ -50,6 +50,48 @@ class TeamManifest:
 _SIGNALS: dict[str, tuple[str, float]] = {
     # (regex_pattern, weight)
     "shall":           (r"\bshall\b", 0.90),
+    # ── Document domains (test_intel_report_lifecycle.py) ────────────────
+    # Weighted at 0.90, on a par with "shall": keyword_scores averages the
+    # matched weights and propose() ignores any domain scoring under 0.5, so a
+    # lower weight would classify the domain correctly and then still hand back
+    # the fallback team.
+    "intelligence_noun": (
+        r"\b(?:INTSUM|intelligence summary|intelligence report|IPB|CAPCO"
+        r"|ICD 710|EO 13526|portion marking|derivative classif\w*"
+        r"|indicator[s]?|INTREP|collection plan)\b",
+        0.90,
+    ),
+    "intelligence_verb": (
+        r"\b(?:collect|collection|assess|assessment|corroborat\w+"
+        r"|declassif\w+|classif(?:y|ied|ication))\b",
+        0.85,
+    ),
+    "legal_noun": (
+        r"\b(?:plaintiff|defendant|motion|IRAC|attorney[- ]client"
+        r"|privilege|deposition|statute|case law|brief)\b",
+        0.90,
+    ),
+    "medical_noun": (
+        r"\b(?:patient|clinical note[s]?|SOAP|HIPAA|PHI|diagnos\w+"
+        r"|treatment plan|chart review)\b",
+        0.90,
+    ),
+    "financial_noun": (
+        r"\b(?:10-K|10-Q|SEC filing|MNPI|EBITDA|investment memo"
+        r"|balance sheet|earnings|valuation)\b",
+        0.90,
+    ),
+    "corporate_noun": (
+        r"\b(?:SWOT|Porter Five Forces|Porter's Five Forces|market share"
+        r"|KPI[s]?|competitive analysis|benchmark[s]?)\b",
+        0.90,
+    ),
+    "doc_analysis_noun": (
+        r"\b(?:research memo|key findings|executive summary"
+        r"|document review|analyz\w+ this document|white paper)\b",
+        0.90,
+    ),
+
     "must":            (r"\bmust\b", 0.90),
     "should":          (r"\bshould\b", 0.70),
     "needs_to":        (r"\bneeds? to\b", 0.70),
@@ -120,6 +162,16 @@ _COMPILED: dict[str, tuple[re.Pattern, float]] = {
 
 # Domain clusters: signal names -> role hints
 _DOMAIN_SIGNALS: dict[str, list[str]] = {
+    # ── Document domains ─────────────────────────────────────────────────
+    # Each maps to the same five-role documentation team below: the work is
+    # read-analyse-write-review-classify regardless of subject matter, which is
+    # why one team serves all of them.
+    "intelligence":   ["intelligence_noun", "intelligence_verb"],
+    "legal":          ["legal_noun"],
+    "medical":        ["medical_noun"],
+    "financial":      ["financial_noun"],
+    "corporate":      ["corporate_noun"],
+    "doc_analysis":   ["doc_analysis_noun"],
     "requirements": [
         "shall", "must", "should", "needs_to", "has_to", "requirement",
         "user_story", "bdd", "acceptance", "functional_req", "system_shall",
@@ -136,7 +188,25 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
 }
 
 # Domain -> preferred role_ids (matched against loaded catalog first)
+#: The documentation team every document domain routes to.
+_DOC_TEAM: tuple[str, ...] = (
+    "researcher",
+    "intelligence_analyst",
+    "writer",
+    "editor",
+    "derivative_classifier",
+)
+
 _DOMAIN_ROLES: dict[str, list[str]] = {
+    # The five-role documentation team. Read-analyse-write-review-classify
+    # is the same pipeline whatever the subject matter, so every document
+    # domain routes here rather than each growing its own near-duplicate.
+    "intelligence":   list(_DOC_TEAM),
+    "legal":          list(_DOC_TEAM),
+    "medical":        list(_DOC_TEAM),
+    "financial":      list(_DOC_TEAM),
+    "corporate":      list(_DOC_TEAM),
+    "doc_analysis":   list(_DOC_TEAM),
     "requirements":   ["requirements_engineer", "business_analyst", "product_owner"],
     "build":          ["ai_developer", "software_engineer", "developer"],
     "devops":         ["devops_engineer", "infrastructure_manager", "platform_engineer"],
@@ -275,7 +345,13 @@ class ProblemClassifierLens(BaseLens):
             else:
                 severity = "info"
 
-            top = candidates[:3]
+            # The domain's declared team, not an arbitrary slice of it. This
+            # was `candidates[:3]`, which was a silent no-op while every domain
+            # happened to declare exactly three roles — and then truncated the
+            # five-role documentation team to three the moment one did not, so
+            # the domain classified correctly and still returned a partial team.
+            # Team size belongs to _DOMAIN_ROLES.
+            top = candidates
             predictions.append(
                 OraclePrediction(
                     lens=self.name,

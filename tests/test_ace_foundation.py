@@ -87,7 +87,16 @@ def test_team_assembler_creates_db_rows(monkeypatch, role_loader, ace_db_path):
     import icdev.tools.ace.db.init_db as _init_mod
 
     def _fake_conn(env_var=None):
-        return sqlite3.connect(str(ace_db_path))
+        # Wrap in storage's own connection type rather than handing back a bare
+        # sqlite3 one. The production code under test writes PostgreSQL-dialect
+        # SQL ("... WHERE id = %s"), and get_canvas_connection returns a
+        # StorageConnection whose execute() rewrites %s to ? on SQLite. A raw
+        # sqlite3.Connection does not, so this fake used to make every statement
+        # fail with `near "%": syntax error` — a defect in the double, reported as
+        # AssemblyError from the module it was meant to be testing.
+        return _storage.StorageConnection(
+            sqlite3.connect(str(ace_db_path)), backend="sqlite"
+        )
 
     monkeypatch.setattr(_storage, "get_canvas_connection", _fake_conn)
     monkeypatch.setattr(_init_mod, "init", lambda: None)
