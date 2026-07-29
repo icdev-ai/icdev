@@ -1,0 +1,7 @@
+{
+  "id": "309_studio_run_tables_rls_columns",
+  "description": "Backfill the RLS columns (classification, tenant_id) onto studio_workflow_runs and studio_workflow_run_steps. Migration 305 did this for studio_workflows and stopped there, so get_connection()'s global predicate produced SQL the run tables could not satisfy — get_run() raised 'no such column: classification' and the run-detail API answered 500 inside a request context. The read succeeds outside one, so pytest never caught it; only the browser and the DWO E2E specs did. This is the KNOWN BLOCKER that keeps all three DWO specs out of the CI sweep (dwo-vv-03-d5)",
+  "created": "2026-07-28",
+  "targets": ["icdev.db"],
+  "adrs": []
+}
