@@ -144,6 +144,13 @@ STUDIO_TABLES: dict[str, str] = {
             completed_at   TEXT,
             triggered_by   TEXT,
             project_id     TEXT DEFAULT 'default',
+            -- RLS columns (migration 309). get_connection() attaches the global
+            -- tenant/classification predicate inside a request context; without
+            -- these the run-detail read raises "no such column: classification"
+            -- and the API 500s, while the same read outside a request context
+            -- succeeds — which is why only the browser and E2E caught it.
+            classification TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id      TEXT,
             summary_json   TEXT,
             -- dwo-evt-04: inputs the run started with (trigger input_mapping_json
             -- output, or manual inputs).  NULL = none recorded, distinct from
@@ -164,6 +171,8 @@ STUDIO_TABLES: dict[str, str] = {
             stdout       TEXT,
             stderr       TEXT,
             duration_ms  INTEGER DEFAULT 0,
+            classification TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id    TEXT,
             started_at   TEXT DEFAULT (datetime('now')),
             completed_at TEXT
         )
