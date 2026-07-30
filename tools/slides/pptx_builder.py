@@ -16,7 +16,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
-from pptx.util import Inches, Pt
+from pptx.util import Emu, Inches, Pt
 
 from tools.slides.constants import THEME_PALETTES, DEFAULT_THEME
 
@@ -514,7 +514,12 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
 
     num_rows = len(all_rows)
     num_cols = max(len(r) for r in all_rows) if all_rows else 1
-    row_h = min(Inches(0.5), (H - Inches(2.0)) / num_rows)
+    # Emu subclasses int, but `/` is true division: once num_rows exceeds ~11 the
+    # float branch wins here and the frame height reaches the XML as
+    # cy="5029200.0". That is not a valid ST_PositiveCoordinate (xsd:long), so
+    # PowerPoint reports the deck as needing repair and python-pptx raises on
+    # .height — with no error at write time. Keep row heights whole EMU.
+    row_h = Emu(int(min(Inches(0.5), (H - Inches(2.0)) / num_rows)))
 
     tbl_shape = s.shapes.add_table(num_rows, num_cols, LM, Inches(0.9), CW, row_h * num_rows)
     tbl = tbl_shape.table
