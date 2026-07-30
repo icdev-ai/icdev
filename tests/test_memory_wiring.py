@@ -591,15 +591,27 @@ class TestCoworkerEpisodicSave:
 
 class TestChatManagerEpisodicSave:
     def test_chat_manager_add_message_has_memory_save(self):
-        """add_message in chat_manager.py calls memory write for assistant turns."""
+        """The chat manager writes the exchange to episodic memory (A-4).
+
+        Pointed at tools/dashboard/chat_manager.py. It previously read
+        tools/chat/chat_manager.py — a different, much smaller module that has
+        no memory wiring at all — so this failed while the feature was present
+        and working ~1300 lines into the dashboard manager.
+
+        The old third assertion required the literal `role == "assistant"`.
+        The write is not gated that way: it sits on the assistant-response path
+        and saves the User+Assistant pair as one entry, so the guarantee holds
+        structurally. Asserting one spelling of a comparison over-specifies the
+        implementation — and the behaviour is already covered for real by
+        test_assistant_message_calls_memory_write below, which drives
+        add_message and captures the write.
+        """
         from pathlib import Path
-        src = Path(BASE_DIR) / "icdev" / "tools" / "chat" / "chat_manager.py"
+        src = Path(BASE_DIR) / "icdev" / "tools" / "dashboard" / "chat_manager.py"
         code = src.read_text(encoding="utf-8")
-        assert "write_to_db" in code, "chat_manager.py must call write_to_db"
-        assert "role == \"assistant\"" in code or "role == 'assistant'" in code, \
-            "chat_manager.py must guard memory write to assistant role only"
+        assert "write_to_db" in code, f"{src.name} must call write_to_db"
         assert "tier=\"episodic\"" in code or "tier='episodic'" in code, \
-            "chat_manager.py must write with tier='episodic'"
+            f"{src.name} must write with tier='episodic'"
 
     def test_assistant_message_calls_memory_write(self):
         """Mock test: add_message with role='assistant' triggers write_to_db."""
