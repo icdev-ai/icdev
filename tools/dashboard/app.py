@@ -2950,16 +2950,11 @@ def create_app(testing: bool = False) -> Flask:
         app.logger.warning("Stripe webhook blueprint failed to register: %s", _exc)
 
     # ---- Centralized Logs viewer ----
-    try:
-        from tools.logging.blueprint import create_logs_blueprint as _create_logs_bp
-        _logs_bp = _create_logs_bp()
-        if _logs_bp is not None:
-            app.register_blueprint(_logs_bp)
-            app.logger.info("Logs blueprint registered at /logs")
-        else:
-            app.logger.info("Logs blueprint disabled (ICDEV_LOGS_ENABLED=false)")
-    except Exception as _exc:
-        app.logger.warning("Logs blueprint failed to register: %s", _exc)
+    # Registered by the component-registry loop above, from the `logs` entry in
+    # args/component_registry.yaml. The hand-rolled registration that used to sit
+    # here always lost the race to it and logged "The name 'logs' is already
+    # registered for a different blueprint" on every boot — and, had it ever won,
+    # it would have bypassed the registry's enablement and IL gating.
 
     # ---- Platform Updates (CHANGELOG.md viewer) ----
     try:
