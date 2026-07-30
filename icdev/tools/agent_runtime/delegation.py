@@ -40,6 +40,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from tools.compat.subprocess_utils import runnable_module
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.agent_runtime.delegation")
@@ -184,11 +185,22 @@ def delegate_task(
     env = dict(os.environ)
     env["ICDEV_SAG_DEPTH"] = str(child_depth)
     env["ICDEV_SAG_CAN_DELEGATE"] = child_can_delegate
-    root = str(_REPO_ROOT)
-    existing_pp = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = root + (os.pathsep + existing_pp if existing_pp else "")
+    # Only prepend a root that actually makes `tools` importable. In an
+    # installed wheel _find_repo_root() matches no sentinel and falls back to
+    # its own directory, so this used to push .../icdev/tools/agent_runtime
+    # onto the child's sys.path — a junk entry that imported nothing and
+    # shadowed by module name.
+    if (_REPO_ROOT / "tools").is_dir():
+        root = str(_REPO_ROOT)
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = root + (os.pathsep + existing_pp if existing_pp else "")
 
-    cmd = [sys.executable, "-m", "tools.agent_runtime.delegation", "--child"]
+    # `-m tools.…` cannot resolve in a child: the tools → icdev.tools alias is
+    # a sys.modules entry in the PARENT. Verified against a 1.2.42 wheel — the
+    # child died with ModuleNotFoundError, so delegation was unusable for every
+    # pip-installed agent runtime.
+    cmd = [sys.executable, "-m",
+           runnable_module("tools.agent_runtime.delegation"), "--child"]
     t0 = time.time()
     try:
         proc = subprocess.run(
