@@ -54,6 +54,18 @@ def test_the_clearance_pads_the_scrolling_panes_not_just_the_page():
     assert ".fa-sidebar" in css, "the step list scrolls independently too"
 
 
+def test_the_runner_reserves_a_gutter_for_the_floating_fabs():
+    """The assistant and IQE FABs stack above the bar, where padding-bottom can't reach.
+
+    They are anchored to the right edge, as are the runner's Run/Continue/Ask Sensei
+    controls, so a control scrolling into their vertical band lost its right corner —
+    measured at 20px of "Ask Sensei", where a click opened the assistant instead.
+    """
+    css = PARTIAL.read_text(encoding="utf-8")
+    assert "--fa-fab-gutter" in css
+    assert "padding-right" in css, "the FAB column has to be reserved horizontally"
+
+
 def test_the_clearance_is_academy_scoped():
     """A global rule would change every other canvas sharing the dashboard shell."""
     css = PARTIAL.read_text(encoding="utf-8")

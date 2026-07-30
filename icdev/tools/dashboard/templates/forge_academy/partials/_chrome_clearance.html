@@ -16,9 +16,23 @@
    --fa-docked-chrome is sized from the measured stack: the IQE mini-bar is ~68px
    tall and the CLI panel ~42px, sitting ~24px off the bottom edge. 7.5rem (120px)
    clears both with room for the focus ring on a control that lands at the boundary.
+
+   --fa-fab-gutter handles the two round buttons stacked ABOVE the bar rather than
+   below it, which bottom padding cannot reach. Both are anchored to the right edge
+   (the assistant FAB starts 95px in, the IQE FAB 75px) and the runner's content
+   ended 75px in — so any right-aligned control that scrolled into their vertical
+   band lost its right corner. Measured on the runner: 20px of "Ask Sensei" sat
+   under the assistant FAB, and a click there opened the assistant instead. Both
+   sides being right-anchored is what makes one gutter correct at every viewport
+   width rather than only the one measured.
+
+   Sizing, in px because the FAB offsets are: the runner's pane ends 47px from the
+   viewport edge and the FAB begins at 95px, so its content needs >=48px of right
+   padding. 2rem of that already exists on .fa-main, and the root font here is 14px,
+   so a 2rem gutter takes it to 56px — clear by 8px.
 #}
 <style>
-:root { --fa-docked-chrome: 7.5rem; }
+:root { --fa-docked-chrome: 7.5rem; --fa-fab-gutter: 2rem; }
 
 /* Hub, missions browser, and the simple academy pages: their outermost content
    wrapper is a plain block, so padding is enough to extend the scroll range. */
@@ -37,7 +51,14 @@
 /* The mission runner is a full-height grid whose right pane scrolls on its own, so
    the padding has to go on the scrolling pane rather than the page. Without this
    the Run/Continue controls sit under the IQE bar at the bottom of the pane. */
-.fa-main { padding-bottom: calc(1.5rem + var(--fa-docked-chrome)); }
+.fa-main {
+  padding-bottom: calc(1.5rem + var(--fa-docked-chrome));
+  /* Keeps right-aligned controls (Run, Continue, Ask Sensei) out of the FAB column
+     no matter where they land as the pane scrolls. The 2rem repeats mission.html's
+     own `padding:1.5rem 2rem` because CSS cannot add to an inherited value; the
+     gutter is what this rule contributes. */
+  padding-right: calc(2rem + var(--fa-fab-gutter));
+}
 
 /* The sidebar scrolls independently and ends in the "All Missions" link. */
 .fa-sidebar { padding-bottom: calc(1.2rem + var(--fa-docked-chrome)); }
