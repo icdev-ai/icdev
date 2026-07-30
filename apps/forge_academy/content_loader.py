@@ -1986,6 +1986,24 @@ def reconcile_all_step_assets(conn, discovered: dict | None = None) -> int:
             touched += 1
         except Exception as exc:
             _log.warning("FORGE Academy: asset reconcile failed for %s: %s", slug, exc)
+
+    # Commit once for the whole pass. _reconcile_step_assets issues UPDATEs and does
+    # NOT commit: when it was reached only from _seed_steps a later commit in the
+    # seeding flow happened to cover it, but this pass runs before the seeder's
+    # already-seeded fast-path return, so nothing else ever committed and every
+    # UPDATE was discarded. Verified against the live database — the log said
+    # "attached code assets to m01-llm-fundamentals step 1" while the row never
+    # changed.
+    #
+    # This is invisible to a test that writes and reads back on ONE in-memory
+    # connection, because uncommitted writes are visible inside their own
+    # transaction. tests/test_aca_reconcile_commit.py uses a file-backed database
+    # and a SECOND connection so a missing commit fails.
+    if touched:
+        try:
+            conn.commit()
+        except Exception as exc:
+            _log.warning("FORGE Academy: asset reconcile commit failed: %s", exc)
     return touched
 
 
