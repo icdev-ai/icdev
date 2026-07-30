@@ -12,6 +12,7 @@ from .constants import (
     XP_SPEED_BONUS_THRESHOLD_S, XP_DAILY_LOGIN_BASE, XP_STREAK_BONUS_PER_DAY,
     xp_to_next_level,
 )
+from . import db as _fadb
 from .db import (
     update_user_xp, grant_achievement, get_user_achievements, get_user,
 )
@@ -141,8 +142,7 @@ def check_step_achievements(user_id: int, steps_completed: int) -> list[dict]:
 
 def award_daily_login(user_id: int) -> dict | None:
     """Award daily login XP + streak bonus. Returns award dict or None if already awarded."""
-    from tools.db.storage import get_connection
-    conn = get_connection()
+    conn = _fadb.get_connection()
     today = datetime.now(timezone.utc).date().isoformat()
     existing = conn.execute(
         "SELECT id FROM fa_daily_logins WHERE user_id=? AND login_date=?",
@@ -151,7 +151,11 @@ def award_daily_login(user_id: int) -> dict | None:
     if existing:
         return None
     user = get_user(user_id)
-    streak = user.get("streak_days", 1) if user else 1
+    # aca-hyg-04: `.get("streak_days", 1)` looked like it defaulted to 1, but the key
+    # always exists and the column defaults to 0 — so a learner on day one got
+    # min(0,7)*10 = 0 bonus. Logging in IS day one, so floor at 1.
+    stored = int((user or {}).get("streak_days") or 0)
+    streak = max(1, stored)
     bonus = min(streak, 7) * XP_STREAK_BONUS_PER_DAY
     xp = XP_DAILY_LOGIN_BASE + bonus
     conn.execute(
@@ -184,8 +188,7 @@ def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_pa
 
     # First GameDay participation → arena_gladiator
     try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
+        conn = _fadb.get_connection()
         prev = conn.execute(
             "SELECT COUNT(*) FROM fa_user_achievements WHERE user_id = ? AND achievement_slug = 'arena_gladiator'",
             (user_id,),

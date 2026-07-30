@@ -516,13 +516,27 @@ def update_user_xp(user_id: int, xp_delta: int, conn=None) -> dict:
 
 
 def _touch_streak(conn, user: dict) -> None:
-    today = datetime.now(timezone.utc).date().isoformat()
+    """Advance or reset the login streak. One clock only.
+
+    aca-hyg-04: `today` came from datetime.now(timezone.utc) while `yesterday` came
+    from date.today(), which is LOCAL. Whenever the machine's local date differs from
+    the UTC date — several hours of every day for most timezones — `last ==
+    yesterday` was false and the streak reset to 1. It therefore never advanced past
+    1 in production: the one learner had 41 daily logins over 41 distinct days with
+    35 consecutive-day pairs, including the final six unbroken, and streak_days = 1.
+    Every streak bonus ever paid was min(1,7)*10 instead of up to 70.
+
+    last_active is stored in UTC, so both sides of the comparison are now UTC.
+    """
+    from datetime import timedelta
+
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date().isoformat()
     last = (user.get("last_active") or "")[:10]
     if last == today:
         return
-    streak = user.get("streak_days", 0)
-    from datetime import date, timedelta
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    streak = int(user.get("streak_days") or 0)
+    yesterday = (now_utc.date() - timedelta(days=1)).isoformat()
     streak = (streak + 1) if last == yesterday else 1
     conn.execute(
         "UPDATE fa_users SET streak_days=?, last_active=? WHERE id=?",
@@ -1097,8 +1111,19 @@ def join_guild(invite_code: str, user_id: int) -> dict | None:
     return dict(guild)
 
 
-def get_guild_stats(guild_id: int) -> dict:
+def get_guild_stats(guild_id: int) -> dict | None:
+    """Members and total XP for a guild, or None when the guild does not exist.
+
+    aca-hyg-03: this returned {"members": [], "total_xp": 0} either way, so a caller
+    could not tell an empty guild from a missing one and the route 200'd on a bad id.
+    An empty-but-real guild still returns a dict with an empty member list.
+    """
     conn = get_connection()
+    exists = conn.execute(
+        "SELECT 1 FROM fa_guilds WHERE id=?", (guild_id,)
+    ).fetchone()
+    if not exists:
+        return None
     members = conn.execute(
         """SELECT u.display_name, u.xp, u.level, gm.role
            FROM fa_guild_members gm
