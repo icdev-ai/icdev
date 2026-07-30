@@ -114,9 +114,35 @@ def client(icdev_db, tmp_path, monkeypatch):
     # Force a fresh init against the temp canvas DB on first request.
     monkeypatch.setattr(bp, "_INIT_DONE", False, raising=False)
 
-    from tools.dashboard.app import app
-    if "agentic_ai_canvas" not in app.blueprints:
-        app.register_blueprint(bp.aadc_bp)
+    # Flask refuses register_blueprint once an app has served its first request,
+    # and tools.dashboard.app.app is a module-level SINGLETON shared by every test
+    # in the run. So whether this fixture worked depended on whether some earlier
+    # module had already made a request against that same app — running this file
+    # alone passed, running it after its siblings produced 79 errors reading
+    # "The setup method 'register_blueprint' can no longer be called".
+    #
+    # Build an isolated app instead, the way _enumerate_get_routes above already
+    # builds its probe. Nothing here needs the dashboard's other blueprints, and not
+    # mutating the shared app also stops this fixture from leaking the canvas into
+    # every later test.
+    from tools.dashboard.app import app as _dashboard_app
+
+    app = Flask(
+        __name__,
+        template_folder=_dashboard_app.template_folder,
+        static_folder=_dashboard_app.static_folder,
+    )
+    app.config.update(_dashboard_app.config)
+    app.jinja_env.filters.update(_dashboard_app.jinja_env.filters)
+    app.jinja_env.globals.update(_dashboard_app.jinja_env.globals)
+    # The canvas templates extend base.html, which reads nav_tree and friends from
+    # the dashboard's app-wide context processors. Without these the pages render
+    # but raise UndefinedError, which a "never 500" smoke test would report as a
+    # route bug rather than a missing fixture.
+    app.template_context_processors[None].extend(
+        _dashboard_app.template_context_processors.get(None, [])
+    )
+    app.register_blueprint(bp.aadc_bp)
     app.config["TESTING"] = True
 
     with app.test_client() as test_client:
