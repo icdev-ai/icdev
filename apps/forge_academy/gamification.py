@@ -39,8 +39,15 @@ def projected_step_xp(base_xp: int, hints_used: int = 0,
 
 
 def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
-                  elapsed_seconds: int = None, step_type: str = "coding") -> dict:
-    """Compute and award XP for a completed step. Returns event dict."""
+                  elapsed_seconds: int = None, step_type: str = "coding",
+                  step_id: int | None = None) -> dict:
+    """Compute and award XP for a completed step. Returns event dict.
+
+    aca-int-07: step_id is what makes the resulting ledger row evidence rather than
+    a number. It is optional only because one legacy guided-step caller has no step
+    to name; that row records source_type='step' with a NULL id, which is visibly
+    weaker than the others rather than silently indistinguishable.
+    """
     xp = projected_step_xp(base_xp, hints_used=hints_used, step_type=step_type)
 
     speed_bonus = 0
@@ -50,7 +57,8 @@ def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
 
     before = get_user(user_id)
     old_level = before["level"] if before else "recruit"
-    result = update_user_xp(user_id, xp)
+    result = update_user_xp(user_id, xp, reason="step_pass",
+                            source_type="step", source_id=step_id)
     leveled_up = result["level"] != old_level
 
     achievements = []
@@ -80,10 +88,12 @@ def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
     }
 
 
-def award_mission_xp(user_id: int, mission_xp: int, perfect: bool = False) -> dict:
+def award_mission_xp(user_id: int, mission_xp: int, perfect: bool = False,
+                     mission_id: int | None = None) -> dict:
     """Award XP on mission completion. perfect=True means no hints, all steps first try."""
     xp = int(mission_xp * 1.5) if perfect else mission_xp
-    result = update_user_xp(user_id, xp)
+    result = update_user_xp(user_id, xp, reason="mission_complete",
+                            source_type="mission", source_id=mission_id)
     return {"xp_earned": xp, "perfect": perfect, "new_xp": result["xp"],
             "new_level": result["level"]}
 
@@ -104,25 +114,29 @@ def check_mission_achievements(user_id: int, mission_slug: str,
         if ctype == "mission_complete" and c.get("mission_slug") == mission_slug:
             granted = grant_achievement(user_id, a["slug"])
             if granted:
-                update_user_xp(user_id, a["xp_bonus"])
+                update_user_xp(user_id, a["xp_bonus"], reason="achievement",
+                               source_type="achievement", note=a["slug"])
                 unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
 
         elif ctype == "aadc_owasp_clean" and aadc_score >= 100:
             granted = grant_achievement(user_id, a["slug"])
             if granted:
-                update_user_xp(user_id, a["xp_bonus"])
+                update_user_xp(user_id, a["xp_bonus"], reason="achievement",
+                               source_type="achievement", note=a["slug"])
                 unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
 
         elif ctype == "aadc_score_gte" and aadc_score >= c.get("threshold", 80):
             granted = grant_achievement(user_id, a["slug"])
             if granted:
-                update_user_xp(user_id, a["xp_bonus"])
+                update_user_xp(user_id, a["xp_bonus"], reason="achievement",
+                               source_type="achievement", note=a["slug"])
                 unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
 
     if hints_total == 0 and "no_hints_needed" not in earned_slugs:
         granted = grant_achievement(user_id, "no_hints_needed")
         if granted:
-            update_user_xp(user_id, 200)
+            update_user_xp(user_id, 200, reason="achievement",
+                           source_type="achievement", note="no_hints_needed")
             unlocked.append({**granted, "bonus_xp": 200})
 
     return unlocked
@@ -135,7 +149,8 @@ def check_step_achievements(user_id: int, steps_completed: int) -> list[dict]:
     if steps_completed >= 1 and "first_spark" not in earned_slugs:
         granted = grant_achievement(user_id, "first_spark")
         if granted:
-            update_user_xp(user_id, 50)
+            update_user_xp(user_id, 50, reason="achievement",
+                           source_type="achievement", note="first_spark")
             unlocked.append({**granted, "bonus_xp": 50})
     return unlocked
 
@@ -163,7 +178,8 @@ def award_daily_login(user_id: int) -> dict | None:
         (user_id, today, xp),
     )
     conn.commit()
-    update_user_xp(user_id, xp)
+    update_user_xp(user_id, xp, reason="daily_login", source_type="daily_login",
+                   note=f"streak {streak}")
     return {"xp": xp, "streak": streak, "bonus": bonus}
 
 
@@ -199,7 +215,8 @@ def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_pa
         pass
 
     try:
-        update_user_xp(user_id, xp)
+        update_user_xp(user_id, xp, reason="achievement", source_type="gameday",
+                       note=f"tournament {tournament_id} rank {final_rank}")
     except Exception:
         pass
 

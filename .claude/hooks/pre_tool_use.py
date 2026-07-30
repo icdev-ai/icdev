@@ -92,6 +92,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "constitutional_audit_log",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
+        # FORGE Academy XP provenance (aca-int-07, migration 315). An award is an
+        # event: corrections are new compensating rows, never an UPDATE, or the
+        # ledger stops being evidence for the certificates that cite it.
+        "fa_xp_ledger",
         # FathomDesk auto-trading (append-only NIST AU)
         "ad_trade_audit",
         "ad_kill_switch",

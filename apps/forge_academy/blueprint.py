@@ -562,7 +562,8 @@ def api_step_submit():
 
     summary = user_progress_summary(fa_user["id"])
     xp_event = award_step_xp(fa_user["id"], verdict["xp_base"], hints_used=hints_used,
-                              elapsed_seconds=elapsed_s, step_type=step_type)
+                              elapsed_seconds=elapsed_s, step_type=step_type,
+                              step_id=step_id)
     step_ach = check_step_achievements(fa_user["id"], summary.get("steps_completed", 0))
     xp_event["achievements"] = xp_event.get("achievements", []) + step_ach
     resp["xp_event"] = xp_event
@@ -578,7 +579,8 @@ def api_step_submit():
     if mission_is_complete(fa_user["id"], mission_id):
         complete_mission(fa_user["id"], mission_id, score=100)
         mission_xp_event = award_mission_xp(fa_user["id"], mission_xp_reward(mission_id),
-                                             perfect=(hints_used == 0))
+                                             perfect=(hints_used == 0),
+                                             mission_id=mission_id)
         mission = get_mission_by_id(mission_id)
         mission_slug = (mission or {}).get("slug", "")
         mission_ach = check_mission_achievements(fa_user["id"], mission_slug, hints_used)
@@ -654,7 +656,8 @@ def api_step_design_assess():
     if result.get("passed"):
         complete_step(fa_user["id"], step_id, submission=design_id, passed=True, hints_used=hints_used)
         summary = user_progress_summary(fa_user["id"])
-        xp_event = award_step_xp(fa_user["id"], base_xp, hints_used=hints_used, step_type="design")
+        xp_event = award_step_xp(fa_user["id"], base_xp, hints_used=hints_used,
+                                  step_type="design", step_id=step_id)
         step_ach = check_step_achievements(fa_user["id"], summary.get("steps_completed", 0))
         xp_event["achievements"] = xp_event.get("achievements", []) + step_ach
 
@@ -669,6 +672,7 @@ def api_step_design_assess():
         if mission_id and data.get("mission_complete"):
             complete_mission(fa_user["id"], mission_id, score=result.get("score", 100))
             mission_xp_event = award_mission_xp(fa_user["id"], int(data.get("mission_xp", 400)),
+                                                mission_id=mission_id,
                                                  perfect=(hints_used == 0))
             mission_ach = check_mission_achievements(
                 fa_user["id"], data.get("mission_slug", ""), hints_used,

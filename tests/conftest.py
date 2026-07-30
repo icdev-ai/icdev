@@ -3476,6 +3476,25 @@ CREATE TABLE IF NOT EXISTS divergence_idea_scores (
     classification     TEXT NOT NULL DEFAULT 'CUI',
     created_at         TEXT
 );
+
+-- FORGE Academy XP provenance (aca-int-07, migration 315). Append-only: one row per
+-- award, naming what earned it, so a rank can be traced to demonstrated work rather
+-- than asserted. is_attendance separates XP for showing up from XP for doing
+-- something, because rank is computed from the latter.
+CREATE TABLE IF NOT EXISTS fa_xp_ledger (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    xp_delta       INTEGER NOT NULL,
+    reason         TEXT    NOT NULL,
+    source_type    TEXT,
+    source_id      INTEGER,
+    is_attendance  INTEGER NOT NULL DEFAULT 0,
+    verified       INTEGER NOT NULL DEFAULT 1,
+    note           TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')),
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT
+);
 """
 
 

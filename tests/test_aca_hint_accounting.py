@@ -33,6 +33,14 @@ def fa_conn(monkeypatch):
     conn = academy_conn(":memory:")
     conn.executescript(
         """
+        -- aca-int-07: every XP award now writes its provenance row in the same
+        -- transaction as the balance change, so a fixture without this table is a
+        -- fixture where XP cannot be awarded at all.
+        CREATE TABLE fa_xp_ledger (id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, xp_delta INTEGER, reason TEXT, source_type TEXT,
+            source_id INTEGER, is_attendance INTEGER DEFAULT 0,
+            verified INTEGER DEFAULT 1, note TEXT, created_at TEXT,
+            classification TEXT, tenant_id TEXT);
         CREATE TABLE fa_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT,
           xp INTEGER DEFAULT 0, level TEXT DEFAULT 'recruit');
         CREATE TABLE fa_mission_steps (id INTEGER PRIMARY KEY AUTOINCREMENT,
