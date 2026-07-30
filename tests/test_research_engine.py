@@ -613,14 +613,27 @@ class TestSessionManager:
 # ===========================================================================
 class TestSourceScanner:
     def test_list_sources(self):
-        """list_sources should return 9 sources."""
+        """list_sources enumerates exactly the registry, and nothing else.
+
+        Asserted against SOURCE_SCANNERS rather than a literal count:
+        list_sources() iterates that dict, so a hardcoded number restates a
+        fact with one source of truth and goes stale the moment a scanner is
+        registered — which is what happened when dic_collection and
+        social_trends were added.
+        """
         result = list_sources()
-        assert result["total"] == 9
-        assert len(result["sources"]) == 9
+        assert {s["name"] for s in result["sources"]} == set(SOURCE_SCANNERS)
+        assert result["total"] == len(SOURCE_SCANNERS)
+        assert len(result["sources"]) == len(SOURCE_SCANNERS)
 
     def test_source_scanners_registry(self):
-        """SOURCE_SCANNERS dict has exactly 9 entries with callable values."""
-        assert len(SOURCE_SCANNERS) == 9
+        """SOURCE_SCANNERS holds exactly these sources, all callable.
+
+        The set is the guard; there is deliberately no separate length
+        assertion. Set equality already pins the count exactly and, when it
+        fails, names the scanner that appeared or vanished instead of only
+        reporting that a number moved.
+        """
         expected_keys = {
             "community_forum",
             "review_site",
@@ -631,6 +644,9 @@ class TestSourceScanner:
             "news_blog",
             "patent",
             "video",
+            # Lazy adapter shims added after the original nine (adapt-l30-02).
+            "dic_collection",
+            "social_trends",
         }
         assert set(SOURCE_SCANNERS.keys()) == expected_keys
         for fn in SOURCE_SCANNERS.values():
@@ -1220,7 +1236,12 @@ class TestPipelineUpdates:
         assert dossier_idx == forecast_idx + 1
 
     def test_source_scanners_include_video(self):
-        """SOURCE_SCANNERS has 9 sources including video (D-RES-14)."""
+        """video is registered and callable (D-RES-14).
+
+        The registry's full membership is pinned by
+        TestSourceScanner::test_source_scanners_registry; this test is about
+        video, so it no longer also asserts a total that made an unrelated
+        scanner addition fail here.
+        """
         assert "video" in SOURCE_SCANNERS
-        assert len(SOURCE_SCANNERS) == 9
         assert callable(SOURCE_SCANNERS["video"])
