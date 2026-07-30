@@ -561,6 +561,32 @@ def get_user_by_username(username: str, tenant_id: str | None = None) -> dict | 
 # Mission CRUD
 # ---------------------------------------------------------------------------
 
+def role_matches(role_filter: str | None, role: str) -> bool:
+    """Whether a mission's ``role_filter`` covers ``role``, matching whole tokens.
+
+    aca-hyg-02: fa_missions.role_filter is a comma-joined TEXT column ('swe,swe_arch',
+    'secops_eng,isso,swe_arch', ...). check_cert_eligibility matched it with
+    ``role_filter LIKE '%swe%'``, so 'swe' also matched every 'swe_arch' mission. On
+    the live catalogue that inflated a plain SWE's Tier-2 certificate denominator from
+    25 missions to 37 — twelve architect-only missions counted against them, so 100%
+    required work aimed at a different role.
+
+    'swe' -> 'swe_arch' is the only collision among the 17 role tokens in use, which
+    is why it survived: it is invisible unless you enumerate them.
+
+    list_missions already compared whole tokens in Python. This is that comparison,
+    extracted so the two call sites cannot drift apart again — and it stays in Python
+    rather than SQL per the repo rule preferring computed filters over dialect-specific
+    string matching.
+    """
+    text = (role_filter or "").strip()
+    if not text or text == "all":
+        return True
+    if not role:
+        return False
+    return role in {tok.strip() for tok in text.split(",") if tok.strip()}
+
+
 def list_missions(tier: int = None, role: str = None,
                   mission_type: str = None, tenant_id: str | None = None) -> list[dict]:
     conn = get_connection()
@@ -598,11 +624,11 @@ def list_missions(tier: int = None, role: str = None,
         m["is_available"] = m["step_count"] > 0
 
     if role:
-        missions = [
-            m for m in missions
-            if not m.get("role_filter") or m["role_filter"] == "all"
-            or role in m["role_filter"].split(",")
-        ]
+        # Whole-token match via the shared helper. This was already correct here and
+        # wrong in check_cert_eligibility; one definition is what stops them drifting
+        # apart again (aca-hyg-02). Note the helper also trims whitespace, which the
+        # previous inline split did not.
+        missions = [m for m in missions if role_matches(m.get("role_filter"), role)]
     return missions
 
 
@@ -1263,27 +1289,48 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
         gates.append({"name": "Tier 1 Complete", "met": met,
                       "detail": f"{t1_done}/{t1_missions} Tier 1 missions completed"})
 
-    # Gate: Role Tier 2 complete (100% of user's role missions)
+    # Gate: Role Tier 2 complete (a percentage of the user's role missions)
     if reqs.get("role_tier2_pct"):
         role = user.get("role", "")
         if role and role != "unset":
-            t2_role = conn.execute(
-                """SELECT COUNT(*) FROM fa_missions
-                   WHERE tier=2 AND (role_filter='all' OR role_filter LIKE ?)""",
-                (f"%{role}%",),
-            ).fetchone()[0]
-            t2_done = conn.execute(
-                """SELECT COUNT(DISTINCT mp.mission_id)
-                   FROM fa_mission_progress mp
-                   JOIN fa_missions m ON m.id=mp.mission_id
-                   WHERE mp.user_id=? AND mp.status='completed' AND m.tier=2
-                     AND (m.role_filter='all' OR m.role_filter LIKE ?)""",
-                (user_id, f"%{role}%"),
-            ).fetchone()[0]
+            # aca-hyg-02: matched with LIKE '%role%', so 'swe' also matched every
+            # 'swe_arch' mission — 37 missions in the denominator instead of 25.
+            # Whole-token matching is done in Python via role_matches(), the same
+            # comparison list_missions uses.
+            #
+            # Zero-step missions are excluded for the same reason as the
+            # tier1_complete gate (aca-ux-04): nine Tier-2 missions have no steps,
+            # and an uncompletable row in a percentage denominator makes 100%
+            # unreachable by construction.
+            t2_rows = conn.execute(
+                "SELECT m.id, m.role_filter FROM fa_missions m "
+                "WHERE m.tier=2 AND m.is_active=1 "
+                "  AND (SELECT COUNT(*) FROM fa_mission_steps s "
+                "       WHERE s.mission_id=m.id) > 0"
+            ).fetchall()
+            role_ids = {
+                (r["id"] if hasattr(r, "keys") else r[0])
+                for r in t2_rows
+                if role_matches(r["role_filter"] if hasattr(r, "keys") else r[1], role)
+            }
+            done_ids = {
+                (r[0] if not hasattr(r, "keys") else r["mission_id"])
+                for r in conn.execute(
+                    "SELECT DISTINCT mp.mission_id FROM fa_mission_progress mp "
+                    "WHERE mp.user_id=? AND mp.status=?",
+                    (user_id, MISSION_STATUS_COMPLETED),
+                ).fetchall()
+            }
+            t2_role = len(role_ids)
+            t2_done = len(role_ids & done_ids)
             pct = int((t2_done / t2_role * 100) if t2_role else 0)
-            met = pct >= reqs["role_tier2_pct"]
+            met = bool(t2_role) and pct >= reqs["role_tier2_pct"]
             gates.append({"name": f"Role Tier 2 ({role})", "met": met,
-                          "detail": f"{t2_done}/{t2_role} role missions ({pct}%)"})
+                          "detail": (
+                              f"{t2_done}/{t2_role} role missions ({pct}%)"
+                              if t2_role else
+                              f"no Tier 2 missions are targeted at role '{role}'"
+                          )})
         else:
             gates.append({"name": "Role Tier 2", "met": False,
                           "detail": "Set your role in profile first"})
