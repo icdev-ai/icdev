@@ -155,6 +155,21 @@
         {% endif %}
       </div>
       <p class="fa-card-tag">{{ m.tagline|default('') }}</p>
+      {# aca-ux-06: 86 of 122 missions declare prerequisites and none were shown, so a
+         122-mission catalogue had no visible ordering. Advisory, not a gate — the card
+         still navigates, matching the locked-but-readable choice made in aca-ux-04. #}
+      {% set pre = prereq_state.get(m.id) if prereq_state is defined else None %}
+      {% if pre and pre.prereqs %}
+      <div style="font-size:.68rem;color:var(--text-secondary);margin:-.2rem 0 .5rem;">
+        <span style="opacity:.8;">Requires:</span>
+        {% for p in pre.prereqs %}
+        <span title="{{ 'Completed' if p.satisfied else 'Not yet completed' }}"
+              style="color:{{ '#00FF88' if p.satisfied else '#ffce7a' }};">
+          {{ '&#10003;'|safe if p.satisfied else '&#9675;'|safe }} {{ p.title }}
+        </span>{% if not loop.last %}<span style="opacity:.5;">,</span>{% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="fa-card-ft">
         <span class="fa-xp-badge">+{{ m.xp_reward }} XP</span>
         <span class="fa-diff {{ m.difficulty|default('beginner') }}">{{ m.difficulty|default('beginner') }}</span>

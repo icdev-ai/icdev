@@ -968,6 +968,64 @@ def mission_step_progress(user_id: int, mission_ids) -> dict:
     }
 
 
+def mission_prereq_state(user_id: int, missions) -> dict:
+    """``{mission_id: {"prereqs": [...], "unmet": n, "ready": bool}}``.
+
+    aca-ux-06: 86 of 122 active missions declare prereq_slugs_json and nothing
+    rendered it, so a learner facing a 122-mission catalogue had no visible ordering
+    — the card vocabulary was Done / Active / Start and nothing else.
+
+    Each prerequisite carries its TITLE, because a slug is not something to show a
+    learner, and falls back to the slug when the mission is unknown so a future typo
+    degrades instead of raising. Two queries regardless of catalogue size; the browser
+    renders every card on one page and this must not be N+1.
+    """
+    entries = list(missions or [])
+    if not entries:
+        return {}
+    conn = get_connection()
+    titles = {
+        (r["slug"] if hasattr(r, "keys") else r[0]): (r["title"] if hasattr(r, "keys") else r[1])
+        for r in conn.execute("SELECT slug, title FROM fa_missions").fetchall()
+    }
+    completed = {
+        (r[0] if not hasattr(r, "keys") else r["slug"])
+        for r in conn.execute(
+            "SELECT m.slug FROM fa_mission_progress mp "
+            "JOIN fa_missions m ON m.id = mp.mission_id "
+            "WHERE mp.user_id=? AND mp.status=?",
+            (user_id, MISSION_STATUS_COMPLETED),
+        ).fetchall()
+    }
+
+    out: dict = {}
+    for mission in entries:
+        raw = mission.get("prereq_slugs_json") or "[]"
+        try:
+            slugs = json.loads(raw) if isinstance(raw, str) else list(raw or [])
+        except (TypeError, ValueError):
+            _log.warning(
+                "mission %s has unparseable prereq_slugs_json", mission.get("slug")
+            )
+            slugs = []
+        prereqs = [
+            {
+                "slug": s,
+                "title": titles.get(s, s),
+                "satisfied": s in completed,
+            }
+            for s in slugs
+            if s
+        ]
+        unmet = sum(1 for p in prereqs if not p["satisfied"])
+        out[mission["id"]] = {
+            "prereqs": prereqs,
+            "unmet": unmet,
+            "ready": unmet == 0,
+        }
+    return out
+
+
 def resume_target(user_id: int) -> dict | None:
     """The mission to offer as "continue where you left off", or None.
 
