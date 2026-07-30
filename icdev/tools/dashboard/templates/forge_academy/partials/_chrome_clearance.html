@@ -32,7 +32,7 @@
    so a 2rem gutter takes it to 56px — clear by 8px.
 #}
 <style>
-:root { --fa-docked-chrome: 7.5rem; --fa-fab-gutter: 2rem; }
+:root { --fa-docked-chrome: 7.5rem; --fa-fab-gutter: 2rem; --fa-cli-gutter: 2.5rem; }
 
 /* Hub, missions browser, and the simple academy pages: their outermost content
    wrapper is a plain block, so padding is enough to extend the scroll range. */
@@ -58,6 +58,13 @@
      own `padding:1.5rem 2rem` because CSS cannot add to an inherited value; the
      gutter is what this rule contributes. */
   padding-right: calc(2rem + var(--fa-fab-gutter));
+  /* And the same on the left, for the "CLI Prompt / BRIDGE" panel. Found by driving
+     the graded journey for aca-vv-02 rather than by inspection: with the pane
+     scrolled down, "Run" sat at x 340-411 while the panel ended at x 364, so
+     elementFromPoint at the button's left edge returned clibp_tog. Centre and right
+     edge still hit Run, but this is the primary action of every coding step — the
+     one control a learner must reach to be assessed at all. */
+  padding-left: calc(2rem + var(--fa-cli-gutter));
 }
 
 /* The sidebar scrolls independently and ends in the "All Missions" link. */
