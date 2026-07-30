@@ -215,6 +215,26 @@ CREATE TABLE IF NOT EXISTS fa_daily_logins (
     UNIQUE(user_id, login_date)
 );
 
+-- aca-int-07: XP provenance. One append-only row per award, naming what earned it.
+-- Declared here as well as in migration 315 so it exists from the child app's own
+-- first-request DDL: a lookup against a missing table inside a caller's open
+-- transaction ABORTS that transaction on PostgreSQL, and swallowing the error then
+-- wedges every later statement on the same connection.
+CREATE TABLE IF NOT EXISTS fa_xp_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES fa_users(id),
+    xp_delta INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    source_type TEXT,
+    source_id INTEGER,
+    is_attendance INTEGER NOT NULL DEFAULT 0,
+    verified INTEGER NOT NULL DEFAULT 1,
+    note TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
+);
+
 CREATE TABLE IF NOT EXISTS fa_oracle_predictions (
     id TEXT PRIMARY KEY,
     lens_id TEXT NOT NULL,
@@ -495,7 +515,93 @@ def update_user_role(user_id: int, role: str) -> None:
     conn.commit()
 
 
-def update_user_xp(user_id: int, xp_delta: int, conn=None) -> dict:
+# aca-int-07: every reason an award can exist. A value outside this set is a bug in
+# the caller, not a new category — adding one means deciding whether it counts toward
+# rank, which is exactly the decision this set exists to force.
+XP_REASONS = frozenset({
+    "step_pass", "mission_complete", "daily_login", "achievement",
+    "certificate", "opening_balance", "adjustment",
+})
+
+# XP for showing up rather than for demonstrating anything. Kept in the ledger so the
+# total still reconciles to fa_users.xp, but excluded from rank.
+ATTENDANCE_REASONS = frozenset({"daily_login"})
+
+
+def earned_xp(user_id: int, conn=None) -> int:
+    """XP from demonstrated work — the basis for rank.
+
+    Measured before this existed: the live learner held 1715 XP of which 1465 was
+    attendance across 41 logins, so 85% of the rank was showing up and logging in for
+    41 days outranked demonstrating anything.
+    """
+    own = conn is None
+    if own:
+        conn = get_connection()
+    if own:
+        # Only swallow on a connection we own. On PostgreSQL a failed statement
+        # ABORTS the whole transaction, so catching the error on a CALLER's
+        # connection leaves it poisoned: every later statement fails with
+        # "current transaction is aborted" and an enclosing commit hangs on the
+        # locks it is still holding. That is a deadlock introduced by an
+        # error handler, and it is why the table is also declared in the DDL above.
+        try:
+            return _earned_xp(conn, user_id)
+        except Exception:
+            return 0
+    return _earned_xp(conn, user_id)
+
+
+def _earned_xp(conn, user_id: int) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(SUM(xp_delta), 0) AS earned FROM fa_xp_ledger "
+        "WHERE user_id=%s AND is_attendance=0",
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return 0
+    earned = row["earned"] if not isinstance(row, tuple) else row[0]
+    return int(earned or 0)
+
+
+def record_xp(user_id: int, xp_delta: int, *, reason: str,
+              source_type: str | None = None, source_id: int | None = None,
+              note: str | None = None, conn=None) -> None:
+    """Append one immutable row describing an award.
+
+    Separate from update_user_xp so the ledger write and the balance update share a
+    connection and therefore a transaction: a balance that moved without a ledger row
+    is the exact failure this card exists to prevent.
+    """
+    if reason not in XP_REASONS:
+        raise ValueError(
+            f"unknown XP reason {reason!r}; add it to XP_REASONS and decide "
+            f"whether it counts toward rank"
+        )
+    own = conn is None
+    if own:
+        conn = get_connection()
+    conn.execute(
+        "INSERT INTO fa_xp_ledger "
+        "(user_id, xp_delta, reason, source_type, source_id, is_attendance, "
+        " verified, note) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (user_id, int(xp_delta), reason, source_type, source_id,
+         1 if reason in ATTENDANCE_REASONS else 0, 1, note),
+    )
+    if own:
+        conn.commit()
+
+
+def update_user_xp(user_id: int, xp_delta: int, conn=None, *,
+                   reason: str,
+                   source_type: str | None = None,
+                   source_id: int | None = None,
+                   note: str | None = None) -> dict:
+    # aca-int-07: `reason` is keyword-only and has NO default on purpose. A default
+    # would let a new award slip in unattributed and still look correct — which is
+    # precisely how fa_users.xp accumulated 1715 points that no record explains.
+    # Without one this is a TypeError at the call site, at import time of the test
+    # suite, rather than a silent hole discovered months later.
     # penta-fix-03: accept an optional caller-supplied connection so an enclosing
     # transaction (e.g. issue_certificate's cert INSERT) can award XP on the SAME
     # connection instead of opening a second one. Opening a second connection while
@@ -506,13 +612,23 @@ def update_user_xp(user_id: int, xp_delta: int, conn=None) -> dict:
     if own_conn:
         conn = get_connection()
     conn.execute("UPDATE fa_users SET xp = xp + %s WHERE id=%s", (xp_delta, user_id))
+    # Same connection, therefore the same transaction as the balance change. A
+    # balance that moved without its ledger row is the exact failure this card
+    # exists to prevent, so the two must not be able to diverge.
+    record_xp(user_id, xp_delta, reason=reason, source_type=source_type,
+              source_id=source_id, note=note, conn=conn)
     row = conn.execute("SELECT xp FROM fa_users WHERE id=%s", (user_id,)).fetchone()
     new_xp = row["xp"]
-    new_level = xp_to_level(new_xp)["slug"]
+    # aca-int-07: rank is computed from EARNED XP, not the running total. Attendance
+    # still accumulates and still shows on the profile — it just no longer buys a
+    # rank. On the live learner this is a visible demotion, and it should be: 1465 of
+    # their 1715 points were logins.
+    earned = earned_xp(user_id, conn=conn)
+    new_level = xp_to_level(earned)["slug"]
     conn.execute("UPDATE fa_users SET level=%s WHERE id=%s", (new_level, user_id))
     if own_conn:
         conn.commit()
-    return {"xp": new_xp, "level": new_level}
+    return {"xp": new_xp, "earned_xp": earned, "level": new_level}
 
 
 def _touch_streak(conn, user: dict) -> None:
@@ -1593,7 +1709,8 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
     # Award XP bonus on the SAME connection/transaction as the cert INSERT.
     xp_bonus = cert_def.get("xp_bonus", 0)
     if xp_bonus:
-        update_user_xp(user_id, xp_bonus, conn=conn)
+        update_user_xp(user_id, xp_bonus, conn=conn, reason="certificate",
+                       source_type="certificate", note=cert_key)
     conn.commit()
     return conn.execute(
         "SELECT * FROM fa_certificates WHERE user_id=%s AND cert_tier=%s",
