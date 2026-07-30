@@ -463,6 +463,9 @@ class SetupReport:
     steps: list = field(default_factory=list)
     env_file: str = ""
     compose_file: str = ""
+    #: True once a database with a schema in it exists. Drives whether the
+    #: closing "Next:" block still tells the user to create one.
+    db_ready: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -470,6 +473,7 @@ class SetupReport:
             "steps": self.steps,
             "env_file": self.env_file,
             "compose_file": self.compose_file,
+            "db_ready": self.db_ready,
         }
 
 
@@ -542,7 +546,9 @@ def main(argv: list | None = None) -> int:
                     help="Skip LLM reachability probes (air-gapped installs).")
     ap.add_argument("--postgres", action="store_true", help="Assume PostgreSQL.")
     ap.add_argument("--provision-db", action="store_true",
-                    help="Create the database and vector store if they do not exist.")
+                    help="Create the database and vector store if they do not "
+                         "exist. Prompted for (default yes) when interactive; "
+                         "pass this to provision under --non-interactive.")
     ap.add_argument("--dry-run", action="store_true", help="Write nothing.")
     ap.add_argument("--json", action="store_true", help="Machine-readable report.")
     args = ap.parse_args(argv)
@@ -699,18 +705,35 @@ def main(argv: list | None = None) -> int:
     # Writing a DSN does not make a database exist. On a fresh machine the
     # first real failure is a connection refused, or a `CREATE EXTENSION vector`
     # that cannot work because the running image has no pgvector at all.
-    if args.provision_db:
-        from tools.cli.provision_db import check_sqlite, provision
+    # Ask, defaulting to yes. Writing a DSN is not the same as having a
+    # database, and "run the setup wizard" has to end with something that
+    # works: leaving this opt-in meant the common path finished with a .env,
+    # no schema, and no indication that a step was still outstanding.
+    # --non-interactive stays explicit — automation should not gain a side
+    # effect it did not ask for.
+    provision_db_now = args.provision_db
+    if not provision_db_now and not args.non_interactive and not args.dry_run:
+        backend = "PostgreSQL" if use_pg else "SQLite"
+        provision_db_now = _ask(
+            f"\nCreate the {backend} database now? (y/n)", "y", ["y", "n"]) == "y"
+
+    if provision_db_now:
+        from tools.cli.provision_db import provision, provision_sqlite
 
         if use_pg:
             pres = provision(dsn, use_docker=env.docker,
                              compose_file=project_dir / "docker-compose.yml",
                              dry_run=args.dry_run)
         else:
-            st = check_sqlite(project_dir / "data" / "icdev.db")
-            pres = {"ok": st.ready, "steps": [], "status": st.to_dict()}
+            # Creating the schema, not just reporting on it. This branch used
+            # to call check_sqlite and stop, so the default zero-install path
+            # printed "database ready : False (missing: schema)" and left the
+            # user to notice that nothing had been provisioned.
+            pres = provision_sqlite(project_dir / "data" / "icdev.db",
+                                    dry_run=args.dry_run)
         report.steps.append({"step": "provision-db", **pres})
         s = pres["status"]
+        report.db_ready = bool(s.get("ready"))
         print(f"  database ready : {s['ready']}"
               + (f"  (missing: {', '.join(s['missing'])})" if s["missing"] else ""))
         if pres.get("hint"):
@@ -724,7 +747,11 @@ def main(argv: list | None = None) -> int:
     print("=" * 68)
     print("Next:")
     print("  icdev setup --components   # turn canvases/features on")
-    print("  icdev-init-db              # create the database")
+    # Only advertise the initialiser when the database still needs one. Telling
+    # a user to "create the database" immediately after --provision-db created
+    # it reads as though the step failed.
+    if not report.db_ready:
+        print("  icdev-init-db              # create the database")
     print("  icdev-dashboard            # http://localhost:5050")
     if report.compose_file:
         print("  docker compose up -d       # or run it all in containers")

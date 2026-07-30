@@ -560,6 +560,15 @@ def step_verify_payload(version: str) -> dict:
         ("icdev/tools/cli/setup_wizard.py", "guided setup wizard"),
         ("icdev/tools/cli/setup.py", "component setup TUI"),
         ("icdev/tools/cli/provision_db.py", "database + vector-store provisioner"),
+        # The wizard provisions by running this in a CHILD process. Absent from
+        # the wheel, `icdev setup --provision-db` and `icdev-init-db` both fail
+        # at the step that creates every table.
+        ("icdev/tools/db/init_icdev_db.py", "platform schema initialiser"),
+        # Resolves `tools.x` → `icdev.tools.x` for `-m` targets. The tools alias
+        # is a sys.modules entry in the PARENT, so without this a child process
+        # dies with ModuleNotFoundError and provisioning reports a generic
+        # failure — the 1.2.42 pip-install bug.
+        ("icdev/tools/compat/subprocess_utils.py", "child-process module resolver"),
     ):
         if mod not in names:
             problems.append(f"wheel carries no {label} ({mod})")

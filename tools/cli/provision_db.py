@@ -53,6 +53,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
+from tools.compat.subprocess_utils import runnable_module
+
 DEFAULT_DSN = "postgresql://icdev:icdev@localhost:5432/icdev"
 
 #: Postgres' own bootstrap database. Always present, so it is where a
@@ -440,15 +442,29 @@ def start_postgres_container(compose_file: Path, *, service: str = "postgres",
     return res
 
 
-def init_schema(*, dry_run: bool = False) -> ProvisionResult:
-    """Run the platform schema initialiser (the same one `icdev-init-db` runs)."""
+def init_schema(*, dry_run: bool = False, db_path: Path | None = None) -> ProvisionResult:
+    """Run the platform schema initialiser (the same one `icdev-init-db` runs).
+
+    The module name is resolved through ``runnable_module`` rather than
+    hardcoded: a child process cannot see the ``tools`` → ``icdev.tools`` alias
+    that ``icdev/__init__.py`` installs, so ``-m tools.db.init_icdev_db`` died
+    with ``ModuleNotFoundError`` on every pip-installed machine while working
+    on every source checkout.
+
+    ``db_path`` is passed explicitly for SQLite. The child does not load the
+    project's ``.env``, so without it the initialiser falls back to its own
+    default and can create the schema somewhere nothing else is looking.
+    """
     res = ProvisionResult()
+    target = runnable_module("tools.db.init_icdev_db")
     if dry_run:
-        res.add("init-schema", False, "would run icdev-init-db")
+        res.add("init-schema", False, f"would run python -m {target}")
         return res
+    cmd = [sys.executable, "-m", target]
+    if db_path is not None:
+        cmd += ["--db-path", str(db_path)]
     try:
-        proc = subprocess.run([sys.executable, "-m", "tools.db.init_icdev_db"],
-                              capture_output=True, text=True, timeout=900)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if proc.returncode != 0:
             res.ok = False
             res.error = (proc.stderr or proc.stdout)[-300:]
@@ -458,6 +474,28 @@ def init_schema(*, dry_run: bool = False) -> ProvisionResult:
         res.ok = False
         res.error = str(exc)[:200]
     return res
+
+
+def provision_sqlite(db_path: Path, *, dry_run: bool = False) -> dict:
+    """Bring a SQLite database up to `ready`, creating the schema if absent.
+
+    The SQLite branch used to call :func:`check_sqlite` and stop, so
+    ``icdev setup --provision-db`` printed ``database ready : False (missing:
+    schema)`` and created nothing — a diagnosis presented as an action. SQLite
+    is the default zero-install backend, so that was the path most first-time
+    installs took.
+    """
+    status = check_sqlite(db_path)
+    steps: list = []
+    if not status.schema_present:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        r = init_schema(dry_run=dry_run, db_path=db_path)
+        steps.append({"step": "schema", **r.to_dict()})
+        if not r.ok:
+            return {"ok": False, "steps": steps, "status": status.to_dict(),
+                    "hint": "schema init failed — run `icdev-init-db` and read its output"}
+    final = status if dry_run else check_sqlite(db_path)
+    return {"ok": final.ready or dry_run, "steps": steps, "status": final.to_dict()}
 
 
 def install_guidance(system: str) -> list:
