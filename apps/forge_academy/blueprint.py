@@ -12,7 +12,7 @@ from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
     migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
-    tier_progress, is_tier_unlocked,
+    tier_progress, is_tier_unlocked, resume_target, mission_step_progress,
     get_user_achievements, grant_achievement,
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
@@ -177,11 +177,27 @@ def hub():
     effective_role = role_filter or fa_user.get("role")
     missions = list_missions(role=effective_role, tier=None)[:6]
     level_ctx = _level_ctx(fa_user)
+
+    # aca-ux-03: the hub listed the first six missions by order_idx and offered no
+    # way back into work already under way. page.html also READ progress_map, which
+    # this route never passed — so its `is defined` guard was always false and every
+    # card showed "Start" no matter the learner's state.
+    resume = resume_target(fa_user["id"])
+    mission_ids = [m["id"] for m in missions]
+    progress_map = {
+        mid: (get_mission_progress(fa_user["id"], mid) or {}).get("status", "pending")
+        for mid in mission_ids
+    }
+    step_progress = mission_step_progress(fa_user["id"], mission_ids)
+
     return render_template(
         "forge_academy/page.html",
         fa_user=fa_user,
         stats=stats,
         missions=missions,
+        resume=resume,
+        progress_map=progress_map,
+        step_progress=step_progress,
         level_ctx=level_ctx,
         daily_login=daily,
         roles=ROLES,
