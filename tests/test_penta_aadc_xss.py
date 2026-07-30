@@ -175,18 +175,31 @@ def test_main_script_block_renders_through_jinja(src):
     """Render the main <script> block via Jinja so its `{{ design.* }}`
     interpolations are exercised and the esc helper + a sink survive.
 
-    The runtime escaping is client-side JS, so the injected graph_json label
-    passes through `| safe` verbatim into the `graph` JS var — it is the DOM
-    esc() call (asserted above) that neutralizes it at render time. We render
-    just the script block (not the whole page) to avoid the unrelated
+    There are now TWO layers, and this test asserts both:
+
+    1. ``| json_script_safe`` (nav-sec-08) escapes ``<``/``>``/``&`` to ``\\uXXXX``
+       as the JSON is embedded, so a payload containing ``</script>`` cannot break
+       out of the script element in the first place.
+    2. the DOM ``esc()`` call (asserted above) neutralizes the value at render time.
+
+    The environment registers the REAL filter rather than a stub. A bare
+    ``Environment`` has no application filters, so when json_script_safe was added
+    to the template this test began failing with "No filter named
+    'json_script_safe'" — a false alarm about an XSS defence, which is the worst
+    kind to have sitting red.
+
+    We render just the script block (not the whole page) to avoid the unrelated
     page-context vars the full template consumes.
     """
+    from tools.dashboard.ux_helpers import json_script_safe
+
     start = src.index("<script>\n// ── HTML escaping")
     end = src.index("</script>", start)
     block = src[start:end]
     assert "function esc(v)" in block  # sanity: we sliced the right block
 
     env = Environment(autoescape=False)  # noqa: S701 - trusted first-party JS block
+    env.filters["json_script_safe"] = json_script_safe
     tpl = env.from_string(block)
     design = {
         "id": "d1",
@@ -198,8 +211,18 @@ def test_main_script_block_renders_through_jinja(src):
     rendered = tpl.render(design=design, node_descs={})
     assert "function esc(v)" in rendered
     assert "esc(n.label)" in rendered
-    # The raw payload rides in the `graph` JS var (neutralized at DOM time by esc()).
-    assert XSS_LABEL in rendered
+
+    # The payload no longer rides into the `graph` JS var verbatim: json_script_safe
+    # escapes its angle brackets on the way in, so it cannot terminate the <script>
+    # element. This assertion used to be `XSS_LABEL in rendered`, which was true when
+    # the value passed through `| safe` untouched and is the WEAKER property.
+    assert XSS_LABEL not in rendered, (
+        "the raw payload reached the script block; json_script_safe did not run"
+    )
+    assert "\\u003cimg src=x onerror=alert(1)\\u003e" in rendered
+    assert "</script>" not in rendered.split("function esc(v)")[-1], (
+        "nothing in the embedded JSON may close the script element"
+    )
 
 
 def test_icdev_mirror_byte_identical(src):
