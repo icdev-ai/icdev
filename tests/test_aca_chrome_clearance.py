@@ -66,6 +66,19 @@ def test_the_runner_reserves_a_gutter_for_the_floating_fabs():
     assert "padding-right" in css, "the FAB column has to be reserved horizontally"
 
 
+def test_the_runner_reserves_a_gutter_for_the_cli_panel_too():
+    """The docked chrome is anchored to BOTH edges, not just the bottom and right.
+
+    Found by driving the graded journey for aca-vv-02: with the pane scrolled down,
+    "Run" sat at x 340-411 while the CLI panel ended at x 364, and elementFromPoint
+    at the button's left edge returned clibp_tog. That is the primary action of every
+    coding step — the one control a learner must reach to be assessed at all.
+    """
+    css = PARTIAL.read_text(encoding="utf-8")
+    assert "--fa-cli-gutter" in css
+    assert "padding-left" in css, "the CLI panel column has to be reserved too"
+
+
 def test_the_clearance_is_academy_scoped():
     """A global rule would change every other canvas sharing the dashboard shell."""
     css = PARTIAL.read_text(encoding="utf-8")
