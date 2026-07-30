@@ -1,22 +1,16 @@
-"""Tests for PNA runner."""
-import importlib
-import pathlib
+# Auto-grader — runner idiom.
+#
+# aca-vv-01: this file used to be a pytest module (def test_*, importlib/subprocess to
+# load the starter from disk). The Academy runner concatenates the learner's code and
+# this grader into ONE script and runs it with `python -I`, so:
+#   * importlib/subprocess are rejected by the sandbox AST allowlist (penta-aca-02),
+#     which made this step impossible to complete; and
+#   * even unblocked, `def test_*` functions are never called by plain python, so it
+#     would have passed everything.
+# The learner's module-level names are already in scope here. Assert on those.
 
-
-def _load():
-    src = pathlib.Path(__file__).parent / "step2_starter.py"
-    spec = importlib.util.spec_from_file_location("pna_runner", src)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def test_run_pna_analysis_returns_list():
-    mod = _load()
-    result = mod.run_pna_analysis()
-    assert isinstance(result, list), "run_pna_analysis() must return a list"
-
-
-def test_function_defined():
-    mod = _load()
-    assert callable(getattr(mod, "run_pna_analysis", None))
+_fn = globals().get("run_pna_analysis")
+assert callable(_fn), "run_pna_analysis() must be defined."
+_result = _fn()
+assert isinstance(_result, list), "run_pna_analysis() must return a list."
+print("PASS: PNA analysis returns a list of predictions.")

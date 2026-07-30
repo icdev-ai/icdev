@@ -352,18 +352,29 @@ def test_hints_are_counted_by_the_server_not_the_request(client):
 # Aggregate invariants — every graded step in the catalogue, not a sample
 # ---------------------------------------------------------------------------
 
-# Graders whose own imports the sandbox AST allowlist rejects, so the COMBINED
-# learner+test script can never run and the step can never be completed. These are
-# content defects, not grading defects: the graders were written assuming they could
-# reach for importlib/subprocess or import the starter as a module, which
-# penta-aca-02 deliberately blocks. Listed explicitly so the count can only shrink.
-_GRADERS_BLOCKED_BY_SANDBOX = {
-    "m-secops-05-aadc-threat-model",   # from step1_starter import ...
-    "m-netops-pna-01",                 # importlib
-    "m-sre-xai-01",                    # importlib
-    "m-ace-03-multi-role-pipeline",    # importlib
-    "m-readiness-01-eleven-pillars",   # subprocess
-    "m-readiness-02-remediation",      # importlib
+# Graders the sandbox AST allowlist rejects, so the COMBINED learner+grader script
+# cannot run and the step can never be completed.
+#
+# This set was six. All six graders were pytest modules — `def test_*(tmp_path)` plus
+# importlib/subprocess to load the starter from disk — which the runner cannot use
+# twice over: the imports are blocked, and plain `python script.py` never calls a
+# `def test_*` anyway, so unblocking them would only have made them vacuous. They are
+# now written in the runner's idiom, asserting against globals() where the learner's
+# own definitions already live. All 49 graded steps now reject a non-solution.
+#
+# The set is empty, and must stay empty: a grader that lands here is one nobody can
+# complete.
+_GRADERS_BLOCKED_BY_SANDBOX: set[str] = set()
+
+# A different defect, deliberately NOT hidden in the set above: these two STARTERS
+# import ICDEV modules the sandbox forbids (tools.db.storage,
+# tools.ai_augmentation.agent_readiness.checker). The grader is fine; the exercise
+# itself is designed to run against the real codebase rather than in an isolated
+# sandbox, so no grader rewrite can rescue it. Recorded here because it is a real
+# content-design conflict that needs an authoring decision, not a silent skip.
+_STARTERS_REQUIRING_BLOCKED_IMPORTS = {
+    "m-sre-xai-01",                  # starter: from tools.db.storage import ...
+    "m-readiness-01-eleven-pillars",  # starter: from tools.ai_augmentation... import ...
 }
 
 NON_SOLUTION = "# I did not solve this\n"
@@ -416,6 +427,42 @@ def test_no_grader_is_rejected_by_the_sandbox_beyond_the_known_set():
     )
     assert not fixed, (
         f"these graders now run — remove them from _GRADERS_BLOCKED_BY_SANDBOX: {fixed}"
+    )
+
+
+def test_the_starters_needing_blocked_imports_are_still_the_known_two():
+    """A separate defect from a blocked GRADER: a blocked STARTER.
+
+    No grader rewrite can fix these — the exercise is written against the real ICDEV
+    codebase and the sandbox forbids those imports by design (penta-aca-02). Pinned so
+    the list cannot grow silently and so fixing one is noticed.
+    """
+    from apps.forge_academy.code_runner import _check_code_safety
+    from apps.forge_academy.content_loader import CONTENT_ROOT
+
+    offenders = set()
+    for sid, slug, _num in _graded_steps():
+        row = _conn().execute(
+            "SELECT starter_code_path FROM fa_mission_steps WHERE id=?", (sid,)
+        ).fetchone()
+        rel = row[0] if row else ""
+        if not rel:
+            continue
+        path = CONTENT_ROOT / rel
+        if not path.is_file():
+            continue
+        ok, _reason = _check_code_safety(path.read_text(encoding="utf-8", errors="replace"))
+        if not ok:
+            offenders.add(slug)
+
+    new = sorted(offenders - _STARTERS_REQUIRING_BLOCKED_IMPORTS)
+    fixed = sorted(_STARTERS_REQUIRING_BLOCKED_IMPORTS - offenders)
+    assert not new, (
+        f"new starter(s) the sandbox rejects, making the exercise impossible: {new}"
+    )
+    assert not fixed, (
+        f"these starters now pass the gate — remove them from "
+        f"_STARTERS_REQUIRING_BLOCKED_IMPORTS: {fixed}"
     )
 
 
