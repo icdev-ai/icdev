@@ -235,6 +235,25 @@ CREATE TABLE IF NOT EXISTS fa_xp_ledger (
     tenant_id TEXT
 );
 
+-- aca-int-07 part 2: what a certificate was issued against, snapshotted at issue
+-- time. Declared here as well as in migration 317 for the same reason as
+-- fa_xp_ledger: a query against a missing table inside an open transaction aborts
+-- that transaction on PostgreSQL.
+CREATE TABLE IF NOT EXISTS fa_certificate_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cert_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES fa_users(id),
+    evidence_type TEXT NOT NULL,
+    ref_id INTEGER,
+    label TEXT NOT NULL,
+    detail TEXT,
+    demonstrated_at TEXT,
+    score INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS fa_oracle_predictions (
     id TEXT PRIMARY KEY,
     lens_id TEXT NOT NULL,
@@ -1672,6 +1691,94 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     return {"eligible": eligible, "gates": gates}
 
 
+def collect_cert_evidence(user_id: int, eligibility: dict, conn) -> list[dict]:
+    """The work a certificate is about to be issued against.
+
+    aca-int-07 part 2: check_cert_eligibility already computes exactly this and
+    issue_certificate read only its boolean, throwing the rest away — so a
+    certificate asserted competence and /academy/verify/<token> could do nothing but
+    repeat the label back.
+
+    Snapshotted at issue time rather than recomputed on the verify page. A
+    certificate is a statement about a moment: recomputing lets the claim drift with
+    the data underneath it, so retiring a mission or re-seeding a step would make a
+    certificate issued last year quietly describe something else.
+    """
+    evidence: list[dict] = []
+
+    # 1. The gates themselves, with the figures that satisfied them.
+    for gate in eligibility.get("gates", []):
+        evidence.append({
+            "evidence_type": "gate",
+            "ref_id": None,
+            "label": gate.get("name", ""),
+            "detail": gate.get("detail", ""),
+            "demonstrated_at": None,
+            "score": None,
+        })
+
+    # 2. The missions that counted, and 3. the verified steps underneath them.
+    rows = conn.execute(
+        """SELECT m.id AS mission_id, m.title AS mission_title, m.tier,
+                  mp.completed_at, mp.score
+             FROM fa_mission_progress mp
+             JOIN fa_missions m ON m.id = mp.mission_id
+            WHERE mp.user_id = %s AND mp.status = 'completed'
+            ORDER BY m.tier, m.id""",
+        (user_id,),
+    ).fetchall()
+    for r in rows:
+        d = dict(r)
+        evidence.append({
+            "evidence_type": "mission",
+            "ref_id": d["mission_id"],
+            "label": d["mission_title"],
+            "detail": f"Tier {d['tier']}",
+            "demonstrated_at": d.get("completed_at"),
+            "score": d.get("score"),
+        })
+
+    steps = conn.execute(
+        """SELECT s.id AS step_id, s.title AS step_title, s.step_type,
+                  m.title AS mission_title, sp.completed_at, sp.score, sp.hints_used
+             FROM fa_step_progress sp
+             JOIN fa_mission_steps s ON s.id = sp.step_id
+             JOIN fa_missions m ON m.id = s.mission_id
+            WHERE sp.user_id = %s AND sp.status = 'completed'
+            ORDER BY s.mission_id, s.step_num""",
+        (user_id,),
+    ).fetchall()
+    for r in steps:
+        d = dict(r)
+        hints = d.get("hints_used") or 0
+        evidence.append({
+            "evidence_type": "step",
+            "ref_id": d["step_id"],
+            "label": f"{d['mission_title']} — {d['step_title']}",
+            "detail": f"{d.get('step_type') or 'step'}, {hints} hint(s)",
+            "demonstrated_at": d.get("completed_at"),
+            "score": d.get("score"),
+        })
+    return evidence
+
+
+def get_cert_evidence(cert_id: int) -> list[dict]:
+    """The evidence recorded when this certificate was issued."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM fa_certificate_evidence WHERE cert_id=%s "
+            "ORDER BY CASE evidence_type WHEN 'gate' THEN 0 WHEN 'mission' THEN 1 "
+            "ELSE 2 END, id",
+            (cert_id,),
+        ).fetchall()
+    except Exception:
+        # Own connection, so swallowing is safe here — see earned_xp for why this
+        # would NOT be safe on a caller's connection under PostgreSQL.
+        return []
+    return [dict(r) for r in rows]
+
+
 def issue_certificate(user_id: int, cert_key: str) -> dict | None:
     """Issue a certificate if eligible. Returns the cert record or None."""
     import secrets
@@ -1711,6 +1818,27 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
     if xp_bonus:
         update_user_xp(user_id, xp_bonus, conn=conn, reason="certificate",
                        source_type="certificate", note=cert_key)
+
+    # aca-int-07 part 2: the evidence goes in on the SAME transaction. A certificate
+    # that commits without it is precisely the artefact this card set out to remove —
+    # a label asserting competence with nothing behind it — and a partial failure
+    # here must take the certificate down with it rather than leave one standing.
+    cert_row = conn.execute(
+        "SELECT id FROM fa_certificates WHERE user_id=%s AND cert_tier=%s",
+        (user_id, cert_key),
+    ).fetchone()
+    cert_id = (cert_row["id"] if not isinstance(cert_row, tuple) else cert_row[0]) \
+        if cert_row else None
+    if cert_id is not None:
+        for item in collect_cert_evidence(user_id, eligibility, conn):
+            conn.execute(
+                "INSERT INTO fa_certificate_evidence "
+                "(cert_id, user_id, evidence_type, ref_id, label, detail, "
+                " demonstrated_at, score) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (cert_id, user_id, item["evidence_type"], item["ref_id"],
+                 item["label"], item["detail"], item["demonstrated_at"],
+                 item["score"]),
+            )
     conn.commit()
     return conn.execute(
         "SELECT * FROM fa_certificates WHERE user_id=%s AND cert_tier=%s",
@@ -1736,7 +1864,14 @@ def verify_certificate_token(token: str) -> dict | None:
            WHERE c.token=%s""",
         (token,),
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    result = dict(row)
+    # aca-int-07 part 2: a verifier needs to see what was demonstrated, not just be
+    # told a label. Read back the snapshot taken at issue time — NOT a fresh
+    # computation, which would let the claim drift with the data underneath it.
+    result["evidence"] = get_cert_evidence(result["id"])
+    return result
 
 
 # ---------------------------------------------------------------------------

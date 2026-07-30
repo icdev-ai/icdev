@@ -96,6 +96,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # event: corrections are new compensating rows, never an UPDATE, or the
         # ledger stops being evidence for the certificates that cite it.
         "fa_xp_ledger",
+        # What a certificate was issued against (aca-int-07, migration 317).
+        # Revoking a certificate means recording a revocation, not deleting
+        # the evidence that it was once issued.
+        "fa_certificate_evidence",
         # FathomDesk auto-trading (append-only NIST AU)
         "ad_trade_audit",
         "ad_kill_switch",
