@@ -67,11 +67,21 @@ def _patch_conn(db_path: str):
     returning the same connection object would result in 'closed database'
     errors on the second call. Using side_effect instead of return_value
     creates a fresh connection per call.
+
+    The factory delegates to the REAL get_connection rather than building a
+    bare sqlite3 connection. ChatManager authors ``%s`` placeholders for
+    PostgreSQL and it is StorageConnection that rewrites them to ``?`` for
+    SQLite; skipping that layer made every statement raise
+    ``near "%": syntax error`` and failed all 23 tests in this file.
+
+    The real function is captured before patch() replaces the attribute, so
+    the factory cannot recurse into its own replacement.
     """
-    def _factory():
-        c = sqlite3.connect(db_path)
-        c.row_factory = sqlite3.Row
-        return c
+    from icdev.tools.db.storage import get_connection as _real_get_connection
+
+    def _factory(*_args, **_kwargs):
+        return _real_get_connection(db_path)
+
     return patch("icdev.tools.db.storage.get_connection", side_effect=_factory)
 
 
