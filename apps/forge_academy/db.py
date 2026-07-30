@@ -933,6 +933,81 @@ def is_tier_unlocked(user_id: int, tier: int) -> bool:
     return bool(info["unlocked"])
 
 
+def mission_step_progress(user_id: int, mission_ids) -> dict:
+    """``{mission_id: {"done": n, "total": n}}`` for the given missions.
+
+    aca-ux-03: the hub and the browser showed a Done/Active/Start badge and nothing
+    else, so a learner could not see how far into a mission they were without
+    opening it.
+    """
+    ids = [int(m) for m in (mission_ids or [])]
+    if not ids:
+        return {}
+    conn = get_connection()
+    placeholders = ",".join(["?"] * len(ids))
+    totals = {
+        int(r[0]): int(r[1])
+        for r in conn.execute(
+            f"SELECT mission_id, COUNT(*) FROM fa_mission_steps "  # noqa: S608
+            f"WHERE mission_id IN ({placeholders}) GROUP BY mission_id",
+            ids,
+        ).fetchall()
+    }
+    done = {
+        int(r[0]): int(r[1])
+        for r in conn.execute(
+            f"SELECT s.mission_id, COUNT(*) FROM fa_step_progress sp "  # noqa: S608
+            f"JOIN fa_mission_steps s ON s.id=sp.step_id "
+            f"WHERE sp.user_id=? AND sp.status=? AND s.mission_id IN ({placeholders}) "
+            f"GROUP BY s.mission_id",
+            [user_id, STEP_STATUS_COMPLETED, *ids],
+        ).fetchall()
+    }
+    return {
+        mid: {"done": done.get(mid, 0), "total": totals.get(mid, 0)} for mid in ids
+    }
+
+
+def resume_target(user_id: int) -> dict | None:
+    """The mission to offer as "continue where you left off", or None.
+
+    Deliberately requires EVIDENCE of work, not just a progress row. Before
+    aca-int-04, opening a mission page created an in_progress row — 39 of them, with
+    352 attempts and not one step submission — so a resume control keyed on status
+    alone would have pointed at missions the learner had merely glanced at. A mission
+    with no fa_step_progress rows is therefore never offered.
+
+    Recency is the learner's own last activity on that mission, falling back to when
+    the mission was started so an attempt that has not completed anything still
+    ranks.
+    """
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT m.id, m.slug, m.title, m.tier, "
+        "       MAX(COALESCE(sp.completed_at, sp.started_at, mp.started_at)) AS last_at "
+        "FROM fa_mission_progress mp "
+        "JOIN fa_missions m ON m.id = mp.mission_id "
+        "JOIN fa_mission_steps s ON s.mission_id = m.id "
+        "JOIN fa_step_progress sp ON sp.step_id = s.id AND sp.user_id = mp.user_id "
+        "WHERE mp.user_id = ? AND mp.status <> ? AND m.is_active = 1 "
+        "GROUP BY m.id, m.slug, m.title, m.tier "
+        "ORDER BY last_at DESC, m.id DESC LIMIT 1",
+        (user_id, MISSION_STATUS_COMPLETED),
+    ).fetchone()
+    if not row:
+        return None
+    mid = row["id"] if hasattr(row, "keys") else row[0]
+    counts = mission_step_progress(user_id, [mid]).get(mid, {"done": 0, "total": 0})
+    return {
+        "id": mid,
+        "slug": row["slug"] if hasattr(row, "keys") else row[1],
+        "title": row["title"] if hasattr(row, "keys") else row[2],
+        "tier": row["tier"] if hasattr(row, "keys") else row[3],
+        "steps_done": counts["done"],
+        "steps_total": counts["total"],
+    }
+
+
 def record_hint(user_id: int, step_id: int) -> int:
     """Count a hint against a step and return the new total.
 

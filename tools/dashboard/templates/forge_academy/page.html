@@ -283,6 +283,33 @@
       <a href="/academy/oracle" class="btn" style="font-size:.78rem;color:#9b59b6;border-color:#9b59b6;">🔮 Oracle Intel</a>
     </div>
 
+    {# aca-ux-03: continue where you left off. Only rendered when the learner has
+       actually submitted work on an unfinished mission — resume_target requires
+       fa_step_progress evidence, not just a progress row, because before
+       aca-int-04 merely opening a page created one. #}
+    {% if resume %}
+    <div class="fa-section-title">Continue where you left off</div>
+    <a href="/academy/mission/{{ resume.slug }}" class="fa-resume-card"
+       style="display:flex;align-items:center;gap:1rem;text-decoration:none;
+              background:linear-gradient(135deg,rgba(255,107,53,.12),rgba(255,184,0,.05));
+              border:1px solid rgba(255,107,53,.45);border-radius:12px;
+              padding:1.1rem 1.3rem;margin-bottom:1.4rem;">
+      <span style="font-size:1.6rem;line-height:1;">&#9654;</span>
+      <span style="flex:1;">
+        <span style="display:block;font-weight:800;color:var(--text-primary);">
+          {{ resume.title }}
+        </span>
+        <span style="display:block;font-size:.76rem;color:var(--text-secondary);margin-top:.2rem;">
+          Tier {{ resume.tier }}
+          {%- if resume.steps_total %} &middot;
+          {{ resume.steps_done }} of {{ resume.steps_total }} steps complete
+          {%- endif %}
+        </span>
+      </span>
+      <span style="font-size:.8rem;font-weight:700;color:var(--fa-orange,#FF6B35);">Resume &rarr;</span>
+    </a>
+    {% endif %}
+
     <!-- Active Missions -->
     <div class="fa-section-title">Active Missions</div>
     <div class="fa-mission-grid">
@@ -300,7 +327,15 @@
           <span class="fa-card-xp">+{{ m.xp_reward }} XP</span>
           <span class="fa-card-diff {{ m.difficulty|default('beginner') }}">{{ m.difficulty|default('beginner') }}</span>
           {% if fa_user %}
-          {% set s = progress_map.get(m.id, 'locked') if progress_map is defined else 'pending' %}
+          {# The hub route now passes progress_map, so this reflects real state
+             instead of always falling through to "Start" (aca-ux-03). #}
+          {% set s = progress_map.get(m.id, 'pending') if progress_map is defined else 'pending' %}
+          {% set sp = step_progress.get(m.id) if step_progress is defined else None %}
+          {% if sp and sp.total and s != 'completed' and sp.done %}
+          <span style="font-size:.68rem;color:var(--text-secondary);">
+            {{ sp.done }}/{{ sp.total }} steps
+          </span>
+          {% endif %}
           <span class="fa-card-status {{ s }}">
             {% if s == 'completed' %}✓ Done{% elif s == 'in_progress' %}● Active{% else %}○ Start{% endif %}
           </span>
