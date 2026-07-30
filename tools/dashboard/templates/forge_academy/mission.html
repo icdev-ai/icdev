@@ -107,10 +107,14 @@
   to   { transform:translateX(0);    opacity:1; }
 }
 </style>
+{% include "forge_academy/partials/_a11y.html" %}
 {% include "forge_academy/partials/_chrome_clearance.html" %}
 {% endblock %}
 
 {% block content %}
+{# aca-trn-06: the step list is the first thing in tab order, so a keyboard user had
+   to pass every step to reach the work. #}
+<a href="#step-main" class="fa-skip-link">Skip to the current step</a>
 <div class="fa-mission-layout">
   <!-- Sidebar -->
   <div class="fa-sidebar">
@@ -121,12 +125,19 @@
       · <span style="color:var(--fa-gold)">+{{ mission.xp_reward }} XP</span>
     </div>
 
-    <ul class="fa-step-nav" id="step-nav">
+    {# aca-trn-06: these were <li onclick> with no role, tabindex or key handling, so
+       the only way through a mission was a mouse. role="button" + tabindex makes each
+       step focusable and operable, aria-current marks the one being shown, and the
+       completed state is announced rather than left to the green tint and the glyph. #}
+    <ul class="fa-step-nav" id="step-nav" aria-label="Mission steps">
       {% for step in mission.steps %}
       {% set s_state = step_states.get(step.id, 'pending') %}
       <li class="{% if loop.first %}active{% endif %} {% if s_state=='completed' %}done{% endif %}"
-          data-step-idx="{{ loop.index0 }}" onclick="goStep({{ loop.index0 }})">
-        <span class="step-num">{% if s_state=='completed' %}✓{% else %}{{ loop.index }}{% endif %}</span>
+          data-step-idx="{{ loop.index0 }}" onclick="goStep({{ loop.index0 }})"
+          role="button" tabindex="0"
+          {% if loop.first %}aria-current="step"{% endif %}
+          aria-label="Step {{ loop.index }} of {{ mission.steps|length }}: {{ step.title }}{% if s_state=='completed' %} (completed){% endif %}">
+        <span class="step-num" aria-hidden="true">{% if s_state=='completed' %}✓{% else %}{{ loop.index }}{% endif %}</span>
         <span>{{ step.title }}</span>
       </li>
       {% endfor %}
@@ -149,7 +160,11 @@
   </div>
 
   <!-- Main step area -->
-  <div class="fa-main" id="step-main">
+  {# tabindex="-1" so the skip link can actually move focus here; without it the
+     browser scrolls but focus stays behind, and the next Tab returns to the nav. #}
+  {# role="region", not "main": base.html already declares role="main" on
+     #main-content, and a second main landmark is itself a violation. #}
+  <div class="fa-main" id="step-main" tabindex="-1" role="region" aria-label="Step content">
     {% if tier_locked %}
     {# aca-ux-04: locked-but-readable. The content below is fully readable; the
        server refuses credit (api_step_submit), so state that plainly rather than
@@ -235,11 +250,35 @@ function goStep(idx) {
   document.querySelectorAll('.fa-step-pane').forEach((p,i) => p.style.display = i===idx ? '' : 'none');
   document.querySelectorAll('#step-nav li').forEach((li,i) => {
     li.classList.toggle('active', i===idx);
+    // aca-trn-06: the active step was signalled by a class and its colour only.
+    if (i === idx) li.setAttribute('aria-current', 'step');
+    else li.removeAttribute('aria-current');
   });
   currentStep = idx;
   startTime = Date.now();
   hintsUsed = 0;
 }
+
+// aca-trn-06: the step list is operable from the keyboard — Enter/Space to open a
+// step, arrows/Home/End to move between them. Without this the sidebar was
+// mouse-only, so a keyboard user could not reach step 2 of any mission.
+document.addEventListener('keydown', function (e) {
+  const li = e.target.closest && e.target.closest('#step-nav li');
+  if (!li) return;
+  const items = Array.from(document.querySelectorAll('#step-nav li'));
+  const i = items.indexOf(li);
+  let next = null;
+  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault();
+    goStep(parseInt(li.dataset.stepIdx, 10));
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = items[i + 1];
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = items[i - 1];
+  else if (e.key === 'Home') next = items[0];
+  else if (e.key === 'End') next = items[items.length - 1];
+  if (next) { e.preventDefault(); next.focus(); }
+});
 
 async function runCode(stepIdx) {
   const ta = document.getElementById('code-editor-' + stepIdx);
@@ -277,9 +316,35 @@ async function runCode(stepIdx) {
   btn.textContent = '▶ Run';
 }
 
+// aca-trn-06: a live region that is already in the DOM and gets its text written
+// afterwards. Injecting a node that is populated at creation time is the common way
+// to get this wrong — many screen readers only announce mutations to a region they
+// were already observing, so the whole toast passes silently. The enrolment notice
+// (faEnrolNotice) had role="status" and was the pattern to follow here.
+function faAnnounce(message) {
+  let live = document.getElementById('fa-live');
+  if (!live) {
+    live = document.createElement('div');
+    live.id = 'fa-live';
+    live.setAttribute('role', 'status');
+    live.setAttribute('aria-live', 'polite');
+    live.setAttribute('aria-atomic', 'true');
+    // Visually hidden, but not display:none — that removes it from the a11y tree.
+    live.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;' +
+      'padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;';
+    document.body.appendChild(live);
+  }
+  live.textContent = '';
+  setTimeout(() => { live.textContent = message; }, 50);
+}
+
 function showXPToast(xp, label) {
+  faAnnounce((label || 'Step Complete') + (xp ? ': ' + xp + ' XP earned' : ''));
   const t = document.createElement('div');
   t.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:linear-gradient(135deg,#12192b,#1a2540);border:1px solid rgba(255,107,53,.5);border-radius:10px;padding:.9rem 1.4rem;font-size:.88rem;font-weight:700;color:#FF6B35;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,.5);display:flex;gap:.7rem;align-items:center;animation:slideInRight .3s ease';
+  // The visual toast is hidden from assistive tech because faAnnounce already said
+  // it; exposing both announces the same event twice.
+  t.setAttribute('aria-hidden', 'true');
   t.innerHTML = '<span style="font-size:1.3rem;">⬡</span><div><div style="font-size:1.1rem">+' + xp + ' XP</div><div style="font-size:.72rem;color:#aaa;font-weight:400">' + (label||'Step Complete') + '</div></div>';
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(),400); }, 2800);
@@ -424,6 +489,13 @@ document.addEventListener('codemirror-ready', function() {
       lineWrapping: false, autofocus: idx == 0,
     });
     cm.setSize(null, 300);
+    // aca-trn-06: fromTextArea HIDES the labelled textarea and types into a private
+    // one of its own, so the <label for> on the original stops reaching the control
+    // the learner actually focuses. Name that input directly.
+    const field = cm.getInputField && cm.getInputField();
+    if (field) {
+      field.setAttribute('aria-label', ta.getAttribute('aria-label') || 'Code editor');
+    }
     window.editors[idx] = cm;
   });
 });

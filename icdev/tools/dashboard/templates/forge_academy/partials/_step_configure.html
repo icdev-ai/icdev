@@ -12,12 +12,19 @@
       {% if schema.fields %}
       {% for field in schema.fields %}
       <div class="fa-form-group" style="margin-bottom:.9rem;">
-        <label style="font-size:.75rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">
+        {# aca-trn-06: this label sits BESIDE its control rather than wrapping it, so
+           without `for` it named nothing — select, textarea and text inputs were all
+           reaching the a11y tree unlabelled. The checkbox branches below do wrap
+           their inputs, so those were already associated. #}
+        <label for="cfg-{{ sidx }}-{{ field.name }}"
+               style="font-size:.75rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">
           {{ field.label | default(field.name) }}
-          {% if field.required %}<span style="color:#ff6b6b">*</span>{% endif %}
+          {% if field.required %}<span style="color:#ff6b6b">*</span><span class="sr-only"> (required)</span>{% endif %}
         </label>
         {% if field.type == 'select' %}
-        <select name="{{ field.name }}" style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
+        <select name="{{ field.name }}" id="cfg-{{ sidx }}-{{ field.name }}"
+                {% if field.required %}required{% endif %}
+                style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
           {% for opt in field.options | default([]) %}
           <option value="{{ opt.value | default(opt) }}">{{ opt.label | default(opt) }}</option>
           {% endfor %}
@@ -40,12 +47,15 @@
           {% endfor %}
         </div>
         {% elif field.type == 'textarea' %}
-        <textarea name="{{ field.name }}" rows="4"
+        <textarea name="{{ field.name }}" id="cfg-{{ sidx }}-{{ field.name }}" rows="4"
                   placeholder="{{ field.placeholder | default('') }}"
+                  {% if field.required %}required{% endif %}
                   style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.82rem;font-family:monospace;resize:vertical;"></textarea>
         {% else %}
         <input type="{{ field.type | default('text') }}" name="{{ field.name }}"
+               id="cfg-{{ sidx }}-{{ field.name }}"
                placeholder="{{ field.placeholder | default('') }}"
+               {% if field.required %}required{% endif %}
                style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
         {% endif %}
         {% if field.hint %}
