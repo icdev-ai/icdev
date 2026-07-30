@@ -1588,21 +1588,28 @@ def seed_mission_catalog() -> None:
         # executed, and Tier 1 stayed ungradeable after a restart. Cheap and
         # idempotent — it only writes to rows whose asset paths are still empty.
         reconcile_all_step_assets(conn, discovered)
+        # aca-hon-02: refresh the catalogue's user-visible fields on an already-seeded
+        # database. The ON CONFLICT upsert below ALREADY sets title/tagline correctly
+        # — it just sits after the fast-path return, so on any seeded database it
+        # never ran and 34 derived missions kept the mechanical titles they were first
+        # written with ('Chromadb Rag', 'Ciso Capstone'). This is the same
+        # fix-is-inert-on-existing-data trap as the asset reconcile and the
+        # mission_type reconcile; making the catalogue self-correcting removes the
+        # whole class rather than adding a third bespoke pass.
+        retire_superseded_missions(conn, discovered)
         # aca-hon-04: correct stored mission_type against the steps that actually
         # exist. Must run AFTER the asset reconcile, because that pass promotes steps
         # to 'coding', and BEFORE the fast-path return below for the same reason it
         # applies to assets — the rows needing correction are already seeded.
         reconcile_mission_types(conn)
 
-        try:
-            existing_count = conn.execute(
-                "SELECT COUNT(*) FROM fa_missions WHERE is_active=1"
-            ).fetchone()[0]
-            if existing_count >= len(catalog):
-                _log.debug("FORGE Academy: mission catalog already seeded (%d missions), skipping", existing_count)
-                return
-        except Exception:
-            pass  # fa_missions may not exist yet; proceed with full seed
+        # NOTE: no fast-path return here any more. It used to skip the whole seed once
+        # the mission count matched, which meant the ON CONFLICT upsert below — the
+        # thing that keeps title/tagline/xp_reward in step with the catalogue — never
+        # ran on a seeded database. Three separate defects traced back to it
+        # (unreachable asset reconcile, stale mission_type, stale derived titles).
+        # The upsert is one executemany over ~124 rows on start-up; correctness is
+        # worth more than skipping it.
 
         # Batch upsert all missions in one executemany + single commit (avoids N individual commits)
         rows = [
@@ -1792,6 +1799,55 @@ def mission_type_from_steps(steps: list | None) -> str:
         counts[t] = counts.get(t, 0) + 1
     # Ties resolve by first appearance, which keeps the result stable.
     return max(types, key=lambda t: (counts[t], -types.index(t)))
+
+
+def retire_superseded_missions(conn, discovered: dict | None = None) -> int:
+    """Deactivate derived missions discovery no longer produces. Returns count.
+
+    aca-hon-03: m11-multimodal was derived before the duplicate-subject check existed
+    and duplicates the catalogued m-t1-11-multimodal. Excluding it from derivation
+    stops it being RE-created but does nothing about the row already in the database,
+    which stayed active and kept rendering as a second Tier-1 card for one subject.
+
+    Scope is deliberately narrow: only rows whose source_credit marks them derived,
+    and only when discovery no longer yields that slug. A hand-written catalogue entry
+    is never retired automatically — that is a content decision (see migration 314 for
+    m-leader-02-roi). Sets is_active=0 rather than deleting, so any learner progress
+    and the audit trail survive.
+    """
+    if discovered is None:
+        discovered = discover_steps()
+    try:
+        still_derived = {m["slug"] for m in discover_missions(discovered)}
+        rows = conn.execute(
+            "SELECT id, slug FROM fa_missions "
+            "WHERE is_active=1 AND source_credit LIKE ?", ("%derived%",),
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — start-up path; must not break boot
+        _log.warning("retire_superseded_missions could not read the catalogue: %s", exc)
+        return 0
+
+    retired = 0
+    for row in rows:
+        mid = row["id"] if hasattr(row, "keys") else row[0]
+        slug = row["slug"] if hasattr(row, "keys") else row[1]
+        if slug in still_derived:
+            continue
+        try:
+            conn.execute("UPDATE fa_missions SET is_active=0 WHERE id=?", (mid,))
+            retired += 1
+            _log.info(
+                "FORGE Academy: retired derived mission %s — discovery no longer "
+                "produces it (superseded or duplicate)", slug,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("could not retire %s: %s", slug, exc)
+    if retired:
+        try:
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("retire_superseded_missions commit failed: %s", exc)
+    return retired
 
 
 def reconcile_mission_types(conn) -> int:
