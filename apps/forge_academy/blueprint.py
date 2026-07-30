@@ -13,6 +13,7 @@ from .db import (
     migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     tier_progress, is_tier_unlocked, resume_target, mission_step_progress,
+    mission_prereq_state,
     get_user_achievements, grant_achievement,
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
@@ -237,11 +238,14 @@ def missions_browser():
         m["is_locked"] = bool(
             fa_user and not tier_info.get(int(m.get("tier") or 1), {}).get("unlocked", True)
         )
+    # aca-ux-06: 86 missions declare prerequisites and nothing showed them.
+    prereq_state = mission_prereq_state(fa_user["id"], all_missions) if fa_user else {}
     return render_template(
         "forge_academy/missions.html",
         fa_user=fa_user,
         missions=all_missions,
         progress_map=progress_map,
+        prereq_state=prereq_state,
         tier_info=tier_info,
         level_ctx=_level_ctx(fa_user) if fa_user else {},
         roles=ROLES,
