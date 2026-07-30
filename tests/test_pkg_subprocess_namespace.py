@@ -70,16 +70,29 @@ def _module_arg_after_dash_m(call: ast.Call) -> str | None:
     return None
 
 
+#: A match requires a literal ``"-m"`` argv element, so a file whose bytes do
+#: not contain one cannot possibly offend. Parsing every .py under tools/ and
+#: apps/ took ~16s and timed out under load; this skips ~99% of them and is a
+#: strict superset of what the AST walk can match, so it cannot hide a hit.
+_DASH_M_NEEDLES = (b'"-m"', b"'-m'")
+
+
 def _offenders(repo_root: Path = REPO_ROOT) -> list[str]:
     bad: list[str] = []
     for path in _packaged_sources(repo_root):
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        if not any(needle in raw for needle in _DASH_M_NEEDLES):
+            continue
         try:
             with warnings.catch_warnings():
                 # Invalid escape sequences in unrelated scanned files would
                 # otherwise surface as this test's warnings. They belong to
                 # those files, not to the scan, and are not what it reports on.
                 warnings.simplefilter("ignore", SyntaxWarning)
-                tree = ast.parse(path.read_text(encoding="utf-8"))
+                tree = ast.parse(raw.decode("utf-8"))
         except (SyntaxError, UnicodeDecodeError):
             continue
         for node in ast.walk(tree):

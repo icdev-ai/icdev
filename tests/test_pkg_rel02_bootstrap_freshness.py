@@ -17,10 +17,14 @@ intentionally allowed to be stale). Run:
 from __future__ import annotations
 
 import importlib
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 vpc = importlib.import_module("tools.installer.validate_package_config")
 pbb = importlib.import_module("tools.installer.prebuild_bootstrap")
@@ -110,3 +114,37 @@ def test_registered_in_validate_check_list(tmp_path, monkeypatch):
     result = vpc.validate()
     ids = {c["check"] for c in result["checks"]}
     assert "bootstrap_freshness" in ids
+
+
+def test_check_runs_without_pythonpath():
+    """The documented invocation must work with no PYTHONPATH set.
+
+    This check imports tools.installer.prebuild_bootstrap. Running the script
+    directly puts tools/installer/ on sys.path[0], not the repo root, so the
+    import raised ModuleNotFoundError and the check reported itself FAILED:
+
+        [FAIL] bootstrap_freshness
+               error: could not import prebuild_bootstrap: No module named 'tools'
+
+    CI sets PYTHONPATH, so this only ever bit local runs and build_release.py —
+    where it blocked the release at the validate step, and masked a real drift
+    (two DWO append-only tables missing from the packaged hook) behind an
+    import error.
+
+    A subprocess with a scrubbed environment is the only honest way to assert
+    this: in-process, pytest has already put the repo root on sys.path.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    proc = subprocess.run(
+        [sys.executable,
+         str(REPO_ROOT / "tools" / "installer" / "validate_package_config.py"),
+         "--json"],
+        cwd=str(REPO_ROOT), env=env,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=300,
+    )
+    payload = json.loads(proc.stdout)
+    check = next(c for c in payload["checks"] if c["check"] == "bootstrap_freshness")
+    assert "error" not in check, (
+        f"bootstrap_freshness could not run without PYTHONPATH: {check.get('error')}"
+    )
