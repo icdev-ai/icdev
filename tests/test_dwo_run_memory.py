@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
@@ -195,6 +196,16 @@ def test_step_a_writes_step_b_reads_across_subprocesses(_memory_db):
 
 
 def test_runner_exports_run_id_to_the_step_environment():
-    """The contract: the runner puts ICDEV_RUN_ID in every step's env."""
-    source = (_ROOT / "tools" / "studio" / "workflow_runner.py").read_text(encoding="utf-8")
-    assert '_env["ICDEV_RUN_ID"] = run_id' in source
+    """The contract: the runner puts ICDEV_RUN_ID in every step's env.
+
+    Asserted by calling ``_build_step_env`` rather than by grepping the module
+    source for ``_env["ICDEV_RUN_ID"] = run_id``. Env building was extracted
+    into this helper and the local renamed to ``env`` — only the caller still
+    says ``_env`` — so the text assertion failed while the behaviour it guards
+    was correct the whole time. A source grep breaks on a rename and stays
+    green if the line is moved somewhere it never runs; calling the function
+    fails only when the contract actually does.
+    """
+    runner = importlib.import_module("tools.studio.workflow_runner")
+
+    assert runner._build_step_env("run-abc")["ICDEV_RUN_ID"] == "run-abc"
