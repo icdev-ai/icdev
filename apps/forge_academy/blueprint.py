@@ -13,7 +13,7 @@ from .db import (
     migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     tier_progress, is_tier_unlocked, resume_target, mission_step_progress,
-    mission_prereq_state,
+    mission_prereq_state, earned_xp,
     get_user_achievements, grant_achievement,
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
@@ -46,7 +46,11 @@ def _inject_fa_nav():
         if user_id:
             user = get_user(user_id)
             if user:
-                ctx = xp_to_next_level(user.get("xp", 0))
+                # aca-int-07: through _level_ctx, not xp_to_next_level directly.
+                # This is the nav bar's own rank, a second display the page-level fix
+                # does not reach — it would have gone on showing the total-based rank
+                # site-wide. Defined below; resolved at request time, not import.
+                ctx = _level_ctx(user)
                 return {
                     "fa_nav_user": user,
                     "fa_nav_level": ctx.get("level", "Recruit"),
@@ -136,7 +140,27 @@ def _fa_user() -> dict | None:
 
 
 def _level_ctx(fa_user: dict) -> dict:
-    xp = fa_user.get("xp", 0) if fa_user else 0
+    """Rank progress, computed from EARNED XP.
+
+    aca-int-07: this read fa_user["xp"] — the running total, attendance included —
+    and it is the only thing the UI ever consults for rank, in eight places. So
+    after migration 316 corrected fa_users.level to 'recruit', every academy page
+    went on rendering 'Operative': the stored column the migration fixed is not what
+    the profile displays. The learner's total was 1715 of which 1465 was 41 daily
+    logins, so the rank on screen was bought by showing up.
+
+    The displayed XP total is deliberately unchanged — attendance is excluded from
+    rank, not confiscated.
+    """
+    if not fa_user:
+        return xp_to_next_level(0)
+    try:
+        xp = earned_xp(fa_user["id"])
+    except Exception:
+        # Before migration 315 there is no ledger to read. Falling back to the total
+        # is the pre-int-07 behaviour, which is wrong but not broken — and it only
+        # applies to a database that has not been migrated yet.
+        xp = fa_user.get("xp", 0)
     return xp_to_next_level(xp)
 
 
