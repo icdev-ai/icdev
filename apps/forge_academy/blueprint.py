@@ -712,6 +712,16 @@ def api_coach_hint():
     hints_used = 0
     projected = None
     step = _load_step(step_id) if step_id else None
+    # aca-hyg-04: honour hint_allowed server-side. Otherwise the column is decoration
+    # in the same way tier_unlocked was before aca-ux-04 — a flag nothing enforces.
+    if step is not None and not _step_allows_hint(step):
+        return jsonify({
+            "hint": "",
+            "error": "hints_not_available",
+            "detail": "This step type does not offer hints.",
+            "hints_used": 0,
+            "projected": None,
+        }), 400
     if step is not None:
         hints_used = record_hint(fa_user["id"], step["id"])
         base_xp = int(step.get("xp_partial") or 0)
@@ -766,7 +776,38 @@ def api_guild_join():
 @bp.route("/api/academy/guild/<int:guild_id>")
 def api_guild_stats(guild_id):
     stats = get_guild_stats(guild_id)
+    if stats is None:
+        # aca-hyg-03: used to 200 with an empty member list, so a client could not
+        # tell a missing guild from an empty one.
+        return jsonify({"error": "guild not found", "guild_id": guild_id}), 404
     return jsonify(stats)
+
+
+# Fields a learner's browser legitimately needs about a mission. Everything else in
+# fa_missions is internal bookkeeping (aca-hyg-03).
+_LEARNER_MISSION_FIELDS = (
+    "id", "slug", "title", "tagline", "tier", "topic", "mission_type",
+    "xp_reward", "difficulty", "estimated_minutes", "is_available",
+)
+
+
+def _learner_mission_view(mission: dict) -> dict:
+    """Project a mission row down to the fields a client may see."""
+    return {k: mission.get(k) for k in _LEARNER_MISSION_FIELDS if k in mission}
+
+
+def _step_allows_hint(step: dict) -> bool:
+    """Whether this step permits a coach hint (aca-hyg-04).
+
+    Prefers the stored hint_allowed column and falls back to the step type, so rows
+    seeded before the column meant anything still behave sensibly.
+    """
+    from .content_loader import hint_allowed_for
+
+    stored = step.get("hint_allowed")
+    if stored is not None:
+        return bool(stored)
+    return hint_allowed_for(step.get("step_type"))
 
 
 @bp.route("/api/academy/leaderboard")
@@ -1087,7 +1128,13 @@ def api_learning_path():
     role = fa_user.get("role", "")
     limit = min(int(request.args.get("limit", 5)), 10)
     recommendations = _recommend_next_missions(fa_user["id"], role, limit=limit)
-    return jsonify({"recommendations": recommendations, "role": role})
+    # aca-hyg-03: this used to serialise raw mission rows, leaking
+    # domain_classes_json, is_active, order_idx, ontology_id, created_at and the rest
+    # of the internal schema to the browser.
+    return jsonify({
+        "recommendations": [_learner_mission_view(m) for m in recommendations],
+        "role": role,
+    })
 
 
 # Alias for app.py _APP_DEFS registration

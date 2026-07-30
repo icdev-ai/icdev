@@ -1720,6 +1720,18 @@ def _title_from_body(body: str, fallback: str) -> str:
     return fallback
 
 
+# Step types where a hint is meaningful. aca-hyg-04: hint_allowed was 1 on all 212
+# steps, including watch steps (there is nothing to hint about reading a page) and
+# reflect steps (where a hint IS the answer to the multiple-choice question). The
+# column was written and then ignored by both the runner and the hint route.
+_HINTABLE_STEP_TYPES = frozenset({"coding", "design", "configure", "deploy", "verify"})
+
+
+def hint_allowed_for(step_type: str | None) -> bool:
+    """Whether asking the coach for a hint makes sense for this step type."""
+    return (step_type or "").strip().lower() in _HINTABLE_STEP_TYPES
+
+
 def _code_assets_for(md_path: Path, step_num: int) -> tuple[str, str]:
     """Find the authored ``stepN_starter.py`` / ``stepN_test.py`` beside a step.
 
@@ -1947,7 +1959,9 @@ def _seed_steps(conn, mission_id: int, mission_slug: str, steps: list | None = N
                     json.dumps(step.get("config_schema", {})),
                     step.get("xp_partial", 50),
                     step.get("skill_tag", ""),
-                    1,
+                    # aca-hyg-04: was a hardcoded 1 for every step, so watch and
+                    # reflect steps advertised a hint that makes no sense there.
+                    1 if hint_allowed_for(step.get("step_type", "configure")) else 0,
                     step.get("estimated_seconds", 300),
                 ),
             )
