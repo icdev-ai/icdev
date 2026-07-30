@@ -855,7 +855,23 @@ def _pg_exec_statements(cursor, sql: str, backend: str) -> None:
             cursor.execute(translated)
             if use_sp:
                 cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
-        except Exception:  # noqa: BLE001 — skip; keep prior successful statements
+        except Exception as stmt_exc:  # noqa: BLE001 — skip; keep prior statements
+            # Log it. Skipping is deliberate (already-exists DDL, out-of-order
+            # references), but doing it SILENTLY means a migration can report
+            # success having applied only some of its statements. That is exactly
+            # how migration 313 half-applied on the live database: a UTF-8 BOM at
+            # the start of the file made its first statement (a DELETE) invalid,
+            # the failure vanished here, the second statement succeeded, and the
+            # runner recorded the migration as applied. The data fix never ran and
+            # nothing anywhere said so.
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "executescript: skipping failed statement (%s: %s) - first 120 chars: %s",
+                type(stmt_exc).__name__,
+                stmt_exc,
+                " ".join(translated.split())[:120],
+            )
             if use_sp:
                 try:
                     cursor.execute("ROLLBACK TO SAVEPOINT icdev_es_stmt")

@@ -1,4 +1,4 @@
-﻿-- CUI // SP-CTI
+-- CUI // SP-CTI
 -- Migration 313: reconcile fa_mission_progress after the GET-write fix (aca-int-04).
 --
 -- blueprint.mission_runner called start_mission() on every GET of a mission page,

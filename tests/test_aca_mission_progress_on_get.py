@@ -1,4 +1,4 @@
-﻿# CUI // SP-CTI
+# CUI // SP-CTI
 """Opening a mission page must not change the learner's progress.
 
 blueprint.mission_runner called start_mission() on every GET, and start_mission

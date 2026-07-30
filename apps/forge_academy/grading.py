@@ -1,4 +1,4 @@
-﻿# CUI // SP-CTI
+# CUI // SP-CTI
 """FORGE Academy server-side grading â€” the single source of a step's verdict.
 
 Before this module the browser decided whether it had passed. `api_step_submit`
