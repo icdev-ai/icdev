@@ -19,16 +19,28 @@ from .db import (
 _log = logging.getLogger(__name__)
 
 
+def projected_step_xp(base_xp: int, hints_used: int = 0,
+                      step_type: str = "coding") -> int:
+    """What a step will pay at `hints_used` hints. No side effects.
+
+    aca-ux-02: the hint button was labelled "-10 XP" in two templates while the
+    real first-hint cost on a 50 XP step was 48 (75 -> 27), because taking a hint
+    both forfeits the 1.5x no-hints multiplier and applies 0.75x plus a per-hint
+    penalty. Exposing the projection from the same code path award_step_xp uses is
+    what stops the quoted price from drifting from the charged price again — do not
+    reintroduce a hardcoded number in a template.
+    """
+    if step_type == "guided":
+        return int(base_xp)
+    if hints_used == 0:
+        return int(base_xp * XP_MULT_FIRST_TRY_NO_HINTS)
+    return max(0, int(base_xp * XP_MULT_WITH_HINTS) - hints_used * XP_HINT_PENALTY)
+
+
 def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
                   elapsed_seconds: int = None, step_type: str = "coding") -> dict:
     """Compute and award XP for a completed step. Returns event dict."""
-    if step_type == "guided":
-        xp = base_xp
-    elif hints_used == 0:
-        xp = int(base_xp * XP_MULT_FIRST_TRY_NO_HINTS)
-    else:
-        xp = int(base_xp * XP_MULT_WITH_HINTS)
-        xp = max(0, xp - hints_used * XP_HINT_PENALTY)
+    xp = projected_step_xp(base_xp, hints_used=hints_used, step_type=step_type)
 
     speed_bonus = 0
     if elapsed_seconds and elapsed_seconds <= XP_SPEED_BONUS_THRESHOLD_S and step_type == "coding":

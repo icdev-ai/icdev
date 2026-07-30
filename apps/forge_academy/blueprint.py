@@ -12,7 +12,7 @@ from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
     migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
-    get_user_achievements, grant_achievement, update_user_xp,
+    get_user_achievements, grant_achievement,
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
@@ -461,8 +461,15 @@ def api_step_submit():
     # `skill_tag` used to be read from this body; every one of them was forgeable.
     submission = data.get("submission", "")
     chosen_option = data.get("chosen_option")
-    hints_used = max(0, int(data.get("hints_used", 0) or 0))
     elapsed_s = data.get("elapsed_seconds")
+    # aca-int-06: the hint count comes from fa_step_progress, where the hint route
+    # recorded it. It used to be read from this body, and the browser zeroed its own
+    # counter on every step navigation - so hints were laundered by clicking away and
+    # back, which also restored the 1.5x "perfect" bonus and no_hints_needed.
+    stored_hints_used = int(
+        (get_step_progress(fa_user["id"], step_id) or {}).get("hints_used", 0) or 0
+    )
+    hints_used = max(0, stored_hints_used)
 
     verdict = grade_step(step_id, submission, chosen_option=chosen_option)
     step = verdict.get("step")
@@ -648,8 +655,43 @@ def api_coach_hint():
     # coach hint is safe to return as HTML — <script>/inline handlers render inert.
     from .content_loader import _md_to_html
     hint_html = _md_to_html(hint)
-    update_user_xp(fa_user["id"], -10)
-    return jsonify({"hint": hint_html, "xp_cost": 10, "chain_mode": chain_mode})
+
+    # aca-int-06 / aca-ux-02: the hint used to be charged TWICE - an instant XP
+    # deduction here, plus the submit path separately applying XP_MULT_WITH_HINTS
+    # (0.75 instead of 1.5) minus XP_HINT_PENALTY per hint. On a 50 XP step one hint
+    # cost 10 up front and then paid 27 instead of 75: 58 XP total, against a button
+    # quoting only the flat penalty. The submit-time multiplier is now the single
+    # pricing mechanism - it is what constants.py documents, and it does not charge
+    # a learner who reads a hint and never submits.
+    #
+    # The count is recorded server-side because it used to live only in the browser,
+    # where goStep() reset it to 0 on every sidebar click.
+    from .db import record_hint
+    from .gamification import projected_step_xp
+    from .grading import _load_step
+
+    step_id = data.get("step_id")
+    hints_used = 0
+    projected = None
+    step = _load_step(step_id) if step_id else None
+    if step is not None:
+        hints_used = record_hint(fa_user["id"], step["id"])
+        base_xp = int(step.get("xp_partial") or 0)
+        step_type = (step.get("step_type") or "coding").strip().lower()
+        projected = {
+            "xp_if_you_stop_now": projected_step_xp(
+                base_xp, hints_used=hints_used, step_type=step_type),
+            "xp_without_hints": projected_step_xp(
+                base_xp, hints_used=0, step_type=step_type),
+            "hints_used": hints_used,
+        }
+
+    return jsonify({
+        "hint": hint_html,
+        "chain_mode": chain_mode,
+        "hints_used": hints_used,
+        "projected": projected,
+    })
 
 
 @bp.route("/api/academy/guild/create", methods=["POST"])
