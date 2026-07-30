@@ -393,7 +393,7 @@ def _seed_achievements(conn):
             conn.execute(
                 "INSERT OR IGNORE INTO fa_achievements "
                 "(slug,title,description,icon,xp_bonus,rarity,criteria_json) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (a["slug"], a["title"], a["description"], a["icon"],
                  a["xp_bonus"], a["rarity"], a["criteria_json"]),
             )
@@ -409,7 +409,7 @@ def _seed_skill_nodes(conn):
             conn.execute(
                 "INSERT OR IGNORE INTO fa_skill_nodes "
                 "(slug,title,tier,role_filter,prereq_ids_json,pos_x,pos_y) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (n["slug"], n["title"], n["tier"], n["role_filter"],
                  json.dumps(n.get("prereqs", [])), pos[0], pos[1]),
             )
@@ -426,26 +426,26 @@ def get_or_create_user(username: str, display_name: str = "", email: str = "", t
     conn = get_connection()
     if tenant_id:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)
+            "SELECT * FROM fa_users WHERE username=%s AND tenant_id=%s", (username, tenant_id)
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)
+            "SELECT * FROM fa_users WHERE username=%s AND (tenant_id IS NULL OR tenant_id='')", (username,)
         ).fetchone()
     if row:
         _touch_streak(conn, dict(row))
         if tenant_id:
-            return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)).fetchone())
-        return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
+            return dict(conn.execute("SELECT * FROM fa_users WHERE username=%s AND tenant_id=%s", (username, tenant_id)).fetchone())
+        return dict(conn.execute("SELECT * FROM fa_users WHERE username=%s AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
     conn.execute(
-        "INSERT INTO fa_users (username, display_name, email, last_active, tenant_id) VALUES (?,?,?,?,?)",
+        "INSERT INTO fa_users (username, display_name, email, last_active, tenant_id) VALUES (%s,%s,%s,%s,%s)",
         (username, display_name or username, email,
          datetime.now(timezone.utc).isoformat(), tenant_id),
     )
     conn.commit()
     if tenant_id:
-        return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)).fetchone())
-    return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
+        return dict(conn.execute("SELECT * FROM fa_users WHERE username=%s AND tenant_id=%s", (username, tenant_id)).fetchone())
+    return dict(conn.execute("SELECT * FROM fa_users WHERE username=%s AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
 
 
 def active_challenge_count() -> int:
@@ -479,7 +479,7 @@ def update_user_display_name(user_id: int, display_name: str) -> None:
         return
     conn = get_connection()
     conn.execute(
-        "UPDATE fa_users SET display_name=? WHERE id=?", (display_name, user_id)
+        "UPDATE fa_users SET display_name=%s WHERE id=%s", (display_name, user_id)
     )
     conn.commit()
 
@@ -489,7 +489,7 @@ def update_user_role(user_id: int, role: str) -> None:
     role_type = ROLES.get(role, {}).get("type", "guided")
     conn = get_connection()
     conn.execute(
-        "UPDATE fa_users SET role=?, role_type=? WHERE id=?",
+        "UPDATE fa_users SET role=%s, role_type=%s WHERE id=%s",
         (role, role_type, user_id),
     )
     conn.commit()
@@ -505,11 +505,11 @@ def update_user_xp(user_id: int, xp_delta: int, conn=None) -> dict:
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
-    conn.execute("UPDATE fa_users SET xp = xp + ? WHERE id=?", (xp_delta, user_id))
-    row = conn.execute("SELECT xp FROM fa_users WHERE id=?", (user_id,)).fetchone()
+    conn.execute("UPDATE fa_users SET xp = xp + %s WHERE id=%s", (xp_delta, user_id))
+    row = conn.execute("SELECT xp FROM fa_users WHERE id=%s", (user_id,)).fetchone()
     new_xp = row["xp"]
     new_level = xp_to_level(new_xp)["slug"]
-    conn.execute("UPDATE fa_users SET level=? WHERE id=?", (new_level, user_id))
+    conn.execute("UPDATE fa_users SET level=%s WHERE id=%s", (new_level, user_id))
     if own_conn:
         conn.commit()
     return {"xp": new_xp, "level": new_level}
@@ -539,7 +539,7 @@ def _touch_streak(conn, user: dict) -> None:
     yesterday = (now_utc.date() - timedelta(days=1)).isoformat()
     streak = (streak + 1) if last == yesterday else 1
     conn.execute(
-        "UPDATE fa_users SET streak_days=?, last_active=? WHERE id=?",
+        "UPDATE fa_users SET streak_days=%s, last_active=%s WHERE id=%s",
         (streak, datetime.now(timezone.utc).isoformat(), user["id"]),
     )
     conn.commit()
@@ -549,11 +549,11 @@ def get_user(user_id: int, tenant_id: str | None = None) -> dict | None:
     conn = get_connection()
     if tenant_id is not None:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+            "SELECT * FROM fa_users WHERE id=%s AND tenant_id=%s", (user_id, tenant_id)
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE id=?", (user_id,)
+            "SELECT * FROM fa_users WHERE id=%s", (user_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -562,11 +562,11 @@ def get_user_by_username(username: str, tenant_id: str | None = None) -> dict | 
     conn = get_connection()
     if tenant_id is not None:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)
+            "SELECT * FROM fa_users WHERE username=%s AND tenant_id=%s", (username, tenant_id)
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE username=?", (username,)
+            "SELECT * FROM fa_users WHERE username=%s", (username,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -607,13 +607,13 @@ def list_missions(tier: int = None, role: str = None,
     q = "SELECT * FROM fa_missions WHERE is_active=1"
     params = []
     if tier:
-        q += " AND tier=?"
+        q += " AND tier=%s"
         params.append(tier)
     if mission_type:
-        q += " AND mission_type=?"
+        q += " AND mission_type=%s"
         params.append(mission_type)
     if tenant_id is not None:
-        q += " AND tenant_id=?"
+        q += " AND tenant_id=%s"
         params.append(tenant_id)
     q += " ORDER BY tier, order_idx"
     rows = conn.execute(q, params).fetchall()
@@ -648,7 +648,7 @@ def list_missions(tier: int = None, role: str = None,
 
 def get_mission(slug: str) -> dict | None:
     row = get_connection().execute(
-        "SELECT * FROM fa_missions WHERE slug=?", (slug,)
+        "SELECT * FROM fa_missions WHERE slug=%s", (slug,)
     ).fetchone()
     return dict(row) if row else None
 
@@ -660,14 +660,14 @@ def get_mission_by_id(mission_id: int) -> dict | None:
     client-supplied slug (aca-int-01), so it needs an id-keyed lookup.
     """
     row = get_connection().execute(
-        "SELECT * FROM fa_missions WHERE id=?", (mission_id,)
+        "SELECT * FROM fa_missions WHERE id=%s", (mission_id,)
     ).fetchone()
     return dict(row) if row else None
 
 
 def get_mission_steps(mission_id: int) -> list[dict]:
     rows = get_connection().execute(
-        "SELECT * FROM fa_mission_steps WHERE mission_id=? ORDER BY step_num",
+        "SELECT * FROM fa_mission_steps WHERE mission_id=%s ORDER BY step_num",
         (mission_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -679,7 +679,7 @@ def upsert_mission(data: dict) -> int:
         """INSERT INTO fa_missions
            (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
             prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(slug) DO UPDATE SET
              title=excluded.title, tagline=excluded.tagline,
              xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
@@ -691,7 +691,7 @@ def upsert_mission(data: dict) -> int:
          data.get("source_credit", "")),
     )
     conn.commit()
-    row = conn.execute("SELECT id FROM fa_missions WHERE slug=?", (data["slug"],)).fetchone()
+    row = conn.execute("SELECT id FROM fa_missions WHERE slug=%s", (data["slug"],)).fetchone()
     return row["id"]
 
 
@@ -704,12 +704,12 @@ def get_mission_progress(user_id: int, mission_id: int, tenant_id: str | None = 
     # Verify user belongs to tenant before returning progress
     if tenant_id is not None:
         user_row = conn.execute(
-            "SELECT id FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+            "SELECT id FROM fa_users WHERE id=%s AND tenant_id=%s", (user_id, tenant_id)
         ).fetchone()
         if not user_row:
             return {"status": "not_started", "xp_earned": 0, "attempts": 0, "score": 0}
     row = conn.execute(
-        "SELECT * FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
+        "SELECT * FROM fa_mission_progress WHERE user_id=%s AND mission_id=%s",
         (user_id, mission_id),
     ).fetchone()
     if row:
@@ -738,7 +738,7 @@ def record_mission_attempt(user_id: int, mission_id: int) -> None:
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     existing = conn.execute(
-        "SELECT id, status FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
+        "SELECT id, status FROM fa_mission_progress WHERE user_id=%s AND mission_id=%s",
         (user_id, mission_id),
     ).fetchone()
     if existing:
@@ -747,19 +747,19 @@ def record_mission_attempt(user_id: int, mission_id: int) -> None:
             # Count the attempt, keep the completion.
             conn.execute(
                 "UPDATE fa_mission_progress SET attempts=attempts+1 "
-                "WHERE user_id=? AND mission_id=?",
+                "WHERE user_id=%s AND mission_id=%s",
                 (user_id, mission_id),
             )
         else:
             conn.execute(
-                "UPDATE fa_mission_progress SET status=?, attempts=attempts+1 "
-                "WHERE user_id=? AND mission_id=?",
+                "UPDATE fa_mission_progress SET status=%s, attempts=attempts+1 "
+                "WHERE user_id=%s AND mission_id=%s",
                 (MISSION_STATUS_IN_PROGRESS, user_id, mission_id),
             )
     else:
         conn.execute(
             "INSERT INTO fa_mission_progress (user_id,mission_id,status,attempts,started_at) "
-            "VALUES (?,?,?,1,?)",
+            "VALUES (%s,%s,%s,1,%s)",
             (user_id, mission_id, MISSION_STATUS_IN_PROGRESS, now),
         )
     conn.commit()
@@ -769,19 +769,19 @@ def complete_mission(user_id: int, mission_id: int, score: int = 100) -> None:
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     existing = conn.execute(
-        "SELECT id FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
+        "SELECT id FROM fa_mission_progress WHERE user_id=%s AND mission_id=%s",
         (user_id, mission_id),
     ).fetchone()
     if existing:
         conn.execute(
-            "UPDATE fa_mission_progress SET status='completed', score=?, completed_at=? "
-            "WHERE user_id=? AND mission_id=?",
+            "UPDATE fa_mission_progress SET status='completed', score=%s, completed_at=%s "
+            "WHERE user_id=%s AND mission_id=%s",
             (score, now, user_id, mission_id),
         )
     else:
         conn.execute(
             "INSERT INTO fa_mission_progress (user_id,mission_id,status,score,completed_at) "
-            "VALUES (?,?,'completed',?,?)",
+            "VALUES (%s,%s,'completed',%s,%s)",
             (user_id, mission_id, score, now),
         )
     conn.commit()
@@ -789,7 +789,7 @@ def complete_mission(user_id: int, mission_id: int, score: int = 100) -> None:
 
 def get_step_progress(user_id: int, step_id: int) -> dict:
     row = get_connection().execute(
-        "SELECT * FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        "SELECT * FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
         (user_id, step_id),
     ).fetchone()
     return dict(row) if row else {"status": "not_started", "hints_used": 0, "score": 0}
@@ -813,7 +813,7 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
     status = STEP_STATUS_COMPLETED if passed else STEP_STATUS_ATTEMPTED
     score = 100 if passed else 0
     existing = conn.execute(
-        "SELECT id, status, score FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        "SELECT id, status, score FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
         (user_id, step_id),
     ).fetchone()
     if existing:
@@ -821,15 +821,15 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
         if already_done == STEP_STATUS_COMPLETED and not passed:
             # Keep the pass; still record what was tried.
             conn.execute(
-                "UPDATE fa_step_progress SET submission=?, hints_used=? "
-                "WHERE user_id=? AND step_id=?",
+                "UPDATE fa_step_progress SET submission=%s, hints_used=%s "
+                "WHERE user_id=%s AND step_id=%s",
                 (submission, hints_used, user_id, step_id),
             )
             conn.commit()
             return STEP_STATUS_COMPLETED
         conn.execute(
-            "UPDATE fa_step_progress SET status=?, submission=?, score=?, "
-            "hints_used=?, completed_at=? WHERE user_id=? AND step_id=?",
+            "UPDATE fa_step_progress SET status=%s, submission=%s, score=%s, "
+            "hints_used=%s, completed_at=%s WHERE user_id=%s AND step_id=%s",
             (status, submission, score, hints_used, now if passed else None,
              user_id, step_id),
         )
@@ -837,7 +837,7 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
         conn.execute(
             "INSERT INTO fa_step_progress "
             "(user_id,step_id,status,submission,score,hints_used,completed_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (user_id, step_id, status, submission, score, hints_used,
              now if passed else None),
         )
@@ -882,7 +882,7 @@ def tier_progress(user_id: int) -> dict:
     done_rows = conn.execute(
         "SELECT m.tier, COUNT(DISTINCT mp.mission_id) "
         "FROM fa_mission_progress mp JOIN fa_missions m ON m.id=mp.mission_id "
-        "WHERE mp.user_id=? AND mp.status=? AND m.is_active=1 "
+        "WHERE mp.user_id=%s AND mp.status=%s AND m.is_active=1 "
         "  AND (SELECT COUNT(*) FROM fa_mission_steps s WHERE s.mission_id=m.id) > 0 "
         "GROUP BY m.tier",
         (user_id, MISSION_STATUS_COMPLETED),
@@ -944,7 +944,7 @@ def mission_step_progress(user_id: int, mission_ids) -> dict:
     if not ids:
         return {}
     conn = get_connection()
-    placeholders = ",".join(["?"] * len(ids))
+    placeholders = ",".join(["%s"] * len(ids))
     totals = {
         int(r[0]): int(r[1])
         for r in conn.execute(
@@ -958,7 +958,7 @@ def mission_step_progress(user_id: int, mission_ids) -> dict:
         for r in conn.execute(
             f"SELECT s.mission_id, COUNT(*) FROM fa_step_progress sp "  # noqa: S608
             f"JOIN fa_mission_steps s ON s.id=sp.step_id "
-            f"WHERE sp.user_id=? AND sp.status=? AND s.mission_id IN ({placeholders}) "
+            f"WHERE sp.user_id=%s AND sp.status=%s AND s.mission_id IN ({placeholders}) "
             f"GROUP BY s.mission_id",
             [user_id, STEP_STATUS_COMPLETED, *ids],
         ).fetchall()
@@ -993,7 +993,7 @@ def mission_prereq_state(user_id: int, missions) -> dict:
         for r in conn.execute(
             "SELECT m.slug FROM fa_mission_progress mp "
             "JOIN fa_missions m ON m.id = mp.mission_id "
-            "WHERE mp.user_id=? AND mp.status=?",
+            "WHERE mp.user_id=%s AND mp.status=%s",
             (user_id, MISSION_STATUS_COMPLETED),
         ).fetchall()
     }
@@ -1047,7 +1047,7 @@ def resume_target(user_id: int) -> dict | None:
         "JOIN fa_missions m ON m.id = mp.mission_id "
         "JOIN fa_mission_steps s ON s.mission_id = m.id "
         "JOIN fa_step_progress sp ON sp.step_id = s.id AND sp.user_id = mp.user_id "
-        "WHERE mp.user_id = ? AND mp.status <> ? AND m.is_active = 1 "
+        "WHERE mp.user_id = %s AND mp.status <> %s AND m.is_active = 1 "
         "GROUP BY m.id, m.slug, m.title, m.tier "
         "ORDER BY last_at DESC, m.id DESC LIMIT 1",
         (user_id, MISSION_STATUS_COMPLETED),
@@ -1081,24 +1081,24 @@ def record_hint(user_id: int, step_id: int) -> int:
     """
     conn = get_connection()
     existing = conn.execute(
-        "SELECT id FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        "SELECT id FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
         (user_id, step_id),
     ).fetchone()
     if existing:
         conn.execute(
             "UPDATE fa_step_progress SET hints_used=hints_used+1 "
-            "WHERE user_id=? AND step_id=?",
+            "WHERE user_id=%s AND step_id=%s",
             (user_id, step_id),
         )
     else:
         conn.execute(
             "INSERT INTO fa_step_progress (user_id, step_id, status, hints_used) "
-            "VALUES (?,?,?,1)",
+            "VALUES (%s,%s,%s,1)",
             (user_id, step_id, STEP_STATUS_NOT_STARTED),
         )
     conn.commit()
     row = conn.execute(
-        "SELECT hints_used FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        "SELECT hints_used FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
         (user_id, step_id),
     ).fetchone()
     if not row:
@@ -1111,24 +1111,24 @@ def user_progress_summary(user_id: int, tenant_id: str | None = None) -> dict:
     # Verify user belongs to tenant
     if tenant_id is not None:
         user_row = conn.execute(
-            "SELECT id FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+            "SELECT id FROM fa_users WHERE id=%s AND tenant_id=%s", (user_id, tenant_id)
         ).fetchone()
         if not user_row:
             return {"total_missions": 0, "completed": 0, "steps_completed": 0, "in_progress": None}
     total = conn.execute("SELECT COUNT(*) FROM fa_missions WHERE is_active=1").fetchone()[0]
     done = conn.execute(
-        "SELECT COUNT(*) FROM fa_mission_progress WHERE user_id=? AND status='completed'",
+        "SELECT COUNT(*) FROM fa_mission_progress WHERE user_id=%s AND status='completed'",
         (user_id,),
     ).fetchone()[0]
     steps_done = conn.execute(
-        "SELECT COUNT(*) FROM fa_step_progress WHERE user_id=? AND status='completed'",
+        "SELECT COUNT(*) FROM fa_step_progress WHERE user_id=%s AND status='completed'",
         (user_id,),
     ).fetchone()[0]
     in_prog = conn.execute(
         """SELECT m.slug, m.title, m.tier, mp.attempts
            FROM fa_mission_progress mp
            JOIN fa_missions m ON m.id=mp.mission_id
-           WHERE mp.user_id=? AND mp.status='in_progress'
+           WHERE mp.user_id=%s AND mp.status='in_progress'
            ORDER BY mp.id DESC LIMIT 1""",
         (user_id,),
     ).fetchone()
@@ -1153,7 +1153,7 @@ def get_user_achievements(user_id: int) -> list[dict]:
         """SELECT a.*, ua.earned_at
            FROM fa_user_achievements ua
            JOIN fa_achievements a ON a.id=ua.achievement_id
-           WHERE ua.user_id=?
+           WHERE ua.user_id=%s
            ORDER BY ua.earned_at DESC""",
         (user_id,),
     ).fetchall()
@@ -1166,7 +1166,7 @@ def get_user_skills(user_id: int) -> set[str]:
     rows = get_connection().execute(
         """SELECT sn.slug FROM fa_user_skills us
            JOIN fa_skill_nodes sn ON sn.id = us.skill_id
-           WHERE us.user_id = ?""",
+           WHERE us.user_id = %s""",
         (user_id,),
     ).fetchall()
     return {r["slug"] for r in rows}
@@ -1176,13 +1176,13 @@ def unlock_skill(user_id: int, skill_slug: str) -> bool:
     """Unlock a skill node for the user. Returns True if newly unlocked."""
     conn = get_connection()
     node = conn.execute(
-        "SELECT id FROM fa_skill_nodes WHERE slug = ?", (skill_slug,)
+        "SELECT id FROM fa_skill_nodes WHERE slug = %s", (skill_slug,)
     ).fetchone()
     if not node:
         return False
     try:
         conn.execute(
-            "INSERT INTO fa_user_skills (user_id, skill_id) VALUES (?, ?)",
+            "INSERT INTO fa_user_skills (user_id, skill_id) VALUES (%s, %s)",
             (user_id, node["id"]),
         )
         conn.commit()
@@ -1194,13 +1194,13 @@ def unlock_skill(user_id: int, skill_slug: str) -> bool:
 def grant_achievement(user_id: int, slug: str) -> dict | None:
     conn = get_connection()
     ach = conn.execute(
-        "SELECT * FROM fa_achievements WHERE slug=?", (slug,)
+        "SELECT * FROM fa_achievements WHERE slug=%s", (slug,)
     ).fetchone()
     if not ach:
         return None
     try:
         conn.execute(
-            "INSERT INTO fa_user_achievements (user_id,achievement_id) VALUES (?,?)",
+            "INSERT INTO fa_user_achievements (user_id,achievement_id) VALUES (%s,%s)",
             (user_id, ach["id"]),
         )
         conn.commit()
@@ -1230,20 +1230,20 @@ def create_guild(
     conn = get_connection()
     code = (invite_code or secrets.token_urlsafe(6)).upper()
     conn.execute(
-        "INSERT INTO fa_guilds (name,description,invite_code,created_by) VALUES (?,?,?,?)",
+        "INSERT INTO fa_guilds (name,description,invite_code,created_by) VALUES (%s,%s,%s,%s)",
         (name, description, code, created_by),
     )
     conn.commit()
     row = conn.execute(
-        "SELECT * FROM fa_guilds WHERE invite_code=?", (code,)
+        "SELECT * FROM fa_guilds WHERE invite_code=%s", (code,)
     ).fetchone()
     guild = dict(row)
     conn.execute(
-        "INSERT INTO fa_guild_members (guild_id,user_id,role) VALUES (?,?,'leader')",
+        "INSERT INTO fa_guild_members (guild_id,user_id,role) VALUES (%s,%s,'leader')",
         (guild["id"], created_by),
     )
     conn.execute(
-        "UPDATE fa_users SET guild_id=? WHERE id=?", (guild["id"], created_by)
+        "UPDATE fa_users SET guild_id=%s WHERE id=%s", (guild["id"], created_by)
     )
     conn.commit()
     return guild
@@ -1252,17 +1252,17 @@ def create_guild(
 def join_guild(invite_code: str, user_id: int) -> dict | None:
     conn = get_connection()
     guild = conn.execute(
-        "SELECT * FROM fa_guilds WHERE invite_code=?", (invite_code.upper(),)
+        "SELECT * FROM fa_guilds WHERE invite_code=%s", (invite_code.upper(),)
     ).fetchone()
     if not guild:
         return None
     try:
         conn.execute(
-            "INSERT INTO fa_guild_members (guild_id,user_id) VALUES (?,?)",
+            "INSERT INTO fa_guild_members (guild_id,user_id) VALUES (%s,%s)",
             (guild["id"], user_id),
         )
         conn.execute(
-            "UPDATE fa_users SET guild_id=? WHERE id=?", (guild["id"], user_id)
+            "UPDATE fa_users SET guild_id=%s WHERE id=%s", (guild["id"], user_id)
         )
         conn.commit()
     except Exception:
@@ -1279,7 +1279,7 @@ def get_guild_stats(guild_id: int) -> dict | None:
     """
     conn = get_connection()
     exists = conn.execute(
-        "SELECT 1 FROM fa_guilds WHERE id=?", (guild_id,)
+        "SELECT 1 FROM fa_guilds WHERE id=%s", (guild_id,)
     ).fetchone()
     if not exists:
         return None
@@ -1287,7 +1287,7 @@ def get_guild_stats(guild_id: int) -> dict | None:
         """SELECT u.display_name, u.xp, u.level, gm.role
            FROM fa_guild_members gm
            JOIN fa_users u ON u.id=gm.user_id
-           WHERE gm.guild_id=?
+           WHERE gm.guild_id=%s
            ORDER BY u.xp DESC""",
         (guild_id,),
     ).fetchall()
@@ -1305,7 +1305,7 @@ _LEADERBOARD_CACHE_TTL = 300  # seconds
 def _leaderboard_cache_fresh(conn, period: str) -> bool:
     try:
         row = conn.execute(
-            "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=?", (period,)
+            "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=%s", (period,)
         ).fetchone()
         if not row or not row[0]:
             return False
@@ -1322,7 +1322,7 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
     q = "SELECT id, xp FROM fa_users WHERE role != 'unset'"
     params: list = []
     if tenant_id:
-        q += " AND tenant_id=?"
+        q += " AND tenant_id=%s"
         params.append(tenant_id)
     else:
         q += " AND (tenant_id IS NULL OR tenant_id='')"
@@ -1335,7 +1335,7 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
             conn.execute(
                 """INSERT OR REPLACE INTO fa_leaderboard_cache
                    (user_id, period, score, rank_pos, computed_at, tenant_id)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (u["id"], period, u["xp"], rank, now, tenant_id or ""),
             )
             count += 1
@@ -1363,17 +1363,17 @@ def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, 
                FROM fa_leaderboard_cache lc
                JOIN fa_users u ON u.id=lc.user_id
                LEFT JOIN fa_guilds g ON g.id=u.guild_id
-               WHERE lc.period=? AND u.role != 'unset'"""
+               WHERE lc.period=%s AND u.role != 'unset'"""
         params: list = [period]
         if tenant_id:
-            q += " AND u.tenant_id=?"
+            q += " AND u.tenant_id=%s"
             params.append(tenant_id)
         else:
             q += " AND (u.tenant_id IS NULL OR u.tenant_id='')"
         if role:
-            q += " AND u.role=?"
+            q += " AND u.role=%s"
             params.append(role)
-        q += " ORDER BY lc.rank_pos LIMIT ?"
+        q += " ORDER BY lc.rank_pos LIMIT %s"
         params.append(limit)
         rows = conn.execute(q, params).fetchall()
         if rows:
@@ -1388,14 +1388,14 @@ def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, 
            WHERE u.role != 'unset'"""
     params = []
     if tenant_id:
-        q += " AND u.tenant_id=?"
+        q += " AND u.tenant_id=%s"
         params.append(tenant_id)
     else:
         q += " AND (u.tenant_id IS NULL OR u.tenant_id='')"
     if role:
-        q += " AND u.role=?"
+        q += " AND u.role=%s"
         params.append(role)
-    q += " ORDER BY u.xp DESC LIMIT ?"
+    q += " ORDER BY u.xp DESC LIMIT %s"
     params.append(limit)
     rows = conn.execute(q, params).fetchall()
     return [dict(r) for r in rows]
@@ -1438,7 +1438,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
             """SELECT COUNT(DISTINCT mp.mission_id)
                FROM fa_mission_progress mp
                JOIN fa_missions m ON m.id=mp.mission_id
-               WHERE mp.user_id=? AND mp.status='completed' AND m.tier=1
+               WHERE mp.user_id=%s AND mp.status='completed' AND m.tier=1
                  AND (SELECT COUNT(*) FROM fa_mission_steps s
                       WHERE s.mission_id=m.id) > 0""",
             (user_id,),
@@ -1475,7 +1475,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
                 (r[0] if not hasattr(r, "keys") else r["mission_id"])
                 for r in conn.execute(
                     "SELECT DISTINCT mp.mission_id FROM fa_mission_progress mp "
-                    "WHERE mp.user_id=? AND mp.status=?",
+                    "WHERE mp.user_id=%s AND mp.status=%s",
                     (user_id, MISSION_STATUS_COMPLETED),
                 ).fetchall()
             }
@@ -1496,7 +1496,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     # Gate: Foundation cert required
     if reqs.get("foundation"):
         has_found = conn.execute(
-            "SELECT COUNT(*) FROM fa_certificates WHERE user_id=? AND cert_tier='foundation'",
+            "SELECT COUNT(*) FROM fa_certificates WHERE user_id=%s AND cert_tier='foundation'",
             (user_id,),
         ).fetchone()[0] > 0
         gates.append({"name": "Foundation Cert", "met": has_found,
@@ -1507,7 +1507,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
         try:
             best = conn.execute(
                 """SELECT MAX(CAST(JSON_EXTRACT(metadata_json,'$.aadc_score') AS REAL))
-                   FROM fa_user_achievements WHERE user_id=?""",
+                   FROM fa_user_achievements WHERE user_id=%s""",
                 (user_id,),
             ).fetchone()[0] or 0
         except Exception:
@@ -1520,7 +1520,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     if reqs.get("gameday_scenarios_min"):
         try:
             gd = conn.execute(
-                """SELECT COUNT(*) FROM ttx_receipts WHERE player_id=? AND status='submitted'""",
+                """SELECT COUNT(*) FROM ttx_receipts WHERE player_id=%s AND status='submitted'""",
                 (user_id,),
             ).fetchone()[0]
         except Exception:
@@ -1532,7 +1532,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     # Gate: Practitioner cert required
     if reqs.get("practitioner"):
         has_prac = conn.execute(
-            "SELECT COUNT(*) FROM fa_certificates WHERE user_id=? AND cert_tier='practitioner'",
+            "SELECT COUNT(*) FROM fa_certificates WHERE user_id=%s AND cert_tier='practitioner'",
             (user_id,),
         ).fetchone()[0] > 0
         gates.append({"name": "Practitioner Cert", "met": has_prac,
@@ -1545,7 +1545,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
             """SELECT COUNT(DISTINCT mp.mission_id)
                FROM fa_mission_progress mp
                JOIN fa_missions m ON m.id=mp.mission_id
-               WHERE mp.user_id=? AND mp.status='completed' AND m.tier=3""",
+               WHERE mp.user_id=%s AND mp.status='completed' AND m.tier=3""",
             (user_id,),
         ).fetchone()[0]
         met = t3_done >= t3_total > 0
@@ -1570,7 +1570,7 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
     conn = get_connection()
     # Idempotent: return existing cert if already issued
     existing = conn.execute(
-        "SELECT * FROM fa_certificates WHERE user_id=? AND cert_tier=?",
+        "SELECT * FROM fa_certificates WHERE user_id=%s AND cert_tier=%s",
         (user_id, cert_key),
     ).fetchone()
     if existing:
@@ -1587,7 +1587,7 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
     conn.execute(
         """INSERT INTO fa_certificates
            (user_id, cert_tier, cert_label, token, issued_at)
-           VALUES (?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s)""",
         (user_id, cert_key, cert_def.get("label", cert_key), token, now),
     )
     # Award XP bonus on the SAME connection/transaction as the cert INSERT.
@@ -1596,14 +1596,14 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
         update_user_xp(user_id, xp_bonus, conn=conn)
     conn.commit()
     return conn.execute(
-        "SELECT * FROM fa_certificates WHERE user_id=? AND cert_tier=?",
+        "SELECT * FROM fa_certificates WHERE user_id=%s AND cert_tier=%s",
         (user_id, cert_key),
     ).fetchone()
 
 
 def get_user_certificates(user_id: int) -> list[dict]:
     rows = get_connection().execute(
-        "SELECT * FROM fa_certificates WHERE user_id=? ORDER BY issued_at DESC",
+        "SELECT * FROM fa_certificates WHERE user_id=%s ORDER BY issued_at DESC",
         (user_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -1616,7 +1616,7 @@ def verify_certificate_token(token: str) -> dict | None:
         """SELECT c.*, u.display_name, u.role
            FROM fa_certificates c
            JOIN fa_users u ON u.id=c.user_id
-           WHERE c.token=?""",
+           WHERE c.token=%s""",
         (token,),
     ).fetchone()
     return dict(row) if row else None
@@ -1633,7 +1633,7 @@ def upsert_mission_ontology(mission_id: int, ontology_id: str, mission_class: st
     conn.execute(
         """INSERT INTO fa_mission_ontology
            (mission_id, ontology_id, mission_class, topic_class, competency_class, prereq_ontology_paths_json)
-           VALUES (?, ?, ?, ?, ?, ?)
+           VALUES (%s, %s, %s, %s, %s, %s)
            ON CONFLICT(mission_id) DO UPDATE SET
              ontology_id=excluded.ontology_id,
              mission_class=excluded.mission_class,
@@ -1651,7 +1651,7 @@ def upsert_step_ontology(step_id: int, ontology_id: str, step_class: str) -> Non
     conn.execute(
         """INSERT INTO fa_step_ontology
            (step_id, ontology_id, step_class)
-           VALUES (?, ?, ?)
+           VALUES (%s, %s, %s)
            ON CONFLICT(step_id) DO UPDATE SET
              ontology_id=excluded.ontology_id,
              step_class=excluded.step_class""",
@@ -1674,7 +1674,7 @@ def record_user_competency(user_id: int, competency_class: str,
     conn.execute(
         """INSERT OR IGNORE INTO fa_user_competencies
            (user_id, competency_class, source_mission_id, source_step_id, demonstrated_at, evidence_json)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (user_id, competency_class, source_mission_id, source_step_id, now,
          json.dumps(evidence or {})),
     )
@@ -1687,7 +1687,7 @@ def record_user_competency(user_id: int, competency_class: str,
         pass
 
     row = conn.execute(
-        "SELECT * FROM fa_user_competencies WHERE user_id=? AND competency_class=? AND source_mission_id=?",
+        "SELECT * FROM fa_user_competencies WHERE user_id=%s AND competency_class=%s AND source_mission_id=%s",
         (user_id, competency_class, source_mission_id),
     ).fetchone()
     return dict(row) if row else {"user_id": user_id, "competency_class": competency_class}
@@ -1696,7 +1696,7 @@ def record_user_competency(user_id: int, competency_class: str,
 def _create_kg_competency_edge(conn, user_id: int, competency_class: str,
                                 source_mission_id: int | None, demonstrated_at: str) -> None:
     """Insert a KG edge linking the user to the ontology competency class."""
-    user = conn.execute("SELECT username FROM fa_users WHERE id=?", (user_id,)).fetchone()
+    user = conn.execute("SELECT username FROM fa_users WHERE id=%s", (user_id,)).fetchone()
     user_label = user["username"] if user else f"user_{user_id}"
     source_node = f"fa_user:{user_id}"
     target_node = f"ontology:{competency_class}"
@@ -1705,21 +1705,21 @@ def _create_kg_competency_edge(conn, user_id: int, competency_class: str,
     conn.execute(
         """INSERT OR REPLACE INTO kg_nodes
            (id, graph_id, label, entity_type, properties, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (source_node, "icdev-core-ontology", user_label, "fa_user",
          json.dumps({"user_id": user_id}), demonstrated_at),
     )
     conn.execute(
         """INSERT OR REPLACE INTO kg_nodes
            (id, graph_id, label, entity_type, properties, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (target_node, "icdev-core-ontology", competency_class, "ontology_class",
          json.dumps({"canonical_id": competency_class}), demonstrated_at),
     )
     conn.execute(
         """INSERT OR REPLACE INTO kg_edges
            (id, graph_id, source_id, target_id, label, properties, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (edge_id, "icdev-core-ontology", source_node, target_node, "demonstrates",
          json.dumps({"source_mission_id": source_mission_id, "user_id": user_id}), demonstrated_at),
     )
@@ -1731,7 +1731,7 @@ def get_user_competencies(user_id: int) -> list[dict]:
         """SELECT uc.*, m.slug as mission_slug, m.title as mission_title
            FROM fa_user_competencies uc
            LEFT JOIN fa_missions m ON m.id = uc.source_mission_id
-           WHERE uc.user_id = ?
+           WHERE uc.user_id = %s
            ORDER BY uc.demonstrated_at DESC""",
         (user_id,),
     ).fetchall()
@@ -1752,7 +1752,7 @@ def seed_mission_ontology_mappings() -> None:
     except Exception:
         pass  # table may not exist yet; proceed with seeding
     for m in BUILTIN_MISSIONS:
-        row = conn.execute("SELECT id FROM fa_missions WHERE slug=?", (m["slug"],)).fetchone()
+        row = conn.execute("SELECT id FROM fa_missions WHERE slug=%s", (m["slug"],)).fetchone()
         if not row:
             continue
         mission_id = row["id"]
@@ -1775,7 +1775,7 @@ def seed_mission_ontology_mappings() -> None:
         steps = BUILTIN_STEPS.get(m["slug"], [])
         for step in steps:
             step_row = conn.execute(
-                "SELECT id FROM fa_mission_steps WHERE mission_id=? AND step_num=?",
+                "SELECT id FROM fa_mission_steps WHERE mission_id=%s AND step_num=%s",
                 (mission_id, step["step_num"]),
             ).fetchone()
             if not step_row:

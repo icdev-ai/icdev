@@ -41,8 +41,8 @@ class LensSkillGap(BaseLens):
             FROM fa_skill_nodes sn
             LEFT JOIN fa_user_skills us ON us.skill_id = sn.id
             GROUP BY sn.id
-            HAVING CAST(unlock_count AS REAL) / ? < ?
-            ORDER BY CAST(unlock_count AS REAL) / ? ASC
+            HAVING CAST(unlock_count AS REAL) / %s < %s
+            ORDER BY CAST(unlock_count AS REAL) / %s ASC
             LIMIT 15
             """,
             (total_users, _LOW_UNLOCK_PCT, total_users),
@@ -58,7 +58,7 @@ class LensSkillGap(BaseLens):
                     "SELECT sn.id, sn.slug, sn.title, COUNT(us.user_id) AS unlock_count "
                     "FROM fa_skill_nodes sn "
                     "LEFT JOIN fa_user_skills us ON us.skill_id = sn.id "
-                    "WHERE sn.id = ? GROUP BY sn.id",
+                    "WHERE sn.id = %s GROUP BY sn.id",
                     (prereq_id,),
                 ).fetchone()
                 if not prereq_row:

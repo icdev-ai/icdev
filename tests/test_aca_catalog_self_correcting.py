@@ -20,7 +20,8 @@ of rows discovery no longer produces.
 from __future__ import annotations
 
 import inspect
-import sqlite3
+
+from _academy_conn import academy_conn
 
 import pytest
 
@@ -58,8 +59,7 @@ def test_the_upsert_still_refreshes_the_visible_fields():
 
 @pytest.fixture
 def conn():
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
+    c = academy_conn(":memory:")
     c.executescript(
         """
         CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT UNIQUE, title TEXT,
@@ -126,8 +126,7 @@ def test_migration_314_retires_only_the_stepless_duplicate():
     sql = next((root / "tools" / "db" / "migrations").glob("314_*.sql")).read_text(
         encoding="utf-8"
     )
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
+    c = academy_conn(":memory:")
     c.executescript(
         """
         CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT, title TEXT,
@@ -165,7 +164,7 @@ def test_migration_314_spares_a_duplicate_that_has_steps():
     sql = next((root / "tools" / "db" / "migrations").glob("314_*.sql")).read_text(
         encoding="utf-8"
     )
-    c = sqlite3.connect(":memory:")
+    c = academy_conn(":memory:")
     c.executescript(
         """
         CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT, title TEXT,

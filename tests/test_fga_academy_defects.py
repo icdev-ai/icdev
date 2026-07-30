@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from _academy_conn import academy_conn
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = REPO_ROOT / "tools" / "dashboard" / "templates" / "forge_academy"
 
@@ -45,12 +47,10 @@ def test_route_reports_the_stored_code_not_its_own():
 
 def test_stored_invite_code_is_joinable(monkeypatch, tmp_path):
     """Round trip: the code create_guild stores must satisfy join_guild."""
-    import sqlite3
 
     from apps.forge_academy import db as fadb
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(":memory:")
     conn.executescript(
         """
         CREATE TABLE fa_guilds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT,
@@ -93,12 +93,10 @@ def test_setup_persists_a_changed_display_name():
 
 def test_display_name_update_ignores_blank_input(monkeypatch):
     """A blank submit must not wipe the stored name."""
-    import sqlite3
 
     from apps.forge_academy import db as fadb
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(":memory:")
     conn.executescript(
         "CREATE TABLE fa_users (id INTEGER PRIMARY KEY, display_name TEXT);"
         "INSERT INTO fa_users (id, display_name) VALUES (1, 'Original');"
@@ -295,12 +293,10 @@ def test_list_missions_derives_availability():
 
 def test_availability_survives_a_missing_steps_table(monkeypatch):
     """A badge is not worth a 500."""
-    import sqlite3
 
     from apps.forge_academy import db as fadb
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(":memory:")
     conn.executescript(
         "CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT, title TEXT,"
         " tier INT, order_idx INT, is_active INT DEFAULT 1, role_filter TEXT,"

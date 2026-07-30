@@ -21,7 +21,8 @@ Four defects found while probing the Academy:
 """
 from __future__ import annotations
 
-import sqlite3
+
+from _academy_conn import academy_conn
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -31,8 +32,7 @@ import pytest
 def fa_conn(monkeypatch):
     from apps.forge_academy import db as fadb
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(":memory:")
     conn.executescript(
         """
         CREATE TABLE fa_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT,

@@ -22,7 +22,8 @@ the submit path, and it never moves a mission out of 'completed'.
 from __future__ import annotations
 
 import inspect
-import sqlite3
+
+from _academy_conn import academy_conn
 
 import pytest
 
@@ -32,8 +33,7 @@ def fa_conn(monkeypatch):
     """Minimal fa_* schema: one learner, one mission, two steps."""
     from apps.forge_academy import db as fadb
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(":memory:")
     conn.executescript(
         """
         CREATE TABLE fa_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT,

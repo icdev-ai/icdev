@@ -238,7 +238,7 @@ def get_hint(
             _aadc_init()
             conn = get_connection()
             row = conn.execute(
-                "SELECT graph_json, metadata_json FROM aadc_designs WHERE design_id = ?",
+                "SELECT graph_json, metadata_json FROM aadc_designs WHERE design_id = %s",
                 (design_id,),
             ).fetchone()
             if row:

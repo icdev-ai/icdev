@@ -79,7 +79,7 @@ def _load_step(step_id: int | str) -> dict | None:
         return None
     row = _conn().execute(
         "SELECT id, mission_id, step_num, title, step_type, test_code_path, "
-        "config_schema_json, xp_partial, skill_tag FROM fa_mission_steps WHERE id=?",
+        "config_schema_json, xp_partial, skill_tag FROM fa_mission_steps WHERE id=%s",
         (sid,),
     ).fetchone()
     return dict(row) if row else None
@@ -96,7 +96,7 @@ def step_xp_base(step: dict) -> int:
 def mission_xp_reward(mission_id: int) -> int:
     """The mission's own XP reward, read from the catalogue."""
     row = _conn().execute(
-        "SELECT xp_reward FROM fa_missions WHERE id=?", (mission_id,)
+        "SELECT xp_reward FROM fa_missions WHERE id=%s", (mission_id,)
     ).fetchone()
     if not row:
         return 0
@@ -114,14 +114,14 @@ def mission_is_complete(user_id: int, mission_id: int) -> bool:
     """
     conn = _conn()
     total = conn.execute(
-        "SELECT COUNT(*) FROM fa_mission_steps WHERE mission_id=?", (mission_id,)
+        "SELECT COUNT(*) FROM fa_mission_steps WHERE mission_id=%s", (mission_id,)
     ).fetchone()[0]
     if not total:
         return False
     done = conn.execute(
         "SELECT COUNT(*) FROM fa_step_progress sp "
         "JOIN fa_mission_steps s ON s.id=sp.step_id "
-        "WHERE sp.user_id=? AND s.mission_id=? AND sp.status='completed'",
+        "WHERE sp.user_id=%s AND s.mission_id=%s AND sp.status='completed'",
         (user_id, mission_id),
     ).fetchone()[0]
     return int(done) >= int(total)

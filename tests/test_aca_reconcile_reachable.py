@@ -16,7 +16,8 @@ reconcile runs before the fast path.
 from __future__ import annotations
 
 import inspect
-import sqlite3
+
+from _academy_conn import academy_conn
 
 import pytest
 
@@ -41,8 +42,7 @@ def test_reconcile_all_step_assets_exists():
 
 @pytest.fixture
 def conn():
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
+    c = academy_conn(":memory:")
     c.executescript(
         """
         CREATE TABLE fa_missions (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE,

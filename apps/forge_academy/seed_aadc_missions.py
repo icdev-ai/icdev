@@ -115,7 +115,7 @@ def seed():
     for m in _MISSIONS:
         steps = m.pop("steps")
         existing = conn.execute(
-            "SELECT id FROM fa_missions WHERE slug=?", (m["slug"],)
+            "SELECT id FROM fa_missions WHERE slug=%s", (m["slug"],)
         ).fetchone()
 
         if existing:
@@ -126,7 +126,7 @@ def seed():
                 """INSERT INTO fa_missions
                    (slug, title, tagline, tier, topic, role_filter, mission_type,
                     xp_reward, prereq_slugs_json, order_idx, difficulty, estimated_minutes)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     m["slug"], m["title"], m["tagline"], m["tier"], m["topic"],
                     m["role_filter"], m["mission_type"], m["xp_reward"],
@@ -140,7 +140,7 @@ def seed():
 
         for s in steps:
             ex_step = conn.execute(
-                "SELECT id FROM fa_mission_steps WHERE mission_id=? AND step_num=?",
+                "SELECT id FROM fa_mission_steps WHERE mission_id=%s AND step_num=%s",
                 (mission_id, s["step_num"]),
             ).fetchone()
             if ex_step:
@@ -151,7 +151,7 @@ def seed():
                    (mission_id, step_num, title, step_type, content_path,
                     starter_code_path, test_code_path, config_schema_json,
                     xp_partial, skill_tag, hint_allowed, estimated_seconds)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     mission_id, s["step_num"], s["title"], s["step_type"],
                     s["content_path"], s["starter_code_path"], s["test_code_path"],

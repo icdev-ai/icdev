@@ -45,7 +45,7 @@ class LensContentQuality(BaseLens):
             JOIN fa_missions m ON m.id = ms.mission_id
             WHERE sp.status = 'completed'
             GROUP BY ms.id
-            HAVING total_attempts >= ? AND CAST(hint_count AS REAL)/total_attempts > ?
+            HAVING total_attempts >= %s AND CAST(hint_count AS REAL)/total_attempts > %s
             ORDER BY CAST(hint_count AS REAL)/total_attempts DESC
             LIMIT 20
             """,
@@ -66,7 +66,7 @@ class LensContentQuality(BaseLens):
             JOIN fa_mission_steps ms ON ms.id = sp.step_id
             JOIN fa_missions m ON m.id = ms.mission_id
             GROUP BY ms.id
-            HAVING unique_users >= ? AND avg_attempts > ?
+            HAVING unique_users >= %s AND avg_attempts > %s
             ORDER BY avg_attempts DESC
             LIMIT 20
             """,
@@ -83,8 +83,8 @@ class LensContentQuality(BaseLens):
             JOIN fa_missions m ON m.id = mp.mission_id
             WHERE mp.status IN ('in_progress','completed')
             GROUP BY m.id
-            HAVING total_starters >= ?
-               AND CAST(completed_count AS REAL)/total_starters < ?
+            HAVING total_starters >= %s
+               AND CAST(completed_count AS REAL)/total_starters < %s
             ORDER BY CAST(completed_count AS REAL)/total_starters ASC
             LIMIT 20
             """,
