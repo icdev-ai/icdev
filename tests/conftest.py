@@ -3481,6 +3481,24 @@ CREATE TABLE IF NOT EXISTS divergence_idea_scores (
 -- award, naming what earned it, so a rank can be traced to demonstrated work rather
 -- than asserted. is_attendance separates XP for showing up from XP for doing
 -- something, because rank is computed from the latter.
+-- What a certificate was issued against (aca-int-07, migration 317). Snapshotted at
+-- issue time: a certificate is a statement about a moment, and recomputing on the
+-- verify page would let the claim drift with the data underneath it.
+CREATE TABLE IF NOT EXISTS fa_certificate_evidence (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    cert_id         INTEGER NOT NULL,
+    user_id         INTEGER NOT NULL,
+    evidence_type   TEXT    NOT NULL,
+    ref_id          INTEGER,
+    label           TEXT    NOT NULL,
+    detail          TEXT,
+    demonstrated_at TEXT,
+    score           INTEGER,
+    classification  TEXT    DEFAULT 'CUI',
+    tenant_id       TEXT,
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS fa_xp_ledger (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id        INTEGER NOT NULL,
