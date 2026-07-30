@@ -1580,6 +1580,15 @@ def seed_mission_catalog() -> None:
                 "a discovered mission collided with a hand-written one."
             )
 
+        # Attach newly-discovered code assets to steps that are ALREADY seeded.
+        # This has to run BEFORE the fast-path return below, because that return
+        # fires on exactly the databases this pass exists to repair. aca-hon-05
+        # first placed the reconcile inside _seed_steps, which the fast path skips
+        # entirely: on the live database (124 missions >= catalog size) it never
+        # executed, and Tier 1 stayed ungradeable after a restart. Cheap and
+        # idempotent — it only writes to rows whose asset paths are still empty.
+        reconcile_all_step_assets(conn, discovered)
+
         try:
             existing_count = conn.execute(
                 "SELECT COUNT(*) FROM fa_missions WHERE is_active=1"
@@ -1946,6 +1955,38 @@ def _seed_steps(conn, mission_id: int, mission_slug: str, steps: list | None = N
             _log.debug("Step seed %s step %s: %s", mission_slug, step.get("step_num"), exc)
 
     _reconcile_step_assets(conn, mission_id, mission_slug, steps)
+
+
+def reconcile_all_step_assets(conn, discovered: dict | None = None) -> int:
+    """Attach discovered code assets across the whole catalog. Returns rows touched.
+
+    Runs independently of the per-mission insert path so it reaches databases that
+    are already fully seeded — see the call site in ``seed_mission_catalog``, which
+    must invoke this before its already-seeded fast-path return.
+
+    Never raises: this executes during dashboard start-up, so a cold or partially
+    migrated database must not break boot.
+    """
+    if discovered is None:
+        discovered = discover_steps()
+    touched = 0
+    for slug, steps in (discovered or {}).items():
+        try:
+            row = conn.execute(
+                "SELECT id FROM fa_missions WHERE slug=?", (slug,)
+            ).fetchone()
+        except Exception as exc:
+            _log.warning("FORGE Academy: asset reconcile could not read missions: %s", exc)
+            return touched
+        if not row:
+            continue  # authored content with no catalog entry — nothing to attach to
+        mission_id = row["id"] if hasattr(row, "keys") else row[0]
+        try:
+            _reconcile_step_assets(conn, mission_id, slug, steps)
+            touched += 1
+        except Exception as exc:
+            _log.warning("FORGE Academy: asset reconcile failed for %s: %s", slug, exc)
+    return touched
 
 
 def _reconcile_step_assets(conn, mission_id: int, mission_slug: str, steps: list) -> None:
