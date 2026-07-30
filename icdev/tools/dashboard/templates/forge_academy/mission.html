@@ -321,7 +321,7 @@ async function runCode(stepIdx) {
 // to get this wrong — many screen readers only announce mutations to a region they
 // were already observing, so the whole toast passes silently. The enrolment notice
 // (faEnrolNotice) had role="status" and was the pattern to follow here.
-function faAnnounce(message) {
+function faLiveRegion() {
   let live = document.getElementById('fa-live');
   if (!live) {
     live = document.createElement('div');
@@ -334,6 +334,19 @@ function faAnnounce(message) {
       'padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;';
     document.body.appendChild(live);
   }
+  return live;
+}
+
+// Registered at load, not on first use. A live region has to be under observation
+// BEFORE the mutation it should announce, and creating it inside the first
+// announcement leaves only the gap below for the screen reader to pick it up — so the
+// least reliable announcement was a learner's first completed step, which is the one
+// that most needs to land. Verified in the browser: this used to report
+// liveRegionExistedBefore: false.
+document.addEventListener('DOMContentLoaded', faLiveRegion);
+
+function faAnnounce(message) {
+  const live = faLiveRegion();
   live.textContent = '';
   setTimeout(() => { live.textContent = message; }, 50);
 }
