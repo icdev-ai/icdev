@@ -23,6 +23,20 @@ MIGRATION = REPO_ROOT / "tools" / "db" / "migrations" / "304_studio_event_tables
 MIGRATION_DISPATCH = (
     REPO_ROOT / "tools" / "db" / "migrations" / "308_studio_trigger_dispatch.sql"
 )
+#: dwo-evt-04-d5 found the event tables never got the RLS columns that 305 and
+#: 309 gave the workflow and run tables, so migration 311 adds them. It is a
+#: Python migration — it branches on ``is_pg()`` and opens its own connection —
+#: so its SQLite branch is replayed here instead of being read as a .sql file.
+#: Without it the reference database sits one migration behind a real install
+#: and this parity check reports a fresh install as *wrong* for having columns
+#: a migrated database also has.
+MIGRATION_RLS = (
+    REPO_ROOT / "tools" / "db" / "migrations" / "311_studio_event_tables_rls_columns"
+)
+RLS_COLUMN_DDL = [
+    "ALTER TABLE {table} ADD COLUMN classification TEXT NOT NULL DEFAULT 'CUI'",
+    "ALTER TABLE {table} ADD COLUMN tenant_id TEXT",
+]
 
 EVENT_TABLES = [
     "studio_event_sources",
@@ -34,6 +48,23 @@ EVENT_TABLES = [
 def _apply(conn: sqlite3.Connection, sql: str) -> None:
     conn.executescript(sql)
     conn.commit()
+
+
+def _apply_rls_columns(conn: sqlite3.Connection) -> None:
+    """Replay migration 311's SQLite branch over the three event tables.
+
+    Duplicate-column errors are tolerated because 311 tolerates them: SQLite
+    has no ``ADD COLUMN IF NOT EXISTS``, and 308 already gives one of these
+    tables its ``classification``. Skipping the column it added — rather than
+    failing — is what makes 311 idempotent, so the replay has to do the same.
+    """
+    for table in EVENT_TABLES:
+        for ddl in RLS_COLUMN_DDL:
+            try:
+                _apply(conn, ddl.format(table=table))
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
 
 
 @pytest.fixture()
@@ -48,6 +79,11 @@ def migrated() -> sqlite3.Connection:
 
 def test_migration_file_exists():
     assert MIGRATION.exists(), f"missing migration: {MIGRATION}"
+    assert MIGRATION_DISPATCH.exists(), f"missing migration: {MIGRATION_DISPATCH}"
+    # RLS_COLUMN_DDL replays this one by hand, so its disappearance or
+    # renumbering has to fail here rather than leave the parity check quietly
+    # comparing against a schema nothing produces.
+    assert (MIGRATION_RLS / "up.py").exists(), f"missing migration: {MIGRATION_RLS}"
 
 
 @pytest.mark.parametrize("table", EVENT_TABLES)
@@ -83,6 +119,7 @@ def test_init_db_ddl_matches_migration(table):
             _apply(ref, STUDIO_TABLES["studio_workflows"])
             _apply(ref, MIGRATION.read_text(encoding="utf-8"))
             _apply(ref, MIGRATION_DISPATCH.read_text(encoding="utf-8"))
+            _apply_rls_columns(ref)
             ref_cols = {r[1] for r in ref.execute(f"PRAGMA table_info({table})")}
         finally:
             ref.close()

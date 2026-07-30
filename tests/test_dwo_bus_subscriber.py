@@ -32,7 +32,7 @@ import uuid
 import pytest
 
 from tools.db.storage import get_connection
-from tools.studio import bus_subscriber, event_sources, run_memory
+from tools.studio import bus_subscriber, event_sources
 
 _BUS_DDL = """
 CREATE TABLE IF NOT EXISTS canvas_events (
@@ -93,17 +93,20 @@ def started_runs(monkeypatch):
     ``icdev.tools`` — a string path could bind a different module object than
     the one ``dispatch_event`` imports.
 
-    ``start_run`` does not take an ``inputs`` argument on this branch — that is
-    dwo-evt-04-d2 — so the mapped trigger inputs are not visible here.
-    ``dispatch_event`` seeds them into run memory instead, which is where the
-    assertions below read them from.
+    dwo-evt-04-d2 has since landed, so ``start_run`` *does* take ``inputs`` and
+    the mapped trigger inputs arrive with the run rather than being seeded into
+    run memory afterwards — the old seeding raced the worker thread, and a
+    first step reading a trigger input could run before the seed landed. The
+    stub therefore captures ``inputs``, which is where the assertions below
+    read them from; discarding it into ``**kwargs`` is what made this test
+    assert an empty run memory and fail.
     """
     runner = importlib.import_module("tools.studio.workflow_runner")
     started: list[tuple] = []
 
-    def _start(workflow_id, project_id="default", **kwargs):
+    def _start(workflow_id, project_id="default", inputs=None, **kwargs):
         run_id = f"run-{uuid.uuid4().hex[:12]}"
-        started.append((workflow_id, project_id, run_id))
+        started.append((workflow_id, project_id, run_id, inputs or {}))
         return run_id
 
     monkeypatch.setattr(runner, "start_run", _start)
@@ -170,11 +173,12 @@ def test_published_canvas_event_starts_the_matching_workflow(bus, started_runs):
     # on the same event, so assertions here are scoped to this test's workflow.
     mine = [r for r in started_runs if r[0] == workflow_id]
     assert len(mine) == 1
-    _workflow_id, _project, run_id = mine[0]
-    # The input mapping resolved against the canvas payload; the literal passed
-    # through unchanged.  Seeded into run memory rather than handed to
-    # start_run, per the note in dispatch_event.
-    assert run_memory.all(run_id) == {"gate": "stig-cat1", "env": "staging"}
+    _workflow_id, _project, run_id, inputs = mine[0]
+    # The input mapping resolved against the canvas payload — note the dotted
+    # path reached into it (dwo-evt-05) — and the literal passed through
+    # unchanged.  Handed to start_run rather than seeded into run memory, per
+    # the note in dispatch_event.
+    assert inputs == {"gate": "stig-cat1", "env": "staging"}
 
     rows = event_sources.list_trigger_events(source_id=source_id)
     assert len(rows) == 1
