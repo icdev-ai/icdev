@@ -18,6 +18,9 @@
     </p>
 
     <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;">
+      {# aca-trn-06: the placeholder was doing the job of a label, and a placeholder
+         disappears the moment anything is typed. #}
+      <label for="design-id-{{ sidx }}" class="sr-only">Design ID to assess</label>
       <input id="design-id-{{ sidx }}" type="text" placeholder="design-id (e.g. d_abc123)"
              style="flex:1;min-width:200px;background:#111;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .75rem;font-size:.82rem;font-family:monospace;" />
       <button id="assess-btn-{{ sidx }}" onclick="assessDesign({{ sidx }})"

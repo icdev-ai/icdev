@@ -5,7 +5,15 @@
   {% endif %}
 
   <div class="fa-editor-wrap">
-    <textarea class="fa-cm-target" data-step-idx="{{ sidx }}" id="code-editor-{{ sidx }}">{{ step.starter_code | default('# Write your solution here\n') }}</textarea>
+    {# aca-trn-06: the editor had no accessible name at all. The label is real rather
+       than an aria-label so it is visible to everyone, not only to screen readers. #}
+    <label for="code-editor-{{ sidx }}"
+           style="display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;
+                  color:var(--text-secondary);margin-bottom:.35rem;">
+      Your solution — {{ step.title }}
+    </label>
+    <textarea class="fa-cm-target" data-step-idx="{{ sidx }}" id="code-editor-{{ sidx }}"
+              aria-label="Code editor for {{ step.title }}">{{ step.starter_code | default('# Write your solution here\n') }}</textarea>
   </div>
 
   <div class="fa-controls">
