@@ -32,10 +32,42 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_REPO_ROOT = Path(__file__).parents[4].resolve()
+def _resolve_repo_root() -> Path:
+    """Directory the allowlisted commands are executed in.
+
+    Every allowed prefix names a RELATIVE path (``python tools/…``,
+    ``python icdev/…``), so this decides whether they resolve at all.
+
+    ``Path(__file__).parents[4]`` was two levels above the repository in BOTH
+    layouts — ``tools/ace/`` and the ``icdev/tools/ace/`` mirror — so the
+    subprocess ran somewhere containing neither ``tools/`` nor ``icdev/`` and
+    every path-form command died with "can't open file". It stayed invisible
+    because both production call sites take the default while every test passes
+    ``repo_root=tmp_path``, so nothing exercised it.
+
+    Resolved from ``__file__`` via a repo sentinel rather than by counting
+    parents, so it survives the mirror, a worktree, and any cwd. With no
+    sentinel above it — a pip-installed wheel under site-packages — the cwd is
+    used instead: that is the user's project, where ``data/`` and ``.env`` live,
+    and it is where a tool's output belongs. In that environment the module
+    form (``python -m icdev.tools.…``) is the one that resolves; it is already
+    permitted below.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").is_file() or (parent / ".git").exists():
+            return parent
+    return Path.cwd()
+
+
+_REPO_ROOT = _resolve_repo_root()
 _DB_ENV = "ICDEV_ACE_DB_URL"
 
 # Commands must start with one of these prefixes to prevent arbitrary execution.
+# Both namespaces are permitted deliberately: `tools.`/`tools/` is the source
+# checkout, `icdev.`/`icdev/` is the installed wheel, which ships only `icdev`.
+# `python -m icdev.` already covers `python -m icdev.tools.…`, so the packaged
+# form of any tool here needs no additional entry.
 _ALLOWED_PREFIXES: tuple[str, ...] = (
     "python tools/",
     "python -m tools.",
