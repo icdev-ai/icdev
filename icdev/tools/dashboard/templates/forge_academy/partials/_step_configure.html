@@ -96,7 +96,28 @@ async function submitConfigure(idx) {
     });
     const d = await resp.json();
     resultPanel.style.display = 'block';
-    resultPanel.textContent = JSON.stringify(d, null, 2);
+    // aca-hon-01: several handlers return teaching-only values. They now declare
+    // simulated=true, and the learner must SEE that rather than reading invented
+    // numbers as the output of the action they just ran.
+    if (d.simulated) {
+      const head = document.createElement('div');
+      head.setAttribute('role', 'status');
+      head.style.cssText = 'background:#1a1206;border:1px solid #d98b12;color:#ffce7a;'
+        + 'border-radius:6px;padding:.6rem .8rem;margin-bottom:.6rem;font-family:inherit;'
+        + 'font-size:.78rem;white-space:normal;';
+      head.innerHTML = '<strong>&#9888; Simulated result &mdash; not a live system call.</strong><br>'
+        + (d.note || '')
+        + (d.real_tool ? '<br><span style="opacity:.8">Real equivalent: <code>'
+            + d.real_tool + '</code></span>' : '');
+      resultPanel.textContent = '';
+      resultPanel.appendChild(head);
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'margin:0;white-space:pre-wrap;';
+      pre.textContent = JSON.stringify(d.result !== undefined ? d.result : d, null, 2);
+      resultPanel.appendChild(pre);
+    } else {
+      resultPanel.textContent = JSON.stringify(d, null, 2);
+    }
     if (d.status === 'ok' || d.status === 'partial') {
       resultPanel.style.borderColor = 'var(--fa-green)';
       await submitStep(idx, JSON.stringify(config));
