@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import inspect
 import json
-import sqlite3
+
+from _academy_conn import academy_conn
 from pathlib import Path
 
 import pytest
@@ -34,8 +35,7 @@ def fa_conn(monkeypatch):
     """In-memory fa_* schema with one learner, one mission and three steps."""
     from apps.forge_academy import db as fadb
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(":memory:")
     conn.executescript(
         """
         CREATE TABLE fa_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT,

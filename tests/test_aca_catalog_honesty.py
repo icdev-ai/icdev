@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import pytest
 
+from _academy_conn import academy_conn
+
 from apps.forge_academy import content_loader as cl
 
 _MARKERS = ("CUI", "SP-CTI", "SECRET", "NOFORN")
@@ -161,10 +163,8 @@ def test_a_reconcile_pass_exists_for_already_seeded_mission_types():
 
 
 def test_reconcile_mission_types_corrects_a_stored_row():
-    import sqlite3
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(":memory:")
     conn.executescript(
         """
         CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT, mission_type TEXT,

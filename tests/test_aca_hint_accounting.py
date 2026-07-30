@@ -20,7 +20,8 @@ constants.py documents and it does not charge a learner who never submits.
 from __future__ import annotations
 
 import inspect
-import sqlite3
+
+from _academy_conn import academy_conn
 
 import pytest
 
@@ -29,8 +30,7 @@ import pytest
 def fa_conn(monkeypatch):
     from apps.forge_academy import db as fadb
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(":memory:")
     conn.executescript(
         """
         CREATE TABLE fa_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT,

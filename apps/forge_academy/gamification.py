@@ -145,7 +145,7 @@ def award_daily_login(user_id: int) -> dict | None:
     conn = _fadb.get_connection()
     today = datetime.now(timezone.utc).date().isoformat()
     existing = conn.execute(
-        "SELECT id FROM fa_daily_logins WHERE user_id=? AND login_date=?",
+        "SELECT id FROM fa_daily_logins WHERE user_id=%s AND login_date=%s",
         (user_id, today),
     ).fetchone()
     if existing:
@@ -159,7 +159,7 @@ def award_daily_login(user_id: int) -> dict | None:
     bonus = min(streak, 7) * XP_STREAK_BONUS_PER_DAY
     xp = XP_DAILY_LOGIN_BASE + bonus
     conn.execute(
-        "INSERT INTO fa_daily_logins (user_id,login_date,xp_awarded) VALUES (?,?,?)",
+        "INSERT INTO fa_daily_logins (user_id,login_date,xp_awarded) VALUES (%s,%s,%s)",
         (user_id, today, xp),
     )
     conn.commit()
@@ -190,7 +190,7 @@ def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_pa
     try:
         conn = _fadb.get_connection()
         prev = conn.execute(
-            "SELECT COUNT(*) FROM fa_user_achievements WHERE user_id = ? AND achievement_slug = 'arena_gladiator'",
+            "SELECT COUNT(*) FROM fa_user_achievements WHERE user_id = %s AND achievement_slug = 'arena_gladiator'",
             (user_id,),
         ).fetchone()
         if prev and prev[0] == 0:
@@ -236,7 +236,7 @@ def get_gameday_seed_bonus(user_id: int) -> float:
 
     try:
         row = get_connection().execute(
-            "SELECT xp FROM fa_users WHERE id = ?",
+            "SELECT xp FROM fa_users WHERE id = %s",
             (user_id,),
         ).fetchone()
     except Exception:

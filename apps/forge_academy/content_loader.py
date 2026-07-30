@@ -1627,7 +1627,7 @@ def seed_mission_catalog() -> None:
             """INSERT INTO fa_missions
                (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
                 prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(slug) DO UPDATE SET
                  title=excluded.title, tagline=excluded.tagline,
                  xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
@@ -1640,7 +1640,7 @@ def seed_mission_catalog() -> None:
         slug_to_id = {}
         for row in conn.execute(
             "SELECT id, slug FROM fa_missions WHERE slug IN ({})".format(
-                ",".join(["?"] * len(slugs))
+                ",".join(["%s"] * len(slugs))
             ),
             slugs,
         ).fetchall():
@@ -1658,7 +1658,7 @@ def seed_mission_catalog() -> None:
             if not mission_id:
                 continue
             existing = conn.execute(
-                "SELECT COUNT(*) FROM fa_mission_steps WHERE mission_id=?", (mission_id,)
+                "SELECT COUNT(*) FROM fa_mission_steps WHERE mission_id=%s", (mission_id,)
             ).fetchone()[0]
             if existing:
                 continue
@@ -1821,7 +1821,7 @@ def retire_superseded_missions(conn, discovered: dict | None = None) -> int:
         still_derived = {m["slug"] for m in discover_missions(discovered)}
         rows = conn.execute(
             "SELECT id, slug FROM fa_missions "
-            "WHERE is_active=1 AND source_credit LIKE ?", ("%derived%",),
+            "WHERE is_active=1 AND source_credit LIKE %s", ("%derived%",),
         ).fetchall()
     except Exception as exc:  # noqa: BLE001 — start-up path; must not break boot
         _log.warning("retire_superseded_missions could not read the catalogue: %s", exc)
@@ -1834,7 +1834,7 @@ def retire_superseded_missions(conn, discovered: dict | None = None) -> int:
         if slug in still_derived:
             continue
         try:
-            conn.execute("UPDATE fa_missions SET is_active=0 WHERE id=?", (mid,))
+            conn.execute("UPDATE fa_missions SET is_active=0 WHERE id=%s", (mid,))
             retired += 1
             _log.info(
                 "FORGE Academy: retired derived mission %s — discovery no longer "
@@ -1875,7 +1875,7 @@ def reconcile_mission_types(conn) -> int:
             steps = [
                 {"step_type": (r[0] if not hasattr(r, "keys") else r["step_type"])}
                 for r in conn.execute(
-                    "SELECT step_type FROM fa_mission_steps WHERE mission_id=?", (mid,)
+                    "SELECT step_type FROM fa_mission_steps WHERE mission_id=%s", (mid,)
                 ).fetchall()
             ]
         except Exception as exc:  # noqa: BLE001
@@ -1886,7 +1886,7 @@ def reconcile_mission_types(conn) -> int:
         derived = mission_type_from_steps(steps)
         if derived != stored:
             conn.execute(
-                "UPDATE fa_missions SET mission_type=? WHERE id=?", (derived, mid)
+                "UPDATE fa_missions SET mission_type=%s WHERE id=%s", (derived, mid)
             )
             changed += 1
             _log.info(
@@ -2158,7 +2158,7 @@ def _seed_steps(conn, mission_id: int, mission_slug: str, steps: list | None = N
                    (mission_id, step_num, title, step_type, content_path,
                     starter_code_path, test_code_path,
                     config_schema_json, xp_partial, skill_tag, hint_allowed, estimated_seconds)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     mission_id,
                     step["step_num"],
@@ -2198,7 +2198,7 @@ def reconcile_all_step_assets(conn, discovered: dict | None = None) -> int:
     for slug, steps in (discovered or {}).items():
         try:
             row = conn.execute(
-                "SELECT id FROM fa_missions WHERE slug=?", (slug,)
+                "SELECT id FROM fa_missions WHERE slug=%s", (slug,)
             ).fetchone()
         except Exception as exc:
             _log.warning("FORGE Academy: asset reconcile could not read missions: %s", exc)
@@ -2259,7 +2259,7 @@ def _reconcile_step_assets(conn, mission_id: int, mission_slug: str, steps: list
         try:
             row = conn.execute(
                 "SELECT id, step_type, starter_code_path, test_code_path "
-                "FROM fa_mission_steps WHERE mission_id=? AND step_num=?",
+                "FROM fa_mission_steps WHERE mission_id=%s AND step_num=%s",
                 (mission_id, step["step_num"]),
             ).fetchone()
             if not row:
@@ -2281,7 +2281,7 @@ def _reconcile_step_assets(conn, mission_id: int, mission_slug: str, steps: list
                 continue
             assignments = ", ".join(f"{col}=?" for col in updates)
             conn.execute(
-                f"UPDATE fa_mission_steps SET {assignments} WHERE id=?",  # noqa: S608
+                f"UPDATE fa_mission_steps SET {assignments} WHERE id=%s",  # noqa: S608
                 (*updates.values(), stored["id"]),
             )
             _log.info(

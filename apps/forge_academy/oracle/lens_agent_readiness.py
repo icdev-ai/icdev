@@ -34,7 +34,7 @@ _READINESS_STEPS_SQL = """
 
 _ORG_READINESS_UPSERT = """
     INSERT INTO fa_org_readiness (metric_name, metric_value, details_json, computed_at)
-    VALUES (?, ?, ?, ?)
+    VALUES (%s, %s, %s, %s)
     ON CONFLICT (metric_name) DO UPDATE SET
         metric_value = excluded.metric_value,
         details_json = excluded.details_json,

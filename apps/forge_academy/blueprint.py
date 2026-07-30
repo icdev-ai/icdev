@@ -852,7 +852,7 @@ def api_challenge_enter():
     conn = get_connection()
     conn.execute(
         "INSERT OR REPLACE INTO fa_challenge_entries "
-        "(challenge_id,user_id,submission,score,submitted_at) VALUES (?,?,?,?,datetime('now'))",
+        "(challenge_id,user_id,submission,score,submitted_at) VALUES (%s,%s,%s,%s,datetime('now'))",
         (challenge_id, fa_user["id"], submission, 0),
     )
     conn.commit()
@@ -874,7 +874,7 @@ def api_workflow_submit():
         conn = get_connection()
         conn.execute(
             "INSERT INTO fa_workflow_submissions "
-            "(user_id,design_id,score,ai_feedback,tier,submitted_at) VALUES (?,?,?,?,?,datetime('now'))",
+            "(user_id,design_id,score,ai_feedback,tier,submitted_at) VALUES (%s,%s,%s,%s,%s,datetime('now'))",
             (fa_user["id"], result.get("design_id", ""), 80, result.get("goal_md", "")[:500], 1),
         )
         conn.commit()
@@ -1109,7 +1109,7 @@ def _recommend_next_missions(user_id: int, role: str, limit: int = 3) -> list[di
     try:
         from tools.db.storage import get_connection
         rows = get_connection().execute(
-            "SELECT mission_id FROM fa_mission_progress WHERE user_id=? AND status='completed'",
+            "SELECT mission_id FROM fa_mission_progress WHERE user_id=%s AND status='completed'",
             (user_id,),
         ).fetchall()
         completed_ids = {r[0] for r in rows}
@@ -1122,7 +1122,7 @@ def _recommend_next_missions(user_id: int, role: str, limit: int = 3) -> list[di
     try:
         from tools.db.storage import get_connection
         rows = get_connection().execute(
-            "SELECT mission_id FROM fa_mission_progress WHERE user_id=? AND status='in_progress'",
+            "SELECT mission_id FROM fa_mission_progress WHERE user_id=%s AND status='in_progress'",
             (user_id,),
         ).fetchall()
         in_prog_ids = {r[0] for r in rows}

@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from _academy_conn import academy_conn
+
 import pytest
 
 from apps.forge_academy.content_loader import reconcile_all_step_assets
@@ -48,7 +50,7 @@ DISCOVERED = {
 @pytest.fixture
 def db_path(tmp_path):
     p = tmp_path / "academy.db"
-    setup = sqlite3.connect(str(p))
+    setup = academy_conn(str(p))
     setup.executescript(SCHEMA)
     setup.commit()
     setup.close()
@@ -57,13 +59,11 @@ def db_path(tmp_path):
 
 def test_reconcile_persists_across_connections(db_path):
     """The assertion the in-memory tests structurally could not make."""
-    writer = sqlite3.connect(db_path)
-    writer.row_factory = sqlite3.Row
+    writer = academy_conn(db_path)
     assert reconcile_all_step_assets(writer, DISCOVERED) == 1
     writer.close()  # a missing commit is discarded here
 
-    reader = sqlite3.connect(db_path)
-    reader.row_factory = sqlite3.Row
+    reader = academy_conn(db_path)
     row = reader.execute(
         "SELECT step_type, starter_code_path, test_code_path FROM fa_mission_steps "
         "WHERE mission_id=1 AND step_num=1"
@@ -77,18 +77,15 @@ def test_reconcile_persists_across_connections(db_path):
 
 def test_a_second_pass_over_persisted_rows_is_a_no_op(db_path):
     """Idempotency has to hold across the commit boundary too."""
-    first = sqlite3.connect(db_path)
-    first.row_factory = sqlite3.Row
+    first = academy_conn(db_path)
     reconcile_all_step_assets(first, DISCOVERED)
     first.close()
 
-    second = sqlite3.connect(db_path)
-    second.row_factory = sqlite3.Row
+    second = academy_conn(db_path)
     reconcile_all_step_assets(second, DISCOVERED)
     second.close()
 
-    reader = sqlite3.connect(db_path)
-    reader.row_factory = sqlite3.Row
+    reader = academy_conn(db_path)
     rows = reader.execute(
         "SELECT step_type, test_code_path FROM fa_mission_steps WHERE mission_id=1"
     ).fetchall()
@@ -99,16 +96,14 @@ def test_a_second_pass_over_persisted_rows_is_a_no_op(db_path):
 
 def test_nothing_to_do_does_not_require_a_commit(db_path):
     """An unknown slug touches nothing; the pass must still return cleanly."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(db_path)
     assert reconcile_all_step_assets(conn, {"no-such": [{"step_num": 1}]}) == 0
     conn.close()
 
 
 def test_a_failing_commit_is_logged_not_raised(db_path, caplog):
     """Start-up must survive a database that cannot commit."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = academy_conn(db_path)
 
     class NoCommit:
         def __init__(self, inner):

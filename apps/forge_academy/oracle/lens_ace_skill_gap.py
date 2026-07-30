@@ -52,7 +52,7 @@ class ACESkillGapLens(BaseLens):
         if not tier2_rows:
             return {"gap_users": []}
 
-        placeholders = ",".join("?" * len(ACE_MISSION_SLUGS))
+        placeholders = ",".join("%s" for _ in ACE_MISSION_SLUGS)
         ace_started = {
             row[0]
             for row in conn.execute(

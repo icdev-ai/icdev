@@ -13,7 +13,8 @@ never demote, never overwrite.
 """
 from __future__ import annotations
 
-import sqlite3
+
+from _academy_conn import academy_conn
 
 import pytest
 
@@ -22,8 +23,7 @@ from apps.forge_academy.content_loader import _reconcile_step_assets
 
 @pytest.fixture
 def conn():
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
+    c = academy_conn(":memory:")
     c.executescript(
         """
         CREATE TABLE fa_mission_steps (id INTEGER PRIMARY KEY AUTOINCREMENT,
