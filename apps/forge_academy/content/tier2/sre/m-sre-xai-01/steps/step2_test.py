@@ -1,22 +1,18 @@
-"""Tests for AgentSHAP runner."""
-import importlib
-import pathlib
+# Auto-grader — runner idiom.
+#
+# aca-vv-01: this file used to be a pytest module (def test_*, importlib/subprocess to
+# load the starter from disk). The Academy runner concatenates the learner's code and
+# this grader into ONE script and runs it with `python -I`, so:
+#   * importlib/subprocess are rejected by the sandbox AST allowlist (penta-aca-02),
+#     which made this step impossible to complete; and
+#   * even unblocked, `def test_*` functions are never called by plain python, so it
+#     would have passed everything.
+# The learner's module-level names are already in scope here. Assert on those.
 
-
-def _load():
-    src = pathlib.Path(__file__).parent / "step2_starter.py"
-    spec = importlib.util.spec_from_file_location("shap_runner", src)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def test_get_recent_traces_returns_list():
-    mod = _load()
-    result = mod.get_recent_traces(3)
-    assert isinstance(result, list)
-
-
-def test_run_attribution_defined():
-    mod = _load()
-    assert callable(getattr(mod, "run_attribution_report", None))
+_traces = globals().get("get_recent_traces")
+assert callable(_traces), "get_recent_traces() must be defined."
+assert isinstance(_traces(), list), "get_recent_traces() must return a list."
+assert callable(globals().get("run_attribution_report")), (
+    "run_attribution_report() must be defined."
+)
+print("PASS: traces retrieved and an attribution report is available.")
