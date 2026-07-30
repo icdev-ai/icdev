@@ -117,9 +117,23 @@ def test_the_live_region_is_populated_after_it_is_attached():
     showXPToast did — can pass silently.
     """
     html = _runner()
-    fn = html[html.index("function faAnnounce"):html.index("function showXPToast")]
+    fn = html[html.index("function faLiveRegion"):html.index("function showXPToast")]
     assert "appendChild" in fn
     assert "setTimeout" in fn, "text must be written after the region is in the DOM"
+
+
+def test_the_live_region_is_registered_at_load_not_on_first_use():
+    """A region created inside the first announcement may miss that announcement.
+
+    It has to be under observation before the mutation it should announce. Creating
+    it lazily made the least reliable announcement a learner's FIRST completed step —
+    the one that most needs to land. Probing the live page reported
+    liveRegionExistedBefore: false.
+    """
+    html = _code_only(_runner())
+    registered = ("DOMContentLoaded', faLiveRegion" in html
+                  or 'DOMContentLoaded", faLiveRegion' in html)
+    assert registered, "the live region must be created at page load, not on first use"
 
 
 def test_the_visual_toast_is_not_announced_twice():
@@ -131,7 +145,7 @@ def test_the_visual_toast_is_not_announced_twice():
 def test_the_live_region_is_not_display_none():
     """display:none removes an element from the accessibility tree entirely."""
     html = _code_only(_runner())
-    fn = html[html.index("function faAnnounce"):html.index("function showXPToast")]
+    fn = html[html.index("function faLiveRegion"):html.index("function showXPToast")]
     assert "display:none" not in fn.replace(" ", "")
     assert "clip:rect" in fn.replace(" ", ""), "use clip-based visually-hidden"
 
