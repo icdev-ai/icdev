@@ -1588,6 +1588,11 @@ def seed_mission_catalog() -> None:
         # executed, and Tier 1 stayed ungradeable after a restart. Cheap and
         # idempotent — it only writes to rows whose asset paths are still empty.
         reconcile_all_step_assets(conn, discovered)
+        # aca-hon-04: correct stored mission_type against the steps that actually
+        # exist. Must run AFTER the asset reconcile, because that pass promotes steps
+        # to 'coding', and BEFORE the fast-path return below for the same reason it
+        # applies to assets — the rows needing correction are already seeded.
+        reconcile_mission_types(conn)
 
         try:
             existing_count = conn.execute(
@@ -1711,13 +1716,133 @@ def _step_type_from_class(step_class: str) -> str:
     return _STEP_CLASS_TO_TYPE.get(tail, _DEFAULT_STEP_TYPE)
 
 
+# Classification banners appear as the first markdown heading in some content files.
+# They are markings, not titles (aca-hon-02): m11-multimodal's card tagline was the
+# literal string "CUI // SP-CTI" because _title_from_body returned the first heading
+# it found, that heading became the step title, and the step title became the
+# mission tagline.
+_CLASSIFICATION_TOKENS = ("CUI", "SP-CTI", "SECRET", "NOFORN", "FOUO", "TOP SECRET")
+
+
+def _is_classification_heading(text: str) -> bool:
+    """A heading that is only a classification marking, not a title."""
+    stripped = (text or "").strip().strip("[]").strip()
+    if not stripped:
+        return False
+    upper = stripped.upper()
+    if not any(tok in upper for tok in _CLASSIFICATION_TOKENS):
+        return False
+    # A real title may mention CUI ("STIG markers, CUI headers, CI gates"), so only
+    # reject headings that are essentially nothing but markings and separators.
+    residue = upper
+    for tok in _CLASSIFICATION_TOKENS:
+        residue = residue.replace(tok, "")
+    residue = residue.replace("TEMPLATE:", "")
+    return not any(ch.isalnum() for ch in residue)
+
+
 def _title_from_body(body: str, fallback: str) -> str:
-    """First markdown H1, else a humanised filename."""
+    """First markdown H1 that is not a classification banner, else the fallback."""
     for line in (body or "").splitlines():
         line = line.strip()
         if line.startswith("# "):
-            return line[2:].strip()[:200]
+            heading = line[2:].strip()
+            if _is_classification_heading(heading):
+                continue  # a marking, not a title — keep looking
+            return heading[:200]
     return fallback
+
+
+# Step types that make a mission "hands-on". aca-hon-04: mission_type was taken from
+# the FIRST step alone (and simply declared for hand-written entries), so 34 missions
+# advertised 'coding' with no coding step at all — every Tier-1 mission among them.
+def _title_head(title: str | None) -> str:
+    """The subject part of a title, before any subtitle separator.
+
+    "Multimodal AI - Vision, Documents, Images" -> "multimodal ai". Used to spot a
+    derived mission that covers the same subject as a catalogued one even though the
+    full strings differ (aca-hon-03).
+    """
+    text = (title or "").strip()
+    for sep in ("—", "–", " - ", ":", "|"):
+        if sep in text:
+            text = text.split(sep, 1)[0]
+            break
+    return " ".join(text.lower().split())
+
+
+def mission_type_from_steps(steps: list | None) -> str:
+    """Derive a mission's advertised type from its actual step composition.
+
+    Any coding step makes the mission 'coding' — that is the thing a learner is
+    promised and the thing that can be graded. Otherwise the most common step type
+    wins, so a mission is described by what it mostly is.
+    """
+    types = [
+        (s.get("step_type") or "").strip().lower()
+        for s in (steps or [])
+        if (s.get("step_type") or "").strip()
+    ]
+    if not types:
+        return "watch"
+    if "coding" in types:
+        return "coding"
+    counts: dict[str, int] = {}
+    for t in types:
+        counts[t] = counts.get(t, 0) + 1
+    # Ties resolve by first appearance, which keeps the result stable.
+    return max(types, key=lambda t: (counts[t], -types.index(t)))
+
+
+def reconcile_mission_types(conn) -> int:
+    """Correct stored fa_missions.mission_type against actual steps. Returns changes.
+
+    Discovery alone cannot fix this: the offending rows are already seeded, and
+    _seed_steps uses INSERT OR IGNORE. That is the same trap aca-hon-05 fell into
+    twice — a fix on the insert path is inert against an existing database — so this
+    is a reconcile pass, and it commits.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT m.id, m.slug, m.mission_type FROM fa_missions m WHERE m.is_active=1"
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — runs at start-up; must not break boot
+        _log.warning("mission_type reconcile could not read missions: %s", exc)
+        return 0
+
+    changed = 0
+    for row in rows:
+        mid = row["id"] if hasattr(row, "keys") else row[0]
+        slug = row["slug"] if hasattr(row, "keys") else row[1]
+        stored = (row["mission_type"] if hasattr(row, "keys") else row[2]) or ""
+        try:
+            steps = [
+                {"step_type": (r[0] if not hasattr(r, "keys") else r["step_type"])}
+                for r in conn.execute(
+                    "SELECT step_type FROM fa_mission_steps WHERE mission_id=?", (mid,)
+                ).fetchall()
+            ]
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("mission_type reconcile: steps unavailable for %s: %s", slug, exc)
+            continue
+        if not steps:
+            continue  # a Coming Soon mission keeps its declared type
+        derived = mission_type_from_steps(steps)
+        if derived != stored:
+            conn.execute(
+                "UPDATE fa_missions SET mission_type=? WHERE id=?", (derived, mid)
+            )
+            changed += 1
+            _log.info(
+                "FORGE Academy: mission_type %s: %r -> %r (from %d steps)",
+                slug, stored, derived, len(steps),
+            )
+    if changed:
+        try:
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("mission_type reconcile commit failed: %s", exc)
+    return changed
 
 
 # Step types where a hint is meaningful. aca-hyg-04: hint_allowed was 1 on all 212
@@ -1878,6 +2003,15 @@ def discover_missions(discovered: dict | None = None) -> list:
         return (m.group("family"), m.group("num")) if m else None
 
     taken = {k for k in (_track_key(s) for s in catalogued) if k}
+    # aca-hon-03: the track-slot check keys on family+number, so m11-multimodal and
+    # the catalogued m-t1-11-multimodal look unrelated and BOTH ended up in the
+    # catalogue as adjacent Tier-1 cards about the same subject. Compare the derived
+    # human title against catalogued titles as well.
+    # Compare the title HEAD — the part before a subtitle separator. m11-multimodal
+    # derives "Multimodal AI - Vision, Documents, Images" against the catalogued
+    # "Multimodal AI": the same subject, so an exact match would miss it.
+    catalogued_titles = {_title_head(m.get("title")) for m in BUILTIN_MISSIONS}
+    catalogued_titles.discard("")
 
     out: list = []
     for slug in sorted(set(discovered) - catalogued):
@@ -1895,14 +2029,35 @@ def discover_missions(discovered: dict | None = None) -> list:
         first = steps[0]
         match = _MISSION_SLUG_RE.match(slug)
         family = match.group("family") if match else ""
+
+        # aca-hon-02: title and tagline were INVERTED. title was
+        # _humanise_slug(slug) — a title-cased slug fragment like 'Ciso Capstone' or
+        # 'Chromadb Rag' — while the authored human title sat in the tagline. 35 of
+        # 124 missions showed the mechanical string as their card title.
+        human_title = (first.get("title") or "").strip()
+        title = human_title or _humanise_slug(slug)
+        # The tagline was only ever a copy of the step title; leaving it identical
+        # would just print the title twice on the card.
+        tagline = "" if title == human_title else human_title
+
+        if _title_head(title) in catalogued_titles:
+            _log.warning(
+                "FORGE Academy: %s derives the title %r, which a catalogued mission "
+                "already uses — not auto-catalogued to avoid two cards for one "
+                "subject; resolve by hand (aca-hon-03)", slug, title,
+            )
+            continue
+
         out.append({
             "slug": slug,
-            "title": _humanise_slug(slug),
-            "tagline": first.get("title") or _humanise_slug(slug),
+            "title": title,
+            "tagline": tagline,
             "tier": _tier_from_path(first.get("content_path", "")),
             "topic": family or "general",
             "role_filter": _FAMILY_ROLE.get(family, "all"),
-            "mission_type": first.get("step_type") or "watch",
+            # aca-hon-04: was first.get("step_type"), so a watch intro hid a coding
+            # exercise behind a 'watch' label (and vice versa).
+            "mission_type": mission_type_from_steps(steps),
             "xp_reward": 100,
             "order_idx": int(match.group("num")) if match else 99,
             "difficulty": "intermediate",

@@ -204,20 +204,36 @@ def test_no_authored_mission_is_left_uncatalogued(discovered, catalog_slugs):
         slug for slug in discovered
         if slug not in known and discovered[slug]
     )
-    # Anything left must be a deliberate exclusion (a contested track slot),
-    # never an oversight.
-    from apps.forge_academy.content_loader import _MISSION_SLUG_RE
+    # Anything left must be a deliberate exclusion, never an oversight. There are two
+    # legitimate reasons: a contested TRACK slot (same family+number), and — added by
+    # aca-hon-03 — a contested SUBJECT, where the derived title head matches a
+    # catalogued mission's. m11-multimodal is the latter: its slug is unrelated to
+    # m-t1-11-multimodal so the track check cannot see it, but both are "Multimodal
+    # AI" and cataloguing both produced two adjacent Tier-1 cards for one subject.
+    from apps.forge_academy.content_loader import (
+        BUILTIN_MISSIONS,
+        _MISSION_SLUG_RE,
+        _title_head,
+        discover_steps,
+    )
+
+    catalogued_heads = {_title_head(m.get("title")) for m in BUILTIN_MISSIONS}
+    catalogued_heads.discard("")
+    all_steps = discover_steps()
 
     for slug in unreachable:
         m = _MISSION_SLUG_RE.match(slug)
-        assert m, f"{slug} is unreachable and not an excluded track collision"
-        collision = any(
+        track_collision = bool(m) and any(
             other != slug
             and (om := _MISSION_SLUG_RE.match(other))
             and (om.group("family"), om.group("num")) == (m.group("family"), m.group("num"))
             for other in catalog_slugs
         )
-        assert collision, f"{slug} has content, no catalog entry, and no reason to be skipped"
+        first_title = ((all_steps.get(slug) or [{}])[0].get("title") or "")
+        subject_collision = _title_head(first_title) in catalogued_heads
+        assert track_collision or subject_collision, (
+            f"{slug} has content, no catalog entry, and no reason to be skipped"
+        )
 
 
 def test_derived_missions_are_marked_as_derived(discovered):
