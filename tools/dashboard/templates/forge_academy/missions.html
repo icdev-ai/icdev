@@ -145,6 +145,11 @@
            count in list_missions. #}
         {% if m.is_available is defined and not m.is_available %}
         <span class="fa-type-badge" style="background:#2a2118;color:#ffce7a;border:1px solid #d98b12;">coming soon</span>
+        {% elif m.is_locked %}
+        {# aca-ux-04: locked-but-readable — say so before the click. The card still
+           navigates; the mission just cannot earn credit yet. #}
+        <span class="fa-type-badge" title="Readable, but earns no XP until this tier unlocks"
+              style="background:#1a1a24;color:#9aa0b5;border:1px solid #4a4a5e;">&#128274; locked</span>
         {% else %}
         <span class="fa-type-badge {{ m.mission_type|default('coding') }}">{{ m.mission_type|default('coding') }}</span>
         {% endif %}

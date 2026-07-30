@@ -12,6 +12,7 @@ from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
     migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
+    tier_progress, is_tier_unlocked,
     get_user_achievements, grant_achievement,
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
@@ -213,11 +214,19 @@ def missions_browser():
         for m in all_missions:
             p = get_mission_progress(fa_user["id"], m["id"])
             progress_map[m["id"]] = p["status"] if p else "locked"
+    # aca-ux-04: state the lock on the card, before the click. Computed once for all
+    # tiers rather than per mission — tier_progress is two queries.
+    tier_info = tier_progress(fa_user["id"]) if fa_user else {}
+    for m in all_missions:
+        m["is_locked"] = bool(
+            fa_user and not tier_info.get(int(m.get("tier") or 1), {}).get("unlocked", True)
+        )
     return render_template(
         "forge_academy/missions.html",
         fa_user=fa_user,
         missions=all_missions,
         progress_map=progress_map,
+        tier_info=tier_info,
         level_ctx=_level_ctx(fa_user) if fa_user else {},
         roles=ROLES,
         active_tier=tier,
@@ -252,10 +261,22 @@ def mission_runner(slug):
     level_ctx = _level_ctx(fa_user)
     from .grading import client_safe_steps
 
+    # aca-ux-04: locked-but-readable. A learner may read a mission from a tier they
+    # have not unlocked — curiosity is not something to punish — but submitting it
+    # earns nothing (enforced in api_step_submit, not just hidden in the UI).
+    tier_info = tier_progress(fa_user["id"])
+    mission_tier = int(mission.get("tier") or 1)
+    tier_state = tier_info.get(mission_tier, {})
+    tier_locked = not tier_state.get("unlocked", True)
+    gating_tier = tier_state.get("gating_tier")
+
     return render_template(
         "forge_academy/mission.html",
         fa_user=fa_user,
         mission=mission,
+        tier_locked=tier_locked,
+        tier_state=tier_state,
+        gating_state=tier_info.get(gating_tier, {}) if gating_tier else {},
         # aca-int-02/03: the template serialises this into page JavaScript. The
         # raw step rows carry the grading test and the answer key, so only the
         # sanitised projection may go into the page.
@@ -479,6 +500,23 @@ def api_step_submit():
     mission_id = step["mission_id"]
     step_type = (step.get("step_type") or "coding").strip().lower()
     passed = verdict["passed"]
+
+    # aca-ux-04: the tier gate is enforced HERE, where credit is granted, not only
+    # in the template. A locked mission stays readable and runnable; it just cannot
+    # pay out or record completion.
+    _m = get_mission_by_id(mission_id)
+    if _m and not is_tier_unlocked(fa_user["id"], int(_m.get("tier") or 1)):
+        return jsonify({
+            "ok": True,
+            "passed": False,
+            "assessed": verdict["assessed"],
+            "status": "locked",
+            "reason": "tier_locked",
+            "stderr": (
+                f"Tier {_m.get('tier')} is not unlocked yet, so this step cannot be "
+                "credited. You can keep reading and experimenting."
+            ),
+        })
 
     # aca-int-04: submitting work is what puts a mission in progress and what
     # counts as an attempt — not opening its page.

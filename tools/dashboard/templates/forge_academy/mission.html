@@ -149,6 +149,33 @@
 
   <!-- Main step area -->
   <div class="fa-main" id="step-main">
+    {% if tier_locked %}
+    {# aca-ux-04: locked-but-readable. The content below is fully readable; the
+       server refuses credit (api_step_submit), so state that plainly rather than
+       letting a learner work through it and wonder where the XP went. #}
+    <div role="status" style="background:#14141f;border:1px solid #4a4a5e;border-left:3px solid #d98b12;
+                border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.2rem;font-size:.85rem;
+                color:#c9cede;">
+      <strong style="color:#ffce7a;">&#128274; Tier {{ mission.tier }} is not unlocked yet.</strong>
+      Read and experiment freely &mdash; nothing here is hidden &mdash; but steps will not
+      earn XP or count toward a certificate until it unlocks.
+      {% if gating_state and tier_state.required_pct %}
+      <div style="margin-top:.5rem;color:var(--text-secondary);">
+        Requires <strong>{{ tier_state.required_pct }}%</strong> of Tier
+        {{ tier_state.gating_tier }} &mdash; you are at
+        <strong>{{ gating_state.pct }}%</strong>
+        ({{ gating_state.completed }}/{{ gating_state.completable }} missions
+        {%- if gating_state.total and gating_state.total > gating_state.completable %},
+        excluding {{ gating_state.total - gating_state.completable }} not yet authored
+        {%- endif -%}).
+      </div>
+      {% endif %}
+      <div style="margin-top:.5rem;">
+        <a href="/academy/missions?tier={{ tier_state.gating_tier or 1 }}"
+           style="color:var(--fa-cyan);">Go to Tier {{ tier_state.gating_tier or 1 }} missions &rarr;</a>
+      </div>
+    </div>
+    {% endif %}
     {% set steps = mission.steps %}
     {% if steps %}
     {% for step in steps %}

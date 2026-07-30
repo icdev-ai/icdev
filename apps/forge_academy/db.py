@@ -812,6 +812,87 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
 complete_step = record_step_attempt
 
 
+def tier_progress(user_id: int) -> dict:
+    """Per-tier completion and unlock state for a learner.
+
+    Returns ``{tier: {total, completable, completed, pct, unlocked, required_pct,
+    gating_tier}}``.
+
+    aca-ux-04: fa_users.tier_unlocked was set to 1 for everyone and enforced
+    nowhere — all 104 Tier-2 missions were listed and openable while the hub showed
+    a "TIER 1" tile implying a gate that did not exist. This computes the gate from
+    recorded completions instead of trusting a stored column that nothing maintained.
+
+    `completable` excludes zero-step missions. That is load-bearing: Tier 1 contains
+    a mission with no steps by design, so counting it would put an impossible row in
+    the denominator and lock Tier 2 forever. `total` is still reported so the UI can
+    explain the difference.
+    """
+    from .constants import TIER_UNLOCK_PCT
+
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT m.tier, "
+        " COUNT(*) AS total, "
+        " SUM(CASE WHEN (SELECT COUNT(*) FROM fa_mission_steps s "
+        "               WHERE s.mission_id=m.id) > 0 THEN 1 ELSE 0 END) AS completable "
+        "FROM fa_missions m WHERE m.is_active=1 GROUP BY m.tier"
+    ).fetchall()
+
+    done_rows = conn.execute(
+        "SELECT m.tier, COUNT(DISTINCT mp.mission_id) "
+        "FROM fa_mission_progress mp JOIN fa_missions m ON m.id=mp.mission_id "
+        "WHERE mp.user_id=? AND mp.status=? AND m.is_active=1 "
+        "  AND (SELECT COUNT(*) FROM fa_mission_steps s WHERE s.mission_id=m.id) > 0 "
+        "GROUP BY m.tier",
+        (user_id, MISSION_STATUS_COMPLETED),
+    ).fetchall()
+    done = {int(r[0]): int(r[1]) for r in done_rows}
+
+    out: dict = {}
+    for r in rows:
+        tier = int(r["tier"] if hasattr(r, "keys") else r[0])
+        total = int(r["total"] if hasattr(r, "keys") else r[1])
+        completable = int((r["completable"] if hasattr(r, "keys") else r[2]) or 0)
+        completed = done.get(tier, 0)
+        pct = int(round(completed * 100 / completable)) if completable else 0
+        out[tier] = {
+            "total": total,
+            "completable": completable,
+            "completed": completed,
+            "pct": pct,
+            "required_pct": TIER_UNLOCK_PCT.get(tier),
+            "gating_tier": tier - 1 if tier in TIER_UNLOCK_PCT else None,
+            "unlocked": True,  # resolved below, once every tier's pct is known
+        }
+
+    for tier, info in out.items():
+        required = info["required_pct"]
+        if required is None:
+            info["unlocked"] = True  # entry tier
+            continue
+        prior = out.get(tier - 1)
+        if not prior or not prior["completable"]:
+            # Nothing completable to gate on — an empty prior tier must not become a
+            # permanent lock on everything after it.
+            info["unlocked"] = True
+        else:
+            info["unlocked"] = prior["pct"] >= required
+    return out
+
+
+def is_tier_unlocked(user_id: int, tier: int) -> bool:
+    """Whether `tier` is unlocked for this learner. Unknown tiers are open."""
+    try:
+        info = tier_progress(user_id).get(int(tier))
+    except Exception:
+        _log.exception("tier gate lookup failed for user %s tier %s", user_id, tier)
+        return True  # never lock a learner out because of a query failure
+    if not info:
+        return True
+    return bool(info["unlocked"])
+
+
 def record_hint(user_id: int, step_id: int) -> int:
     """Count a hint against a step and return the new total.
 
@@ -1146,13 +1227,12 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     Returns dict with keys: eligible (bool), gates (list of {name, met, detail}).
     """
     from apps.forge_academy.constants import CERT_BY_KEY
-    from tools.db.storage import get_connection as _gc
 
     cert = CERT_BY_KEY.get(cert_key)
     if not cert:
         return {"eligible": False, "gates": [], "error": "unknown cert key"}
 
-    conn = _gc()
+    conn = get_connection()
     user = get_user(user_id)
     if not user:
         return {"eligible": False, "gates": [], "error": "user not found"}
@@ -1162,14 +1242,21 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
 
     # Gate: Tier 1 complete
     if reqs.get("tier1_complete"):
+        # aca-ux-04: this counted EVERY tier-1 mission, including the zero-step
+        # "Coming soon" one that can never be completed (fga-wire-06) — so the
+        # Foundation certificate was unobtainable by construction. Count only
+        # completable missions, matching tier_progress().
         t1_missions = conn.execute(
-            """SELECT COUNT(*) FROM fa_missions WHERE tier=1"""
+            "SELECT COUNT(*) FROM fa_missions m WHERE m.tier=1 AND m.is_active=1 "
+            "AND (SELECT COUNT(*) FROM fa_mission_steps s WHERE s.mission_id=m.id) > 0"
         ).fetchone()[0]
         t1_done = conn.execute(
             """SELECT COUNT(DISTINCT mp.mission_id)
                FROM fa_mission_progress mp
                JOIN fa_missions m ON m.id=mp.mission_id
-               WHERE mp.user_id=? AND mp.status='completed' AND m.tier=1""",
+               WHERE mp.user_id=? AND mp.status='completed' AND m.tier=1
+                 AND (SELECT COUNT(*) FROM fa_mission_steps s
+                      WHERE s.mission_id=m.id) > 0""",
             (user_id,),
         ).fetchone()[0]
         met = t1_done >= t1_missions > 0
@@ -1268,7 +1355,6 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
     """Issue a certificate if eligible. Returns the cert record or None."""
     import secrets
     from datetime import datetime, timezone
-    from tools.db.storage import get_connection as _gc
     from apps.forge_academy.constants import CERT_BY_KEY
 
     eligibility = check_cert_eligibility(user_id, cert_key)
@@ -1276,7 +1362,7 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
         return None
 
     cert_def = CERT_BY_KEY.get(cert_key, {})
-    conn = _gc()
+    conn = get_connection()
     # Idempotent: return existing cert if already issued
     existing = conn.execute(
         "SELECT * FROM fa_certificates WHERE user_id=? AND cert_tier=?",
