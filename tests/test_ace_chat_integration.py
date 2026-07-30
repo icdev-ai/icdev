@@ -152,12 +152,14 @@ def test_chat_manager_stores_coworker_link(tmp_path):
     # Use canonical icdev module (shim redirects tools.* -> icdev.tools.*)
     import icdev.tools.dashboard.chat_manager as cm_mod
 
-    def _fake_get_conn(db_path=None, **_kwargs):
-        c = sqlite3.connect(str(db_path) if db_path else ":memory:")
-        return c
-
-    with patch.object(cm_mod, "DB_PATH", db_path), \
-         patch.object(cm_mod, "get_connection", side_effect=_fake_get_conn):
+    # Only DB_PATH is patched. get_connection is deliberately left real: it
+    # returns a StorageConnection that rewrites the %s placeholders this repo
+    # authors for PostgreSQL into ? for SQLite. Substituting a raw
+    # sqlite3.connect skipped that translation, so every statement in
+    # _check_coworker_trigger raised a syntax error — swallowed by its
+    # best-effort `except Exception`, leaving context_config unwritten and the
+    # test asserting against a no-op it had caused itself.
+    with patch.object(cm_mod, "DB_PATH", db_path):
         cm_mod._check_coworker_trigger(
             "ctx-004",
             "@team build a pipeline",

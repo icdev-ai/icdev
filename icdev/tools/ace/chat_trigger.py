@@ -20,6 +20,14 @@ from icdev.tools.ace import controller as _ace_controller
 
 _ORIGINAL_CONTROLLER_CLS = _ace_controller.ACEController
 
+#: Module-level patch point, read by the resolution in ``maybe_launch_ace``.
+#: It has to actually exist: ``monkeypatch.setattr(chat_trigger,
+#: "ACEController", ...)`` raises AttributeError on a name the module never
+#: defines, so the seam the code below documents was unusable — the whole
+#: `getattr(sys.modules[__name__], "ACEController", ...)` branch could only
+#: ever return its default.
+ACEController = _ORIGINAL_CONTROLLER_CLS
+
 # Explicit trigger: message starts with @team
 _EXPLICIT_RE = re.compile(r"^\s*@team\b", re.IGNORECASE)
 
