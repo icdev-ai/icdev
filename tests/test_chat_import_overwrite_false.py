@@ -72,7 +72,10 @@ def client(icdev_db):
     app.register_blueprint(chat_api)
 
     def _make_conn(db_path=None, **kw):
-        return sqlite3.connect(str(icdev_db))
+        # Translating wrapper — the chat API authors %s for PostgreSQL.
+        from _sql_compat import connect as _tconnect
+
+        return _tconnect(icdev_db, row_factory=False)
 
     with (
         patch("tools.db.storage.get_connection", side_effect=_make_conn),

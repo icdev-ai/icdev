@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import sqlite3
 import sys
 import uuid
 from pathlib import Path
@@ -20,8 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def _sqlite_conn_factory(db_path):
     """Return a get_connection-style factory bound to a SQLite file."""
     def _factory():
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
+        # Translating wrapper: the SSO code authors %s for PostgreSQL, and a
+        # bare sqlite3 connection makes every statement a syntax error.
+        from _sql_compat import connect as _tconnect
+
+        conn = _tconnect(db_path, check_same_thread=False)
         return contextlib.closing(conn)
     return _factory
 
