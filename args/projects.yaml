@@ -6552,3 +6552,72 @@ projects:
   - key: vv
     title: VV — Integration, Docs & Verification
     priority: high
+- key: tsr
+  name: TSR — Test Suite Remediation (by subsystem)
+  description: 'Bring tests/ to green, worked one subsystem at a time. Measured 2026-07-30:
+    30,963 tests across 1,838 files; a full run exceeds 75 minutes; ~1,000 failing. CI has
+    never covered this — its Test job is a 12-file allowlist, so the suite has been red for
+    a long time without anyone seeing it. Two causes dominate. (1) Tests that patch
+    get_connection with a bare sqlite3.connect: the repo authors %s for PostgreSQL and only
+    StorageConnection rewrites it to ?, so every statement becomes a syntax error, and where
+    the caller swallows exceptions the test asserts against a no-op it caused itself. 87
+    fixed this way already (PRs #1043/#1047/#1051); tests/_sql_compat.py now exists for it.
+    (2) Fixtures that depend on ambient DB state — green on a populated dev box, red on a
+    clean checkout. Epics are subsystem groups derived from what each test file actually
+    imports, not from its filename: test_dwo_* exercises tools/studio and test_ecr_sso
+    exercises tools/auth, so filename grouping misleads.'
+  task_prefix: tsr-
+  default_open: true
+  briefs:
+  - 'Seed the DB before any sweep: an unseeded worktree HANGS in storage.py::execute rather
+    than failing, which is why whole-suite runs never terminate. Run tools/db/init_icdev_db.py,
+    then tools/studio/init_db.py, then migrations/311_studio_event_tables_rls_columns/up.py.
+    migrate.py --up cannot substitute — ~25 migrations are PG-only and fail on SQLite.'
+  - 'Never run the whole suite to validate a fix. Select the test files that reference the
+    symbols touched and run those: a 24-file slice takes ~4 minutes against >75 for the full
+    sweep. Per-subsystem slices are the unit of work here.'
+  - 'Triage before fixing. Run the failing file against the populated shared checkout as well
+    as a clean worktree: passing there and failing here means an ambient-state fixture, not a
+    defect. Both are worth fixing, but they are different fixes.'
+  - 'A whole file failing at once is one shared fixture, not N broken features. Read the
+    fixture before the implementation.'
+  - 'Do not delete assertions to make tests pass. Where a test and the code disagree, work
+    out which is right — several so far were tests asserting contracts the code never had,
+    and at least three were real features deleted by a mirror sync.'
+  epics:
+  - key: dash
+    title: "DASH — Dashboard, IQE & presentation"
+    priority: high
+  - key: canv
+    title: "CANV — Design canvases"
+    priority: high
+  - key: agent
+    title: "AGENT — ACE, agent runtime & MCP"
+    priority: medium
+  - key: gen
+    title: "GEN — Genesis, Oracle & autonomy"
+    priority: high
+  - key: ai
+    title: "AI — LLM, RAG, Cortex & memory"
+    priority: high
+  - key: comp
+    title: "COMP — Compliance, security & governance"
+    priority: critical
+  - key: gov
+    title: "GOV — GovCon, proposals & CPMP"
+    priority: medium
+  - key: net
+    title: "NET — Network, pipeline & infrastructure"
+    priority: medium
+  - key: flow
+    title: "FLOW — Studio, workflow & kanban"
+    priority: high
+  - key: doc
+    title: "DOC — Document intelligence & quality"
+    priority: medium
+  - key: core
+    title: "CORE — Platform core (DB, SaaS, CLI, packaging)"
+    priority: critical
+  - key: intel
+    title: "INTEL — Strategos, research & trading"
+    priority: low
