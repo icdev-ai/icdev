@@ -6772,3 +6772,23 @@ projects:
   - key: gate
     title: "GATE - coherence check to prevent recurrence"
     priority: high
+
+- key: tsh
+  name: "TSH — Test Suite Health"
+  description: "The local pytest suite could not finish. Two causes are fixed (#1007 removed an infinite live-LLM call; #1011 fixed inverted timeouts and a SQLite lock wait that equalled the per-test budget), taking the run from hanging forever to reaching 17%. Three issues remain, all measured and none fixed. Note none of this affects CI, where pytest-timeout is not installed — these bite only locally, which is exactly where the 12-file CI allowlist stops protecting anyone."
+  task_prefix: "tsh-"
+  default_open: true
+  briefs:
+    - "Fixed already, for context: #1007 (live LLM call in a unit test, hung forever), #1008 (classifier document domains), #1011 (inverted subprocess timeouts + SQLite busy_timeout == the 30s test budget)."
+    - "The unifying rule behind the fixed ones: an inner wait must expire BEFORE the outer test budget. pytest-timeout has only the thread method on Windows, so it kills the interpreter rather than failing one test — turning any slow operation into a session abort that names the wrong file."
+    - "Measured progress of a full `pytest tests/`: 14% before, 17% after #1011."
+  epics:
+    - key: kill
+      title: "KILL — Remaining session-killers"
+      priority: high
+    - key: leak
+      title: "LEAK — Leaked SQLite write transaction"
+      priority: high
+    - key: e2e
+      title: "E2E — ~55 local Playwright failures"
+      priority: medium
