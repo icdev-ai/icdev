@@ -165,7 +165,19 @@ def _pin_sqlite(monkeypatch, tmp_db):
     for var in ("ICDEV_STORAGE_BACKEND", "ICDEV_CANVAS_STORAGE_BACKEND",
                 "DDC_STORAGE_BACKEND"):
         monkeypatch.setenv(var, "sqlite")
-    sys.modules.pop("tools.data_canvas.db.init_db", None)
+    # NOT sys.modules.pop(). Evicting the module and re-importing it installs a
+    # NEW module object in sys.modules that nothing ever puts back, so every later
+    # test in the run resolves tools.data_canvas.db.init_db to that replacement
+    # while modules that imported get_connection earlier still hold the original.
+    # monkeypatch restores the attributes it set, on the object it set them on —
+    # it cannot restore a swapped module. That leak failed 11 tests in
+    # test_dcpr_product_registry and test_dcpr_governance_engine whenever this file
+    # ran first, and all of them pass in isolation, which is what made it look like
+    # a data_canvas bug rather than a fixture one.
+    #
+    # The pop was redundant anyway: it existed to re-read the module-level
+    # _DDC_BACKEND/DB_PATH after setenv, and the two setattr calls below overwrite
+    # exactly those globals.
     from tools.data_canvas.db import init_db as ddc_init
     monkeypatch.setattr(ddc_init, "_DDC_BACKEND", "sqlite", raising=False)
     monkeypatch.setattr(ddc_init, "DB_PATH", Path(tmp_db), raising=False)
