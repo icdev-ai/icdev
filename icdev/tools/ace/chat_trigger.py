@@ -176,7 +176,18 @@ def _audit(action: str, detail: str, instance_id: str = "") -> None:
 
 
 def _classify_roles(content: str) -> list[dict]:
-    """Best-effort roster preview. Never raises; an empty roster is valid."""
+    """Best-effort roster preview. Never raises; an empty roster is valid.
+
+    When the classifier has nothing better than its generic fallback roster,
+    a domain-expert slot is added for the problem's OWN domain. That fallback
+    is `[ai_developer, qa_manager]` -- a software team -- so without this an
+    agricultural supply chain, a maritime insurer and a rare-disease diagnostic
+    all get a developer and a QA manager, because the classifier knows how
+    software is built and nothing about what it is about.
+
+    The extra slot is marked `to_generate` and NOTHING is created here: the
+    expert is only brought into existence if a human approves the proposal.
+    """
     try:
         from icdev.tools.ace.problem_classifier import ProblemClassifierLens
 
@@ -192,10 +203,32 @@ def _classify_roles(content: str) -> list[dict]:
                 "count": int(getattr(slot, "count", 1)),
                 "status": "existing" if role is not None else "to_generate",
             })
+
+        gap = _detect_domain_gap(content, manifest)
+        if gap and len(out) < MAX_CHAT_TEAM:
+            out.append({
+                "role_id": "",  # assigned by ensure_sme at approval time
+                "display_name": "Domain specialist",
+                "count": 1,
+                "status": "to_generate",
+                "domain_description": gap.domain_description,
+                "gap_reason": gap.reason,
+            })
         return out
     except Exception as exc:  # noqa: BLE001
         logger.warning("chat_trigger: role classification failed: %s", exc)
         return []
+
+
+def _detect_domain_gap(content: str, manifest):
+    """Return an SmeGap when the catalog does not cover this problem's domain."""
+    try:
+        from icdev.tools.ace.sme_gap_detector import detect_sme_gap
+
+        return detect_sme_gap(content, manifest)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("chat_trigger: gap detection unavailable: %s", exc)
+        return None
 
 
 def build_team_proposal(
@@ -341,10 +374,23 @@ def confirm_proposal(suggestion_id: str, user_id: str = "system") -> dict:
     except Exception:  # noqa: BLE001
         roles = []
 
-    # Only roles that actually exist may be launch targets. An unresolvable id
-    # becomes a ghost coworker that fails role_not_found, so passing one is
-    # worse than passing none.
-    role_ids = [r["role_id"] for r in roles if r.get("status") == "existing"]
+    # Existing roles are launch targets directly. An unresolvable id becomes a
+    # ghost coworker that fails role_not_found, so a role is only ever passed
+    # once it is known to exist.
+    role_ids = [r["role_id"] for r in roles if r.get("status") == "existing" and r.get("role_id")]
+
+    # Approval is what brings a generated specialist into existence -- never
+    # the heuristic that proposed it. A declined proposal therefore costs no
+    # LLM spend and leaves no role behind.
+    for entry in roles:
+        if entry.get("status") != "to_generate":
+            continue
+        domain = str(entry.get("domain_description") or "").strip()
+        if not domain:
+            continue
+        resolved = _resolve_domain_gap(domain)
+        if resolved and resolved.get("role_id"):
+            role_ids.append(resolved["role_id"])
 
     if _ace_controller.ACEController is not _ORIGINAL_CONTROLLER_CLS:
         _ctrl = _ace_controller.ACEController
@@ -380,3 +426,14 @@ def confirm_proposal(suggestion_id: str, user_id: str = "system") -> dict:
 
     _audit("team_approved", "suggestion=%s roles=%s" % (suggestion_id, role_ids), instance_id)
     return {"ok": True, "instance_id": instance_id, "error": ""}
+
+
+def _resolve_domain_gap(domain_description: str) -> dict | None:
+    """Create (or reuse) the SME for a proposed domain at approval time."""
+    try:
+        from icdev.tools.ace.sme_gap_detector import SmeGap, resolve_gap
+
+        return resolve_gap(SmeGap(domain_description=domain_description, reason="approved"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("chat_trigger: could not resolve domain gap: %s", exc)
+        return None

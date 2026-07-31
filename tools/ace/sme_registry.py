@@ -163,12 +163,98 @@ def _tokens(text: str) -> set[str]:
 _SEQUENCE_WEIGHT = 0.75
 
 
+
 def _similarity(label: str, candidate_text: str) -> float:
     """Blend token overlap with (discounted) sequence similarity."""
     a, b = _tokens(label), _tokens(candidate_text)
     jaccard = len(a & b) / len(a | b) if (a or b) else 0.0
     ratio = SequenceMatcher(None, label.lower(), str(candidate_text).lower()).ratio()
     return max(jaccard, ratio * _SEQUENCE_WEIGHT)
+
+
+def _adjudicate_near_miss(domain_label: str) -> str:
+    """Ask whether an existing role already covers *domain_label*.
+
+    Returns a real ``role_id`` or ``""``. Constrained deliberately: the model
+    chooses from a supplied list or answers NONE — it never invents a name, so
+    the worst case is an unnecessary generation, never a ghost role that fails
+    ``role_not_found`` at launch.
+
+    Any failure returns "" (generate), because falling back to "create a
+    specialist" is recoverable while wrongly reusing an unrelated role silently
+    gives the user the wrong expert.
+    """
+    neighbours = _catalog_listing()
+    if not neighbours:
+        return ""
+
+    listing = "\n".join(f"- {rid}: {desc}" for rid, desc in neighbours)
+    valid = {rid for rid, _ in neighbours}
+
+    try:
+        from icdev.tools.llm.provider import LLMRequest
+        from icdev.tools.llm.router import LLMRouter
+
+        response = LLMRouter().invoke(
+            "task_decomposition",
+            LLMRequest(
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Domain needing an expert: {domain_label}\n\n"
+                        f"Existing experts:\n{listing}\n\n"
+                        "Does one of the existing experts already cover that domain "
+                        "well enough that creating a new specialist would be a "
+                        "near-duplicate? Answer with exactly one role id from the "
+                        "list, or the single word NONE. No explanation."
+                    ),
+                }],
+                max_tokens=24,
+                temperature=0.0,
+            ),
+        )
+        answer = (getattr(response, "content", "") or "").strip().split()[0].strip(".,`'\"")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("sme_registry: adjudication unavailable (%s); generating", exc)
+        return ""
+
+    if answer in valid:
+        return answer
+    return ""
+
+
+def _catalog_listing() -> list[tuple[str, str]]:
+    """Every catalog role as ``(role_id, short_label)``.
+
+    The adjudicator is shown the WHOLE catalog rather than a lexically
+    pre-filtered shortlist. Pre-filtering was the bug: ranking by token overlap
+    could not connect "container image vulnerability scanning" to
+    `security_analyst`, whose description says "reviews vulnerabilities", and
+    hand-rolled stemming made it worse by producing inconsistent stems
+    ("vulnerability" -> vulnerab, "vulnerabilities" -> vulnerabil). A candidate
+    filtered out can never be chosen, so a recall bug there is invisible and
+    permanent.
+
+    ~90 roles at a few tokens each is a small prompt, and it is paid only in the
+    near-miss band -- never on a clear hit or a clear miss. Correct recall for a
+    trivial cost beats a clever filter that silently drops the right answer.
+    """
+    role_dir = _role_yaml_dir()
+    if not role_dir.exists():
+        return []
+
+    out: list[tuple[str, str]] = []
+    for path in sorted(role_dir.glob("*.yaml")):
+        try:
+            spec = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001
+            continue
+        role_id = str(spec.get("role_id") or path.stem)
+        personality = spec.get("personality") or {}
+        domain = personality.get("domain", "") if isinstance(personality, dict) else ""
+        label = str(domain or spec.get("display_name") or role_id.replace("_", " "))
+        out.append((role_id, label[:60]))
+    return out
 
 
 def find_existing_role(domain_label: str) -> tuple[str, float]:
@@ -353,6 +439,8 @@ def ensure_sme(
     # 3. Does the shipped catalog already cover this?
     if allow_reuse and role_id not in index:
         match_id, score = find_existing_role(domain_label)
+
+        # Clear match — reuse, no LLM needed.
         if match_id and score >= REUSE_THRESHOLD:
             logger.info(
                 "sme_registry: reusing existing role %r for %r (similarity %.2f)",
@@ -366,6 +454,41 @@ def ensure_sme(
                 role_yaml_path=str(_role_yaml_dir() / f"{match_id}.yaml"),
                 matched_existing=match_id,
             )
+
+        # Near-miss band. Lexical similarity is genuinely undecided here:
+        # "container image vulnerability scanning" scores 0.38 against the
+        # catalog yet `security_analyst` covers it perfectly, while "maritime
+        # insurance underwriting" scores 0.36 and is genuinely new. Telling
+        # those apart needs meaning, not string overlap, so this is the one
+        # place worth paying for a model call — and only in the band, never on
+        # a clear hit or a clear miss.
+        #
+        # This is what keeps the catalog from silting up as more industries
+        # arrive: without it, every adjacent phrasing of a covered domain mints
+        # another near-duplicate.
+        if match_id and NOVEL_THRESHOLD <= score < REUSE_THRESHOLD:
+            adjudicated = _adjudicate_near_miss(domain_label)
+            if adjudicated:
+                logger.info(
+                    "sme_registry: adjudicated %r -> existing role %r (lexical %.2f)",
+                    domain_label, adjudicated, score,
+                )
+                index.setdefault(role_id, {})
+                index[role_id] = {
+                    "domain_label": domain_label,
+                    "domain_description": description,
+                    "resolved_to": adjudicated,
+                    "resolved_by": "adjudication",
+                }
+                _save_index(index)
+                return SmeResult(
+                    role_id=adjudicated,
+                    status="reused",
+                    domain_label=domain_label,
+                    capability_bundle="",
+                    role_yaml_path=str(_role_yaml_dir() / f"{adjudicated}.yaml"),
+                    matched_existing=adjudicated,
+                )
 
     # 4. Generate both halves. Validate BEFORE writing anything.
     spec = _build_role_spec(role_id, domain_label, description, bundle_name)

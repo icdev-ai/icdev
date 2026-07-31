@@ -151,6 +151,23 @@ class _FakeController:
         return "ace-test123"
 
 
+@pytest.fixture(autouse=True)
+def _no_live_sme_generation(monkeypatch):
+    """Never let a test reach a real LLM.
+
+    Approving a proposal resolves any `to_generate` slot through
+    `ensure_sme`, which normalises the domain via the router — a live model
+    call that hangs a unit test indefinitely. Stubbed for every test here;
+    the tests that care about generation assert on this stub explicitly.
+    """
+    from icdev.tools.ace import chat_trigger as ct
+
+    monkeypatch.setattr(
+        ct, "_resolve_domain_gap",
+        lambda domain: {"role_id": "generated_specialist", "status": "generated"},
+    )
+
+
 @pytest.fixture
 def fake_ctrl(monkeypatch):
     import icdev.tools.ace.controller as ctrl
@@ -249,3 +266,45 @@ def test_decisions_are_written_to_the_append_only_trail(ace_db, ct, fake_ctrl):
 
     actions = {dict(r)["action"] for r in rows}
     assert {"team_proposed", "team_approved"} <= actions
+
+
+def test_generated_slot_is_created_only_on_approval(ace_db, ct, fake_ctrl, monkeypatch):
+    """A proposed domain specialist comes into existence at approval, not before.
+
+    This is what makes the engine work for an industry nobody enumerated: the
+    classifier's roster is process-shaped, so a domain slot is proposed, and the
+    expert is created only if a human says yes. A declined proposal therefore
+    costs no LLM spend and leaves no role behind.
+    """
+    monkeypatch.setattr(ct, "_classify_roles", lambda c: [
+        {"role_id": "requirements_engineer", "display_name": "Req Eng",
+         "count": 1, "status": "existing"},
+        {"role_id": "", "display_name": "Domain specialist", "count": 1,
+         "status": "to_generate", "domain_description": GOAL,
+         "gap_reason": "proposed roles cover the delivery process but not the subject matter"},
+    ])
+
+    proposal = ct.build_team_proposal("ctx-1", GOAL)
+    ct.confirm_proposal(proposal["suggestion_id"])
+
+    role_ids = fake_ctrl.launched[0]["role_ids"]
+    assert "requirements_engineer" in role_ids
+    assert "generated_specialist" in role_ids, "approved domain slot was not created"
+    assert "" not in role_ids, "empty placeholder id must never reach launch"
+
+
+def test_declining_creates_nothing(ace_db, ct, fake_ctrl, monkeypatch):
+    """Declining must not generate the specialist the proposal offered."""
+    created: list[str] = []
+    monkeypatch.setattr(ct, "_resolve_domain_gap",
+                        lambda d: created.append(d) or {"role_id": "x"})
+    monkeypatch.setattr(ct, "_classify_roles", lambda c: [
+        {"role_id": "", "display_name": "Domain specialist", "count": 1,
+         "status": "to_generate", "domain_description": GOAL},
+    ])
+
+    proposal = ct.build_team_proposal("ctx-1", GOAL)
+    ct.decline_proposal(proposal["suggestion_id"], "not now")
+
+    assert created == [], "declining generated a specialist anyway"
+    assert fake_ctrl.launched == []
