@@ -152,10 +152,17 @@ def _redact_outbound(text: str) -> tuple[str, int]:
 
 
 def _audit(agent_id: str, connector: str, table: str, decision: str,
-           detail: str = "", rows: int = 0) -> None:
+           reason: str = "", rows: int = 0, redactions: int = 0) -> None:
     """Append one row per call, allowed or denied.
 
-    Denials are the interesting half — a connector an agent keeps being refused
+    Writes to databridge_agent_access_log, NOT db_sync_log. The first draft
+    used db_sync_log and every insert failed silently: that table records sync
+    OPERATIONS, requires a connection_id FK and counts rows, while an
+    authorization decision has none of those — a denied fetch has no connection
+    and moved nothing. The audit trail was empty precisely when it mattered, and
+    the tests did not catch it because they stubbed this function.
+
+    Denials are the interesting half: a connector an agent keeps being refused
     is either a misconfiguration or someone probing.
     """
     try:
@@ -164,11 +171,12 @@ def _audit(agent_id: str, connector: str, table: str, decision: str,
         conn = get_connection()
         try:
             conn.execute(
-                "INSERT INTO db_sync_log (connector_name, table_name, direction, "
-                "status, rows_processed, detail, created_at) "
-                "VALUES (%s, %s, 'read', %s, %s, %s, %s)",
-                (connector, table, decision, rows,
-                 f"agent={agent_id} {detail}"[:500],
+                "INSERT INTO databridge_agent_access_log "
+                "(agent_id, connector_name, table_name, decision, reason, "
+                " rows_returned, redactions_applied, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (agent_id or "unknown", connector, table, decision,
+                 str(reason)[:500], int(rows), int(redactions),
                  datetime.now(timezone.utc).isoformat(timespec="seconds")),
             )
             conn.commit()
@@ -279,8 +287,8 @@ def fetch(
         return _deny(f"connector error: {exc}")
 
     rows = list(getattr(response, "data", None) or [])[:limit]
-    _audit(agent_id, connector, table, "allowed",
-           f"redactions={redactions}", rows=len(rows))
+    _audit(agent_id, connector, table, "allowed", "",
+           rows=len(rows), redactions=redactions)
 
     return FetchOutcome(
         ok=True, connector=connector, table=table,

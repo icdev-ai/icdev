@@ -308,3 +308,123 @@ def test_toolset_bundle_is_read_only():
     bundle = cfg["bundles"]["external_data"]
     assert bundle["mutating"] is False
     assert set(bundle["tools"]) == {"databridge_fetch", "databridge_sources"}
+
+
+# ---------------------------------------------------------------------------
+# The audit trail must actually be written
+# ---------------------------------------------------------------------------
+#
+# The first draft wrote to db_sync_log, whose schema requires a connection_id FK
+# and row counts -- an authorization decision has neither, so every insert failed
+# silently into a warning and the trail was empty exactly when it mattered. The
+# tests did not catch it because every one of them stubbed _audit.
+#
+# These do NOT stub it. A module only ever tested with its risky path mocked away
+# is untested, not working.
+
+
+@pytest.fixture
+def real_audit_db(tmp_path, monkeypatch):
+    """A real SQLite DB with the access-log table, and _audit unstubbed."""
+    import sqlite3
+
+    db = tmp_path / "audit.db"
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(db))
+
+    conn = sqlite3.connect(db)
+    conn.executescript("""
+        CREATE TABLE databridge_agent_access_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id TEXT NOT NULL DEFAULT 'unknown',
+            connector_name TEXT NOT NULL DEFAULT '',
+            table_name TEXT NOT NULL DEFAULT '',
+            decision TEXT NOT NULL DEFAULT 'denied'
+                CHECK(decision IN ('allowed','denied')),
+            reason TEXT NOT NULL DEFAULT '',
+            rows_returned INTEGER DEFAULT 0,
+            redactions_applied INTEGER DEFAULT 0,
+            classification TEXT DEFAULT 'CUI // SP-CTI',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+    # Undo the autouse stub — this fixture is about the real write path.
+    monkeypatch.undo()
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(db))
+    return db
+
+
+def _rows(db):
+    import sqlite3
+
+    conn = sqlite3.connect(db)
+    try:
+        return conn.execute(
+            "SELECT agent_id, connector_name, table_name, decision, reason "
+            "FROM databridge_agent_access_log ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def test_a_denial_is_actually_persisted(real_audit_db):
+    """The row must reach the table, not a swallowed exception."""
+    broker.fetch("security_analyst", "github", "issues")
+
+    rows = _rows(real_audit_db)
+    assert rows, "no audit row was written — the insert failed silently"
+    agent, connector, table, decision, reason = rows[0]
+    assert agent == "security_analyst"
+    assert connector == "github"
+    assert decision == "denied"
+    assert "not granted" in reason
+
+
+def test_an_allowed_fetch_is_persisted_with_counts(real_audit_db, monkeypatch):
+    monkeypatch.setattr(broker, "load_manifest", lambda: {
+        "enabled": True,
+        "connectors": [{"name": "github", "tables": ["issues"], "agents": []}],
+    })
+    monkeypatch.setattr(broker, "_redact_outbound", lambda t: (t, 2))
+
+    with patch("icdev.tools.databridge.registry.get_connector_instance") as gi:
+        gi.return_value = MagicMock(
+            read=MagicMock(return_value=MagicMock(data=[{"id": 1}, {"id": 2}]))
+        )
+        broker.fetch("a", "github", "issues", query="something")
+
+    rows = _rows(real_audit_db)
+    assert any(r[3] == "allowed" for r in rows)
+
+
+def test_audit_targets_the_access_log_not_the_sync_log():
+    """db_sync_log requires a connection_id FK and counts rows.
+
+    An authorization decision has neither. Writing there is what made the trail
+    silently empty.
+    """
+    from pathlib import Path
+
+    # Read the FILE, not the attribute: the autouse fixture patches _audit, so
+    # inspect.getsource would return the stub's source and the assertion would
+    # pass against a lambda.
+    source = (
+        Path(broker.__file__).read_text(encoding="utf-8")
+    )
+    audit_body = source.split("def _audit(")[1].split("def fetch(")[0]
+    assert "databridge_agent_access_log" in audit_body
+    assert "INSERT INTO db_sync_log" not in audit_body
+
+
+def test_access_log_is_registered_append_only():
+    """An audit table that can be rewritten is not an audit table."""
+    from pathlib import Path
+
+    hook = (Path(__file__).resolve().parents[1] / ".claude/hooks/pre_tool_use.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"databridge_agent_access_log"' in hook
