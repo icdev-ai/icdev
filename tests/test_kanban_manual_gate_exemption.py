@@ -249,3 +249,63 @@ class TestStateMachineAutoCloseExemption:
         assert "reg-parent-01" in closed
         assert _task_status(icdev_db, GATE_ID)[0] == "in_progress"
         assert _task_status(icdev_db, "reg-parent-01")[0] == "done"
+
+
+# ── _count_in_progress (dispatch capacity accounting) ────────────────────
+
+
+class TestCapacityAccounting:
+    """A gate is a sentinel, not work, so it must not consume a dispatch slot.
+
+    Regression (2026-07-31): _count_in_progress() was a raw
+    COUNT(*) WHERE status='in_progress', which counted gates. _get_due_tasks
+    already excluded gates from dispatch, so the two disagreed: every held gate
+    permanently burned one of MAX_IN_PROGRESS (default 3) slots. With two gates
+    held the pipeline ran at 1 concurrent task, and a single running task drove
+    available_slots to 0 — where _get_due_tasks returns [] and the scheduler
+    logs "idle (no due tasks)" while due, dependency-satisfied tasks sit in
+    'scheduled'. Three gates would have stopped dispatch entirely.
+    """
+
+    def test_gates_do_not_consume_dispatch_slots(self, icdev_db, monkeypatch):
+        _patch_km(icdev_db, monkeypatch)
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Two held gates (matched by id suffix and by title marker respectively)
+        # plus one genuinely running task.
+        _insert_task(icdev_db, GATE_ID, GATE_TITLE, "in_progress", now)
+        _insert_task(icdev_db, "aca-gate-00", "MANUAL-MODE GATE - held", "in_progress", now)
+        _insert_task(icdev_db, "tsr-comp-01", "Real running work", "in_progress", now)
+
+        assert km._count_in_progress() == 1, (
+            "only genuinely running work may occupy a dispatch slot; "
+            "manual-mode gates are sentinels held in_progress forever"
+        )
+
+    def test_all_gates_leaves_full_capacity(self, icdev_db, monkeypatch):
+        """Three held gates must leave every slot free, not stop dispatch."""
+        _patch_km(icdev_db, monkeypatch)
+        now = datetime.now(timezone.utc).isoformat()
+
+        for gid in ("prem-gate-00", "aca-gate-00", "gdx-gate-00"):
+            _insert_task(icdev_db, gid, "MANUAL-MODE GATE - held", "in_progress", now)
+
+        count = km._count_in_progress()
+        assert count == 0, "gates-only board must report zero occupied slots"
+        assert km.MAX_IN_PROGRESS - count == km.MAX_IN_PROGRESS, (
+            "available_slots must be untouched by gates; at <= 0 "
+            "_get_due_tasks returns [] and the pipeline stalls"
+        )
+
+    def test_ordinary_in_progress_still_counted(self, icdev_db, monkeypatch):
+        """Guard the other direction — the cap must still bound real work."""
+        _patch_km(icdev_db, monkeypatch)
+        now = datetime.now(timezone.utc).isoformat()
+
+        for tid in ("tsr-a-01", "tsr-b-01", "tsr-c-01"):
+            _insert_task(icdev_db, tid, "Real work", "in_progress", now)
+
+        assert km._count_in_progress() == 3
+        assert km.MAX_IN_PROGRESS - km._count_in_progress() <= 0, (
+            "genuine work must still saturate capacity"
+        )
