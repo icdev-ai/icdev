@@ -156,9 +156,13 @@ class ACEController:
         except Exception as exc:
             logger.warning("ace launch: pre-insert failed for %s: %s", instance_id, exc)
 
+        # webhook_url must be passed through as a keyword: the positional args
+        # stopped at project_id, so _run always received the "" default and
+        # _persist_webhook_url / _deliver_webhook were unreachable from launch().
+        # cortex.api.agent() forwards a webhook_url that was being dropped here.
         self._executor.submit(
             self._run, instance_id, problem_text, trigger_source, trigger_ref,
-            user_id, project_id, role_ids=role_ids,
+            user_id, project_id, webhook_url=webhook_url, role_ids=role_ids,
         )
         return instance_id
 

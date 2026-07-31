@@ -6687,3 +6687,39 @@ projects:
   - key: doc
     title: "DOC — Docs, registry drift & verification"
     priority: low
+
+- key: sme
+  name: "SME — Chat-Native SME Co-Worker Spawning"
+  description: "Make chat the front door to ACE. A conversation anywhere in the platform can propose a team of subject-matter-expert co-workers; one click staffs it, generating any missing persona AND its executable role; the team does real work under existing trust/HITL/audit controls; a synthesized answer returns inline with a deep link to /coworker. Premium-gated on ICDEV_LICENSE_TIER, inherited automatically by future canvases and child apps, and consumed by idea_lab and compass. Phase 0 is a blocking prerequisite: 86 of 90 ACE roles were no-ops that reported success, because _normalise_step rewrote every bare step into llm_step.invoke while step_executor refused that tool unless the role granted it, and the resulting error was swallowed as optional."
+  task_prefix: "sme-"
+  default_open: true
+  briefs:
+    - "fix: intrinsic llm_step exemption, RoleStep normalisation, no-success-on-total-failure, webhook_url passthrough, profile_generator permission/tier sanitisation (sme-fix-01..06)"
+    - "reg: ensure_sme() producing BOTH a SOUL.md persona and an executable role YAML; capability bundles; role_policy validation; SIPA fail-closed (sme-reg-01..05)"
+    - "gap: generate-on-miss in the suggestion builder with cheap-first dedup against the existing 90 roles (sme-gap-01..03)"
+    - "card: suggest-then-confirm action_card, ace_team_suggestions table, shared includes/_chat_panel.html (sme-card-01..05)"
+    - "ctx: wire the dead confirm_agent path in cortex/blueprint.py; route suggestion scoring through Cortex; fix the blank governance tile (sme-ctx-01..04)"
+    - "ret: chat_result_reflex posting the synthesized answer back into the originating chat context (sme-ret-01..03)"
+    - "tier: ICDEV_LICENSE_TIER gate via billing/tier.py, SME_CHAT_MAX_TEAM=5, tiered LLM routing (sme-tier-01..03)"
+  epics:
+    - key: fix
+      title: "FIX — Make ACE co-workers actually produce output"
+      priority: critical
+    - key: reg
+      title: "REG — SME registry: persona + executable role, safely bounded"
+      priority: critical
+    - key: gap
+      title: "GAP — Generate-on-miss with duplicate suppression"
+      priority: high
+    - key: card
+      title: "CARD — Suggest-then-confirm and the shared chat panel"
+      priority: high
+    - key: ctx
+      title: "CTX — Cortex as decision brain; governance tile"
+      priority: high
+    - key: ret
+      title: "RET — Results back into the conversation"
+      priority: high
+    - key: tier
+      title: "TIER — Premium gate, team caps, tiered LLM"
+      priority: medium
