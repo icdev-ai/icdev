@@ -3681,3 +3681,72 @@ def assert_no_leaked_transaction(request, _sqlite_connection_tracker):
         f"@pytest.mark.allow_open_transaction.",
         pytrace=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# No live LLM calls during tests
+# ---------------------------------------------------------------------------
+#
+# The suite could hang indefinitely and abort naming an unrelated file. Root
+# cause: `chat_response` and friends resolve to `claude-cli` via CLILLMProvider
+# with supports_thinking=True, so any test reaching an un-mocked
+# `router.invoke(...)` SPAWNS A SUBPROCESS and waits on a thinking-mode model.
+# Nothing prevented that.
+#
+# It explains the symptoms exactly: each suite passes alone, because its own
+# mocks cover the paths it exercises; combined runs hang, because a path one
+# suite never reaches is reached after another suite has primed the state. And
+# because pytest-timeout's only method on Windows is `thread`, it kills the
+# interpreter rather than failing one test, so the report blames whatever
+# happened to be collected nearby.
+#
+# The guard patches LLMProvider.invoke / invoke_streaming — the single abstract
+# chokepoint EVERY provider implements. Patching there rather than LLMRouter
+# matters: a test that already mocks the router is untouched, while one that
+# falls through to a real provider fails immediately with a named error instead
+# of hanging the run.
+#
+# Escape hatches, in order of preference:
+#   @pytest.mark.live            a test that genuinely needs a real model
+#   ICDEV_ALLOW_LIVE_LLM=1       a deliberate live run of the whole suite
+
+
+class LiveLLMCallInTest(RuntimeError):
+    """Raised when a test reaches a real LLM provider.
+
+    Not a failure of the model — a failure to mock. The message names the
+    provider and model so the offending call site is obvious.
+    """
+
+
+def _live_llm_allowed(request) -> bool:
+    if os.environ.get("ICDEV_ALLOW_LIVE_LLM", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return request.node.get_closest_marker("live") is not None
+
+
+@pytest.fixture(autouse=True)
+def _no_live_llm_calls(request, monkeypatch):
+    """Fail fast instead of hanging when a test reaches a real provider."""
+    if _live_llm_allowed(request):
+        return
+
+    try:
+        from tools.llm.provider import LLMProvider
+    except Exception:  # noqa: BLE001 — provider layer optional in some checkouts
+        return
+
+    def _refuse(self, req, model_id="", model_config=None, *a, **k):
+        raise LiveLLMCallInTest(
+            f"Test reached a LIVE LLM provider "
+            f"({type(self).__name__} / {model_id or 'unknown model'}). "
+            "Mock the router or the provider for this path. If the test genuinely "
+            "needs a real model, mark it @pytest.mark.live; to run the whole suite "
+            "against live models set ICDEV_ALLOW_LIVE_LLM=1.\n"
+            "Left un-mocked this spawns a thinking-mode CLI subprocess and hangs "
+            "the run, which pytest-timeout resolves by killing the interpreter and "
+            "blaming an unrelated file."
+        )
+
+    monkeypatch.setattr(LLMProvider, "invoke", _refuse, raising=False)
+    monkeypatch.setattr(LLMProvider, "invoke_streaming", _refuse, raising=False)
