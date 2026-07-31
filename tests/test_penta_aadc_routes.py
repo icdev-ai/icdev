@@ -35,6 +35,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from _aadc_canvas import pin_canvas_db  # noqa: E402
+
 import tools.agentic_ai_canvas.blueprint as bp  # noqa: E402
 
 # Phase-4 tables created by migration 105 (present in prod PG; recreated here
@@ -107,9 +109,7 @@ def client(icdev_db, tmp_path, monkeypatch):
     import tools.dashboard.auth as _auth
     monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
 
-    import tools.agentic_ai_canvas.db.init_db as initdb
-    monkeypatch.setattr(initdb, "_BACKEND", "sqlite", raising=True)
-    monkeypatch.setattr(initdb, "DB_PATH", tmp_path / "aadc_canvas.db", raising=True)
+    initdb = pin_canvas_db(monkeypatch, tmp_path / "aadc_canvas.db")
 
     # Force a fresh init against the temp canvas DB on first request.
     monkeypatch.setattr(bp, "_INIT_DONE", False, raising=False)
