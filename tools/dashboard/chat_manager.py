@@ -28,6 +28,7 @@ Usage:
 """
 
 import json
+import os
 import sqlite3
 import threading
 import time
@@ -708,6 +709,122 @@ def _resolve_chat_reasoning_mode(reasoning_mode: str, user_content: str, router)
         return mode
     except Exception:
         return "cot" if reasoning_mode == "on" else "off"
+
+
+# ---------------------------------------------------------------------------
+# Cortex governance for chat turns
+# ---------------------------------------------------------------------------
+# Chat called LLMRouter directly, which meant the platform's single largest
+# prompt-injection surface ran with none of Cortex's TRUST gates and wrote no
+# audit row. We wrap the existing ``router.invoke`` rather than swapping in
+# ``cortex_api.complete()``: by the time ``_process_message`` reaches the model
+# it has assembled the RICOAS constitution, corrections, RAG, KG, live
+# compliance, hybrid memory and history compression, plus the reasoned-codegen
+# branch and the CLIJobDeferred protocol. ``complete()`` takes a bare prompt and
+# would drop all of it along with ``ctx.agent_model``.
+
+CHAT_GOVERNANCE_OPERATION = "chat.message"
+
+# Kept in sync with the refusal assertions in tests/test_chat_cortex_governance.py.
+_CHAT_BLOCKED_TEMPLATE = (
+    "This message was **blocked** by the Cortex governance gate "
+    "({gate}): {reason}. The decision was recorded in the audit trail."
+)
+
+_CHAT_GOVERNANCE_OFF = {"0", "false", "off", "no"}
+
+
+def _chat_governance_enabled() -> bool:
+    """Governance is on unless explicitly switched off.
+
+    Ungoverned chat is the gap this closes, so this is opt-out, not opt-in —
+    but a change on every turn needs one obvious lever to disable it.
+    """
+    return os.environ.get("ICDEV_CHAT_GOVERNANCE", "").strip().lower() not in _CHAT_GOVERNANCE_OFF
+
+
+def _build_chat_cortex_ctx(ctx):
+    """Map a :class:`ChatContext` onto a ``CortexContext``.
+
+    Returns None when Cortex's schemas aren't importable — Cortex is optional,
+    and the caller degrades to an ungoverned call.
+    """
+    try:
+        from tools.cortex.schemas import CortexContext
+    except Exception:
+        return None
+
+    return CortexContext(
+        tenant_id=getattr(ctx, "tenant_id", "") or "",
+        user_id=getattr(ctx, "user_id", "") or "",
+        classification=DEFAULT_CLASSIFICATION,
+        session_id=getattr(ctx, "context_id", "") or "",
+        # A conversation must not be blocked because a reply cites nothing;
+        # the grounding gates are skipped entirely below (retrieval=False), and
+        # the injection pre-check blocks regardless of this setting.
+        fail_closed=False,
+    )
+
+
+def governed_chat_invoke(invoke, prompt: str, ctx):
+    """Run ``invoke(governed_prompt)`` inside the Cortex TRUST chain.
+
+    Returns ``(reply, blocked)``. ``invoke`` receives the screened/redacted
+    prompt — not the original — so input redaction actually takes effect
+    instead of merely being recorded.
+
+    A failure anywhere in the governance layer degrades to an ungoverned call:
+    a Cortex outage must not break every conversation on the platform.
+    """
+    if not _chat_governance_enabled():
+        return invoke(prompt), False
+
+    try:
+        from tools.cortex.governance import GovernancePipeline, GovernanceBlockedError
+    except Exception as exc:
+        logger.debug("cortex governance unavailable (%s) — ungoverned chat turn", exc)
+        return invoke(prompt), False
+
+    cortex_ctx = _build_chat_cortex_ctx(ctx)
+    if cortex_ctx is None:
+        logger.debug("cortex schemas unavailable — ungoverned chat turn")
+        return invoke(prompt), False
+
+    # Degrading must not call the model twice. Once the pipeline has handed the
+    # governed prompt to the invoker, any later failure is the invoker's own
+    # (e.g. CLIJobDeferred from the CLI bridge, which the caller handles) and
+    # must propagate rather than trigger a retry.
+    reached_model = {"called": False}
+
+    def _tracked(text):
+        reached_model["called"] = True
+        return invoke(text)
+
+    try:
+        pipeline = GovernancePipeline(operation=CHAT_GOVERNANCE_OPERATION)
+        result, _report = pipeline.wrap(
+            _tracked,
+            cortex_ctx,
+            prompt=prompt,
+            # A conversational turn is generative, not retrieval-grounded.
+            # Scoring it against no sources would manufacture a defect every
+            # turn and make governance look broken.
+            context_sources=None,
+            retrieval=False,
+            attach=False,
+        )
+        return result, False
+    except GovernanceBlockedError as exc:
+        logger.warning(
+            "chat turn blocked by governance gate %s for context %s: %s",
+            exc.gate, getattr(ctx, "context_id", ""), exc.reason,
+        )
+        return _CHAT_BLOCKED_TEMPLATE.format(gate=exc.gate, reason=exc.reason), True
+    except Exception as exc:
+        if reached_model["called"]:
+            raise
+        logger.warning("chat governance failed (%s) — degrading to ungoverned call", exc)
+        return invoke(prompt), False
 
 
 class ChatContext:
@@ -1472,30 +1589,47 @@ class ChatManager:
             reasoning_mode = _resolve_chat_reasoning_mode(
                 getattr(ctx, "reasoning_mode", "off"), user_content, router,
             )
-            if reasoning_mode != "off":
-                try:
-                    from tools.llm.reasoned_codegen import generate_reasoned_code
 
-                    rc = generate_reasoned_code(
-                        function="code_generation",
-                        request=request,
-                        router=router,
-                        mode=reasoning_mode,
-                        project_id=ctx.project_id,
-                    )
-                    result = rc.code if rc and rc.code else ""
-                    if not result:
-                        response = router.invoke("chat_response", request)
-                        result = response.content if response.content else str(response)
-                except CLIJobDeferred:
-                    raise  # let the outer handler switch to background mode
-                except Exception as exc:
-                    logger.debug("reasoned codegen failed (%s) — plain chat", exc)
-                    response = router.invoke("chat_response", request)
-                    result = response.content if response.content else str(response)
-            else:
-                response = router.invoke("chat_response", request)
-                result = response.content if response.content else str(response)
+            def _invoke_model(governed_text: str) -> str:
+                """Call the model with the governed prompt.
+
+                Cortex screens/redacts the user's turn; substitute the governed
+                text back into the assembled conversation so redaction takes
+                effect rather than only being recorded. Everything else the
+                turn assembled above is preserved.
+                """
+                req = request
+                if governed_text != user_content:
+                    msgs = [dict(m) for m in conversation]
+                    for m in reversed(msgs):
+                        if m.get("role") == "user":
+                            m["content"] = governed_text
+                            break
+                    req = LLMRequest(messages=msgs, model=ctx.agent_model)
+
+                if reasoning_mode != "off":
+                    try:
+                        from tools.llm.reasoned_codegen import generate_reasoned_code
+
+                        rc = generate_reasoned_code(
+                            function="code_generation",
+                            request=req,
+                            router=router,
+                            mode=reasoning_mode,
+                            project_id=ctx.project_id,
+                        )
+                        out = rc.code if rc and rc.code else ""
+                        if out:
+                            return out
+                    except CLIJobDeferred:
+                        raise  # let the outer handler switch to background mode
+                    except Exception as exc:
+                        logger.debug("reasoned codegen failed (%s) — plain chat", exc)
+
+                response = router.invoke("chat_response", req)
+                return response.content if response.content else str(response)
+
+            result, _blocked = governed_chat_invoke(_invoke_model, user_content, ctx)
 
             # Store RAG sources in metadata for attribution display
             if rag_results:
