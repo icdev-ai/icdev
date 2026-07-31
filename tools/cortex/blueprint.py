@@ -160,6 +160,11 @@ def api_metrics_tile():
     s = stats["summary"]
     return jsonify({
         "available": stats["available"],
+        # "ok" | "idle" (healthy, no traffic in window) | "unavailable" (broken).
+        # The tile renders idle and unavailable differently — an operator must be
+        # able to tell "governance is quiet" from "governance metrics are down".
+        "status": stats.get("status", "ok"),
+        "last_call_at": stats.get("last_call_at", ""),
         "window_hours": stats["window_hours"],
         "calls": s["calls"],
         "blocked": s["blocked"],
