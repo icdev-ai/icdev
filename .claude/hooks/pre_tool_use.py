@@ -559,6 +559,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "slides_audit",
         # ACE (Autonomous Collaborative Engine) — step execution audit trail + skill candidates (NIST AU, append-only)
         "ace_audit_log",
+        "databridge_agent_access_log",
         "ace_step_audit_log",
         "ace_webhook_log",
         "ace_skill_candidates",

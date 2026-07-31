@@ -3784,3 +3784,46 @@ def handle_ace_ensure_sme(args: dict) -> dict:
         return {"error": str(exc)}
 
     return result.to_dict()
+
+
+def handle_databridge_fetch(args: dict) -> dict:
+    """MCP: read from an external SaaS connector, through the agent broker.
+
+    The ONLY agent-facing route to DataBridge. Deliberately not a ToolRunner
+    entry: that matches command strings exactly, so a parameterised data fetch
+    cannot be usefully allowlisted there.
+
+    Every call passes the broker's chain — air-gap interlock, per-agent
+    authorization against args/databridge_agent_access.yaml, read-only
+    enforcement, fail-closed outbound redaction of free-text filters, the
+    egress guard in saas_base, and an audit row. A denial is returned as a
+    result rather than raised, so an agent can reason about being refused.
+    """
+    from icdev.tools.databridge import broker
+
+    connector = str(args.get("connector") or "").strip()
+    table = str(args.get("table") or "").strip()
+    if not connector or not table:
+        return {"ok": False, "error": "connector and table are required"}
+
+    outcome = broker.fetch(
+        agent_id=str(args.get("agent_id") or "unknown"),
+        connector=connector,
+        table=table,
+        filters=args.get("filters") or {},
+        query=str(args.get("query") or ""),
+        limit=int(args.get("limit") or broker.DEFAULT_MAX_ROWS),
+        classification=str(args.get("classification") or "UNCLASSIFIED"),
+    )
+    return outcome.to_dict()
+
+
+def handle_databridge_sources(args: dict) -> dict:
+    """MCP: list the connectors and tables this agent may read.
+
+    Lets an agent discover its own reach instead of probing and accumulating
+    denials — probing is indistinguishable from an attack in an audit trail.
+    """
+    from icdev.tools.databridge import broker
+
+    return {"sources": broker.list_available(str(args.get("agent_id") or ""))}

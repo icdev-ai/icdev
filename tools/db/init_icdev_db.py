@@ -7608,6 +7608,30 @@ CREATE TABLE IF NOT EXISTS db_sync_log (
 CREATE INDEX IF NOT EXISTS idx_db_sync_conn ON db_sync_log(connection_id);
 CREATE INDEX IF NOT EXISTS idx_db_sync_time ON db_sync_log(synced_at);
 
+-- Agent access decisions for external DataBridge connectors.
+--
+-- DISTINCT from db_sync_log, which records sync OPERATIONS and requires a
+-- connection_id FK plus row counts. An authorization decision is a different
+-- thing: a DENIED fetch has no connection, transferred nothing, and is the most
+-- important row in the table. Forcing it into a sync log meant the insert
+-- failed silently and the trail was empty exactly when it mattered.
+--
+-- Append-only (NIST AU) -- see APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL DEFAULT 'unknown',
+    connector_name TEXT NOT NULL DEFAULT '',
+    table_name TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL DEFAULT 'denied' CHECK(decision IN ('allowed','denied')),
+    reason TEXT NOT NULL DEFAULT '',
+    rows_returned INTEGER DEFAULT 0,
+    redactions_applied INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_agent_access_agent ON databridge_agent_access_log(agent_id);
+CREATE INDEX IF NOT EXISTS idx_db_agent_access_decision ON databridge_agent_access_log(decision);
+
 -- Connector configuration registry
 CREATE TABLE IF NOT EXISTS db_connector_configs (
     id TEXT PRIMARY KEY,

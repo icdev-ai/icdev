@@ -54,6 +54,19 @@ os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL DEFAULT 'unknown',
+    connector_name TEXT NOT NULL DEFAULT '',
+    table_name TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL DEFAULT 'denied' CHECK(decision IN ('allowed','denied')),
+    reason TEXT NOT NULL DEFAULT '',
+    rows_returned INTEGER DEFAULT 0,
+    redactions_applied INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS web_fetch_provenance (
     id TEXT PRIMARY KEY,
     citation_id TEXT,
