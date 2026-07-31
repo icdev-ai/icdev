@@ -1115,6 +1115,52 @@ class ChatManager:
         logger.info("Closed chat context %s", context_id)
         return {"context_id": context_id, "status": "completed"}
 
+    def shutdown(self, timeout: float = 2.0) -> int:
+        """Stop every running agent loop and wait for its thread to exit.
+
+        Returns the number of threads still alive after *timeout*.
+
+        ``close_context`` sets a context's stop event but never joins its
+        thread, and it only ever addresses one context. Nothing else stops an
+        agent loop at all, so a process that creates contexts accumulates
+        threads that outlive whatever created them.
+
+        In tests that is actively harmful rather than merely untidy. Each loop
+        polls on a 0.1s sleep and touches the database -- task rows, message
+        rows, budget usage -- so a thread left running from an earlier test
+        keeps writing during later ones. Its work is then attributed to whatever
+        test happens to be executing, and a transaction it holds blocks DDL on
+        other connections until the busy timeout expires. That is the same
+        cross-test interference that made the suite hang, arriving from a
+        different direction.
+
+        Threads are daemons, so this is not needed for interpreter exit; it is
+        needed for a clean boundary between tests, and for a graceful shutdown
+        that does not abandon in-flight work mid-write.
+        """
+        with self._lock:
+            contexts = list(self._contexts.values())
+
+        threads = []
+        for ctx in contexts:
+            ctx._stop_event.set()
+            thread = getattr(ctx, "_thread", None)
+            if thread is not None and thread.is_alive():
+                threads.append(thread)
+
+        # One shared deadline, not `timeout` per thread: N contexts must not
+        # take N * timeout to shut down.
+        deadline = time.monotonic() + timeout
+        for thread in threads:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+
+        still_alive = sum(1 for t in threads if t.is_alive())
+        if still_alive:
+            logger.warning(
+                "%d chat agent loop(s) did not stop within %.1fs", still_alive, timeout
+            )
+        return still_alive
+
     # ------------------------------------------------------------------
     # Messaging
     # ------------------------------------------------------------------

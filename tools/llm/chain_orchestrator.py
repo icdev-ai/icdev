@@ -469,8 +469,10 @@ class ChainOrchestrator:
                 tokens=result.total_input_tokens + result.total_output_tokens,
                 function=function,
             )
-        except Exception:
-            pass  # Best-effort — never block on budget recording
+        except Exception as exc:
+            # Best-effort, but not silent — see the note in router.py: a bare
+            # `pass` here is how a permanently-failing insert went unnoticed.
+            logger.warning("Module budget recording failed: %s", exc)
 
         self._publish_reasoning_event(result, function)
 

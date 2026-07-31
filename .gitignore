@@ -9,6 +9,14 @@
 data/*.db
 data/*.db.bak*
 data/tenants/*.db
+# WAL sidecars: any test run in WAL mode drops these next to the .db. They were
+# only ignored per-database (fathomdesk, network_canvas), so running the suite
+# left data/icdev.db-shm / -wal untracked -- and the auto-commit hook sweeps
+# untracked files into a commit and pushes them.
+data/*.db-shm
+data/*.db-wal
+data/tenants/*.db-shm
+data/tenants/*.db-wal
 *.sqlite
 *.sqlite3
 

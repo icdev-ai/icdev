@@ -36,7 +36,15 @@ def _run_probe(*extra_args, env=None):
     PROBE.write_text(textwrap.dedent(PROBE_SOURCE), encoding="utf-8")
     try:
         return subprocess.run(
-            [sys.executable, "-m", "pytest", str(PROBE), "-p", "no:cacheprovider", "-v"],
+            # --color=no: the child inherits this run's environment, so pytest
+            # can decide to emit ANSI codes into a captured pipe. That splits
+            # "<nodeid> PASSED" with an escape sequence and every assertion
+            # here that matches on the verbose output fails for no real reason.
+            [
+                sys.executable, "-m", "pytest", str(PROBE),
+                "-p", "no:cacheprovider", "-v", "--color=no",
+                *extra_args,
+            ],
             capture_output=True,
             text=True,
             cwd=str(Path(__file__).parent.parent),
@@ -61,6 +69,22 @@ def test_leak_does_not_cascade_into_the_next_test():
 
     # The guard rolls the leak back, so the following test still passes.
     assert "test_runs_after_the_leak PASSED" in result.stdout
+
+
+def test_failure_reports_where_the_connection_was_opened():
+    """The report has to carry the opening stack, not just the finishing test.
+
+    Regression guard: the origin registry is cleared during the same teardown
+    that builds the message, so reading it in the wrong order degrades every
+    entry to "(origin not recorded)" while the guard still looks like it works.
+    """
+    result = _run_probe()
+
+    assert "Opened at:" in result.stdout
+    assert "not attributable" not in result.stdout
+    # The frame naming the probe's sqlite3.connect call, not just the nodeid.
+    assert "_txn_leak_probe_generated.py" in result.stdout
+    assert "opened on thread 'MainThread'" in result.stdout
 
 
 def test_guard_can_be_disabled_by_env(monkeypatch):

@@ -3663,6 +3663,16 @@ def assert_no_leaked_transaction(request, _sqlite_connection_tracker):
         _txn_guard.reset()
         return
 
+    # Report WHERE each leaked connection was opened. Naming only the test that
+    # finished blames the wrong one whenever a background thread opens the
+    # connection mid-test — which is how a pure HTTP test that touches no
+    # database at all came to be reported as leaking.
+    #
+    # Read the origins BEFORE reset(): reset() clears the origin registry, so
+    # describing the connections afterwards reports "(origin not recorded)" for
+    # every one of them and the diagnostic is silently a no-op.
+    origins = chr(10).join(_txn_guard.describe_origin(c) for c in leaked)
+
     # Roll back first: without this every subsequent test in the run would see
     # the same open transaction and fail, burying the real culprit.
     for conn in leaked:
@@ -3678,6 +3688,116 @@ def assert_no_leaked_transaction(request, _sqlite_connection_tracker):
         f"transaction. Commit, roll back, or close the connection before the "
         f"test ends (the guard rolled them back so later tests are unaffected). "
         f"If the open transaction is intentional, mark the test with "
-        f"@pytest.mark.allow_open_transaction.",
+        f"@pytest.mark.allow_open_transaction.{chr(10)}{chr(10)}"
+        f"Opened at:{chr(10)}{origins}",
         pytrace=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# No live LLM calls during tests
+# ---------------------------------------------------------------------------
+#
+# The suite could hang indefinitely and abort naming an unrelated file. Root
+# cause: `chat_response` and friends resolve to `claude-cli` via CLILLMProvider
+# with supports_thinking=True, so any test reaching an un-mocked
+# `router.invoke(...)` SPAWNS A SUBPROCESS and waits on a thinking-mode model.
+# Nothing prevented that.
+#
+# It explains the symptoms exactly: each suite passes alone, because its own
+# mocks cover the paths it exercises; combined runs hang, because a path one
+# suite never reaches is reached after another suite has primed the state. And
+# because pytest-timeout's only method on Windows is `thread`, it kills the
+# interpreter rather than failing one test, so the report blames whatever
+# happened to be collected nearby.
+#
+# The guard patches LLMProvider.invoke / invoke_streaming — the single abstract
+# chokepoint EVERY provider implements. Patching there rather than LLMRouter
+# matters: a test that already mocks the router is untouched, while one that
+# falls through to a real provider fails immediately with a named error instead
+# of hanging the run.
+#
+# Escape hatches, in order of preference:
+#   @pytest.mark.live            a test that genuinely needs a real model
+#   ICDEV_ALLOW_LIVE_LLM=1       a deliberate live run of the whole suite
+
+
+class LiveLLMCallInTest(RuntimeError):
+    """Raised when a test reaches a real LLM provider.
+
+    Not a failure of the model — a failure to mock. The message names the
+    provider and model so the offending call site is obvious.
+    """
+
+
+def _live_llm_allowed(request) -> bool:
+    if os.environ.get("ICDEV_ALLOW_LIVE_LLM", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return request.node.get_closest_marker("live") is not None
+
+
+@pytest.fixture(autouse=True)
+def _no_live_llm_calls(request, monkeypatch):
+    """Fail fast instead of hanging when a test reaches a real provider."""
+    if _live_llm_allowed(request):
+        return
+
+    try:
+        from tools.llm.provider import LLMProvider
+    except Exception:  # noqa: BLE001 — provider layer optional in some checkouts
+        return
+
+    def _refuse(self, req, model_id="", model_config=None, *a, **k):
+        raise LiveLLMCallInTest(
+            f"Test reached a LIVE LLM provider "
+            f"({type(self).__name__} / {model_id or 'unknown model'}). "
+            "Mock the router or the provider for this path. If the test genuinely "
+            "needs a real model, mark it @pytest.mark.live; to run the whole suite "
+            "against live models set ICDEV_ALLOW_LIVE_LLM=1.\n"
+            "Left un-mocked this spawns a thinking-mode CLI subprocess and hangs "
+            "the run, which pytest-timeout resolves by killing the interpreter and "
+            "blaming an unrelated file."
+        )
+
+    monkeypatch.setattr(LLMProvider, "invoke", _refuse, raising=False)
+    monkeypatch.setattr(LLMProvider, "invoke_streaming", _refuse, raising=False)
+
+
+# ---------------------------------------------------------------------------
+# No chat agent loops surviving a test
+# ---------------------------------------------------------------------------
+#
+# ChatManager.create_context spawns a daemon thread per context and only
+# close_context stops one -- and even that never joins. A test that creates a
+# context and does not close it leaves a loop polling on a 0.1s sleep for the
+# rest of the session, writing task rows, message rows and budget usage while
+# LATER tests run.
+#
+# The damage is misattribution rather than noise: work from an abandoned thread
+# lands during whichever test is executing, and a transaction it holds blocks
+# DDL on other connections until the busy timeout expires. That is the same
+# cross-test interference behind the suite hang, reached by another route.
+#
+# Guarded on sys.modules so this costs nothing for the vast majority of tests
+# that never touch chat: importing chat_manager here would drag the dashboard
+# import graph into every test in the suite.
+
+
+@pytest.fixture(autouse=True)
+def _stop_chat_agent_loops():
+    """Stop any chat agent loops a test leaves running."""
+    yield
+
+    module = sys.modules.get("tools.dashboard.chat_manager")
+    if module is None:
+        return
+
+    manager = getattr(module, "chat_manager", None)
+    shutdown = getattr(manager, "shutdown", None)
+    if shutdown is None:
+        return
+
+    try:
+        shutdown(timeout=2.0)
+    except Exception:  # noqa: BLE001 — teardown must never fail a passing test
+        pass
