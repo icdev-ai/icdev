@@ -123,11 +123,36 @@ def _ensure_prompt_dir():
 
 
 def _count_in_progress() -> int:
-    """Count how many tasks are currently in_progress."""
+    """Count tasks currently in_progress that represent REAL work.
+
+    Manual-mode gates are excluded. A gate is a sentinel, not work: per
+    ``tools/kanban/gates.py`` it is held ``in_progress`` FOREVER by design, so
+    counting it consumed a dispatch slot that nothing was ever going to release.
+    ``_get_due_tasks`` already filters gates out of dispatch via the same
+    predicate; counting them here contradicted that and throttled the pipeline
+    in proportion to how many cards were gated.
+
+    Concretely, with the default ``MAX_IN_PROGRESS=3`` and two gates held,
+    ``available_slots`` was 1 instead of 3, and a single running task drove it to
+    0 — where ``_get_due_tasks`` returns ``[]`` and the scheduler logs
+    "idle (no due tasks)" while due, dependency-satisfied tasks sit in
+    ``scheduled``. Three gates would have stopped dispatch outright.
+
+    Imported locally because ``_is_manual_gate`` is bound further down this
+    module; ``tools.kanban.gates`` imports nothing, so this is cheap.
+    """
+    from tools.kanban.gates import is_manual_gate
+
     conn = get_connection()
     try:
-        row = conn.execute("SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'in_progress'").fetchone()
-        return dict(row).get("cnt", 0)
+        rows = conn.execute(
+            "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
+        ).fetchall()
+        return sum(
+            1
+            for r in (dict(x) for x in rows)
+            if not is_manual_gate(r.get("id"), r.get("title"))
+        )
     finally:
         conn.close()
 
