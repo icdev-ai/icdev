@@ -6996,6 +6996,32 @@ TOOL_REGISTRY = {
             },
         },
     },
+    "ace_ensure_sme": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_ensure_sme",
+        "description": (
+            "Ensure a TEAM-CAPABLE subject-matter expert exists for a domain, creating one "
+            "only if the existing catalog does not already cover it. Unlike ace_persona_query "
+            "-- which yields an advisory-only SOUL.md persona that can answer a question but "
+            "can never be staffed onto a team -- this produces BOTH the persona identity and "
+            "the executable role YAML, so the returned role_id can be passed straight to "
+            "ace_launch's role_ids. Reuses a near-match from the ~90-role catalog rather than "
+            "minting a duplicate. All security fields (trust_tier, tool_permissions, "
+            "folder_access, icdev_tools) come from hand-authored capability bundles, never "
+            "from the model; generated roles are trust_tier 'red' so the human confidence gate "
+            "reviews their first run. Primary use case is cross-repo callers (idea_lab, compass)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain_description": {"type": "string", "description": "Free-text description of the expertise needed, e.g. 'maritime hull and cargo underwriting'"},
+                "capability_bundle": {"type": "string", "description": "Optional: advisory (default, read-only) | analyst | builder. Escalation beyond advisory is a deliberate human choice."},
+                "allow_reuse": {"type": "boolean", "description": "Reuse a sufficiently similar existing role instead of generating (default true)"},
+            },
+            "required": ["domain_description"],
+        },
+    },
     "ace_persona_query": {
         "category": "nova",
         "module": "tools.mcp.gap_handlers",

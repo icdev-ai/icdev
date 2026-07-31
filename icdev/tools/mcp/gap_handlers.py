@@ -3741,3 +3741,46 @@ def handle_browser_screenshot(args: dict) -> dict:
     from tools.agent_toolkit import browser_screenshot
 
     return browser_screenshot(name=args.get("name"), run_id=args.get("run_id"))
+
+
+def handle_ace_ensure_sme(args: dict) -> dict:
+    """MCP: ensure a team-capable subject-matter expert exists for a domain.
+
+    Distinct from ``ace_persona_query``, which produces an ADVISORY-only persona
+    (a SOUL.md identity for one-shot Q&A). A persona alone cannot be staffed onto
+    an ACE team, so a cross-repo caller that generated one could ask it a
+    question but never put it to work. ``ensure_sme`` produces both halves — the
+    SOUL.md identity AND the executable role YAML — or neither.
+
+    Resolution order: reuse a previously generated SME for the same normalised
+    domain; else reuse a sufficiently similar role from the existing catalog
+    rather than minting a near-duplicate; else generate.
+
+    The returned ``role_id`` is safe to pass straight to ``ace_launch``'s
+    ``role_ids``.
+    """
+    domain_description = str(args.get("domain_description") or "").strip()
+    if not domain_description:
+        return {"error": "domain_description is required"}
+
+    bundle = args.get("capability_bundle") or None
+    allow_reuse = args.get("allow_reuse", True)
+
+    try:
+        from tools.ace.sme_registry import ensure_sme
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"sme_registry unavailable: {exc}"}
+
+    try:
+        result = ensure_sme(
+            domain_description,
+            capability_bundle=bundle,
+            allow_reuse=bool(allow_reuse),
+        )
+    except PermissionError as exc:
+        # The generated role violated capability policy and was NOT written.
+        return {"error": f"capability policy rejected the generated role: {exc}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+    return result.to_dict()
