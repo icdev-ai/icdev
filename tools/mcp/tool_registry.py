@@ -5947,6 +5947,50 @@ TOOL_REGISTRY = {
     # ============================================================
     # REDACTION & DATA PROTECTION (Phase 70 — D-RDT-1)
     # ============================================================
+    "databridge_fetch": {
+        "category": "databridge",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_databridge_fetch",
+        "description": (
+            "Read from an external SaaS connector (Splunk, ServiceNow, GitHub, ...) through "
+            "the agent access broker. READ-ONLY: the broker has no write path. Every call is "
+            "authorized per-agent against args/databridge_agent_access.yaml (deny-all by "
+            "default), refused outright in air-gap mode, has free-text filter values redacted "
+            "fail-closed before egress, and writes an audit row whether allowed or denied. "
+            "Call databridge_sources first to see what this agent may reach rather than "
+            "probing -- a denial is returned as a result, not an error."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "connector": {"type": "string", "description": "Registered connector name, e.g. 'github', 'servicenow_itsm'"},
+                "table": {"type": "string", "description": "Table/collection to read; must be in the connector's grant"},
+                "query": {"type": "string", "description": "Optional free-text search. Redacted fail-closed before it leaves."},
+                "filters": {"type": "object", "description": "Optional structured filters. String values are redacted."},
+                "limit": {"type": "integer", "description": "Max rows (default 200, hard cap 1000)"},
+                "agent_id": {"type": "string", "description": "Calling agent's role_id, for authorization and audit"},
+                "classification": {"type": "string", "description": "Sensitivity of the query content (default UNCLASSIFIED)"},
+            },
+            "required": ["connector", "table"],
+        },
+    },
+    "databridge_sources": {
+        "category": "databridge",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_databridge_sources",
+        "description": (
+            "List external connectors and tables the calling agent is permitted to read. "
+            "Use this before databridge_fetch: discovering your own reach is preferable to "
+            "probing, which is indistinguishable from an attack in the audit trail."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "Calling agent's role_id"},
+            },
+            "required": [],
+        },
+    },
     "redaction_detect": {
         "category": "redaction",
         "module": "tools.mcp.gap_handlers",

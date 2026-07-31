@@ -1,0 +1,70 @@
+# CUI // SP-CTI
+# Which external DataBridge connectors an AGENT may read from.
+#
+# Consumed by tools/databridge/broker.py.
+#
+# ---------------------------------------------------------------------------
+# This file is an authorization boundary, not a convenience config.
+#
+# DataBridge connectors reach a customer's own systems — Splunk, ServiceNow,
+# SolarWinds, Tenable, GitHub. Before the broker existed, agents could not
+# reach them at all, and the only reason was that nobody had wired it up. That
+# was an accident. This file is the deliberate version.
+#
+# Deny-all by default, and a missing or unreadable file also denies: a config
+# mistake must not be indistinguishable from a grant.
+#
+# ---------------------------------------------------------------------------
+# READ-ONLY. The broker has no write path. An agent creating a ticket or
+# updating a CRM record is a much larger blast radius than reading one, it
+# lands in a system ICDEV does not own and cannot roll back, and it needs its
+# own approval design. Do not add a `write:` key here expecting it to work.
+#
+# ---------------------------------------------------------------------------
+# Grant shape:
+#
+#   - name: splunk                  # must match the registered connector name
+#     description: SIEM search      # shown to agents by list_available()
+#     connection_id: prod-splunk    # row in db_connections holding creds
+#     tables: [notable_events]      # ALLOWLIST — not a hint
+#     agents: [security_analyst]    # optional; empty means any agent
+#     classification_ceiling: UNCLASSIFIED
+#
+# `tables` is an allowlist because a connector typically exposes far more than
+# an agent needs, and "everything the API offers" is not a decision anyone
+# consciously made.
+#
+# `agents` is by role_id. Leaving it empty grants every agent, including
+# runtime-generated SMEs — reasonable for a low-sensitivity public data source,
+# rarely right for a customer system.
+#
+# `classification_ceiling` bounds what may be SENT as a query filter. Free-text
+# filter values are sanitized fail-closed regardless.
+
+version: databridge-agent-access-1.0
+
+# Master switch. Off by default: agent access to customer systems is opt-in per
+# deployment, never on because a connector happens to be configured.
+enabled: false
+
+connectors: []
+
+# ---------------------------------------------------------------------------
+# Example, left commented. A manifest shipping with live grants would mean an
+# install silently authorising agents against systems the operator never
+# reviewed.
+#
+# connectors:
+#   - name: github
+#     description: Read-only repository and issue search.
+#     connection_id: corp-github
+#     tables: [issues, pull_requests]
+#     agents: []
+#     classification_ceiling: UNCLASSIFIED
+#
+#   - name: servicenow_itsm
+#     description: Incident records for operational context.
+#     connection_id: prod-snow
+#     tables: [incident]
+#     agents: [security_analyst, incident_responder]
+#     classification_ceiling: CUI
