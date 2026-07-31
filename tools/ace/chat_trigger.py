@@ -107,3 +107,333 @@ def maybe_launch_ace(
         user_id=user_id,
         project_id=project_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Suggest-then-confirm
+# ---------------------------------------------------------------------------
+#
+# `maybe_launch_ace` above is deliberately left untouched: tests/
+# test_ace_chat_trigger.py monkeypatches `chat_trigger.ACEController` and asserts
+# an immediate launch with trigger_source == "chat". That is a regression
+# contract, and "@team <problem>" should stay immediate anyway -- an explicit
+# command IS the approval.
+#
+# What follows is the implicit path. A message that merely LOOKS like a
+# multi-step goal now produces a proposal a human can approve, instead of
+# silently spawning a team of agents with read/write/execute agency.
+
+import json as _json  # noqa: E402
+import uuid as _uuid  # noqa: E402
+from datetime import datetime as _dt  # noqa: E402
+from datetime import timezone as _tz  # noqa: E402
+
+from icdev.tools.logging.icdev_logger import get_logger  # noqa: E402
+
+logger = get_logger(__name__)
+
+_DB_ENV = "ICDEV_ACE_DB_URL"
+
+#: A proposal older than this is stale -- the conversation has moved on.
+SUGGESTION_TTL_SECONDS = 60 * 60 * 6
+
+#: Chat-spawned teams are capped tighter than the global MAX_TEAM_SIZE (8).
+#: Lowering the global cap would regress other paths, e.g. the 5-role doc team.
+MAX_CHAT_TEAM = 5
+
+
+def _now() -> str:
+    return _dt.now(_tz.utc).isoformat(timespec="seconds")
+
+
+def _conn():
+    from icdev.tools.ace.db.init_db import init as _init
+    from icdev.tools.db.storage import get_canvas_connection
+
+    _init()
+    return get_canvas_connection(_DB_ENV)
+
+
+def _audit(action: str, detail: str, instance_id: str = "") -> None:
+    """Append a decision to the immutable trail.
+
+    ace_team_suggestions itself transitions state, so the durable record of who
+    approved what lives in ace_audit_log, which is append-only.
+    """
+    try:
+        conn = _conn()
+        try:
+            conn.execute(
+                "INSERT INTO ace_audit_log (instance_id, coworker_id, action, detail, "
+                "actor, classification, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (instance_id, "", action, detail, "chat", "CUI", _now()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 -- auditing must not block the flow
+        logger.warning("chat_trigger: audit write failed for %s: %s", action, exc)
+
+
+def _classify_roles(content: str) -> list[dict]:
+    """Best-effort roster preview. Never raises; an empty roster is valid.
+
+    When the classifier has nothing better than its generic fallback roster,
+    a domain-expert slot is added for the problem's OWN domain. That fallback
+    is `[ai_developer, qa_manager]` -- a software team -- so without this an
+    agricultural supply chain, a maritime insurer and a rare-disease diagnostic
+    all get a developer and a QA manager, because the classifier knows how
+    software is built and nothing about what it is about.
+
+    The extra slot is marked `to_generate` and NOTHING is created here: the
+    expert is only brought into existence if a human approves the proposal.
+    """
+    try:
+        from icdev.tools.ace.problem_classifier import ProblemClassifierLens
+
+        lens = ProblemClassifierLens(content)
+        manifest = lens.run()
+        known = {r.role_id: r for r in lens._role_loader.list_roles()}
+        out: list[dict] = []
+        for slot in (getattr(manifest, "slots", None) or [])[:MAX_CHAT_TEAM]:
+            role = known.get(slot.role_id)
+            out.append({
+                "role_id": slot.role_id,
+                "display_name": getattr(role, "display_name", "") or slot.role_id,
+                "count": int(getattr(slot, "count", 1)),
+                "status": "existing" if role is not None else "to_generate",
+            })
+
+        gap = _detect_domain_gap(content, manifest)
+        if gap and len(out) < MAX_CHAT_TEAM:
+            out.append({
+                "role_id": "",  # assigned by ensure_sme at approval time
+                "display_name": "Domain specialist",
+                "count": 1,
+                "status": "to_generate",
+                "domain_description": gap.domain_description,
+                "gap_reason": gap.reason,
+            })
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("chat_trigger: role classification failed: %s", exc)
+        return []
+
+
+def _detect_domain_gap(content: str, manifest):
+    """Return an SmeGap when the catalog does not cover this problem's domain."""
+    try:
+        from icdev.tools.ace.sme_gap_detector import detect_sme_gap
+
+        return detect_sme_gap(content, manifest)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("chat_trigger: gap detection unavailable: %s", exc)
+        return None
+
+
+def build_team_proposal(
+    context_id: str,
+    content: str,
+    user_id: str = "system",
+    project_id: str = "",
+) -> Optional[dict]:
+    """Return a persisted team proposal for *content*, or None.
+
+    Returns None when the message does not warrant a team, or when it is an
+    explicit ``@team`` command (which the caller launches directly).
+
+    The proposal is written to ``ace_team_suggestions`` in state ``proposed``
+    and returned as a dict suitable for a ``content_type='action_card'`` chat
+    message. Nothing is launched and no SME is generated here -- generation is
+    deferred until approval, so a declined proposal costs no LLM spend.
+    """
+    if detect_ace_trigger(content) != "implicit":
+        return None
+
+    roles = _classify_roles(content)
+    suggestion_id = "sug-" + _uuid.uuid4().hex[:12]
+
+    try:
+        conn = _conn()
+        try:
+            conn.execute(
+                "INSERT INTO ace_team_suggestions "
+                "(id, context_id, user_id, project_id, problem_text, "
+                " proposed_roles_json, state, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, 'proposed', %s)",
+                (
+                    suggestion_id, context_id, user_id, project_id, content,
+                    _json.dumps(roles), _now(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("chat_trigger: could not persist proposal: %s", exc)
+        return None
+
+    role_ids = [r["role_id"] for r in roles]
+    _audit("team_proposed", "suggestion=%s roles=%s" % (suggestion_id, role_ids))
+
+    return {
+        "card": "sme_team_suggestion",
+        "suggestion_id": suggestion_id,
+        "roles": roles,
+        "estimated_agents": sum(int(r.get("count", 1)) for r in roles),
+        "rationale": (
+            "This message reads as a multi-step goal spanning more than one "
+            "specialty. A co-worker team could take it on."
+        ),
+        "actions": [
+            {"id": "approve", "label": "Spin up the team"},
+            {"id": "decline", "label": "No thanks"},
+        ],
+    }
+
+
+def get_proposal(suggestion_id: str) -> Optional[dict]:
+    """Return the stored proposal row, or None."""
+    try:
+        conn = _conn()
+        try:
+            row = conn.execute(
+                "SELECT id, context_id, user_id, project_id, problem_text, "
+                "proposed_roles_json, state, instance_id, created_at "
+                "FROM ace_team_suggestions WHERE id = %s",
+                (suggestion_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("chat_trigger: proposal lookup failed: %s", exc)
+        return None
+    return dict(row) if row else None
+
+
+def is_expired(proposal: dict) -> bool:
+    """True when the proposal is older than the TTL.
+
+    Evaluated at read time rather than by a reaper: a stale row is harmless
+    until someone tries to act on it.
+    """
+    try:
+        created = _dt.fromisoformat(str(proposal.get("created_at")))
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=_tz.utc)
+    except Exception:  # noqa: BLE001
+        return False
+    return (_dt.now(_tz.utc) - created).total_seconds() > SUGGESTION_TTL_SECONDS
+
+
+def decline_proposal(suggestion_id: str, reason: str = "") -> bool:
+    """Mark a proposal declined. Returns True when a row was updated."""
+    proposal = get_proposal(suggestion_id)
+    if not proposal or proposal["state"] != "proposed":
+        return False
+    try:
+        conn = _conn()
+        try:
+            conn.execute(
+                "UPDATE ace_team_suggestions SET state='declined', decline_reason=%s, "
+                "decided_at=%s WHERE id=%s AND state='proposed'",
+                (reason[:400], _now(), suggestion_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("chat_trigger: decline failed: %s", exc)
+        return False
+    _audit("team_declined", "suggestion=%s reason=%s" % (suggestion_id, reason[:120]))
+    return True
+
+
+def confirm_proposal(suggestion_id: str, user_id: str = "system") -> dict:
+    """Approve a proposal and launch the team.
+
+    The only path that spawns agents from an implicit chat trigger, and it runs
+    exactly once per proposal -- the state guard makes a double-click idempotent
+    rather than launching twice.
+
+    Returns ``{"ok": bool, "instance_id": str, "error": str}``.
+    """
+    proposal = get_proposal(suggestion_id)
+    if not proposal:
+        return {"ok": False, "instance_id": "", "error": "unknown suggestion"}
+    if proposal["state"] == "launched":
+        return {"ok": True, "instance_id": proposal["instance_id"], "error": ""}
+    if proposal["state"] != "proposed":
+        return {"ok": False, "instance_id": "", "error": "already " + str(proposal["state"])}
+    if is_expired(proposal):
+        decline_proposal(suggestion_id, "expired")
+        return {"ok": False, "instance_id": "", "error": "expired"}
+
+    try:
+        roles = _json.loads(proposal.get("proposed_roles_json") or "[]")
+    except Exception:  # noqa: BLE001
+        roles = []
+
+    # Existing roles are launch targets directly. An unresolvable id becomes a
+    # ghost coworker that fails role_not_found, so a role is only ever passed
+    # once it is known to exist.
+    role_ids = [r["role_id"] for r in roles if r.get("status") == "existing" and r.get("role_id")]
+
+    # Approval is what brings a generated specialist into existence -- never
+    # the heuristic that proposed it. A declined proposal therefore costs no
+    # LLM spend and leaves no role behind.
+    for entry in roles:
+        if entry.get("status") != "to_generate":
+            continue
+        domain = str(entry.get("domain_description") or "").strip()
+        if not domain:
+            continue
+        resolved = _resolve_domain_gap(domain)
+        if resolved and resolved.get("role_id"):
+            role_ids.append(resolved["role_id"])
+
+    if _ace_controller.ACEController is not _ORIGINAL_CONTROLLER_CLS:
+        _ctrl = _ace_controller.ACEController
+    else:
+        _ctrl = getattr(sys.modules[__name__], "ACEController", _ORIGINAL_CONTROLLER_CLS)
+
+    try:
+        instance_id = _ctrl.get_instance().launch(
+            problem_text=proposal["problem_text"],
+            trigger_source="chat_suggestion",
+            trigger_ref=proposal["context_id"],
+            user_id=user_id or proposal["user_id"],
+            project_id=proposal["project_id"],
+            role_ids=role_ids or None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("chat_trigger: launch from proposal failed: %s", exc)
+        return {"ok": False, "instance_id": "", "error": str(exc)}
+
+    try:
+        conn = _conn()
+        try:
+            conn.execute(
+                "UPDATE ace_team_suggestions SET state='launched', instance_id=%s, "
+                "decided_at=%s WHERE id=%s",
+                (instance_id, _now(), suggestion_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 -- the team IS running; report success
+        logger.warning("chat_trigger: could not mark proposal launched: %s", exc)
+
+    _audit("team_approved", "suggestion=%s roles=%s" % (suggestion_id, role_ids), instance_id)
+    return {"ok": True, "instance_id": instance_id, "error": ""}
+
+
+def _resolve_domain_gap(domain_description: str) -> dict | None:
+    """Create (or reuse) the SME for a proposed domain at approval time."""
+    try:
+        from icdev.tools.ace.sme_gap_detector import SmeGap, resolve_gap
+
+        return resolve_gap(SmeGap(domain_description=domain_description, reason="approved"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("chat_trigger: could not resolve domain gap: %s", exc)
+        return None

@@ -720,6 +720,15 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
 
+  # Summarises a finished ACE co-worker team's artifacts for the chat reader
+  # who asked (tools/ace/chat_result.py). Deliberately a SEPARATE function from
+  # the workers': the team members can run on a cheap/local chain while the one
+  # synthesis call that a human actually reads runs on a stronger model. Change
+  # the split here, not in code — no model IDs are hardcoded anywhere.
+  ace_result_synthesis:
+    chain: [claude-sonnet, kimi-cloud, gpt-4o, qwen3-local, gemini-2.5-flash]
+    effort: medium
+
   collaboration:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium

@@ -29,12 +29,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from icdev.tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _ROLES_CANDIDATES_DIR = Path(__file__).parents[3] / "args" / "ace" / "roles" / "candidates"
 _MAX_PER_RUN = 5
 
 # SIPA verdicts that are acceptable for promotion to candidates/
 _PROMOTABLE_VERDICTS = {"clean", "low_risk"}
+
+#: Sentinel meaning "the scanner did not run", distinct from any verdict SIPA
+#: itself returns. Never promotable; handled as skipped so it retries.
+_VERDICT_UNAVAILABLE = "unavailable"
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +77,13 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
             verdict, score = _run_sipa(candidate_yaml, role_id)
             summary["assessed"] += 1
 
-            if verdict in _PROMOTABLE_VERDICTS:
+            if verdict == _VERDICT_UNAVAILABLE:
+                # The scanner did not run, so nothing has been vetted. Skip
+                # rather than reject: 'rejected' is terminal, but a scanner
+                # outage should be retried once SIPA is back.
+                _mark_skipped(candidate_id, "SIPA unavailable — not assessed")
+                summary["skipped"] += 1
+            elif verdict in _PROMOTABLE_VERDICTS:
                 _promote(candidate_id, role_id, candidate_yaml, verdict, score)
                 summary["promoted"] += 1
             else:
@@ -98,7 +112,13 @@ def _run_sipa(candidate_yaml: str, role_id: str) -> tuple[str, float]:
     try:
         from tools.integrity.engine import assess
     except ImportError:
-        return "clean", 0.0  # SIPA not available in this environment
+        # FAIL CLOSED. This gate stands between an LLM-authored role spec and a
+        # promoted, staffable role. Returning "clean" when the scanner is simply
+        # absent means an unvetted candidate is promoted on the strength of the
+        # scanner not being installed — the opposite of what the gate is for.
+        # "unavailable" is handled by the caller as skipped, not promoted.
+        logger.warning("skill_promoter: SIPA unavailable (import failed) — refusing to promote")
+        return "unavailable", 0.0
 
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -118,9 +138,12 @@ def _run_sipa(candidate_yaml: str, role_id: str) -> tuple[str, float]:
         verdict = result.get("verdict", "unknown")
         score = float(result.get("risk_score", 0.0))
         return verdict, score
-    except Exception:
-        # SIPA failed (DB not initialized, scanner error, etc.) — promote with warning
-        return "clean", 0.0
+    except Exception as exc:  # noqa: BLE001
+        # FAIL CLOSED, same reasoning as the ImportError branch above. A scanner
+        # that errored has not vetted anything; treating that as "clean" made the
+        # gate strongest exactly when it was working and absent when it was not.
+        logger.warning("skill_promoter: SIPA assessment errored (%s) — refusing to promote", exc)
+        return "unavailable", 0.0
     finally:
         try:
             Path(tmp_path).unlink(missing_ok=True)

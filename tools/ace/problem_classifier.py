@@ -19,7 +19,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from icdev.tools.ace.role_loader import RoleLoader
+from icdev.tools.logging.icdev_logger import get_logger
 from tools.oracle.base_lens import BaseLens, OraclePrediction
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +422,77 @@ class ProblemClassifierLens(BaseLens):
     # LLM helper
     # ------------------------------------------------------------------
 
+    def _resolve_suggested_roles(self, raw_ids: list[str]) -> list[RoleSlot]:
+        """Map model-named role ids onto roles that actually exist on disk.
+
+        The model can only emit *strings*. Any name it invents that is not a
+        role YAML becomes a ghost co-worker: ``team_assembler._build_specs``
+        catches ``RoleNotFoundError``, builds a spec with ``llm_function=""``
+        and no permissions, and ``CoWorkerThread`` then fails it immediately
+        with ``role_not_found``. So an unmatched suggestion is strictly worse
+        than no suggestion.
+
+        Each id is therefore either matched to a real role (exactly, or via the
+        same similarity search ``sme_registry`` uses for duplicate suppression)
+        or dropped. Genuinely novel domains are handled upstream by the
+        suggestion builder calling ``ensure_sme`` — never here, because this
+        runs inside the controller's background thread where a synchronous
+        generation would stall assembly with nobody to approve it.
+        """
+        if not raw_ids:
+            return []
+
+        # list_roles() returns RoleTemplate objects, not ids.
+        try:
+            known = {r.role_id for r in self._role_loader.list_roles()}
+        except Exception as exc:  # noqa: BLE001 — degrade to no suggestions
+            logger.warning("problem_classifier: role catalog unavailable: %s", exc)
+            return []
+
+        resolved: list[str] = []
+        for raw in raw_ids:
+            if raw in known:
+                resolved.append(raw)
+                continue
+            match = self._nearest_known_role(raw, known)
+            if match:
+                logger.info(
+                    "problem_classifier: mapped suggested role %r -> %r", raw, match
+                )
+                resolved.append(match)
+            else:
+                logger.info(
+                    "problem_classifier: dropping unknown suggested role %r "
+                    "(no role YAML; would fail as role_not_found)", raw
+                )
+
+        slots: list[RoleSlot] = []
+        for i, role_id in enumerate(dict.fromkeys(resolved)):
+            slots.append(
+                RoleSlot(
+                    role_id=role_id,
+                    count=1,
+                    priority="high" if i == 0 else "medium",
+                )
+            )
+        return slots
+
+    @staticmethod
+    def _nearest_known_role(raw: str, known: set[str]) -> str:
+        """Best existing role for *raw*, or "" if nothing is close enough."""
+        try:
+            from icdev.tools.ace.sme_registry import REUSE_THRESHOLD, _similarity
+        except Exception:  # noqa: BLE001
+            return ""
+
+        label = raw.replace("_", " ")
+        best, best_score = "", 0.0
+        for candidate in known:
+            score = _similarity(label, candidate.replace("_", " "))
+            if score > best_score:
+                best, best_score = candidate, score
+        return best if best_score >= REUSE_THRESHOLD else ""
+
     def _llm_suggest_roles(self) -> list[RoleSlot]:
         """Call LLMRouter for role suggestions when pattern confidence is low.
 
@@ -459,15 +533,8 @@ class ProblemClassifierLens(BaseLens):
             end = content.rfind("]") + 1
             if start >= 0 and end > start:
                 role_ids: list = json.loads(content[start:end])
-                return [
-                    RoleSlot(
-                        role_id=str(r),
-                        count=1,
-                        priority="high" if i == 0 else "medium",
-                    )
-                    for i, r in enumerate(role_ids[:3])
-                    if isinstance(r, str) and r
-                ]
+                raw = [str(r) for r in role_ids[:3] if isinstance(r, str) and r]
+                return self._resolve_suggested_roles(raw)
         except Exception:  # noqa: BLE001 — LLMUnavailableError, network, parse errors
             pass
         return []

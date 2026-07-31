@@ -160,6 +160,11 @@ def api_metrics_tile():
     s = stats["summary"]
     return jsonify({
         "available": stats["available"],
+        # "ok" | "idle" (healthy, no traffic in window) | "unavailable" (broken).
+        # The tile renders idle and unavailable differently — an operator must be
+        # able to tell "governance is quiet" from "governance metrics are down".
+        "status": stats.get("status", "ok"),
+        "last_call_at": stats.get("last_call_at", ""),
         "window_hours": stats["window_hours"],
         "calls": s["calls"],
         "blocked": s["blocked"],
@@ -219,6 +224,127 @@ def _resolve_facade(question: str, requested_mode: str) -> tuple[str, dict]:
     return decision["facade"], decision
 
 
+def _propose_roles(question: str) -> list[dict]:
+    """Best-effort roster preview for an agent proposal.
+
+    Runs the same classifier a launch would, so the confirm card shows the team
+    the user is actually approving rather than an unspecified "an agent". Purely
+    advisory: any failure yields an empty roster and the proposal still renders.
+    """
+    try:
+        from icdev.tools.ace.problem_classifier import ProblemClassifierLens
+
+        lens = ProblemClassifierLens(question)
+        manifest = lens.run()
+        known = {r.role_id: r for r in lens._role_loader.list_roles()}
+        roster: list[dict] = []
+        for slot in getattr(manifest, "slots", []) or []:
+            role = known.get(slot.role_id)
+            roster.append({
+                "role_id": slot.role_id,
+                "display_name": getattr(role, "display_name", "") or slot.role_id,
+                "count": getattr(slot, "count", 1),
+                "exists": role is not None,
+            })
+        return roster
+    except Exception as exc:  # noqa: BLE001 — proposal must render regardless
+        logger.debug("cortex: role proposal unavailable: %s", exc)
+        return []
+
+
+def _agent_proposal(question: str) -> dict:
+    """The unconfirmed branch: describe what WOULD run, and ask."""
+    roster = _propose_roles(question)
+    if roster:
+        names = ", ".join(r["display_name"] for r in roster)
+        answer = (
+            "This looks like a multi-step goal best handled by a Cortex agent team. "
+            f"Proposed roster: {names}. Agents can take actions across the platform, "
+            "so they are not launched automatically — confirm to proceed."
+        )
+    else:
+        answer = (
+            "This looks like a multi-step goal best handled by a Cortex agent "
+            "(cortex.agent). Agents can take actions across the platform, so "
+            "they are not launched automatically — confirm to proceed."
+        )
+    return {
+        "answer": answer,
+        "grounded": False,
+        "confidence": "",
+        "citations": [],
+        "governance": {"gates_run": [], "outcomes": {}, "blocked": False},
+        "requires_confirm": True,
+        "degraded": False,
+        "proposed_roles": roster,
+    }
+
+
+def _launch_confirmed_agent(question: str, ctx) -> dict:
+    """The confirmed branch: actually launch, through the governed facade.
+
+    Goes through ``cortex_api.agent`` rather than ``ACEController`` directly so
+    the launch inherits the TRUST pipeline — governance matters most at the
+    moment something is authorised to act.
+    """
+    from tools.cortex import api as cortex_api
+
+    roster = _propose_roles(question)
+    role_ids = [r["role_id"] for r in roster if r.get("exists")]
+
+    try:
+        result = cortex_api.agent(
+            question,
+            roles=role_ids or None,
+            ctx=ctx,
+            mode="auto",          # roles present -> team; absent -> single loop
+            trigger_source="cortex.chat",
+        )
+    except Exception as exc:  # noqa: BLE001 — never 500 the chat route
+        logger.warning("cortex: confirmed agent launch failed: %s", exc)
+        return {
+            "answer": f"The agent could not be launched: {exc}",
+            "grounded": False,
+            "confidence": "",
+            "citations": [],
+            "governance": {"gates_run": [], "outcomes": {}, "blocked": False},
+            "requires_confirm": False,
+            "degraded": True,
+        }
+
+    data = getattr(result, "data", None) or {}
+    instance_id = str(data.get("instance_id") or "")
+    answer = getattr(result, "text", "") or "Agent launched."
+    deep_link = f"/coworker/{instance_id}" if instance_id else ""
+    if deep_link:
+        answer = f"{answer}\n\n[View the team's progress]({deep_link})"
+
+    return {
+        "answer": answer,
+        "grounded": False,
+        "confidence": "",
+        "citations": [],
+        "governance": _governance_summary(result),
+        "requires_confirm": False,
+        "degraded": False,
+        "instance_id": instance_id,
+        "deep_link": deep_link,
+        "launched_roles": role_ids,
+    }
+
+
+def _governance_summary(result) -> dict:
+    """Normalise a CortexResult's governance report into the chat shape."""
+    report = getattr(result, "governance", None)
+    if report is None:
+        return {"gates_run": [], "outcomes": {}, "blocked": False}
+    return {
+        "gates_run": list(getattr(report, "gates_run", []) or []),
+        "outcomes": dict(getattr(report, "outcomes", {}) or {}),
+        "blocked": bool(getattr(report, "blocked", False)),
+    }
+
+
 def _run_facade(facade: str, question: str, ctx, confirm_agent: bool) -> dict:
     """Dispatch one chat turn to the resolved cortex.* facade.
 
@@ -230,21 +356,10 @@ def _run_facade(facade: str, question: str, ctx, confirm_agent: bool) -> dict:
 
     if facade == "agent":
         # TRUST + safety: never auto-launch an agent loop / ACE team from chat.
-        # Surface a confirm affordance; the caller must re-submit with a
-        # dedicated confirm action (the agent facade itself is not wired here).
-        return {
-            "answer": (
-                "This looks like a multi-step goal best handled by a Cortex agent "
-                "(cortex.agent). Agents can take actions across the platform, so "
-                "they are not launched automatically — confirm to proceed."
-            ),
-            "grounded": False,
-            "confidence": "",
-            "citations": [],
-            "governance": {"gates_run": [], "outcomes": {}, "blocked": False},
-            "requires_confirm": True,
-            "degraded": False,
-        }
+        # An explicit confirm is the human approval; without it we only propose.
+        if not confirm_agent:
+            return _agent_proposal(question)
+        return _launch_confirmed_agent(question, ctx)
 
     try:
         if facade == "search":
@@ -382,6 +497,12 @@ def api_chat():
         "governance": outcome["governance"],
         "requires_confirm": outcome["requires_confirm"],
         "degraded": outcome["degraded"],
+        # Agent-facade extras. Present only on the agent path: the roster the
+        # user is being asked to approve, and — once confirmed — the launched
+        # instance and its deep link.
+        "proposed_roles": outcome.get("proposed_roles", []),
+        "instance_id": outcome.get("instance_id", ""),
+        "deep_link": outcome.get("deep_link", ""),
     })
 
 
