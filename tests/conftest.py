@@ -3761,3 +3761,43 @@ def _no_live_llm_calls(request, monkeypatch):
 
     monkeypatch.setattr(LLMProvider, "invoke", _refuse, raising=False)
     monkeypatch.setattr(LLMProvider, "invoke_streaming", _refuse, raising=False)
+
+
+# ---------------------------------------------------------------------------
+# No chat agent loops surviving a test
+# ---------------------------------------------------------------------------
+#
+# ChatManager.create_context spawns a daemon thread per context and only
+# close_context stops one -- and even that never joins. A test that creates a
+# context and does not close it leaves a loop polling on a 0.1s sleep for the
+# rest of the session, writing task rows, message rows and budget usage while
+# LATER tests run.
+#
+# The damage is misattribution rather than noise: work from an abandoned thread
+# lands during whichever test is executing, and a transaction it holds blocks
+# DDL on other connections until the busy timeout expires. That is the same
+# cross-test interference behind the suite hang, reached by another route.
+#
+# Guarded on sys.modules so this costs nothing for the vast majority of tests
+# that never touch chat: importing chat_manager here would drag the dashboard
+# import graph into every test in the suite.
+
+
+@pytest.fixture(autouse=True)
+def _stop_chat_agent_loops():
+    """Stop any chat agent loops a test leaves running."""
+    yield
+
+    module = sys.modules.get("tools.dashboard.chat_manager")
+    if module is None:
+        return
+
+    manager = getattr(module, "chat_manager", None)
+    shutdown = getattr(manager, "shutdown", None)
+    if shutdown is None:
+        return
+
+    try:
+        shutdown(timeout=2.0)
+    except Exception:  # noqa: BLE001 — teardown must never fail a passing test
+        pass
