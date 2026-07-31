@@ -69,13 +69,13 @@ def db(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def patch_get_connection(db, monkeypatch):
     """Patch _conn() in group_manager to use the test DB."""
-    import sqlite3 as _sqlite3
     import tools.security.group_manager as _gm
 
+    # Translating wrapper — group_manager authors %s for PostgreSQL.
+    from _sql_compat import connect as _tconnect
+
     def _test_conn():
-        conn = _sqlite3.connect(str(db))
-        conn.row_factory = _sqlite3.Row
-        return conn
+        return _tconnect(db)
 
     monkeypatch.setattr(_gm, "_conn", _test_conn)
 
