@@ -11,6 +11,15 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# tests/ itself, so the guard registry is one module object shared by this
+# conftest and the tests that cover it (pytest loads conftest under its own
+# module name, so `tests.conftest` would be a distinct copy). Matches the
+# existing `from _sql_compat import ...` convention in this directory.
+if str(Path(__file__).parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).parent))
+
+import _txn_guard  # noqa: E402  (needs the sys.path entry above)
+
 # Force SQLite backend for tests (override .env PostgreSQL setting — same as main
 # conftest) UNLESS the opt-in ICDEV_PYTEST_PG flag is set. The dedicated CI
 # "test-pg" tier (.github/workflows/icdev-ci.yml) sets ICDEV_PYTEST_PG=1 +
@@ -3578,3 +3587,84 @@ def pmc_db(tmp_path, monkeypatch):
     conn = get_connection()
     yield conn
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Transaction-leak guard (tsh-leak-01)
+#
+# A test that runs an INSERT/UPDATE/DELETE and never commits or rolls back
+# leaves SQLite's implicit BEGIN open on that connection. The test itself
+# passes; the damage lands on whichever *later* test touches the same file and
+# blocks on the write lock, or reads rows a prior test never committed. The
+# failure is then attributed to the innocent test, which is why these are so
+# expensive to chase.
+#
+# The guard closes that gap by attributing the leak to the test that caused it:
+# every sqlite3 connection opened during the session is tracked, and at each
+# test's teardown any connection still reporting `in_transaction` fails that
+# test by name. Leaked transactions are rolled back before failing so a single
+# leak produces a single failure instead of cascading into the rest of the run.
+#
+# Escape hatches (both narrow, both deliberate):
+#   * ICDEV_TXN_LEAK_GUARD=0            — disable the guard for a whole run.
+#   * @pytest.mark.allow_open_transaction — a test that *intends* to hand an open
+#     transaction to something outside its own scope.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session", autouse=True)
+def _sqlite_connection_tracker():
+    """Wrap sqlite3.connect for the session so every connection is tracked."""
+    if _txn_guard.GUARD_DISABLED:
+        yield
+        return
+
+    real_connect = sqlite3.connect
+
+    def _tracking_connect(*args, **kwargs):
+        return _txn_guard.track(real_connect(*args, **kwargs))
+
+    sqlite3.connect = _tracking_connect
+    try:
+        yield
+    finally:
+        sqlite3.connect = real_connect
+        _txn_guard.reset()
+
+
+@pytest.fixture(autouse=True)
+def assert_no_leaked_transaction(request, _sqlite_connection_tracker):
+    """Fail the test that leaves a write transaction open, naming it."""
+    # Only connections opened by this test are the test's responsibility.
+    _txn_guard.reset()
+
+    yield
+
+    if _txn_guard.GUARD_DISABLED or request.node.get_closest_marker(
+        "allow_open_transaction"
+    ):
+        _txn_guard.reset()
+        return
+
+    leaked = _txn_guard.open_write_transactions()
+    if not leaked:
+        _txn_guard.reset()
+        return
+
+    # Roll back first: without this every subsequent test in the run would see
+    # the same open transaction and fail, burying the real culprit.
+    for conn in leaked:
+        try:
+            conn.rollback()
+        except sqlite3.Error:  # pragma: no cover - connection died mid-teardown
+            pass
+    _txn_guard.reset()
+
+    pytest.fail(
+        f"Transaction leak: {request.node.nodeid} finished with "
+        f"{len(leaked)} SQLite connection(s) holding an uncommitted write "
+        f"transaction. Commit, roll back, or close the connection before the "
+        f"test ends (the guard rolled them back so later tests are unaffected). "
+        f"If the open transaction is intentional, mark the test with "
+        f"@pytest.mark.allow_open_transaction.",
+        pytrace=False,
+    )
