@@ -140,8 +140,16 @@ def test_sync_cloud_catalog_upsert_executes_on_storageconnection(monkeypatch):
     monkeypatch.setenv("MC_DB_PATH", tmp_db)
 
     # Fresh import so _MC_BACKEND / DB path env are read with the pins above.
+    #
+    # monkeypatch.delitem, not sys.modules.pop: pytest records the evicted module
+    # and puts it back at teardown. A bare pop leaves the re-imported replacement
+    # installed for the rest of the run, so every later test resolves this module
+    # to an object pinned at whatever the env said here — while anything that
+    # imported from it earlier still holds the original. The identical pattern in
+    # this file's data_canvas siblings failed 11 tests in test_dcpr_product_registry
+    # and test_dcpr_governance_engine, all of which passed in isolation.
     for mod in ("tools.migration_canvas.db.init_db", "tools.migration_canvas.server_migration"):
-        sys.modules.pop(mod, None)
+        monkeypatch.delitem(sys.modules, mod, raising=False)
     from tools.migration_canvas.db import init_db as mc_init
     from tools.migration_canvas import server_migration as sm
 
