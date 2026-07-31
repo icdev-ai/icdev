@@ -123,13 +123,32 @@ def _ensure_prompt_dir():
 
 
 def _count_in_progress() -> int:
-    """Count how many tasks are currently in_progress."""
+    """Count tasks occupying an execution slot.
+
+    Manual-mode gates are excluded. A gate is a SENTINEL held ``in_progress``
+    FOREVER by design — it is not work and never executes — but this counted
+    it against ``MAX_IN_PROGRESS`` anyway. With the default of 3, two parked
+    gates (``aca-gate-00`` + ``tsr-gate-00``) consumed two of the three
+    execution slots permanently, cutting autonomous throughput by two thirds
+    for as long as those cards existed. The more cards a board gates, the less
+    it can build — and nothing reported it, because the gates legitimately
+    show as in_progress on the board.
+
+    Uses ``tools.kanban.gates.is_manual_gate``, the single source of truth,
+    rather than an inline LIKE: it matches on the id suffix OR the title
+    marker, so a gate stays recognised if one of the two is renamed.
+    """
     conn = get_connection()
     try:
-        row = conn.execute("SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'in_progress'").fetchone()
-        return dict(row).get("cnt", 0)
+        rows = conn.execute(
+            "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
+        ).fetchall()
     finally:
         conn.close()
+    return sum(
+        1 for r in rows
+        if not _is_manual_gate(dict(r).get("id"), dict(r).get("title"))
+    )
 
 
 def _count_pending_prompts() -> int:
