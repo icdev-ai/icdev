@@ -3964,6 +3964,97 @@ def check_new_page_completeness() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: chat_card_inheritance — the shared chat action-card renderer must stay
+# globally reachable, in both mirrors, and ungated.
+# ---------------------------------------------------------------------------
+
+
+def check_chat_card_inheritance() -> CoherenceCheck:
+    """Guard the mechanism that makes chat action cards reach every page.
+
+    Why this check exists
+    ---------------------
+    In this repo a shared Jinja include does NOT propagate by being useful. It
+    propagates only if something fails when it is missing:
+
+      includes/iqe_query_widget.html   ~157 templates  (gated — grepped below)
+      includes/classification_macros   56 templates    (convention only)
+      includes/twin_snapshot_panel     1 — itself      (ungated)
+      includes/_canvas_shell.html      1 — itself      (ungated)
+
+    The chat action-card renderer is global JS included once from base.html, so
+    unlike the IQE widget it needs no per-page include — requiring one would be
+    cargo-culting a pattern that does not apply. What it DOES need is for that
+    single global include to survive: both mirrors present, and crucially
+    UNGATED.
+
+    The failure mode being prevented is concrete. base.html already contains
+    ``{% if '/strategos' in request.path %}`` around the Strategos panel, and
+    that one line is the entire reason that panel reaches exactly one route.
+    Wrapping this include the same way would silently reduce "every chat surface
+    in the platform" to "one page", with nothing failing to say so.
+    """
+    include_rel = "tools/dashboard/templates/includes/_chat_action_card.html"
+    base_rel = "tools/dashboard/templates/base.html"
+    marker = "includes/_chat_action_card.html"
+
+    violations: List[str] = []
+    checked: List[str] = []
+
+    for prefix in ("", "icdev/"):
+        partial = PROJECT_ROOT / f"{prefix}{include_rel}"
+        if not partial.exists():
+            violations.append(f"{prefix}{include_rel} missing")
+        else:
+            checked.append(f"{prefix}{include_rel}")
+
+        base = PROJECT_ROOT / f"{prefix}{base_rel}"
+        if not base.exists():
+            violations.append(f"{prefix}{base_rel} missing")
+            continue
+
+        text = base.read_text(encoding="utf-8", errors="replace")
+        if marker not in text:
+            violations.append(
+                f"{prefix}{base_rel} does not include {marker} — chat action cards "
+                "will not render on any page"
+            )
+            continue
+
+        # The include must not sit inside a path-conditional block. Look at the
+        # few lines above it for an `{% if ... request.path ... %}` guard, which
+        # is the exact pattern that limits the Strategos panel to one route.
+        lines = text.splitlines()
+        idx = next((i for i, ln in enumerate(lines) if marker in ln), -1)
+        window = "\n".join(lines[max(0, idx - 3):idx])
+        if "request.path" in window and "{% if" in window:
+            violations.append(
+                f"{prefix}{base_rel}: {marker} is inside a request.path conditional — "
+                "that is what limits the Strategos panel to a single route"
+            )
+        checked.append(f"{prefix}{base_rel}")
+
+    status = "fail" if violations else "pass"
+    return CoherenceCheck(
+        check_id="chat_card_inheritance",
+        check_name="Chat Action-Card Global Inheritance",
+        status=status,
+        expected=[
+            "_chat_action_card.html present in both mirrors and included "
+            "unconditionally from base.html"
+        ],
+        actual=[f"{len(violations)} violation(s) across {len(checked)} checked path(s)"],
+        missing=violations,
+        extra=[],
+        message=(
+            "Chat action cards will not reach every surface: " + "; ".join(violations)
+        ) if violations else (
+            "Chat action-card renderer is globally included and ungated in both mirrors"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check: nav_route_parity — every href in base.html nav must have a Flask route
 # ---------------------------------------------------------------------------
 
@@ -6531,6 +6622,7 @@ CHECK_REGISTRY = {
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
+    "chat_card_inheritance": check_chat_card_inheritance,
     "canvas_placeholder_style": check_canvas_placeholder_style,
     "runtime_placeholder_style": check_runtime_placeholder_style,
     "ace_yaml_listen_topics": check_ace_yaml_listen_topics,
