@@ -82,27 +82,14 @@ def ca_db(tmp_path, monkeypatch):
     conn.executescript(_SCHEMA)
     conn.commit()
 
-    class _FakeConn:
-        def __init__(self):
-            self._c = conn
+    # Translating wrapper — canvas_access and group_manager author %s for
+    # PostgreSQL. unclosable= keeps the shared connection alive across the
+    # close() both modules call in their finally blocks.
+    from _sql_compat import translating as _translating
 
-        def execute(self, sql, params=()):
-            return self._c.execute(sql, params)
-
-        def commit(self):
-            return self._c.commit()
-
-        def close(self):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            pass
-
-    monkeypatch.setattr(_ca, "_conn", lambda: _FakeConn())
-    monkeypatch.setattr(_gm, "_conn", lambda: _FakeConn())
+    shared = _translating(conn, unclosable=True)
+    monkeypatch.setattr(_ca, "_conn", lambda: shared)
+    monkeypatch.setattr(_gm, "_conn", lambda: shared)
     return conn
 
 

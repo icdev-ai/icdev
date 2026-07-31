@@ -175,8 +175,10 @@ def test_erasure_nulls_pii(tmp_path):
       - other tenants' rows are untouched
       - append-only erasure_audit row is created with correct fields
     """
-    conn = sqlite3.connect(str(tmp_path / "test_erasure.db"))
-    conn.row_factory = sqlite3.Row
+    # Translating wrapper — gdpr_eraser authors %s for PostgreSQL.
+    from _sql_compat import connect as _tconnect
+
+    conn = _tconnect(tmp_path / "test_erasure.db")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id          TEXT PRIMARY KEY,
@@ -261,8 +263,10 @@ def test_migration_212_module_importable():
 
 def test_erasure_audit_row_created(tmp_path):
     """erase_tenant_data() writes exactly one erasure_audit row per call."""
-    conn = sqlite3.connect(str(tmp_path / "audit_row_test.db"))
-    conn.row_factory = sqlite3.Row
+    # Translating wrapper — gdpr_eraser authors %s for PostgreSQL.
+    from _sql_compat import connect as _tconnect
+
+    conn = _tconnect(tmp_path / "audit_row_test.db")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id        TEXT PRIMARY KEY,
@@ -305,8 +309,10 @@ def test_erasure_audit_row_created(tmp_path):
 
 def test_erasure_skips_audit_tables(tmp_path):
     """Append-only tables in _SKIP_TABLES are not modified by erase_tenant_data()."""
-    conn = sqlite3.connect(str(tmp_path / "skip_audit_test.db"))
-    conn.row_factory = sqlite3.Row
+    # Translating wrapper — gdpr_eraser authors %s for PostgreSQL.
+    from _sql_compat import connect as _tconnect
+
+    conn = _tconnect(tmp_path / "skip_audit_test.db")
     conn.executescript("""
         -- rls_audit is in _SKIP_TABLES; give it tenant_id + PII columns
         -- to confirm it is explicitly skipped (not just lacking those columns).
