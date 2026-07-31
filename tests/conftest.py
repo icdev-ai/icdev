@@ -3663,6 +3663,16 @@ def assert_no_leaked_transaction(request, _sqlite_connection_tracker):
         _txn_guard.reset()
         return
 
+    # Report WHERE each leaked connection was opened. Naming only the test that
+    # finished blames the wrong one whenever a background thread opens the
+    # connection mid-test — which is how a pure HTTP test that touches no
+    # database at all came to be reported as leaking.
+    #
+    # Read the origins BEFORE reset(): reset() clears the origin registry, so
+    # describing the connections afterwards reports "(origin not recorded)" for
+    # every one of them and the diagnostic is silently a no-op.
+    origins = chr(10).join(_txn_guard.describe_origin(c) for c in leaked)
+
     # Roll back first: without this every subsequent test in the run would see
     # the same open transaction and fail, burying the real culprit.
     for conn in leaked:
@@ -3678,7 +3688,8 @@ def assert_no_leaked_transaction(request, _sqlite_connection_tracker):
         f"transaction. Commit, roll back, or close the connection before the "
         f"test ends (the guard rolled them back so later tests are unaffected). "
         f"If the open transaction is intentional, mark the test with "
-        f"@pytest.mark.allow_open_transaction.",
+        f"@pytest.mark.allow_open_transaction.{chr(10)}{chr(10)}"
+        f"Opened at:{chr(10)}{origins}",
         pytrace=False,
     )
 
