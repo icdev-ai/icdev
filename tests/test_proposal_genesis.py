@@ -302,14 +302,19 @@ class TestDaemonModule:
         allowed, reason = tk.can_execute("yellow")
         assert allowed is True
 
+    # PGReflexState.load() and BaseDaemon.get_status() resolve get_connection from
+    # tools.daemon.base, not from the subclass module — patch both or the state load
+    # escapes the mock and hits the real DB.
+    @patch("tools.daemon.base.get_connection")
     @patch("tools.proposal_genesis.daemon.get_connection")
-    def test_daemon_get_status(self, mock_conn, pg_config):
+    def test_daemon_get_status(self, mock_conn, mock_base_conn, pg_config):
         from tools.proposal_genesis.daemon import ProposalGenesisDaemon
 
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_db.execute.return_value.fetchone.return_value = {"cnt": 0}
         mock_conn.return_value = mock_db
+        mock_base_conn.return_value = mock_db
         daemon = ProposalGenesisDaemon(pg_config)
         status = daemon.get_status()
         assert "daemon" in status
@@ -1052,13 +1057,15 @@ class TestScoutReflex:
     @patch("tools.proposal_genesis.reflexes.scout._find_competitor_overlaps")
     @patch("tools.proposal_genesis.reflexes.scout._get_top_competitors")
     @patch("tools.proposal_genesis.reflexes.scout._scan_awards")
-    def test_run_air_gapped(self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store):
+    def test_run_air_gapped(
+        self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store, tmp_path
+    ):
         from tools.proposal_genesis.reflexes.scout import run
 
         mock_leaders.return_value = []
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 0, "win_loss_created": 0}
-        mock_store.return_value = "/tmp/brief.md"
+        mock_store.return_value = str(tmp_path / "brief.md")
 
         with patch.dict(os.environ, {"ICDEV_AIR_GAPPED": "true"}):
             result = run({}, None)
@@ -1072,14 +1079,16 @@ class TestScoutReflex:
     @patch("tools.proposal_genesis.reflexes.scout._find_competitor_overlaps")
     @patch("tools.proposal_genesis.reflexes.scout._get_top_competitors")
     @patch("tools.proposal_genesis.reflexes.scout._scan_awards")
-    def test_run_connected(self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store):
+    def test_run_connected(
+        self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store, tmp_path
+    ):
         from tools.proposal_genesis.reflexes.scout import run
 
         mock_scan.return_value = {"status": "ok", "new_awards": 3}
         mock_leaders.return_value = [{"rank": 1, "vendor": "X", "awards": 5}]
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 2, "win_loss_created": 2}
-        mock_store.return_value = "/tmp/brief.md"
+        mock_store.return_value = str(tmp_path / "brief.md")
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ICDEV_AIR_GAPPED", None)
@@ -3052,14 +3061,16 @@ class TestProposalGenesisPhaseF_API:
                 outcome TEXT, competitor_name TEXT,
                 competitor_strengths TEXT, our_strengths TEXT,
                 our_weaknesses TEXT, lessons_learned TEXT,
-                created_at TEXT
+                created_at TEXT,
+                classification TEXT DEFAULT 'CUI'
             );
             CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
                 id TEXT PRIMARY KEY, win_loss_id TEXT,
                 category TEXT, lesson TEXT,
                 actionable INTEGER DEFAULT 0,
                 applied INTEGER DEFAULT 0,
-                created_at TEXT
+                created_at TEXT,
+                classification TEXT DEFAULT 'CUI'
             );
             CREATE TABLE IF NOT EXISTS pg_training_pair_sources (
                 id TEXT PRIMARY KEY, source_type TEXT NOT NULL,
