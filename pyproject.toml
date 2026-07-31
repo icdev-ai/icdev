@@ -281,6 +281,7 @@ timeout = 30
 markers = [
     "selenium: marks tests that require a running Selenium/ChromeDriver (skip if unavailable)",
     "integration: marks tests that exercise live backends/corpora (opt-in; skipped by default)",
+    "allow_open_transaction: test intentionally leaves a SQLite write transaction open (tsh-leak-01 guard opt-out)",
 ]
 
 

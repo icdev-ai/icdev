@@ -79,7 +79,12 @@ class _FakeConn:
 
 @pytest.fixture()
 def db():
-    return _FakeConn()
+    conn = _FakeConn()
+    yield conn
+    # auto_close_by_naming_convention documents "Caller commits", so these tests
+    # end with an open write transaction. Close the real connection at teardown
+    # rather than leaving it for the conftest transaction-leak guard to find.
+    conn._db.close()
 
 
 # ---------------------------------------------------------------------------
