@@ -6621,3 +6621,69 @@ projects:
   - key: intel
     title: "INTEL — Strategos, research & trading"
     priority: low
+
+- key: gdx
+  name: "GDX — GameDay Defect & Drift Remediation"
+  task_prefix: gdx-
+  default_open: false
+  description: 'Remediation of what the two prior GameDay cards left behind, found by a live
+    analysis of /gameday on 2026-07-31. The page itself is healthy: all 12 routes return 200,
+    bad ids correctly 404, the browser console is clean (0 errors, 0 warnings) and every XHR
+    returns 200 — this is not a broken-page card. The headline defect is invisible from the
+    browser. Both FGA GameDay fixes landed in tools/ and were verified genuinely shipped
+    against the running app, but neither reached the packaged icdev/ mirror: a CONTENT diff
+    (not a file-list diff) shows icdev/tools/dashboard/templates/ai_gameday/hub.html is
+    missing the fga-gd-01 Scenario Manager/Builder links (9619B vs 8956B) and player.html is
+    missing the fga-gd-02 tool.navigable guard (17627B vs 17082B). In a packaged or
+    pip-installed ICDEV both pages are reachable only by typing the URL, and 12 of the 34
+    AI_TOOLS_CATALOG entries render as clickable anchors that 405. The drift shipped silently
+    because the mirror-parity check compares file LISTS, not content. Second: migration
+    136_gameday_ai_league declares its 8 gd_ai_* tables an "Append-only audit trail (AU)" but
+    grep gd_ai_ against .claude/hooks/pre_tool_use.py returns zero — none are registered in
+    APPEND_ONLY_TABLES, though ttx_api_log is. PRIOR ART, do not reopen: penta epic gd (7
+    tasks, closed 2026-07-18, 31 merged PRs — route auth/RBAC, AI League repoint,
+    ontology_tags_json, stored XSS, content packs) and fga epic gd (3 tasks, done — hub
+    reachability, POST-only tool links, scenario-picker verification). FGA also deliberately
+    REFUTED several audit claims that must not be re-carded: Oracle and the GameDay responses
+    API are RBAC-gated (401 misread as breakage), and the scenario picker has 9 distinct packs
+    on disk. OUT OF SCOPE by explicit decision: IQE integration (genuinely incomplete but
+    already recorded as a deliberate iqe_partial exemption in args/completion_exemptions.yaml),
+    platform-wide performance (no gzip on any dashboard response, ~120KB/page), and
+    mirror-parity gate hardening (the root cause of the headline finding — deserves its own
+    card covering all canvases, not just GameDay). MANUAL-ONLY: all tasks gated behind
+    gdx-gate-00 held in_progress so the kanban runner never dispatches them; worktree + push
+    + PR, no auto-merge.'
+  briefs:
+  - 'Prior art: penta epic gd (7 tasks, closed 2026-07-18) and fga epic gd (3 tasks, done).
+    Both were spot-verified as genuinely shipped on the dev tree — 0 GET anchors pointing at
+    /api/, and Scenario Manager + Builder are linked from the hub. Do not reopen either card.'
+  - 'The headline defect is mirror drift, not a page bug. Reproduce it with a CONTENT diff,
+    never a file-list diff: diff tools/dashboard/templates/ai_gameday/hub.html against
+    icdev/tools/dashboard/templates/ai_gameday/hub.html. A file-list diff reports the trees as
+    fine and is what let this ship.'
+  - 'Never hand-copy files into icdev/. Use the companion/mirror sync tooling. A --clean sync
+    has destroyed the mirror before, and mirror-only files are silently deleted by the next
+    sync — which is the likely origin of the three mirror-only templates in gdx-mir-02.'
+  - 'GameDay is a child_app (kind: child_app in args/component_registry.yaml:1190-1209,
+    module apps.ai_gameday.blueprint), NOT a tools/ canvas. There is no tools/gameday/
+    blueprint.py. Templates render from tools/dashboard/templates/{ai_gameday,gameday}/
+    because the blueprint declares no template_folder.'
+  - 'Verify before fixing, as fga-gd-03 did. Two of the five external-audit GameDay findings
+    were already fixed eight days before that audit ran. Reproduce each claim against the
+    live app first.'
+  epics:
+  - key: gate
+    title: Manual Gate (held)
+    priority: high
+  - key: mir
+    title: "MIR — icdev/ mirror drift"
+    priority: high
+  - key: aud
+    title: "AUD — Append-only audit registration"
+    priority: critical
+  - key: dead
+    title: "DEAD — Orphaned templates & schema"
+    priority: medium
+  - key: doc
+    title: "DOC — Docs, registry drift & verification"
+    priority: low
