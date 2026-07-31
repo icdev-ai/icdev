@@ -1045,14 +1045,27 @@ class ChatManager:
 
         if role == "user":
             _fire_intake_hook(context_id, content)
-            # ACE co-worker trigger: detect @team / implicit RICOAS signals and launch
+            # ACE co-worker trigger. Two paths, deliberately different:
+            #
+            #   explicit  "@team <problem>"  -> launch immediately. An explicit
+            #             command IS the approval, and this is a pinned
+            #             regression contract (tests/test_ace_chat_trigger.py).
+            #   implicit  4+ RICOAS signals  -> PROPOSE. A heuristic must not
+            #             spawn agents that hold read/write/execute agency; the
+            #             user gets an action card and decides.
             if not hook_ctx.get("coworker_instance_id"):
                 try:
-                    from icdev.tools.ace.chat_trigger import detect_ace_trigger, maybe_launch_ace
-                    if detect_ace_trigger(content):
-                        _ace_id = maybe_launch_ace(context_id, content)
+                    from icdev.tools.ace import chat_trigger as _ct
+
+                    _trigger = _ct.detect_ace_trigger(content)
+                    if _trigger == "explicit":
+                        _ace_id = _ct.maybe_launch_ace(context_id, content)
                         if _ace_id:
                             hook_ctx["coworker_instance_id"] = _ace_id
+                    elif _trigger == "implicit":
+                        _proposal = _ct.build_team_proposal(context_id, content)
+                        if _proposal:
+                            self._post_action_card(context_id, _proposal)
                 except Exception as _ace_exc:
                     logger.debug("ACE trigger skipped: %s", _ace_exc)
             _check_coworker_trigger(context_id, content, hook_ctx)
@@ -1680,6 +1693,41 @@ class ChatManager:
             conn.close()
         except sqlite3.OperationalError:
             pass
+
+    def _post_action_card(self, context_id: str, card: dict) -> None:
+        """Insert an interactive card into the conversation.
+
+        Stored as a normal ``chat_messages`` row with
+        ``content_type='action_card'`` — a value the CHECK constraint already
+        permits, so this needs no migration. The payload lives in ``metadata``;
+        ``content`` carries a plain-markdown fallback so a surface that does not
+        know about cards still renders something meaningful instead of a blank
+        turn.
+
+        Posted as ``system`` rather than ``assistant`` on purpose: it is not a
+        model turn, and it must not be fed back as conversational context.
+        """
+        try:
+            roles = card.get("roles") or []
+            names = ", ".join(r.get("display_name") or r.get("role_id") for r in roles)
+            fallback = (
+                "**Subject-matter experts available.** "
+                + (f"Proposed team: {names}. " if names else "")
+                + "Reply `@team <goal>` to start one."
+            )
+            with self._lock:
+                ctx = self._contexts.get(context_id)
+                if ctx is None:
+                    return
+                ctx.turn_number += 1
+                turn = ctx.turn_number
+            self._db_insert_message(
+                context_id, turn, "system", fallback,
+                content_type="action_card", metadata=card,
+            )
+            _mark_dirty(context_id, "action_card", {"card": card.get("card")})
+        except Exception as exc:  # noqa: BLE001 — a card must never break the turn
+            logger.debug("action card post skipped: %s", exc)
 
     def _db_insert_message(
         self,
