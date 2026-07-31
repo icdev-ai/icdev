@@ -37,7 +37,6 @@ import json
 from contextlib import contextmanager
 import logging
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -168,9 +167,6 @@ def _month_range(month: str) -> tuple:
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-
-def _gen_id(prefix: str) -> str:
-    return f"{prefix}{uuid.uuid4().hex[:12]}"
 
 
 # ---------------------------------------------------------------------------
@@ -495,22 +491,39 @@ def record_module_usage(
 ) -> str:
     """Record resource consumption against a module budget.
 
-    Returns the inserted usage record ID.
+    Returns the inserted usage record ID as a string, or "" if the module is
+    unknown.
+
+    ``id`` is deliberately absent from the column list. It is
+    ``INTEGER PRIMARY KEY AUTOINCREMENT`` (translated to ``SERIAL`` for
+    PostgreSQL), so the database assigns it. This function used to pass an
+    explicit ``_gen_id("mbu-")`` string into that integer column, which failed
+    on EVERY call and on BOTH backends -- ``InvalidTextRepresentation`` on
+    PostgreSQL, ``IntegrityError: datatype mismatch`` on SQLite. Every caller
+    wraps the call in ``except Exception: pass``, so the failure was silent and
+    ``module_budget_usage`` never received a single row; module budget
+    enforcement read a permanently empty table. The sibling
+    ``_get_or_create_period`` omits ``id`` and has always worked, which is why
+    ``module_budget_periods`` has rows and this table does not.
+
+    Fixed by omitting the column rather than by widening it to TEXT:
+    ``CREATE TABLE IF NOT EXISTS`` never alters an existing table, so a DDL
+    change would leave every deployed database broken until a migration ran.
     """
     if module_name not in VALID_MODULES:
         logger.debug("Skipping module usage for unknown module: %s", module_name)
         return ""
 
-    record_id = _gen_id("mbu-")
+    record_id = ""
     with _conn_scope() as conn:
         _ensure_tables(conn)
-        conn.execute(
+        cursor = conn.execute(
             """INSERT INTO module_budget_usage
-               (id, module_name, function_name, resource_type, amount, tokens,
+               (module_name, function_name, resource_type, amount, tokens,
                 operations, project_id, model_id, details_json, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               RETURNING id""",
             (
-                record_id,
                 module_name,
                 function,
                 "usd" if cost_usd > 0 else ("tokens" if tokens > 0 else "operations"),
@@ -523,6 +536,12 @@ def record_module_usage(
                 _now_iso(),
             ),
         )
+        # RETURNING is supported by PostgreSQL and by SQLite 3.35+, so one
+        # statement serves both backends without an is_pg branch. psycopg2's
+        # lastrowid would not: it reports an OID, not the sequence value.
+        row = cursor.fetchone()
+        if row is not None:
+            record_id = str(row["id"] if isinstance(row, dict) else row[0])
         conn.commit()
 
     # Update period aggregate on its own connection (_sync_period_spent commits).
