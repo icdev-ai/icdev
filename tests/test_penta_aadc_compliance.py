@@ -34,7 +34,6 @@ if str(ROOT) not in sys.path:
 import tools.aadc.compliance_checker as cc  # noqa: E402
 import tools.aadc.governance_scanner as gs  # noqa: E402
 import tools.agentic_ai_canvas.db.init_db as canvas_init_db  # noqa: E402
-from tools.db import storage as _storage  # noqa: E402
 
 _AADC_DESIGNS_DDL = """
 CREATE TABLE IF NOT EXISTS aadc_designs (
@@ -93,21 +92,28 @@ SAFE_GRAPH = {
 
 @pytest.fixture
 def canvas_db(tmp_path, monkeypatch):
-    """Point the canvas connection factory at a temp DB (translate layer)."""
+    """Point the canvas connection factory at a temp DB (translate layer).
+
+    Patches ``_BACKEND``/``DB_PATH`` rather than replacing ``get_connection``
+    itself. ``agentic_engine.assess_design`` imports ``canvas_bridge`` lazily,
+    and ``canvas_bridge`` does ``from ...init_db import get_connection`` at
+    module level — so a fixture that swaps the *function object* gets captured
+    by value into a module that did not exist when the patch was applied, and
+    monkeypatch cannot undo it. The stale closure then outlives this fixture
+    and points later tests (e.g. test_penta_aadc_p2) at a deleted tmp DB.
+    Patching module data keeps the real function in place, so every binding —
+    early or late — resolves to this temp DB and is cleanly restored.
+    """
     db_path = tmp_path / "aadc_test.db"
+    monkeypatch.setattr(canvas_init_db, "_BACKEND", "sqlite", raising=True)
+    monkeypatch.setattr(canvas_init_db, "DB_PATH", db_path, raising=True)
 
-    def _canvas_conn():
-        conn = _storage.get_connection(db_path=str(db_path))
-        # Mirror get_canvas_connection(): RLS disabled for tenant-less aadc_*.
-        conn.set_security_context(None)
-        return conn
-
-    monkeypatch.setattr(canvas_init_db, "get_connection", _canvas_conn)
-
-    conn = _canvas_conn()
-    conn.executescript(_AADC_DESIGNS_DDL) if hasattr(conn, "executescript") else conn.execute(_AADC_DESIGNS_DDL)
-    conn.commit()
-    conn.close()
+    conn = canvas_init_db.get_connection()
+    try:
+        conn.executescript(_AADC_DESIGNS_DDL)
+        conn.commit()
+    finally:
+        conn.close()
     return db_path
 
 
