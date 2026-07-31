@@ -24,12 +24,52 @@ review safety net without blocking on it.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_ROLES_DIR = Path(__file__).parent / "roles"
+from icdev.tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
+def _roles_dir() -> Path:
+    """Resolve the roles directory the same way ``soul_manager`` does.
+
+    Two reasons this is a function rather than the old module-level
+    ``Path(__file__).parent / "roles"``:
+
+    1. **Mirror drift.** SOUL directories exist under BOTH ``tools/ace/roles/``
+       and ``icdev/tools/ace/roles/`` and are byte-identical today. Resolving
+       from ``__file__`` wrote to whichever copy happened to be imported, so the
+       first generated persona would silently desynchronise the two trees — and
+       mirror parity is a CI gate.
+    2. **Test isolation.** ``soul_manager._roles_dir()`` honours
+       ``ICDEV_ACE_ROLES_DIR``; resolving from ``__file__`` ignored it, so
+       generated personas accumulated as debris in the committed tree during
+       test runs.
+
+    Falls back to the package-local directory if soul_manager is unavailable.
+    """
+    try:
+        from icdev.tools.ace.soul_manager import _roles_dir as _sm_roles_dir
+
+        return Path(_sm_roles_dir())
+    except Exception:  # noqa: BLE001 — keep generation working standalone
+        override = os.environ.get("ICDEV_ACE_ROLES_DIR")
+        if override:
+            return Path(override)
+        return Path(__file__).resolve().parent / "roles"
+
+
+def _generated_index_path() -> Path:
+    return _roles_dir() / "_generated_personas.json"
+
+
+#: Retained for backward compatibility — some callers and tests read these
+#: module attributes directly. Prefer the functions above in new code.
+_ROLES_DIR = Path(__file__).resolve().parent / "roles"
 _GENERATED_INDEX_PATH = _ROLES_DIR / "_generated_personas.json"
 
 
@@ -42,21 +82,58 @@ def _slug(name: str) -> str:
 
 
 def _soul_path(role_id: str) -> Path:
-    return _ROLES_DIR / role_id / "SOUL.md"
+    return _roles_dir() / role_id / "SOUL.md"
+
+
+def _mirror_roles_dirs() -> list[Path]:
+    """Every roles directory a generated artifact must be written to.
+
+    Normally just one. When the resolved directory is inside one half of the
+    ``tools/`` ↔ ``icdev/tools/`` mirror and the other half also exists on disk,
+    both are returned so a generated persona does not desynchronise the trees.
+    Returns an empty-safe, de-duplicated list.
+    """
+    primary = _roles_dir().resolve()
+    dirs = [primary]
+
+    text = primary.as_posix()
+    for a, b in (("/icdev/tools/", "/tools/"), ("/tools/", "/icdev/tools/")):
+        if a in text:
+            twin = Path(text.replace(a, b, 1))
+            # Only mirror into a tree that already exists — never conjure one.
+            if twin != primary and twin.parent.exists():
+                dirs.append(twin)
+            break
+
+    seen: set[str] = set()
+    out: list[Path] = []
+    for d in dirs:
+        key = d.as_posix().lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(d)
+    return out
 
 
 def _load_index() -> dict[str, Any]:
-    if not _GENERATED_INDEX_PATH.exists():
+    path = _generated_index_path()
+    if not path.exists():
         return {}
     try:
-        return json.loads(_GENERATED_INDEX_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
 
 def _save_index(index: dict[str, Any]) -> None:
-    _GENERATED_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _GENERATED_INDEX_PATH.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
+    payload = json.dumps(index, indent=2, sort_keys=True)
+    for d in _mirror_roles_dirs():
+        target = d / "_generated_personas.json"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(payload, encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — a mirror write must not fail generation
+            logger.warning("persona_generator: index mirror write failed at %s: %s", target, exc)
 
 
 def _normalize_domain_label(domain_description: str) -> str:
@@ -176,9 +253,14 @@ def get_or_generate_persona(domain_description: str) -> dict[str, Any]:
         f"\"{domain_description}\". Not yet reviewed by a human -- verify before "
         f"relying on this for high-stakes decisions._\n"
     )
-    path = _soul_path(role_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(soul_text + marker, encoding="utf-8")
+    content = soul_text + marker
+    for d in _mirror_roles_dirs():
+        target = d / role_id / "SOUL.md"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("persona_generator: SOUL mirror write failed at %s: %s", target, exc)
 
     index[role_id] = {
         "domain_label": domain_label,
