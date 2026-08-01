@@ -401,6 +401,17 @@ python tools/logging/log_query.py --contains timeout --since 2026-06-06 --limit 
 # IQE: POST /logs/api/iqe-query {question}  (collection logs.entries)
 ```
 
+## Swallowed-Persistence Gate (swp-swallow-01)
+```bash
+# Report `except Exception: pass` blocks guarding an INSERT (nothing is written)
+python tools/refactor/fix_swallowed_persistence.py --dry-run --json
+# Rewrite them into logged best-effort handlers (behaviour kept, silence removed)
+python tools/refactor/fix_swallowed_persistence.py --write --json
+python tools/refactor/fix_swallowed_persistence.py --write --path tools/govcon --path icdev/tools/govcon
+# The gate that fails the build if the pattern is reintroduced (fast + full tier)
+python tools/workflow/coherence_checker.py --check swallowed_persistence --json
+```
+
 ---
 
 ## Code Intelligence Commands

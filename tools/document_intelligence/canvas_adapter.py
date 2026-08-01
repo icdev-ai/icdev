@@ -26,6 +26,9 @@ from typing import Any
 import yaml
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.document_intelligence.canvas_adapter")
 
 # ── Config cache ──────────────────────────────────────────────────────────────
 
@@ -223,8 +226,12 @@ def mark_event_processed(event_id: str, conn=None) -> None:
                 (event_id, now),
             )
             c.commit()
-        except Exception:
-            pass  # duplicate key — already processed
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # duplicate key — already processed
+            logger.warning(
+                "_insert: best-effort INSERT into dic_processed_canvas_events failed (non-blocking): %s",
+                exc,
+            )
 
     if conn is not None:
         _insert(conn)

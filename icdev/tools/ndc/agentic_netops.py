@@ -22,6 +22,9 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ndc.agentic_netops")
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
@@ -99,8 +102,8 @@ def _log_agent_action(conn, agent: str, scenario: str, trigger: str,
              mitre, task_id, model, elapsed_ms),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_log_agent_action: best-effort INSERT into ndc_agent_actions failed (non-blocking): %s", exc)
 
 
 # ── Kanban task creation ───────────────────────────────────────────────────────
@@ -124,8 +127,8 @@ def _create_kanban_task(title: str, description: str, priority: str = "high",
              epic_key, depends_on or None, now, now, now),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_create_kanban_task: best-effort INSERT into tasks failed (non-blocking): %s", exc)
     finally:
         conn.close()
     return task_id

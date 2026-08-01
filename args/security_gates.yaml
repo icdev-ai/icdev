@@ -1173,6 +1173,32 @@ canvas_placeholder_style:
     Replace ? with %s in any execute() SQL string in files importing get_canvas_connection.
     The coherence checker returns FAIL (exits 1 with --gate) on any violation so CI blocks
     the merge before the ProgrammingError reaches production.
+
+# Swallowed Persistence Gate (swp-swallow-01, D-WF-8 sub-check)
+# The other half of canvas_placeholder_style above: that gate catches the SQL
+# that raises, this one catches the handler that eats it. A broad `except` whose
+# body is exactly `pass` over a try block containing an INSERT means the write
+# can fail on every call, forever, with nothing to show for it — which is how a
+# batch of persistence defects survived long enough to need a card.
+# Run: python tools/workflow/coherence_checker.py --check swallowed_persistence --gate
+swallowed_persistence:
+  description: "Detect `except Exception: pass` guarding an INSERT — best-effort is fine, silent is not"
+  blocking:
+    - insert_guarded_by_bare_pass_handler
+  warning: []
+  thresholds:
+    max_swallowed_insert_sites: 0
+  note: >
+    Violations detected by tools/workflow/coherence_checker.py::check_swallowed_persistence,
+    which shares its AST detector with tools/refactor/swallowed_persistence.py so the gate and
+    the fixer cannot disagree. The fix keeps the best-effort behaviour and adds the report:
+    `except Exception as exc:` + `logger.warning("<fn>: best-effort INSERT into <table> failed
+    (non-blocking): %s", exc)` — see tools/canvas/event_bus.py::_audit_event. Narrowing the
+    handler to the exception actually expected is equally acceptable. Run
+    `python tools/refactor/fix_swallowed_persistence.py --write --json` to apply the rewrite.
+    The check runs in BOTH the fast (per-task) and full (nightly) tiers; a full-tier-only gate
+    would not block the build that reintroduces the pattern.
+
 foundry_self_vet:
   description: "ACF Autonomous Capability Foundry — self-vet gate before autonomous build (acf-engine-03)"
   blocking:

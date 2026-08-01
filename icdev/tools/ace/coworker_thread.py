@@ -232,8 +232,8 @@ class HITLGate:
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("resolve: best-effort INSERT into ace_audit_log failed (non-blocking): %s", exc)
         # Wake the waiting co-worker thread immediately (event-driven, no 2 s
         # poll delay).  Best-effort and idempotent — set even if the insert
         # above failed so a same-process waiter re-checks the DB promptly.

@@ -30,6 +30,9 @@ import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.award_tracker")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -60,8 +63,8 @@ def _audit(conn, action, details="", actor="award_tracker"):
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (_now(), "govcon.award_tracking", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _load_config():
@@ -267,8 +270,11 @@ def _register_competitor(conn, award):
                 _now(),
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_register_competitor: best-effort INSERT into creative_competitors failed (non-blocking): %s",
+            exc,
+        )
 
 
 # ── listing and querying ──────────────────────────────────────────────

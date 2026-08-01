@@ -29,6 +29,9 @@ import json
 import pathlib
 from datetime import datetime, timezone
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.strategos.iw_engine")
 
 try:
     import yaml
@@ -319,8 +322,8 @@ class PMESIIPTCompositor:
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_persist: best-effort INSERT into sg_wri_assessments failed (non-blocking): %s", exc)
 
     def _zeroed_assessment(self) -> dict[str, Any]:
         dims = {d: 0.0 for d in _DIMENSIONS}

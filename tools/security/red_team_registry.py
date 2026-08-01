@@ -27,6 +27,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.security.red_team_registry")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -610,8 +613,9 @@ class RedTeamRunner:
                 ),
             )
             conn.commit()
-        except Exception:
-            pass  # Table may not exist yet
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # Table may not exist yet
+            logger.warning("_store_result: best-effort INSERT into red_team_results failed (non-blocking): %s", exc)
         finally:
             conn.close()
 

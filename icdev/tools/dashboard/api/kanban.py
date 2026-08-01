@@ -15,6 +15,9 @@ from tools.awareness.value_scorer import annotate_tasks_with_value
 from tools.db.storage import get_connection, sql_placeholder
 from tools.dashboard.sse_manager import sse_manager
 from tools.kanban.gates import is_manual_gate
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.kanban")
 
 try:
     from tools.kanban.des_audit_logger import DESAuditLogger as _DESAuditLogger
@@ -52,8 +55,8 @@ def _notify_task_done(task_id: str, title: str):
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_notify_task_done: best-effort INSERT into notifications failed (non-blocking): %s", exc)
 
 
 def _gen_id():
@@ -123,10 +126,13 @@ def _log_verification_bypass(conn, task_id: str, reason: str) -> None:
             ),
         )
         conn.commit()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         # Audit failure must not block the operator-intended move; the
         # bypass is logged downstream via dashboard SSE regardless.
-        pass
+        logger.warning(
+            "_log_verification_bypass: best-effort INSERT into kanban_verifications failed (non-blocking): %s",
+            exc,
+        )
 
 
 def _annotate_in_progress_tasks(conn, tasks: list) -> None:
@@ -1650,8 +1656,12 @@ def move_task(task_id):
                     now,
                 ),
             )
-        except Exception:
-            pass  # Best-effort; annotator degrades gracefully if row absent
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # Best-effort; annotator degrades gracefully if row absent
+            logger.warning(
+                "move_task: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s",
+                exc,
+            )
 
         conn.commit()
 

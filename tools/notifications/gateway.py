@@ -304,8 +304,9 @@ class NotificationGateway:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass  # Best-effort — never block on audit
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # Best-effort — never block on audit
+            logger.warning("_audit_log: best-effort INSERT into notification_log failed (non-blocking): %s", exc)
 
     def _secure_log(
         self,

@@ -30,6 +30,9 @@ from typing import Optional
 
 from tools.ci.core.event_envelope import EventEnvelope
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ci.core.event_router")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "icdev.db"
@@ -322,8 +325,8 @@ class EventRouter:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_queue_followup: best-effort INSERT into ci_event_queue failed (non-blocking): %s", exc)
 
         return {
             "action": "queued",
@@ -351,8 +354,11 @@ class EventRouter:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "_create_pipeline_run: best-effort INSERT into ci_pipeline_runs failed (non-blocking): %s",
+                exc,
+            )
 
     def _launch_workflow(self, workflow: str, issue_number: str, run_id: str, platform: str):
         """Launch a workflow script as a background subprocess."""

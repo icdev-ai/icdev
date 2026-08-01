@@ -791,8 +791,9 @@ def seed_demo_data():
                     json.dumps({"tenant": "ICDEV™ Demo", "user": "admin@icdev.local"}),
                 ),
             )
-        except Exception:
-            pass  # Audit logging should not block seed
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # Audit logging should not block seed
+            logger.warning("seed_demo_data: best-effort INSERT into audit_platform failed (non-blocking): %s", _exc)
 
         conn.commit()
         logger.info("Demo data seeded: tenant=%s, user=admin@icdev.local", tenant_id)

@@ -25,6 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.reporter")
 
 REPORTS_DIR = BASE_DIR / "data" / "genesis" / "reports"
 
@@ -438,8 +441,8 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("generate_report: best-effort INSERT into genesis_audit failed (non-blocking): %s", exc)
 
     return {
         "status": "generated",

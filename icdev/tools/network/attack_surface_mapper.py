@@ -224,8 +224,9 @@ def _append_audit_log(conn, action: str, input_text: str, nqe_source: str) -> No
                VALUES (%s,%s,%s,%s)""",
             (action, input_text, nqe_source, _now()),
         )
-    except Exception:
-        pass  # audit log may not exist yet
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # audit log may not exist yet
+        logger.warning("_append_audit_log: best-effort INSERT into nc_nqe_audit_log failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

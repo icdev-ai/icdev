@@ -22,6 +22,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from tools.rag.vector_store_factory import VectorStoreFactory
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.rag.retention_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
@@ -366,8 +369,8 @@ def migrate_chunks(
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("migrate_chunks: best-effort INSERT into rag_ingestion_log failed (non-blocking): %s", exc)
 
     return {
         "classification": "CUI // SP-CTI",

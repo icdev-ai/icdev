@@ -67,6 +67,8 @@ from tools.dashboard.findings_aggregator import (  # noqa: E402
 )
 # P1.1: Centralized API blueprint registration (replaces 50+ individual imports)
 from tools.dashboard.api import register_api_blueprints  # noqa: E402
+
+logger = get_logger("icdev.dashboard.app")
 try:
     from tools.usage_analytics.event_collector import track_request as _track_request
 except ImportError:
@@ -668,8 +670,11 @@ def _register_govcon_pages(app: "Flask", _get_db):
                     ),
                 )
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "cpmp_cor_detail_page: best-effort INSERT into cpmp_cor_access_log failed (non-blocking): %s",
+                    exc,
+                )
             return render_template(
                 "cpmp/cor_detail.html",
                 contract=contract,
@@ -8151,8 +8156,11 @@ def create_app(testing: bool = False) -> Flask:
                 )
                 conn.commit()
                 conn.close()
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "api_genesis_run_reflex: best-effort INSERT into audit_trail failed (non-blocking): %s",
+                    _exc,
+                )
             return jsonify(result)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -8295,8 +8303,8 @@ def create_app(testing: bool = False) -> Flask:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit_gkp_mutation: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
     @app.route("/api/genesis/gkps/<gkp_id>/promote", methods=["POST"])
     @require_role("admin", "pm")
@@ -8639,8 +8647,11 @@ def create_app(testing: bool = False) -> Flask:
                 )
                 conn.commit()
                 conn.close()
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "api_review_board_run_reflex: best-effort INSERT into audit_trail failed (non-blocking): %s",
+                    _exc,
+                )
             if result.returncode == 0 and result.stdout.strip():
                 return jsonify(json.loads(result.stdout))
             return jsonify({"status": "completed", "stdout": result.stdout[:500]}), 200

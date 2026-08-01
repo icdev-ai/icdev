@@ -27,6 +27,7 @@ Checks:
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
  18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
  19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
+ 20. swallowed_persistence — no `except Exception: pass` guarding an INSERT in tools/; best-effort must log (swp-swallow-01)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -2804,6 +2805,104 @@ def check_sandbox_coverage() -> CoherenceCheck:
         missing=[],
         extra=[],
         message=f"All {len(required)} gap references present in sandbox-coverage.md",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: Swallowed Persistence (swp-swallow-01)
+# ---------------------------------------------------------------------------
+
+
+def check_swallowed_persistence(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """swp-swallow-01 — ban ``except Exception: pass`` around an INSERT.
+
+    A broad handler whose body is exactly ``pass`` over a try block that
+    writes means the write can fail forever and nothing ever reports it.
+    That silence is what let a batch of defects survive undetected long
+    enough to be worth a card of their own.
+
+    Best-effort persistence stays legal — the rule is only that it must be
+    *audible*. Keep the ``except Exception``, add a ``logger.warning``.
+    Narrow handlers, handlers that re-raise or return, and handlers that
+    already log are all untouched by this check.
+
+    Detection is shared with the fixer via
+    :mod:`tools.refactor.swallowed_persistence` so the gate and the tool
+    can never drift apart on what counts as a violation.
+    """
+    check_name = "Swallowed Persistence (swp-swallow-01)"
+    expected = ["no `except Exception: pass` around an INSERT in tools/"]
+
+    try:
+        from tools.refactor.swallowed_persistence import find_sites
+    except ImportError as exc:
+        # A missing detector must not silently pass the very gate it backs.
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=["detector unavailable"],
+            missing=["tools/refactor/swallowed_persistence.py"],
+            extra=[],
+            message=(
+                "cannot import tools.refactor.swallowed_persistence — the "
+                f"swallowed-persistence gate cannot run: {exc}"
+            ),
+        )
+
+    targets = _scan_targets(changed_files, "tools") + _scan_targets(
+        changed_files, "icdev/tools"
+    )
+    if changed_files and not targets:
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no Python files under tools/ in this diff"],
+            missing=[],
+            extra=[],
+            message="no scanned files in diff — swallowed-persistence gate skipped",
+        )
+
+    sites = find_sites(targets, PROJECT_ROOT)
+    if sites:
+        offenders = [
+            f"{site.rel}:{site.handler_lineno}"
+            f" ({site.func_name or '<module>'} -> {site.table})"
+            for site in sites
+        ]
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=[f"{len(sites)} swallowed INSERT site(s)"],
+            missing=[],
+            extra=offenders,
+            message=(
+                f"{len(sites)} `except Exception: pass` block(s) guard an INSERT "
+                "— the write can fail forever and nothing reports it. Keep the "
+                "best-effort behaviour and add a logger.warning (see "
+                "tools/canvas/event_bus.py::_audit_event), or narrow the "
+                f"handler. Offenders: {', '.join(offenders[:5])}"
+                + (" ..." if len(offenders) > 5 else "")
+            ),
+        )
+
+    scope = "diff" if changed_files else f"{len(targets)} files"
+    return CoherenceCheck(
+        check_id="swallowed_persistence",
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=[f"no swallowed INSERT sites ({scope})"],
+        missing=[],
+        extra=[],
+        message=f"no `except Exception: pass` guarding an INSERT ({scope})",
     )
 
 
@@ -6795,6 +6894,7 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "swallowed_persistence": check_swallowed_persistence,
     "reflex_registry": check_reflex_registry,
     "direct_anthropic_import": check_direct_anthropic_import,
     "provider_bypass": check_provider_bypass,

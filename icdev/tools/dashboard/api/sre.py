@@ -466,8 +466,8 @@ def api_sre_process_alert():
                 ),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("api_sre_process_alert: best-effort INSERT into audit_trail failed (non-blocking): %s", _exc)
         finally:
             conn.close()
 

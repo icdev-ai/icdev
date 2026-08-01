@@ -48,6 +48,9 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from tools.network.adapters.gns3_adapter import GNS3Adapter
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ndc.gns3_dod_topology_builder")
 
 # ── Template IDs (GNS3 built-ins — stable across installs) ────────────────────
 _T_MIKROTIK = "28bcd7fe-3c87-4bd0-9c49-3b9aa1b63da6"
@@ -217,8 +220,9 @@ def _save_to_db(name: str, pid: str, name_to_id: dict) -> None:
             conn.commit()
         finally:
             conn.close()
-    except Exception:
-        pass  # DB unavailable — non-fatal
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # DB unavailable — non-fatal
+        logger.warning("_save_to_db: best-effort INSERT into ndc_topologies failed (non-blocking): %s", exc)
 
 
 def build(server: str = "http://localhost:3080",

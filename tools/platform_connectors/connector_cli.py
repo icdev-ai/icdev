@@ -45,6 +45,9 @@ except ImportError:
 
 
 from tools.platform_connectors.connector_registry import get_registry
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.platform_connectors.connector_cli")
 
 
 # =========================================================================
@@ -126,8 +129,11 @@ def _persist_result(conn, result) -> None:
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_persist_result: best-effort INSERT into platform_connector_fetches failed (non-blocking): %s",
+            exc,
+        )
 
 
 # =========================================================================

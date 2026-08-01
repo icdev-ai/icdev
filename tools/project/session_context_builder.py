@@ -39,6 +39,9 @@ from tools.project.manifest_loader import (  # noqa: E402
     load_manifest,
     _apply_defaults,
 )
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.project.session_context_builder")
 
 
 # ── Core API ────────────────────────────────────────────────────────────
@@ -716,8 +719,8 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
                     classification,
                 ),
             )
-        except Exception:
-            pass
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("init_from_manifest: best-effort INSERT into audit_trail failed (non-blocking): %s", _exc)
 
         conn.commit()
         result["project_id"] = db_id
@@ -735,8 +738,11 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
                 )
                 conn.commit()
                 result["dev_profile_created"] = True
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "init_from_manifest: best-effort INSERT into dev_profiles failed (non-blocking): %s",
+                    _exc,
+                )
 
         conn.close()
     except Exception as exc:

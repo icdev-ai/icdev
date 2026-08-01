@@ -47,6 +47,9 @@ except ImportError:
     _HAS_YAML = False
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.quota_tracker")
 
 # ── Constants ────────────────────────────────────────────────────────
 
@@ -124,8 +127,9 @@ def _log_event(event_type: str, requests_made: int, daily_limit: int, details: s
                 (f"qe-{uuid4().hex[:12]}", event_type, _today(), requests_made, daily_limit, details, _now()),
             )
             conn.commit()
-    except Exception:
-        pass  # Non-critical — don't block API calls for audit failures
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Non-critical — don't block API calls for audit failures
+        logger.warning("_log_event: best-effort INSERT into sam_gov_quota_events failed (non-blocking): %s", exc)
 
 
 # ── Core API ─────────────────────────────────────────────────────────
