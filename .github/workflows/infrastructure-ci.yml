@@ -195,6 +195,14 @@ jobs:
       ICDEV_CLASSIFICATION: CUI
       IMPACT_LEVEL: IL4
       ICDEV_STORAGE_BACKEND: sqlite
+      # The steps below run repo scripts by PATH (`python tools/testing/
+      # health_check.py`), which puts sys.path[0] at tools/testing — so
+      # `from tools.x import y` raises ModuleNotFoundError. The job's
+      # `pip install -e . 2>/dev/null || true` is not a substitute: the `|| true`
+      # swallows a failed install and leaves the package unimportable with no
+      # signal. Same absolute-PYTHONPATH convention CLAUDE.md mandates and
+      # icdev-ci.yml already uses.
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - uses: actions/checkout@v4
@@ -267,11 +275,17 @@ jobs:
           # answering after the loop, this is what fails the step.
           curl -sf http://localhost:5050/api/health | python -m json.tool
 
-      - name: Run Python health check
-        run: python tools/testing/health_check.py --json
-
+      # Order matters, and was inverted. health_check.py exits 1 when
+      # data/icdev.db is absent — and it was absent, because the step that
+      # creates it ran afterwards. It also reports ICDEV_DB_PATH as a missing
+      # REQUIRED var, but only while that default file does not exist, so
+      # creating the database first satisfies both checks. You cannot
+      # health-check a database you have not initialized.
       - name: Verify DB schema
         run: python tools/db/init_icdev_db.py
+
+      - name: Run Python health check
+        run: python tools/testing/health_check.py --json
 
       - name: Run core unit tests against live stack
         run: |
