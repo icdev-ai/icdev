@@ -5727,7 +5727,10 @@ projects:
   default_open: true
   briefs:
   - 'eval: Eval-first — golden query set + baseline metrics via tools/rag/evaluator.py
-    and crag_evaluator.py; embedding fine-tune feasibility spike (rce-eval-01..02)'
+    and crag_evaluator.py; embedding fine-tune feasibility spike (rce-eval-01..02);
+    close the measurement gap — the ctx/raptor toggles shipped default-OFF and
+    UNMEASURED because the baseline corpus (research-heavy, ~0 NIST chunks) does not
+    match the compliance-targeted golden set (rce-eval-03)'
   - 'ctx: Contextual retrieval — context-prefix generation in ingestion_manager.py
     via LLMRouter, config toggle in args/rag_config.yaml, re-index CLI, measure vs
     baseline (rce-ctx-01..02)'
@@ -5739,6 +5742,16 @@ projects:
     (rce-quant-01..02)'
   - 'xcut: Docs + manifest shard + coherence registration + record the skip decisions
     (rce-xcut-01)'
+  - 'hyper: Hyper-retrieval spike — n-ary hypergraph RAG (HyperGraphRAG arXiv
+    2503.21322 / Hyper-RAG arXiv 2504.08758, Nature Comms Feb 2026) scoped to the
+    compliance-crosswalk subgraph, where facts are genuinely n-ary (NIST control +
+    impact level + framework + baseline + parameter) and today get shredded into
+    lossy binary kg_edges. PG stays the ONLY system of record — hyperedges reify
+    onto kg_hyperedges + members so tenant_id/classification RLS still applies;
+    hypergraph-db (PyPI, Apache-2.0, py3-none-any, zero deps) is evaluated as an
+    in-memory traversal library only, never as a second store. Go/no-go on measured
+    recall against the rce-eval-03 baseline, not on the papers numbers — magnitude
+    is single-lab and unreplicated. Depends on rce-eval-03 (rce-hyper-01)'
   epics:
   - key: eval
     title: Eval-First — baseline harness + embedding fine-tune spike
@@ -5755,6 +5768,9 @@ projects:
   - key: xcut
     title: Cross-Cutting — docs, manifest, decisions record
     priority: low
+  - key: hyper
+    title: Hyper-Retrieval — n-ary hypergraph spike over the crosswalk subgraph
+    priority: medium
 - key: sag
   name: 'SAG — Standalone Agent (Hermes-Class) Runtime'
   description: 'Recompose existing ICDEV primitives into a standalone conversational
