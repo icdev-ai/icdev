@@ -111,7 +111,7 @@ asserts the seeded secret marker never appears in a serialized observation.
 
 ## Storage
 
-Migration `303_dynamic_finding_reproductions.sql`, two tables with deliberately
+Migration `320_dynamic_finding_reproductions.sql`, two tables with deliberately
 different mutability:
 
 | Table | Mutability | Role |

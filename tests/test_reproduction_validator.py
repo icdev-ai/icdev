@@ -25,7 +25,7 @@ MIGRATION = (
     / "tools"
     / "db"
     / "migrations"
-    / "303_dynamic_finding_reproductions.sql"
+    / "320_dynamic_finding_reproductions.sql"
 )
 
 

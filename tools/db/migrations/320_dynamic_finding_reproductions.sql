@@ -1,5 +1,5 @@
 -- CUI // SP-CTI
--- Migration 303: reproduce-or-drop storage for DYNAMIC security findings
+-- Migration 320: reproduce-or-drop storage for DYNAMIC security findings
 -- (oss-poc-01, tools/security/reproduction_validator.py).
 --
 -- Two tables with deliberately different mutability:
