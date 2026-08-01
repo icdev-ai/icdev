@@ -62,8 +62,11 @@ python tools/db/storage.py --health --json
 # Companion sync (ALWAYS after code changes)
 python tools/dx/companion.py --sync --write --json
 
-# Coherence check
-python tools/workflow/coherence_checker.py --all --fix --gate
+# Coherence check — tiered (fast = per-task gate, full = nightly sweep)
+python tools/workflow/coherence_checker.py --all --fix --gate                       # full tier + autofix
+python tools/workflow/coherence_checker.py --tier fast --gate --changed-files "tools/foo.py"
+python tools/workflow/coherence_checker.py --tier fast --list-tier                  # which checks the tier runs
+python tools/genesis/reflexes/coherence_sweep.py                                    # full-tier sweep + baseline refresh
 
 # Showcase / Demo Runner
 python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json

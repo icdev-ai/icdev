@@ -5727,7 +5727,10 @@ projects:
   default_open: true
   briefs:
   - 'eval: Eval-first — golden query set + baseline metrics via tools/rag/evaluator.py
-    and crag_evaluator.py; embedding fine-tune feasibility spike (rce-eval-01..02)'
+    and crag_evaluator.py; embedding fine-tune feasibility spike (rce-eval-01..02);
+    close the measurement gap — the ctx/raptor toggles shipped default-OFF and
+    UNMEASURED because the baseline corpus (research-heavy, ~0 NIST chunks) does not
+    match the compliance-targeted golden set (rce-eval-03)'
   - 'ctx: Contextual retrieval — context-prefix generation in ingestion_manager.py
     via LLMRouter, config toggle in args/rag_config.yaml, re-index CLI, measure vs
     baseline (rce-ctx-01..02)'
@@ -5739,6 +5742,16 @@ projects:
     (rce-quant-01..02)'
   - 'xcut: Docs + manifest shard + coherence registration + record the skip decisions
     (rce-xcut-01)'
+  - 'hyper: Hyper-retrieval spike — n-ary hypergraph RAG (HyperGraphRAG arXiv
+    2503.21322 / Hyper-RAG arXiv 2504.08758, Nature Comms Feb 2026) scoped to the
+    compliance-crosswalk subgraph, where facts are genuinely n-ary (NIST control +
+    impact level + framework + baseline + parameter) and today get shredded into
+    lossy binary kg_edges. PG stays the ONLY system of record — hyperedges reify
+    onto kg_hyperedges + members so tenant_id/classification RLS still applies;
+    hypergraph-db (PyPI, Apache-2.0, py3-none-any, zero deps) is evaluated as an
+    in-memory traversal library only, never as a second store. Go/no-go on measured
+    recall against the rce-eval-03 baseline, not on the papers numbers — magnitude
+    is single-lab and unreplicated. Depends on rce-eval-03 (rce-hyper-01)'
   epics:
   - key: eval
     title: Eval-First — baseline harness + embedding fine-tune spike
@@ -5755,6 +5768,9 @@ projects:
   - key: xcut
     title: Cross-Cutting — docs, manifest, decisions record
     priority: low
+  - key: hyper
+    title: Hyper-Retrieval — n-ary hypergraph spike over the crosswalk subgraph
+    priority: medium
 - key: sag
   name: 'SAG — Standalone Agent (Hermes-Class) Runtime'
   description: 'Recompose existing ICDEV primitives into a standalone conversational
@@ -6552,3 +6568,469 @@ projects:
   - key: vv
     title: VV — Integration, Docs & Verification
     priority: high
+- key: tsr
+  name: TSR — Test Suite Remediation (by subsystem)
+  description: 'Bring tests/ to green, worked one subsystem at a time. Measured 2026-07-30:
+    30,963 tests across 1,838 files; a full run exceeds 75 minutes; ~1,000 failing. CI has
+    never covered this — its Test job is a 12-file allowlist, so the suite has been red for
+    a long time without anyone seeing it. Two causes dominate. (1) Tests that patch
+    get_connection with a bare sqlite3.connect: the repo authors %s for PostgreSQL and only
+    StorageConnection rewrites it to ?, so every statement becomes a syntax error, and where
+    the caller swallows exceptions the test asserts against a no-op it caused itself. 87
+    fixed this way already (PRs #1043/#1047/#1051); tests/_sql_compat.py now exists for it.
+    (2) Fixtures that depend on ambient DB state — green on a populated dev box, red on a
+    clean checkout. Epics are subsystem groups derived from what each test file actually
+    imports, not from its filename: test_dwo_* exercises tools/studio and test_ecr_sso
+    exercises tools/auth, so filename grouping misleads.'
+  task_prefix: tsr-
+  default_open: true
+  briefs:
+  - 'Seed the DB before any sweep: an unseeded worktree HANGS in storage.py::execute rather
+    than failing, which is why whole-suite runs never terminate. Run tools/db/init_icdev_db.py,
+    then tools/studio/init_db.py, then migrations/311_studio_event_tables_rls_columns/up.py.
+    migrate.py --up cannot substitute — ~25 migrations are PG-only and fail on SQLite.'
+  - 'Never run the whole suite to validate a fix. Select the test files that reference the
+    symbols touched and run those: a 24-file slice takes ~4 minutes against >75 for the full
+    sweep. Per-subsystem slices are the unit of work here.'
+  - 'Triage before fixing. Run the failing file against the populated shared checkout as well
+    as a clean worktree: passing there and failing here means an ambient-state fixture, not a
+    defect. Both are worth fixing, but they are different fixes.'
+  - 'A whole file failing at once is one shared fixture, not N broken features. Read the
+    fixture before the implementation.'
+  - 'Do not delete assertions to make tests pass. Where a test and the code disagree, work
+    out which is right — several so far were tests asserting contracts the code never had,
+    and at least three were real features deleted by a mirror sync.'
+  epics:
+  - key: dash
+    title: "DASH — Dashboard, IQE & presentation"
+    priority: high
+  - key: canv
+    title: "CANV — Design canvases"
+    priority: high
+  - key: agent
+    title: "AGENT — ACE, agent runtime & MCP"
+    priority: medium
+  - key: gen
+    title: "GEN — Genesis, Oracle & autonomy"
+    priority: high
+  - key: ai
+    title: "AI — LLM, RAG, Cortex & memory"
+    priority: high
+  - key: comp
+    title: "COMP — Compliance, security & governance"
+    priority: critical
+  - key: gov
+    title: "GOV — GovCon, proposals & CPMP"
+    priority: medium
+  - key: net
+    title: "NET — Network, pipeline & infrastructure"
+    priority: medium
+  - key: flow
+    title: "FLOW — Studio, workflow & kanban"
+    priority: high
+  - key: doc
+    title: "DOC — Document intelligence & quality"
+    priority: medium
+  - key: core
+    title: "CORE — Platform core (DB, SaaS, CLI, packaging)"
+    priority: critical
+  - key: intel
+    title: "INTEL — Strategos, research & trading"
+    priority: low
+
+- key: gdx
+  name: "GDX — GameDay Defect & Drift Remediation"
+  task_prefix: gdx-
+  default_open: false
+  description: 'Remediation of what the two prior GameDay cards left behind, found by a live
+    analysis of /gameday on 2026-07-31. The page itself is healthy: all 12 routes return 200,
+    bad ids correctly 404, the browser console is clean (0 errors, 0 warnings) and every XHR
+    returns 200 — this is not a broken-page card. The headline defect is invisible from the
+    browser. Both FGA GameDay fixes landed in tools/ and were verified genuinely shipped
+    against the running app, but neither reached the packaged icdev/ mirror: a CONTENT diff
+    (not a file-list diff) shows icdev/tools/dashboard/templates/ai_gameday/hub.html is
+    missing the fga-gd-01 Scenario Manager/Builder links (9619B vs 8956B) and player.html is
+    missing the fga-gd-02 tool.navigable guard (17627B vs 17082B). In a packaged or
+    pip-installed ICDEV both pages are reachable only by typing the URL, and 12 of the 34
+    AI_TOOLS_CATALOG entries render as clickable anchors that 405. The drift shipped silently
+    because the mirror-parity check compares file LISTS, not content. Second: migration
+    136_gameday_ai_league declares its 8 gd_ai_* tables an "Append-only audit trail (AU)" but
+    grep gd_ai_ against .claude/hooks/pre_tool_use.py returns zero — none are registered in
+    APPEND_ONLY_TABLES, though ttx_api_log is. PRIOR ART, do not reopen: penta epic gd (7
+    tasks, closed 2026-07-18, 31 merged PRs — route auth/RBAC, AI League repoint,
+    ontology_tags_json, stored XSS, content packs) and fga epic gd (3 tasks, done — hub
+    reachability, POST-only tool links, scenario-picker verification). FGA also deliberately
+    REFUTED several audit claims that must not be re-carded: Oracle and the GameDay responses
+    API are RBAC-gated (401 misread as breakage), and the scenario picker has 9 distinct packs
+    on disk. OUT OF SCOPE by explicit decision: IQE integration (genuinely incomplete but
+    already recorded as a deliberate iqe_partial exemption in args/completion_exemptions.yaml),
+    platform-wide performance (no gzip on any dashboard response, ~120KB/page), and
+    mirror-parity gate hardening (the root cause of the headline finding — deserves its own
+    card covering all canvases, not just GameDay). MANUAL-ONLY: all tasks gated behind
+    gdx-gate-00 held in_progress so the kanban runner never dispatches them; worktree + push
+    + PR, no auto-merge.'
+  briefs:
+  - 'Prior art: penta epic gd (7 tasks, closed 2026-07-18) and fga epic gd (3 tasks, done).
+    Both were spot-verified as genuinely shipped on the dev tree — 0 GET anchors pointing at
+    /api/, and Scenario Manager + Builder are linked from the hub. Do not reopen either card.'
+  - 'The headline defect is mirror drift, not a page bug. Reproduce it with a CONTENT diff,
+    never a file-list diff: diff tools/dashboard/templates/ai_gameday/hub.html against
+    icdev/tools/dashboard/templates/ai_gameday/hub.html. A file-list diff reports the trees as
+    fine and is what let this ship.'
+  - 'Never hand-copy files into icdev/. Use the companion/mirror sync tooling. A --clean sync
+    has destroyed the mirror before, and mirror-only files are silently deleted by the next
+    sync — which is the likely origin of the three mirror-only templates in gdx-mir-02.'
+  - 'GameDay is a child_app (kind: child_app in args/component_registry.yaml:1190-1209,
+    module apps.ai_gameday.blueprint), NOT a tools/ canvas. There is no tools/gameday/
+    blueprint.py. Templates render from tools/dashboard/templates/{ai_gameday,gameday}/
+    because the blueprint declares no template_folder.'
+  - 'Verify before fixing, as fga-gd-03 did. Two of the five external-audit GameDay findings
+    were already fixed eight days before that audit ran. Reproduce each claim against the
+    live app first.'
+  epics:
+  - key: gate
+    title: Manual Gate (held)
+    priority: high
+  - key: mir
+    title: "MIR — icdev/ mirror drift"
+    priority: high
+  - key: aud
+    title: "AUD — Append-only audit registration"
+    priority: critical
+  - key: dead
+    title: "DEAD — Orphaned templates & schema"
+    priority: medium
+  - key: doc
+    title: "DOC — Docs, registry drift & verification"
+    priority: low
+
+- key: sme
+  name: "SME — Chat-Native SME Co-Worker Spawning"
+  description: "Make chat the front door to ACE. A conversation anywhere in the platform can propose a team of subject-matter-expert co-workers; one click staffs it, generating any missing persona AND its executable role; the team does real work under existing trust/HITL/audit controls; a synthesized answer returns inline with a deep link to /coworker. Premium-gated on ICDEV_LICENSE_TIER, inherited automatically by future canvases and child apps, and consumed by idea_lab and compass. Phase 0 is a blocking prerequisite: 86 of 90 ACE roles were no-ops that reported success, because _normalise_step rewrote every bare step into llm_step.invoke while step_executor refused that tool unless the role granted it, and the resulting error was swallowed as optional."
+  task_prefix: "sme-"
+  default_open: true
+  briefs:
+    - "fix: intrinsic llm_step exemption, RoleStep normalisation, no-success-on-total-failure, webhook_url passthrough, profile_generator permission/tier sanitisation (sme-fix-01..06)"
+    - "reg: ensure_sme() producing BOTH a SOUL.md persona and an executable role YAML; capability bundles; role_policy validation; SIPA fail-closed (sme-reg-01..05)"
+    - "gap: generate-on-miss in the suggestion builder with cheap-first dedup against the existing 90 roles (sme-gap-01..03)"
+    - "card: suggest-then-confirm action_card, ace_team_suggestions table, shared includes/_chat_panel.html (sme-card-01..05)"
+    - "ctx: wire the dead confirm_agent path in cortex/blueprint.py; route suggestion scoring through Cortex; fix the blank governance tile (sme-ctx-01..04)"
+    - "ret: chat_result_reflex posting the synthesized answer back into the originating chat context (sme-ret-01..03)"
+    - "tier: ICDEV_LICENSE_TIER gate via billing/tier.py, SME_CHAT_MAX_TEAM=5, tiered LLM routing (sme-tier-01..03)"
+  epics:
+    - key: fix
+      title: "FIX — Make ACE co-workers actually produce output"
+      priority: critical
+    - key: reg
+      title: "REG — SME registry: persona + executable role, safely bounded"
+      priority: critical
+    - key: gap
+      title: "GAP — Generate-on-miss with duplicate suppression"
+      priority: high
+    - key: card
+      title: "CARD — Suggest-then-confirm and the shared chat panel"
+      priority: high
+    - key: ctx
+      title: "CTX — Cortex as decision brain; governance tile"
+      priority: high
+    - key: ret
+      title: "RET — Results back into the conversation"
+      priority: high
+    - key: tier
+      title: "TIER — Premium gate, team caps, tiered LLM"
+      priority: medium
+- key: swp
+  name: SWP - Silent Write Failures and Schema Drift
+  description: 'Sweep for writes that cannot succeed and fail invisibly. Found while
+    fixing the test-suite hang: module_budget_usage held 0 rows on live PostgreSQL
+    because record_module_usage inserted a client-generated string id into a SERIAL
+    column, and every caller wrapped it in "except Exception: pass". The same shape
+    then turned up across tools/govcon, where audit_trail has never received a single
+    row from the subsystem - 3033 rows total, zero from govcon. An automated pass
+    comparing every static INSERT column list in tools/ against the live PostgreSQL
+    schema found 95 statements naming columns that do not exist. These are not
+    hypothetical: each one raises at runtime and is swallowed, so the feature reports
+    success while persisting nothing. Budget gates, audit trails and telemetry all
+    read tables that can never fill.'
+  task_prefix: swp-
+  default_open: true
+  briefs:
+  - 'Verify against the LIVE PostgreSQL schema, not the DDL in the source. Many tables
+    were created by an older migration and never altered - CREATE TABLE IF NOT EXISTS
+    does not change an existing table, so the code and the database disagree silently.
+    information_schema.columns is the source of truth.'
+  - 'Prove the defect before fixing it. Attempt the INSERT against live PG and capture
+    the error, then assert the row IS IN THE DATABASE afterwards. Existing tests pass
+    against functions that persist nothing because they mock the writer or assert only
+    on its return value.'
+  - 'Prefer omitting a client-generated id over widening the column to TEXT. CREATE
+    TABLE IF NOT EXISTS never alters an existing table, so a DDL change repairs nothing
+    already deployed until a migration runs, while omitting the column fixes every
+    existing database immediately. RETURNING id works on PostgreSQL and SQLite 3.35+,
+    so one statement serves both; psycopg2 lastrowid does not - it reports an OID.'
+  - 'Never leave "except Exception: pass" around a persistence call. Log it. That bare
+    pass is the single reason every defect in this card survived. 227 such sites exist
+    in tools/ (AST-verified, migrations excluded); they are the search space, not the
+    defect list - many are legitimately best-effort and only need logging.'
+  - 'A CHECK constraint and its Python constant drift apart. VALID_EVENT_TYPES has 221
+    entries; audit_trail_event_type_check admits 189. Derive the constraint from the
+    constant, per CLAUDE.md, rather than adding to one side.'
+  epics:
+  - key: audit
+    title: "AUDIT - audit_trail event types and constraint drift"
+    priority: critical
+  - key: scan
+    title: "SCAN - triage the 95 column-mismatch INSERTs"
+    priority: high
+  - key: swallow
+    title: "SWALLOW - logging for swallowed persistence"
+    priority: medium
+  - key: gate
+    title: "GATE - coherence check to prevent recurrence"
+    priority: high
+
+- key: tsh
+  name: "TSH — Test Suite Health"
+  description: "The local pytest suite could not finish. Two causes are fixed (#1007 removed an infinite live-LLM call; #1011 fixed inverted timeouts and a SQLite lock wait that equalled the per-test budget), taking the run from hanging forever to reaching 17%. Three issues remain, all measured and none fixed. Note none of this affects CI, where pytest-timeout is not installed — these bite only locally, which is exactly where the 12-file CI allowlist stops protecting anyone."
+  task_prefix: "tsh-"
+  default_open: true
+  briefs:
+    - "Fixed already, for context: #1007 (live LLM call in a unit test, hung forever), #1008 (classifier document domains), #1011 (inverted subprocess timeouts + SQLite busy_timeout == the 30s test budget)."
+    - "The unifying rule behind the fixed ones: an inner wait must expire BEFORE the outer test budget. pytest-timeout has only the thread method on Windows, so it kills the interpreter rather than failing one test — turning any slow operation into a session abort that names the wrong file."
+    - "Measured progress of a full `pytest tests/`: 14% before, 17% after #1011."
+  epics:
+    - key: kill
+      title: "KILL — Remaining session-killers"
+      priority: high
+    - key: leak
+      title: "LEAK — Leaked SQLite write transaction"
+      priority: high
+    - key: e2e
+      title: "E2E — ~55 local Playwright failures"
+      priority: medium
+- key: lpx
+  name: LPX — LLM Proxy & Provider Key Abstraction
+  description: 'Stand up a server-side LLM proxy so one real provider key is held by
+    infrastructure and never reaches students, tenants, or child apps — the missing
+    piece identified in docs/anthropic-proxy-strategy.md and
+    docs/keycloak-vs-proxy-sequencing.md (both authored 2026-07, both still
+    uncommitted, zero implementation). Verified 2026-07-25: `litellm` appears in
+    exactly 5 files, 3 of which are those docs and 2 are research-corpus JSON. No
+    docker-compose service, no k8s manifest, no requirements entry, no config, no
+    kanban tasks. What DOES exist and must NOT be rebuilt: tools/llm/gateway.py is
+    an in-process guardrail wrapper (injection detection, PII scrub, rate limit,
+    cost cap, llm_gateway_audit) and stays as the client-side layer;
+    tools/llm/proxy_resolver.py is a rotating EGRESS HTTP proxy for corporate
+    networks and is unrelated; tools/llm/rate_gate.py already does concurrency
+    gating; tools/saas/bedrock/bedrock_proxy.py already does BYOK-vs-shared-pool
+    routing with per-tenant token metering and is the closest prior art, but it is
+    Bedrock-only, a library call rather than an HTTP server, and has no virtual
+    keys. The `saas_proxy` entry in args/llm_config.yaml is a routing FUNCTION name,
+    not a proxy. The strategy doc claims integration is a one-line base_url change;
+    that is true for anthropic_provider.py (base_url is already a constructor arg)
+    but FALSE overall — six call sites bypass LLMRouter entirely and POST raw
+    requests to https://api.anthropic.com/v1/messages with ANTHROPIC_API_KEY read
+    straight from os.environ (tools/network/routes/ai.py:272,539,605,
+    tools/network/routes/topology.py:511,803,
+    tools/network/routes/twin_migration.py:1289). A base_url-only integration would
+    silently leave those six paths pointed at the real API with the real key, which
+    is exactly the leak the card exists to close. Router-bypass remediation is
+    therefore a PREREQUISITE, not a follow-up. DEPLOYMENT MODEL (confirmed with the
+    user 2026-07-25, and it is what makes the proxy mandatory rather than optional):
+    there are TWO consumer classes, not one. (1) /academy and /gameday run on ONE
+    SHARED SERVER with 4-5 teams competing against each other — no player ever needs
+    a key, the server holds it, and the real requirement is FAIRNESS: teams are
+    adversaries, so one team exhausting a shared RPM/TPM limit degrades every other
+    team''s exercise even while under budget. ICDEV''s existing cost cap
+    (tools/llm/gateway.py) and concurrency gate (tools/llm/rate_gate.py) are
+    process-global and would throttle everyone when one team overruns — the missing
+    dimension is per-team scoping, not a new cap. (2) ICDEV CANVASES RUN AS LOCAL
+    COPIES, one per person. This is the half that forces a proxy: the real key cannot
+    be distributed into N local .env files (unrevocable per-person, and rotating it
+    breaks every copy at once), so local copies must point base_url at the hosted
+    gateway and authenticate with a per-person virtual key. It also promotes the
+    router-bypass from cleanup to a hard blocker — on a local copy pointed at the
+    gateway, those six sites either fail with no key in env or, worse, work because
+    someone pasted a real key there to fix them. GROUPING UNITS ARE NOT UNIFORM —
+    verified against the schemas, one virtual-key scheme cannot cover all three:
+    gameday uses ttx_teams(team_id, session_id) scoped per exercise via
+    ttx_sessions(session_id, join_code, max_teams DEFAULT 8), and its players are
+    ttx_team_members(player_name, role_id) who join by join_code and have NO
+    dashboard_users account — so per-USER keys are impossible there and per-TEAM is
+    both the right and the only available granularity; academy uses a different unit
+    entirely, fa_guilds/fa_guild_members over fa_users; local canvas copies are
+    individual dashboard users. ttx_api_log(session_id, team_id, tool_slug, endpoint,
+    call_id, result_hash, called_at) already exists and is the natural attribution
+    hook, but it is a CALL log with no token or cost columns — attribution is not
+    half-built, it needs cost/token columns or a join to token_tracker. Hard
+    constraints: the proxy ships OFF by default and air-gap mode
+    (ICDEV_LLM_PROVIDER=ollama, two_tier disabled) must keep working with zero proxy
+    dependency; CUI-classified traffic must continue to honor the existing local-only
+    egress policy and must not gain a new cloud path via the proxy. Keycloak is
+    explicitly OUT OF SCOPE per the sequencing doc — the two systems are independent
+    and the proxy does not need SSO to issue virtual keys. Sources:
+    docs/anthropic-proxy-strategy.md, docs/keycloak-vs-proxy-sequencing.md'
+  task_prefix: lpx-
+  default_open: true
+  briefs:
+  - 'gate: Manual gate held in_progress — nothing dispatches until a human releases it
+    and confirms the proxy product choice (lpx-gate-00)'
+  - 'router: Router-bypass remediation — migrate the 6 hardcoded api.anthropic.com
+    call sites onto LLMRouter and add a coherence gate so new ones cannot land. HARD
+    BLOCKER for the local-copy model, not cleanup (lpx-router-01..03)'
+  - 'proxy: Proxy deployment — compose/k8s service, config, .env contract, and the
+    llm_config.yaml base_url wiring, all opt-in and off by default (lpx-proxy-01..04)'
+  - 'keys: Virtual key lifecycle — issuance, budgets, rotation and revocation across
+    three non-uniform scopes (gameday team, academy guild/user, local-copy person),
+    surfaced as an ICDEV tool not a manual curl (lpx-keys-01..04)'
+  - 'teams: Competition fairness for /academy and /gameday — per-team RPM/TPM ceilings
+    so one team cannot starve its opponents, per-team budget, and per-team spend
+    attribution on the existing ttx_api_log hook (lpx-teams-01..03)'
+  - 'egress: Egress safety — prove air-gap and CUI-local-only paths are unchanged and
+    that the proxy cannot become a new cloud egress for classified content
+    (lpx-egress-01..02)'
+  - 'obs: Spend observability — scrape proxy metrics, attribute cost per key, and
+    reconcile against the existing token_tracker / llm_gateway_audit (lpx-obs-01..02)'
+  - 'vv: V&V — provider-abstraction tests, air-gap regression, and an E2E that proves
+    no real provider key is reachable from an academy session (lpx-vv-01..02)'
+  - 'xcut: Close-out — ADR recording the product choice and what was rejected, commit
+    the two strategy docs, manifest/commands/companion/coherence (lpx-xcut-01)'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: high
+  - key: router
+    title: Router-Bypass Remediation (Prerequisite)
+    priority: critical
+  - key: proxy
+    title: Proxy Deployment & Wiring
+    priority: high
+  - key: keys
+    title: Virtual Key Lifecycle & Budgets
+    priority: high
+  - key: teams
+    title: Competition Fairness — Per-Team Limits & Attribution
+    priority: high
+  - key: egress
+    title: Air-Gap & CUI Egress Safety
+    priority: critical
+  - key: obs
+    title: Spend Observability & Cost Attribution
+    priority: medium
+  - key: vv
+    title: V&V — Key Abstraction Proof
+    priority: high
+  - key: xcut
+    title: Cross-Cutting — ADR & Close-Out
+    priority: low
+- key: docmodx
+  name: DOCMODX Coverage Extension — Doc Drift Domain Packs + Feedback Loops
+  description: 'Extend the shipped Document Modernization (DocMod) engine with the
+    verified-absent P0/P1 coverage gaps identified by an external audit of the DIC
+    + DocDrift + DocMod stack. The framework itself is production-grade and needs
+    domain extension plus feedback loops, not redesign. Scope is two new declarative
+    rulebook packs (architecture patterns, SOP workflows), temporal validity (effective
+    and sunset dates) in the policy rulebook, proactive stale-document notification
+    wired through the existing NotificationGateway, and an inter-document cross-reference
+    table populated at ingest time. Zero-Python rulebook path is unproven in-repo
+    (no shipped pack uses RulebookPack), so the first pack task doubles as the exemplar.
+    Deferred gaps: regen citation gate, link rot, semantic claim persistence, external
+    push feeds, living-document model. SCOPE BOUNDARY: the DocMod engine itself already
+    shipped previously as 32 completed tasks under the older task_prefix "docmod-"
+    (epics bridge, catalog, core, hitl, learner, ops, packs, regen, ux) plus migrations
+    257/258; that prior work is deliberately OUT OF SCOPE for this card and must not be
+    re-conflated with it. This card covers only the new extension work under "docmodx-".
+
+    '
+  task_prefix: docmodx-
+  default_open: true
+  briefs:
+  - 'scope: prior DocMod engine work (32 done tasks under the older docmod- prefix)
+    shipped already and is deliberately out of this card''s scope'
+  - 'gate: manual hold so the runner never auto-dispatches this set; the five impl
+    tasks depend_on the gate — docmodx-gate-00'
+  - 'pack: architecture_patterns rulebook pack (also the RulebookPack exemplar) +
+    sop_workflows tool/command drift pack — docmodx-pack-01/02'
+  - 'temporal: effective_date / sunset_date structured fields in rulebook_policy.yaml
+    + evaluator emits sunset verdicts — docmodx-temporal-01'
+  - 'notify: freshness_engine threshold crossing -> NotificationGateway doc_stale
+    event, owner via dic_collections.owner_id — docmodx-notify-01'
+  - 'xref: dic_cross_references table (RLS) + ingest-time reference parser — docmodx-xref-01'
+  epics:
+  - key: gate
+    title: Manual Gate (held in_progress, pipeline-exempt)
+    priority: high
+  - key: pack
+    title: Domain Rulebook Packs — architecture patterns + SOP workflows
+    priority: high
+  - key: temporal
+    title: Temporal Validity — effective/sunset dates
+    priority: medium
+  - key: notify
+    title: Proactive Stale-Document Notification
+    priority: medium
+  - key: xref
+    title: Inter-Document Cross-References
+    priority: medium
+- key: gpx
+  name: GPX - Kanban Gate Performance Split (CodeLens / Coherence)
+  description: 'Autonomous kanban builds were timing out at the CodeLens and Coherence
+    gates. Measured root cause: coherence_checker.py --all took 151s warm and 328s
+    on a cold kanban worktree, against a 120s subprocess timeout in
+    validated_commit._run_coherence - so the gate timed out on every task. The
+    TimeoutExpired was caught and returned as True (''coherence skipped''), which
+    recorded coherence_passed=1 for tasks whose coherence had never run: 24 of the
+    last 25 kanban_verifications rows showed a pass, including rows where CodeLens
+    failed. Three further defects compounded it: validate_working_tree joined the
+    coherence future before testing the CodeLens result, so a 4s lint failure still
+    waited out the full timeout; the main baseline was recomputed per task rather
+    than cached; and the baseline comparison was binary (does main also fail), so
+    any single pre-existing failure turned the whole gate into an unconditional
+    pass. Cost was concentrated - 3 of 49 checks (blueprint_imports, openapi_parity,
+    llm_router_api) accounted for ~100s of a ~170s warm run, all of them whole-app
+    checks blind to the diff. SHIPPED in PR feat/gate-perf-split: tiered checks
+    (--tier fast|full) with trigger-surface promotion, diff-scoped file scanners, a
+    4-way parallel run_checks, a tri-state coherence result where a timeout records
+    not_run instead of pass, a per-check-id baseline delta cached by main HEAD sha,
+    stdout protection so the JSON report is parseable, a tool_runner executor so
+    deterministic gate sub-tasks stop paying for an LLM dispatch, and a 6-hourly
+    coherence_sweep reflex carrying the deferred heavy checks. Result: per-task gate
+    328s -> 15.5s; full sweep 328s -> 132.5s. The tasks below are follow-ups, not
+    the shipped work.'
+  task_prefix: gpx-
+  default_open: false
+  briefs:
+  - 'SHIPPED (feat/gate-perf-split): Tier 1 - tri-state coherence result
+    (timeout/cancel/unparseable = not_run, never pass), CodeLens failure cancels the
+    coherence subprocess instead of blocking on it, main baseline cached on disk by
+    HEAD sha, per-check-id delta replaces the binary compare, robust JSON extraction
+    plus stdout protection in the checker CLI. Tier 2 - --tier fast|full,
+    HEAVY_CHECKS with trigger-surface promotion, _scan_targets() diff-scoping for
+    direct_anthropic_import and provider_bypass, ThreadPoolExecutor run_checks
+    (serial under --fix), per-check duration_sec in the report, --changed-files-from
+    for diffs past the argv limit. Tier 3 - conformance review only once the
+    mechanical gates are green, gate budget derived from the task dispatch budget,
+    _dispatch_via_tool_runner for auto-decomposed phase-gate steps, coherence_sweep
+    reflex on a 6h cadence.'
+  - 'FOLLOW-UPS (the tasks on this card): the ~120 [init_db] print() calls across 11
+    canvas modules still write to stdout at import time - the checker CLI now
+    shields its own stdout and the parser tolerates the noise, but the prints
+    themselves belong on stderr. run_checks has no hard per-check kill; a
+    pathological check can still run past the sweep budget without being cancelled,
+    and doing that safely needs process isolation rather than threads. The
+    tool_runner executor currently only handles auto-decomposed phase-gate sub-tasks
+    and could cover other deterministic task shapes. Thread vs process pool for the
+    full tier has not been measured. And
+    tests/test_coherence_checker.py::test_autofix_mode mutates tracked files (it
+    appended 14 unrelated tools to tools/manifest.md during this build) - a test
+    that writes to the repo it is testing.'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: hyg
+    title: Gate Hygiene Follow-ups
+    priority: medium
+  - key: perf
+    title: Further Gate Performance
+    priority: low

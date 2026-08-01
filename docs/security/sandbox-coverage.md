@@ -1002,3 +1002,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - **Caller IL/RBAC before dispatch** — `check_caller_authorized()` refuses a caller below the tool's `min_il` or missing a required role, reading both from `args/component_registry.yaml` via the component that owns the handler's module. Runs after lookup (it needs the module) but before params and dispatch; `test_run_refuses_before_the_handler_is_called` asserts non-invocation.
   - **Regression test** — `tests/studio/test_mcp_executor.py` (39 tests) covers registry lookup, resource rejection, each validation failure mode, handler-exception propagation, the allowlist gate, and the CLI exit-code contract; `tests/studio/test_mcp_executor_rbac.py` (34 tests) covers caller resolution and the IL/role refusals.
 - **Revisit if:** the tool name or module path ever becomes derivable from tenant/end-user content rather than an authenticated template author; the registry lookup is relaxed to accept an arbitrary dotted module path; or the `mcp_workflow_tools` allowlist is removed or made default-allow → re-decide as **sandboxed** (`tools/security/sandbox_executor.py`).
+
+### Gap 42 — SAML ACS response parsing (`tools/auth/saml.py`)
+
+**Module:** `tools/auth/saml.py` (`process_acs_response()`, + `icdev/` mirror); ingress at `tools/auth/blueprint.py` route `POST /auth/saml/<provider_id>/acs` (task aca-hyg-06-d2).
+
+**Ingress path:** An identity provider (or anyone who can reach the ACS route) POSTs a base64-encoded `SAMLResponse` form field. `process_acs_response()` base64-decodes it and parses the resulting XML to extract `NameID` and `Attribute` values, which are then persisted to `sso_sessions`. This is **unauthenticated, remote-attacker-reachable XML** — the ACS endpoint must accept the POST before any session exists.
+
+- **Decision:** **bypass-documented** (hardened parser, no code-execution surface)
+- **Rationale:** Parsing goes through `defusedxml.ElementTree.fromstring` (already a project dependency, `defusedxml>=0.7` in both `requirements.txt` and `pyproject.toml`), which forbids internal entity expansion (billion-laughs DoS), external entity resolution (XXE / local file disclosure), and external DTD retrieval (SSRF). Previously this call site used stdlib `xml.etree.ElementTree.fromstring`, which permits internal entity expansion — Bandit B314. The stdlib `ET` import is retained *only* to BUILD the XML this module emits (`register_namespace`, `Element`, `SubElement`, `tostring` in `generate_sp_metadata`/`initiate_saml_login`) and is marked `# nosec B405` accordingly; no untrusted bytes reach it. Extraction is read-only tree traversal (`find`/`findall`) into parameterized SQL — no `eval()`, `exec()`, `subprocess`, or filesystem writes.
+- **Guardrails:**
+  - `defusedxml.ElementTree.fromstring` for all untrusted parsing; stdlib `ET` is construction-only.
+  - Both `ET.ParseError` (malformed XML) and `ValueError` (defusedxml's `EntitiesForbidden` / `DTDForbidden` / `ExternalReferenceForbidden`, which subclass `ValueError`) are caught and re-raised as a uniform `ValueError("Invalid SAMLResponse XML")`, so the parser's internals are never echoed to the caller.
+  - `tools/auth/blueprint.py::acs` catches that `ValueError` and returns HTTP 400 — a hostile payload is rejected without creating a session.
+  - Invalid base64 is rejected before the parser runs.
+  - `tests/test_ecr_sso.py` covers metadata parsing and benign ACS round-trips (16 tests).
+- **Revisit if:** parsing moves back to stdlib `xml.etree`/`minidom`/`lxml` without `resolve_entities=False`, the module starts resolving external references from assertion content, or a signature-verification path is added that shells out to an external XMLSec binary.
+- **Scope of this entry:** this decision covers the **parser's** attack surface only (entity expansion, external references, malformed input). SAML *protocol trust* — assertion signature verification and condition/audience validation — is a separate concern reviewed and tracked outside this document.

@@ -27,14 +27,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-@pytest.fixture
-def canvas_db(tmp_path, monkeypatch):
-    """AADC canvas DB pinned to a temp sqlite file, initialized + seeded."""
-    initdb = importlib.import_module("tools.agentic_ai_canvas.db.init_db")
-    monkeypatch.setattr(initdb, "_BACKEND", "sqlite", raising=True)
-    monkeypatch.setattr(initdb, "DB_PATH", tmp_path / "aadc_p2.db", raising=True)
-    initdb.init_db()
-    return initdb
+from _aadc_canvas import canvas_db as _canvas_db  # noqa: E402
+
+# Re-export so pytest collects the shared fixture from this module. Bound by
+# assignment rather than imported under its own name so the test signatures
+# below are not each flagged as redefining an import (F811).
+canvas_db = _canvas_db
 
 
 def _insert_design(initdb, did="aadc-p2", classification="CUI", updated_at="2026-01-01T00:00:00"):

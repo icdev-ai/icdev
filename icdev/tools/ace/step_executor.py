@@ -61,6 +61,30 @@ class CoWorkerSpec:
 
 _VAR_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
 
+# Intrinsic engine capabilities — always callable, never require an explicit
+# grant in ``spec.tool_permissions``.
+#
+# ``llm_step.invoke`` is the engine asking its OWN configured LLM to carry out a
+# step. It opens no file, spawns no process, and reaches nothing outside the
+# router that the co-worker was already constructed with, so gating it behind a
+# per-role grant protects nothing.
+#
+# Treating it as permissioned was a latent deadlock: CoWorkerThread._normalise_step
+# rewrites every bare-string step into a ``llm_step.invoke`` call, but only two of
+# the ninety shipped role YAMLs listed that dotted path in ``tool_permissions``.
+# For the other eighty-eight, run() raised ToolPermissionDeniedError on every
+# step; because _normalise_step also marks those steps ``required: False``, the
+# error was swallowed as ``step_failed_optional`` and the co-worker finished
+# ``state='complete'`` having produced nothing at all.
+#
+# Real agency is unaffected and still gated elsewhere: filesystem writes go
+# through ``folder_access`` (FileAccessBroker) and process execution through
+# ``icdev_tools`` (ToolRunner). Read/Write/Edit/Bash remain permissioned here.
+_INTRINSIC_TOOLS: frozenset[str] = frozenset({
+    "icdev.tools.ace.llm_step.invoke",
+    "tools.ace.llm_step.invoke",
+})
+
 _AUDIT_TABLE_CREATED: set[str] = set()
 
 # Step-level execution audit trail. This table is DISTINCT from the ACE canvas
@@ -330,8 +354,8 @@ class StepExecutor:
             )
             return None
 
-        # 2. Verify tool is whitelisted in spec
-        if tool_path not in spec.tool_permissions:
+        # 2. Verify tool is whitelisted in spec (intrinsic engine calls exempt)
+        if tool_path not in _INTRINSIC_TOOLS and tool_path not in spec.tool_permissions:
             err = f"Tool '{tool_path}' not in spec.tool_permissions for '{getattr(spec, 'name', 'ace-coworker')}'"
             _emit_audit(
                 step_id=step_id,

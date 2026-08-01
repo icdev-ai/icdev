@@ -207,7 +207,12 @@ class TestRecordA2ATask:
         d = _make_daemon()
 
         with patch("tools.genesis.daemon.get_connection") as mock_conn_factory:
-            inner_conn = sqlite3.connect(str(db_path))
+            # Translating wrapper — the daemon authors %s for PostgreSQL, and
+            # its insert sits inside a best-effort except, so a bare connection
+            # silently wrote nothing and this read as a missing feature.
+            from _sql_compat import connect as _tconnect
+
+            inner_conn = _tconnect(db_path, row_factory=False)
             mock_conn_factory.return_value = inner_conn
 
             d._record_a2a_task(
@@ -243,7 +248,12 @@ class TestRecordA2ATask:
         d = _make_daemon()
 
         with patch("tools.genesis.daemon.get_connection") as mock_conn_factory:
-            inner_conn = sqlite3.connect(str(db_path))
+            # Translating wrapper — the daemon authors %s for PostgreSQL, and
+            # its insert sits inside a best-effort except, so a bare connection
+            # silently wrote nothing and this read as a missing feature.
+            from _sql_compat import connect as _tconnect
+
+            inner_conn = _tconnect(db_path, row_factory=False)
             mock_conn_factory.return_value = inner_conn
 
             d._record_a2a_task(

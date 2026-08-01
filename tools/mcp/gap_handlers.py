@@ -3741,3 +3741,89 @@ def handle_browser_screenshot(args: dict) -> dict:
     from tools.agent_toolkit import browser_screenshot
 
     return browser_screenshot(name=args.get("name"), run_id=args.get("run_id"))
+
+
+def handle_ace_ensure_sme(args: dict) -> dict:
+    """MCP: ensure a team-capable subject-matter expert exists for a domain.
+
+    Distinct from ``ace_persona_query``, which produces an ADVISORY-only persona
+    (a SOUL.md identity for one-shot Q&A). A persona alone cannot be staffed onto
+    an ACE team, so a cross-repo caller that generated one could ask it a
+    question but never put it to work. ``ensure_sme`` produces both halves — the
+    SOUL.md identity AND the executable role YAML — or neither.
+
+    Resolution order: reuse a previously generated SME for the same normalised
+    domain; else reuse a sufficiently similar role from the existing catalog
+    rather than minting a near-duplicate; else generate.
+
+    The returned ``role_id`` is safe to pass straight to ``ace_launch``'s
+    ``role_ids``.
+    """
+    domain_description = str(args.get("domain_description") or "").strip()
+    if not domain_description:
+        return {"error": "domain_description is required"}
+
+    bundle = args.get("capability_bundle") or None
+    allow_reuse = args.get("allow_reuse", True)
+
+    try:
+        from tools.ace.sme_registry import ensure_sme
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"sme_registry unavailable: {exc}"}
+
+    try:
+        result = ensure_sme(
+            domain_description,
+            capability_bundle=bundle,
+            allow_reuse=bool(allow_reuse),
+        )
+    except PermissionError as exc:
+        # The generated role violated capability policy and was NOT written.
+        return {"error": f"capability policy rejected the generated role: {exc}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+    return result.to_dict()
+
+
+def handle_databridge_fetch(args: dict) -> dict:
+    """MCP: read from an external SaaS connector, through the agent broker.
+
+    The ONLY agent-facing route to DataBridge. Deliberately not a ToolRunner
+    entry: that matches command strings exactly, so a parameterised data fetch
+    cannot be usefully allowlisted there.
+
+    Every call passes the broker's chain — air-gap interlock, per-agent
+    authorization against args/databridge_agent_access.yaml, read-only
+    enforcement, fail-closed outbound redaction of free-text filters, the
+    egress guard in saas_base, and an audit row. A denial is returned as a
+    result rather than raised, so an agent can reason about being refused.
+    """
+    from icdev.tools.databridge import broker
+
+    connector = str(args.get("connector") or "").strip()
+    table = str(args.get("table") or "").strip()
+    if not connector or not table:
+        return {"ok": False, "error": "connector and table are required"}
+
+    outcome = broker.fetch(
+        agent_id=str(args.get("agent_id") or "unknown"),
+        connector=connector,
+        table=table,
+        filters=args.get("filters") or {},
+        query=str(args.get("query") or ""),
+        limit=int(args.get("limit") or broker.DEFAULT_MAX_ROWS),
+        classification=str(args.get("classification") or "UNCLASSIFIED"),
+    )
+    return outcome.to_dict()
+
+
+def handle_databridge_sources(args: dict) -> dict:
+    """MCP: list the connectors and tables this agent may read.
+
+    Lets an agent discover its own reach instead of probing and accumulating
+    denials — probing is indistinguishable from an attack in an audit trail.
+    """
+    from icdev.tools.databridge import broker
+
+    return {"sources": broker.list_available(str(args.get("agent_id") or ""))}

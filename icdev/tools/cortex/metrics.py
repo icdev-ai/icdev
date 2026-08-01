@@ -29,9 +29,24 @@ logger = get_logger(__name__)
 _DEFAULT_WINDOW_HOURS = 24
 
 
-def _empty(window_hours: int) -> dict:
+def _empty(window_hours: int, *, status: str = "unavailable") -> dict:
+    """Skeleton result.
+
+    ``status`` distinguishes two states the panel used to render identically:
+
+    ``unavailable``  the table is missing or the read raised — Cortex metrics
+                     are BROKEN and the operator should investigate.
+    ``idle``         the table read fine and simply held no rows in the window —
+                     Cortex is HEALTHY but has had no governed traffic.
+
+    Collapsing these was actively misleading: a governance tile reading "no
+    calls" looks the same whether governance is switched off or the audit table
+    has vanished.
+    """
     return {
-        "available": False,
+        "available": status != "unavailable",
+        "status": status,
+        "last_call_at": "",
         "window_hours": window_hours,
         "summary": {
             "calls": 0, "blocked": 0, "block_rate_pct": 0.0,
@@ -76,13 +91,37 @@ def summarize(window_hours: int = _DEFAULT_WINDOW_HOURS, conn=None) -> dict:
         rows = cursor.fetchall()
     except Exception as exc:  # noqa: BLE001 — table may not exist yet
         logger.debug("cortex metrics: cortex_audit read failed: %s", exc)
-        return _empty(window_hours)
-    finally:
         if own_conn:
             try:
                 conn.close()
             except Exception:  # noqa: BLE001, S110
                 pass
+        return _empty(window_hours, status="unavailable")
+
+    # An empty window is not the same as a broken table. Report when the last
+    # governed call actually happened so "no calls in 24h" can be read as
+    # "quiet since <date>" rather than "no data exists" — the trail may hold
+    # months of history just outside the default window.
+    last_call_at = ""
+    if not rows:
+        try:
+            cur = conn.execute("SELECT MAX(created_at) FROM cortex_audit")
+            row = cur.fetchone()
+            raw = _row_get(row, "max", 0) if row else None
+            last_call_at = str(raw) if raw else ""
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("cortex metrics: last_call_at lookup failed: %s", exc)
+
+    if own_conn:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+    if not rows:
+        out = _empty(window_hours, status="idle")
+        out["last_call_at"] = last_call_at
+        return out
 
     return _aggregate(rows, window_hours)
 
@@ -98,7 +137,7 @@ def _row_get(row, key: str, idx: int):
 
 
 def _aggregate(rows, window_hours: int) -> dict:
-    out = _empty(window_hours)
+    out = _empty(window_hours, status="ok")
     out["available"] = True
     summ = out["summary"]
     by_function: dict = {}

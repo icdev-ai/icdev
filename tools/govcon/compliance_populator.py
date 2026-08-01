@@ -21,7 +21,6 @@ Usage:
 import argparse
 import json
 import os
-import uuid
 from tools.db.storage import get_connection, table_exists
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,9 +45,9 @@ def _now():
 def _audit(conn, action, details="", actor="compliance_populator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )
     except Exception:
         pass
@@ -98,7 +97,6 @@ def populate_compliance_matrix(opportunity_id):
                         "compliance_notes, evidence_reference, created_at, updated_at) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (
-                            str(uuid.uuid4()),
                             "",  # Will be linked when section is created
                             item.get("shall_id", ""),
                             item["statement"][:500],

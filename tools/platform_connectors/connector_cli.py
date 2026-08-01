@@ -44,7 +44,7 @@ except ImportError:
         return -1
 
 
-from tools.platform_connectors.registry import get_registry
+from tools.platform_connectors.connector_registry import get_registry
 
 
 # =========================================================================

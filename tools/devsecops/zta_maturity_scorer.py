@@ -113,7 +113,7 @@ def _gather_pillar_evidence(project_id: str, pillar: str, conn) -> dict:
     rows = (
         conn.execute(
             """SELECT evidence_type, status FROM zta_posture_evidence
-           WHERE project_id = ? AND evidence_type IN ({})""".format(  # nosec B608 -- table/column names are internal constants, not user input
+           WHERE project_id = %s AND evidence_type IN ({})""".format(  # nosec B608 -- table/column names are internal constants, not user input
                 ",".join(["%s"] * len(evidence_types))
             ),
             [project_id] + evidence_types,

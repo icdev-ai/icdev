@@ -235,7 +235,18 @@ class TestTriggerKanbanWakeup(unittest.TestCase):
             result = _trigger_kanban_wakeup()
         self.assertEqual(result, "triggered_via_api")
 
-    def test_api_failure_falls_back_to_direct(self):
+    def test_api_failure_does_NOT_run_the_reflex_in_process(self):
+        """A health check must not become an executor.
+
+        This used to assert the opposite — that an unreachable dashboard caused
+        the daemon to import the kanban reflex and call run() in ITS OWN
+        process. The reflex tracks live subprocesses in a module-global dict,
+        so that second process saw an empty _running, concluded the real
+        scheduler's live tasks were dead, and reaped them to backlog with
+        failure_count++. The scheduler's next poll then found the DB status
+        changed underneath it and killed the subprocess as "stale-cleanup".
+        Those two reasons together were 51 of 182 recorded task failures.
+        """
         import urllib.error
 
         mock_kanban = MagicMock()
@@ -245,18 +256,16 @@ class TestTriggerKanbanWakeup(unittest.TestCase):
             with patch.dict("sys.modules", {"tools.genesis.reflexes.kanban": mock_kanban}):
                 result = _trigger_kanban_wakeup()
 
-        self.assertEqual(result, "triggered_direct")
-        mock_kanban.run.assert_called_once_with({}, None)
+        self.assertIn("wakeup_unavailable", result)
+        mock_kanban.run.assert_not_called()
 
-    def test_api_and_import_both_fail_returns_wakeup_failed(self):
+    def test_api_failure_reports_unavailable_rather_than_failing_silently(self):
         import urllib.error
 
-        # Setting a module to None in sys.modules causes ImportError on import
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("conn refused")):
-            with patch.dict("sys.modules", {"tools.genesis.reflexes.kanban": None}):
-                result = _trigger_kanban_wakeup()
+            result = _trigger_kanban_wakeup()
 
-        self.assertIn("wakeup_failed", result)
+        self.assertIn("wakeup_unavailable", result)
 
 
 if __name__ == "__main__":

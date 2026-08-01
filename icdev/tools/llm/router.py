@@ -2083,8 +2083,13 @@ class LLMRouter:
                             project_id=getattr(request, "project_id", None),
                             model_id=getattr(response, "model_id", model_id),
                         )
-                except Exception:
-                    pass  # Best-effort — never block on budget recording
+                except Exception as exc:
+                    # Best-effort — never block a completed LLM call on budget
+                    # bookkeeping. But log it: a bare `pass` here hid a schema
+                    # mismatch that made every insert fail, so
+                    # module_budget_usage stayed empty and budget enforcement
+                    # silently read a table that could never fill.
+                    logger.warning("Module budget recording failed: %s", exc)
 
                 # D-CACHE-5: Store successful response in cache
                 self._cache_store(function, request, response, model_id)

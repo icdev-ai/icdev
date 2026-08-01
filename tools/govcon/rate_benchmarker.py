@@ -77,10 +77,9 @@ def _audit(conn, event_type, action, details, opportunity_id=None):
     """
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, "
-            "project_id, session_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, "
+            "project_id, session_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                _gen_id("aud"),
                 _now(),
                 event_type,
                 "rate_benchmarker",

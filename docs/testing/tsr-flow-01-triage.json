@@ -1,0 +1,803 @@
+{
+  "files": {
+    "tests/ci/test_error_classifier.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 23,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/ci/test_pr_watcher.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 16,
+      "failed": 3,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": [
+        "assert 'refusing auto-merge' in \"enforced gate: verification unreadable, holding ('_FakeConnection' object has no attribute 'cursor')\"",
+        "AssertionError: assert 'wait' == 'merge'"
+      ]
+    },
+    "tests/docmod/test_hitl_surfaces.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 10,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/genesis/test_kanban_bypass_exemption.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/genesis/test_kanban_message_injection.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 4,
+      "failed": 2,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": [
+        "AssertionError: expected 2 invocations, got 0",
+        "assert 0 == 1"
+      ]
+    },
+    "tests/genesis/test_kanban_orphan_cleanup.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/genesis/test_kanban_phantom_guard.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 23,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/genesis_auto/test_kanban_verify.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 11,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/innovation/test_kanban_promoter.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 14,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_build_mode_and_model.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 17,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_cli_done_gate.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 21,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_cli_pipeline.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 4,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_des_audit_logger.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_done_verification.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 25,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_manual_gate_api_guard.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 11,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_oss_adaptation_seed.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 31,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_pause_worktree_safety.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 12,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_pipeline.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 20,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_pipeline_enforce_mode.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 14,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_repo_registry.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_scheduler_hardened.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 23,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_scheduler_pause_controls.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 9,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_state_machine.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 12,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_status_lifecycle.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 9,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/kanban/test_stranded_audit.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/security/test_anvil_runner.py": {
+      "packages": [
+        "anvil"
+      ],
+      "passed": 12,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_ace_hitl_resolve_endpoint.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 4,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_ace_qa_workflow.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_acoic_hitl_audit.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 9,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_agent_hitl.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 16,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_anvil_critique.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 36,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_arr_error_recovery.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 33,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_chat_intake_hitl.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 15,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_clx_control_loop.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 34,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_compass_dispatch_seed.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_component_registry.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 40,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_dashboard_kanban.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 11,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_dsyn_hitl_task.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 7,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": [
+        "AttributeError: <module 'tools.genesis.reflexes.dic_review_cadence' from 'C:\\\\AI\\\\ICDev\\\\.tmp\\\\worktrees\\\\tsr-flow-01-d1\\\\tools\\\\genesis\\\\reflexes\\\\dic_review_cadence.py'> does not have the attribute "
+      ]
+    },
+    "tests/test_dwo_gate_bridge.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_heartbeat_kanban_wakeup.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 10,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_integrity_engine_hitl.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_auto_revive.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_autoclose.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 19,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_board_columns.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_cascade_rollback.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_cli_manual_transition.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_decompose_ai_narrative.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_depends_on.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 13,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_external_dispatch.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 10,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_gate_dependency.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 9,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_gate_integrity.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_manual_gate_exemption.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 13,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_mcp_delete_task.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_merge_isolation.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_move_task_scheduled.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_nlp_timeout.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_pause_expiry_visibility.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 0,
+      "failed": 0,
+      "errors": 9,
+      "skipped": 0,
+      "signatures": [
+        "failed on setup with \"AttributeError: <module 'tools.kanban.scheduler_control' from 'C:\\\\AI\\\\ICDev\\\\.tmp\\\\worktrees\\\\tsr-flow-01-d1\\\\tools\\\\kanban\\\\scheduler_control.py'> has no attribute '_FLAG'\""
+      ]
+    },
+    "tests/test_kanban_pev.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 23,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_pipeline_commit_subject.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 16,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_scheduled_and_pr_opened.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 11,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_silent_cleanup.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_sla_metrics.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_stale_reaper_manual_actor.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_kanban_startup_recovery.py": {
+      "packages": [
+        "filename-keyed-only"
+      ],
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_loop_engineering.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 21,
+      "failed": 2,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": [
+        "AssertionError: assert 'a2' in []",
+        "assert 0 == 1"
+      ]
+    },
+    "tests/test_nav_llm_01_router_invoke.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 16,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_nav_misc_04_cli_repo_resolution.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 10,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_nav_sec_04_hitl_rbac.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 15,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_nav_sec_06_mutation_rbac.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 44,
+      "failed": 8,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": [
+        "AssertionError: POST /api/ai-wizard/submit -> 403",
+        "AssertionError: POST /api/aisg/patterns/seed -> 403",
+        "AssertionError: POST /api/aisg/patterns/px/deploy -> 403"
+      ]
+    },
+    "tests/test_odc_coverage_refresh.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 11,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_penta_aiify_promotion.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_qa_agent_runner.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 28,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_redaction_scan_reflex.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 11,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_rfi_demand.py": {
+      "packages": [
+        "kanban"
+      ],
+      "passed": 17,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_wiki_integrations.py": {
+      "packages": [
+        "anvil"
+      ],
+      "passed": 19,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_workflow_hitl_api.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 18,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    },
+    "tests/test_workflow_hitl_engine.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 12,
+      "failed": 11,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": [
+        "sqlite3.IntegrityError: FOREIGN KEY constraint failed"
+      ]
+    },
+    "tests/test_workflow_hitl_report.py": {
+      "packages": [
+        "workflow_hitl"
+      ],
+      "passed": 17,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "signatures": []
+    }
+  }
+}

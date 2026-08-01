@@ -596,6 +596,12 @@
 
     <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
     {% include "includes/assistant_widget.html" ignore missing %}
+    {# Shared chat action-card renderer (sme-card-03).
+       Included UNGATED, deliberately: this is the one globally-reachable slot,
+       so every page that renders chat turns inherits every card type. The
+       path-gated pattern used for the Strategos panel below is exactly why that
+       panel reaches one route and nothing else. #}
+    {% include "includes/_chat_action_card.html" ignore missing %}
     <!-- Interactive CLI-bridge prompt panel — slide-out (ucb-widget-02) -->
     {% include "includes/cli_bridge_panel.html" ignore missing %}
     <!-- STRATEGOS floating chat panel (only on Strategos pages) -->

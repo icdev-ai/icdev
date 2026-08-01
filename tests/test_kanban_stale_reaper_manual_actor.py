@@ -176,17 +176,25 @@ class TestTaskDispatchedByScheduler:
 
 
 class TestReapStaleInProgressManualExemption:
-    def test_manual_task_not_fast_reaped_at_90_seconds(self, reaper_ctx, monkeypatch):
-        """90s is well past _SILENT_DISPATCH_THRESHOLD (default 60s) but far
-        under any normal 2x-timeout threshold (30+ min) -- a manually-managed
-        task must survive this window; a scheduler-owned one must not."""
+    def test_manual_task_not_fast_reaped_past_the_silent_threshold(self, reaper_ctx, monkeypatch):
+        """A manually-managed task must survive the fast-reap window; a
+        scheduler-owned one with no log AND no heartbeat must not.
+
+        The age moved from 90s to just past _SILENT_DISPATCH_THRESHOLD because
+        that threshold went from 60s to 600s: at 60s the reaper was killing
+        live agents (a file-redirected LLM dispatch prints nothing for minutes),
+        which was the single largest source of task failures on this board.
+        The manual-exemption behaviour under test is unchanged.
+        """
         km = reaper_ctx["km"]
         monkeypatch.setattr(km, "_task_log_is_empty", lambda tid: True)
         monkeypatch.setattr(km, "_get_task_timeout", lambda tid: 900)  # avoid adaptive DB logic
         monkeypatch.setattr(km, "_detect_execution_anomaly", lambda age: (False, ""))
+        # Deterministic: this process is the runner owner.
+        monkeypatch.setattr(km, "_foreign_scheduler_pid", lambda: 0)
 
         now = datetime.now(timezone.utc)
-        stale_ts = (now - timedelta(seconds=90)).isoformat()
+        stale_ts = (now - timedelta(seconds=km._SILENT_DISPATCH_THRESHOLD + 30)).isoformat()
 
         _insert_task(reaper_ctx["db"], "prop-cap-manual", "in_progress", stale_ts)
         _insert_transition(reaper_ctx["db"], "prop-cap-manual", "in_progress", "manual", stale_ts)
@@ -199,8 +207,10 @@ class TestReapStaleInProgressManualExemption:
         manual_row = _task_status(reaper_ctx["db"], "prop-cap-manual")
         scheduler_row = _task_status(reaper_ctx["db"], "prop-cap-scheduler")
 
-        assert manual_row[0] == "in_progress", "manually-managed task must survive the 90s window"
-        assert scheduler_row[0] == "backlog", "scheduler-owned task with empty log must still fast-reap at 90s"
+        assert manual_row[0] == "in_progress", "manually-managed task must survive the fast-reap window"
+        assert scheduler_row[0] == "backlog", (
+            "scheduler-owned task with no log AND no heartbeat must still fast-reap"
+        )
         assert scheduler_row[1] == 1
 
     def test_manual_task_with_no_transition_row_still_fast_reaped(self, reaper_ctx, monkeypatch):
@@ -213,9 +223,11 @@ class TestReapStaleInProgressManualExemption:
         monkeypatch.setattr(km, "_task_log_is_empty", lambda tid: True)
         monkeypatch.setattr(km, "_get_task_timeout", lambda tid: 900)
         monkeypatch.setattr(km, "_detect_execution_anomaly", lambda age: (False, ""))
+        monkeypatch.setattr(km, "_foreign_scheduler_pid", lambda: 0)
 
         now = datetime.now(timezone.utc)
-        stale_ts = (now - timedelta(seconds=90)).isoformat()
+        # Past the (now 600s) silent-dispatch threshold; no heartbeat recorded.
+        stale_ts = (now - timedelta(seconds=km._SILENT_DISPATCH_THRESHOLD + 30)).isoformat()
         _insert_task(reaper_ctx["db"], "prop-cap-untracked", "in_progress", stale_ts)
 
         km._reap_stale_in_progress()

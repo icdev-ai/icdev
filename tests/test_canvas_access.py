@@ -71,13 +71,13 @@ def db(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def patch_deps(db, monkeypatch):
-    import sqlite3 as _sq
     import tools.security.canvas_access as _ca
 
+    # Translating wrapper — canvas_access authors %s for PostgreSQL.
+    from _sql_compat import connect as _tconnect
+
     def _test_conn():
-        c = _sq.connect(str(db))
-        c.row_factory = _sq.Row
-        return c
+        return _tconnect(db)
 
     monkeypatch.setattr(_ca, "_conn", _test_conn)
 

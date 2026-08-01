@@ -156,9 +156,13 @@ class ACEController:
         except Exception as exc:
             logger.warning("ace launch: pre-insert failed for %s: %s", instance_id, exc)
 
+        # webhook_url must be passed through as a keyword: the positional args
+        # stopped at project_id, so _run always received the "" default and
+        # _persist_webhook_url / _deliver_webhook were unreachable from launch().
+        # cortex.api.agent() forwards a webhook_url that was being dropped here.
         self._executor.submit(
             self._run, instance_id, problem_text, trigger_source, trigger_ref,
-            user_id, project_id, role_ids=role_ids,
+            user_id, project_id, webhook_url=webhook_url, role_ids=role_ids,
         )
         return instance_id
 
@@ -562,6 +566,7 @@ class ACEController:
             self._emit_completion_event(instance_id)
             self._emit_sse(instance_id, "complete", "All coworkers finished")
             self._emit_task_completed(instance_id)
+            self._deliver_chat_result(instance_id, "complete")
             if webhook_url:
                 self._deliver_webhook(instance_id, webhook_url)
             logger.info("ACE %s: complete", instance_id)
@@ -570,6 +575,9 @@ class ACEController:
             logger.exception("ACE %s: fatal error: %s", instance_id, exc)
             self._set_instance_state(instance_id, "failed")
             self._emit_sse(instance_id, "failed", str(exc))
+            # Tell the conversation. Silence after "spinning up a team" is the
+            # worst outcome: the user cannot distinguish a crash from slow work.
+            self._deliver_chat_result(instance_id, "failed")
         finally:
             with self._threads_lock:
                 self._threads.pop(instance_id, None)
@@ -599,6 +607,25 @@ class ACEController:
                 sem.release()
 
         return _guarded
+
+    @staticmethod
+    def _deliver_chat_result(instance_id: str, state: str) -> None:
+        """Post the run's outcome back to the chat that started it.
+
+        In-process rather than via the webhook: an outbound POST would mean the
+        dashboard calling itself over loopback, which needs a reachable base URL
+        and breaks in air-gapped and odd-port deployments. Webhooks remain for
+        external consumers.
+
+        Best-effort by design — a delivery failure must never change the outcome
+        of a run that already finished.
+        """
+        try:
+            from icdev.tools.ace.chat_result import deliver
+
+            deliver(instance_id, state=state)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("chat result delivery skipped for %s: %s", instance_id, exc)
 
     def _finalize_instance(self, instance_id: str) -> None:
         """Extract facts from the final artifact and persist to ace_coworker_memory (best-effort)."""

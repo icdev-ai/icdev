@@ -31,12 +31,17 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from tools.boundary_canvas.cato_twin import poam_auto_generator as _pag  # noqa: E402
 from tools.boundary_canvas.cato_twin.poam_auto_generator import (  # noqa: E402
     generate_from_violations,
 )
 from tools.db.storage import StorageConnection  # noqa: E402
 
-_LOGGER_NAME = "tools.boundary_canvas.cato_twin.poam_auto_generator"
+# Read the name off the module rather than hardcoding it. The module moved from
+# `logging.getLogger(__name__)` to the structured ICDEV logger in d83c2a0f6,
+# which renamed it to "icdev.boundary_canvas.poam_auto_generator" and silently
+# broke every caplog assertion below.
+_LOGGER_NAME = _pag.logger.name
 
 SCHEMA = """
 CREATE TABLE poam_items (
@@ -164,6 +169,16 @@ class _NoIdCursor:
 
 
 class TestFailureSurfacing:
+    @pytest.fixture(autouse=True)
+    def _propagate_to_caplog(self):
+        """``get_logger`` sets ``propagate = False`` to avoid double-logging to
+        the root handler — but caplog installs its handler ON the root, so the
+        records below never reach it. Re-enable propagation for these tests."""
+        prior = _pag.logger.propagate
+        _pag.logger.propagate = True
+        yield
+        _pag.logger.propagate = prior
+
     def test_insert_returning_no_id_is_logged_and_surfaced(self, sconn, caplog):
         _seed_violations(sconn)
         real_execute = sconn.execute

@@ -1,0 +1,49 @@
+{#
+  Shared "describe your change" chat panel for digital-twin pages.
+
+  This markup was duplicated verbatim across four twin.html templates
+  (boundary_canvas, data_canvas, observability_canvas, security_canvas). The
+  copies differed on exactly two lines — the hint and the placeholder — while
+  every element id, inline style and handler was identical. A fifth canvas
+  adding a twin page would have copied it again.
+
+  Element ids are deliberately unchanged (chatInput, chatSpinner,
+  chatExplanation, chatExplanationText, chatError): the per-canvas scripts and
+  the existing Playwright specs address them by id, so renaming here would break
+  callers for no gain.
+
+  Context (all optional, sensible defaults):
+    chat_title        section heading           default "DESCRIBE YOUR CHANGE"
+    chat_hint         one-line explanation shown under the heading
+    chat_placeholder  textarea placeholder text
+    chat_button       submit button label       default "Generate JSON"
+    chat_bare         omit the bordered wrapper and heading; the host already
+                      provides framing. network/twin.html needs this — its copy
+                      sits inside a tab pane with its own heading, which is the
+                      only structural difference among the five copies and the
+                      reason it would otherwise have been left duplicated.
+
+  Usage:
+    {% with chat_hint="Describe the schema change in plain English.",
+            chat_placeholder="e.g. Add a fulfillment timestamp to orders..." %}
+      {% include "includes/_twin_chat_panel.html" %}
+    {% endwith %}
+#}
+{% if not chat_bare %}
+<div style="margin-top:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
+  <strong style="font-size:12px;color:#7a8cb0;">{{ chat_title | default("DESCRIBE YOUR CHANGE") }}</strong>
+{% endif %}
+  <p class="hint" style="margin:{{ '0 0 6px' if chat_bare else '4px 0 6px' }};">{{ chat_hint | default("Describe the change in plain English — AI generates the JSON.") }}</p>
+  <div style="display:flex;gap:8px;align-items:flex-start;">
+    <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
+      placeholder="{{ chat_placeholder | default('Describe the change you want to model...') }}"></textarea>
+    <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">{{ chat_button | default("Generate JSON") }}</button>
+  </div>
+  <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
+  <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
+    <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
+  </div>
+  <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
+{% if not chat_bare %}
+</div>
+{% endif %}
