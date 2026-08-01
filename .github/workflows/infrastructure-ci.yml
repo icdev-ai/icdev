@@ -143,16 +143,30 @@ jobs:
           load: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
       - name: Smoke-test image (non-root, read-only rootfs)
+        # --entrypoint is load-bearing. 9 of the 10 images declare an ENTRYPOINT
+        # (python, gunicorn, /bin/bash), so a bare trailing command is APPENDED
+        # to it rather than replacing it. The previous probe ran
+        #   python python --version      then     python echo "image OK"
+        # which failed as `python: can't open file '/app/echo'` — after the image
+        # had built successfully. All 10 matrix jobs went red on that, which is
+        # what issue #911 recorded as "all 10 Docker builds fail". They build.
+        #
+        # `sh -c` rather than `python --version`: iac is terraform-based and
+        # api-gateway runs gunicorn, so a Python interpreter is not a safe
+        # assumption across the matrix. Every image here is debian/alpine-based
+        # and has a shell.
+        #
+        # stderr is deliberately NOT sent to /dev/null. That redirect is why this
+        # took a full log dig to diagnose — it discarded the only message that
+        # named the cause and left the confusing /app/echo error behind.
         run: |
           docker run --rm \
             --user 65534:65534 \
             --read-only \
             --tmpfs /tmp \
+            --entrypoint sh \
             ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }} \
-            python --version 2>/dev/null || \
-          docker run --rm \
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }} \
-            echo "image OK"
+            -c 'echo "image OK: $(uname -s) $(id -u)"'
 
   # ── Deploy: spin up CI stack and run health checks ──────────────────────
   provision-ci-stack:
