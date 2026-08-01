@@ -208,7 +208,11 @@ def test_coach_hint_route_returns_sanitized_html(monkeypatch):
     import apps.forge_academy.ai_coach as coach_mod
 
     monkeypatch.setattr(bp_mod, "_fa_user", lambda: {"id": 1, "role": "developer"})
-    monkeypatch.setattr(bp_mod, "update_user_xp", lambda uid, delta: None)
+    # No update_user_xp patch: the route used to deduct XP the moment a hint was
+    # read, and aca-int-06 made the submit-time multiplier the single pricing
+    # mechanism, so the name is no longer imported here. Patching it raised
+    # AttributeError and failed this test for reasons having nothing to do with
+    # sanitisation. Posting without a step_id keeps the DB out of the request.
     monkeypatch.setattr(coach_mod, "get_hint", lambda **kw: "Try <script>steal()</script> this")
 
     app = Flask(__name__)

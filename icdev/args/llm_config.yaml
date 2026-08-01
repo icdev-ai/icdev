@@ -22,6 +22,26 @@ providers:
     api_key_env: OPENAI_API_KEY
     base_url: https://api.openai.com/v1
 
+  # Corporate LLM gateway / egress proxy.
+  #
+  # Many enterprises front all model traffic with their own gateway, which
+  # authenticates UPSTREAM — the client presents no API key at all. Set
+  # ICDEV_LLM_GATEWAY_URL and leave the key unset; the OpenAI-compatible
+  # provider sends the placeholder "not-needed" and the gateway supplies real
+  # credentials on the way out.
+  #
+  # Distinct from the LPX proxy (proxy_gateway.py): that is OUR LiteLLM proxy
+  # with virtual keys. This is THEIR infrastructure, and ICDEV is just a client.
+  gateway:
+    type: openai_compatible
+    # No default on purpose. A corporate gateway URL is site-specific, and any
+    # value invented here would be wrong everywhere — :4000 in particular is
+    # ICDEV's OWN LiteLLM proxy, a different service entirely. Unset means
+    # unconfigured, which the setup probe reports plainly.
+    base_url: ${ICDEV_LLM_GATEWAY_URL:-}
+    # Optional. Most gateways need nothing; some want a team/tenant token.
+    api_key_env: ICDEV_LLM_GATEWAY_KEY
+
   ollama:
     type: ollama
     base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
@@ -699,6 +719,15 @@ routing:
   task_decomposition:
     chain: [kimi-cloud, qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
+
+  # Summarises a finished ACE co-worker team's artifacts for the chat reader
+  # who asked (tools/ace/chat_result.py). Deliberately a SEPARATE function from
+  # the workers': the team members can run on a cheap/local chain while the one
+  # synthesis call that a human actually reads runs on a stronger model. Change
+  # the split here, not in code — no model IDs are hardcoded anywhere.
+  ace_result_synthesis:
+    chain: [claude-sonnet, kimi-cloud, gpt-4o, qwen3-local, gemini-2.5-flash]
+    effort: medium
 
   collaboration:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
@@ -1885,7 +1914,13 @@ agent_loop:
     stall_threshold: 3                # abort after N turns with no novel tool call
   memory:
     enabled: true
-    top_k: 5
+    top_k: 5                  # agent-loop recall depth
+    # Recall depth for the chat pre-response lookup specifically. Read by
+    # tools/dashboard/chat_manager.py, which fell back to a hardcoded 3 while
+    # this key was absent — the setting was live but undiscoverable, so tuning
+    # chat recall looked impossible from config. Kept separate from top_k
+    # because a chat turn is latency-sensitive in a way an agent loop is not.
+    chat_top_k: 3
     tier: "episodic|semantic"
   rubric:
     max_grading_iterations: 3   # grade-then-revise rounds before giving up

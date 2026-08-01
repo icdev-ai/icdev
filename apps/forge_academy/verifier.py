@@ -33,7 +33,7 @@ def _verify_pattern_deployed(user_id: int, data: dict) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id FROM aisg_patterns WHERE created_by LIKE ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id FROM aisg_patterns WHERE created_by LIKE %s ORDER BY created_at DESC LIMIT 1",
             (f"%{user_id}%",),
         ).fetchone()
         if row:
@@ -53,7 +53,7 @@ def _verify_poam_exists(user_id: int, data: dict) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) FROM poam_findings WHERE system_id=? LIMIT 1",
+            "SELECT COUNT(*) FROM poam_findings WHERE system_id=%s LIMIT 1",
             (data.get("system_id", ""),),
         ).fetchone()
         count = row[0] if row else 0
@@ -82,7 +82,7 @@ def _verify_workflow_exists(user_id: int, data: dict) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id FROM fa_workflow_submissions WHERE user_id=? ORDER BY submitted_at DESC LIMIT 1",
+            "SELECT id FROM fa_workflow_submissions WHERE user_id=%s ORDER BY submitted_at DESC LIMIT 1",
             (user_id,),
         ).fetchone()
         if row:
@@ -108,7 +108,7 @@ def _verify_aadc_design(user_id: int, data: dict) -> dict:
         _aadc_init()
         conn = get_connection()
         row = conn.execute(
-            "SELECT graph_json, metadata_json FROM aadc_designs WHERE design_id = ?",
+            "SELECT graph_json, metadata_json FROM aadc_designs WHERE design_id = %s",
             (design_id,),
         ).fetchone()
         if not row:

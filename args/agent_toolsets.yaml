@@ -126,3 +126,17 @@ bundles:
       - kanban_move_task
       - kanban_queue_plan
     mutating: false
+
+  external_data:
+    description: >-
+      Read-only access to a customer's own external systems (Splunk, ServiceNow,
+      GitHub, ...) through the DataBridge agent broker. Deny-all by default:
+      nothing is reachable until a connector and table are granted in
+      args/databridge_agent_access.yaml, so adding this bundle to a role grants
+      the CAPABILITY, not the DATA. Every call is authorized per-agent, refused
+      in air-gap mode, has free-text filters redacted fail-closed before egress,
+      and writes an audit row whether allowed or denied.
+    tools:
+      - databridge_sources
+      - databridge_fetch
+    mutating: false

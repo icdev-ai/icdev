@@ -142,8 +142,8 @@ def _audit(conn, action: str, details: str = "", project_id: str = "") -> None:
     try:
         conn.execute(
             "INSERT INTO audit_trail "
-            "(id, created_at, event_type, actor, action, details, session_id, project_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "(created_at, event_type, actor, action, details, session_id, project_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 _now(),

@@ -29,7 +29,9 @@ except ImportError:
 
 TEMPLATES_DIR = Path(__file__).parent.parent.parent / "args" / "workflow_templates"
 
-VALID_NODE_TYPES: frozenset[str] = frozenset({"tool", "human", "approval"})
+# "mcp" (dwo-mcp-03): the step names a TOOL_REGISTRY tool in `mcp_tool`
+# rather than a script path in `tool`.
+VALID_NODE_TYPES: frozenset[str] = frozenset({"tool", "human", "approval", "mcp"})
 VALID_AUDIENCES: frozenset[str] = frozenset({"leadership", "technical", "compliance", "board", "customer"})
 
 

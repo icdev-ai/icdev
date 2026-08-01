@@ -8,7 +8,16 @@ import secrets
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
-from .constants import ACHIEVEMENTS, SKILL_NODES, xp_to_level
+from .constants import (
+    ACHIEVEMENTS,
+    MISSION_STATUS_COMPLETED,
+    MISSION_STATUS_IN_PROGRESS,
+    SKILL_NODES,
+    STEP_STATUS_ATTEMPTED,
+    STEP_STATUS_COMPLETED,
+    STEP_STATUS_NOT_STARTED,
+    xp_to_level,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -206,6 +215,45 @@ CREATE TABLE IF NOT EXISTS fa_daily_logins (
     UNIQUE(user_id, login_date)
 );
 
+-- aca-int-07: XP provenance. One append-only row per award, naming what earned it.
+-- Declared here as well as in migration 315 so it exists from the child app's own
+-- first-request DDL: a lookup against a missing table inside a caller's open
+-- transaction ABORTS that transaction on PostgreSQL, and swallowing the error then
+-- wedges every later statement on the same connection.
+CREATE TABLE IF NOT EXISTS fa_xp_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES fa_users(id),
+    xp_delta INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    source_type TEXT,
+    source_id INTEGER,
+    is_attendance INTEGER NOT NULL DEFAULT 0,
+    verified INTEGER NOT NULL DEFAULT 1,
+    note TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT
+);
+
+-- aca-int-07 part 2: what a certificate was issued against, snapshotted at issue
+-- time. Declared here as well as in migration 317 for the same reason as
+-- fa_xp_ledger: a query against a missing table inside an open transaction aborts
+-- that transaction on PostgreSQL.
+CREATE TABLE IF NOT EXISTS fa_certificate_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cert_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES fa_users(id),
+    evidence_type TEXT NOT NULL,
+    ref_id INTEGER,
+    label TEXT NOT NULL,
+    detail TEXT,
+    demonstrated_at TEXT,
+    score INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS fa_oracle_predictions (
     id TEXT PRIMARY KEY,
     lens_id TEXT NOT NULL,
@@ -384,7 +432,7 @@ def _seed_achievements(conn):
             conn.execute(
                 "INSERT OR IGNORE INTO fa_achievements "
                 "(slug,title,description,icon,xp_bonus,rarity,criteria_json) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (a["slug"], a["title"], a["description"], a["icon"],
                  a["xp_bonus"], a["rarity"], a["criteria_json"]),
             )
@@ -400,7 +448,7 @@ def _seed_skill_nodes(conn):
             conn.execute(
                 "INSERT OR IGNORE INTO fa_skill_nodes "
                 "(slug,title,tier,role_filter,prereq_ids_json,pos_x,pos_y) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (n["slug"], n["title"], n["tier"], n["role_filter"],
                  json.dumps(n.get("prereqs", [])), pos[0], pos[1]),
             )
@@ -417,26 +465,62 @@ def get_or_create_user(username: str, display_name: str = "", email: str = "", t
     conn = get_connection()
     if tenant_id:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)
+            "SELECT * FROM fa_users WHERE username=%s AND tenant_id=%s", (username, tenant_id)
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)
+            "SELECT * FROM fa_users WHERE username=%s AND (tenant_id IS NULL OR tenant_id='')", (username,)
         ).fetchone()
     if row:
         _touch_streak(conn, dict(row))
         if tenant_id:
-            return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)).fetchone())
-        return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
+            return dict(conn.execute("SELECT * FROM fa_users WHERE username=%s AND tenant_id=%s", (username, tenant_id)).fetchone())
+        return dict(conn.execute("SELECT * FROM fa_users WHERE username=%s AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
     conn.execute(
-        "INSERT INTO fa_users (username, display_name, email, last_active, tenant_id) VALUES (?,?,?,?,?)",
+        "INSERT INTO fa_users (username, display_name, email, last_active, tenant_id) VALUES (%s,%s,%s,%s,%s)",
         (username, display_name or username, email,
          datetime.now(timezone.utc).isoformat(), tenant_id),
     )
     conn.commit()
     if tenant_id:
-        return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)).fetchone())
-    return dict(conn.execute("SELECT * FROM fa_users WHERE username=? AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
+        return dict(conn.execute("SELECT * FROM fa_users WHERE username=%s AND tenant_id=%s", (username, tenant_id)).fetchone())
+    return dict(conn.execute("SELECT * FROM fa_users WHERE username=%s AND (tenant_id IS NULL OR tenant_id='')", (username,)).fetchone())
+
+
+def active_challenge_count() -> int:
+    """How many challenges are currently running.
+
+    fa_challenges has never had an INSERT anywhere in the repo — no seeder, no
+    admin-create route — so the Arena has always rendered "No Active
+    Challenges" and the entry API was unreachable (fga-fix-04). This lets the
+    nav hide a feature that cannot work rather than advertising a dead end.
+    Returns 0 on any error: a nav link is not worth an exception.
+    """
+    try:
+        row = get_connection().execute(
+            "SELECT COUNT(*) FROM fa_challenges WHERE ends_at > datetime('now')"
+        ).fetchone()
+        return int(row[0]) if row else 0
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("active_challenge_count failed: %s", exc)
+        return 0
+
+
+def update_user_display_name(user_id: int, display_name: str) -> None:
+    """Persist a display name for an EXISTING user.
+
+    get_or_create_user() only sets display_name on INSERT, so a returning user
+    who changed their name had it silently discarded by the setup route
+    (fga-fix-03). Blank input is ignored rather than wiping the stored name.
+    """
+    display_name = (display_name or "").strip()
+    if not display_name:
+        return
+    conn = get_connection()
+    conn.execute(
+        "UPDATE fa_users SET display_name=%s WHERE id=%s", (display_name, user_id)
+    )
+    conn.commit()
 
 
 def update_user_role(user_id: int, role: str) -> None:
@@ -444,13 +528,99 @@ def update_user_role(user_id: int, role: str) -> None:
     role_type = ROLES.get(role, {}).get("type", "guided")
     conn = get_connection()
     conn.execute(
-        "UPDATE fa_users SET role=?, role_type=? WHERE id=?",
+        "UPDATE fa_users SET role=%s, role_type=%s WHERE id=%s",
         (role, role_type, user_id),
     )
     conn.commit()
 
 
-def update_user_xp(user_id: int, xp_delta: int, conn=None) -> dict:
+# aca-int-07: every reason an award can exist. A value outside this set is a bug in
+# the caller, not a new category — adding one means deciding whether it counts toward
+# rank, which is exactly the decision this set exists to force.
+XP_REASONS = frozenset({
+    "step_pass", "mission_complete", "daily_login", "achievement",
+    "certificate", "opening_balance", "adjustment",
+})
+
+# XP for showing up rather than for demonstrating anything. Kept in the ledger so the
+# total still reconciles to fa_users.xp, but excluded from rank.
+ATTENDANCE_REASONS = frozenset({"daily_login"})
+
+
+def earned_xp(user_id: int, conn=None) -> int:
+    """XP from demonstrated work — the basis for rank.
+
+    Measured before this existed: the live learner held 1715 XP of which 1465 was
+    attendance across 41 logins, so 85% of the rank was showing up and logging in for
+    41 days outranked demonstrating anything.
+    """
+    own = conn is None
+    if own:
+        conn = get_connection()
+    if own:
+        # Only swallow on a connection we own. On PostgreSQL a failed statement
+        # ABORTS the whole transaction, so catching the error on a CALLER's
+        # connection leaves it poisoned: every later statement fails with
+        # "current transaction is aborted" and an enclosing commit hangs on the
+        # locks it is still holding. That is a deadlock introduced by an
+        # error handler, and it is why the table is also declared in the DDL above.
+        try:
+            return _earned_xp(conn, user_id)
+        except Exception:
+            return 0
+    return _earned_xp(conn, user_id)
+
+
+def _earned_xp(conn, user_id: int) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(SUM(xp_delta), 0) AS earned FROM fa_xp_ledger "
+        "WHERE user_id=%s AND is_attendance=0",
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return 0
+    earned = row["earned"] if not isinstance(row, tuple) else row[0]
+    return int(earned or 0)
+
+
+def record_xp(user_id: int, xp_delta: int, *, reason: str,
+              source_type: str | None = None, source_id: int | None = None,
+              note: str | None = None, conn=None) -> None:
+    """Append one immutable row describing an award.
+
+    Separate from update_user_xp so the ledger write and the balance update share a
+    connection and therefore a transaction: a balance that moved without a ledger row
+    is the exact failure this card exists to prevent.
+    """
+    if reason not in XP_REASONS:
+        raise ValueError(
+            f"unknown XP reason {reason!r}; add it to XP_REASONS and decide "
+            f"whether it counts toward rank"
+        )
+    own = conn is None
+    if own:
+        conn = get_connection()
+    conn.execute(
+        "INSERT INTO fa_xp_ledger "
+        "(user_id, xp_delta, reason, source_type, source_id, is_attendance, "
+        " verified, note) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (user_id, int(xp_delta), reason, source_type, source_id,
+         1 if reason in ATTENDANCE_REASONS else 0, 1, note),
+    )
+    if own:
+        conn.commit()
+
+
+def update_user_xp(user_id: int, xp_delta: int, conn=None, *,
+                   reason: str,
+                   source_type: str | None = None,
+                   source_id: int | None = None,
+                   note: str | None = None) -> dict:
+    # aca-int-07: `reason` is keyword-only and has NO default on purpose. A default
+    # would let a new award slip in unattributed and still look correct — which is
+    # precisely how fa_users.xp accumulated 1715 points that no record explains.
+    # Without one this is a TypeError at the call site, at import time of the test
+    # suite, rather than a silent hole discovered months later.
     # penta-fix-03: accept an optional caller-supplied connection so an enclosing
     # transaction (e.g. issue_certificate's cert INSERT) can award XP on the SAME
     # connection instead of opening a second one. Opening a second connection while
@@ -460,27 +630,51 @@ def update_user_xp(user_id: int, xp_delta: int, conn=None) -> dict:
     own_conn = conn is None
     if own_conn:
         conn = get_connection()
-    conn.execute("UPDATE fa_users SET xp = xp + ? WHERE id=?", (xp_delta, user_id))
-    row = conn.execute("SELECT xp FROM fa_users WHERE id=?", (user_id,)).fetchone()
+    conn.execute("UPDATE fa_users SET xp = xp + %s WHERE id=%s", (xp_delta, user_id))
+    # Same connection, therefore the same transaction as the balance change. A
+    # balance that moved without its ledger row is the exact failure this card
+    # exists to prevent, so the two must not be able to diverge.
+    record_xp(user_id, xp_delta, reason=reason, source_type=source_type,
+              source_id=source_id, note=note, conn=conn)
+    row = conn.execute("SELECT xp FROM fa_users WHERE id=%s", (user_id,)).fetchone()
     new_xp = row["xp"]
-    new_level = xp_to_level(new_xp)["slug"]
-    conn.execute("UPDATE fa_users SET level=? WHERE id=?", (new_level, user_id))
+    # aca-int-07: rank is computed from EARNED XP, not the running total. Attendance
+    # still accumulates and still shows on the profile — it just no longer buys a
+    # rank. On the live learner this is a visible demotion, and it should be: 1465 of
+    # their 1715 points were logins.
+    earned = earned_xp(user_id, conn=conn)
+    new_level = xp_to_level(earned)["slug"]
+    conn.execute("UPDATE fa_users SET level=%s WHERE id=%s", (new_level, user_id))
     if own_conn:
         conn.commit()
-    return {"xp": new_xp, "level": new_level}
+    return {"xp": new_xp, "earned_xp": earned, "level": new_level}
 
 
 def _touch_streak(conn, user: dict) -> None:
-    today = datetime.now(timezone.utc).date().isoformat()
+    """Advance or reset the login streak. One clock only.
+
+    aca-hyg-04: `today` came from datetime.now(timezone.utc) while `yesterday` came
+    from date.today(), which is LOCAL. Whenever the machine's local date differs from
+    the UTC date — several hours of every day for most timezones — `last ==
+    yesterday` was false and the streak reset to 1. It therefore never advanced past
+    1 in production: the one learner had 41 daily logins over 41 distinct days with
+    35 consecutive-day pairs, including the final six unbroken, and streak_days = 1.
+    Every streak bonus ever paid was min(1,7)*10 instead of up to 70.
+
+    last_active is stored in UTC, so both sides of the comparison are now UTC.
+    """
+    from datetime import timedelta
+
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date().isoformat()
     last = (user.get("last_active") or "")[:10]
     if last == today:
         return
-    streak = user.get("streak_days", 0)
-    from datetime import date, timedelta
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    streak = int(user.get("streak_days") or 0)
+    yesterday = (now_utc.date() - timedelta(days=1)).isoformat()
     streak = (streak + 1) if last == yesterday else 1
     conn.execute(
-        "UPDATE fa_users SET streak_days=?, last_active=? WHERE id=?",
+        "UPDATE fa_users SET streak_days=%s, last_active=%s WHERE id=%s",
         (streak, datetime.now(timezone.utc).isoformat(), user["id"]),
     )
     conn.commit()
@@ -490,11 +684,11 @@ def get_user(user_id: int, tenant_id: str | None = None) -> dict | None:
     conn = get_connection()
     if tenant_id is not None:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+            "SELECT * FROM fa_users WHERE id=%s AND tenant_id=%s", (user_id, tenant_id)
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE id=?", (user_id,)
+            "SELECT * FROM fa_users WHERE id=%s", (user_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -503,11 +697,11 @@ def get_user_by_username(username: str, tenant_id: str | None = None) -> dict | 
     conn = get_connection()
     if tenant_id is not None:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)
+            "SELECT * FROM fa_users WHERE username=%s AND tenant_id=%s", (username, tenant_id)
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM fa_users WHERE username=?", (username,)
+            "SELECT * FROM fa_users WHERE username=%s", (username,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -516,42 +710,99 @@ def get_user_by_username(username: str, tenant_id: str | None = None) -> dict | 
 # Mission CRUD
 # ---------------------------------------------------------------------------
 
+def role_matches(role_filter: str | None, role: str) -> bool:
+    """Whether a mission's ``role_filter`` covers ``role``, matching whole tokens.
+
+    aca-hyg-02: fa_missions.role_filter is a comma-joined TEXT column ('swe,swe_arch',
+    'secops_eng,isso,swe_arch', ...). check_cert_eligibility matched it with
+    ``role_filter LIKE '%swe%'``, so 'swe' also matched every 'swe_arch' mission. On
+    the live catalogue that inflated a plain SWE's Tier-2 certificate denominator from
+    25 missions to 37 — twelve architect-only missions counted against them, so 100%
+    required work aimed at a different role.
+
+    'swe' -> 'swe_arch' is the only collision among the 17 role tokens in use, which
+    is why it survived: it is invisible unless you enumerate them.
+
+    list_missions already compared whole tokens in Python. This is that comparison,
+    extracted so the two call sites cannot drift apart again — and it stays in Python
+    rather than SQL per the repo rule preferring computed filters over dialect-specific
+    string matching.
+    """
+    text = (role_filter or "").strip()
+    if not text or text == "all":
+        return True
+    if not role:
+        return False
+    return role in {tok.strip() for tok in text.split(",") if tok.strip()}
+
+
 def list_missions(tier: int = None, role: str = None,
                   mission_type: str = None, tenant_id: str | None = None) -> list[dict]:
     conn = get_connection()
     q = "SELECT * FROM fa_missions WHERE is_active=1"
     params = []
     if tier:
-        q += " AND tier=?"
+        q += " AND tier=%s"
         params.append(tier)
     if mission_type:
-        q += " AND mission_type=?"
+        q += " AND mission_type=%s"
         params.append(mission_type)
     if tenant_id is not None:
-        q += " AND tenant_id=?"
+        q += " AND tenant_id=%s"
         params.append(tenant_id)
     q += " ORDER BY tier, order_idx"
     rows = conn.execute(q, params).fetchall()
     missions = [dict(r) for r in rows]
+
+    # is_available: does this mission have any steps? A catalogue card leading
+    # to "No steps found for this mission" is a dead end the student cannot
+    # tell apart from a playable one until they click it (fga-wire-06). Ten
+    # missions have no content on disk at all; they are catalogued deliberately,
+    # so mark them rather than hide them.
+    try:
+        counts = {
+            r[0]: r[1] for r in conn.execute(
+                "SELECT mission_id, COUNT(*) FROM fa_mission_steps GROUP BY mission_id"
+            ).fetchall()
+        }
+    except Exception as exc:  # noqa: BLE001 — a badge is not worth a 500
+        _log.debug("list_missions: step counts unavailable: %s", exc)
+        counts = {}
+    for m in missions:
+        m["step_count"] = int(counts.get(m.get("id"), 0))
+        m["is_available"] = m["step_count"] > 0
+
     if role:
-        missions = [
-            m for m in missions
-            if not m.get("role_filter") or m["role_filter"] == "all"
-            or role in m["role_filter"].split(",")
-        ]
+        # Whole-token match via the shared helper. This was already correct here and
+        # wrong in check_cert_eligibility; one definition is what stops them drifting
+        # apart again (aca-hyg-02). Note the helper also trims whitespace, which the
+        # previous inline split did not.
+        missions = [m for m in missions if role_matches(m.get("role_filter"), role)]
     return missions
 
 
 def get_mission(slug: str) -> dict | None:
     row = get_connection().execute(
-        "SELECT * FROM fa_missions WHERE slug=?", (slug,)
+        "SELECT * FROM fa_missions WHERE slug=%s", (slug,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_mission_by_id(mission_id: int) -> dict | None:
+    """Look a mission up by id.
+
+    The submit route derives the mission from the step row rather than trusting a
+    client-supplied slug (aca-int-01), so it needs an id-keyed lookup.
+    """
+    row = get_connection().execute(
+        "SELECT * FROM fa_missions WHERE id=%s", (mission_id,)
     ).fetchone()
     return dict(row) if row else None
 
 
 def get_mission_steps(mission_id: int) -> list[dict]:
     rows = get_connection().execute(
-        "SELECT * FROM fa_mission_steps WHERE mission_id=? ORDER BY step_num",
+        "SELECT * FROM fa_mission_steps WHERE mission_id=%s ORDER BY step_num",
         (mission_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -563,7 +814,7 @@ def upsert_mission(data: dict) -> int:
         """INSERT INTO fa_missions
            (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
             prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(slug) DO UPDATE SET
              title=excluded.title, tagline=excluded.tagline,
              xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
@@ -575,7 +826,7 @@ def upsert_mission(data: dict) -> int:
          data.get("source_credit", "")),
     )
     conn.commit()
-    row = conn.execute("SELECT id FROM fa_missions WHERE slug=?", (data["slug"],)).fetchone()
+    row = conn.execute("SELECT id FROM fa_missions WHERE slug=%s", (data["slug"],)).fetchone()
     return row["id"]
 
 
@@ -588,12 +839,12 @@ def get_mission_progress(user_id: int, mission_id: int, tenant_id: str | None = 
     # Verify user belongs to tenant before returning progress
     if tenant_id is not None:
         user_row = conn.execute(
-            "SELECT id FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+            "SELECT id FROM fa_users WHERE id=%s AND tenant_id=%s", (user_id, tenant_id)
         ).fetchone()
         if not user_row:
             return {"status": "not_started", "xp_earned": 0, "attempts": 0, "score": 0}
     row = conn.execute(
-        "SELECT * FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
+        "SELECT * FROM fa_mission_progress WHERE user_id=%s AND mission_id=%s",
         (user_id, mission_id),
     ).fetchone()
     if row:
@@ -601,24 +852,50 @@ def get_mission_progress(user_id: int, mission_id: int, tenant_id: str | None = 
     return {"status": "not_started", "xp_earned": 0, "attempts": 0, "score": 0}
 
 
-def start_mission(user_id: int, mission_id: int) -> None:
+def record_mission_attempt(user_id: int, mission_id: int) -> None:
+    """Record that the learner submitted work against this mission.
+
+    aca-int-04: this was `start_mission` and the mission GET handler called it on
+    every page load, with `SET status='in_progress', attempts=attempts+1` applied
+    unconditionally. Two consequences:
+
+      * `attempts` counted page views. Production showed 39 rows in_progress with
+        352 attempts while fa_step_progress was entirely empty — every one of
+        those "attempts" was somebody opening a page.
+      * revisiting a COMPLETED mission reverted it to in_progress, withdrawing a
+        completion that check_cert_eligibility counts. Certificate eligibility
+        oscillated with browsing.
+
+    It is now called from the submit path only, so progress is a consequence of
+    work, and a completed mission is never moved backwards — a learner must be
+    able to reopen and tinker with something they have already passed.
+    """
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     existing = conn.execute(
-        "SELECT id FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
+        "SELECT id, status FROM fa_mission_progress WHERE user_id=%s AND mission_id=%s",
         (user_id, mission_id),
     ).fetchone()
     if existing:
-        conn.execute(
-            "UPDATE fa_mission_progress SET status='in_progress', attempts=attempts+1 "
-            "WHERE user_id=? AND mission_id=?",
-            (user_id, mission_id),
-        )
+        status = existing["status"] if hasattr(existing, "keys") else existing[1]
+        if status == MISSION_STATUS_COMPLETED:
+            # Count the attempt, keep the completion.
+            conn.execute(
+                "UPDATE fa_mission_progress SET attempts=attempts+1 "
+                "WHERE user_id=%s AND mission_id=%s",
+                (user_id, mission_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE fa_mission_progress SET status=%s, attempts=attempts+1 "
+                "WHERE user_id=%s AND mission_id=%s",
+                (MISSION_STATUS_IN_PROGRESS, user_id, mission_id),
+            )
     else:
         conn.execute(
             "INSERT INTO fa_mission_progress (user_id,mission_id,status,attempts,started_at) "
-            "VALUES (?,?,'in_progress',1,?)",
-            (user_id, mission_id, now),
+            "VALUES (%s,%s,%s,1,%s)",
+            (user_id, mission_id, MISSION_STATUS_IN_PROGRESS, now),
         )
     conn.commit()
 
@@ -627,19 +904,19 @@ def complete_mission(user_id: int, mission_id: int, score: int = 100) -> None:
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     existing = conn.execute(
-        "SELECT id FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
+        "SELECT id FROM fa_mission_progress WHERE user_id=%s AND mission_id=%s",
         (user_id, mission_id),
     ).fetchone()
     if existing:
         conn.execute(
-            "UPDATE fa_mission_progress SET status='completed', score=?, completed_at=? "
-            "WHERE user_id=? AND mission_id=?",
+            "UPDATE fa_mission_progress SET status='completed', score=%s, completed_at=%s "
+            "WHERE user_id=%s AND mission_id=%s",
             (score, now, user_id, mission_id),
         )
     else:
         conn.execute(
             "INSERT INTO fa_mission_progress (user_id,mission_id,status,score,completed_at) "
-            "VALUES (?,?,'completed',?,?)",
+            "VALUES (%s,%s,'completed',%s,%s)",
             (user_id, mission_id, score, now),
         )
     conn.commit()
@@ -647,35 +924,321 @@ def complete_mission(user_id: int, mission_id: int, score: int = 100) -> None:
 
 def get_step_progress(user_id: int, step_id: int) -> dict:
     row = get_connection().execute(
-        "SELECT * FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        "SELECT * FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
         (user_id, step_id),
     ).fetchone()
     return dict(row) if row else {"status": "not_started", "hints_used": 0, "score": 0}
 
 
-def complete_step(user_id: int, step_id: int, submission: str = "",
-                  passed: bool = True, hints_used: int = 0) -> None:
+def record_step_attempt(user_id: int, step_id: int, submission: str = "",
+                        passed: bool = True, hints_used: int = 0) -> str:
+    """Record a submission against a step. Returns the resulting status.
+
+    aca-int-05: this used to hardcode status='completed' in BOTH branches, so a
+    FAILED submission was filed as a completed step (only `score` recorded the
+    failure) and `steps_completed` counted it. A failure is now stored as
+    STEP_STATUS_ATTEMPTED, and only a pass sets completed_at.
+
+    Mastery is never withdrawn: once a step is completed, a later failed
+    experiment records the submission but does not downgrade the status or the
+    score. Learners must be able to keep tinkering after they have passed.
+    """
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
+    status = STEP_STATUS_COMPLETED if passed else STEP_STATUS_ATTEMPTED
     score = 100 if passed else 0
     existing = conn.execute(
-        "SELECT id FROM fa_step_progress WHERE user_id=? AND step_id=?",
+        "SELECT id, status, score FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
         (user_id, step_id),
     ).fetchone()
     if existing:
+        already_done = (existing["status"] if hasattr(existing, "keys") else existing[1])
+        if already_done == STEP_STATUS_COMPLETED and not passed:
+            # Keep the pass; still record what was tried.
+            conn.execute(
+                "UPDATE fa_step_progress SET submission=%s, hints_used=%s "
+                "WHERE user_id=%s AND step_id=%s",
+                (submission, hints_used, user_id, step_id),
+            )
+            conn.commit()
+            return STEP_STATUS_COMPLETED
         conn.execute(
-            "UPDATE fa_step_progress SET status='completed', submission=?, score=?, "
-            "hints_used=?, completed_at=? WHERE user_id=? AND step_id=?",
-            (submission, score, hints_used, now, user_id, step_id),
+            "UPDATE fa_step_progress SET status=%s, submission=%s, score=%s, "
+            "hints_used=%s, completed_at=%s WHERE user_id=%s AND step_id=%s",
+            (status, submission, score, hints_used, now if passed else None,
+             user_id, step_id),
         )
     else:
         conn.execute(
             "INSERT INTO fa_step_progress "
             "(user_id,step_id,status,submission,score,hints_used,completed_at) "
-            "VALUES (?,?,'completed',?,?,?,?)",
-            (user_id, step_id, submission, score, hints_used, now),
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (user_id, step_id, status, submission, score, hints_used,
+             now if passed else None),
         )
     conn.commit()
+    return status
+
+
+# Back-compat alias: `complete_step` is the historical name and is still what the
+# blueprint and the existing tests import. It no longer implies completion — the
+# `passed` argument decides — so new call sites should prefer
+# `record_step_attempt`, which says what it does.
+complete_step = record_step_attempt
+
+
+def tier_progress(user_id: int) -> dict:
+    """Per-tier completion and unlock state for a learner.
+
+    Returns ``{tier: {total, completable, completed, pct, unlocked, required_pct,
+    gating_tier}}``.
+
+    aca-ux-04: fa_users.tier_unlocked was set to 1 for everyone and enforced
+    nowhere — all 104 Tier-2 missions were listed and openable while the hub showed
+    a "TIER 1" tile implying a gate that did not exist. This computes the gate from
+    recorded completions instead of trusting a stored column that nothing maintained.
+
+    `completable` excludes zero-step missions. That is load-bearing: Tier 1 contains
+    a mission with no steps by design, so counting it would put an impossible row in
+    the denominator and lock Tier 2 forever. `total` is still reported so the UI can
+    explain the difference.
+    """
+    from .constants import TIER_UNLOCK_PCT
+
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT m.tier, "
+        " COUNT(*) AS total, "
+        " SUM(CASE WHEN (SELECT COUNT(*) FROM fa_mission_steps s "
+        "               WHERE s.mission_id=m.id) > 0 THEN 1 ELSE 0 END) AS completable "
+        "FROM fa_missions m WHERE m.is_active=1 GROUP BY m.tier"
+    ).fetchall()
+
+    done_rows = conn.execute(
+        "SELECT m.tier, COUNT(DISTINCT mp.mission_id) "
+        "FROM fa_mission_progress mp JOIN fa_missions m ON m.id=mp.mission_id "
+        "WHERE mp.user_id=%s AND mp.status=%s AND m.is_active=1 "
+        "  AND (SELECT COUNT(*) FROM fa_mission_steps s WHERE s.mission_id=m.id) > 0 "
+        "GROUP BY m.tier",
+        (user_id, MISSION_STATUS_COMPLETED),
+    ).fetchall()
+    done = {int(r[0]): int(r[1]) for r in done_rows}
+
+    out: dict = {}
+    for r in rows:
+        tier = int(r["tier"] if hasattr(r, "keys") else r[0])
+        total = int(r["total"] if hasattr(r, "keys") else r[1])
+        completable = int((r["completable"] if hasattr(r, "keys") else r[2]) or 0)
+        completed = done.get(tier, 0)
+        pct = int(round(completed * 100 / completable)) if completable else 0
+        out[tier] = {
+            "total": total,
+            "completable": completable,
+            "completed": completed,
+            "pct": pct,
+            "required_pct": TIER_UNLOCK_PCT.get(tier),
+            "gating_tier": tier - 1 if tier in TIER_UNLOCK_PCT else None,
+            "unlocked": True,  # resolved below, once every tier's pct is known
+        }
+
+    for tier, info in out.items():
+        required = info["required_pct"]
+        if required is None:
+            info["unlocked"] = True  # entry tier
+            continue
+        prior = out.get(tier - 1)
+        if not prior or not prior["completable"]:
+            # Nothing completable to gate on — an empty prior tier must not become a
+            # permanent lock on everything after it.
+            info["unlocked"] = True
+        else:
+            info["unlocked"] = prior["pct"] >= required
+    return out
+
+
+def is_tier_unlocked(user_id: int, tier: int) -> bool:
+    """Whether `tier` is unlocked for this learner. Unknown tiers are open."""
+    try:
+        info = tier_progress(user_id).get(int(tier))
+    except Exception:
+        _log.exception("tier gate lookup failed for user %s tier %s", user_id, tier)
+        return True  # never lock a learner out because of a query failure
+    if not info:
+        return True
+    return bool(info["unlocked"])
+
+
+def mission_step_progress(user_id: int, mission_ids) -> dict:
+    """``{mission_id: {"done": n, "total": n}}`` for the given missions.
+
+    aca-ux-03: the hub and the browser showed a Done/Active/Start badge and nothing
+    else, so a learner could not see how far into a mission they were without
+    opening it.
+    """
+    ids = [int(m) for m in (mission_ids or [])]
+    if not ids:
+        return {}
+    conn = get_connection()
+    placeholders = ",".join(["%s"] * len(ids))
+    totals = {
+        int(r[0]): int(r[1])
+        for r in conn.execute(
+            f"SELECT mission_id, COUNT(*) FROM fa_mission_steps "  # noqa: S608
+            f"WHERE mission_id IN ({placeholders}) GROUP BY mission_id",
+            ids,
+        ).fetchall()
+    }
+    done = {
+        int(r[0]): int(r[1])
+        for r in conn.execute(
+            f"SELECT s.mission_id, COUNT(*) FROM fa_step_progress sp "  # noqa: S608
+            f"JOIN fa_mission_steps s ON s.id=sp.step_id "
+            f"WHERE sp.user_id=%s AND sp.status=%s AND s.mission_id IN ({placeholders}) "
+            f"GROUP BY s.mission_id",
+            [user_id, STEP_STATUS_COMPLETED, *ids],
+        ).fetchall()
+    }
+    return {
+        mid: {"done": done.get(mid, 0), "total": totals.get(mid, 0)} for mid in ids
+    }
+
+
+def mission_prereq_state(user_id: int, missions) -> dict:
+    """``{mission_id: {"prereqs": [...], "unmet": n, "ready": bool}}``.
+
+    aca-ux-06: 86 of 122 active missions declare prereq_slugs_json and nothing
+    rendered it, so a learner facing a 122-mission catalogue had no visible ordering
+    — the card vocabulary was Done / Active / Start and nothing else.
+
+    Each prerequisite carries its TITLE, because a slug is not something to show a
+    learner, and falls back to the slug when the mission is unknown so a future typo
+    degrades instead of raising. Two queries regardless of catalogue size; the browser
+    renders every card on one page and this must not be N+1.
+    """
+    entries = list(missions or [])
+    if not entries:
+        return {}
+    conn = get_connection()
+    titles = {
+        (r["slug"] if hasattr(r, "keys") else r[0]): (r["title"] if hasattr(r, "keys") else r[1])
+        for r in conn.execute("SELECT slug, title FROM fa_missions").fetchall()
+    }
+    completed = {
+        (r[0] if not hasattr(r, "keys") else r["slug"])
+        for r in conn.execute(
+            "SELECT m.slug FROM fa_mission_progress mp "
+            "JOIN fa_missions m ON m.id = mp.mission_id "
+            "WHERE mp.user_id=%s AND mp.status=%s",
+            (user_id, MISSION_STATUS_COMPLETED),
+        ).fetchall()
+    }
+
+    out: dict = {}
+    for mission in entries:
+        raw = mission.get("prereq_slugs_json") or "[]"
+        try:
+            slugs = json.loads(raw) if isinstance(raw, str) else list(raw or [])
+        except (TypeError, ValueError):
+            _log.warning(
+                "mission %s has unparseable prereq_slugs_json", mission.get("slug")
+            )
+            slugs = []
+        prereqs = [
+            {
+                "slug": s,
+                "title": titles.get(s, s),
+                "satisfied": s in completed,
+            }
+            for s in slugs
+            if s
+        ]
+        unmet = sum(1 for p in prereqs if not p["satisfied"])
+        out[mission["id"]] = {
+            "prereqs": prereqs,
+            "unmet": unmet,
+            "ready": unmet == 0,
+        }
+    return out
+
+
+def resume_target(user_id: int) -> dict | None:
+    """The mission to offer as "continue where you left off", or None.
+
+    Deliberately requires EVIDENCE of work, not just a progress row. Before
+    aca-int-04, opening a mission page created an in_progress row — 39 of them, with
+    352 attempts and not one step submission — so a resume control keyed on status
+    alone would have pointed at missions the learner had merely glanced at. A mission
+    with no fa_step_progress rows is therefore never offered.
+
+    Recency is the learner's own last activity on that mission, falling back to when
+    the mission was started so an attempt that has not completed anything still
+    ranks.
+    """
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT m.id, m.slug, m.title, m.tier, "
+        "       MAX(COALESCE(sp.completed_at, sp.started_at, mp.started_at)) AS last_at "
+        "FROM fa_mission_progress mp "
+        "JOIN fa_missions m ON m.id = mp.mission_id "
+        "JOIN fa_mission_steps s ON s.mission_id = m.id "
+        "JOIN fa_step_progress sp ON sp.step_id = s.id AND sp.user_id = mp.user_id "
+        "WHERE mp.user_id = %s AND mp.status <> %s AND m.is_active = 1 "
+        "GROUP BY m.id, m.slug, m.title, m.tier "
+        "ORDER BY last_at DESC, m.id DESC LIMIT 1",
+        (user_id, MISSION_STATUS_COMPLETED),
+    ).fetchone()
+    if not row:
+        return None
+    mid = row["id"] if hasattr(row, "keys") else row[0]
+    counts = mission_step_progress(user_id, [mid]).get(mid, {"done": 0, "total": 0})
+    return {
+        "id": mid,
+        "slug": row["slug"] if hasattr(row, "keys") else row[1],
+        "title": row["title"] if hasattr(row, "keys") else row[2],
+        "tier": row["tier"] if hasattr(row, "keys") else row[3],
+        "steps_done": counts["done"],
+        "steps_total": counts["total"],
+    }
+
+
+def record_hint(user_id: int, step_id: int) -> int:
+    """Count a hint against a step and return the new total.
+
+    aca-int-06: `hintsUsed` used to live only in the browser, and goStep() reset it
+    to 0 on every sidebar click - so three hints followed by a click away and back
+    erased the penalty entirely, restoring both the 1.5x "perfect" mission
+    multiplier and the no_hints_needed achievement. A counter the learner's own
+    navigation can zero is not a counter.
+
+    Creates the progress row if the learner has not submitted anything yet, and
+    leaves status/score untouched so recording a hint can never disturb a step that
+    is already completed.
+    """
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT id FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
+        (user_id, step_id),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE fa_step_progress SET hints_used=hints_used+1 "
+            "WHERE user_id=%s AND step_id=%s",
+            (user_id, step_id),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO fa_step_progress (user_id, step_id, status, hints_used) "
+            "VALUES (%s,%s,%s,1)",
+            (user_id, step_id, STEP_STATUS_NOT_STARTED),
+        )
+    conn.commit()
+    row = conn.execute(
+        "SELECT hints_used FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
+        (user_id, step_id),
+    ).fetchone()
+    if not row:
+        return 0
+    return int((row["hints_used"] if hasattr(row, "keys") else row[0]) or 0)
 
 
 def user_progress_summary(user_id: int, tenant_id: str | None = None) -> dict:
@@ -683,24 +1246,24 @@ def user_progress_summary(user_id: int, tenant_id: str | None = None) -> dict:
     # Verify user belongs to tenant
     if tenant_id is not None:
         user_row = conn.execute(
-            "SELECT id FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+            "SELECT id FROM fa_users WHERE id=%s AND tenant_id=%s", (user_id, tenant_id)
         ).fetchone()
         if not user_row:
             return {"total_missions": 0, "completed": 0, "steps_completed": 0, "in_progress": None}
     total = conn.execute("SELECT COUNT(*) FROM fa_missions WHERE is_active=1").fetchone()[0]
     done = conn.execute(
-        "SELECT COUNT(*) FROM fa_mission_progress WHERE user_id=? AND status='completed'",
+        "SELECT COUNT(*) FROM fa_mission_progress WHERE user_id=%s AND status='completed'",
         (user_id,),
     ).fetchone()[0]
     steps_done = conn.execute(
-        "SELECT COUNT(*) FROM fa_step_progress WHERE user_id=? AND status='completed'",
+        "SELECT COUNT(*) FROM fa_step_progress WHERE user_id=%s AND status='completed'",
         (user_id,),
     ).fetchone()[0]
     in_prog = conn.execute(
         """SELECT m.slug, m.title, m.tier, mp.attempts
            FROM fa_mission_progress mp
            JOIN fa_missions m ON m.id=mp.mission_id
-           WHERE mp.user_id=? AND mp.status='in_progress'
+           WHERE mp.user_id=%s AND mp.status='in_progress'
            ORDER BY mp.id DESC LIMIT 1""",
         (user_id,),
     ).fetchone()
@@ -725,7 +1288,7 @@ def get_user_achievements(user_id: int) -> list[dict]:
         """SELECT a.*, ua.earned_at
            FROM fa_user_achievements ua
            JOIN fa_achievements a ON a.id=ua.achievement_id
-           WHERE ua.user_id=?
+           WHERE ua.user_id=%s
            ORDER BY ua.earned_at DESC""",
         (user_id,),
     ).fetchall()
@@ -738,7 +1301,7 @@ def get_user_skills(user_id: int) -> set[str]:
     rows = get_connection().execute(
         """SELECT sn.slug FROM fa_user_skills us
            JOIN fa_skill_nodes sn ON sn.id = us.skill_id
-           WHERE us.user_id = ?""",
+           WHERE us.user_id = %s""",
         (user_id,),
     ).fetchall()
     return {r["slug"] for r in rows}
@@ -748,13 +1311,13 @@ def unlock_skill(user_id: int, skill_slug: str) -> bool:
     """Unlock a skill node for the user. Returns True if newly unlocked."""
     conn = get_connection()
     node = conn.execute(
-        "SELECT id FROM fa_skill_nodes WHERE slug = ?", (skill_slug,)
+        "SELECT id FROM fa_skill_nodes WHERE slug = %s", (skill_slug,)
     ).fetchone()
     if not node:
         return False
     try:
         conn.execute(
-            "INSERT INTO fa_user_skills (user_id, skill_id) VALUES (?, ?)",
+            "INSERT INTO fa_user_skills (user_id, skill_id) VALUES (%s, %s)",
             (user_id, node["id"]),
         )
         conn.commit()
@@ -766,13 +1329,13 @@ def unlock_skill(user_id: int, skill_slug: str) -> bool:
 def grant_achievement(user_id: int, slug: str) -> dict | None:
     conn = get_connection()
     ach = conn.execute(
-        "SELECT * FROM fa_achievements WHERE slug=?", (slug,)
+        "SELECT * FROM fa_achievements WHERE slug=%s", (slug,)
     ).fetchone()
     if not ach:
         return None
     try:
         conn.execute(
-            "INSERT INTO fa_user_achievements (user_id,achievement_id) VALUES (?,?)",
+            "INSERT INTO fa_user_achievements (user_id,achievement_id) VALUES (%s,%s)",
             (user_id, ach["id"]),
         )
         conn.commit()
@@ -785,24 +1348,37 @@ def grant_achievement(user_id: int, slug: str) -> dict | None:
 # Guilds
 # ---------------------------------------------------------------------------
 
-def create_guild(name: str, description: str, created_by: int) -> dict:
+def create_guild(
+    name: str, description: str, created_by: int, invite_code: str | None = None
+) -> dict:
+    """Create a guild and make ``created_by`` its leader.
+
+    ``invite_code`` is accepted so the caller can mint the code it shows the
+    user. The route already generated one and passed it, which raised TypeError
+    on every request because this signature did not take it (fga-fix-01) — and
+    had the signature matched, the route would have shown the user its own code
+    while the row stored a different one, so the invite would never resolve.
+
+    Codes are stored uppercased because ``join_guild`` uppercases before
+    lookup; a lowercase code would be unjoinable.
+    """
     conn = get_connection()
-    code = secrets.token_urlsafe(6).upper()
+    code = (invite_code or secrets.token_urlsafe(6)).upper()
     conn.execute(
-        "INSERT INTO fa_guilds (name,description,invite_code,created_by) VALUES (?,?,?,?)",
+        "INSERT INTO fa_guilds (name,description,invite_code,created_by) VALUES (%s,%s,%s,%s)",
         (name, description, code, created_by),
     )
     conn.commit()
     row = conn.execute(
-        "SELECT * FROM fa_guilds WHERE invite_code=?", (code,)
+        "SELECT * FROM fa_guilds WHERE invite_code=%s", (code,)
     ).fetchone()
     guild = dict(row)
     conn.execute(
-        "INSERT INTO fa_guild_members (guild_id,user_id,role) VALUES (?,?,'leader')",
+        "INSERT INTO fa_guild_members (guild_id,user_id,role) VALUES (%s,%s,'leader')",
         (guild["id"], created_by),
     )
     conn.execute(
-        "UPDATE fa_users SET guild_id=? WHERE id=?", (guild["id"], created_by)
+        "UPDATE fa_users SET guild_id=%s WHERE id=%s", (guild["id"], created_by)
     )
     conn.commit()
     return guild
@@ -811,17 +1387,17 @@ def create_guild(name: str, description: str, created_by: int) -> dict:
 def join_guild(invite_code: str, user_id: int) -> dict | None:
     conn = get_connection()
     guild = conn.execute(
-        "SELECT * FROM fa_guilds WHERE invite_code=?", (invite_code.upper(),)
+        "SELECT * FROM fa_guilds WHERE invite_code=%s", (invite_code.upper(),)
     ).fetchone()
     if not guild:
         return None
     try:
         conn.execute(
-            "INSERT INTO fa_guild_members (guild_id,user_id) VALUES (?,?)",
+            "INSERT INTO fa_guild_members (guild_id,user_id) VALUES (%s,%s)",
             (guild["id"], user_id),
         )
         conn.execute(
-            "UPDATE fa_users SET guild_id=? WHERE id=?", (guild["id"], user_id)
+            "UPDATE fa_users SET guild_id=%s WHERE id=%s", (guild["id"], user_id)
         )
         conn.commit()
     except Exception:
@@ -829,13 +1405,24 @@ def join_guild(invite_code: str, user_id: int) -> dict | None:
     return dict(guild)
 
 
-def get_guild_stats(guild_id: int) -> dict:
+def get_guild_stats(guild_id: int) -> dict | None:
+    """Members and total XP for a guild, or None when the guild does not exist.
+
+    aca-hyg-03: this returned {"members": [], "total_xp": 0} either way, so a caller
+    could not tell an empty guild from a missing one and the route 200'd on a bad id.
+    An empty-but-real guild still returns a dict with an empty member list.
+    """
     conn = get_connection()
+    exists = conn.execute(
+        "SELECT 1 FROM fa_guilds WHERE id=%s", (guild_id,)
+    ).fetchone()
+    if not exists:
+        return None
     members = conn.execute(
         """SELECT u.display_name, u.xp, u.level, gm.role
            FROM fa_guild_members gm
            JOIN fa_users u ON u.id=gm.user_id
-           WHERE gm.guild_id=?
+           WHERE gm.guild_id=%s
            ORDER BY u.xp DESC""",
         (guild_id,),
     ).fetchall()
@@ -853,7 +1440,7 @@ _LEADERBOARD_CACHE_TTL = 300  # seconds
 def _leaderboard_cache_fresh(conn, period: str) -> bool:
     try:
         row = conn.execute(
-            "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=?", (period,)
+            "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=%s", (period,)
         ).fetchone()
         if not row or not row[0]:
             return False
@@ -870,7 +1457,7 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
     q = "SELECT id, xp FROM fa_users WHERE role != 'unset'"
     params: list = []
     if tenant_id:
-        q += " AND tenant_id=?"
+        q += " AND tenant_id=%s"
         params.append(tenant_id)
     else:
         q += " AND (tenant_id IS NULL OR tenant_id='')"
@@ -883,7 +1470,7 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
             conn.execute(
                 """INSERT OR REPLACE INTO fa_leaderboard_cache
                    (user_id, period, score, rank_pos, computed_at, tenant_id)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (u["id"], period, u["xp"], rank, now, tenant_id or ""),
             )
             count += 1
@@ -911,17 +1498,17 @@ def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, 
                FROM fa_leaderboard_cache lc
                JOIN fa_users u ON u.id=lc.user_id
                LEFT JOIN fa_guilds g ON g.id=u.guild_id
-               WHERE lc.period=? AND u.role != 'unset'"""
+               WHERE lc.period=%s AND u.role != 'unset'"""
         params: list = [period]
         if tenant_id:
-            q += " AND u.tenant_id=?"
+            q += " AND u.tenant_id=%s"
             params.append(tenant_id)
         else:
             q += " AND (u.tenant_id IS NULL OR u.tenant_id='')"
         if role:
-            q += " AND u.role=?"
+            q += " AND u.role=%s"
             params.append(role)
-        q += " ORDER BY lc.rank_pos LIMIT ?"
+        q += " ORDER BY lc.rank_pos LIMIT %s"
         params.append(limit)
         rows = conn.execute(q, params).fetchall()
         if rows:
@@ -936,14 +1523,14 @@ def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, 
            WHERE u.role != 'unset'"""
     params = []
     if tenant_id:
-        q += " AND u.tenant_id=?"
+        q += " AND u.tenant_id=%s"
         params.append(tenant_id)
     else:
         q += " AND (u.tenant_id IS NULL OR u.tenant_id='')"
     if role:
-        q += " AND u.role=?"
+        q += " AND u.role=%s"
         params.append(role)
-    q += " ORDER BY u.xp DESC LIMIT ?"
+    q += " ORDER BY u.xp DESC LIMIT %s"
     params.append(limit)
     rows = conn.execute(q, params).fetchall()
     return [dict(r) for r in rows]
@@ -959,13 +1546,12 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     Returns dict with keys: eligible (bool), gates (list of {name, met, detail}).
     """
     from apps.forge_academy.constants import CERT_BY_KEY
-    from tools.db.storage import get_connection as _gc
 
     cert = CERT_BY_KEY.get(cert_key)
     if not cert:
         return {"eligible": False, "gates": [], "error": "unknown cert key"}
 
-    conn = _gc()
+    conn = get_connection()
     user = get_user(user_id)
     if not user:
         return {"eligible": False, "gates": [], "error": "user not found"}
@@ -975,41 +1561,69 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
 
     # Gate: Tier 1 complete
     if reqs.get("tier1_complete"):
+        # aca-ux-04: this counted EVERY tier-1 mission, including the zero-step
+        # "Coming soon" one that can never be completed (fga-wire-06) — so the
+        # Foundation certificate was unobtainable by construction. Count only
+        # completable missions, matching tier_progress().
         t1_missions = conn.execute(
-            """SELECT COUNT(*) FROM fa_missions WHERE tier=1"""
+            "SELECT COUNT(*) FROM fa_missions m WHERE m.tier=1 AND m.is_active=1 "
+            "AND (SELECT COUNT(*) FROM fa_mission_steps s WHERE s.mission_id=m.id) > 0"
         ).fetchone()[0]
         t1_done = conn.execute(
             """SELECT COUNT(DISTINCT mp.mission_id)
                FROM fa_mission_progress mp
                JOIN fa_missions m ON m.id=mp.mission_id
-               WHERE mp.user_id=? AND mp.status='completed' AND m.tier=1""",
+               WHERE mp.user_id=%s AND mp.status='completed' AND m.tier=1
+                 AND (SELECT COUNT(*) FROM fa_mission_steps s
+                      WHERE s.mission_id=m.id) > 0""",
             (user_id,),
         ).fetchone()[0]
         met = t1_done >= t1_missions > 0
         gates.append({"name": "Tier 1 Complete", "met": met,
                       "detail": f"{t1_done}/{t1_missions} Tier 1 missions completed"})
 
-    # Gate: Role Tier 2 complete (100% of user's role missions)
+    # Gate: Role Tier 2 complete (a percentage of the user's role missions)
     if reqs.get("role_tier2_pct"):
         role = user.get("role", "")
         if role and role != "unset":
-            t2_role = conn.execute(
-                """SELECT COUNT(*) FROM fa_missions
-                   WHERE tier=2 AND (role_filter='all' OR role_filter LIKE ?)""",
-                (f"%{role}%",),
-            ).fetchone()[0]
-            t2_done = conn.execute(
-                """SELECT COUNT(DISTINCT mp.mission_id)
-                   FROM fa_mission_progress mp
-                   JOIN fa_missions m ON m.id=mp.mission_id
-                   WHERE mp.user_id=? AND mp.status='completed' AND m.tier=2
-                     AND (m.role_filter='all' OR m.role_filter LIKE ?)""",
-                (user_id, f"%{role}%"),
-            ).fetchone()[0]
+            # aca-hyg-02: matched with LIKE '%role%', so 'swe' also matched every
+            # 'swe_arch' mission — 37 missions in the denominator instead of 25.
+            # Whole-token matching is done in Python via role_matches(), the same
+            # comparison list_missions uses.
+            #
+            # Zero-step missions are excluded for the same reason as the
+            # tier1_complete gate (aca-ux-04): nine Tier-2 missions have no steps,
+            # and an uncompletable row in a percentage denominator makes 100%
+            # unreachable by construction.
+            t2_rows = conn.execute(
+                "SELECT m.id, m.role_filter FROM fa_missions m "
+                "WHERE m.tier=2 AND m.is_active=1 "
+                "  AND (SELECT COUNT(*) FROM fa_mission_steps s "
+                "       WHERE s.mission_id=m.id) > 0"
+            ).fetchall()
+            role_ids = {
+                (r["id"] if hasattr(r, "keys") else r[0])
+                for r in t2_rows
+                if role_matches(r["role_filter"] if hasattr(r, "keys") else r[1], role)
+            }
+            done_ids = {
+                (r[0] if not hasattr(r, "keys") else r["mission_id"])
+                for r in conn.execute(
+                    "SELECT DISTINCT mp.mission_id FROM fa_mission_progress mp "
+                    "WHERE mp.user_id=%s AND mp.status=%s",
+                    (user_id, MISSION_STATUS_COMPLETED),
+                ).fetchall()
+            }
+            t2_role = len(role_ids)
+            t2_done = len(role_ids & done_ids)
             pct = int((t2_done / t2_role * 100) if t2_role else 0)
-            met = pct >= reqs["role_tier2_pct"]
+            met = bool(t2_role) and pct >= reqs["role_tier2_pct"]
             gates.append({"name": f"Role Tier 2 ({role})", "met": met,
-                          "detail": f"{t2_done}/{t2_role} role missions ({pct}%)"})
+                          "detail": (
+                              f"{t2_done}/{t2_role} role missions ({pct}%)"
+                              if t2_role else
+                              f"no Tier 2 missions are targeted at role '{role}'"
+                          )})
         else:
             gates.append({"name": "Role Tier 2", "met": False,
                           "detail": "Set your role in profile first"})
@@ -1017,7 +1631,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     # Gate: Foundation cert required
     if reqs.get("foundation"):
         has_found = conn.execute(
-            "SELECT COUNT(*) FROM fa_certificates WHERE user_id=? AND cert_tier='foundation'",
+            "SELECT COUNT(*) FROM fa_certificates WHERE user_id=%s AND cert_tier='foundation'",
             (user_id,),
         ).fetchone()[0] > 0
         gates.append({"name": "Foundation Cert", "met": has_found,
@@ -1028,7 +1642,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
         try:
             best = conn.execute(
                 """SELECT MAX(CAST(JSON_EXTRACT(metadata_json,'$.aadc_score') AS REAL))
-                   FROM fa_user_achievements WHERE user_id=?""",
+                   FROM fa_user_achievements WHERE user_id=%s""",
                 (user_id,),
             ).fetchone()[0] or 0
         except Exception:
@@ -1041,7 +1655,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     if reqs.get("gameday_scenarios_min"):
         try:
             gd = conn.execute(
-                """SELECT COUNT(*) FROM ttx_receipts WHERE player_id=? AND status='submitted'""",
+                """SELECT COUNT(*) FROM ttx_receipts WHERE player_id=%s AND status='submitted'""",
                 (user_id,),
             ).fetchone()[0]
         except Exception:
@@ -1053,7 +1667,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     # Gate: Practitioner cert required
     if reqs.get("practitioner"):
         has_prac = conn.execute(
-            "SELECT COUNT(*) FROM fa_certificates WHERE user_id=? AND cert_tier='practitioner'",
+            "SELECT COUNT(*) FROM fa_certificates WHERE user_id=%s AND cert_tier='practitioner'",
             (user_id,),
         ).fetchone()[0] > 0
         gates.append({"name": "Practitioner Cert", "met": has_prac,
@@ -1066,7 +1680,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
             """SELECT COUNT(DISTINCT mp.mission_id)
                FROM fa_mission_progress mp
                JOIN fa_missions m ON m.id=mp.mission_id
-               WHERE mp.user_id=? AND mp.status='completed' AND m.tier=3""",
+               WHERE mp.user_id=%s AND mp.status='completed' AND m.tier=3""",
             (user_id,),
         ).fetchone()[0]
         met = t3_done >= t3_total > 0
@@ -1077,11 +1691,98 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     return {"eligible": eligible, "gates": gates}
 
 
+def collect_cert_evidence(user_id: int, eligibility: dict, conn) -> list[dict]:
+    """The work a certificate is about to be issued against.
+
+    aca-int-07 part 2: check_cert_eligibility already computes exactly this and
+    issue_certificate read only its boolean, throwing the rest away — so a
+    certificate asserted competence and /academy/verify/<token> could do nothing but
+    repeat the label back.
+
+    Snapshotted at issue time rather than recomputed on the verify page. A
+    certificate is a statement about a moment: recomputing lets the claim drift with
+    the data underneath it, so retiring a mission or re-seeding a step would make a
+    certificate issued last year quietly describe something else.
+    """
+    evidence: list[dict] = []
+
+    # 1. The gates themselves, with the figures that satisfied them.
+    for gate in eligibility.get("gates", []):
+        evidence.append({
+            "evidence_type": "gate",
+            "ref_id": None,
+            "label": gate.get("name", ""),
+            "detail": gate.get("detail", ""),
+            "demonstrated_at": None,
+            "score": None,
+        })
+
+    # 2. The missions that counted, and 3. the verified steps underneath them.
+    rows = conn.execute(
+        """SELECT m.id AS mission_id, m.title AS mission_title, m.tier,
+                  mp.completed_at, mp.score
+             FROM fa_mission_progress mp
+             JOIN fa_missions m ON m.id = mp.mission_id
+            WHERE mp.user_id = %s AND mp.status = 'completed'
+            ORDER BY m.tier, m.id""",
+        (user_id,),
+    ).fetchall()
+    for r in rows:
+        d = dict(r)
+        evidence.append({
+            "evidence_type": "mission",
+            "ref_id": d["mission_id"],
+            "label": d["mission_title"],
+            "detail": f"Tier {d['tier']}",
+            "demonstrated_at": d.get("completed_at"),
+            "score": d.get("score"),
+        })
+
+    steps = conn.execute(
+        """SELECT s.id AS step_id, s.title AS step_title, s.step_type,
+                  m.title AS mission_title, sp.completed_at, sp.score, sp.hints_used
+             FROM fa_step_progress sp
+             JOIN fa_mission_steps s ON s.id = sp.step_id
+             JOIN fa_missions m ON m.id = s.mission_id
+            WHERE sp.user_id = %s AND sp.status = 'completed'
+            ORDER BY s.mission_id, s.step_num""",
+        (user_id,),
+    ).fetchall()
+    for r in steps:
+        d = dict(r)
+        hints = d.get("hints_used") or 0
+        evidence.append({
+            "evidence_type": "step",
+            "ref_id": d["step_id"],
+            "label": f"{d['mission_title']} — {d['step_title']}",
+            "detail": f"{d.get('step_type') or 'step'}, {hints} hint(s)",
+            "demonstrated_at": d.get("completed_at"),
+            "score": d.get("score"),
+        })
+    return evidence
+
+
+def get_cert_evidence(cert_id: int) -> list[dict]:
+    """The evidence recorded when this certificate was issued."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM fa_certificate_evidence WHERE cert_id=%s "
+            "ORDER BY CASE evidence_type WHEN 'gate' THEN 0 WHEN 'mission' THEN 1 "
+            "ELSE 2 END, id",
+            (cert_id,),
+        ).fetchall()
+    except Exception:
+        # Own connection, so swallowing is safe here — see earned_xp for why this
+        # would NOT be safe on a caller's connection under PostgreSQL.
+        return []
+    return [dict(r) for r in rows]
+
+
 def issue_certificate(user_id: int, cert_key: str) -> dict | None:
     """Issue a certificate if eligible. Returns the cert record or None."""
     import secrets
     from datetime import datetime, timezone
-    from tools.db.storage import get_connection as _gc
     from apps.forge_academy.constants import CERT_BY_KEY
 
     eligibility = check_cert_eligibility(user_id, cert_key)
@@ -1089,10 +1790,10 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
         return None
 
     cert_def = CERT_BY_KEY.get(cert_key, {})
-    conn = _gc()
+    conn = get_connection()
     # Idempotent: return existing cert if already issued
     existing = conn.execute(
-        "SELECT * FROM fa_certificates WHERE user_id=? AND cert_tier=?",
+        "SELECT * FROM fa_certificates WHERE user_id=%s AND cert_tier=%s",
         (user_id, cert_key),
     ).fetchone()
     if existing:
@@ -1109,23 +1810,45 @@ def issue_certificate(user_id: int, cert_key: str) -> dict | None:
     conn.execute(
         """INSERT INTO fa_certificates
            (user_id, cert_tier, cert_label, token, issued_at)
-           VALUES (?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s)""",
         (user_id, cert_key, cert_def.get("label", cert_key), token, now),
     )
     # Award XP bonus on the SAME connection/transaction as the cert INSERT.
     xp_bonus = cert_def.get("xp_bonus", 0)
     if xp_bonus:
-        update_user_xp(user_id, xp_bonus, conn=conn)
+        update_user_xp(user_id, xp_bonus, conn=conn, reason="certificate",
+                       source_type="certificate", note=cert_key)
+
+    # aca-int-07 part 2: the evidence goes in on the SAME transaction. A certificate
+    # that commits without it is precisely the artefact this card set out to remove —
+    # a label asserting competence with nothing behind it — and a partial failure
+    # here must take the certificate down with it rather than leave one standing.
+    cert_row = conn.execute(
+        "SELECT id FROM fa_certificates WHERE user_id=%s AND cert_tier=%s",
+        (user_id, cert_key),
+    ).fetchone()
+    cert_id = (cert_row["id"] if not isinstance(cert_row, tuple) else cert_row[0]) \
+        if cert_row else None
+    if cert_id is not None:
+        for item in collect_cert_evidence(user_id, eligibility, conn):
+            conn.execute(
+                "INSERT INTO fa_certificate_evidence "
+                "(cert_id, user_id, evidence_type, ref_id, label, detail, "
+                " demonstrated_at, score) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (cert_id, user_id, item["evidence_type"], item["ref_id"],
+                 item["label"], item["detail"], item["demonstrated_at"],
+                 item["score"]),
+            )
     conn.commit()
     return conn.execute(
-        "SELECT * FROM fa_certificates WHERE user_id=? AND cert_tier=?",
+        "SELECT * FROM fa_certificates WHERE user_id=%s AND cert_tier=%s",
         (user_id, cert_key),
     ).fetchone()
 
 
 def get_user_certificates(user_id: int) -> list[dict]:
     rows = get_connection().execute(
-        "SELECT * FROM fa_certificates WHERE user_id=? ORDER BY issued_at DESC",
+        "SELECT * FROM fa_certificates WHERE user_id=%s ORDER BY issued_at DESC",
         (user_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -1138,10 +1861,17 @@ def verify_certificate_token(token: str) -> dict | None:
         """SELECT c.*, u.display_name, u.role
            FROM fa_certificates c
            JOIN fa_users u ON u.id=c.user_id
-           WHERE c.token=?""",
+           WHERE c.token=%s""",
         (token,),
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    result = dict(row)
+    # aca-int-07 part 2: a verifier needs to see what was demonstrated, not just be
+    # told a label. Read back the snapshot taken at issue time — NOT a fresh
+    # computation, which would let the claim drift with the data underneath it.
+    result["evidence"] = get_cert_evidence(result["id"])
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1155,7 +1885,7 @@ def upsert_mission_ontology(mission_id: int, ontology_id: str, mission_class: st
     conn.execute(
         """INSERT INTO fa_mission_ontology
            (mission_id, ontology_id, mission_class, topic_class, competency_class, prereq_ontology_paths_json)
-           VALUES (?, ?, ?, ?, ?, ?)
+           VALUES (%s, %s, %s, %s, %s, %s)
            ON CONFLICT(mission_id) DO UPDATE SET
              ontology_id=excluded.ontology_id,
              mission_class=excluded.mission_class,
@@ -1173,7 +1903,7 @@ def upsert_step_ontology(step_id: int, ontology_id: str, step_class: str) -> Non
     conn.execute(
         """INSERT INTO fa_step_ontology
            (step_id, ontology_id, step_class)
-           VALUES (?, ?, ?)
+           VALUES (%s, %s, %s)
            ON CONFLICT(step_id) DO UPDATE SET
              ontology_id=excluded.ontology_id,
              step_class=excluded.step_class""",
@@ -1196,7 +1926,7 @@ def record_user_competency(user_id: int, competency_class: str,
     conn.execute(
         """INSERT OR IGNORE INTO fa_user_competencies
            (user_id, competency_class, source_mission_id, source_step_id, demonstrated_at, evidence_json)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (user_id, competency_class, source_mission_id, source_step_id, now,
          json.dumps(evidence or {})),
     )
@@ -1209,7 +1939,7 @@ def record_user_competency(user_id: int, competency_class: str,
         pass
 
     row = conn.execute(
-        "SELECT * FROM fa_user_competencies WHERE user_id=? AND competency_class=? AND source_mission_id=?",
+        "SELECT * FROM fa_user_competencies WHERE user_id=%s AND competency_class=%s AND source_mission_id=%s",
         (user_id, competency_class, source_mission_id),
     ).fetchone()
     return dict(row) if row else {"user_id": user_id, "competency_class": competency_class}
@@ -1218,7 +1948,7 @@ def record_user_competency(user_id: int, competency_class: str,
 def _create_kg_competency_edge(conn, user_id: int, competency_class: str,
                                 source_mission_id: int | None, demonstrated_at: str) -> None:
     """Insert a KG edge linking the user to the ontology competency class."""
-    user = conn.execute("SELECT username FROM fa_users WHERE id=?", (user_id,)).fetchone()
+    user = conn.execute("SELECT username FROM fa_users WHERE id=%s", (user_id,)).fetchone()
     user_label = user["username"] if user else f"user_{user_id}"
     source_node = f"fa_user:{user_id}"
     target_node = f"ontology:{competency_class}"
@@ -1227,21 +1957,21 @@ def _create_kg_competency_edge(conn, user_id: int, competency_class: str,
     conn.execute(
         """INSERT OR REPLACE INTO kg_nodes
            (id, graph_id, label, entity_type, properties, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (source_node, "icdev-core-ontology", user_label, "fa_user",
          json.dumps({"user_id": user_id}), demonstrated_at),
     )
     conn.execute(
         """INSERT OR REPLACE INTO kg_nodes
            (id, graph_id, label, entity_type, properties, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)""",
         (target_node, "icdev-core-ontology", competency_class, "ontology_class",
          json.dumps({"canonical_id": competency_class}), demonstrated_at),
     )
     conn.execute(
         """INSERT OR REPLACE INTO kg_edges
            (id, graph_id, source_id, target_id, label, properties, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (edge_id, "icdev-core-ontology", source_node, target_node, "demonstrates",
          json.dumps({"source_mission_id": source_mission_id, "user_id": user_id}), demonstrated_at),
     )
@@ -1253,7 +1983,7 @@ def get_user_competencies(user_id: int) -> list[dict]:
         """SELECT uc.*, m.slug as mission_slug, m.title as mission_title
            FROM fa_user_competencies uc
            LEFT JOIN fa_missions m ON m.id = uc.source_mission_id
-           WHERE uc.user_id = ?
+           WHERE uc.user_id = %s
            ORDER BY uc.demonstrated_at DESC""",
         (user_id,),
     ).fetchall()
@@ -1274,7 +2004,7 @@ def seed_mission_ontology_mappings() -> None:
     except Exception:
         pass  # table may not exist yet; proceed with seeding
     for m in BUILTIN_MISSIONS:
-        row = conn.execute("SELECT id FROM fa_missions WHERE slug=?", (m["slug"],)).fetchone()
+        row = conn.execute("SELECT id FROM fa_missions WHERE slug=%s", (m["slug"],)).fetchone()
         if not row:
             continue
         mission_id = row["id"]
@@ -1297,7 +2027,7 @@ def seed_mission_ontology_mappings() -> None:
         steps = BUILTIN_STEPS.get(m["slug"], [])
         for step in steps:
             step_row = conn.execute(
-                "SELECT id FROM fa_mission_steps WHERE mission_id=? AND step_num=?",
+                "SELECT id FROM fa_mission_steps WHERE mission_id=%s AND step_num=%s",
                 (mission_id, step["step_num"]),
             ).fetchone()
             if not step_row:

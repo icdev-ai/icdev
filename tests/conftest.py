@@ -11,6 +11,15 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# tests/ itself, so the guard registry is one module object shared by this
+# conftest and the tests that cover it (pytest loads conftest under its own
+# module name, so `tests.conftest` would be a distinct copy). Matches the
+# existing `from _sql_compat import ...` convention in this directory.
+if str(Path(__file__).parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).parent))
+
+import _txn_guard  # noqa: E402  (needs the sys.path entry above)
+
 # Force SQLite backend for tests (override .env PostgreSQL setting — same as main
 # conftest) UNLESS the opt-in ICDEV_PYTEST_PG flag is set. The dedicated CI
 # "test-pg" tier (.github/workflows/icdev-ci.yml) sets ICDEV_PYTEST_PG=1 +
@@ -45,6 +54,19 @@ os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL DEFAULT 'unknown',
+    connector_name TEXT NOT NULL DEFAULT '',
+    table_name TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL DEFAULT 'denied' CHECK(decision IN ('allowed','denied')),
+    reason TEXT NOT NULL DEFAULT '',
+    rows_returned INTEGER DEFAULT 0,
+    redactions_applied INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS web_fetch_provenance (
     id TEXT PRIMARY KEY,
     citation_id TEXT,
@@ -89,7 +111,9 @@ CREATE TABLE IF NOT EXISTS studio_workflows (
     created_by    TEXT,
     version       INTEGER DEFAULT 1,
     created_at    TEXT,
-    updated_at    TEXT
+    updated_at    TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id      TEXT
 );
 CREATE TABLE IF NOT EXISTS studio_workflow_runs (
     run_id         TEXT PRIMARY KEY,
@@ -100,7 +124,10 @@ CREATE TABLE IF NOT EXISTS studio_workflow_runs (
     completed_at   TEXT,
     triggered_by   TEXT,
     project_id     TEXT DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id      TEXT,
     summary_json   TEXT,
+    inputs_json    TEXT,
     FOREIGN KEY (workflow_id) REFERENCES studio_workflows(workflow_id)
 );
 CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
@@ -114,9 +141,81 @@ CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
     stdout       TEXT DEFAULT '',
     stderr       TEXT DEFAULT '',
     duration_ms  INTEGER DEFAULT 0,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id    TEXT,
     started_at   TEXT,
     completed_at TEXT,
     FOREIGN KEY (run_id) REFERENCES studio_workflow_runs(run_id)
+);
+CREATE TABLE IF NOT EXISTS studio_run_memory (
+    run_id     TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, key)
+);
+CREATE TABLE IF NOT EXISTS studio_event_sources (
+    source_id   TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    config_json TEXT,
+    enabled     INTEGER DEFAULT 1,
+    max_il      TEXT DEFAULT 'IL2',
+    created_by  TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id   TEXT
+);
+CREATE TABLE IF NOT EXISTS studio_workflow_triggers (
+    trigger_id        TEXT PRIMARY KEY,
+    source_id         TEXT NOT NULL,
+    workflow_id       TEXT NOT NULL,
+    event_type        TEXT,
+    filter_json       TEXT,
+    input_mapping_json TEXT,
+    enabled           INTEGER DEFAULT 1,
+    workflow_il       TEXT DEFAULT 'IL6',
+    project_id        TEXT DEFAULT 'default',
+    created_at        TEXT DEFAULT (datetime('now')),
+    classification    TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id         TEXT
+);
+CREATE TABLE IF NOT EXISTS studio_trigger_events (
+    event_id     TEXT PRIMARY KEY,
+    source_id    TEXT,
+    trigger_id   TEXT,
+    event_type   TEXT,
+    payload_json TEXT,
+    matched      INTEGER DEFAULT 0,
+    run_id       TEXT,
+    reason       TEXT,
+    workflow_id  TEXT,
+    outcome      TEXT,
+    classification TEXT,
+    idempotency_key TEXT UNIQUE,
+    envelope_id  TEXT,
+    received_at  TEXT DEFAULT (datetime('now')),
+    tenant_id    TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_studio_trigger_events_idem
+    ON studio_trigger_events (idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS studio_mcp_dispatch_audit (
+    audit_id       TEXT PRIMARY KEY,
+    run_id         TEXT,
+    step_id        TEXT,
+    tool           TEXT NOT NULL,
+    params_sha256  TEXT NOT NULL,
+    principal_id   TEXT,
+    tenant_id      TEXT,
+    caller_il      TEXT,
+    caller_roles   TEXT,
+    caller_source  TEXT,
+    decision       TEXT NOT NULL
+                   CHECK(decision IN ('allowed','refused','pending_approval')),
+    reason         TEXT NOT NULL,
+    detail         TEXT,
+    classification TEXT NOT NULL,
+    recorded_at    TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kanban_tasks (
     id                    TEXT PRIMARY KEY,
@@ -3431,6 +3530,42 @@ CREATE TABLE IF NOT EXISTS finding_replay_attempts (
     classification     TEXT NOT NULL DEFAULT 'CUI',
     created_at         TEXT
 );
+
+-- FORGE Academy XP provenance (aca-int-07, migration 315). Append-only: one row per
+-- award, naming what earned it, so a rank can be traced to demonstrated work rather
+-- than asserted. is_attendance separates XP for showing up from XP for doing
+-- something, because rank is computed from the latter.
+-- What a certificate was issued against (aca-int-07, migration 317). Snapshotted at
+-- issue time: a certificate is a statement about a moment, and recomputing on the
+-- verify page would let the claim drift with the data underneath it.
+CREATE TABLE IF NOT EXISTS fa_certificate_evidence (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    cert_id         INTEGER NOT NULL,
+    user_id         INTEGER NOT NULL,
+    evidence_type   TEXT    NOT NULL,
+    ref_id          INTEGER,
+    label           TEXT    NOT NULL,
+    detail          TEXT,
+    demonstrated_at TEXT,
+    score           INTEGER,
+    classification  TEXT    DEFAULT 'CUI',
+    tenant_id       TEXT,
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS fa_xp_ledger (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    xp_delta       INTEGER NOT NULL,
+    reason         TEXT    NOT NULL,
+    source_type    TEXT,
+    source_id      INTEGER,
+    is_attendance  INTEGER NOT NULL DEFAULT 0,
+    verified       INTEGER NOT NULL DEFAULT 1,
+    note           TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')),
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT);
 """
 
 
@@ -3496,3 +3631,204 @@ def pmc_db(tmp_path, monkeypatch):
     conn = get_connection()
     yield conn
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Transaction-leak guard (tsh-leak-01)
+#
+# A test that runs an INSERT/UPDATE/DELETE and never commits or rolls back
+# leaves SQLite's implicit BEGIN open on that connection. The test itself
+# passes; the damage lands on whichever *later* test touches the same file and
+# blocks on the write lock, or reads rows a prior test never committed. The
+# failure is then attributed to the innocent test, which is why these are so
+# expensive to chase.
+#
+# The guard closes that gap by attributing the leak to the test that caused it:
+# every sqlite3 connection opened during the session is tracked, and at each
+# test's teardown any connection still reporting `in_transaction` fails that
+# test by name. Leaked transactions are rolled back before failing so a single
+# leak produces a single failure instead of cascading into the rest of the run.
+#
+# Escape hatches (both narrow, both deliberate):
+#   * ICDEV_TXN_LEAK_GUARD=0            — disable the guard for a whole run.
+#   * @pytest.mark.allow_open_transaction — a test that *intends* to hand an open
+#     transaction to something outside its own scope.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session", autouse=True)
+def _sqlite_connection_tracker():
+    """Wrap sqlite3.connect for the session so every connection is tracked."""
+    if _txn_guard.GUARD_DISABLED:
+        yield
+        return
+
+    real_connect = sqlite3.connect
+
+    def _tracking_connect(*args, **kwargs):
+        return _txn_guard.track(real_connect(*args, **kwargs))
+
+    sqlite3.connect = _tracking_connect
+    try:
+        yield
+    finally:
+        sqlite3.connect = real_connect
+        _txn_guard.reset()
+
+
+@pytest.fixture(autouse=True)
+def assert_no_leaked_transaction(request, _sqlite_connection_tracker):
+    """Fail the test that leaves a write transaction open, naming it."""
+    # Only connections opened by this test are the test's responsibility.
+    _txn_guard.reset()
+
+    yield
+
+    if _txn_guard.GUARD_DISABLED or request.node.get_closest_marker(
+        "allow_open_transaction"
+    ):
+        _txn_guard.reset()
+        return
+
+    leaked = _txn_guard.open_write_transactions()
+    if not leaked:
+        _txn_guard.reset()
+        return
+
+    # Report WHERE each leaked connection was opened. Naming only the test that
+    # finished blames the wrong one whenever a background thread opens the
+    # connection mid-test — which is how a pure HTTP test that touches no
+    # database at all came to be reported as leaking.
+    #
+    # Read the origins BEFORE reset(): reset() clears the origin registry, so
+    # describing the connections afterwards reports "(origin not recorded)" for
+    # every one of them and the diagnostic is silently a no-op.
+    origins = chr(10).join(_txn_guard.describe_origin(c) for c in leaked)
+
+    # Roll back first: without this every subsequent test in the run would see
+    # the same open transaction and fail, burying the real culprit.
+    for conn in leaked:
+        try:
+            conn.rollback()
+        except sqlite3.Error:  # pragma: no cover - connection died mid-teardown
+            pass
+    _txn_guard.reset()
+
+    pytest.fail(
+        f"Transaction leak: {request.node.nodeid} finished with "
+        f"{len(leaked)} SQLite connection(s) holding an uncommitted write "
+        f"transaction. Commit, roll back, or close the connection before the "
+        f"test ends (the guard rolled them back so later tests are unaffected). "
+        f"If the open transaction is intentional, mark the test with "
+        f"@pytest.mark.allow_open_transaction.{chr(10)}{chr(10)}"
+        f"Opened at:{chr(10)}{origins}",
+        pytrace=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# No live LLM calls during tests
+# ---------------------------------------------------------------------------
+#
+# The suite could hang indefinitely and abort naming an unrelated file. Root
+# cause: `chat_response` and friends resolve to `claude-cli` via CLILLMProvider
+# with supports_thinking=True, so any test reaching an un-mocked
+# `router.invoke(...)` SPAWNS A SUBPROCESS and waits on a thinking-mode model.
+# Nothing prevented that.
+#
+# It explains the symptoms exactly: each suite passes alone, because its own
+# mocks cover the paths it exercises; combined runs hang, because a path one
+# suite never reaches is reached after another suite has primed the state. And
+# because pytest-timeout's only method on Windows is `thread`, it kills the
+# interpreter rather than failing one test, so the report blames whatever
+# happened to be collected nearby.
+#
+# The guard patches LLMProvider.invoke / invoke_streaming — the single abstract
+# chokepoint EVERY provider implements. Patching there rather than LLMRouter
+# matters: a test that already mocks the router is untouched, while one that
+# falls through to a real provider fails immediately with a named error instead
+# of hanging the run.
+#
+# Escape hatches, in order of preference:
+#   @pytest.mark.live            a test that genuinely needs a real model
+#   ICDEV_ALLOW_LIVE_LLM=1       a deliberate live run of the whole suite
+
+
+class LiveLLMCallInTest(RuntimeError):
+    """Raised when a test reaches a real LLM provider.
+
+    Not a failure of the model — a failure to mock. The message names the
+    provider and model so the offending call site is obvious.
+    """
+
+
+def _live_llm_allowed(request) -> bool:
+    if os.environ.get("ICDEV_ALLOW_LIVE_LLM", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return request.node.get_closest_marker("live") is not None
+
+
+@pytest.fixture(autouse=True)
+def _no_live_llm_calls(request, monkeypatch):
+    """Fail fast instead of hanging when a test reaches a real provider."""
+    if _live_llm_allowed(request):
+        return
+
+    try:
+        from tools.llm.provider import LLMProvider
+    except Exception:  # noqa: BLE001 — provider layer optional in some checkouts
+        return
+
+    def _refuse(self, req, model_id="", model_config=None, *a, **k):
+        raise LiveLLMCallInTest(
+            f"Test reached a LIVE LLM provider "
+            f"({type(self).__name__} / {model_id or 'unknown model'}). "
+            "Mock the router or the provider for this path. If the test genuinely "
+            "needs a real model, mark it @pytest.mark.live; to run the whole suite "
+            "against live models set ICDEV_ALLOW_LIVE_LLM=1.\n"
+            "Left un-mocked this spawns a thinking-mode CLI subprocess and hangs "
+            "the run, which pytest-timeout resolves by killing the interpreter and "
+            "blaming an unrelated file."
+        )
+
+    monkeypatch.setattr(LLMProvider, "invoke", _refuse, raising=False)
+    monkeypatch.setattr(LLMProvider, "invoke_streaming", _refuse, raising=False)
+
+
+# ---------------------------------------------------------------------------
+# No chat agent loops surviving a test
+# ---------------------------------------------------------------------------
+#
+# ChatManager.create_context spawns a daemon thread per context and only
+# close_context stops one -- and even that never joins. A test that creates a
+# context and does not close it leaves a loop polling on a 0.1s sleep for the
+# rest of the session, writing task rows, message rows and budget usage while
+# LATER tests run.
+#
+# The damage is misattribution rather than noise: work from an abandoned thread
+# lands during whichever test is executing, and a transaction it holds blocks
+# DDL on other connections until the busy timeout expires. That is the same
+# cross-test interference behind the suite hang, reached by another route.
+#
+# Guarded on sys.modules so this costs nothing for the vast majority of tests
+# that never touch chat: importing chat_manager here would drag the dashboard
+# import graph into every test in the suite.
+
+
+@pytest.fixture(autouse=True)
+def _stop_chat_agent_loops():
+    """Stop any chat agent loops a test leaves running."""
+    yield
+
+    module = sys.modules.get("tools.dashboard.chat_manager")
+    if module is None:
+        return
+
+    manager = getattr(module, "chat_manager", None)
+    shutdown = getattr(manager, "shutdown", None)
+    if shutdown is None:
+        return
+
+    try:
+        shutdown(timeout=2.0)
+    except Exception:  # noqa: BLE001 — teardown must never fail a passing test
+        pass

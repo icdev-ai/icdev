@@ -28,9 +28,13 @@ def _version_meta_fields(meta_json: str):
     """
     try:
         meta = json.loads(meta_json or "{}")
-    except Exception:
-        meta = {}
-    return meta.get("compliance_score"), meta.get("cat1_count")
+    except Exception as exc:
+        # Fail-closed (ndc-gov-01): report the parse failure instead of
+        # returning (None, None), which the trend view renders as empty cells
+        # indistinguishable from a version that legitimately has no score.
+        # Silently swallowing it made corrupt metadata look like missing data.
+        return None, None, f"metadata parse failed: {type(exc).__name__}: {exc}"
+    return meta.get("compliance_score"), meta.get("cat1_count"), None
 
 
 def register_analysis_routes(bp, get_conn=None, helpers=None):
@@ -104,10 +108,16 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
             cat1, cat2, cat3 = finding_map.get("cat1", 0), finding_map.get("cat2", 0), finding_map.get("cat3", 0)
             compliance_score = max(0, 100 - cat1 * 25 - cat2 * 10 - cat3 * 3)
 
-            # Security: intent validation failures
+            # Security: intent validation failures.
+            #
+            # Fail-closed (ndc-gov-01): 'error' counts as not-pass alongside
+            # 'fail'. An intent check that could not be evaluated is not a
+            # passing check — counting only 'fail' meant a topology whose checks
+            # all errored scored a clean security tally, which is the fail-OPEN
+            # case this gate exists to prevent.
             intent_fails = db.execute(
                 "SELECT COUNT(*) FROM nc_intent_validations "
-                "WHERE topology_id=%s AND result='fail'",
+                "WHERE topology_id=%s AND result IN ('fail','error')",
                 (topo_id,),
             ).fetchone()[0] if _table_exists(db, "nc_intent_validations") else 0
             intent_total = db.execute(
@@ -203,10 +213,16 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
         trend = []
         for v in versions:
             version_num, created_at, meta_json = v
-            compliance_score, cat1_count = _version_meta_fields(meta_json or "{}")
+            compliance_score, cat1_count, meta_error = _version_meta_fields(meta_json or "{}")
+            if meta_error:
+                logger.warning(
+                    "Version %s metadata parse failed for topology %s: %s",
+                    version_num, topo_id, meta_error,
+                )
             trend.append({
                 "version": version_num,
                 "date": created_at,
+                **({"error": meta_error} if meta_error else {}),
                 "compliance_score": compliance_score,
                 "cat1_count": cat1_count,
             })

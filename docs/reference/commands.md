@@ -899,6 +899,28 @@ python tools/intelligence/bayesian_teacher.py --health --json                   
 
 ---
 
+## Studio Workflow Executor Commands
+```bash
+# Generic MCP tool executor — dispatch any tool_registry.TOOL_REGISTRY entry as a workflow step
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}'
+python tools/studio/executors/mcp_executor.py --tool kg_search --params '{"query":"NIST AC-2"}'
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' --run-id "run-xxx" --step-id "probe"
+# Dispatch as a specific principal (default: the run's `caller` memory key, else
+# $ICDEV_MCP_CALLER_IL / $ICDEV_IMPACT_LEVEL, else IL4 with no roles)
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' \
+  --caller-il IL5 --caller-roles isso,compliance_officer --caller-id u1 --tenant-id t1
+# A `requires_approval` tool parks a pending human gate on the run and blocks on it
+# (dwo-mcp-02-d4). Approve/reject it like any HITL node — workflow Details modal, or
+# workflow_runner.approve_step(step_run_id) — the refusal payload names the step_run_id.
+python tools/studio/executors/mcp_executor.py --tool terraform_apply   --params '{"terraform_dir":"infra"}' --run-id "run-xxx" --approval-wait 3600
+# --approval-wait 0 parks the gate without blocking; the run resumes into the decision.
+# Exit 0 = handler returned; exit 1 = unknown tool (suggests closest matches),
+# params failing the entry's input_schema, the handler raised, or gate MCP-WF-001
+# refused it (not allowlisted / awaiting approval / caller IL too low / missing role).
+```
+
+---
+
 ## Workflow Discipline Engine Commands
 ```bash
 # PLAN-APPLY-UNIFY Lifecycle (Phase 66, D-WF-1 through D-WF-7)
@@ -925,6 +947,11 @@ python tools/workflow/coherence_checker.py --all --fix --json                   
 python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+python tools/workflow/coherence_checker.py --changed-files-from diff.txt --tier fast --gate         # Read the diff from a file (avoids argv limits)
+python tools/workflow/coherence_checker.py --tier fast --gate                                       # Per-task gate tier (defers whole-app heavies)
+python tools/workflow/coherence_checker.py --tier full --gate                                       # Every check (nightly sweep / post-merge)
+python tools/workflow/coherence_checker.py --tier fast --list-tier                                  # Print the check ids a tier would run
+python tools/genesis/reflexes/coherence_sweep.py                                                    # Full-tier sweep on main + refresh the gate's baseline
 
 # Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
 # CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
@@ -2737,6 +2764,13 @@ python tools/studio/workflow_editor.py --json templates                         
 python tools/studio/workflow_editor.py --json list                                     # List saved studio workflows
 python tools/studio/workflow_editor.py --json get <workflow_id>                        # Get workflow by ID
 
+# Run Memory — run-scoped shared state for workflow steps (dwo-mem-01)
+# Inside a step the runner sets ICDEV_RUN_ID, so --run-id may be omitted.
+python tools/studio/run_memory.py --run-id <run_id> --set artifact --value '{"path":"x.pdf"}'   # Write a key
+python tools/studio/run_memory.py --run-id <run_id> --get artifact                     # Read a key
+python tools/studio/run_memory.py --run-id <run_id> --all                              # Dump every key
+python tools/studio/run_memory.py --run-id <run_id> --delete artifact                  # Delete a key
+
 # Form Builder — create custom forms with JSON Schema output
 python tools/studio/form_builder.py --json field-types                                     # List field types
 python tools/studio/form_builder.py --json templates                                       # List form templates
@@ -2763,6 +2797,8 @@ python tools/studio/automation_builder.py --json templates                      
 python tools/studio/automation_builder.py --json list                                       # List saved automations
 python tools/studio/automation_builder.py --json runs                                       # List recent runs
 python tools/studio/automation_builder.py --json simulate <automation_id>                   # Dry-run simulation
+python tools/studio/automation_builder.py --json simulate <automation_id> --event '{...}'   # Dry-run against a specific event
+python tools/studio/automation_builder.py --json trigger <automation_id> --event '{...}'    # Fire for real (run_workflow starts a run)
 
 # NL App Builder — describe what you want, get a working app
 python tools/studio/nl_app_builder.py --json extract "description of app"                  # Extract capabilities

@@ -1106,6 +1106,22 @@ reflexes:
       threshold: 0
       operator: gte          # Informational — 0 ISAs tracked is healthy; >0 checked is normal operation
 
+  # ── Full-tier coherence sweep (gate/sweep split) ─────────────────────────────
+
+  coherence_sweep:
+    timeout_seconds: 1800    # full 49-check tier on a cold tree measured 328s; head-room for a loaded host
+    enabled: true
+    risk_tier: green         # read-only: no --fix, writes only the gitignored .tmp/ baseline cache
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 120
+    description: "Full-tier coherence sweep on the main checkout. Runs the whole-app checks (blueprint_imports, openapi_parity, llm_router_api) that the per-task fast-tier gate defers, and refreshes the cached baseline that gate diffs new failures against. Delegates to tools.workflow.validated_commit helpers."
+    dry_run: false           # when true, reports failing checks without refreshing the baseline cache
+    success_metric:
+      name: failed_count
+      threshold: 0
+      operator: lte          # 0 failing checks on main is healthy; >0 means main has regressed
+
   # ── cATO Twin Continuous Monitoring (bdr-ops-1 — enabled after query soak) ───
 
   cato_twin:

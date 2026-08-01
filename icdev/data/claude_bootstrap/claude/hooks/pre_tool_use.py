@@ -406,6 +406,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 72 — ICDEV™ Studio (D364, D365 — case history + automation runs)
         "studio_case_history",
         "studio_automation_runs",
+        # DWO / dwo-evt-01 — trigger evaluation audit ("why did this run start")
+        "studio_trigger_events",
+        # DWO / dwo-mcp-02-d5 — every MCP dispatch attempt (allowed, refused,
+        # pending approval), with the actor and the gate's decision
+        "studio_mcp_dispatch_audit",
         # Cross-canvas KG build audit log (append-only — NIST AU)
         "canvas_kg_build_log",
         # Phase 73 — Findings + Oracle Predictions (NIST AU, append-only)

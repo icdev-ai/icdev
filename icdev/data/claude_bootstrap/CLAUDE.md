@@ -62,8 +62,11 @@ python tools/db/storage.py --health --json
 # Companion sync (ALWAYS after code changes)
 python tools/dx/companion.py --sync --write --json
 
-# Coherence check
-python tools/workflow/coherence_checker.py --all --fix --gate
+# Coherence check — tiered (fast = per-task gate, full = nightly sweep)
+python tools/workflow/coherence_checker.py --all --fix --gate                       # full tier + autofix
+python tools/workflow/coherence_checker.py --tier fast --gate --changed-files "tools/foo.py"
+python tools/workflow/coherence_checker.py --tier fast --list-tier                  # which checks the tier runs
+python tools/genesis/reflexes/coherence_sweep.py                                    # full-tier sweep + baseline refresh
 
 # Showcase / Demo Runner
 python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json
@@ -326,7 +329,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
   7. Nav/parent link — page reachable from navigation or a parent page link
   8. **IQE integration** — `tools/iqe/adapters/<canvas>.py` (registers collections), `POST /api/iqe-query` route in blueprint, `{% include "includes/iqe_query_widget.html" %}` in template, canvas entry in `iqe_dispatch()` `_CANVAS_MAP` in `app.py`, path entry in mini-bar `PATH_CANVAS` in `base.html`, ≥3 seed queries in `context/iqe/queries/<canvas>/`
   **Never ship a template without all 7 other components. This has caused repeated failures.**
-- **Project cards are MANDATORY for every multi-task build — regardless of origin (CLI session, Kanban, chat request).** Before implementation starts: (1) register the project in `args/projects.yaml` (`key`, `name`, `task_prefix`, `briefs[]`, `epics[]`); (2) seed one kanban task per shippable unit via `tools.kanban.task_factory.create_tasks` (never raw INSERT), with descriptions rich enough for a fresh session to implement from cold. Rationale: token exhaustion mid-build must never lose state — the card + tasks are the handoff. For MANUAL-only work (e.g. private external repos the runner cannot build in), gate all tasks behind a `<prefix>-gate-00` task held `in_progress` so `promote_backlog_to_scheduled` never dispatches them; sessions mark tasks done via `python tools/kanban/cli.py --set-status <id> done` with `.env` loaded. Card mechanics: register it in `args/projects.yaml`: define `key`, `name`, `task_prefix`, `briefs[]`, and `epics[]`. Its progress card appears on Home (`/`) below the Task Board automatically via the reusable partial `tools/dashboard/templates/_projects_in_flight.html`. Task IDs MUST use the form `<task_prefix><epic_key>-<N>` (e.g. `dt-iqe-01`). Rules enforced at render time: no two projects may have `task_prefix` values where one is a prefix of the other; within a project, no epic `key` may be a prefix of another under the `-` separator. Cards auto-hide at 100% done or 0 tasks.
+- **Project cards are MANDATORY for every multi-task build — regardless of origin (CLI session, Kanban, chat request).** Before implementation starts: (1) register the project in `args/projects.yaml` (`key`, `name`, `task_prefix`, `briefs[]`, `epics[]`); (2) seed one kanban task per shippable unit via `tools.kanban.task_factory.create_tasks` (never raw INSERT), with descriptions rich enough for a fresh session to implement from cold. Rationale: token exhaustion mid-build must never lose state — the card + tasks are the handoff. For MANUAL-only work (e.g. private external repos the runner cannot build in), gate all tasks behind a `<prefix>-gate-00` task held `in_progress` so `promote_backlog_to_scheduled` never dispatches them; sessions mark tasks done via `python tools/kanban/cli.py --set-status <id> done` with `.env` loaded. **`done` is merge-verified**: the CLI refuses when a branch carrying that task id still has commits not on `origin/<default>` — open a PR and get it merged first. Override only with `--force-done --reason '<why>'` (audit-logged), and set `KANBAN_REQUIRE_MERGE_FOR_DONE=0` only for repos where git verification cannot apply. This closes the recurring "board says done but it is not on main" bug: the runner and the dashboard move API were already gated, the CLI was not — and the CLI is what worker sessions use to report their own completion. Card mechanics: register it in `args/projects.yaml`: define `key`, `name`, `task_prefix`, `briefs[]`, and `epics[]`. Its progress card appears on Home (`/`) below the Task Board automatically via the reusable partial `tools/dashboard/templates/_projects_in_flight.html`. Task IDs MUST use the form `<task_prefix><epic_key>-<N>` (e.g. `dt-iqe-01`). Rules enforced at render time: no two projects may have `task_prefix` values where one is a prefix of the other; within a project, no epic `key` may be a prefix of another under the `-` separator. Cards auto-hide at 100% done or 0 tasks.
 - Screenshots: ALWAYS use `playwright/screenshots/<name>.png` as the filename
 - In Jinja2 templates, NEVER use `'%%.0f'|format(value)` — use `value|round(0)|int`
 - In Behave step definitions, match step text to tool return signatures
@@ -388,7 +391,7 @@ This annotation documents why the bypass is safe and lets `tools/workflow/cohere
 - Audit trail is append-only — NEVER UPDATE/DELETE audit tables
 - Security gates block on: CAT1 STIG, critical/high vulns, failed tests, missing markings
 - When implementing NIST 800-53 control, call crosswalk engine for FedRAMP/CMMC auto-populate
-- Self-healing limited to confidence ≥ 0.7 and max 5/hour
+- Self-healing limited to confidence ≥ 0.7, max 3/hour **per pattern** and 5/hour **across all patterns**. All four thresholds live in `args/heal_constitution.yaml` under `rate_limits` — never hardcode them in a module
 - All A2A uses mutual TLS; never store secrets in code
 - SBOM regenerated on every build; containers non-root, read-only rootfs
 - IL6/SECRET: SIPR-only, NSA Type 1 encryption, air-gapped CI/CD

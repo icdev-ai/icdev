@@ -20,7 +20,13 @@ class TestClassificationsDominatedBy:
     never higher ones. Guards the RLS predicate (classification IN <set>)."""
 
     def test_read_down_only(self):
-        assert classifications_dominated_by("CUI") == {"PUBLIC", "CUI"}
+        # Asserted as an invariant, not a literal set: the ladder gains labels
+        # over time (UNCLASSIFIED was added at order 0 alongside PUBLIC), and a
+        # hardcoded equality turns every such addition into a false failure.
+        # What must hold is that the set is exactly the labels at or below CUI.
+        s = classifications_dominated_by("CUI")
+        assert {"PUBLIC", "UNCLASSIFIED", "CUI"} <= s
+        assert all(_get_clearance_order(lbl) <= _get_clearance_order("CUI") for lbl in s)
 
     def test_secret_reads_down_not_up(self):
         s = classifications_dominated_by("SECRET")

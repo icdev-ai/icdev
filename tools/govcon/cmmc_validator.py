@@ -113,9 +113,9 @@ def _uuid():
 def _audit(conn, action, details="", actor="cmmc_validator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.cmmc_supply_chain", actor, action, details, "proposal_genesis"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.cmmc_supply_chain", actor, action, details, "proposal_genesis"),
         )
     except Exception:
         pass

@@ -2710,6 +2710,13 @@ python tools/studio/workflow_editor.py --json templates                         
 python tools/studio/workflow_editor.py --json list                                     # List saved studio workflows
 python tools/studio/workflow_editor.py --json get <workflow_id>                        # Get workflow by ID
 
+# Run Memory — run-scoped shared state for workflow steps (dwo-mem-01)
+# Inside a step the runner sets ICDEV_RUN_ID, so --run-id may be omitted.
+python tools/studio/run_memory.py --run-id <run_id> --set artifact --value '{"path":"x.pdf"}'   # Write a key
+python tools/studio/run_memory.py --run-id <run_id> --get artifact                     # Read a key
+python tools/studio/run_memory.py --run-id <run_id> --all                              # Dump every key
+python tools/studio/run_memory.py --run-id <run_id> --delete artifact                  # Delete a key
+
 # Form Builder — create custom forms with JSON Schema output
 python tools/studio/form_builder.py --json field-types                                     # List field types
 python tools/studio/form_builder.py --json templates                                       # List form templates

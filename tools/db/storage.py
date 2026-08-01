@@ -855,7 +855,23 @@ def _pg_exec_statements(cursor, sql: str, backend: str) -> None:
             cursor.execute(translated)
             if use_sp:
                 cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
-        except Exception:  # noqa: BLE001 — skip; keep prior successful statements
+        except Exception as stmt_exc:  # noqa: BLE001 — skip; keep prior statements
+            # Log it. Skipping is deliberate (already-exists DDL, out-of-order
+            # references), but doing it SILENTLY means a migration can report
+            # success having applied only some of its statements. That is exactly
+            # how migration 313 half-applied on the live database: a UTF-8 BOM at
+            # the start of the file made its first statement (a DELETE) invalid,
+            # the failure vanished here, the second statement succeeded, and the
+            # runner recorded the migration as applied. The data fix never ran and
+            # nothing anywhere said so.
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "executescript: skipping failed statement (%s: %s) - first 120 chars: %s",
+                type(stmt_exc).__name__,
+                stmt_exc,
+                " ".join(translated.split())[:120],
+            )
             if use_sp:
                 try:
                     cursor.execute("ROLLBACK TO SAVEPOINT icdev_es_stmt")
@@ -1455,15 +1471,59 @@ def _get_pg_connection(db_url: str = None):
         return conn
 
 
+#: How long SQLite waits on a contended lock, in seconds.
+#:
+#: Production waits 30s: real contention between a request and a background job
+#: should queue, not fail.
+#:
+#: Under pytest it waits 5s, and the gap is the entire point. The per-test
+#: budget (``timeout = 30`` in pyproject.toml) was IDENTICAL to this wait, so a
+#: contended lock consumed exactly the whole budget: the statement never got to
+#: raise "database is locked", pytest-timeout fired first, and because its only
+#: method on Windows is ``thread`` it killed the interpreter rather than failing
+#: one test. The run aborted naming whatever file happened to be nearby.
+#:
+#: That is what made the suite look like it hung at random. It is order-
+#: dependent — it needs a test that leaks an open write transaction (the class
+#: #1066's guard catches) to run before anything that opens a second connection
+#: and writes, e.g. LLMRouter lazily creating LLMResponseCache and running
+#: CREATE TABLE IF NOT EXISTS.
+#:
+#: With a 5s wait the contention surfaces as a normal, attributable
+#: OperationalError naming the real test, 25s before the killer fires.
+_SQLITE_BUSY_TIMEOUT_PROD = 30.0
+_SQLITE_BUSY_TIMEOUT_TEST = 5.0
+
+
+def _sqlite_busy_timeout() -> float:
+    """Lock wait for this process, in seconds.
+
+    ``ICDEV_SQLITE_BUSY_TIMEOUT`` overrides both defaults.
+    """
+    override = os.environ.get("ICDEV_SQLITE_BUSY_TIMEOUT", "").strip()
+    if override:
+        try:
+            return max(0.1, float(override))
+        except ValueError:
+            pass
+    under_pytest = bool(
+        os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("PYTEST_VERSION")
+    )
+    return _SQLITE_BUSY_TIMEOUT_TEST if under_pytest else _SQLITE_BUSY_TIMEOUT_PROD
+
+
 def _get_sqlite_connection(db_path: str = None):
     """Create a SQLite connection with Row factory."""
     path = db_path or os.environ.get("ICDEV_DB_PATH", DB_PATH)
     # Ensure parent directory exists
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), timeout=30)
+    busy = _sqlite_busy_timeout()
+    # Both must agree: sqlite3's own `timeout` and the PRAGMA govern the same
+    # wait, and setting only one leaves the other at its default.
+    conn = sqlite3.connect(str(path), timeout=busy)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute(f"PRAGMA busy_timeout={int(busy * 1000)}")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

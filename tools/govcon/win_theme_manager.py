@@ -176,9 +176,9 @@ def _tracking_uuid():
 def _audit(conn, action, details="", actor="win_theme_manager"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.win_theme", actor, action, details, "proposal_genesis"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.win_theme", actor, action, details, "proposal_genesis"),
         )
     except Exception:
         pass

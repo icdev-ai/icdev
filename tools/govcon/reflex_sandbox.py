@@ -195,10 +195,9 @@ def _get_db():
 def _audit(conn, action: str, details: str = "", reflex: str = "") -> None:
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, project_id, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                str(uuid.uuid4()),
                 _now(),
                 "govcon.reflex_sandbox",
                 "reflex_sandbox",

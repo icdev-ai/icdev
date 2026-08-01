@@ -80,20 +80,10 @@
       <textarea id="deltaInput" class="twin-textarea" rows="10"
         placeholder='[{"control_id":"AC-2","implementation_status":"satisfied","evidence_ref":"evidence/ac-2-proc.pdf"},{"control_id":"AU-6","implementation_status":"not_satisfied"}]'></textarea>
 
-      <div style="margin-top:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
-        <strong style="font-size:12px;color:#7a8cb0;">DESCRIBE YOUR CHANGE</strong>
-        <p class="hint" style="margin:4px 0 6px;">Describe the compliance change in plain English — AI maps it to NIST controls and generates the JSON.</p>
-        <div style="display:flex;gap:8px;align-items:flex-start;">
-          <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
-            placeholder="e.g. Mark account management as satisfied with the new HR onboarding procedure, mark audit review as not satisfied..."></textarea>
-          <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
-        </div>
-        <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
-        <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
-          <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
-        </div>
-        <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
-      </div>
+      {% with chat_hint="Describe the compliance change in plain English — AI maps it to NIST controls and generates the JSON.",
+              chat_placeholder="e.g. Mark account management as satisfied with the new HR onboarding procedure, mark audit review as not satisfied..." %}
+        {% include "includes/_twin_chat_panel.html" %}
+      {% endwith %}
 
       <div style="margin-top:8px;">
         <label style="font-size:12px;color:#7a8cb0;margin-right:8px;">Framework:</label>
@@ -424,29 +414,12 @@ async function loadCurrentTopology() {
   } catch(e) { alert('Error: ' + e.message); }
 }
 
-async function sendChatDelta() {
-  const msg = document.getElementById('chatInput').value.trim();
-  if (!msg) return;
-  const spinner = document.getElementById('chatSpinner');
-  const errEl  = document.getElementById('chatError');
-  errEl.style.display = 'none';
-  spinner.style.display = 'inline-block';
-  try {
-    const body = { message: msg };
-    if (_loadedGraphJson) body.graph_json = _loadedGraphJson;
-    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/chat-delta`, {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const data = await r.json();
-    if (data.error) { errEl.textContent = data.error; errEl.style.display='block'; return; }
-    document.getElementById('deltaInput').value = JSON.stringify(data.delta, null, 2);
-    if (data.explanation) {
-      document.getElementById('chatExplanationText').textContent = data.explanation;
-      document.getElementById('chatExplanation').style.display = 'block';
-    }
-  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
-  finally { spinner.style.display = 'none'; }
-}
+</script>
+{% with chat_api_prefix="boundary",
+        chat_id_var="PROJECT_ID" %}
+  {% include "includes/_twin_chat_script.html" %}
+{% endwith %}
+<script>
 
 async function runDrift() {
   const spinner = document.getElementById('driftSpinner');

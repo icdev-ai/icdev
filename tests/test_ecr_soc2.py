@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import sqlite3
 import sys
 import uuid
 from pathlib import Path
@@ -20,8 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def _sqlite_conn_factory(db_path):
     def _factory():
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
+        # Must translate: soc2_collector and the admin evidence route author
+        # PostgreSQL-style %s placeholders, which a bare sqlite3 connection
+        # rejects with `near "%": syntax error`. See tests/_sql_compat.
+        from _sql_compat import connect as _tconnect
+
+        conn = _tconnect(db_path, check_same_thread=False)
         return contextlib.closing(conn)
     return _factory
 

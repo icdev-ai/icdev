@@ -15,9 +15,10 @@ These tests prove:
   - the modules read aadc_* via the canvas connection (get_canvas_connection on
     PG), not the RLS-enforcing tools.db.storage.get_connection.
 
-The canvas aadc_* tables live in a separate store; the fixture points the canvas
-connection factory at a temp DB through the storage translate layer (never raw
-sqlite3, per repo convention).
+The canvas aadc_* tables live in a separate store; the shared ``canvas_db``
+fixture (tests/_aadc_canvas.py) pins that store at a temp SQLite file by
+patching init_db's ``_BACKEND``/``DB_PATH`` rather than replacing its
+``get_connection`` — see that module for why the difference leaks across files.
 """
 from __future__ import annotations
 
@@ -31,25 +32,20 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from _aadc_canvas import canvas_db as _canvas_db  # noqa: E402
+
+# Re-export so pytest collects the shared fixture from this module. Bound by
+# assignment rather than imported under its own name so the test signatures
+# below are not each flagged as redefining an import (F811).
+canvas_db = _canvas_db
+
 import tools.aadc.compliance_checker as cc  # noqa: E402
 import tools.aadc.governance_scanner as gs  # noqa: E402
 import tools.agentic_ai_canvas.db.init_db as canvas_init_db  # noqa: E402
-from tools.db import storage as _storage  # noqa: E402
 
-_AADC_DESIGNS_DDL = """
-CREATE TABLE IF NOT EXISTS aadc_designs (
-    id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL,
-    description     TEXT DEFAULT '',
-    domain          TEXT DEFAULT '',
-    classification  TEXT DEFAULT 'CUI',
-    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
-    safety_impacting INTEGER DEFAULT 0,
-    rights_impacting INTEGER DEFAULT 0,
-    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
-);
-"""
+# The real connection factory, captured before any fixture can swap it — the
+# reference point for TestFixtureDoesNotLeakAcrossFiles below.
+_PRISTINE_GET_CONNECTION = canvas_init_db.get_connection
 
 # --- Crafted designs -------------------------------------------------------
 # Risky: a single unconstrained autonomous agent (no HITL / circuit-breaker /
@@ -89,26 +85,6 @@ SAFE_GRAPH = {
         {"id": "e8", "source": "gr", "target": "ov"},
     ],
 }
-
-
-@pytest.fixture
-def canvas_db(tmp_path, monkeypatch):
-    """Point the canvas connection factory at a temp DB (translate layer)."""
-    db_path = tmp_path / "aadc_test.db"
-
-    def _canvas_conn():
-        conn = _storage.get_connection(db_path=str(db_path))
-        # Mirror get_canvas_connection(): RLS disabled for tenant-less aadc_*.
-        conn.set_security_context(None)
-        return conn
-
-    monkeypatch.setattr(canvas_init_db, "get_connection", _canvas_conn)
-
-    conn = _canvas_conn()
-    conn.executescript(_AADC_DESIGNS_DDL) if hasattr(conn, "executescript") else conn.execute(_AADC_DESIGNS_DDL)
-    conn.commit()
-    conn.close()
-    return db_path
 
 
 def _insert_design(design_id, graph, *, domain="", safety=0, rights=0):
@@ -234,3 +210,33 @@ class TestUsesCanvasConnection:
         # The design read no longer sits under a storage.get_connection import.
         design_read_region = src.split("aadc_designs")[0].rsplit("def generate_ops_config", 1)[-1]
         assert "from tools.db.storage import get_connection" not in design_read_region
+
+
+class TestFixtureDoesNotLeakAcrossFiles:
+    """Regression guard for the third state leak in this suite (aca-hyg-06).
+
+    ``scan_governance`` -> ``assess_design`` imports ``canvas_bridge`` lazily at
+    run time, and ``canvas_bridge`` binds ``get_connection`` at module scope.
+    When this file's fixture replaced ``init_db.get_connection`` with a closure,
+    that first-import captured the closure permanently: monkeypatch restored
+    ``init_db``, but ``canvas_bridge`` kept reading a deleted ``tmp_path`` DB,
+    so ``test_penta_aadc_p2.py::TestIlMapping`` and one routes smoke test failed
+    with "design not found" — but only when run after this file.
+    """
+
+    def test_lazy_canvas_bridge_import_binds_the_real_factory(self, canvas_db, monkeypatch):
+        # Force the lazy import to happen under the fixture, as assess_design
+        # does on a cold session. delitem (not pop) so sys.modules is restored.
+        monkeypatch.delitem(sys.modules, "tools.agentic_ai_canvas.canvas_bridge", raising=False)
+        _insert_design("leakguard", SAFE_GRAPH)
+        gs.scan_governance("leakguard")
+
+        bridge = sys.modules["tools.agentic_ai_canvas.canvas_bridge"]
+        # Compare against the factory as it was at import time, NOT against
+        # canvas_init_db.get_connection right now: under a fixture that swaps
+        # the factory those two are the same object until teardown, and the
+        # divergence only appears in the *next* file.
+        assert bridge.get_connection is _PRISTINE_GET_CONNECTION, (
+            "canvas_bridge captured a fixture-local connection factory; it will "
+            "outlive this test and break every later file in the session"
+        )

@@ -79,10 +79,48 @@ def client(ace_db, monkeypatch):
     _bp_mod = importlib.import_module("icdev.tools.ace.blueprint")
     _bp_mod._state["db_ready"] = False  # type: ignore[attr-defined]
 
+    # Authenticate. /api/ace/chat sits behind the global auth hook (nav-sec-01),
+    # so without a session every request below 401s.
+    #
+    # get_user_by_id is patched rather than seeding a dashboard_users row
+    # because that table lives in the MAIN database, not the temp ACE one this
+    # fixture builds. Depending on it made these tests pass only on a machine
+    # whose data/icdev.db happened to be populated — green on a dev box, six
+    # failures in a fresh worktree or a clean CI checkout.
+    #
+    # Patched on BOTH module objects: `tools.dashboard.auth` and
+    # `icdev.tools.dashboard.auth` do not always resolve to the same object,
+    # and the before_request hook that runs is the one registered by whichever
+    # the app imported. Patching only the icdev spelling left the real
+    # get_user_by_id in place and the query still hit dashboard_users.
+    def _fake_user(user_id, tenant_id=None):
+        return {
+            "id": "test-admin",
+            "email": "admin@test.local",
+            "display_name": "Test Admin",
+            "role": "admin",
+            "status": "active",
+            "tenant_id": "default",
+            "clearance_level": "CUI",
+        }
+
+    _seen: set[int] = set()
+    for _name in ("tools.dashboard.auth", "icdev.tools.dashboard.auth"):
+        try:
+            _auth = importlib.import_module(_name)
+        except ImportError:
+            continue
+        if id(_auth) in _seen:
+            continue
+        _seen.add(id(_auth))
+        monkeypatch.setattr(_auth, "get_user_by_id", _fake_user)
+
     from icdev.tools.dashboard.app import create_app
     app = create_app(testing=True)
     app.config["TESTING"] = True
     with app.test_client() as c:
+        with c.session_transaction() as sess:
+            sess["user_id"] = "test-admin"
         yield c
 
 

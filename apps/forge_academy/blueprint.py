@@ -10,10 +10,12 @@ from flask import Blueprint, g, jsonify, redirect, render_template, request, url
 from .auth import require_org_intel
 from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
-    migrate, get_or_create_user, get_user, update_user_role, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
+    migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
-    get_user_achievements, grant_achievement, update_user_xp,
-    create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
+    tier_progress, is_tier_unlocked, resume_target, mission_step_progress,
+    mission_prereq_state, earned_xp,
+    get_user_achievements, grant_achievement,
+    active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
     record_user_competency,
@@ -24,7 +26,7 @@ from .gamification import (
     check_step_achievements, award_daily_login, get_user_stats,
 )
 from .integrations import (
-    record_skill_usage, advance_learning_track, list_patterns,
+    record_skill_usage, advance_learning_track, patterns_status,
     detect_role_from_answers, create_workflow,
 )
 
@@ -44,7 +46,11 @@ def _inject_fa_nav():
         if user_id:
             user = get_user(user_id)
             if user:
-                ctx = xp_to_next_level(user.get("xp", 0))
+                # aca-int-07: through _level_ctx, not xp_to_next_level directly.
+                # This is the nav bar's own rank, a second display the page-level fix
+                # does not reach — it would have gone on showing the total-based rank
+                # site-wide. Defined below; resolved at request time, not import.
+                ctx = _level_ctx(user)
                 return {
                     "fa_nav_user": user,
                     "fa_nav_level": ctx.get("level", "Recruit"),
@@ -134,7 +140,27 @@ def _fa_user() -> dict | None:
 
 
 def _level_ctx(fa_user: dict) -> dict:
-    xp = fa_user.get("xp", 0) if fa_user else 0
+    """Rank progress, computed from EARNED XP.
+
+    aca-int-07: this read fa_user["xp"] — the running total, attendance included —
+    and it is the only thing the UI ever consults for rank, in eight places. So
+    after migration 316 corrected fa_users.level to 'recruit', every academy page
+    went on rendering 'Operative': the stored column the migration fixed is not what
+    the profile displays. The learner's total was 1715 of which 1465 was 41 daily
+    logins, so the rank on screen was bought by showing up.
+
+    The displayed XP total is deliberately unchanged — attendance is excluded from
+    rank, not confiscated.
+    """
+    if not fa_user:
+        return xp_to_next_level(0)
+    try:
+        xp = earned_xp(fa_user["id"])
+    except Exception:
+        # Before migration 315 there is no ledger to read. Falling back to the total
+        # is the pre-int-07 behaviour, which is wrong but not broken — and it only
+        # applies to a database that has not been migrated yet.
+        xp = fa_user.get("xp", 0)
     return xp_to_next_level(xp)
 
 
@@ -168,16 +194,43 @@ def hub():
         return redirect(url_for("forge_academy.profile"))
     daily = award_daily_login(fa_user["id"])
     stats = get_user_stats(fa_user["id"])
-    missions = list_missions(role=fa_user.get("role"), tier=None)[:6]
+    # Honour ?role= like the browser, leaderboard and leaderboard API already
+    # do. The hub was the only page ignoring it, so the "View as:" persona
+    # dropdown appeared to do nothing here (fga-fix-06). Falling back to the
+    # user's own role keeps the default view unchanged.
+    role_filter = request.args.get("role", "")
+    effective_role = role_filter or fa_user.get("role")
+    missions = list_missions(role=effective_role, tier=None)[:6]
     level_ctx = _level_ctx(fa_user)
+
+    # aca-ux-03: the hub listed the first six missions by order_idx and offered no
+    # way back into work already under way. page.html also READ progress_map, which
+    # this route never passed — so its `is defined` guard was always false and every
+    # card showed "Start" no matter the learner's state.
+    resume = resume_target(fa_user["id"])
+    mission_ids = [m["id"] for m in missions]
+    progress_map = {
+        mid: (get_mission_progress(fa_user["id"], mid) or {}).get("status", "pending")
+        for mid in mission_ids
+    }
+    step_progress = mission_step_progress(fa_user["id"], mission_ids)
+
     return render_template(
         "forge_academy/page.html",
         fa_user=fa_user,
         stats=stats,
         missions=missions,
+        resume=resume,
+        progress_map=progress_map,
+        step_progress=step_progress,
         level_ctx=level_ctx,
         daily_login=daily,
         roles=ROLES,
+        role_filter=role_filter,
+        # Hide the Arena entry point while no challenge can exist. Seeding
+        # filler to populate the page was explicitly rejected — fabricated data
+        # presented as real is the failure mode PENTA removed from this surface.
+        has_challenges=active_challenge_count() > 0,
     )
 
 
@@ -202,11 +255,22 @@ def missions_browser():
         for m in all_missions:
             p = get_mission_progress(fa_user["id"], m["id"])
             progress_map[m["id"]] = p["status"] if p else "locked"
+    # aca-ux-04: state the lock on the card, before the click. Computed once for all
+    # tiers rather than per mission — tier_progress is two queries.
+    tier_info = tier_progress(fa_user["id"]) if fa_user else {}
+    for m in all_missions:
+        m["is_locked"] = bool(
+            fa_user and not tier_info.get(int(m.get("tier") or 1), {}).get("unlocked", True)
+        )
+    # aca-ux-06: 86 missions declare prerequisites and nothing showed them.
+    prereq_state = mission_prereq_state(fa_user["id"], all_missions) if fa_user else {}
     return render_template(
         "forge_academy/missions.html",
         fa_user=fa_user,
         missions=all_missions,
         progress_map=progress_map,
+        prereq_state=prereq_state,
+        tier_info=tier_info,
         level_ctx=_level_ctx(fa_user) if fa_user else {},
         roles=ROLES,
         active_tier=tier,
@@ -228,17 +292,39 @@ def mission_runner(slug):
                                fa_user=fa_user, missions=[], progress_map={},
                                level_ctx=_level_ctx(fa_user), roles=ROLES,
                                active_tier=None, active_topic="", active_type=""), 404
-    start_mission(fa_user["id"], mission["id"])
+    # aca-int-04: this GET used to record a mission start, bumping `attempts` and
+    # forcing status back to 'in_progress' — so merely opening a page counted as
+    # an attempt, and revisiting a completed mission withdrew the completion.
+    # Reading a page is not progress; progress is recorded when work is submitted.
+    # Tests assert no progress-mutating call appears in this function.
     progress = get_mission_progress(fa_user["id"], mission["id"])
     step_states = {}
     for step in mission.get("steps", []):
         sp = get_step_progress(fa_user["id"], step["id"])
         step_states[step["id"]] = sp["status"] if sp else "pending"
     level_ctx = _level_ctx(fa_user)
+    from .grading import client_safe_steps
+
+    # aca-ux-04: locked-but-readable. A learner may read a mission from a tier they
+    # have not unlocked — curiosity is not something to punish — but submitting it
+    # earns nothing (enforced in api_step_submit, not just hidden in the UI).
+    tier_info = tier_progress(fa_user["id"])
+    mission_tier = int(mission.get("tier") or 1)
+    tier_state = tier_info.get(mission_tier, {})
+    tier_locked = not tier_state.get("unlocked", True)
+    gating_tier = tier_state.get("gating_tier")
+
     return render_template(
         "forge_academy/mission.html",
         fa_user=fa_user,
         mission=mission,
+        tier_locked=tier_locked,
+        tier_state=tier_state,
+        gating_state=tier_info.get(gating_tier, {}) if gating_tier else {},
+        # aca-int-02/03: the template serialises this into page JavaScript. The
+        # raw step rows carry the grading test and the answer key, so only the
+        # sanitised projection may go into the page.
+        steps_client=client_safe_steps(mission.get("steps", [])),
         progress=progress,
         step_states=step_states,
         level_ctx=level_ctx,
@@ -350,11 +436,15 @@ def arena():
 def workflow_builder_page():
     _ensure_init()
     fa_user = _fa_user()
-    patterns = list_patterns()
+    # Distinguish "no patterns configured" from "pattern source unavailable"
+    # so the page cannot present a broken dependency as an empty catalogue.
+    pattern_state = patterns_status()
     return render_template(
         "forge_academy/workflow_builder.html",
         fa_user=fa_user,
-        patterns=patterns,
+        patterns=pattern_state["patterns"],
+        patterns_available=pattern_state["available"],
+        patterns_error=pattern_state["error"],
         level_ctx=_level_ctx(fa_user) if fa_user else {},
     )
 
@@ -370,7 +460,14 @@ def api_user_setup():
     email = _fa_email()
     display_name = data.get("display_name", email.split("@")[0])
     role = data.get("role", "devops")
-    fa_user = get_or_create_user(email, display_name=display_name)
+    # tenant_id MUST match what _fa_user() reads with, or setup writes a row in
+    # one tenant while every page reads another — the saved profile appears to
+    # vanish and an orphan row accumulates (fga-fix-03).
+    fa_user = get_or_create_user(email, display_name=display_name,
+                                 tenant_id=_fa_tenant_id())
+    # get_or_create_user only applies display_name on INSERT; persist it
+    # explicitly so a returning user's change is not dropped.
+    update_user_display_name(fa_user["id"], display_name)
     if role:
         update_user_role(fa_user["id"], role)
     wizard_result = {}
@@ -392,12 +489,22 @@ def api_progress():
 
 @bp.route("/api/academy/code/run", methods=["POST"])
 def api_code_run():
-    from .code_runner import run_code
+    """Run a learner's code against the step's OWN stored test.
+
+    aca-int-02: this used to take `test_code` straight from the request body,
+    which mission.html helpfully posted back from the step payload — so the
+    person being graded supplied the test. The step id is now the only thing the
+    caller controls; the test comes from test_code_path on the step row.
+    """
+    from .grading import run_step_code
+
     data = request.get_json(silent=True) or {}
     code = data.get("code", "")
-    test_code = data.get("test_code", "")
-    result = run_code(code, test_code=test_code)
-    return jsonify(result)
+    step_id = data.get("step_id")
+    if not step_id:
+        return jsonify({"error": "step_id required", "passed": False,
+                        "stdout": "", "stderr": "step_id required"}), 400
+    return jsonify(run_step_code(step_id, code))
 
 
 @bp.route("/api/academy/step/submit", methods=["POST"])
@@ -405,61 +512,125 @@ def api_step_submit():
     fa_user = _fa_user()
     if not fa_user:
         return jsonify({"error": "not configured"}), 400
+    from .grading import grade_step, mission_is_complete, mission_xp_reward
+
     data = request.get_json(silent=True) or {}
     step_id = data.get("step_id")
-    mission_id = data.get("mission_id")
-    submission = data.get("submission", "")
-    hints_used = int(data.get("hints_used", 0))
-    elapsed_s = data.get("elapsed_seconds")
-    passed = bool(data.get("passed", True))
-
     if not step_id:
         return jsonify({"error": "step_id required"}), 400
 
-    complete_step(fa_user["id"], step_id, submission=submission,
-                  passed=passed, hints_used=hints_used)
+    # aca-int-01: the ONLY things the client may influence are which step it is
+    # answering and what it submitted. The verdict, the payout and whether the
+    # mission is finished are all derived server-side. `passed`, `score`,
+    # `base_xp`, `mission_xp`, `mission_complete`, `mission_id`, `step_type` and
+    # `skill_tag` used to be read from this body; every one of them was forgeable.
+    submission = data.get("submission", "")
+    chosen_option = data.get("chosen_option")
+    elapsed_s = data.get("elapsed_seconds")
+    # aca-int-06: the hint count comes from fa_step_progress, where the hint route
+    # recorded it. It used to be read from this body, and the browser zeroed its own
+    # counter on every step navigation - so hints were laundered by clicking away and
+    # back, which also restored the 1.5x "perfect" bonus and no_hints_needed.
+    stored_hints_used = int(
+        (get_step_progress(fa_user["id"], step_id) or {}).get("hints_used", 0) or 0
+    )
+    hints_used = max(0, stored_hints_used)
+
+    verdict = grade_step(step_id, submission, chosen_option=chosen_option)
+    step = verdict.get("step")
+    if step is None:
+        return jsonify({"error": "unknown step", "passed": False}), 404
+
+    mission_id = step["mission_id"]
+    step_type = (step.get("step_type") or "coding").strip().lower()
+    passed = verdict["passed"]
+
+    # aca-ux-04: the tier gate is enforced HERE, where credit is granted, not only
+    # in the template. A locked mission stays readable and runnable; it just cannot
+    # pay out or record completion.
+    _m = get_mission_by_id(mission_id)
+    if _m and not is_tier_unlocked(fa_user["id"], int(_m.get("tier") or 1)):
+        return jsonify({
+            "ok": True,
+            "passed": False,
+            "assessed": verdict["assessed"],
+            "status": "locked",
+            "reason": "tier_locked",
+            "stderr": (
+                f"Tier {_m.get('tier')} is not unlocked yet, so this step cannot be "
+                "credited. You can keep reading and experimenting."
+            ),
+        })
+
+    # aca-int-04: submitting work is what puts a mission in progress and what
+    # counts as an attempt — not opening its page.
+    record_mission_attempt(fa_user["id"], mission_id)
+    status = complete_step(fa_user["id"], step_id, submission=submission,
+                           passed=passed, hints_used=hints_used)
+
+    resp = {
+        "ok": True,
+        "passed": passed,
+        "assessed": verdict["assessed"],
+        "status": status,
+        "reason": verdict.get("reason", ""),
+        "stdout": verdict.get("stdout", ""),
+        "stderr": verdict.get("stderr", ""),
+        "explanation": verdict.get("explanation", ""),
+        "correct_option": verdict.get("correct_option"),
+    }
+    if not passed:
+        # No credit for a failed or ungradeable submission. The learner keeps the
+        # feedback and can try again.
+        return jsonify(resp)
 
     summary = user_progress_summary(fa_user["id"])
-    base_xp = int(data.get("base_xp", 50))
-    step_type = data.get("step_type", "coding")
-    xp_event = award_step_xp(fa_user["id"], base_xp, hints_used=hints_used,
-                              elapsed_seconds=elapsed_s, step_type=step_type)
+    xp_event = award_step_xp(fa_user["id"], verdict["xp_base"], hints_used=hints_used,
+                              elapsed_seconds=elapsed_s, step_type=step_type,
+                              step_id=step_id)
     step_ach = check_step_achievements(fa_user["id"], summary.get("steps_completed", 0))
     xp_event["achievements"] = xp_event.get("achievements", []) + step_ach
+    resp["xp_event"] = xp_event
 
     email = _fa_email()
-    skill_tag = data.get("skill_tag", "")
+    skill_tag = (step.get("skill_tag") or "").strip()
     if skill_tag:
         record_skill_usage(email, skill_tag)
         unlock_skill(fa_user["id"], skill_tag)
 
-    mission_complete_data = {}
-    if mission_id and data.get("mission_complete"):
-        complete_mission(fa_user["id"], mission_id, score=int(data.get("score", 100)))
-        mission_xp_event = award_mission_xp(fa_user["id"], int(data.get("mission_xp", 100)),
-                                             perfect=(hints_used == 0))
-        mission_ach = check_mission_achievements(fa_user["id"],
-                                                  data.get("mission_slug", ""), hints_used)
+    # aca-int-01: completion is derived from recorded step progress, not from the
+    # client's "this was the last step".
+    if mission_is_complete(fa_user["id"], mission_id):
+        complete_mission(fa_user["id"], mission_id, score=100)
+        mission_xp_event = award_mission_xp(fa_user["id"], mission_xp_reward(mission_id),
+                                             perfect=(hints_used == 0),
+                                             mission_id=mission_id)
+        mission = get_mission_by_id(mission_id)
+        mission_slug = (mission or {}).get("slug", "")
+        mission_ach = check_mission_achievements(fa_user["id"], mission_slug, hints_used)
         advance_learning_track(email)
-        mission_complete_data = {
-            "mission_xp": mission_xp_event,
-            "mission_achievements": mission_ach,
-        }
+        resp["mission_complete"] = True
+        resp["mission_xp"] = mission_xp_event
+        resp["mission_achievements"] = mission_ach
         # Record competency ontology edges
         try:
-            mission = get_mission(data.get("mission_slug", "")) if data.get("mission_slug") else None
             if mission:
                 from .ontology import get_tier_competency
                 record_user_competency(
                     user_id=fa_user["id"],
                     competency_class=get_tier_competency(mission.get("tier", 1)),
                     source_mission_id=mission_id,
-                    evidence={"mission_slug": mission["slug"], "score": data.get("score", 100)},
+                    evidence={"mission_slug": mission_slug, "score": 100},
                 )
         except Exception:
-            pass
+            # fga-fix-05 precedent: a swallowed warning never reaches a health
+            # check. Competency recording has never produced a row in production
+            # (aca-trn-02) — log loudly enough to find out why.
+            import logging
+            logging.getLogger(__name__).exception(
+                "competency recording failed for mission %s", mission_id)
 
-    return jsonify({"ok": True, "xp_event": xp_event, **mission_complete_data})
+    return jsonify(resp)
 
 
 @bp.route("/api/academy/step/design-assess", methods=["POST"])
@@ -509,7 +680,8 @@ def api_step_design_assess():
     if result.get("passed"):
         complete_step(fa_user["id"], step_id, submission=design_id, passed=True, hints_used=hints_used)
         summary = user_progress_summary(fa_user["id"])
-        xp_event = award_step_xp(fa_user["id"], base_xp, hints_used=hints_used, step_type="design")
+        xp_event = award_step_xp(fa_user["id"], base_xp, hints_used=hints_used,
+                                  step_type="design", step_id=step_id)
         step_ach = check_step_achievements(fa_user["id"], summary.get("steps_completed", 0))
         xp_event["achievements"] = xp_event.get("achievements", []) + step_ach
 
@@ -524,6 +696,7 @@ def api_step_design_assess():
         if mission_id and data.get("mission_complete"):
             complete_mission(fa_user["id"], mission_id, score=result.get("score", 100))
             mission_xp_event = award_mission_xp(fa_user["id"], int(data.get("mission_xp", 400)),
+                                                mission_id=mission_id,
                                                  perfect=(hints_used == 0))
             mission_ach = check_mission_achievements(
                 fa_user["id"], data.get("mission_slug", ""), hints_used,
@@ -568,8 +741,53 @@ def api_coach_hint():
     # coach hint is safe to return as HTML — <script>/inline handlers render inert.
     from .content_loader import _md_to_html
     hint_html = _md_to_html(hint)
-    update_user_xp(fa_user["id"], -10)
-    return jsonify({"hint": hint_html, "xp_cost": 10, "chain_mode": chain_mode})
+
+    # aca-int-06 / aca-ux-02: the hint used to be charged TWICE - an instant XP
+    # deduction here, plus the submit path separately applying XP_MULT_WITH_HINTS
+    # (0.75 instead of 1.5) minus XP_HINT_PENALTY per hint. On a 50 XP step one hint
+    # cost 10 up front and then paid 27 instead of 75: 58 XP total, against a button
+    # quoting only the flat penalty. The submit-time multiplier is now the single
+    # pricing mechanism - it is what constants.py documents, and it does not charge
+    # a learner who reads a hint and never submits.
+    #
+    # The count is recorded server-side because it used to live only in the browser,
+    # where goStep() reset it to 0 on every sidebar click.
+    from .db import record_hint
+    from .gamification import projected_step_xp
+    from .grading import _load_step
+
+    step_id = data.get("step_id")
+    hints_used = 0
+    projected = None
+    step = _load_step(step_id) if step_id else None
+    # aca-hyg-04: honour hint_allowed server-side. Otherwise the column is decoration
+    # in the same way tier_unlocked was before aca-ux-04 — a flag nothing enforces.
+    if step is not None and not _step_allows_hint(step):
+        return jsonify({
+            "hint": "",
+            "error": "hints_not_available",
+            "detail": "This step type does not offer hints.",
+            "hints_used": 0,
+            "projected": None,
+        }), 400
+    if step is not None:
+        hints_used = record_hint(fa_user["id"], step["id"])
+        base_xp = int(step.get("xp_partial") or 0)
+        step_type = (step.get("step_type") or "coding").strip().lower()
+        projected = {
+            "xp_if_you_stop_now": projected_step_xp(
+                base_xp, hints_used=hints_used, step_type=step_type),
+            "xp_without_hints": projected_step_xp(
+                base_xp, hints_used=0, step_type=step_type),
+            "hints_used": hints_used,
+        }
+
+    return jsonify({
+        "hint": hint_html,
+        "chain_mode": chain_mode,
+        "hints_used": hints_used,
+        "projected": projected,
+    })
 
 
 @bp.route("/api/academy/guild/create", methods=["POST"])
@@ -582,10 +800,14 @@ def api_guild_create():
     description = data.get("description", "")
     if not name:
         return jsonify({"error": "name required"}), 400
-    invite_code = secrets.token_urlsafe(6)
     guild = create_guild(name=name, description=description,
-                         invite_code=invite_code, created_by=fa_user["id"])
-    return jsonify({"ok": True, "guild": guild, "invite_code": invite_code})
+                         invite_code=secrets.token_urlsafe(6),
+                         created_by=fa_user["id"])
+    # Report the code that was actually STORED, not the one we proposed —
+    # create_guild uppercases it to match join_guild's lookup, so echoing the
+    # local variable would hand the user an invite that never resolves.
+    return jsonify({"ok": True, "guild": guild,
+                    "invite_code": guild.get("invite_code")})
 
 
 @bp.route("/api/academy/guild/join", methods=["POST"])
@@ -602,7 +824,38 @@ def api_guild_join():
 @bp.route("/api/academy/guild/<int:guild_id>")
 def api_guild_stats(guild_id):
     stats = get_guild_stats(guild_id)
+    if stats is None:
+        # aca-hyg-03: used to 200 with an empty member list, so a client could not
+        # tell a missing guild from an empty one.
+        return jsonify({"error": "guild not found", "guild_id": guild_id}), 404
     return jsonify(stats)
+
+
+# Fields a learner's browser legitimately needs about a mission. Everything else in
+# fa_missions is internal bookkeeping (aca-hyg-03).
+_LEARNER_MISSION_FIELDS = (
+    "id", "slug", "title", "tagline", "tier", "topic", "mission_type",
+    "xp_reward", "difficulty", "estimated_minutes", "is_available",
+)
+
+
+def _learner_mission_view(mission: dict) -> dict:
+    """Project a mission row down to the fields a client may see."""
+    return {k: mission.get(k) for k in _LEARNER_MISSION_FIELDS if k in mission}
+
+
+def _step_allows_hint(step: dict) -> bool:
+    """Whether this step permits a coach hint (aca-hyg-04).
+
+    Prefers the stored hint_allowed column and falls back to the step type, so rows
+    seeded before the column meant anything still behave sensibly.
+    """
+    from .content_loader import hint_allowed_for
+
+    stored = step.get("hint_allowed")
+    if stored is not None:
+        return bool(stored)
+    return hint_allowed_for(step.get("step_type"))
 
 
 @bp.route("/api/academy/leaderboard")
@@ -627,7 +880,7 @@ def api_challenge_enter():
     conn = get_connection()
     conn.execute(
         "INSERT OR REPLACE INTO fa_challenge_entries "
-        "(challenge_id,user_id,submission,score,submitted_at) VALUES (?,?,?,?,datetime('now'))",
+        "(challenge_id,user_id,submission,score,submitted_at) VALUES (%s,%s,%s,%s,datetime('now'))",
         (challenge_id, fa_user["id"], submission, 0),
     )
     conn.commit()
@@ -649,7 +902,7 @@ def api_workflow_submit():
         conn = get_connection()
         conn.execute(
             "INSERT INTO fa_workflow_submissions "
-            "(user_id,design_id,score,ai_feedback,tier,submitted_at) VALUES (?,?,?,?,?,datetime('now'))",
+            "(user_id,design_id,score,ai_feedback,tier,submitted_at) VALUES (%s,%s,%s,%s,%s,datetime('now'))",
             (fa_user["id"], result.get("design_id", ""), 80, result.get("goal_md", "")[:500], 1),
         )
         conn.commit()
@@ -884,7 +1137,7 @@ def _recommend_next_missions(user_id: int, role: str, limit: int = 3) -> list[di
     try:
         from tools.db.storage import get_connection
         rows = get_connection().execute(
-            "SELECT mission_id FROM fa_mission_progress WHERE user_id=? AND status='completed'",
+            "SELECT mission_id FROM fa_mission_progress WHERE user_id=%s AND status='completed'",
             (user_id,),
         ).fetchall()
         completed_ids = {r[0] for r in rows}
@@ -897,7 +1150,7 @@ def _recommend_next_missions(user_id: int, role: str, limit: int = 3) -> list[di
     try:
         from tools.db.storage import get_connection
         rows = get_connection().execute(
-            "SELECT mission_id FROM fa_mission_progress WHERE user_id=? AND status='in_progress'",
+            "SELECT mission_id FROM fa_mission_progress WHERE user_id=%s AND status='in_progress'",
             (user_id,),
         ).fetchall()
         in_prog_ids = {r[0] for r in rows}
@@ -923,7 +1176,13 @@ def api_learning_path():
     role = fa_user.get("role", "")
     limit = min(int(request.args.get("limit", 5)), 10)
     recommendations = _recommend_next_missions(fa_user["id"], role, limit=limit)
-    return jsonify({"recommendations": recommendations, "role": role})
+    # aca-hyg-03: this used to serialise raw mission rows, leaking
+    # domain_classes_json, is_active, order_idx, ontology_id, created_at and the rest
+    # of the internal schema to the browser.
+    return jsonify({
+        "recommendations": [_learner_mission_view(m) for m in recommendations],
+        "role": role,
+    })
 
 
 # Alias for app.py _APP_DEFS registration

@@ -59,6 +59,21 @@ except ImportError:
     _yaml = None  # type: ignore[assignment]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# CHECK 8 imports tools.installer.prebuild_bootstrap. Running this file as a
+# script puts tools/installer/ on sys.path[0] — not the repo root — so that
+# import raised ModuleNotFoundError unless PYTHONPATH already carried the root,
+# and the check reported itself as a hard FAIL:
+#
+#   [FAIL] bootstrap_freshness
+#          error: could not import prebuild_bootstrap: No module named 'tools'
+#
+# CI sets PYTHONPATH, so this only bit the documented local invocation and
+# build_release.py, where it blocked the release at the validate step. Resolved
+# from __file__ rather than cwd so it holds from a worktree or any directory.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 PKG_DIR = REPO_ROOT / "icdev"
 SYNC_SCRIPT = REPO_ROOT / "tools" / "installer" / "sync_package_tree.py"
 PYPROJECT = REPO_ROOT / "pyproject.toml"

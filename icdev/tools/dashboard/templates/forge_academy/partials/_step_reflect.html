@@ -11,10 +11,15 @@
     {% if schema.question %}
     <p style="font-size:.95rem;font-weight:600;margin:0 0 1.2rem;line-height:1.5;">{{ schema.question }}</p>
     <div id="choices-{{ sidx }}">
+      {# aca-int-03: each choice used to carry the answer key as a data attribute,
+         and the same boolean went into the onclick handler, so the right answer was
+         readable in page source before answering. Only the option INDEX is emitted
+         now; the server compares it against the stored schema and returns the
+         verdict. Keep it that way — tests assert the key never appears here. #}
       {% for opt in schema.options | default([]) %}
       <label style="display:flex;align-items:flex-start;gap:.7rem;padding:.7rem .9rem;border:1px solid var(--fa-border);border-radius:8px;cursor:pointer;margin-bottom:.5rem;transition:all .15s;"
-             class="reflect-choice" data-correct="{{ opt.correct | default(false) | lower }}"
-             onclick="checkAnswer({{ sidx }}, this, {{ opt.correct | default(false) | lower }})">
+             class="reflect-choice" data-option-idx="{{ loop.index0 }}"
+             onclick="checkAnswer({{ sidx }}, this, {{ loop.index0 }})">
         <span style="width:18px;height:18px;border-radius:50%;border:1px solid var(--fa-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.65rem;margin-top:.1rem;" class="radio-dot"></span>
         <span style="font-size:.88rem;">{{ opt.text }}</span>
       </label>
@@ -38,47 +43,64 @@
 </div>
 
 <script>
-async function checkAnswer(idx, el, isCorrect) {
+// The server decides. This used to compare a boolean the template had already
+// leaked, and — whichever way it went — called submitStep(..., true), so a wrong
+// answer earned full XP (aca-int-03/05).
+async function checkAnswer(idx, el, optionIdx) {
   const choices = document.querySelectorAll('#choices-' + idx + ' .reflect-choice');
   choices.forEach(c => c.style.pointerEvents = 'none');
   const feedback = document.getElementById('reflect-feedback-' + idx);
-  if (isCorrect) {
+  feedback.style.display = 'block';
+  feedback.textContent = 'Checking…';
+
+  const d = await submitStep(idx, 'reflect', optionIdx);
+  if (!d) {
+    feedback.textContent = 'Could not record your answer — check your connection and retry.';
+    choices.forEach(c => c.style.pointerEvents = '');
+    return;
+  }
+
+  const dot = el.querySelector('.radio-dot');
+  if (d.passed) {
     el.style.borderColor = 'var(--fa-green)';
     el.style.background = 'rgba(0,255,136,.08)';
-    el.querySelector('.radio-dot').textContent = '✓';
-    el.querySelector('.radio-dot').style.borderColor = 'var(--fa-green)';
-    el.querySelector('.radio-dot').style.color = 'var(--fa-green)';
-    feedback.style.display = 'block';
+    dot.textContent = '✓';
+    dot.style.borderColor = 'var(--fa-green)';
+    dot.style.color = 'var(--fa-green)';
     feedback.style.background = 'rgba(0,255,136,.06)';
     feedback.style.border = '1px solid rgba(0,255,136,.25)';
     feedback.style.color = 'var(--fa-green)';
-    feedback.textContent = '✓ Correct. +' + (STEPS[idx].xp_partial || 50) * 1.25 + ' XP (first try bonus)';
-    await submitStep(idx, 'correct', true);
-    document.getElementById('next-btn-' + idx).style.display = 'inline-block';
+    const xp = (d.xp_event && d.xp_event.xp_earned) || 0;
+    feedback.textContent = '✓ Correct.' + (xp ? ' +' + xp + ' XP' : '');
   } else {
     el.style.borderColor = '#FF2D55';
     el.style.background = 'rgba(255,45,85,.06)';
-    el.querySelector('.radio-dot').textContent = '✗';
-    el.querySelector('.radio-dot').style.borderColor = '#FF2D55';
-    el.querySelector('.radio-dot').style.color = '#ff6b6b';
-    const correct = document.querySelector('#choices-' + idx + ' .reflect-choice[data-correct="true"]');
-    if (correct) {
-      correct.style.borderColor = 'var(--fa-green)';
-      correct.style.background = 'rgba(0,255,136,.05)';
+    dot.textContent = '✗';
+    dot.style.borderColor = '#FF2D55';
+    dot.style.color = '#ff6b6b';
+    // The server tells us which option was right, only after the attempt.
+    if (d.correct_option !== null && d.correct_option !== undefined) {
+      const right = document.querySelector(
+        '#choices-' + idx + ' .reflect-choice[data-option-idx="' + d.correct_option + '"]');
+      if (right) {
+        right.style.borderColor = 'var(--fa-green)';
+        right.style.background = 'rgba(0,255,136,.05)';
+      }
     }
-    feedback.style.display = 'block';
     feedback.style.background = 'rgba(255,45,85,.06)';
     feedback.style.border = '1px solid rgba(255,45,85,.2)';
     feedback.style.color = '#ff9090';
-    const step = STEPS[idx];
-    const explanation = (step.config_schema && step.config_schema.explanation) || 'Review the concept and try again next time.';
-    feedback.textContent = '✗ Not quite. ' + explanation;
-    await submitStep(idx, 'incorrect', true);
-    document.getElementById('next-btn-' + idx).style.display = 'inline-block';
+    feedback.textContent = '✗ Not quite. No XP for this step. '
+      + (d.explanation || 'Review the concept and try again.');
   }
+  // Forward is always available — a wrong answer is recorded, not a dead end.
+  document.getElementById('next-btn-' + idx).style.display = 'inline-block';
 }
+
+// A reflect step with no question is a prompt to think, not a test. The server
+// classifies it as an acknowledgement (assessed: false).
 async function autoPassReflect(idx) {
-  await submitStep(idx, 'reflected', true);
+  await submitStep(idx, 'reflected');
   document.getElementById('next-btn-' + idx).style.display = 'inline-block';
 }
 </script>

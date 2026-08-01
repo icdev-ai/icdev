@@ -24,6 +24,7 @@ Usage examples:
 
 import argparse
 import json
+import os
 import secrets
 import sys
 from datetime import datetime, timezone
@@ -106,7 +107,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _record_manual_transition(conn, task_id: str, from_status, to_status: str) -> None:
+def _record_manual_transition(conn, task_id: str, from_status, to_status: str,
+                              reason: str = "") -> None:
     """Append a 'manual' row to kanban_status_transitions (best-effort).
 
     The scheduler's stale-reaper (tools/genesis/reflexes/kanban.py::
@@ -132,19 +134,73 @@ def _record_manual_transition(conn, task_id: str, from_status, to_status: str) -
             (
                 "kst-" + secrets.token_hex(6),
                 task_id, from_status, to_status, "manual",
-                "tools/kanban/cli.py --set-status", _now(),
+                reason or "tools/kanban/cli.py --set-status", _now(),
             ),
         )
     except Exception:
         pass
 
 
-def cmd_set_status(task_ids: list, status: str, json_out: bool) -> int:
+def _refuses_done(task_id: str) -> str:
+    """Reason this task may not be marked done, or '' if it may.
+
+    The runner (``reflexes/kanban.py::_move_task``) and the dashboard move API
+    both verify that a task's work is actually on ``origin/<default>`` before
+    allowing 'done'. This CLI did not, and it is the command dispatched worker
+    sessions are told to use to complete their own tasks (CLAUDE.md) — so a
+    worker that opened a PR and self-reported reached 'done' with the work
+    still unmerged. That is the "board says done but it is not on main" bug.
+
+    Same primitive, same FAIL-OPEN contract: only a positive "there is work for
+    this task that is not on origin" signal refuses. Unreachable git, an absent
+    branch, or an import error must never wedge completions.
+    """
+    if os.environ.get("KANBAN_REQUIRE_MERGE_FOR_DONE", "1").strip().lower() in ("0", "false", "no"):
+        return ""
+    try:
+        from tools.genesis.reflexes.kanban import _branch_has_unmerged_commits
+    except Exception:
+        return ""
+    try:
+        if _branch_has_unmerged_commits(task_id):
+            return (
+                f"{task_id}: work is not on origin yet — a branch for this task has "
+                f"commits that have not merged. Merge the PR first, or pass "
+                f"--force-done --reason '<why>' to override (audit-logged)."
+            )
+    except Exception:
+        return ""
+    return ""
+
+
+def cmd_set_status(
+    task_ids: list,
+    status: str,
+    json_out: bool,
+    force_done: bool = False,
+    reason: str = "",
+) -> int:
     if status not in VALID_STATUSES:
         print(
             f"ERROR: invalid status '{status}'. Valid: {', '.join(sorted(VALID_STATUSES))}",
             file=sys.stderr,
         )
+        return 1
+
+    # Merge-verify before writing anything: refuse the whole batch rather than
+    # marking some tasks done and rejecting others halfway through.
+    if status == "done" and not force_done:
+        refusals = [r for r in (_refuses_done(t) for t in task_ids) if r]
+        if refusals:
+            if json_out:
+                print(json.dumps(
+                    {"error": "refused_done_unmerged", "refusals": refusals}, indent=2))
+            else:
+                for r in refusals:
+                    print(f"  REFUSED: {r}", file=sys.stderr)
+            return 1
+    if status == "done" and force_done and not reason.strip():
+        print("ERROR: --force-done requires --reason '<why>'", file=sys.stderr)
         return 1
 
     now = _now()
@@ -167,7 +223,11 @@ def cmd_set_status(task_ids: list, status: str, json_out: bool) -> int:
                     (status, now, tid),
                 )
             if prior_row:
-                _record_manual_transition(conn, tid, prior_status, status)
+                _record_manual_transition(
+                    conn, tid, prior_status, status,
+                    reason=(f"FORCED done (merge check overridden): {reason}"
+                            if (status == 'done' and force_done) else ""),
+                )
             row = conn.execute(
                 "SELECT id, title, status FROM kanban_tasks WHERE id = %s", (tid,)
             ).fetchone()
@@ -463,6 +523,11 @@ def main():
     )
 
     # --show <id>
+    parser.add_argument("--force-done", dest="force_done", action="store_true",
+                        help="Override the merge check on --set-status done "
+                             "(requires --reason; audit-logged)")
+    parser.add_argument("--reason", metavar="TEXT",
+                        help="Justification recorded with --force-done")
     parser.add_argument("--show", metavar="TASK_ID", help="Show details of one task")
 
     # --pipeline <id> — delivery-pipeline (gate) status; CLI mirror of the dashboard stepper
@@ -516,7 +581,8 @@ def main():
             parser.error("--set-status requires at least one task ID and a status.")
         status = tokens[-1]
         task_ids = tokens[:-1]
-        sys.exit(cmd_set_status(task_ids, status, args.json_out))
+        sys.exit(cmd_set_status(task_ids, status, args.json_out,
+                            force_done=args.force_done, reason=args.reason or ''))
 
     elif args.show:
         sys.exit(cmd_show(args.show, args.json_out))

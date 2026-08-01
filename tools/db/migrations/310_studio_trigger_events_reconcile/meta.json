@@ -1,0 +1,7 @@
+{
+  "id": "310_studio_trigger_events_reconcile",
+  "description": "Reconcile a live studio_trigger_events table that matches no schema source in the tree. On the primary PostgreSQL database the table carried match_reason/evaluated_at instead of reason/received_at and was missing the six dwo-evt-02 dispatch columns, so every audit write from log_trigger_event() failed and was swallowed — the trigger audit trail, which exists to answer 'why did this run start', recorded nothing at all. CREATE TABLE IF NOT EXISTS could never repair it because the table already existed",
+  "created": "2026-07-29",
+  "targets": ["icdev.db"],
+  "adrs": []
+}

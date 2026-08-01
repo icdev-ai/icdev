@@ -985,7 +985,42 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 - **Residual risk (accepted, stated plainly):** on a multi-user host, a co-resident local process could, within the session's short lifetime, connect to the ephemeral loopback port and drive the throwaway profile. The mitigation is that the profile holds nothing worth stealing and the port is short-lived and unpredictable; `--remote-debugging-pipe` (fd-based, no TCP listener at all) is the documented future hardening that removes the port entirely.
 - **Revisit if:** the listener is ever bound to a routable address, the debug port is made fixed/predictable or long-lived, a persistent (non-temp) profile is used for a debugging session, or CDP is exposed to a caller as anything other than an internal transport beneath `GuardedDriver`.
 
-### Gap 41 — Reproduce-or-drop finding replay (`tools/security/reproduction_validator.py`)
+### Gap 41 — Generic MCP tool executor for workflow steps (`tools/studio/executors/mcp_executor.py`)
+
+**Module:** `tools/studio/executors/mcp_executor.py` (+ `icdev/` mirror) — dispatches any entry of `tools/mcp/tool_registry.py::TOOL_REGISTRY` as a Studio workflow step, so 455 registered tools become reachable without a hand-written executor each (card `dwo-`, task dwo-mcp-01).
+
+**Ingress path:** A workflow step supplies two strings — `--tool <name>` and `--params '<json>'` — that originate from a Studio workflow template or the DAG editor, i.e. from an **authenticated Studio author**, not from an anonymous request or an ingested document. The executor then `importlib.import_module()`s a module path and `getattr()`s a handler, and calls it with the parsed params.
+
+- **Decision:** **trusted-first-party** (import target). Authorization of *which* tools a step may call is the default-deny allowlist landed by dwo-mcp-02-d1/d2; *which caller* may call them is the IL/RBAC check landed by dwo-mcp-02-d3.
+- **Rationale:** The security-relevant property is that **no user-supplied string ever reaches `importlib`**. `--tool` is used only as a dictionary key into `TOOL_REGISTRY`; a miss raises `LookupError` and exits 1. The `module`/`handler` strings actually passed to `importlib.import_module()`/`getattr()` come exclusively from that repo-authored registry, so the reachable import set is a fixed, committed allowlist of 455 entries — not an open namespace. This is the identical resolution path `tools/mcp/unified_server.py::_resolve_handler` already uses for the same registry; this executor adds no import capability that the MCP gateway did not already expose. Params are `json.loads`-parsed only (never `eval`), and are schema-checked before dispatch. There is no `exec`, no `subprocess`, and no shell.
+- **Guardrails:**
+  - **Registry-keyed dispatch** — `resolve_entry()` refuses anything not in `TOOL_REGISTRY`; MCP *resources* are refused explicitly rather than silently dispatched.
+  - **Schema gate before dispatch** — params are validated against the entry's own `input_schema` (`jsonschema.Draft7Validator`) and the handler is **not called** if validation fails; `test_run_rejects_invalid_params_before_dispatch` asserts non-invocation.
+  - **Object-only params** — `parse_params()` refuses non-JSON and refuses any JSON that is not an object, so a handler always receives a `dict`.
+  - **Fails the step, never launders the error** — an unknown tool, invalid params, an unimportable handler, or a raising handler all exit 1, so `workflow_runner` marks the step failed. This deliberately diverges from the MCP protocol layer, which returns a handler exception as a *successful* call with `{"error": ...}` in the payload.
+  - **Default-deny allowlist before lookup** — `check_tool_allowed()` refuses any tool absent from `mcp_workflow_tools.allowed` (gate MCP-WF-001) *before* the registry is touched, so a refused tool is never imported. A missing or non-default-deny policy refuses everything.
+  - **Caller IL/RBAC before dispatch** — `check_caller_authorized()` refuses a caller below the tool's `min_il` or missing a required role, reading both from `args/component_registry.yaml` via the component that owns the handler's module. Runs after lookup (it needs the module) but before params and dispatch; `test_run_refuses_before_the_handler_is_called` asserts non-invocation.
+  - **Regression test** — `tests/studio/test_mcp_executor.py` (39 tests) covers registry lookup, resource rejection, each validation failure mode, handler-exception propagation, the allowlist gate, and the CLI exit-code contract; `tests/studio/test_mcp_executor_rbac.py` (34 tests) covers caller resolution and the IL/role refusals.
+- **Revisit if:** the tool name or module path ever becomes derivable from tenant/end-user content rather than an authenticated template author; the registry lookup is relaxed to accept an arbitrary dotted module path; or the `mcp_workflow_tools` allowlist is removed or made default-allow → re-decide as **sandboxed** (`tools/security/sandbox_executor.py`).
+
+### Gap 42 — SAML ACS response parsing (`tools/auth/saml.py`)
+
+**Module:** `tools/auth/saml.py` (`process_acs_response()`, + `icdev/` mirror); ingress at `tools/auth/blueprint.py` route `POST /auth/saml/<provider_id>/acs` (task aca-hyg-06-d2).
+
+**Ingress path:** An identity provider (or anyone who can reach the ACS route) POSTs a base64-encoded `SAMLResponse` form field. `process_acs_response()` base64-decodes it and parses the resulting XML to extract `NameID` and `Attribute` values, which are then persisted to `sso_sessions`. This is **unauthenticated, remote-attacker-reachable XML** — the ACS endpoint must accept the POST before any session exists.
+
+- **Decision:** **bypass-documented** (hardened parser, no code-execution surface)
+- **Rationale:** Parsing goes through `defusedxml.ElementTree.fromstring` (already a project dependency, `defusedxml>=0.7` in both `requirements.txt` and `pyproject.toml`), which forbids internal entity expansion (billion-laughs DoS), external entity resolution (XXE / local file disclosure), and external DTD retrieval (SSRF). Previously this call site used stdlib `xml.etree.ElementTree.fromstring`, which permits internal entity expansion — Bandit B314. The stdlib `ET` import is retained *only* to BUILD the XML this module emits (`register_namespace`, `Element`, `SubElement`, `tostring` in `generate_sp_metadata`/`initiate_saml_login`) and is marked `# nosec B405` accordingly; no untrusted bytes reach it. Extraction is read-only tree traversal (`find`/`findall`) into parameterized SQL — no `eval()`, `exec()`, `subprocess`, or filesystem writes.
+- **Guardrails:**
+  - `defusedxml.ElementTree.fromstring` for all untrusted parsing; stdlib `ET` is construction-only.
+  - Both `ET.ParseError` (malformed XML) and `ValueError` (defusedxml's `EntitiesForbidden` / `DTDForbidden` / `ExternalReferenceForbidden`, which subclass `ValueError`) are caught and re-raised as a uniform `ValueError("Invalid SAMLResponse XML")`, so the parser's internals are never echoed to the caller.
+  - `tools/auth/blueprint.py::acs` catches that `ValueError` and returns HTTP 400 — a hostile payload is rejected without creating a session.
+  - Invalid base64 is rejected before the parser runs.
+  - `tests/test_ecr_sso.py` covers metadata parsing and benign ACS round-trips (16 tests).
+- **Revisit if:** parsing moves back to stdlib `xml.etree`/`minidom`/`lxml` without `resolve_entities=False`, the module starts resolving external references from assertion content, or a signature-verification path is added that shells out to an external XMLSec binary.
+- **Scope of this entry:** this decision covers the **parser's** attack surface only (entity expansion, external references, malformed input). SAML *protocol trust* — assertion signature verification and condition/audience validation — is a separate concern reviewed and tracked outside this document.
+
+### Gap 43 — Reproduce-or-drop finding replay (`tools/security/reproduction_validator.py`)
 
 **Module:** `tools/security/reproduction_validator.py` (oss-poc-01).
 

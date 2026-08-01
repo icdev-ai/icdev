@@ -220,7 +220,11 @@ def pg_db(tmp_path):
         );
     """)
     conn.commit()
-    yield conn, db_path
+    # Wrapped, not bare: tests patch get_connection with this object, and the
+    # reflexes it stands in for author %s for PostgreSQL. Translation is a
+    # no-op for the ? SQL this fixture's own setup uses, so wrapping is safe
+    # for every existing consumer.
+    yield _TranslatingConn(conn), db_path
     conn.close()
 
 
@@ -298,14 +302,19 @@ class TestDaemonModule:
         allowed, reason = tk.can_execute("yellow")
         assert allowed is True
 
+    # PGReflexState.load() and BaseDaemon.get_status() resolve get_connection from
+    # tools.daemon.base, not from the subclass module — patch both or the state load
+    # escapes the mock and hits the real DB.
+    @patch("tools.daemon.base.get_connection")
     @patch("tools.proposal_genesis.daemon.get_connection")
-    def test_daemon_get_status(self, mock_conn, pg_config):
+    def test_daemon_get_status(self, mock_conn, mock_base_conn, pg_config):
         from tools.proposal_genesis.daemon import ProposalGenesisDaemon
 
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_db.execute.return_value.fetchone.return_value = {"cnt": 0}
         mock_conn.return_value = mock_db
+        mock_base_conn.return_value = mock_db
         daemon = ProposalGenesisDaemon(pg_config)
         status = daemon.get_status()
         assert "daemon" in status
@@ -551,7 +560,12 @@ class TestProposalGenesisAPI:
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
@@ -1043,13 +1057,15 @@ class TestScoutReflex:
     @patch("tools.proposal_genesis.reflexes.scout._find_competitor_overlaps")
     @patch("tools.proposal_genesis.reflexes.scout._get_top_competitors")
     @patch("tools.proposal_genesis.reflexes.scout._scan_awards")
-    def test_run_air_gapped(self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store):
+    def test_run_air_gapped(
+        self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store, tmp_path
+    ):
         from tools.proposal_genesis.reflexes.scout import run
 
         mock_leaders.return_value = []
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 0, "win_loss_created": 0}
-        mock_store.return_value = "/tmp/brief.md"
+        mock_store.return_value = str(tmp_path / "brief.md")
 
         with patch.dict(os.environ, {"ICDEV_AIR_GAPPED": "true"}):
             result = run({}, None)
@@ -1063,14 +1079,16 @@ class TestScoutReflex:
     @patch("tools.proposal_genesis.reflexes.scout._find_competitor_overlaps")
     @patch("tools.proposal_genesis.reflexes.scout._get_top_competitors")
     @patch("tools.proposal_genesis.reflexes.scout._scan_awards")
-    def test_run_connected(self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store):
+    def test_run_connected(
+        self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store, tmp_path
+    ):
         from tools.proposal_genesis.reflexes.scout import run
 
         mock_scan.return_value = {"status": "ok", "new_awards": 3}
         mock_leaders.return_value = [{"rank": 1, "vendor": "X", "awards": 5}]
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 2, "win_loss_created": 2}
-        mock_store.return_value = "/tmp/brief.md"
+        mock_store.return_value = str(tmp_path / "brief.md")
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ICDEV_AIR_GAPPED", None)
@@ -1592,7 +1610,12 @@ class TestProposalGenesisPhaseCAPI:
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
@@ -1872,7 +1895,10 @@ class TestPublishReflex:
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
-            return c
+            # publish.py authors %s for PostgreSQL; without translation its
+            # INSERTs raise and the reflex's own except returns None, which
+            # reads here as "staging produced no post".
+            return _TranslatingConn(c)
 
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _stage_article
@@ -1899,7 +1925,10 @@ class TestPublishReflex:
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
-            return c
+            # publish.py authors %s for PostgreSQL; without translation its
+            # INSERTs raise and the reflex's own except returns None, which
+            # reads here as "staging produced no post".
+            return _TranslatingConn(c)
 
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _create_pulse_link
@@ -1922,7 +1951,10 @@ class TestPublishReflex:
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
-            return c
+            # publish.py authors %s for PostgreSQL; without translation its
+            # INSERTs raise and the reflex's own except returns None, which
+            # reads here as "staging produced no post".
+            return _TranslatingConn(c)
 
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _audit_publish
@@ -1983,7 +2015,12 @@ class TestProposalGenesisPhaseD:
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
@@ -2461,7 +2498,12 @@ class TestProposalGenesisPhaseEAPI:
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
@@ -3019,14 +3061,16 @@ class TestProposalGenesisPhaseF_API:
                 outcome TEXT, competitor_name TEXT,
                 competitor_strengths TEXT, our_strengths TEXT,
                 our_weaknesses TEXT, lessons_learned TEXT,
-                created_at TEXT
+                created_at TEXT,
+                classification TEXT DEFAULT 'CUI'
             );
             CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
                 id TEXT PRIMARY KEY, win_loss_id TEXT,
                 category TEXT, lesson TEXT,
                 actionable INTEGER DEFAULT 0,
                 applied INTEGER DEFAULT 0,
-                created_at TEXT
+                created_at TEXT,
+                classification TEXT DEFAULT 'CUI'
             );
             CREATE TABLE IF NOT EXISTS pg_training_pair_sources (
                 id TEXT PRIMARY KEY, source_type TEXT NOT NULL,
@@ -3051,7 +3095,12 @@ class TestProposalGenesisPhaseF_API:
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app

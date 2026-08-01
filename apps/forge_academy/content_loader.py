@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 _log = logging.getLogger(__name__)
@@ -1562,15 +1563,53 @@ def seed_mission_catalog() -> None:
         from tools.db.storage import get_connection
         conn = get_connection()
         # Fast path: skip if catalog is already fully seeded
-        try:
-            existing_count = conn.execute(
-                "SELECT COUNT(*) FROM fa_missions WHERE is_active=1"
-            ).fetchone()[0]
-            if existing_count >= len(BUILTIN_MISSIONS):
-                _log.debug("FORGE Academy: mission catalog already seeded (%d missions), skipping", existing_count)
-                return
-        except Exception:
-            pass  # fa_missions may not exist yet; proceed with full seed
+        # Hand-written catalog plus any mission whose content is on disk but
+        # which no catalog entry covers (fga-wire-07).
+        discovered = discover_steps()
+        catalog = all_missions(discovered)
+
+        # Same collapse risk as the BUILTIN_MISSIONS check above, now that the
+        # catalog has a second source. discover_missions() excludes catalogued
+        # slugs, so this should be unreachable — assert it rather than trust it,
+        # because the failure mode is a mission silently vanishing.
+        _all = [m["slug"] for m in catalog]
+        _all_dupes = sorted({s for s in _all if _all.count(s) > 1})
+        if _all_dupes:
+            raise ValueError(
+                f"Duplicate mission slug(s) across the combined catalog: {_all_dupes} — "
+                "a discovered mission collided with a hand-written one."
+            )
+
+        # Attach newly-discovered code assets to steps that are ALREADY seeded.
+        # This has to run BEFORE the fast-path return below, because that return
+        # fires on exactly the databases this pass exists to repair. aca-hon-05
+        # first placed the reconcile inside _seed_steps, which the fast path skips
+        # entirely: on the live database (124 missions >= catalog size) it never
+        # executed, and Tier 1 stayed ungradeable after a restart. Cheap and
+        # idempotent — it only writes to rows whose asset paths are still empty.
+        reconcile_all_step_assets(conn, discovered)
+        # aca-hon-02: refresh the catalogue's user-visible fields on an already-seeded
+        # database. The ON CONFLICT upsert below ALREADY sets title/tagline correctly
+        # — it just sits after the fast-path return, so on any seeded database it
+        # never ran and 34 derived missions kept the mechanical titles they were first
+        # written with ('Chromadb Rag', 'Ciso Capstone'). This is the same
+        # fix-is-inert-on-existing-data trap as the asset reconcile and the
+        # mission_type reconcile; making the catalogue self-correcting removes the
+        # whole class rather than adding a third bespoke pass.
+        retire_superseded_missions(conn, discovered)
+        # aca-hon-04: correct stored mission_type against the steps that actually
+        # exist. Must run AFTER the asset reconcile, because that pass promotes steps
+        # to 'coding', and BEFORE the fast-path return below for the same reason it
+        # applies to assets — the rows needing correction are already seeded.
+        reconcile_mission_types(conn)
+
+        # NOTE: no fast-path return here any more. It used to skip the whole seed once
+        # the mission count matched, which meant the ON CONFLICT upsert below — the
+        # thing that keeps title/tagline/xp_reward in step with the catalogue — never
+        # ran on a seeded database. Three separate defects traced back to it
+        # (unreachable asset reconcile, stale mission_type, stale derived titles).
+        # The upsert is one executemany over ~124 rows on start-up; correctness is
+        # worth more than skipping it.
 
         # Batch upsert all missions in one executemany + single commit (avoids N individual commits)
         rows = [
@@ -1582,13 +1621,13 @@ def seed_mission_catalog() -> None:
                 m.get("difficulty", "intermediate"), m.get("estimated_minutes", 30),
                 m.get("source_credit", ""),
             )
-            for m in BUILTIN_MISSIONS
+            for m in catalog
         ]
         conn.executemany(
             """INSERT INTO fa_missions
                (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
                 prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(slug) DO UPDATE SET
                  title=excluded.title, tagline=excluded.tagline,
                  xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
@@ -1597,35 +1636,521 @@ def seed_mission_catalog() -> None:
         conn.commit()
 
         # Fetch all IDs in one query instead of N per-mission SELECTs
-        slugs = [m["slug"] for m in BUILTIN_MISSIONS]
+        slugs = [m["slug"] for m in catalog]
         slug_to_id = {}
         for row in conn.execute(
             "SELECT id, slug FROM fa_missions WHERE slug IN ({})".format(
-                ",".join(["?"] * len(slugs))
+                ",".join(["%s"] * len(slugs))
             ),
             slugs,
         ).fetchall():
             slug_to_id[row["slug"]] = row["id"]
 
-        # Seed steps for missions that have none
-        for m in BUILTIN_MISSIONS:
+        # Seed steps for missions that have none. Source of truth is
+        # BUILTIN_STEPS where an entry exists (curated titles, xp weights,
+        # starter/test code paths), otherwise the authored markdown discovered
+        # on disk. Before fga-wire-01 only the dict was consulted, so 53 of 89
+        # missions rendered "Content is being authored" — 43 of them with their
+        # content already committed.
+        seeded_from_disk = 0
+        for m in catalog:
             mission_id = slug_to_id.get(m["slug"])
             if not mission_id:
                 continue
             existing = conn.execute(
-                "SELECT COUNT(*) FROM fa_mission_steps WHERE mission_id=?", (mission_id,)
+                "SELECT COUNT(*) FROM fa_mission_steps WHERE mission_id=%s", (mission_id,)
             ).fetchone()[0]
-            if existing == 0 and m["slug"] in BUILTIN_STEPS:
-                _seed_steps(conn, mission_id, m["slug"])
+            if existing:
+                continue
+            steps = steps_for(m["slug"], discovered)
+            if not steps:
+                continue
+            _seed_steps(conn, mission_id, m["slug"], steps=steps)
+            if m["slug"] not in BUILTIN_STEPS:
+                seeded_from_disk += 1
+        if seeded_from_disk:
+            _log.info(
+                "FORGE Academy: seeded %d mission(s) from discovered content", seeded_from_disk
+            )
         conn.commit()
-        _log.info("FORGE Academy: seeded/updated %d missions", len(BUILTIN_MISSIONS))
+        _log.info("FORGE Academy: seeded/updated %d missions (%d derived from content)",
+                  len(catalog), len(catalog) - len(BUILTIN_MISSIONS))
     except Exception as e:
         _log.warning("Mission catalog seed failed: %s", e)
 
 
-def _seed_steps(conn, mission_id: int, mission_slug: str) -> None:
-    """Insert step records for a mission from BUILTIN_STEPS."""
-    steps = BUILTIN_STEPS.get(mission_slug, [])
+# ---------------------------------------------------------------------------
+# Filesystem discovery of authored step content (fga-wire-01)
+# ---------------------------------------------------------------------------
+# Steps used to be seeded ONLY from the hand-maintained BUILTIN_STEPS dict, so a
+# mission absent from that dict got zero step rows permanently and the UI showed
+# "Content is being authored" even with its markdown sitting on disk. 53 of 89
+# missions had no steps; 43 of those had authored content. Adding 43 more dict
+# entries would have cleared the symptom and left the mechanism that produced it,
+# so discovery replaces the dict as the source of truth for *which* steps exist.
+#
+# Discovery keys on the frontmatter, not the path. Content uses three different
+# layouts (tier1/<slug>/steps/stepN_x.md, tier2/<family>/<slug>/steps/stepN_x.md,
+# tier2/<slug>/step-N.md) but every one of the 212 files carries
+# `ontology_id: icdev:mission:<slug>:step:<n>` and an H1 title, which makes the
+# mission and step number unambiguous without guessing at directory conventions.
+
+#: icdev:mission:<mission-slug>:step:<step-num>
+_ONTOLOGY_STEP_RE = re.compile(
+    r"icdev:mission:(?P<slug>[A-Za-z0-9._-]+):step:(?P<num>\d+)"
+)
+
+#: frontmatter step_class -> the fa_mission_steps.step_type vocabulary.
+_STEP_CLASS_TO_TYPE = {
+    "lesson": "watch",
+    "assessment": "reflect",
+    "reflect": "reflect",
+    "configure": "configure",
+    "lab": "coding",
+    "coding": "coding",
+    "verify": "configure",
+    "design": "reflect",
+}
+
+_DEFAULT_STEP_TYPE = "watch"
+_DEFAULT_XP = 50
+_DEFAULT_SECONDS = 300
+
+
+def _step_type_from_class(step_class: str) -> str:
+    """Map `step_class: icdev:Lesson` to a step_type the UI understands."""
+    tail = str(step_class or "").split(":")[-1].strip().lower()
+    return _STEP_CLASS_TO_TYPE.get(tail, _DEFAULT_STEP_TYPE)
+
+
+# Classification banners appear as the first markdown heading in some content files.
+# They are markings, not titles (aca-hon-02): m11-multimodal's card tagline was the
+# literal string "CUI // SP-CTI" because _title_from_body returned the first heading
+# it found, that heading became the step title, and the step title became the
+# mission tagline.
+_CLASSIFICATION_TOKENS = ("CUI", "SP-CTI", "SECRET", "NOFORN", "FOUO", "TOP SECRET")
+
+
+def _is_classification_heading(text: str) -> bool:
+    """A heading that is only a classification marking, not a title."""
+    stripped = (text or "").strip().strip("[]").strip()
+    if not stripped:
+        return False
+    upper = stripped.upper()
+    if not any(tok in upper for tok in _CLASSIFICATION_TOKENS):
+        return False
+    # A real title may mention CUI ("STIG markers, CUI headers, CI gates"), so only
+    # reject headings that are essentially nothing but markings and separators.
+    residue = upper
+    for tok in _CLASSIFICATION_TOKENS:
+        residue = residue.replace(tok, "")
+    residue = residue.replace("TEMPLATE:", "")
+    return not any(ch.isalnum() for ch in residue)
+
+
+def _title_from_body(body: str, fallback: str) -> str:
+    """First markdown H1 that is not a classification banner, else the fallback."""
+    for line in (body or "").splitlines():
+        line = line.strip()
+        if line.startswith("# "):
+            heading = line[2:].strip()
+            if _is_classification_heading(heading):
+                continue  # a marking, not a title — keep looking
+            return heading[:200]
+    return fallback
+
+
+# Step types that make a mission "hands-on". aca-hon-04: mission_type was taken from
+# the FIRST step alone (and simply declared for hand-written entries), so 34 missions
+# advertised 'coding' with no coding step at all — every Tier-1 mission among them.
+def _title_head(title: str | None) -> str:
+    """The subject part of a title, before any subtitle separator.
+
+    "Multimodal AI - Vision, Documents, Images" -> "multimodal ai". Used to spot a
+    derived mission that covers the same subject as a catalogued one even though the
+    full strings differ (aca-hon-03).
+    """
+    text = (title or "").strip()
+    for sep in ("—", "–", " - ", ":", "|"):
+        if sep in text:
+            text = text.split(sep, 1)[0]
+            break
+    return " ".join(text.lower().split())
+
+
+def mission_type_from_steps(steps: list | None) -> str:
+    """Derive a mission's advertised type from its actual step composition.
+
+    Any coding step makes the mission 'coding' — that is the thing a learner is
+    promised and the thing that can be graded. Otherwise the most common step type
+    wins, so a mission is described by what it mostly is.
+    """
+    types = [
+        (s.get("step_type") or "").strip().lower()
+        for s in (steps or [])
+        if (s.get("step_type") or "").strip()
+    ]
+    if not types:
+        return "watch"
+    if "coding" in types:
+        return "coding"
+    counts: dict[str, int] = {}
+    for t in types:
+        counts[t] = counts.get(t, 0) + 1
+    # Ties resolve by first appearance, which keeps the result stable.
+    return max(types, key=lambda t: (counts[t], -types.index(t)))
+
+
+def retire_superseded_missions(conn, discovered: dict | None = None) -> int:
+    """Deactivate derived missions discovery no longer produces. Returns count.
+
+    aca-hon-03: m11-multimodal was derived before the duplicate-subject check existed
+    and duplicates the catalogued m-t1-11-multimodal. Excluding it from derivation
+    stops it being RE-created but does nothing about the row already in the database,
+    which stayed active and kept rendering as a second Tier-1 card for one subject.
+
+    Scope is deliberately narrow: only rows whose source_credit marks them derived,
+    and only when discovery no longer yields that slug. A hand-written catalogue entry
+    is never retired automatically — that is a content decision (see migration 314 for
+    m-leader-02-roi). Sets is_active=0 rather than deleting, so any learner progress
+    and the audit trail survive.
+    """
+    if discovered is None:
+        discovered = discover_steps()
+    try:
+        still_derived = {m["slug"] for m in discover_missions(discovered)}
+        rows = conn.execute(
+            "SELECT id, slug FROM fa_missions "
+            "WHERE is_active=1 AND source_credit LIKE %s", ("%derived%",),
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — start-up path; must not break boot
+        _log.warning("retire_superseded_missions could not read the catalogue: %s", exc)
+        return 0
+
+    retired = 0
+    for row in rows:
+        mid = row["id"] if hasattr(row, "keys") else row[0]
+        slug = row["slug"] if hasattr(row, "keys") else row[1]
+        if slug in still_derived:
+            continue
+        try:
+            conn.execute("UPDATE fa_missions SET is_active=0 WHERE id=%s", (mid,))
+            retired += 1
+            _log.info(
+                "FORGE Academy: retired derived mission %s — discovery no longer "
+                "produces it (superseded or duplicate)", slug,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("could not retire %s: %s", slug, exc)
+    if retired:
+        try:
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("retire_superseded_missions commit failed: %s", exc)
+    return retired
+
+
+def reconcile_mission_types(conn) -> int:
+    """Correct stored fa_missions.mission_type against actual steps. Returns changes.
+
+    Discovery alone cannot fix this: the offending rows are already seeded, and
+    _seed_steps uses INSERT OR IGNORE. That is the same trap aca-hon-05 fell into
+    twice — a fix on the insert path is inert against an existing database — so this
+    is a reconcile pass, and it commits.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT m.id, m.slug, m.mission_type FROM fa_missions m WHERE m.is_active=1"
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — runs at start-up; must not break boot
+        _log.warning("mission_type reconcile could not read missions: %s", exc)
+        return 0
+
+    changed = 0
+    for row in rows:
+        mid = row["id"] if hasattr(row, "keys") else row[0]
+        slug = row["slug"] if hasattr(row, "keys") else row[1]
+        stored = (row["mission_type"] if hasattr(row, "keys") else row[2]) or ""
+        try:
+            steps = [
+                {"step_type": (r[0] if not hasattr(r, "keys") else r["step_type"])}
+                for r in conn.execute(
+                    "SELECT step_type FROM fa_mission_steps WHERE mission_id=%s", (mid,)
+                ).fetchall()
+            ]
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("mission_type reconcile: steps unavailable for %s: %s", slug, exc)
+            continue
+        if not steps:
+            continue  # a Coming Soon mission keeps its declared type
+        derived = mission_type_from_steps(steps)
+        if derived != stored:
+            conn.execute(
+                "UPDATE fa_missions SET mission_type=%s WHERE id=%s", (derived, mid)
+            )
+            changed += 1
+            _log.info(
+                "FORGE Academy: mission_type %s: %r -> %r (from %d steps)",
+                slug, stored, derived, len(steps),
+            )
+    if changed:
+        try:
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("mission_type reconcile commit failed: %s", exc)
+    return changed
+
+
+# Step types where a hint is meaningful. aca-hyg-04: hint_allowed was 1 on all 212
+# steps, including watch steps (there is nothing to hint about reading a page) and
+# reflect steps (where a hint IS the answer to the multiple-choice question). The
+# column was written and then ignored by both the runner and the hint route.
+_HINTABLE_STEP_TYPES = frozenset({"coding", "design", "configure", "deploy", "verify"})
+
+
+def hint_allowed_for(step_type: str | None) -> bool:
+    """Whether asking the coach for a hint makes sense for this step type."""
+    return (step_type or "").strip().lower() in _HINTABLE_STEP_TYPES
+
+
+def _code_assets_for(md_path: Path, step_num: int) -> tuple[str, str]:
+    """Find the authored ``stepN_starter.py`` / ``stepN_test.py`` beside a step.
+
+    aca-hon-05: discovery globbed ``*.md`` only, so the Python assets authored next
+    to the prose were never attached — 124 files across 60 mission directories,
+    including all ten Tier-1 missions. Every m01 step was step_type='watch' with
+    empty asset paths while step1_starter.py and step1_test.py sat unused in the
+    same folder. That is why the onboarding path advertised CODING and had nothing
+    to grade.
+
+    Returns ``(starter_rel, test_rel)``, each '' when absent. Paths are relative to
+    CONTENT_ROOT, matching every other path in a step record.
+    """
+    out = []
+    for suffix in ("starter", "test"):
+        candidate = md_path.parent / f"step{step_num}_{suffix}.py"
+        out.append(
+            candidate.relative_to(CONTENT_ROOT).as_posix()
+            if candidate.is_file() else ""
+        )
+    return out[0], out[1]
+
+
+def discover_steps() -> dict:
+    """Scan CONTENT_ROOT and return ``{mission_slug: [step-record, ...]}``.
+
+    Records match the BUILTIN_STEPS shape so both sources feed one writer. Files
+    whose frontmatter carries no parsable ontology_id are skipped rather than
+    guessed at — a step attached to the wrong mission is worse than one that is
+    visibly absent.
+
+    Authored ``stepN_starter.py`` / ``stepN_test.py`` siblings are attached where
+    they exist (see ``_code_assets_for``). A sibling TEST promotes the step to
+    'coding', because the test is what makes it gradeable; a starter on its own is
+    attached for the editor but does not change the declared step type. Promoting
+    without a test would manufacture a 'coding' step that aca-int-02 can never
+    credit, which is worse than leaving it as the lesson its frontmatter declares.
+    """
+    found: dict = {}
+    if not CONTENT_ROOT.is_dir():
+        return found
+
+    for path in sorted(CONTENT_ROOT.rglob("*.md")):
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        fm, body = _parse_frontmatter(raw)
+        match = _ONTOLOGY_STEP_RE.search(str(fm.get("ontology_id") or ""))
+        if not match:
+            continue
+        rel = path.relative_to(CONTENT_ROOT).as_posix()
+        step_num = int(match.group("num"))
+        starter_rel, test_rel = _code_assets_for(path, step_num)
+        step_type = _step_type_from_class(fm.get("step_class"))
+        if test_rel:
+            step_type = "coding"
+        found.setdefault(match.group("slug"), []).append({
+            "step_num": step_num,
+            "title": _title_from_body(body, path.stem.replace("_", " ").title()),
+            "step_type": step_type,
+            "content_path": rel,
+            "starter_code_path": starter_rel,
+            "test_code_path": test_rel,
+            "config_schema": {},
+            "xp_partial": _DEFAULT_XP,
+            "skill_tag": str(fm.get("skill_tag") or ""),
+            "estimated_seconds": _DEFAULT_SECONDS,
+        })
+
+    for slug, steps in found.items():
+        steps.sort(key=lambda s: s["step_num"])
+        seen: set = set()
+        deduped = []
+        for st in steps:
+            if st["step_num"] in seen:
+                _log.warning(
+                    "FORGE Academy: duplicate step %d for mission %s (%s) — keeping the first",
+                    st["step_num"], slug, st["content_path"],
+                )
+                continue
+            seen.add(st["step_num"])
+            deduped.append(st)
+        found[slug] = deduped
+    return found
+
+
+# ---------------------------------------------------------------------------
+# Mission discovery — authored content with no catalog entry (fga-wire-07)
+# ---------------------------------------------------------------------------
+# Step discovery above fixes missions the catalog KNOWS about. A second,
+# previously unrecorded gap sits one level up: 37 mission directories carry
+# authored steps but appear in no catalog at all, so no amount of step discovery
+# reaches them. They are whole track continuations — tier3/m-t3-02..07, m-pm-02..06,
+# m-issm-03..06 — where the content was written and the catalog stopped short.
+#
+# Mission metadata (tagline, xp, difficulty) is NOT on disk; only the step files
+# are. Rather than invent a curated-looking catalog entry, these are derived
+# deterministically from the slug and path and marked in source_credit so a
+# reviewer can tell a derived mission from a hand-curated one at a glance.
+
+_MISSION_SLUG_RE = re.compile(r"^m-(?P<family>[a-z0-9]+)-(?:[a-z0-9]+-)?(?P<num>\d+)-")
+
+#: Slug family -> the role_filter the browse UI filters on.
+_FAMILY_ROLE = {
+    "ciso": "ciso", "issm": "issm", "isso": "isso", "pm": "pm",
+    "secops": "secops", "swe": "swe", "devops": "devops",
+    "dataops": "dataops", "sre": "sre", "netops": "netops",
+}
+
+_DERIVED_CREDIT = "derived from authored content (fga-wire-07)"
+
+
+def _tier_from_path(content_path: str) -> int:
+    head = (content_path or "").split("/", 1)[0]
+    if head.startswith("tier") and head[4:].isdigit():
+        return int(head[4:])
+    return 2
+
+
+def _humanise_slug(slug: str) -> str:
+    """`m-t3-02-write-your-first-tool` -> `Write Your First Tool`."""
+    parts = [p for p in slug.split("-") if not p.isdigit()]
+    if parts and parts[0] == "m":
+        parts = parts[1:]
+    if parts and (parts[0] in _FAMILY_ROLE or parts[0].startswith("t")):
+        parts = parts[1:] or parts
+    return " ".join(p.capitalize() for p in parts) or slug
+
+
+def discover_missions(discovered: dict | None = None) -> list:
+    """Catalog entries for authored missions absent from BUILTIN_MISSIONS.
+
+    Excludes a slug whose family+number already has a catalogued mission: that
+    is superseded or renamed content, and adding it would put two missions at the
+    same position in a track. Those are reported for a human instead.
+    """
+    if discovered is None:
+        discovered = discover_steps()
+    catalogued = {m["slug"] for m in BUILTIN_MISSIONS}
+
+    def _track_key(slug: str):
+        m = _MISSION_SLUG_RE.match(slug)
+        return (m.group("family"), m.group("num")) if m else None
+
+    taken = {k for k in (_track_key(s) for s in catalogued) if k}
+    # aca-hon-03: the track-slot check keys on family+number, so m11-multimodal and
+    # the catalogued m-t1-11-multimodal look unrelated and BOTH ended up in the
+    # catalogue as adjacent Tier-1 cards about the same subject. Compare the derived
+    # human title against catalogued titles as well.
+    # Compare the title HEAD — the part before a subtitle separator. m11-multimodal
+    # derives "Multimodal AI - Vision, Documents, Images" against the catalogued
+    # "Multimodal AI": the same subject, so an exact match would miss it.
+    catalogued_titles = {_title_head(m.get("title")) for m in BUILTIN_MISSIONS}
+    catalogued_titles.discard("")
+
+    out: list = []
+    for slug in sorted(set(discovered) - catalogued):
+        steps = discovered.get(slug) or []
+        if not steps:
+            continue
+        key = _track_key(slug)
+        if key and key in taken:
+            _log.warning(
+                "FORGE Academy: %s has authored content but its track position is "
+                "already held by a catalogued mission — not auto-catalogued; "
+                "resolve by hand (superseded or renamed?)", slug,
+            )
+            continue
+        first = steps[0]
+        match = _MISSION_SLUG_RE.match(slug)
+        family = match.group("family") if match else ""
+
+        # aca-hon-02: title and tagline were INVERTED. title was
+        # _humanise_slug(slug) — a title-cased slug fragment like 'Ciso Capstone' or
+        # 'Chromadb Rag' — while the authored human title sat in the tagline. 35 of
+        # 124 missions showed the mechanical string as their card title.
+        human_title = (first.get("title") or "").strip()
+        title = human_title or _humanise_slug(slug)
+        # The tagline was only ever a copy of the step title; leaving it identical
+        # would just print the title twice on the card.
+        tagline = "" if title == human_title else human_title
+
+        if _title_head(title) in catalogued_titles:
+            _log.warning(
+                "FORGE Academy: %s derives the title %r, which a catalogued mission "
+                "already uses — not auto-catalogued to avoid two cards for one "
+                "subject; resolve by hand (aca-hon-03)", slug, title,
+            )
+            continue
+
+        out.append({
+            "slug": slug,
+            "title": title,
+            "tagline": tagline,
+            "tier": _tier_from_path(first.get("content_path", "")),
+            "topic": family or "general",
+            "role_filter": _FAMILY_ROLE.get(family, "all"),
+            # aca-hon-04: was first.get("step_type"), so a watch intro hid a coding
+            # exercise behind a 'watch' label (and vice versa).
+            "mission_type": mission_type_from_steps(steps),
+            "xp_reward": 100,
+            "order_idx": int(match.group("num")) if match else 99,
+            "difficulty": "intermediate",
+            "estimated_minutes": max(5, (len(steps) * _DEFAULT_SECONDS) // 60),
+            "prereqs": [],
+            "source_credit": _DERIVED_CREDIT,
+        })
+    return out
+
+
+def all_missions(discovered: dict | None = None) -> list:
+    """BUILTIN_MISSIONS plus any mission discovered from authored content."""
+    return list(BUILTIN_MISSIONS) + discover_missions(discovered)
+
+
+def steps_for(mission_slug: str, discovered: dict | None = None) -> list:
+    """Steps for one mission: the hand-authored dict wins, else discovery.
+
+    BUILTIN_STEPS keeps priority because its entries carry curated titles,
+    xp weights and starter/test code paths that the markdown does not express.
+    """
+    if mission_slug in BUILTIN_STEPS:
+        return BUILTIN_STEPS[mission_slug]
+    if discovered is None:
+        discovered = discover_steps()
+    return discovered.get(mission_slug, [])
+
+
+def _seed_steps(conn, mission_id: int, mission_slug: str, steps: list | None = None) -> None:
+    """Insert step records for a mission.
+
+    ``steps`` defaults to the BUILTIN_STEPS entry so existing callers are
+    unchanged; the seeder passes discovered steps for missions the dict does
+    not cover.
+    """
+    if steps is None:
+        steps = BUILTIN_STEPS.get(mission_slug, [])
     for step in steps:
         try:
             conn.execute(
@@ -1633,7 +2158,7 @@ def _seed_steps(conn, mission_id: int, mission_slug: str) -> None:
                    (mission_id, step_num, title, step_type, content_path,
                     starter_code_path, test_code_path,
                     config_schema_json, xp_partial, skill_tag, hint_allowed, estimated_seconds)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     mission_id,
                     step["step_num"],
@@ -1645,12 +2170,129 @@ def _seed_steps(conn, mission_id: int, mission_slug: str) -> None:
                     json.dumps(step.get("config_schema", {})),
                     step.get("xp_partial", 50),
                     step.get("skill_tag", ""),
-                    1,
+                    # aca-hyg-04: was a hardcoded 1 for every step, so watch and
+                    # reflect steps advertised a hint that makes no sense there.
+                    1 if hint_allowed_for(step.get("step_type", "configure")) else 0,
                     step.get("estimated_seconds", 300),
                 ),
             )
         except Exception as exc:
             _log.debug("Step seed %s step %s: %s", mission_slug, step.get("step_num"), exc)
+
+    _reconcile_step_assets(conn, mission_id, mission_slug, steps)
+
+
+def reconcile_all_step_assets(conn, discovered: dict | None = None) -> int:
+    """Attach discovered code assets across the whole catalog. Returns rows touched.
+
+    Runs independently of the per-mission insert path so it reaches databases that
+    are already fully seeded — see the call site in ``seed_mission_catalog``, which
+    must invoke this before its already-seeded fast-path return.
+
+    Never raises: this executes during dashboard start-up, so a cold or partially
+    migrated database must not break boot.
+    """
+    if discovered is None:
+        discovered = discover_steps()
+    touched = 0
+    for slug, steps in (discovered or {}).items():
+        try:
+            row = conn.execute(
+                "SELECT id FROM fa_missions WHERE slug=%s", (slug,)
+            ).fetchone()
+        except Exception as exc:
+            _log.warning("FORGE Academy: asset reconcile could not read missions: %s", exc)
+            return touched
+        if not row:
+            continue  # authored content with no catalog entry — nothing to attach to
+        mission_id = row["id"] if hasattr(row, "keys") else row[0]
+        try:
+            _reconcile_step_assets(conn, mission_id, slug, steps)
+            touched += 1
+        except Exception as exc:
+            _log.warning("FORGE Academy: asset reconcile failed for %s: %s", slug, exc)
+
+    # Commit once for the whole pass. _reconcile_step_assets issues UPDATEs and does
+    # NOT commit: when it was reached only from _seed_steps a later commit in the
+    # seeding flow happened to cover it, but this pass runs before the seeder's
+    # already-seeded fast-path return, so nothing else ever committed and every
+    # UPDATE was discarded. Verified against the live database — the log said
+    # "attached code assets to m01-llm-fundamentals step 1" while the row never
+    # changed.
+    #
+    # This is invisible to a test that writes and reads back on ONE in-memory
+    # connection, because uncommitted writes are visible inside their own
+    # transaction. tests/test_aca_reconcile_commit.py uses a file-backed database
+    # and a SECOND connection so a missing commit fails.
+    if touched:
+        try:
+            conn.commit()
+        except Exception as exc:
+            _log.warning("FORGE Academy: asset reconcile commit failed: %s", exc)
+    return touched
+
+
+def _reconcile_step_assets(conn, mission_id: int, mission_slug: str, steps: list) -> None:
+    """Attach newly-discovered code assets to steps that were already seeded.
+
+    ``_seed_steps`` uses INSERT OR IGNORE, so a step row written before
+    ``discover_steps`` learned about ``stepN_starter.py``/``stepN_test.py``
+    (aca-hon-05) keeps its original values forever. Every one of the 212 steps in
+    production was seeded that way — all with step_type='watch' and empty asset
+    paths — so without this pass the discovery fix would be inert against any
+    existing database and Tier 1 would stay ungradeable.
+
+    Deliberately conservative, because seeding runs on every dashboard start:
+
+      * only fills an asset path that is currently empty — never overwrites a
+        path already recorded (BUILTIN_STEPS entries stay authoritative);
+      * only promotes step_type to 'coding', and only when a test is attached, so
+        it can never demote an authored type or create an ungradeable coding step
+        (which aca-int-02 would refuse to credit anyway);
+      * idempotent — a second run matches nothing and writes nothing.
+    """
+    for step in steps:
+        test_path = step.get("test_code_path") or ""
+        starter_path = step.get("starter_code_path") or ""
+        if not (test_path or starter_path):
+            continue
+        try:
+            row = conn.execute(
+                "SELECT id, step_type, starter_code_path, test_code_path "
+                "FROM fa_mission_steps WHERE mission_id=%s AND step_num=%s",
+                (mission_id, step["step_num"]),
+            ).fetchone()
+            if not row:
+                continue
+            stored = dict(row) if hasattr(row, "keys") else {
+                "id": row[0], "step_type": row[1],
+                "starter_code_path": row[2], "test_code_path": row[3],
+            }
+            updates: dict = {}
+            if test_path and not (stored.get("test_code_path") or ""):
+                updates["test_code_path"] = test_path
+            if starter_path and not (stored.get("starter_code_path") or ""):
+                updates["starter_code_path"] = starter_path
+            # Promote only once a test is actually present on the row.
+            will_have_test = updates.get("test_code_path") or stored.get("test_code_path")
+            if will_have_test and stored.get("step_type") != "coding":
+                updates["step_type"] = "coding"
+            if not updates:
+                continue
+            assignments = ", ".join(f"{col}=?" for col in updates)
+            conn.execute(
+                f"UPDATE fa_mission_steps SET {assignments} WHERE id=%s",  # noqa: S608
+                (*updates.values(), stored["id"]),
+            )
+            _log.info(
+                "FORGE Academy: attached code assets to %s step %s (%s)",
+                mission_slug, step["step_num"], ", ".join(sorted(updates)),
+            )
+        except Exception as exc:
+            _log.warning(
+                "Step asset reconcile %s step %s: %s",
+                mission_slug, step.get("step_num"), exc,
+            )
 
 
 # ---------------------------------------------------------------------------

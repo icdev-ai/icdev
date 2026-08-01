@@ -11,7 +11,6 @@ Covers:
   - ai_governance_config.yaml loading
 """
 
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -39,9 +38,16 @@ from ai_governance_scorer import (  # noqa: E402
 
 @pytest.fixture
 def conn():
-    """In-memory SQLite with all tables needed by ai_governance_scorer."""
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
+    """In-memory SQLite with all tables needed by ai_governance_scorer.
+
+    ``ai_governance_scorer`` authors PG-native ``%s`` placeholders, which a bare
+    ``sqlite3`` connection rejects with ``near "%": syntax error``. Hand it a
+    translating connection so the fixture stands in for what production's
+    ``StorageConnection`` actually provides. See tests/_sql_compat.
+    """
+    from _sql_compat import connect as _tconnect
+
+    c = _tconnect(":memory:")
     c.executescript("""
         CREATE TABLE ai_use_case_inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,8 +109,9 @@ def conn():
 @pytest.fixture
 def empty_conn():
     """In-memory SQLite with NO governance tables at all."""
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
+    from _sql_compat import connect as _tconnect
+
+    c = _tconnect(":memory:")
     yield c
     c.close()
 

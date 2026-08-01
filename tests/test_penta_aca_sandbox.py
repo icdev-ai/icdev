@@ -176,16 +176,40 @@ def test_legit_starter_imports_not_blocked():
         assert ok is True, f"{starter.name} wrongly blocked: {reason}"
 
 
-def test_m01_step1_starter_plus_test_passes():
-    """The completed-shape M01/step1 starter + its auto-grader passes end-to-end
-    through the hardened runner (the grader is self-contained)."""
+def test_m01_step1_solution_plus_grader_passes():
+    """A COMPLETED M01/step1 solution plus its grader runs clean through the sandbox.
+
+    This asserted that the raw starter passed, and it did — because the grader was
+    self-contained, as the original docstring noted: it defined its own
+    simulate_llm_call, re-ran its own solution and asserted on its own output, so it
+    passed whatever the learner submitted (aca-vv-01). The grader now checks the
+    learner's work, so the starter alone correctly FAILS: its TODOs are the exercise.
+
+    The sandbox intent of this test is unchanged — legitimate lesson code must not be
+    blocked by the hardened runner and must execute to completion.
+    """
+    base = _TIER1 / "m01-llm-fundamentals" / "steps"
+    starter = (base / "step1_starter.py").read_text(encoding="utf-8")
+    test_code = (base / "step1_test.py").read_text(encoding="utf-8")
+    solution = starter + (
+        "\nresponse = simulate_llm_call(system_prompt, user_message)\n"
+        "print(response['content'])\n"
+        "print(response['usage']['input_tokens'], response['usage']['output_tokens'])\n"
+    )
+    result = run_code(solution, test_code=test_code)
+    assert result.get("error") != "blocked"
+    assert result["passed"] is True, result["stderr"]
+    assert "PASS" in result["stdout"]
+
+
+def test_m01_step1_unfinished_starter_does_not_pass():
+    """The TODOs are the exercise; submitting the starter untouched must not pass."""
     base = _TIER1 / "m01-llm-fundamentals" / "steps"
     starter = (base / "step1_starter.py").read_text(encoding="utf-8")
     test_code = (base / "step1_test.py").read_text(encoding="utf-8")
     result = run_code(starter, test_code=test_code)
-    assert result.get("error") != "blocked"
-    assert result["passed"] is True, result["stderr"]
-    assert "PASS" in result["stdout"]
+    assert result.get("error") != "blocked", "must fail on its merits, not the gate"
+    assert result["passed"] is False
 
 
 def test_legit_stdlib_code_runs():

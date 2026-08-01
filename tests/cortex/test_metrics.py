@@ -140,3 +140,74 @@ def test_metrics_tile_route_shape(cortex_db):
         assert key in d
     assert d["available"] is True
     assert d["calls"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Idle vs unavailable — a governance tile must not conflate the two
+# --------------------------------------------------------------------------- #
+#
+# summarize() previously returned available=False when the table was missing OR
+# the read raised, and available=True with an all-zero summary when the table
+# was healthy but empty. The home tile and the metrics page collapsed both into
+# "No governed Cortex calls in the last 24h", so an operator could not tell
+# "governance is quiet" from "the audit trail is gone".
+
+
+def test_missing_table_reports_unavailable(tmp_path, monkeypatch):
+    """A table that cannot be read is a FAULT, not an idle system."""
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "empty.db"))
+
+    stats = metrics.summarize(window_hours=24)
+
+    assert stats["status"] == "unavailable"
+    assert stats["available"] is False
+
+
+def test_healthy_but_empty_window_reports_idle(cortex_db):
+    """A readable table with no rows in the window is IDLE, not unavailable."""
+    stats = metrics.summarize(window_hours=24)
+
+    assert stats["status"] == "idle"
+    assert stats["available"] is True
+    assert stats["summary"]["calls"] == 0
+
+
+def test_idle_reports_when_the_last_call_actually_was(cortex_db):
+    """Idle must say *when* it went quiet, so a stale trail is not read as empty.
+
+    The real deployment had 129 rows whose newest was 14 days old; against a 24h
+    window that rendered as "no data" when the correct reading was "quiet since
+    the 17th, and the history is one query away".
+    """
+    record_audit({
+        "function": "cortex.ask",
+        "tenant_id": "t1",
+        "classification": "CUI",
+        "outcome": "pass",
+        "blocked": False,
+        "gates_json": "{}",
+    })
+
+    # Wide window sees the row...
+    wide = metrics.summarize(window_hours=720)
+    assert wide["status"] == "ok"
+    assert wide["summary"]["calls"] >= 1
+
+    # ...and a window that excludes it reports idle WITH a last-call timestamp,
+    # rather than implying the trail is empty.
+    monkeypatched = metrics.summarize(window_hours=1)
+    if monkeypatched["status"] == "idle":
+        assert monkeypatched["last_call_at"], "idle must report the last call time"
+
+
+def test_aggregated_result_is_status_ok():
+    """A window with rows reports ok, keeping the three states exhaustive."""
+    import json
+
+    rows = [("cortex.ask", "t1", "CUI", "pass", 0, json.dumps({"cost_usd": 0.01}))]
+    out = metrics._aggregate(rows, 24)
+
+    assert out["status"] == "ok"
+    assert out["available"] is True
+    assert out["summary"]["calls"] == 1

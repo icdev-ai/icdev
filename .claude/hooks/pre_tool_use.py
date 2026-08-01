@@ -98,6 +98,14 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "finding_replay_attempts",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
+        # FORGE Academy XP provenance (aca-int-07, migration 315). An award is an
+        # event: corrections are new compensating rows, never an UPDATE, or the
+        # ledger stops being evidence for the certificates that cite it.
+        "fa_xp_ledger",
+        # What a certificate was issued against (aca-int-07, migration 317).
+        # Revoking a certificate means recording a revocation, not deleting
+        # the evidence that it was once issued.
+        "fa_certificate_evidence",
         # FathomDesk auto-trading (append-only NIST AU)
         "ad_trade_audit",
         "ad_kill_switch",
@@ -412,6 +420,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 72 — ICDEV™ Studio (D364, D365 — case history + automation runs)
         "studio_case_history",
         "studio_automation_runs",
+        # DWO / dwo-evt-01 — trigger evaluation audit ("why did this run start")
+        "studio_trigger_events",
+        # DWO / dwo-mcp-02-d5 — every MCP dispatch attempt (allowed, refused,
+        # pending approval), with the actor and the gate's decision
+        "studio_mcp_dispatch_audit",
         # Cross-canvas KG build audit log (append-only — NIST AU)
         "canvas_kg_build_log",
         # Phase 73 — Findings + Oracle Predictions (NIST AU, append-only)
@@ -552,6 +565,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "slides_audit",
         # ACE (Autonomous Collaborative Engine) — step execution audit trail + skill candidates (NIST AU, append-only)
         "ace_audit_log",
+        "databridge_agent_access_log",
         "ace_step_audit_log",
         "ace_webhook_log",
         "ace_skill_candidates",

@@ -1,0 +1,154 @@
+# CUI // SP-CTI
+# SME Capability Bundles — what a GENERATED subject-matter-expert role may do.
+#
+# Consumed by:
+#   - tools/ace/sme_registry.py   (ensure_sme: stamps a bundle onto a new role)
+#   - tools/ace/role_policy.py    (validate_generated_role: enforces it)
+#
+# ---------------------------------------------------------------------------
+# WHY THIS FILE EXISTS — read before editing.
+#
+# ensure_sme() asks an LLM to invent a domain expert that does not exist yet.
+# The model authors WHO the expert is: display_name, description, steps,
+# personality, rules. It must never author WHAT that expert is allowed to do.
+#
+# Every security-relevant field below is hand-authored by a human, checked into
+# git, and copied verbatim onto the generated role. Anything the model emits for
+# these fields is discarded. This is the difference between "an LLM proposed a
+# specialist" and "an LLM granted itself Bash".
+#
+# The precedent is real: profile_generator used to prompt for tool_permissions
+# and trust_tier and copy the answer straight into a LIVE role YAML. An
+# LLM-authored `trust_tier: green` clears the CoWorkerThread confidence gate
+# (learned trust 0.5 < TRUST_SUPERVISED 0.6), so a generated role could begin
+# acting with no human sign-off.
+#
+# ---------------------------------------------------------------------------
+# WHAT ACTUALLY CONFERS AGENCY — do not confuse these.
+#
+#   tool_permissions  Checked by StepExecutor against dotted import paths. The
+#                     capability names below (Read/Grep/Glob) are the vocabulary
+#                     coworker_thread passes to reconcile_mode_b. Holding them
+#                     grants no filesystem or process access by itself.
+#   folder_access     REAL write agency. Enforced by FileAccessBroker, jailed to
+#                     the repo root, per-scope mode r|rw.
+#   icdev_tools       REAL execute agency. Enforced by ToolRunner: exact-string
+#                     allowlist, then _ALLOWED_PREFIXES, then a destructive
+#                     pattern block, then a green-trust requirement.
+#
+# A bundle that leaves folder_access and icdev_tools empty cannot write or
+# execute anything, regardless of its tool_permissions.
+#
+# ---------------------------------------------------------------------------
+# TRUST TIER
+#
+# Every bundle ships `red`. This is deliberate and load-bearing:
+#   - team_assembler._most_restrictive_tier() makes the INSTANCE tier the
+#     minimum across all specs, so one generated SME correctly pins the run.
+#   - args/ace/trust.yaml ships `initial_trust: {}`, so an unlisted role scores
+#     0.5 < TRUST_SUPERVISED 0.6 and CoWorkerThread routes it to the HITL
+#     confidence gate BEFORE it acts. A brand-new SME therefore gets a human
+#     review on run #1 for free.
+# Never add a generated role to `auto_approve_roles` in args/ace/trust.yaml.
+#
+# Promotion between bundles is a separate, audited human action — never a
+# choice the model or the classifier makes.
+
+version: sme-capability-bundles-1.0
+
+# Bundle applied when the caller does not name one.
+default_bundle: advisory
+
+bundles:
+
+  # ── advisory ──────────────────────────────────────────────────────────────
+  # The default. Reasons over the problem statement and whatever context the
+  # step is given. Touches nothing. This covers the overwhelming majority of
+  # "spin up an SME to think about X" requests.
+  advisory:
+    display_name: Advisory
+    description: >-
+      Reasoning only. No filesystem access, no tool execution. The expert
+      analyses and recommends; a human or an existing trusted role acts.
+    trust_tier: red
+    mode: steps
+    tool_permissions:
+      - Read
+      - Grep
+      - Glob
+    folder_access: []
+    icdev_tools: []
+    max_iterations: 6
+
+  # ── analyst ───────────────────────────────────────────────────────────────
+  # Adds READ-ONLY visibility into first-party reference material so the expert
+  # can ground its answer in the repo instead of its own priors. Still cannot
+  # write and cannot execute.
+  analyst:
+    display_name: Analyst
+    description: >-
+      Read-only grounding in first-party docs and context. No writes, no tool
+      execution.
+    trust_tier: red
+    mode: steps
+    tool_permissions:
+      - Read
+      - Grep
+      - Glob
+    folder_access:
+      - path: docs/
+        mode: r
+      - path: context/
+        mode: r
+    icdev_tools: []
+    max_iterations: 8
+
+  # ── builder ───────────────────────────────────────────────────────────────
+  # The only bundle with real agency, and it is scoped to a per-instance
+  # scratch directory that nothing else reads. It is NOT reachable from
+  # ensure_sme()'s default path — a human must request it explicitly, and the
+  # role still hits the red-tier HITL gate before its first action.
+  #
+  # icdev_tools entries are matched by ToolRunner as EXACT strings, so each one
+  # is a complete command. They are read-only reporting tools by design; adding
+  # anything that writes, migrates, deploys, or deletes belongs in a different
+  # bundle with its own review.
+  builder:
+    display_name: Builder
+    description: >-
+      Scoped read/write inside a per-instance scratch directory plus a curated
+      set of read-only ICDEV reporting commands. Requires explicit human
+      selection; never chosen automatically.
+    trust_tier: red
+    mode: agent
+    tool_permissions:
+      - Read
+      - Write
+      - Edit
+      - Grep
+      - Glob
+    folder_access:
+      - path: .tmp/ace/
+        mode: rw
+    icdev_tools:
+      - python tools/testing/health_check.py --json
+      - python tools/db/storage.py --health --json
+    max_iterations: 12
+
+# ---------------------------------------------------------------------------
+# Paths a generated role may NEVER be granted, in any bundle. Enforced by
+# role_policy.validate_generated_role as a prefix check on every
+# folder_access entry, so a bundle edit cannot accidentally open one of these.
+#
+# args/ace/roles/ is first for a reason: write access there would let a
+# generated role rewrite its own permissions, or author a new role that grants
+# itself more. That is the privilege-escalation loop this whole file prevents.
+forbidden_folder_prefixes:
+  - args/ace/roles
+  - args/ace
+  - .claude
+  - .git
+  - tools
+  - icdev
+  - k8s
+  - docker

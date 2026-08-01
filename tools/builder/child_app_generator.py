@@ -304,6 +304,23 @@ CONDITIONAL_DIRS = {
         "tools/integration",
         "context/requirements",
     ],
+    # SME co-worker teams (sme-*). Conditional rather than always-on: ACE is a
+    # large subsystem (execution engine, ~90 role YAMLs, its own canvas DB), and
+    # a child app that never spawns co-workers should not carry it. Apps that DO
+    # want chat-native SME teams request this capability and inherit the whole
+    # stack — engine, role catalog, capability bundles, and the chat trigger.
+    #
+    # The action-card renderer itself needs no entry here: it lives under
+    # tools/dashboard/templates/includes/, which the "dashboard" capability
+    # already copies, so any child app with a dashboard renders cards already.
+    "coworker": [
+        "tools/ace",
+        "tools/ace/db",
+        "tools/ace/roles",
+        "tools/chat",
+        "args/ace",
+        "args/ace/roles",
+    ],
     "devsecops_zta": ["tools/devsecops", "context/devsecops"],
     "observability": [
         "tools/observability",

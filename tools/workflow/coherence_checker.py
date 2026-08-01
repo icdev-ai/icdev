@@ -47,10 +47,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import concurrent.futures
 import dataclasses
 import json
+import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -82,6 +85,9 @@ class CoherenceCheck:
     extra: List[str]
     message: str
     fixes_applied: List[str] = dataclasses.field(default_factory=list)
+    # Wall-clock cost of this check, filled in by run_checks. Surfaced in the
+    # JSON report so tier assignment stays evidence-based instead of guessed.
+    duration_sec: float = 0.0
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -157,6 +163,36 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def _scan_targets(
+    changed_files: Optional[List[Path]] = None, subdir: str = "tools"
+) -> List[Path]:
+    """Python files a file-scanning check should read.
+
+    Returns the changed subset under *subdir* when the caller supplied one,
+    otherwise the whole tree.  Diff-scoping is what lets a whole-tree scanner
+    run inside the per-task gate instead of only in the nightly full sweep:
+    the same check costs ~17s over 4k files and milliseconds over a diff.
+    """
+    root = PROJECT_ROOT / subdir
+    if changed_files:
+        picked: List[Path] = []
+        for entry in changed_files:
+            path = entry if isinstance(entry, Path) else Path(str(entry))
+            if not path.is_absolute():
+                path = PROJECT_ROOT / path
+            if path.suffix != ".py" or not path.exists():
+                continue
+            try:
+                path.relative_to(root)
+            except ValueError:
+                continue  # outside the scanned subtree
+            picked.append(path)
+        return sorted(set(picked))
+    if not root.exists():
+        return []
+    return sorted(root.rglob("*.py"))
 
 
 _ROUTE_DECORATOR_RE = re.compile(r"@\w+\.route\s*\(")
@@ -2776,7 +2812,9 @@ def check_sandbox_coverage() -> CoherenceCheck:
 # ---------------------------------------------------------------------------
 
 
-def check_direct_anthropic_import() -> CoherenceCheck:
+def check_direct_anthropic_import(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
     """OPT-44 — ban direct `import anthropic` / `from anthropic` outside
     tools/llm/anthropic_provider.py.
 
@@ -2810,18 +2848,16 @@ def check_direct_anthropic_import() -> CoherenceCheck:
         return hits
 
     violations: List[str] = []
-    tools_root = PROJECT_ROOT / "tools"
-    if tools_root.exists():
-        for py_file in sorted(tools_root.rglob("*.py")):
-            try:
-                rel = py_file.relative_to(PROJECT_ROOT)
-            except ValueError:
-                rel = py_file
-            if rel == allowed:
-                continue  # the one permitted file
-            text = _read_text(py_file)
-            for lineno, stmt in _has_direct_anthropic_import(text):
-                violations.append(f"{rel}:{lineno}: {stmt}")
+    for py_file in _scan_targets(changed_files):
+        try:
+            rel = py_file.relative_to(PROJECT_ROOT)
+        except ValueError:
+            rel = py_file
+        if rel == allowed:
+            continue  # the one permitted file
+        text = _read_text(py_file)
+        for lineno, stmt in _has_direct_anthropic_import(text):
+            violations.append(f"{rel}:{lineno}: {stmt}")
 
     if violations:
         return CoherenceCheck(
@@ -3967,6 +4003,184 @@ def check_new_page_completeness() -> CoherenceCheck:
         ),
     )
 
+
+# ---------------------------------------------------------------------------
+# Check: chat_card_inheritance — the shared chat action-card renderer must stay
+# globally reachable, in both mirrors, and ungated.
+# ---------------------------------------------------------------------------
+
+
+def check_chat_card_inheritance() -> CoherenceCheck:
+    """Guard the mechanism that makes chat action cards reach every page.
+
+    Why this check exists
+    ---------------------
+    In this repo a shared Jinja include does NOT propagate by being useful. It
+    propagates only if something fails when it is missing:
+
+      includes/iqe_query_widget.html   ~157 templates  (gated — grepped below)
+      includes/classification_macros   56 templates    (convention only)
+      includes/twin_snapshot_panel     1 — itself      (ungated)
+      includes/_canvas_shell.html      1 — itself      (ungated)
+
+    The chat action-card renderer is global JS included once from base.html, so
+    unlike the IQE widget it needs no per-page include — requiring one would be
+    cargo-culting a pattern that does not apply. What it DOES need is for that
+    single global include to survive: both mirrors present, and crucially
+    UNGATED.
+
+    The failure mode being prevented is concrete. base.html already contains
+    ``{% if '/strategos' in request.path %}`` around the Strategos panel, and
+    that one line is the entire reason that panel reaches exactly one route.
+    Wrapping this include the same way would silently reduce "every chat surface
+    in the platform" to "one page", with nothing failing to say so.
+    """
+    include_rel = "tools/dashboard/templates/includes/_chat_action_card.html"
+    base_rel = "tools/dashboard/templates/base.html"
+    marker = "includes/_chat_action_card.html"
+
+    violations: List[str] = []
+    checked: List[str] = []
+
+    for prefix in ("", "icdev/"):
+        partial = PROJECT_ROOT / f"{prefix}{include_rel}"
+        if not partial.exists():
+            violations.append(f"{prefix}{include_rel} missing")
+        else:
+            checked.append(f"{prefix}{include_rel}")
+
+        base = PROJECT_ROOT / f"{prefix}{base_rel}"
+        if not base.exists():
+            violations.append(f"{prefix}{base_rel} missing")
+            continue
+
+        text = base.read_text(encoding="utf-8", errors="replace")
+        if marker not in text:
+            violations.append(
+                f"{prefix}{base_rel} does not include {marker} — chat action cards "
+                "will not render on any page"
+            )
+            continue
+
+        # The include must not sit inside a path-conditional block. Look at the
+        # few lines above it for an `{% if ... request.path ... %}` guard, which
+        # is the exact pattern that limits the Strategos panel to one route.
+        lines = text.splitlines()
+        idx = next((i for i, ln in enumerate(lines) if marker in ln), -1)
+        window = "\n".join(lines[max(0, idx - 3):idx])
+        if "request.path" in window and "{% if" in window:
+            violations.append(
+                f"{prefix}{base_rel}: {marker} is inside a request.path conditional — "
+                "that is what limits the Strategos panel to a single route"
+            )
+        checked.append(f"{prefix}{base_rel}")
+
+    status = "fail" if violations else "pass"
+    return CoherenceCheck(
+        check_id="chat_card_inheritance",
+        check_name="Chat Action-Card Global Inheritance",
+        status=status,
+        expected=[
+            "_chat_action_card.html present in both mirrors and included "
+            "unconditionally from base.html"
+        ],
+        actual=[f"{len(violations)} violation(s) across {len(checked)} checked path(s)"],
+        missing=violations,
+        extra=[],
+        message=(
+            "Chat action cards will not reach every surface: " + "; ".join(violations)
+        ) if violations else (
+            "Chat action-card renderer is globally included and ungated in both mirrors"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: twin_chat_include — twin pages must share the chat panel, not copy it
+# ---------------------------------------------------------------------------
+
+
+def check_twin_chat_include() -> CoherenceCheck:
+    """Stop the digital-twin chat panel being copied into the next canvas.
+
+    This panel and its sendChatDelta() were duplicated verbatim across four
+    twin.html templates. The markup copies differed on exactly two lines (hint,
+    placeholder) and the JS copies on exactly one (the fetch URL); every element
+    id, inline style and handler was identical. Nothing failed when a fifth
+    canvas copied it again, so nothing stopped that happening.
+
+    That is the pattern this repo already demonstrates in both directions:
+    includes/iqe_query_widget.html is gated and reached ~157 templates, while
+    ungated includes reached exactly one — themselves. A shared include here
+    does not survive on merit, only on a check that fails without it.
+
+    A twin template is in scope when it renders the chat surface at all, which
+    is detected by the `sendChatDelta` handler. Templates without it (infra,
+    pipeline) are simply not chat surfaces and are ignored rather than being
+    forced to grow one.
+    """
+    marker_panel = "includes/_twin_chat_panel.html"
+    marker_script = "includes/_twin_chat_script.html"
+    # An inline copy is recognisable by the ids the include owns.
+    inline_markers = ('id="chatInput"', 'async function sendChatDelta')
+
+    violations: List[str] = []
+    checked: List[str] = []
+
+    for prefix in ("", "icdev/"):
+        tpl_root = PROJECT_ROOT / f"{prefix}tools/dashboard/templates"
+        if not tpl_root.exists():
+            continue
+
+        for name in (marker_panel, marker_script):
+            if not (tpl_root / name).exists():
+                violations.append(f"{prefix}tools/dashboard/templates/{name} missing")
+
+        for twin in sorted(tpl_root.glob("*/twin.html")):
+            text = twin.read_text(encoding="utf-8", errors="replace")
+            rel = twin.relative_to(PROJECT_ROOT).as_posix()
+
+            inline = [m for m in inline_markers if m in text]
+            uses_include = marker_panel in text or marker_script in text
+            if not inline and not uses_include:
+                continue  # genuinely not a chat surface (infra, pipeline)
+
+            # Counted whether it passes or fails. Detecting surfaces by the
+            # inline markers ALONE would make this check pass vacuously the
+            # moment the refactor succeeds -- zero surfaces found, zero
+            # violations, green. The include itself must therefore also mark a
+            # file as in scope.
+            checked.append(rel)
+
+            if marker_panel not in text and inline:
+                violations.append(
+                    f"{rel} carries an inline chat panel ({', '.join(inline)}) "
+                    f"instead of including {marker_panel}"
+                )
+            if marker_script not in text and "async function sendChatDelta" in text:
+                violations.append(
+                    f"{rel} defines its own sendChatDelta() instead of including "
+                    f"{marker_script}"
+                )
+
+    status = "fail" if violations else "pass"
+    return CoherenceCheck(
+        check_id="twin_chat_include",
+        check_name="Twin Chat Panel Shared Include",
+        status=status,
+        expected=[
+            "every twin.html with a chat surface includes _twin_chat_panel.html "
+            "and _twin_chat_script.html, in both mirrors"
+        ],
+        actual=[f"{len(violations)} violation(s) across {len(checked)} chat surface(s)"],
+        missing=violations,
+        extra=[],
+        message=(
+            "Twin chat panel is being duplicated again: " + "; ".join(violations)
+        ) if violations else (
+            f"All {len(checked)} twin chat surface(s) use the shared include"
+        ),
+    )
 
 # ---------------------------------------------------------------------------
 # Check: nav_route_parity — every href in base.html nav must have a Flask route
@@ -6228,7 +6442,9 @@ def _lpx_environ_subscript_key(sub: ast.Subscript) -> Optional[str]:
     return None
 
 
-def check_provider_bypass() -> CoherenceCheck:
+def check_provider_bypass(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
     """lpx-router-03 — no direct-to-provider access outside tools/llm/.
 
     Fails when a runtime module under ``tools/`` (excluding ``tools/llm/`` and the
@@ -6238,33 +6454,31 @@ def check_provider_bypass() -> CoherenceCheck:
     """
     new_violations: List[str] = []
     grandfathered = 0
-    tools_root = PROJECT_ROOT / "tools"
     llm_dir = Path("tools") / "llm"
-    if tools_root.exists():
-        for py_file in sorted(tools_root.rglob("*.py")):
-            try:
-                rel_path = py_file.relative_to(PROJECT_ROOT)
-            except ValueError:
-                rel_path = py_file
-            # Skip the provider layer itself and documented exceptions.
-            if llm_dir in rel_path.parents or rel_path == llm_dir:
+    for py_file in _scan_targets(changed_files):
+        try:
+            rel_path = py_file.relative_to(PROJECT_ROOT)
+        except ValueError:
+            rel_path = py_file
+        # Skip the provider layer itself and documented exceptions.
+        if llm_dir in rel_path.parents or rel_path == llm_dir:
+            continue
+        if rel_path in _LPX_BYPASS_EXEMPT_FILES:
+            continue
+        # Skip test scaffolding that may reference provider vars intentionally.
+        if py_file.name.startswith("test_"):
+            continue
+        text = _read_text(py_file)
+        # Cheap prefilter before paying for an AST parse.
+        if "api." not in text and "generativelanguage" not in text and "_API_KEY" not in text:
+            continue
+        rel_str = str(rel_path).replace("\\", "/")
+        for lineno, token, reason in _lpx_scan_provider_bypass(text, rel_str):
+            signature = f"{rel_str}::{token}"
+            if signature in _LPX_BYPASS_BASELINE:
+                grandfathered += 1
                 continue
-            if rel_path in _LPX_BYPASS_EXEMPT_FILES:
-                continue
-            # Skip test scaffolding that may reference provider vars intentionally.
-            if py_file.name.startswith("test_"):
-                continue
-            text = _read_text(py_file)
-            # Cheap prefilter before paying for an AST parse.
-            if "api." not in text and "generativelanguage" not in text and "_API_KEY" not in text:
-                continue
-            rel_str = str(rel_path).replace("\\", "/")
-            for lineno, token, reason in _lpx_scan_provider_bypass(text, rel_str):
-                signature = f"{rel_str}::{token}"
-                if signature in _LPX_BYPASS_BASELINE:
-                    grandfathered += 1
-                    continue
-                new_violations.append(f"{rel_str}:{lineno}: {reason}")
+            new_violations.append(f"{rel_str}:{lineno}: {reason}")
 
     if new_violations:
         return CoherenceCheck(
@@ -6536,6 +6750,8 @@ CHECK_REGISTRY = {
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
+    "chat_card_inheritance": check_chat_card_inheritance,
+    "twin_chat_include": check_twin_chat_include,
     "canvas_placeholder_style": check_canvas_placeholder_style,
     "runtime_placeholder_style": check_runtime_placeholder_style,
     "ace_yaml_listen_topics": check_ace_yaml_listen_topics,
@@ -6553,6 +6769,86 @@ CHECK_REGISTRY = {
     "mirror_drift": check_mirror_drift,
     "doc_command_paths": check_doc_command_paths,
 }
+
+
+# ---------------------------------------------------------------------------
+# Check tiers — the gate/sweep split
+# ---------------------------------------------------------------------------
+
+TIERS = ("fast", "full")
+
+# Checks that import or introspect the ENTIRE application rather than the diff.
+# Measured on a warm checkout these three cost ~100s of a ~170s full run, which
+# is why the per-task coherence gate could never finish inside its subprocess
+# timeout. They are global invariants — a single task can only break one in a
+# way that also shows up in the main baseline — so the fast tier runs a heavy
+# check ONLY when the diff touches its trigger surface. `--tier full` (the
+# nightly sweep and post-merge reflex) always runs every check.
+#
+# NOTE: direct_anthropic_import and provider_bypass used to belong here too;
+# they are now diff-scoped via _scan_targets() and cheap enough to always run.
+HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
+    "blueprint_imports": (
+        "tools/dashboard/",
+        "icdev/tools/dashboard/",
+        "blueprint.py",
+        "args/component_registry.yaml",
+    ),
+    "openapi_parity": (
+        "tools/dashboard/",
+        "icdev/tools/dashboard/",
+        "blueprint.py",
+        "openapi",
+    ),
+    "llm_router_api": (
+        "tools/llm/",
+        "icdev/tools/llm/",
+        "args/llm_config.yaml",
+    ),
+}
+
+
+def _normalised_paths(changed_files: Optional[List[Path]]) -> List[str]:
+    """Changed paths as forward-slash strings for substring trigger matching."""
+    return [str(entry).replace("\\", "/") for entry in (changed_files or [])]
+
+
+def select_checks(
+    tier: str = "full", changed_files: Optional[List[Path]] = None
+) -> List[str]:
+    """Ordered check ids to run for *tier*.
+
+    ``full`` returns every registered check. ``fast`` drops the whole-app
+    heavies in HEAVY_CHECKS, re-adding any whose trigger surface appears in
+    *changed_files*.
+
+    With no diff information the fast tier still drops the heavies — "fast"
+    means fast. Callers that cannot supply a file list and need full coverage
+    should ask for ``full`` explicitly rather than relying on this to guess.
+    """
+    all_ids = list(CHECK_REGISTRY.keys())
+    if tier != "fast":
+        return all_ids
+    touched = _normalised_paths(changed_files)
+    keep: List[str] = []
+    for check_id in all_ids:
+        triggers = HEAVY_CHECKS.get(check_id)
+        if triggers is None:
+            keep.append(check_id)
+        elif any(trigger in path for path in touched for trigger in triggers):
+            keep.append(check_id)
+    return keep
+
+
+def _check_workers() -> int:
+    """Thread count for the parallel check sweep. ``1`` forces serial."""
+    try:
+        configured = int(os.environ.get("ICDEV_COHERENCE_WORKERS", "0"))
+    except ValueError:
+        configured = 0
+    if configured > 0:
+        return configured
+    return max(1, min(4, (os.cpu_count() or 2) - 1))
 
 
 # ---------------------------------------------------------------------------
@@ -6706,68 +7002,114 @@ def _apply_fixes(check: CoherenceCheck) -> CoherenceCheck:
     return check
 
 
+def _unknown_check(check_id: str) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=f"Unknown: {check_id}",
+        status="warn",
+        expected=[],
+        actual=[],
+        missing=[],
+        extra=[],
+        message=f"Unknown check: {check_id}",
+    )
+
+
+def _run_one_check(
+    check_id: str, changed_files: Optional[List[Path]]
+) -> CoherenceCheck:
+    """Execute a single check, timing it and converting any raise into a warn."""
+    import inspect
+
+    func = CHECK_REGISTRY.get(check_id)
+    if not func:
+        return _unknown_check(check_id)
+
+    started = time.monotonic()
+    try:
+        if "changed_files" in inspect.signature(func).parameters:
+            result = func(changed_files=changed_files)
+        else:
+            result = func()
+    except Exception as exc:
+        result = CoherenceCheck(
+            check_id=check_id,
+            check_name=check_id,
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message=f"Check error: {exc}",
+        )
+    result.duration_sec = round(time.monotonic() - started, 3)
+    return result
+
+
 def run_checks(
     selected: Optional[List[str]] = None,
     changed_files: Optional[List[Path]] = None,
     autofix: bool = False,
+    tier: Optional[str] = None,
 ) -> CoherenceReport:
     """Run selected coherence checks and produce aggregate report.
 
     Args:
-        selected: specific check IDs to run (None = all)
-        changed_files: restrict import check to these files
+        selected: specific check IDs to run (None = tier selection)
+        changed_files: diff-scope passed to every check that accepts it
         autofix: if True, auto-fix safe issues after detection
+        tier: ``fast`` or ``full``; ignored when *selected* is given.
+
+    Checks run concurrently on a small thread pool — most of the cost is
+    subprocess, file I/O, and imports, all of which release the GIL. Autofix
+    forces the serial path because fixers mutate the tree and two of them
+    landing at once is not something the fix registry is written for.
     """
-    checks_to_run = selected or list(CHECK_REGISTRY.keys())
+    if selected:
+        checks_to_run = list(selected)
+    else:
+        checks_to_run = select_checks(tier or "full", changed_files)
+
     results: List[CoherenceCheck] = []
+    workers = 1 if autofix else min(_check_workers(), max(1, len(checks_to_run)))
+
+    if workers > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_run_one_check, check_id, changed_files): check_id
+                for check_id in checks_to_run
+            }
+            by_id: Dict[str, CoherenceCheck] = {}
+            for future in concurrent.futures.as_completed(futures):
+                check_id = futures[future]
+                try:
+                    by_id[check_id] = future.result()
+                except Exception as exc:  # pragma: no cover — defensive
+                    by_id[check_id] = CoherenceCheck(
+                        check_id=check_id,
+                        check_name=check_id,
+                        status="warn",
+                        expected=[],
+                        actual=[],
+                        missing=[],
+                        extra=[],
+                        message=f"Check error: {exc}",
+                    )
+        # Preserve registry order regardless of completion order.
+        results = [by_id[check_id] for check_id in checks_to_run if check_id in by_id]
+    else:
+        for check_id in checks_to_run:
+            results.append(_run_one_check(check_id, changed_files))
+
     total_fixes = 0
-
-    for check_id in checks_to_run:
-        func = CHECK_REGISTRY.get(check_id)
-        if not func:
-            results.append(
-                CoherenceCheck(
-                    check_id=check_id,
-                    check_name=f"Unknown: {check_id}",
-                    status="warn",
-                    expected=[],
-                    actual=[],
-                    missing=[],
-                    extra=[],
-                    message=f"Unknown check: {check_id}",
-                )
-            )
-            continue
-
-        try:
-            # Pass changed_files to checks that accept it
-            import inspect
-
-            sig = inspect.signature(func)
-            if "changed_files" in sig.parameters:
-                result = func(changed_files=changed_files)
-            else:
-                result = func()
-
-            # Auto-fix if requested and check failed/warned
-            if autofix and result.status in ("fail", "warn"):
+    if autofix:
+        fixed: List[CoherenceCheck] = []
+        for result in results:
+            if result.status in ("fail", "warn"):
                 result = _apply_fixes(result)
                 total_fixes += len(result.fixes_applied)
-
-            results.append(result)
-        except Exception as exc:
-            results.append(
-                CoherenceCheck(
-                    check_id=check_id,
-                    check_name=check_id,
-                    status="warn",
-                    expected=[],
-                    actual=[],
-                    missing=[],
-                    extra=[],
-                    message=f"Check error: {exc}",
-                )
-            )
+            fixed.append(result)
+        results = fixed
 
     passed = sum(1 for r in results if r.status == "pass")
     failed = sum(1 for r in results if r.status == "fail")
@@ -6842,23 +7184,73 @@ def main() -> None:
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     parser.add_argument("--gate", action="store_true", help="Exit 0=pass, 1=fail")
     parser.add_argument("--fix", action="store_true", help="Auto-fix safe issues (imports, append-only)")
-    parser.add_argument("--all", action="store_true", help="Run all checks")
+    parser.add_argument("--all", action="store_true", help="Run all checks (alias for --tier full)")
+    parser.add_argument(
+        "--tier",
+        choices=TIERS,
+        default=None,
+        help=(
+            "fast = per-task gate (drops whole-app heavies unless the diff "
+            "touches them); full = every check (nightly sweep / post-merge). "
+            "Default: full."
+        ),
+    )
     parser.add_argument("--check", type=str, default="", help=f"Specific check: {', '.join(CHECK_REGISTRY.keys())}")
     parser.add_argument("--changed-files", type=str, default="", help="Comma-separated list of changed file paths")
+    parser.add_argument(
+        "--changed-files-from",
+        type=str,
+        default="",
+        help="Read changed file paths (one per line) from a file — avoids the OS argv length limit on large diffs",
+    )
+    parser.add_argument(
+        "--list-tier",
+        action="store_true",
+        help="Print the check ids the selected tier would run, then exit",
+    )
 
     args = parser.parse_args()
 
     selected = None
     if args.check:
         selected = [c.strip() for c in args.check.split(",")]
-    elif args.all:
-        selected = None  # All checks
 
-    changed: Optional[List[Path]] = None
+    tier = args.tier or ("full" if args.all else "full")
+
+    raw_changed: List[str] = []
     if args.changed_files:
-        changed = [PROJECT_ROOT / f.strip() for f in args.changed_files.split(",")]
+        raw_changed += [f.strip() for f in args.changed_files.split(",") if f.strip()]
+    if args.changed_files_from:
+        try:
+            raw_changed += [
+                line.strip()
+                for line in Path(args.changed_files_from).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except OSError as exc:
+            print(f"could not read --changed-files-from: {exc}", file=sys.stderr)
+            sys.exit(2)
+    changed: Optional[List[Path]] = [PROJECT_ROOT / f for f in raw_changed] or None
 
-    report = run_checks(selected, changed, autofix=args.fix)
+    if args.list_tier:
+        for check_id in (selected or select_checks(tier, changed)):
+            print(check_id)
+        sys.exit(0)
+
+    # Checks import application modules that print banners at import time
+    # (canvas `db/init_db.py` emits ~67 lines of "[init_db] ..."). Those landed
+    # on stdout AHEAD of the JSON document, so every downstream
+    # json.loads(stdout) raised and callers silently fell back to "no failure
+    # detail available". Swap stdout for stderr while the checks run so the
+    # report is the only thing on stdout — this covers noisy imports we haven't
+    # met yet, not just today's eleven offenders. sys.stdout is process-global,
+    # so the thread pool inside run_checks is covered too.
+    _real_stdout = sys.stdout
+    try:
+        sys.stdout = sys.stderr
+        report = run_checks(selected, changed, autofix=args.fix, tier=tier)
+    finally:
+        sys.stdout = _real_stdout
 
     if args.human:
         print(_format_human(report))

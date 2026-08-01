@@ -3,6 +3,7 @@ from __future__ import annotations
 """FORGE Academy gamification engine — XP, level-ups, achievements."""
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from .constants import (
@@ -11,21 +12,43 @@ from .constants import (
     XP_SPEED_BONUS_THRESHOLD_S, XP_DAILY_LOGIN_BASE, XP_STREAK_BONUS_PER_DAY,
     xp_to_next_level,
 )
+from . import db as _fadb
 from .db import (
     update_user_xp, grant_achievement, get_user_achievements, get_user,
 )
 
+_log = logging.getLogger(__name__)
+
+
+def projected_step_xp(base_xp: int, hints_used: int = 0,
+                      step_type: str = "coding") -> int:
+    """What a step will pay at `hints_used` hints. No side effects.
+
+    aca-ux-02: the hint button was labelled "-10 XP" in two templates while the
+    real first-hint cost on a 50 XP step was 48 (75 -> 27), because taking a hint
+    both forfeits the 1.5x no-hints multiplier and applies 0.75x plus a per-hint
+    penalty. Exposing the projection from the same code path award_step_xp uses is
+    what stops the quoted price from drifting from the charged price again — do not
+    reintroduce a hardcoded number in a template.
+    """
+    if step_type == "guided":
+        return int(base_xp)
+    if hints_used == 0:
+        return int(base_xp * XP_MULT_FIRST_TRY_NO_HINTS)
+    return max(0, int(base_xp * XP_MULT_WITH_HINTS) - hints_used * XP_HINT_PENALTY)
+
 
 def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
-                  elapsed_seconds: int = None, step_type: str = "coding") -> dict:
-    """Compute and award XP for a completed step. Returns event dict."""
-    if step_type == "guided":
-        xp = base_xp
-    elif hints_used == 0:
-        xp = int(base_xp * XP_MULT_FIRST_TRY_NO_HINTS)
-    else:
-        xp = int(base_xp * XP_MULT_WITH_HINTS)
-        xp = max(0, xp - hints_used * XP_HINT_PENALTY)
+                  elapsed_seconds: int = None, step_type: str = "coding",
+                  step_id: int | None = None) -> dict:
+    """Compute and award XP for a completed step. Returns event dict.
+
+    aca-int-07: step_id is what makes the resulting ledger row evidence rather than
+    a number. It is optional only because one legacy guided-step caller has no step
+    to name; that row records source_type='step' with a NULL id, which is visibly
+    weaker than the others rather than silently indistinguishable.
+    """
+    xp = projected_step_xp(base_xp, hints_used=hints_used, step_type=step_type)
 
     speed_bonus = 0
     if elapsed_seconds and elapsed_seconds <= XP_SPEED_BONUS_THRESHOLD_S and step_type == "coding":
@@ -34,12 +57,21 @@ def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
 
     before = get_user(user_id)
     old_level = before["level"] if before else "recruit"
-    result = update_user_xp(user_id, xp)
+    result = update_user_xp(user_id, xp, reason="step_pass",
+                            source_type="step", source_id=step_id)
     leveled_up = result["level"] != old_level
 
     achievements = []
-    if leveled_up:
-        slug = f"level_{result['level']}"
+    # NOTE: a `slug = f"level_{result['level']}"` was computed here and never
+    # used — ruff F841. Do not "fix" it by passing that slug to
+    # grant_achievement(): none of the 29 defined achievements is a level_*
+    # entry, and grant_achievement() returns None for an unknown slug, so the
+    # call would no-op and the visible behaviour would be identical. The real
+    # gap is that per-level achievements were designed and never defined.
+    # Defining them (names, xp_bonus, rarity) is a content decision, so the dead
+    # assignment is removed rather than dressed up as a working feature.
+    # `leveled_up` is still reported in the return value, which is what the UI
+    # actually consumes.
     if speed_bonus:
         ach = grant_achievement(user_id, "speed_demon")
         if ach:
@@ -56,10 +88,12 @@ def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
     }
 
 
-def award_mission_xp(user_id: int, mission_xp: int, perfect: bool = False) -> dict:
+def award_mission_xp(user_id: int, mission_xp: int, perfect: bool = False,
+                     mission_id: int | None = None) -> dict:
     """Award XP on mission completion. perfect=True means no hints, all steps first try."""
     xp = int(mission_xp * 1.5) if perfect else mission_xp
-    result = update_user_xp(user_id, xp)
+    result = update_user_xp(user_id, xp, reason="mission_complete",
+                            source_type="mission", source_id=mission_id)
     return {"xp_earned": xp, "perfect": perfect, "new_xp": result["xp"],
             "new_level": result["level"]}
 
@@ -80,25 +114,29 @@ def check_mission_achievements(user_id: int, mission_slug: str,
         if ctype == "mission_complete" and c.get("mission_slug") == mission_slug:
             granted = grant_achievement(user_id, a["slug"])
             if granted:
-                update_user_xp(user_id, a["xp_bonus"])
+                update_user_xp(user_id, a["xp_bonus"], reason="achievement",
+                               source_type="achievement", note=a["slug"])
                 unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
 
         elif ctype == "aadc_owasp_clean" and aadc_score >= 100:
             granted = grant_achievement(user_id, a["slug"])
             if granted:
-                update_user_xp(user_id, a["xp_bonus"])
+                update_user_xp(user_id, a["xp_bonus"], reason="achievement",
+                               source_type="achievement", note=a["slug"])
                 unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
 
         elif ctype == "aadc_score_gte" and aadc_score >= c.get("threshold", 80):
             granted = grant_achievement(user_id, a["slug"])
             if granted:
-                update_user_xp(user_id, a["xp_bonus"])
+                update_user_xp(user_id, a["xp_bonus"], reason="achievement",
+                               source_type="achievement", note=a["slug"])
                 unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
 
     if hints_total == 0 and "no_hints_needed" not in earned_slugs:
         granted = grant_achievement(user_id, "no_hints_needed")
         if granted:
-            update_user_xp(user_id, 200)
+            update_user_xp(user_id, 200, reason="achievement",
+                           source_type="achievement", note="no_hints_needed")
             unlocked.append({**granted, "bonus_xp": 200})
 
     return unlocked
@@ -111,32 +149,37 @@ def check_step_achievements(user_id: int, steps_completed: int) -> list[dict]:
     if steps_completed >= 1 and "first_spark" not in earned_slugs:
         granted = grant_achievement(user_id, "first_spark")
         if granted:
-            update_user_xp(user_id, 50)
+            update_user_xp(user_id, 50, reason="achievement",
+                           source_type="achievement", note="first_spark")
             unlocked.append({**granted, "bonus_xp": 50})
     return unlocked
 
 
 def award_daily_login(user_id: int) -> dict | None:
     """Award daily login XP + streak bonus. Returns award dict or None if already awarded."""
-    from tools.db.storage import get_connection
-    conn = get_connection()
+    conn = _fadb.get_connection()
     today = datetime.now(timezone.utc).date().isoformat()
     existing = conn.execute(
-        "SELECT id FROM fa_daily_logins WHERE user_id=? AND login_date=?",
+        "SELECT id FROM fa_daily_logins WHERE user_id=%s AND login_date=%s",
         (user_id, today),
     ).fetchone()
     if existing:
         return None
     user = get_user(user_id)
-    streak = user.get("streak_days", 1) if user else 1
+    # aca-hyg-04: `.get("streak_days", 1)` looked like it defaulted to 1, but the key
+    # always exists and the column defaults to 0 — so a learner on day one got
+    # min(0,7)*10 = 0 bonus. Logging in IS day one, so floor at 1.
+    stored = int((user or {}).get("streak_days") or 0)
+    streak = max(1, stored)
     bonus = min(streak, 7) * XP_STREAK_BONUS_PER_DAY
     xp = XP_DAILY_LOGIN_BASE + bonus
     conn.execute(
-        "INSERT INTO fa_daily_logins (user_id,login_date,xp_awarded) VALUES (?,?,?)",
+        "INSERT INTO fa_daily_logins (user_id,login_date,xp_awarded) VALUES (%s,%s,%s)",
         (user_id, today, xp),
     )
     conn.commit()
-    update_user_xp(user_id, xp)
+    update_user_xp(user_id, xp, reason="daily_login", source_type="daily_login",
+                   note=f"streak {streak}")
     return {"xp": xp, "streak": streak, "bonus": bonus}
 
 
@@ -161,10 +204,9 @@ def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_pa
 
     # First GameDay participation → arena_gladiator
     try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
+        conn = _fadb.get_connection()
         prev = conn.execute(
-            "SELECT COUNT(*) FROM fa_user_achievements WHERE user_id = ? AND achievement_slug = 'arena_gladiator'",
+            "SELECT COUNT(*) FROM fa_user_achievements WHERE user_id = %s AND achievement_slug = 'arena_gladiator'",
             (user_id,),
         ).fetchone()
         if prev and prev[0] == 0:
@@ -173,7 +215,8 @@ def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_pa
         pass
 
     try:
-        update_user_xp(user_id, xp)
+        update_user_xp(user_id, xp, reason="achievement", source_type="gameday",
+                       note=f"tournament {tournament_id} rank {final_rank}")
     except Exception:
         pass
 
@@ -199,19 +242,28 @@ def get_gameday_seed_bonus(user_id: int) -> float:
     L4+ (5000+ XP) earns the maximum bonus of 0.25.
     Used by GameDay team_runner to give higher-XP learners slightly better starting stats.
     """
+    # aca-hyg-01: this had three faults that combined into dead code. It imported
+    # get_connection from `icdev.tools.db.storage` while every other query in this
+    # module uses `tools.db.storage` — a different module object under the shim, so
+    # a test patching one never affected the other. It passed a literal `%s`
+    # placeholder where the rest of the app uses `?` and lets the storage layer
+    # translate. And the whole body sat under `except Exception: pass`, so either
+    # fault silently returned 0.0 and the bonus was never applied to anyone.
+    from tools.db.storage import get_connection
+
     try:
-        from icdev.tools.db.storage import get_connection
-        conn = get_connection()
-        row = conn.execute(
+        row = get_connection().execute(
             "SELECT xp FROM fa_users WHERE id = %s",
             (user_id,),
         ).fetchone()
-        if row:
-            xp = row[0] or 0
-            return min(0.25, xp / 20000.0)
     except Exception:
-        pass
-    return 0.0
+        # fga-fix-05 precedent: a swallowed warning never reaches a health check.
+        _log.exception("gameday seed bonus lookup failed for user %s", user_id)
+        return 0.0
+    if not row:
+        return 0.0
+    xp = row[0] or 0
+    return min(0.25, xp / 20000.0)
 
 
 def get_user_stats(user_id: int) -> dict:

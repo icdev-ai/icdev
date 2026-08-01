@@ -148,9 +148,9 @@ def _audit(conn, event_type, action, details):
     try:
         conn.execute(
             "INSERT INTO audit_trail "
-            "(id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (_gen_id("aud"), _now(), event_type, "idiq_factory", action, det, None, None),
+            "(created_at, event_type, actor, action, details, project_id, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (_now(), event_type, "idiq_factory", action, det, None, None),
         )
     except Exception:
         try:

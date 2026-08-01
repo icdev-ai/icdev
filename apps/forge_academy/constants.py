@@ -86,6 +86,51 @@ STEP_TYPES = [
 ]
 
 # ---------------------------------------------------------------------------
+# Step progress vocabulary
+# ---------------------------------------------------------------------------
+# fa_step_progress.status. 'attempted' exists because a failed submission used to
+# be filed as 'completed' with score 0 (aca-int-05) — a failure is now visibly a
+# failure. If a CHECK constraint is ever added to the column, derive it from
+# STEP_STATUSES rather than hardcoding the list in SQL.
+STEP_STATUS_NOT_STARTED = "not_started"
+STEP_STATUS_ATTEMPTED   = "attempted"
+STEP_STATUS_COMPLETED   = "completed"
+STEP_STATUSES = (STEP_STATUS_NOT_STARTED, STEP_STATUS_ATTEMPTED, STEP_STATUS_COMPLETED)
+
+# ---------------------------------------------------------------------------
+# Tier gating (aca-ux-04)
+# ---------------------------------------------------------------------------
+# Percentage of the PRIOR tier's *completable* missions required to unlock a tier.
+# Tier 1 is deliberately absent: it is the entry point and must never gate.
+#
+# "Completable" excludes missions with zero steps. This is not a nicety — Tier 1
+# contains m-chat-agent-interview, which has no steps by design (fga-wire-06 marks
+# genuinely-empty missions Coming Soon). A "100% of the prior tier" rule would
+# therefore have made Tier 2 PERMANENTLY unreachable. 12 of 13 Tier-1 missions and
+# 95 of 104 Tier-2 missions are completable.
+#
+# Tier 3's bar is deliberately much lower than Tier 2's: Tier 2 is a 95-mission
+# role-track catalogue that no single learner is expected to finish (a netops
+# engineer has no reason to complete the ISSM track), so a high percentage there
+# would gate Tier 3 on irrelevant work. Scoping the Tier-3 threshold to the
+# learner's own role missions is the better answer and is deliberately deferred:
+# role matching currently uses LIKE '%role%', so 'swe' matches 'swe_arch'
+# (aca-hyg-02). Revisit once that is exact-token.
+TIER_UNLOCK_PCT = {
+    2: 80,
+    3: 25,
+}
+
+# fa_mission_progress.status. Same rule as above: if a CHECK is ever added to the
+# column, derive it from MISSION_STATUSES.
+MISSION_STATUS_NOT_STARTED = "not_started"
+MISSION_STATUS_IN_PROGRESS = "in_progress"
+MISSION_STATUS_COMPLETED   = "completed"
+MISSION_STATUSES = (
+    MISSION_STATUS_NOT_STARTED, MISSION_STATUS_IN_PROGRESS, MISSION_STATUS_COMPLETED,
+)
+
+# ---------------------------------------------------------------------------
 # XP multipliers
 # ---------------------------------------------------------------------------
 XP_MULT_FIRST_TRY_NO_HINTS = 1.5

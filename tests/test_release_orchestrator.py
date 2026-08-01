@@ -367,6 +367,8 @@ def test_payload_gate_ignores_parent_only_subsystems(tmp_path, monkeypatch):
         "icdev/tools/cli/setup_wizard.py": b"x",
         "icdev/tools/cli/setup.py": b"x",
         "icdev/tools/cli/provision_db.py": b"x",
+        "icdev/tools/db/init_icdev_db.py": b"x",
+        "icdev/tools/compat/subprocess_utils.py": b"x",
         **_platform_entries(),
     })
     monkeypatch.setattr(rel, "DIST_DIR", dist)
@@ -383,6 +385,10 @@ def test_payload_gate_ignores_parent_only_subsystems(tmp_path, monkeypatch):
     ("icdev/data/goals/g.md", "goals"),
     ("icdev/data/claude_bootstrap/CLAUDE.md", "no CLAUDE.md"),
     ("icdev/data/.env.template", ".env.template"),
+    # Without these two, `icdev setup --provision-db` and `icdev-init-db` both
+    # fail at the step that creates every table — a project with no database.
+    ("icdev/tools/db/init_icdev_db.py", "platform schema initialiser"),
+    ("icdev/tools/compat/subprocess_utils.py", "child-process module resolver"),
 ])
 def test_payload_gate_requires_each_forge_layer(tmp_path, monkeypatch, drop, expect):
     """`icdev init` copies these OUT of the wheel.
@@ -402,6 +408,8 @@ def test_payload_gate_requires_each_forge_layer(tmp_path, monkeypatch, drop, exp
         "icdev/tools/cli/setup_wizard.py": b"x",
         "icdev/tools/cli/setup.py": b"x",
         "icdev/tools/cli/provision_db.py": b"x",
+        "icdev/tools/db/init_icdev_db.py": b"x",
+        "icdev/tools/compat/subprocess_utils.py": b"x",
         **_platform_entries(),
     }
     full.pop(drop)

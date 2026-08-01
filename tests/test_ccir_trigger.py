@@ -277,8 +277,10 @@ def test_evaluate_ccirs_trigger_and_alert_when_baseline_true(icdev_intelligence_
         patch("tools.strategos.ccir_trigger.publish") as mock_publish,
         patch("tools.strategos.ccir_trigger.NotificationGateway") as mock_gw,
     ):
-        conn = sqlite3.connect(str(icdev_intelligence_db))
-        conn.row_factory = sqlite3.Row
+        # Translating wrapper — ccir_trigger authors %s for PostgreSQL.
+        from _sql_compat import connect as _tconnect
+
+        conn = _tconnect(icdev_intelligence_db)
         mock_get_conn.return_value = conn
 
         mock_gw_instance = MagicMock()
@@ -320,8 +322,10 @@ def test_evaluate_ccirs_no_alert_when_baseline_false(icdev_intelligence_db):
         patch("tools.strategos.ccir_trigger.NotificationGateway") as mock_gw,
         patch("tools.strategos.ccir_trigger._validate_baseline") as mock_val,
     ):
-        conn = sqlite3.connect(str(icdev_intelligence_db))
-        conn.row_factory = sqlite3.Row
+        # Translating wrapper — ccir_trigger authors %s for PostgreSQL.
+        from _sql_compat import connect as _tconnect
+
+        conn = _tconnect(icdev_intelligence_db)
         mock_get_conn.return_value = conn
 
         mock_gw_instance = MagicMock()

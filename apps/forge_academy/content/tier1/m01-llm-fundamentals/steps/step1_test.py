@@ -1,33 +1,47 @@
-
 # Auto-grader for M01 Step 1
+#
+# aca-vv-01: the previous version of this file defined its OWN simulate_llm_call,
+# re-executed its own solution, and asserted on its own output — so it passed no
+# matter what the learner submitted, including an empty file. It was step 1 of
+# mission 1: the Academy's front door graded nothing.
+#
+# run_code concatenates the learner's script and this file into ONE program, so the
+# learner's module-level names and their stdout are visible here. Grade those.
 
-def simulate_llm_call(system_prompt: str, user_message: str) -> dict:
-    return {
-        "content": "A token is a unit of text...",
-        "model": "ollama/mistral",
-        "usage": {"input_tokens": len(system_prompt.split()) + len(user_message.split()), "output_tokens": 42}
-    }
+# --- 1. The learner must actually have called the simulator -------------------
+_fn = globals().get("simulate_llm_call")
+assert callable(_fn), (
+    "simulate_llm_call is not defined — keep the starter's function and call it."
+)
 
-# The student code should have called simulate_llm_call and printed output
-# We verify they called it by checking if variables exist and output was produced
+_resp = globals().get("response")
+assert isinstance(_resp, dict), (
+    "No `response` dict found. Call simulate_llm_call(system_prompt, user_message) "
+    "and assign the result to `response`."
+)
+for _key in ("content", "model", "usage"):
+    assert _key in _resp, f"The response is missing {_key!r}."
 
-import sys
-from io import StringIO
+# --- 2. The call must have used the learner's own prompts ---------------------
+_sys_prompt = globals().get("system_prompt", "")
+_user_msg = globals().get("user_message", "")
+assert isinstance(_sys_prompt, str) and _sys_prompt.strip(), "system_prompt is empty."
+assert isinstance(_user_msg, str) and _user_msg.strip(), "user_message is empty."
+assert _resp["content"], "The response content is empty."
+assert _user_msg[:20] in _resp["content"], (
+    "The response does not reflect your user_message — call the simulator with your "
+    "own prompts rather than hardcoding a result."
+)
 
-captured = StringIO()
-sys.stdout = captured
+# --- 3. Token usage must be read from the response, not invented --------------
+_usage = _resp["usage"]
+assert {"input_tokens", "output_tokens"} <= set(_usage), (
+    "usage must carry input_tokens and output_tokens."
+)
+_expected_in = len(_sys_prompt.split()) + len(_user_msg.split())
+assert _usage["input_tokens"] == _expected_in, (
+    f"input_tokens should be {_expected_in} for your prompts — read it from the "
+    "response instead of hardcoding a number."
+)
 
-try:
-    # Re-execute their solution context
-    system_prompt = "You are an expert AI engineer teaching fundamentals."
-    user_message = "What is a token in the context of language models?"
-    response = simulate_llm_call(system_prompt, user_message)
-    print(response["content"])
-    print(f"Tokens: in={response['usage']['input_tokens']}, out={response['usage']['output_tokens']}")
-finally:
-    sys.stdout = sys.__stdout__
-
-output = captured.getvalue()
-assert len(output) > 10, "No output generated — call simulate_llm_call and print the results"
-assert "token" in output.lower() or "processing" in output.lower(), "Output should reference the LLM response content"
-print("PASS: LLM call structure understood")
+print("PASS: you made the call, read the response, and reported real token usage.")

@@ -58,6 +58,17 @@ SCOREBOARD_ONTOLOGY_FILTERS = [
 # Entries that map to a real MCP tool carry an `mcp_tool` key whose value is a
 # key in tools/mcp/tool_registry.py::TOOL_REGISTRY. The freshness test
 # (tests/test_penta_gd_content.py) asserts every `mcp_tool` resolves there.
+def tool_is_navigable(tool: dict) -> bool:
+    """True when a catalog entry can be opened in a browser tab.
+
+    12 of the 34 entries are POST-only ``/api/...`` endpoints. The player
+    console rendered every entry as ``<a href=...>``, so clicking one of those
+    opened a tab that 405s or 404s (fga-gd-02). A page cannot GET a POST API,
+    so these are shown as reference rather than as links.
+    """
+    return not str(tool.get("endpoint", "")).startswith("/api/")
+
+
 AI_TOOLS_CATALOG = [
     {"slug": "strategos.oracle",          "label": "Strategos Oracle",       "endpoint": "/api/strategos/oracle",           "icon": "🔮"},
     {"slug": "strategos.signals",         "label": "Signal Prioritizer",     "endpoint": "/api/strategos/signals",          "icon": "📡"},
@@ -101,3 +112,12 @@ AI_TOOLS_CATALOG = [
     # ── Governed delivery pipeline ───────────────────────────────────────────
     {"slug": "kanban.summary",        "label": "Kanban Board Summary",     "endpoint": "/kanban",              "icon": "📋", "mcp_tool": "kanban_board_summary"},
 ]
+
+
+def catalog_for_render() -> list:
+    """AI_TOOLS_CATALOG with a ``navigable`` flag on each entry.
+
+    Kept next to the catalog so every render site gets the same answer; the
+    player console previously linked all 34 entries regardless of method.
+    """
+    return [{**t, "navigable": tool_is_navigable(t)} for t in AI_TOOLS_CATALOG]

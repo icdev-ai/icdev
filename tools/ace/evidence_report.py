@@ -51,11 +51,81 @@ def generate(instance_id: str, fmt: str = "ssp") -> dict[str, Any] | str:
         ValueError: Instance not found.
     """
     data = _collect(instance_id)
+    _write_generate_audit(data["instance"]["id"], data)
     if fmt == "json":
         return data
     if fmt == "markdown":
         return _render_markdown(data)
     return _render_ssp(data)
+
+
+# ---------------------------------------------------------------------------
+# Audit helper
+# ---------------------------------------------------------------------------
+
+
+def _write_generate_audit(
+    instance_id: str,
+    data: dict[str, Any],
+    publish_meta: dict[str, Any] | None = None,
+) -> None:
+    """Append an ace_audit_log row recording that this report was generated.
+
+    Generating an evidence report is itself an auditable act — it is the
+    artifact an assessor is handed, so "who produced this, when, and over what"
+    has to be answerable. Reading ace_audit_log without writing to it left that
+    unanswered.
+
+    This function was lost, not omitted: it was authored only in the
+    ``icdev/tools/`` mirror, and ``sync_package_tree`` copies canonical
+    ``tools/`` OVER the mirror, so the next release sync deleted it. Restored
+    here in ``tools/`` — the canonical location — so a sync propagates it
+    instead of destroying it.
+
+    Non-blocking: exceptions are swallowed so an audit failure never breaks
+    report generation.
+
+    Args:
+        publish_meta: Optional IDR publish context merged into the detail JSON
+            (e.g. ``{"idr_session_id": "...", "formats": ["html", "docx"]}``)
+            to link the entry back to the triggering publish event.
+    """
+    try:
+        from icdev.tools.db.storage import get_canvas_connection, sql_placeholder
+
+        summary = data.get("summary", {})
+        detail_dict: dict[str, Any] = {
+            "generated_at": data.get("generated_at"),
+            "classification": data.get("classification"),
+            "total_actions": summary.get("total_actions", 0),
+            "total_artifacts": summary.get("total_artifacts", 0),
+            "control_refs_count": summary.get("control_refs_count", 0),
+        }
+        if publish_meta:
+            detail_dict["publish"] = publish_meta
+        detail = json.dumps(detail_dict, separators=(",", ":"))
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        conn = get_canvas_connection(_DB_ENV)
+        try:
+            _ph = sql_placeholder(conn)
+            conn.execute(
+                "INSERT INTO ace_audit_log "
+                "(instance_id, action, detail, actor, classification, created_at) "
+                f"VALUES ({_ph}, {_ph}, {_ph}, {_ph}, {_ph}, {_ph})",
+                (
+                    instance_id,
+                    "evidence_report.generate",
+                    detail,
+                    "evidence_report",
+                    data.get("classification", _DEFAULT_CLASSIFICATION),
+                    now,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

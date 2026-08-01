@@ -1,0 +1,122 @@
+{# CUI // SP-CTI
+   Shared renderer for chat action cards.
+
+   A chat message with content_type='action_card' carries its payload in
+   metadata JSON. The `card` key selects the renderer; only sme_team_suggestion
+   is registered today. This partial exists as the ADOPTION SEAM: any surface
+   that renders chat turns can include it and inherit every future card type
+   without re-implementing the markup.
+
+   Note content_type='action_card' is already permitted by the chat_messages
+   CHECK constraint, so none of this needed a migration.
+#}
+<script>
+(function () {
+  if (window.__icdevChatCards) { return; }
+
+  var CARDS = {};
+
+  // ── sme_team_suggestion ───────────────────────────────────────────────────
+  // Proposes a co-worker team for a message that looks like a multi-step goal.
+  // Nothing has been launched at this point; approving is what spawns agents.
+  CARDS.sme_team_suggestion = function (meta, el) {
+    var roles = meta.roles || [];
+    var locked = !!meta.locked;
+
+    var roleHtml = roles.length
+      ? roles.map(function (r) {
+          var isNew = r.status === 'to_generate';
+          return '<li style="margin:2px 0;">'
+            + '<strong>' + escapeHtml(r.display_name || r.role_id) + '</strong>'
+            + (r.count > 1 ? ' &times;' + r.count : '')
+            + (isNew
+                ? ' <span title="No such specialist exists yet — one will be created" '
+                  + 'style="font-size:10px;padding:1px 5px;border-radius:3px;'
+                  + 'background:#3b2f0b;color:#fbbf24;">will be created</span>'
+                : '')
+            + '</li>';
+        }).join('')
+      : '<li style="color:var(--text-dim);">roster will be decided at launch</li>';
+
+    var actions = locked
+      ? '<div style="font-size:11px;color:#fbbf24;">&#128274; Requires the '
+          + escapeHtml(meta.tier_required || 'professional') + ' plan.</div>'
+      : '<button class="btn" data-sme-approve="' + escapeHtml(meta.suggestion_id) + '" '
+          + 'style="font-size:11px;padding:4px 12px;">Spin up the team</button>'
+        + '<button class="btn" data-sme-decline="' + escapeHtml(meta.suggestion_id) + '" '
+          + 'style="font-size:11px;padding:4px 12px;background:transparent;">No thanks</button>';
+
+    el.innerHTML =
+      '<div style="border:1px solid #1e3a6e;border-left:3px solid #5aa9e6;border-radius:6px;'
+      + 'padding:12px;background:#0d1b2e;margin:6px 0;">'
+      + '<div style="font-size:12px;font-weight:600;color:#b8d0e8;margin-bottom:4px;">'
+      + 'Subject-matter experts available</div>'
+      + '<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">'
+      + escapeHtml(meta.rationale || '') + '</div>'
+      + '<ul style="margin:0 0 10px 16px;padding:0;font-size:12px;color:#d5e3f2;">'
+      + roleHtml + '</ul>'
+      + '<div style="display:flex;gap:6px;align-items:center;" data-sme-actions>'
+      + actions + '</div>'
+      + '<div data-sme-result style="font-size:11px;margin-top:6px;"></div>'
+      + '</div>';
+  };
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function render(meta, el) {
+    var fn = CARDS[meta && meta.card];
+    if (!fn) { return false; }
+    fn(meta, el);
+    return true;
+  }
+
+  // Delegated so cards rendered after page load still work.
+  document.addEventListener('click', function (ev) {
+    var approve = ev.target.closest('[data-sme-approve]');
+    var decline = ev.target.closest('[data-sme-decline]');
+    if (!approve && !decline) { return; }
+
+    var btn = approve || decline;
+    var id = btn.getAttribute(approve ? 'data-sme-approve' : 'data-sme-decline');
+    var card = btn.closest('[data-sme-actions]').parentNode;
+    var result = card.querySelector('[data-sme-result]');
+    var actions = card.querySelector('[data-sme-actions]');
+
+    // Disable immediately: confirm is idempotent server-side, but a double
+    // click should not look like it did nothing.
+    actions.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    result.textContent = approve ? 'Starting the team…' : 'Dismissing…';
+
+    fetch('/api/ace/suggestions/' + encodeURIComponent(id) + (approve ? '/confirm' : '/decline'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; });
+    }).then(function (res) {
+      if (!approve) { result.textContent = 'Dismissed.'; return; }
+      if (res.status === 402) {
+        result.innerHTML = '<span style="color:#fbbf24;">'
+          + escapeHtml(res.d.message || 'Upgrade required.') + '</span>';
+        return;
+      }
+      if (!res.ok) {
+        result.innerHTML = '<span style="color:#ef4444;">'
+          + escapeHtml(res.d.error || 'Could not start the team.') + '</span>';
+        return;
+      }
+      result.innerHTML = 'Team running. <a href="' + escapeHtml(res.d.deep_link)
+        + '" style="color:#5aa9e6;">View progress</a>';
+    }).catch(function () {
+      result.innerHTML = '<span style="color:#ef4444;">Network error.</span>';
+      actions.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+    });
+  });
+
+  window.__icdevChatCards = { render: render, types: CARDS };
+})();
+</script>

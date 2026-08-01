@@ -6045,6 +6045,50 @@ TOOL_REGISTRY = {
     # ============================================================
     # REDACTION & DATA PROTECTION (Phase 70 — D-RDT-1)
     # ============================================================
+    "databridge_fetch": {
+        "category": "databridge",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_databridge_fetch",
+        "description": (
+            "Read from an external SaaS connector (Splunk, ServiceNow, GitHub, ...) through "
+            "the agent access broker. READ-ONLY: the broker has no write path. Every call is "
+            "authorized per-agent against args/databridge_agent_access.yaml (deny-all by "
+            "default), refused outright in air-gap mode, has free-text filter values redacted "
+            "fail-closed before egress, and writes an audit row whether allowed or denied. "
+            "Call databridge_sources first to see what this agent may reach rather than "
+            "probing -- a denial is returned as a result, not an error."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "connector": {"type": "string", "description": "Registered connector name, e.g. 'github', 'servicenow_itsm'"},
+                "table": {"type": "string", "description": "Table/collection to read; must be in the connector's grant"},
+                "query": {"type": "string", "description": "Optional free-text search. Redacted fail-closed before it leaves."},
+                "filters": {"type": "object", "description": "Optional structured filters. String values are redacted."},
+                "limit": {"type": "integer", "description": "Max rows (default 200, hard cap 1000)"},
+                "agent_id": {"type": "string", "description": "Calling agent's role_id, for authorization and audit"},
+                "classification": {"type": "string", "description": "Sensitivity of the query content (default UNCLASSIFIED)"},
+            },
+            "required": ["connector", "table"],
+        },
+    },
+    "databridge_sources": {
+        "category": "databridge",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_databridge_sources",
+        "description": (
+            "List external connectors and tables the calling agent is permitted to read. "
+            "Use this before databridge_fetch: discovering your own reach is preferable to "
+            "probing, which is indistinguishable from an attack in the audit trail."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "Calling agent's role_id"},
+            },
+            "required": [],
+        },
+    },
     "redaction_detect": {
         "category": "redaction",
         "module": "tools.mcp.gap_handlers",
@@ -7092,6 +7136,32 @@ TOOL_REGISTRY = {
             "properties": {
                 "limit": {"type": "integer", "default": 20, "description": "Max entries to return"},
             },
+        },
+    },
+    "ace_ensure_sme": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_ensure_sme",
+        "description": (
+            "Ensure a TEAM-CAPABLE subject-matter expert exists for a domain, creating one "
+            "only if the existing catalog does not already cover it. Unlike ace_persona_query "
+            "-- which yields an advisory-only SOUL.md persona that can answer a question but "
+            "can never be staffed onto a team -- this produces BOTH the persona identity and "
+            "the executable role YAML, so the returned role_id can be passed straight to "
+            "ace_launch's role_ids. Reuses a near-match from the ~90-role catalog rather than "
+            "minting a duplicate. All security fields (trust_tier, tool_permissions, "
+            "folder_access, icdev_tools) come from hand-authored capability bundles, never "
+            "from the model; generated roles are trust_tier 'red' so the human confidence gate "
+            "reviews their first run. Primary use case is cross-repo callers (idea_lab, compass)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain_description": {"type": "string", "description": "Free-text description of the expertise needed, e.g. 'maritime hull and cargo underwriting'"},
+                "capability_bundle": {"type": "string", "description": "Optional: advisory (default, read-only) | analyst | builder. Escalation beyond advisory is a deliberate human choice."},
+                "allow_reuse": {"type": "boolean", "description": "Reuse a sufficiently similar existing role instead of generating (default true)"},
+            },
+            "required": ["domain_description"],
         },
     },
     "ace_persona_query": {

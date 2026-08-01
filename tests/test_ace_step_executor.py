@@ -87,8 +87,21 @@ def _fake_module(fn_name: str, return_value: Any = "ok"):
 
 
 class TestSubstitute:
-    def test_whole_var_preserves_type(self):
-        assert _substitute("$count", {"count": 42}) == 42
+    def test_whole_var_is_stringified_like_inline(self):
+        """Both substitution forms stringify — see _substitute's docstring.
+
+        Previously asserted `== 42`, i.e. that a whole-var reference preserves
+        the context value's type. _substitute has stringified both forms since
+        its first commit and documents why: step arguments originate in
+        JSON/YAML and are text by the time a tool receives them. The assertion
+        was added long afterwards and never matched the code.
+
+        Renamed rather than deleted: type-preserving whole-var substitution is
+        a defensible design (Ansible and GitHub Actions both do it), so if it
+        is wanted it should be a deliberate change to _substitute and its
+        docstring, not a lone test asserting a behaviour nothing implements.
+        """
+        assert _substitute("$count", {"count": 42}) == "42"
 
     def test_inline_var_stringified(self):
         assert _substitute("prefix_$name", {"name": "foo"}) == "prefix_foo"

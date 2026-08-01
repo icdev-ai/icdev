@@ -484,6 +484,8 @@ class CoWorkerThread(threading.Thread):
     def _run_step_mode(self, role: Any) -> None:
         """Execute the role's fixed ``steps`` list (the legacy default mode)."""
         executor = StepExecutor()
+        attempted = 0
+        succeeded = 0
 
         # 4 & 5. Execute each step; poll inbox between steps
         for raw_step in role.steps:
@@ -499,8 +501,10 @@ class CoWorkerThread(threading.Thread):
             step = self._normalise_step(raw_step)
             self._set_assigned_step(step.get("id", str(raw_step)))
 
+            attempted += 1
             try:
                 result = executor.run(step, self._ace_context, self.spec, self.trust_kernel)
+                succeeded += 1
                 self._audit(
                     "step_complete",
                     f"step={step.get('id')} result_type={type(result).__name__}",
@@ -520,6 +524,20 @@ class CoWorkerThread(threading.Thread):
                 step_text = str(result) if result is not None else ""
                 if self._check_behavioral_compliance(step_text, role):
                     return  # instance paused to hitl_pending
+
+        # A co-worker that attempted work and had EVERY step fail has produced
+        # nothing. Reporting 'done' there is how the llm_step permission
+        # deadlock stayed invisible for 88 of 90 roles: each step raised, each
+        # raise was swallowed as optional, and the instance still finished
+        # 'complete' with zero artifacts. Individual steps stay optional; total
+        # failure is not.
+        if attempted and not succeeded:
+            self._set_state("failed")
+            self._audit(
+                "all_steps_failed",
+                f"attempted={attempted} succeeded=0 — no output produced",
+            )
+            return
 
         self._finish_done(role, detail="all steps completed")
 
@@ -1398,16 +1416,53 @@ class CoWorkerThread(threading.Thread):
     # ------------------------------------------------------------------
 
     def _normalise_step(self, raw_step: Any) -> dict[str, Any]:
-        """Convert a string step ID to an LLM-invoke step dict.
+        """Convert a role step into the dict schema ``StepExecutor.run`` expects.
 
-        String steps (e.g. 'analyze_requirements') are expanded into a
-        structured LLM invocation so that bare role YAMLs produce real output
-        instead of silently failing with ToolPermissionDeniedError.
+        Accepts three shapes:
+
+        - ``dict``  — already in executor schema; passed through untouched.
+        - ``RoleStep`` — the dataclass ``RoleLoader`` actually produces
+          (``name``/``tool``/``params``/``condition``). If it declares a
+          ``tool``, that tool is invoked with ``params`` as args and the
+          declared ``condition`` preserved; otherwise it degrades to the same
+          LLM invocation as a bare string.
+        - ``str``   — a bare step name, expanded into an LLM invocation.
+
+        RoleStep used to fall through to the ``str(raw_step)`` branch, so the
+        step id became the dataclass repr —
+        ``"RoleStep(name='analyze_requirements', tool='', params={}, condition=None)"``
+        — which was written to ``ace_coworkers.assigned_step`` and fed into the
+        LLM prompt, while any declared ``tool``/``params``/``condition`` was
+        silently discarded.
         """
         if isinstance(raw_step, dict):
             return raw_step
-        step_name = str(raw_step)
-        # Build an LLM step: invoke LLMRouter with the step description + problem
+
+        # RoleStep (or anything exposing the same attributes) — duck-typed so a
+        # test double does not have to import the dataclass.
+        name = getattr(raw_step, "name", None)
+        if name is not None:
+            step_name = str(name)
+            declared_tool = str(getattr(raw_step, "tool", "") or "")
+            condition = getattr(raw_step, "condition", None)
+            if declared_tool:
+                return {
+                    "id": step_name,
+                    "tool": declared_tool,
+                    "args": dict(getattr(raw_step, "params", None) or {}),
+                    "condition": condition,
+                    "output_var": f"{step_name}_result",
+                    "required": False,
+                }
+            step = self._llm_step(step_name)
+            if condition is not None:
+                step["condition"] = condition
+            return step
+
+        return self._llm_step(str(raw_step))
+
+    def _llm_step(self, step_name: str) -> dict[str, Any]:
+        """Build an LLM-invoke step dict for a step that declares no tool."""
         return {
             "id": step_name,
             "tool": "icdev.tools.ace.llm_step.invoke",
