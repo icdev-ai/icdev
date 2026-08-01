@@ -369,7 +369,7 @@ def guild():
     fa_user = _fa_user()
     guild_data = None
     if fa_user and fa_user.get("guild_id"):
-        guild_data = get_guild_stats(fa_user["guild_id"])
+        guild_data = get_guild_stats(fa_user["guild_id"], tenant_id=_fa_tenant_id())
     return render_template(
         "forge_academy/guild.html",
         fa_user=fa_user,
@@ -815,7 +815,8 @@ def api_guild_create():
         return jsonify({"error": "name required"}), 400
     guild = create_guild(name=name, description=description,
                          invite_code=secrets.token_urlsafe(6),
-                         created_by=fa_user["id"])
+                         created_by=fa_user["id"],
+                         tenant_id=_fa_tenant_id())
     # Report the code that was actually STORED, not the one we proposed —
     # create_guild uppercases it to match join_guild's lookup, so echoing the
     # local variable would hand the user an invite that never resolves.
@@ -830,13 +831,22 @@ def api_guild_join():
         return jsonify({"error": "not configured"}), 400
     data = request.get_json(silent=True) or {}
     invite_code = data.get("invite_code", "").strip()
-    result = join_guild(user_id=fa_user["id"], invite_code=invite_code)
+    result = join_guild(user_id=fa_user["id"], invite_code=invite_code,
+                        tenant_id=_fa_tenant_id())
+    if result is None:
+        # aca-trn-04: this returned `null` with a 200, so an unresolvable invite
+        # code was indistinguishable from a successful join to any caller that
+        # checked the status.
+        return jsonify({"ok": False, "error": "invite code not found"}), 404
     return jsonify(result)
 
 
 @bp.route("/api/academy/guild/<int:guild_id>")
 def api_guild_stats(guild_id):
-    stats = get_guild_stats(guild_id)
+    # aca-trn-04: scoped to the caller's tenant. The id comes from the URL and
+    # this route has no other authorisation, so unscoped it enumerated every
+    # learner's display name and XP across every tenant.
+    stats = get_guild_stats(guild_id, tenant_id=_fa_tenant_id())
     if stats is None:
         # aca-hyg-03: used to 200 with an empty member list, so a client could not
         # tell a missing guild from an empty one.
@@ -1052,6 +1062,161 @@ def api_org_readiness():
         return jsonify(compute_org_readiness())
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Instructor / cohort workflow  (aca-trn-04)
+#
+# Every route here wears @require_org_intel — the SAME admin/pm/isso gate Org
+# Readiness and the Oracle already use. A second RBAC model for instructors was
+# explicitly not built: two authorisation systems over one dataset is how a
+# surface ends up authorised in one place and open in the other.
+# ---------------------------------------------------------------------------
+
+def _instructor_identity() -> tuple[str, str]:
+    """(actor, role) for the audit trail. Never anonymous — the gate guarantees a user."""
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        return (user.get("email") or user.get("username") or "unknown",
+                str(user.get("role") or ""))
+    return (str(getattr(user, "email", "") or getattr(user, "username", "") or "unknown"),
+            str(getattr(user, "role", "") or ""))
+
+
+@bp.route("/academy/instructor")
+@require_org_intel
+def instructor_page():
+    _ensure_init()
+    from . import instructor as _inst
+    tenant_id = _fa_tenant_id()
+    learners = _inst.roster(tenant_id)
+    assignments = _inst.list_assignments(tenant_id)
+    return render_template(
+        "forge_academy/instructor.html",
+        learners=learners,
+        assignments=assignments,
+        missions=list_missions(tier=None),
+        roles=ROLES,
+        audit=_inst.audit_trail(tenant_id, limit=25),
+        verdicts=sorted(_inst.REVIEW_VERDICTS),
+    )
+
+
+@bp.route("/academy/instructor/learner/<int:user_id>")
+@require_org_intel
+def instructor_learner_page(user_id: int):
+    _ensure_init()
+    from . import instructor as _inst
+    tenant_id = _fa_tenant_id()
+    learner = _inst.get_learner(user_id, tenant_id)
+    if not learner:
+        # Same answer for "not in this tenant" as for "does not exist".
+        return redirect(url_for("forge_academy.instructor_page"))
+    return render_template(
+        "forge_academy/instructor_learner.html",
+        learner=learner,
+        summary=user_progress_summary(user_id, tenant_id),
+        assignments=_inst.list_assignments(tenant_id, user_id=user_id),
+        submissions=_inst.learner_submissions(user_id),
+        evidence=_inst.learner_evidence(user_id),
+        reviews=_inst.learner_reviews(user_id),
+        roles=ROLES,
+        verdicts=sorted(_inst.REVIEW_VERDICTS),
+    )
+
+
+@bp.route("/api/academy/instructor/roster")
+@require_org_intel
+def api_instructor_roster():
+    _ensure_init()
+    from . import instructor as _inst
+    return jsonify({"learners": _inst.roster(_fa_tenant_id(),
+                                             request.args.get("role") or None)})
+
+
+@bp.route("/api/academy/instructor/assignments")
+@require_org_intel
+def api_instructor_assignments():
+    _ensure_init()
+    from . import instructor as _inst
+    user_id = request.args.get("user_id", type=int)
+    return jsonify({"assignments": _inst.list_assignments(
+        _fa_tenant_id(), user_id=user_id)})
+
+
+@bp.route("/api/academy/instructor/assign", methods=["POST"])
+@require_org_intel
+def api_instructor_assign():
+    _ensure_init()
+    from . import instructor as _inst
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    actor, actor_role = _instructor_identity()
+    try:
+        assignment = _inst.create_assignment(
+            assigned_by=actor,
+            actor_role=actor_role,
+            assignment_type=data.get("assignment_type", "mission"),
+            mission_id=data.get("mission_id"),
+            track_key=data.get("track_key"),
+            target_type=data.get("target_type", "learner"),
+            target_user_id=data.get("target_user_id"),
+            target_role=data.get("target_role"),
+            due_at=data.get("due_at"),
+            note=data.get("note", ""),
+            tenant_id=_fa_tenant_id(),
+        )
+    except _inst.AssignmentError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "assignment": assignment})
+
+
+@bp.route("/api/academy/instructor/assignment/<int:assignment_id>/cancel", methods=["POST"])
+@require_org_intel
+def api_instructor_cancel(assignment_id: int):
+    _ensure_init()
+    from . import instructor as _inst
+    actor, actor_role = _instructor_identity()
+    ok = _inst.cancel_assignment(assignment_id, actor=actor, actor_role=actor_role,
+                                 tenant_id=_fa_tenant_id())
+    if not ok:
+        return jsonify({"ok": False, "error": "assignment not found"}), 404
+    return jsonify({"ok": True, "assignment_id": assignment_id})
+
+
+@bp.route("/api/academy/instructor/review", methods=["POST"])
+@require_org_intel
+def api_instructor_review():
+    _ensure_init()
+    from . import instructor as _inst
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    actor, actor_role = _instructor_identity()
+    try:
+        result = _inst.record_review(
+            user_id=int(data.get("user_id") or 0),
+            verdict=data.get("verdict", ""),
+            reviewer=actor,
+            actor_role=actor_role,
+            mission_id=data.get("mission_id"),
+            step_id=data.get("step_id"),
+            assignment_id=data.get("assignment_id"),
+            override_score=data.get("override_score"),
+            comment=data.get("comment", ""),
+            tenant_id=_fa_tenant_id(),
+        )
+    except _inst.AssignmentError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "user_id must be a learner id"}), 400
+    return jsonify(result)
+
+
+@bp.route("/api/academy/instructor/audit")
+@require_org_intel
+def api_instructor_audit():
+    _ensure_init()
+    from . import instructor as _inst
+    limit = min(request.args.get("limit", 50, type=int) or 50, 200)
+    return jsonify({"audit": _inst.audit_trail(_fa_tenant_id(), limit=limit)})
 
 
 @bp.route("/api/academy/health")
