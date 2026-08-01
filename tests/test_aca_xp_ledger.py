@@ -43,7 +43,13 @@ def fadb(monkeypatch):
     conn.commit()
     mod = importlib.import_module("apps.forge_academy.db")
     monkeypatch.setattr(mod, "get_connection", lambda *a, **k: conn)
-    return mod, conn
+    # Closed rather than returned — see the note in test_aca_rank_recompute.py:
+    # the code under test leaves the commit to a caller that never comes, so the
+    # test ends holding an open write transaction (tsh-leak-01).
+    try:
+        yield mod, conn
+    finally:
+        conn.close()
 
 
 def _rows(conn):

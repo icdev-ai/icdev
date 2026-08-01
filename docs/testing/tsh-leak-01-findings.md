@@ -88,3 +88,45 @@ re-run is where the `test_procurement_quote_compare.py` leak came from. So
 file never checked for leaks, and it needs a PG-backed run.
 
 No batch hit the 900s timeout.
+
+## Resolution — tsh-leak-01-d3
+
+All 25 leaks are cleared. Verified per-file in isolation (the two
+`test_routing_policy_enforcement.py` leaks only reproduce that way) and as one
+10-file batch: 21 guard errors before, 0 after, with no new failures.
+
+Two of the fixes are in production code, not the tests:
+
+| Fix | Clears |
+|-----|--------|
+| `tools/security/ai_telemetry_logger.py` — `rollback()` on the failure path and `close()` in `finally`, on all four methods | both `test_routing_policy_enforcement.py` leaks |
+| `tools/govcon/procurement_quote_compare.py::add_quote` — `rollback()` before the duplicate-quote early return | `test_procurement_quote_compare.py::test_add_quote_rejects_duplicate` |
+
+Both were the same shape: a write fails, the handler returns a tidy error dict,
+and the connection is abandoned mid-transaction holding a RESERVED lock on the
+shared `data/icdev.db` until garbage collection. The caller cannot tell.
+
+The rest are fixtures that returned a connection instead of yielding and closing
+it, so the transaction the code under test left open outlived the test:
+`test_aca_grading_integrity.py`, `test_aca_rank_recompute.py`,
+`test_aca_step_asset_reconcile.py`, `test_aca_xp_ledger.py`,
+`test_ato_compliance_dashboard.py` (`ato_db`, which `seeded_ato_db` builds on),
+and `test_iqe_seed_queries.py` (five tests opened `sqlite3.connect(":memory:")`
+inline; they now share a closing `mem_conn` fixture).
+
+`test_autoresearch.py` and `test_mcp_instrumentation.py` no longer reproduce
+their leak in isolation or in batch, before or after this change — they were
+already cleared by work merged since the d2 sweep.
+
+### Not fixed here
+
+`test_procurement_quote_compare.py` has 3 pre-existing failures in
+`TestAuditTrail`, unrelated to the leak and unchanged by it: `_audit()` inserts
+`event_type`/`actor`/`project_id`/`session_id`, the test fixture's `audit_trail`
+has none of them, and the INSERT is swallowed — so the tests fail reading back a
+row that was never written. The module's event types (`quote.created`,
+`procurement.created`, `igce.created`, …) are also absent from
+`VALID_EVENT_TYPES`, so the same INSERT is rejected by the CHECK against the real
+schema. Both are already carded: **swp-audit-01** (event-type reconciliation) and
+**swp-scan-01** (INSERTs naming columns absent from the live schema). Fixing the
+fixture alone would turn the tests green while production kept dropping the rows.
