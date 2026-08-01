@@ -1,0 +1,52 @@
+{#
+  sendChatDelta() for digital-twin pages — the JS half of _twin_chat_panel.html.
+
+  This function was duplicated verbatim across four twin.html templates. The
+  copies differed on exactly ONE line: the fetch URL. Everything else — the
+  spinner handling, the _loadedGraphJson passthrough, the error and explanation
+  rendering — was identical.
+
+  Context:
+    chat_api_prefix  REQUIRED  canvas route prefix, no slashes, e.g. "data"
+    chat_id_var      JS global holding the twin id; default "DESIGN_ID"
+                     (boundary_canvas uses PROJECT_ID)
+
+  The id is read into a local first so the fetch stays a plain JS template
+  literal: `${_twinId}` passes through Jinja untouched, whereas interpolating
+  the variable name directly inside ${...} collides with Jinja's own {{ }}.
+
+  Depends on the ids in _twin_chat_panel.html and on a `deltaInput` textarea in
+  the host template. `_loadedGraphJson` is optional — canvases that do not
+  implement "Load from Canvas" simply leave it undefined.
+
+  Usage:
+    {% with chat_api_prefix="data" %}
+      {% include "includes/_twin_chat_script.html" %}
+    {% endwith %}
+#}
+<script>
+async function sendChatDelta() {
+  const msg = document.getElementById('chatInput').value.trim();
+  if (!msg) return;
+  const spinner = document.getElementById('chatSpinner');
+  const errEl  = document.getElementById('chatError');
+  errEl.style.display = 'none';
+  spinner.style.display = 'inline-block';
+  try {
+    const body = { message: msg };
+    if (typeof _loadedGraphJson !== 'undefined' && _loadedGraphJson) body.graph_json = _loadedGraphJson;
+    const _twinId = {{ chat_id_var | default("DESIGN_ID") }};
+    const r = await fetch(`/{{ chat_api_prefix }}/api/twin/${_twinId}/chat-delta`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (data.error) { errEl.textContent = data.error; errEl.style.display='block'; return; }
+    document.getElementById('deltaInput').value = JSON.stringify(data.delta, null, 2);
+    if (data.explanation) {
+      document.getElementById('chatExplanationText').textContent = data.explanation;
+      document.getElementById('chatExplanation').style.display = 'block';
+    }
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+</script>
