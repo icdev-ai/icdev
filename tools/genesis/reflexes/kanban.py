@@ -25,7 +25,7 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = get_logger(__name__)
 
@@ -234,9 +234,20 @@ MAX_AUTO_REVIVE = _int_env("KANBAN_MAX_AUTO_REVIVE", 2)
 QUARANTINE_REVIVE_COOLDOWN_MIN = _int_env("KANBAN_REVIVE_COOLDOWN_MIN", 30)
 # Max seconds a Claude CLI subprocess can run before being killed.
 # Override via KANBAN_MAX_EXECUTION_SECONDS / _SCAN / _PYTEST env vars.
-MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 900)
-MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1200)
-MAX_EXECUTION_SECONDS_PYTEST = _int_env("KANBAN_MAX_EXECUTION_SECONDS_PYTEST", 2400)
+# 900s was too tight by a hair, not by an order of magnitude: recorded failures
+# include "TIMEOUT after 902s (max 900s)" and "911s (max 900s)" — tasks killed
+# with ~0.2-1.2% of their work left. 1800s gives real headroom without letting a
+# wedged task hold one of only MAX_IN_PROGRESS slots for long.
+#
+# The ladder MUST stay monotonic (default <= scan <= pytest). _EXTENDED_TIMEOUT_
+# PATTERNS routes `codelens|coherence|companion` to SCAN and `pytest|e2e|...` to
+# PYTEST, so a tier below the default would SHORTEN those tasks' budgets — which
+# is exactly what happened when the default was raised on its own.
+MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 1800)
+MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1800)
+# Full-suite tasks legitimately run past an hour; they should still set
+# max_runtime_seconds explicitly rather than lean on this ceiling.
+MAX_EXECUTION_SECONDS_PYTEST = _int_env("KANBAN_MAX_EXECUTION_SECONDS_PYTEST", 3600)
 # Minimum remaining budget required to start post-process operations (guard-budget).
 # Override via KANBAN_VERIFICATION_MIN_BUDGET_SECONDS / _REMEDIATION / _SELF_DEBUG env vars.
 VERIFICATION_MIN_BUDGET_SECONDS = _int_env("KANBAN_VERIFICATION_MIN_BUDGET_SECONDS", 30)
@@ -247,7 +258,14 @@ SELF_DEBUG_MIN_BUDGET_SECONDS = _int_env("KANBAN_SELF_DEBUG_MIN_BUDGET_SECONDS",
 MAX_TIMEOUT_RETRIES = _int_env("KANBAN_MAX_TIMEOUT_RETRIES", 3)
 # Failures before a task is flagged for decomposition.
 # Override via KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION env var.
-_MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT = _int_env("KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION", 1)
+# 3, not 1. At 1 a single failure split a task into 3-5 LLM-generated children,
+# which meant the retry-with-coaching path (_get_retry_coaching) could never run
+# — the task was decomposed before it was ever retried — and the coaching text
+# the agent is shown said "after 3 failures", which was a lie. Most first
+# failures on this board were harness artifacts (reaping/timeout), so we were
+# splitting healthy tasks in response to noise; measured, decomposition children
+# fail ~3x more often than undecomposed tasks.
+_MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT = _int_env("KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION", 3)
 # Minimum claude output length (chars) to be considered non-trivial.
 # Override via KANBAN_MIN_OUTPUT_LENGTH env var.
 MIN_OUTPUT_LENGTH = _int_env("KANBAN_MIN_OUTPUT_LENGTH", 200)
@@ -257,6 +275,10 @@ PHANTOM_RATIO_THRESHOLD = _float_env("KANBAN_PHANTOM_RATIO_THRESHOLD", 0.5)
 # Scan-only task minimum run duration before accepting as successful.
 # Override via KANBAN_SCAN_MIN_RUN_SECONDS env var.
 SCAN_MIN_RUN_SECONDS = _int_env("KANBAN_SCAN_MIN_RUN_SECONDS", 60)
+# A single task's diff should never approach this. Past it, the base ref is
+# almost certainly wrong and the gates degrade to silent passes rather than
+# failing — so refuse to run them. Override via KANBAN_MAX_CHANGED_FILES.
+_MAX_CHANGED_FILES_FOR_GATES = _int_env("KANBAN_MAX_CHANGED_FILES", 500)
 
 # Task ID patterns that get extended timeouts (regex, case-insensitive).
 # Order matters: first match wins.
@@ -302,11 +324,14 @@ def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 2
                 "  AND execution_seconds IS NOT NULL "
                 "  AND execution_seconds > 0 "
             )
+            # %s, not ? — this is runtime SQL against PostgreSQL (the primary
+            # backend). The bare ? here relied on translate_sql's init-fallback
+            # rewrite, which warns and is explicitly not load-bearing.
             params: list = []
             if task_type:
-                query += "  AND task_type = ? "
+                query += "  AND task_type = %s "
                 params.append(task_type)
-            query += "ORDER BY updated_at DESC LIMIT ?"
+            query += "ORDER BY updated_at DESC LIMIT %s"
             params.append(window)
             rows = conn.execute(query, params).fetchall()
         finally:
@@ -509,9 +534,15 @@ def _get_task_timeout(task_id: str) -> int:
         m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
         if m:
             return min(3600, int(m.group(1)))  # cap at 1 hour
-        # NLP fallback: understand natural language timeout hints
+        # NLP fallback: understand natural language timeout hints.
+        #
+        # This may only RAISE the budget, never lower it. It is an LLM reading
+        # free text, and a misread was setting the build's kill timer: a task
+        # died with "TIMEOUT after 60s (max 60s)" because the extractor returned
+        # the clamp floor. A model's guess about prose must not be able to kill
+        # a build faster than the tier default would.
         nlp_secs = _nlp_extract_timeout_hint(desc)
-        if nlp_secs is not None:
+        if nlp_secs is not None and nlp_secs > MAX_EXECUTION_SECONDS:
             return nlp_secs
         # PYTEST-level: try adaptive ceiling first, then fall back to static
         _pytest_kw = ("pytest", "regression", "full test", "test suite",
@@ -905,6 +936,48 @@ def _default_branch() -> str:
 
     _default_branch_cache = "main"
     return "main"
+
+
+_default_base_ref_cache: Optional[str] = None
+
+
+def _default_base_ref(repo_root: Optional[Path] = None) -> str:
+    """Ref to diff a task branch against — ``origin/<default>``, not the local ref.
+
+    Task branches are cut from ``origin/<default>`` (see _create_worktree), but
+    the changed-file set was being computed against the LOCAL branch name. The
+    shared checkout's local ``main`` drifts behind origin as other sessions
+    merge — measured 86 commits / 244 files behind — so every task's "changed
+    files" list picked up hundreds of files it never touched. That inflates the
+    diff handed to the conformance reviewer, wastes bandit-delta work, records
+    nonsense in files_changed (observed up to 11,118 files for one task), and
+    overflows the argv budget in validated_commit._coherence_cmd, which
+    silently degrades the fast coherence tier back to the slow full tier.
+
+    Falls back to the bare local name when no remote-tracking ref exists, so a
+    detached or origin-less checkout still works.
+    """
+    global _default_base_ref_cache
+    if _default_base_ref_cache:
+        return _default_base_ref_cache
+
+    branch = _default_branch()
+    candidate = f"origin/{branch}"
+    try:
+        import subprocess as _sp
+
+        r = _sp.run(
+            ["git", "rev-parse", "--verify", "--quiet", candidate],
+            capture_output=True, text=True,
+            cwd=str(repo_root or BASE_DIR), timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            _default_base_ref_cache = candidate
+            return candidate
+    except Exception as exc:
+        logger.debug("kanban: could not verify %s, using local ref: %s", candidate, exc)
+    _default_base_ref_cache = branch
+    return branch
 
 
 def _create_worktree(task_id: str) -> Optional[str]:
@@ -1650,7 +1723,7 @@ def _capture_diff_stats(task_id: str) -> dict:
     default = {"files_changed": 0, "lines_added": 0, "lines_removed": 0}
     try:
         result = _sp.run(
-            ["git", "diff", "--stat", f"{_default_branch()}..{branch}"],
+            ["git", "diff", "--stat", f"{_default_base_ref()}..{branch}"],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -2513,7 +2586,7 @@ def _run_gate_step(slug: str, work_dir: str, task_id: str) -> Tuple[bool, str]:
 
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", f"{_default_branch()}...HEAD"],
+            ["git", "diff", "--name-only", f"{_default_base_ref()}...HEAD"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             cwd=work_dir, timeout=30,
         )
@@ -2724,11 +2797,24 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                 prev = int(prev_val) if prev_val is not None else 0
             new_count = prev + 1
 
-            reason_short = (reason or "")[:500]
+            # Put the FAILURE clause first and keep the full narrative
+            # elsewhere. `reason` arrives as a pipe-joined pipeline story built
+            # across _run_verify_checks -> _verify_task_specific ->
+            # _run_post_task_validation -> auto_remediate, and its first clause
+            # is usually whatever the git-first check said. So a task that
+            # PASSED the git check and then failed validation was storing a
+            # string beginning "Verified (git-first): ..." in
+            # last_failure_reason — and at 500 chars the real failure was often
+            # truncated off the end entirely. 41% of the rows in that column
+            # were success or auto-remediation text, which is why triage (and
+            # the Autonomous Recovery panel, and _get_retry_coaching's
+            # classify_failure) had nothing to work with.
+            failure_clause, narrative = _split_failure_narrative(reason)
             conn.execute(
                 "UPDATE kanban_tasks SET failure_count = %s, "
-                "last_failure_reason = %s, last_failure_at = %s WHERE id = %s",
-                (new_count, reason_short, now, task_id),
+                "last_failure_reason = %s, last_failure_at = %s, "
+                "last_run_summary = %s WHERE id = %s",
+                (new_count, failure_clause[:500], now, narrative[:2000], task_id),
             )
             conn.commit()
 
@@ -2779,7 +2865,7 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                             f"Task failed {new_count} verification attempts. "
                             f"It is likely too big for one Claude CLI session. "
                             f"Please split it into smaller sub-tasks.\n"
-                            f"Latest reason: {reason_short[:200]}"
+                            f"Latest reason: {failure_clause[:200]}"
                             f"{chain_note}",
                             severity="warning",
                         )
@@ -3136,6 +3222,19 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             vals.append(now)
             if completed_via_bypass:
                 sql += ", completed_via_bypass = 1"
+            # Record observed wall-clock runtime so _detect_execution_anomalies
+            # has a sample to work from. Without this the adaptive-timeout
+            # ceiling has nothing to read and every task silently falls back to
+            # the static constant. Only for tasks this process dispatched —
+            # _dispatch_times is in-memory, so a manual/CLI completion or a
+            # post-restart completion simply leaves the column NULL, which the
+            # anomaly query already filters out.
+            _started = _dispatch_times.get(task_id)
+            if _started is not None:
+                _elapsed = (datetime.now(timezone.utc) - _started).total_seconds()
+                if 0 < _elapsed < _ABSOLUTE_MAX_IN_PROGRESS_SECONDS:
+                    sql += ", execution_seconds = ?"
+                    vals.append(round(_elapsed, 1))
         elif new_status == "in_progress":
             # Clear stale failure reason on re-dispatch so the Autonomous
             # Recovery panel doesn't keep showing this task as broken.
@@ -3412,6 +3511,17 @@ def _write_prompt_file(task: dict):
 
     resume_section = _get_resume_context(task_id)
 
+    # Show the agent the criteria it will be GRADED on. review_conformance
+    # (via make_pipeline_grader) and _check_acceptance_criteria both judge the
+    # finished work against acceptance_criteria, but the column never reached
+    # the prompt — the agent was marked down against a spec it was never given.
+    criteria = (task.get("acceptance_criteria") or "").strip()
+    criteria_section = (
+        f"\n## Acceptance Criteria\nYou will be graded against these. "
+        f"Satisfy every one.\n{criteria}\n"
+        if criteria else ""
+    )
+
     prompt = f"""{resume_section}# Kanban Task: {title}
 - **ID:** {task_id}
 - **Type:** {task_type}
@@ -3420,7 +3530,7 @@ def _write_prompt_file(task: dict):
 
 ## Description
 {desc}
-
+{criteria_section}
 ## Instructions
 Execute this task as described above. When complete:
 1. POST to http://localhost:5050/api/kanban/tasks/{task_id}/move
@@ -6560,13 +6670,40 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     branch_name = f"kanban/{task_id}"
     try:
         result = _sp.run(
-            ["git", "diff", "--name-only", f"{_default_branch()}...{branch_name}"],
+            ["git", "diff", "--name-only", f"{_default_base_ref()}...{branch_name}"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             cwd=str(BASE_DIR), timeout=15,
         )
         modified = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     except Exception:
         modified = []
+
+    # Defence in depth against a diff that is too large to be a real task.
+    # An over-long list does not fail loudly — it fails SILENTLY, three ways:
+    #   * _run_codelens builds `py_compile <paths>` / `ruff check <paths>` as
+    #     literal argv; past Windows' 32767-char command line the call raises,
+    #     is caught and only logged, and CodeLens degrades to a PASS.
+    #   * _run_pytest selects every changed tests/* path under a <=120s cap, so
+    #     it always TimeoutExpires and is recorded as "not run".
+    #   * ui_touched matches almost any dashboard template, so E2E runs on every
+    #     task and exhausts the verification budget.
+    # Three gates quietly answering "fine" is far worse than one loud failure.
+    if len(modified) > _MAX_CHANGED_FILES_FOR_GATES:
+        logger.error(
+            "guard-7: %s has %d changed files vs %s — refusing to run the gates "
+            "on a diff this size; the base ref is probably wrong",
+            task_id, len(modified), _default_base_ref(),
+        )
+        _oversize: Dict[str, Any] = {
+            "codelens_passed": None, "ruff_issues": 0, "bandit_issues": 0,
+            "coherence_passed": None, "e2e_ran": False, "e2e_passed": None,
+            "companion_synced": False, "modified_files": len(modified),
+            "modified_py": 0, "budget_sec": 0, "elapsed_sec": 0,
+        }
+        return False, (
+            f"changed-file set is implausibly large ({len(modified)} files vs "
+            f"{_default_base_ref()}) — gates not run"
+        ), _oversize
 
     passed, reason, metrics = validate_working_tree(
         cwd=cwd,
@@ -6681,7 +6818,7 @@ def _verify_task_completed(task_id, claude_output):
                 # Get the list of files the agent touched (for targeted ruff/manifest)
                 import subprocess as _sp
                 diff = _sp.run(
-                    ["git", "diff", "--name-only", f"{_default_branch()}...kanban/{task_id}"],
+                    ["git", "diff", "--name-only", f"{_default_base_ref()}...kanban/{task_id}"],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                     cwd=str(BASE_DIR), timeout=15,
                 )
@@ -6785,7 +6922,15 @@ _dispatch_times: Dict[str, datetime] = {}
 _current_exec_tier: Optional[str] = None
 
 # Override via KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS / KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS env vars.
-_SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 1 * 60)
+#
+# This was 60s and it was the single largest source of task failures: 31 of 182
+# recorded failures were "stale-reaper: ... silent-dispatch (no log output)".
+# An LLM dispatch routinely produces no stdout for minutes while the model
+# thinks, so an empty log after one minute is not evidence of a dead process.
+# Liveness is now carried by last_heartbeat_at (refreshed every scheduler cycle
+# for every live subprocess, see _refresh_running_heartbeats); this threshold is
+# only the fallback for a task that never recorded a heartbeat at all.
+_SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 10 * 60)
 _ABSOLUTE_MAX_IN_PROGRESS_SECONDS = _int_env("KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS", 24 * 60 * 60)
 
 # Anomaly detection parameters for _detect_execution_anomaly.
@@ -6803,6 +6948,147 @@ def _task_log_is_empty(tid: str) -> bool:
         return not log_path.exists() or log_path.stat().st_size == 0
     except Exception:
         return False
+
+
+# Clause prefixes that describe SUCCESS, not failure. A pipeline narrative
+# frequently leads with one of these; storing it as the failure reason is what
+# made 41% of last_failure_reason rows useless for triage.
+_SUCCESS_CLAUSE_PREFIXES = (
+    "verified (",
+    "verified:",
+    "auto-remediated",
+    "remediation=",
+    "passed",
+    "all validation gates passed",
+)
+
+
+def _split_failure_narrative(reason: Optional[str]) -> Tuple[str, str]:
+    """Split a pipeline narrative into (failure_clause, full_narrative).
+
+    The narrative is pipe-joined across the verification stages. Returns the
+    first clause that actually describes a failure, plus the untouched whole
+    story for last_run_summary. When every clause reads as success the failure
+    clause falls back to the whole string prefixed as unclassified — callers
+    still record *something*, but it is visibly not a real diagnosis rather
+    than silently masquerading as one.
+    """
+    narrative = (reason or "").strip()
+    if not narrative:
+        return "", ""
+    clauses = [c.strip() for c in narrative.split("|") if c.strip()]
+    for clause in clauses:
+        low = clause.lower()
+        if not any(low.startswith(p) for p in _SUCCESS_CLAUSE_PREFIXES):
+            return clause, narrative
+    logger.warning(
+        "failure recorded with no failure clause — every clause reads as "
+        "success: %s", narrative[:200],
+    )
+    return f"UNCLASSIFIED (no failure clause): {narrative}", narrative
+
+
+def _foreign_scheduler_pid() -> int:
+    """PID of a LIVE kanban scheduler that is not this process, or 0.
+
+    ``_running`` is a module global, so it is per-process. Any second process
+    that calls the kanban reflex's run() — the heartbeat daemon's wakeup, a
+    dashboard-triggered reflex, an interactive `--once` — sees an empty
+    ``_running`` and concludes that the real scheduler's live tasks are dead.
+    Its reaper then resets them to backlog with failure_count++, and the real
+    scheduler kills the orphaned subprocess as "stale-cleanup".
+
+    Reuses the lockfile tools/genesis/kanban_scheduler.py already maintains
+    rather than introducing a second ownership mechanism.
+    """
+    import os as _os
+
+    lock_path = BASE_DIR / ".tmp" / "kanban_scheduler.pid"
+    try:
+        owner_pid = int(lock_path.read_text(encoding="utf-8").strip())
+    except Exception:
+        return 0
+    if owner_pid == _os.getpid():
+        return 0
+    try:
+        import psutil as _ps
+
+        if _ps.pid_exists(owner_pid):
+            proc = _ps.Process(owner_pid)
+            if "kanban_scheduler" in " ".join(proc.cmdline()):
+                return owner_pid
+    except Exception:
+        pass
+    return 0
+
+
+def _refresh_running_heartbeats() -> int:
+    """Stamp last_heartbeat_at for every task whose subprocess is still alive.
+
+    Called once per scheduler cycle (≤ MAX_IN_PROGRESS rows, so it is cheap).
+    This is what turns last_heartbeat_at into a real liveness signal instead of
+    a column only the dashboard ever wrote: the reaper can then distinguish
+    "the model is thinking and has not printed anything yet" from "the
+    subprocess is gone", which an empty log file cannot do.
+
+    Returns the number of tasks stamped. Never raises.
+    """
+    alive: List[str] = []
+    for tid, proc in list(_running.items()):
+        try:
+            if proc is not None and proc.poll() is None:
+                alive.append(tid)
+        except Exception:  # noqa: BLE001 — a handle that can't be polled isn't proof of death
+            continue
+    if not alive:
+        return 0
+    try:
+        now = _utcnow_iso()
+        with get_connection() as conn:
+            for tid in alive:
+                conn.execute(
+                    "UPDATE kanban_tasks SET last_heartbeat_at = %s WHERE id = %s",
+                    (now, tid),
+                )
+    except Exception as exc:
+        logger.debug("kanban: heartbeat refresh skipped: %s", exc)
+        return 0
+    return len(alive)
+
+
+def _heartbeat_is_stale(tid: str, conn, threshold_seconds: float) -> bool:
+    """True when this task has no usable heartbeat newer than *threshold_seconds*.
+
+    A task that never sent a heartbeat is treated as stale — that is the
+    pre-heartbeat case the age-based threshold already covers. A task with a
+    heartbeat inside the window is alive and must never be reaped.
+    """
+    age = _heartbeat_age_seconds(tid, conn)
+    if age is None:
+        return True
+    return age >= threshold_seconds
+
+
+def _heartbeat_age_seconds(tid: str, conn) -> Optional[float]:
+    """Seconds since this task's last heartbeat, or None if it never sent one."""
+    try:
+        row = conn.execute(
+            "SELECT last_heartbeat_at FROM kanban_tasks WHERE id = %s", (tid,)
+        ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    raw = dict(row).get("last_heartbeat_at")
+    if not raw:
+        return None
+    try:
+        beat = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if beat.tzinfo is None:
+            beat = beat.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - beat).total_seconds()
+    except Exception:
+        return None
 
 
 def _task_dispatched_by_scheduler(tid: str, conn) -> bool:
@@ -7343,13 +7629,21 @@ def _reclaim_zombie_tasks() -> None:
     conn = None
     try:
         conn = get_connection()
+        # The cutoff is computed in Python rather than in SQL: the previous
+        # `datetime('now', %s || ' hours')` is SQLite-only and raises
+        # UndefinedFunction on PostgreSQL (the primary backend), so this whole
+        # sweep silently never ran. Comparing ISO-8601 UTC strings is correct
+        # for both backends and needs no dialect branch.
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=silence_hours)
+        ).isoformat()
         rows = conn.execute(
             "SELECT id, title, failure_count "
             "FROM kanban_tasks "
             "WHERE status = 'in_progress' "
             "  AND last_heartbeat_at IS NOT NULL "
-            "  AND last_heartbeat_at < datetime('now', %s || ' hours')",
-            (f"-{silence_hours}",),
+            "  AND last_heartbeat_at < %s",
+            (cutoff,),
         ).fetchall()
         if not rows:
             return
@@ -7456,11 +7750,22 @@ def _reap_stale_in_progress() -> None:
          managed work.
 
     Normal threshold: 2× task timeout (30–80 min).
-    Silent-dispatch threshold: _SILENT_DISPATCH_THRESHOLD (default 1 min;
-    log empty + not in _running + last in_progress transition actor is
-    'scheduler' or unrecorded).
+    Silent-dispatch threshold: _SILENT_DISPATCH_THRESHOLD (log empty AND no
+    fresh heartbeat AND not in _running AND last in_progress transition actor
+    is 'scheduler' or unrecorded).
     Only resets tasks NOT currently in _running to avoid killing live agents.
+
+    NO-OP when another live scheduler owns the runner: _running is per-process,
+    so a second process would see every one of the owner's live tasks as dead.
     """
+    _foreign = _foreign_scheduler_pid()
+    if _foreign:
+        logger.info(
+            "stale-reaper: skipped — scheduler pid=%d owns the runner and this "
+            "process cannot see its live subprocesses", _foreign,
+        )
+        return
+
     conn = None
     try:
         conn = get_connection()
@@ -7543,10 +7848,16 @@ def _reap_stale_in_progress() -> None:
             elif tid in _running:
                 continue  # live subprocess within normal budget — skip
 
-            # Fast-reap silent dispatch: task is not in _running AND log file
-            # is still empty — subprocess never wrote a single byte, so it
-            # never actually started. Use a short 5-min window instead of the
-            # normal 2× budget to catch these within the next cycle or two.
+            # Fast-reap silent dispatch: the subprocess never actually started.
+            #
+            # An empty log alone is NOT evidence of that — an LLM dispatch
+            # routinely prints nothing for minutes while the model thinks, and
+            # reaping on that signal at 60s was the single largest source of
+            # task failures on this board. So require a stale heartbeat too:
+            # _refresh_running_heartbeats stamps last_heartbeat_at every cycle
+            # for every live subprocess, so a fresh beat means the task is
+            # working regardless of what it has printed.
+            #
             # Skipped for tasks explicitly marked actor='manual' in
             # kanban_status_transitions (tools/kanban/cli.py --set-status) —
             # an externally-managed task also has an empty log by
@@ -7554,10 +7865,11 @@ def _reap_stale_in_progress() -> None:
             elif (
                 _task_log_is_empty(tid)
                 and age_seconds >= _SILENT_DISPATCH_THRESHOLD
+                and _heartbeat_is_stale(tid, conn, _SILENT_DISPATCH_THRESHOLD)
                 and _task_dispatched_by_scheduler(tid, conn)
             ):
                 threshold = _SILENT_DISPATCH_THRESHOLD
-                reap_label = "silent-dispatch (no log output)"
+                reap_label = "silent-dispatch (no log output, no heartbeat)"
             else:
                 threshold = _get_task_timeout(tid) * 2  # 2× normal budget = 30–80 min
                 reap_label = "no live subprocess"
@@ -7637,6 +7949,18 @@ def _startup_recover_stale_in_progress() -> None:
     global _startup_recovery_done
     if _startup_recovery_done:
         return
+
+    # Hard guard: this sweep resets EVERY in_progress row, skipping only those
+    # in the process-local _running. Run from a second process (the heartbeat
+    # daemon's wakeup, a dashboard reflex trigger, an interactive --once) it
+    # would reset the owning scheduler's entire live board in one pass.
+    _foreign = _foreign_scheduler_pid()
+    if _foreign:
+        logger.info(
+            "startup-recovery: skipped — scheduler pid=%d owns the runner", _foreign,
+        )
+        return
+
     _startup_recovery_done = True
     conn = None
     try:
@@ -8958,6 +9282,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 print(f"  Kanban: worktree age sweep removed {len(swept)} stale worktree(s)")
     except Exception as _ws_exc:
         logger.warning("worktree age sweep failed: %s", _ws_exc)
+
+    # 0c-bis. Heartbeat refresh — stamp last_heartbeat_at for every live
+    # subprocess. Must run BEFORE the reaper below so a task that started this
+    # cycle already has a beat on record. Cheap: at most MAX_IN_PROGRESS rows.
+    try:
+        _refresh_running_heartbeats()
+    except Exception as _hb_exc:
+        logger.warning("heartbeat refresh failed: %s", _hb_exc)
 
     # 0d. Periodic stale-in_progress reaper — catches tasks that are in_progress
     # in the DB but absent from _running (process died after dispatch without
