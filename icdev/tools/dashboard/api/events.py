@@ -22,6 +22,9 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, request
 
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.events")
 
 events_bp = Blueprint("events_api", __name__)
 
@@ -271,8 +274,9 @@ def ingest_event():
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Best-effort persist; don't block ingest
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best-effort persist; don't block ingest
+        logger.warning("ingest_event: best-effort INSERT into hook_events failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

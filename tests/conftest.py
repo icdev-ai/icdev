@@ -3566,6 +3566,61 @@ CREATE TABLE IF NOT EXISTS fa_xp_ledger (
     created_at     TEXT    DEFAULT (datetime('now')),
     classification TEXT    DEFAULT 'CUI',
     tenant_id      TEXT);
+
+-- The instructor workflow (aca-trn-04, migration 323). An assignment targets one
+-- learner or a cohort (a role token, or 'all'); cohort membership is resolved at
+-- read time rather than frozen here, so a learner who enrols into the role
+-- afterwards inherits the assignment.
+CREATE TABLE IF NOT EXISTS fa_assignments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_type TEXT    NOT NULL DEFAULT 'mission',
+    mission_id      INTEGER,
+    track_key       TEXT,
+    target_type     TEXT    NOT NULL DEFAULT 'learner',
+    target_user_id  INTEGER,
+    target_role     TEXT,
+    due_at          TEXT,
+    note            TEXT,
+    assigned_by     TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'open',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One human verdict. override_score writes fa_mission_progress.score and never
+-- moves XP; prior_score records what it replaced so the change is reversible by
+-- inspection.
+CREATE TABLE IF NOT EXISTS fa_instructor_reviews (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    mission_id      INTEGER,
+    step_id         INTEGER,
+    assignment_id   INTEGER,
+    verdict         TEXT    NOT NULL,
+    override_score  INTEGER,
+    prior_score     INTEGER,
+    comment         TEXT,
+    reviewer        TEXT    NOT NULL,
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). A grade override that cannot be
+-- attributed to a person is indistinguishable from a bug in the grader.
+CREATE TABLE IF NOT EXISTS fa_instructor_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    action          TEXT    NOT NULL,
+    actor           TEXT    NOT NULL,
+    actor_role      TEXT,
+    subject_type    TEXT,
+    subject_id      TEXT,
+    detail_json     TEXT    DEFAULT '{}',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

@@ -1459,7 +1459,7 @@ def init_db():
                     ),
                 )
             conn.commit()
-            print(f"IDC: seeded {len(_build_templates())} templates")
+            print(f"IDC: seeded {len(_build_templates())} templates", file=sys.stderr)
 
         # Seed snippets (upsert)
         added = 0
@@ -1473,13 +1473,13 @@ def init_db():
                 added += 1
         if added:
             conn.commit()
-            print(f"IDC: seeded {added} snippets")
+            print(f"IDC: seeded {added} snippets", file=sys.stderr)
 
         # Seed runbooks (upsert by id)
         from tools.infra_canvas.runbooks import seed_runbooks
         rb_added = seed_runbooks()
         if rb_added:
-            print(f"IDC: seeded {rb_added} runbooks")
+            print(f"IDC: seeded {rb_added} runbooks", file=sys.stderr)
 
         # CAM extension: idc_migration_baselines — before/after snapshot for any container migration
         conn.executescript("""

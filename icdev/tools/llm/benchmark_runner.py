@@ -20,6 +20,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.llm.benchmark_runner")
 
 
 # ---------------------------------------------------------------------------
@@ -438,8 +441,12 @@ class BenchmarkRunner:
                         ),
                     )
             conn.commit()
-        except Exception:
-            pass  # DB not initialized — results not persisted; caller can retry
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # DB not initialized — results not persisted; caller can retry
+            logger.warning(
+                "persist_results: best-effort INSERT into benchmark_eval_runs failed (non-blocking): %s",
+                exc,
+            )
         finally:
             if _own_conn and conn is not None:
                 try:

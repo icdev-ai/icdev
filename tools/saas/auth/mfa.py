@@ -384,8 +384,8 @@ def _log_attempt(user_id: str, success: bool, method: str, ip_address: str) -> N
                 (user_id, int(success), method, ip_address, _now()),
             )
             conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_log_attempt: best-effort INSERT into mfa_attempts failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

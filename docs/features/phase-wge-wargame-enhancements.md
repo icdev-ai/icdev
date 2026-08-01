@@ -82,7 +82,7 @@ A `tools/ttx/persona_generator.py` module that synthesizes role-specific persona
 
 | Module | Purpose |
 |--------|---------|
-| `blueprint.py` | Flask blueprint registering all `/gameday` and `/api/gameday` routes (37 total). Implements session/team management, inject dispatch, response submission, scoring, leaderboard, scenario builder, registration/team-formation workflow, and AAR export. |
+| `blueprint.py` | Flask blueprint registering all `/gameday` and `/api/gameday` routes (35 total). Implements session/team management, inject dispatch, response submission, scoring, leaderboard, scenario builder, and AAR export. The registration/team-formation workflow is **designed but not wired** — see [Registration & team formation: designed, not built](#registration--team-formation-designed-not-built). |
 | `db.py` | Database schema and idempotent migration. Defines all `ttx_*` tables via DDL; handles alter-table migrations for columns added post-launch. |
 | `constants.py` | App-level constants: `INJECT_TYPES`, `ROLE_TECH_WEIGHTS`, `SCENARIO_TECH_PROFILES` (tech_ideal/min/max for scenario recommendation), and XP tier definitions. |
 
@@ -121,8 +121,8 @@ All routes are registered under the `ai_gameday` Flask blueprint.
 | `/gameday/session/<session_id>/results` | GET | Post-session results: AAR, per-team AI stats, final leaderboard. |
 | `/gameday/scenarios` | GET | Scenario manager: YAML file scenarios and DB-authored scenarios. |
 | `/gameday/scenarios/builder` | GET | Scenario builder UI: inject templates, AI tools, rubric editor. |
-| `/gameday/session/<session_id>/register` | GET | Player registration form for skill→role matching. |
-| `/gameday/session/<session_id>/registrations` | GET | Facilitator view: all registrations and team formation plan. |
+| `/gameday/session/<session_id>/register` | GET | **NOT BUILT** — designed player registration form for skill→role matching. |
+| `/gameday/session/<session_id>/registrations` | GET | **NOT BUILT** — designed facilitator view: all registrations and team formation plan. |
 
 #### API Routes — Session & Team Management
 
@@ -169,6 +169,10 @@ All routes are registered under the `ai_gameday` Flask blueprint.
 
 #### API Routes — Registration & Team Formation
 
+> **NOT BUILT.** None of the seven routes below is registered in `apps/ai_gameday/blueprint.py`.
+> They are the design for an unwired feature — see
+> [Registration & team formation: designed, not built](#registration--team-formation-designed-not-built).
+
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/api/gameday/session/<session_id>/register` | POST | Submit player registration (skill→role matching). |
@@ -205,12 +209,47 @@ All tables are prefixed `ttx_` and reside in the main `data/icdev.db` (or Postgr
 | `ttx_leaderboard` | `lb_id` INTEGER | Cached leaderboard snapshot: `session_id` FK, `team_id` FK, `rank_pos`, score breakdown columns, `computed_at` (UNIQUE on session+team). |
 | `ttx_scenarios` | `scenario_id` INTEGER | DB-authored scenarios: `slug` UNIQUE, `name`, `yaml_content`, `created_by`, `is_active`, `created_at`. |
 | `ttx_inject_templates` | `template_id` INTEGER | Reusable inject templates: `name`, `inject_type`, `body_md`, `rubric_json`, `ai_tools_json`, `created_at`. |
-| `ttx_registrations` | `registration_id` TEXT | Pre-session player registrations: `session_id` FK, `player_name`, `email`, `stated_skill`, `matched_role_id`, `match_confidence`, `match_method`, `match_reasoning`, `academy_username`. |
-| `ttx_formation_plan` | `plan_id` INTEGER | Snake-draft team formation plan (pre-confirm): `session_id` FK, `registration_id` FK, `team_slot`, `team_name`, `confirmed`, `created_at`. |
+| `ttx_registrations` ⚠️ | `registration_id` INTEGER | **UNWIRED** — no module reads or writes it. Pre-session player registrations: `session_id` FK, `player_name`, `email`, `stated_skill`, `matched_role_id`, `match_confidence`, `match_method`, `match_reasoning`, `academy_username`. |
+| `ttx_formation_plan` ⚠️ | `plan_id` INTEGER | **UNWIRED** — no module reads or writes it. Snake-draft team formation plan (pre-confirm): `session_id` FK, `registration_id` FK, `team_slot`, `team_name`, `confirmed`, `created_at`. |
+
+⚠️ The last two tables exist **only** in `tools/db/schema/pg_consolidated.sql`. No migration creates
+them and no runtime DDL (`apps/ai_gameday/db.py`) declares them, so they are absent from any freshly
+initialised database. See
+[Registration & team formation: designed, not built](#registration--team-formation-designed-not-built).
 
 **Indexes:** `idx_ttx_teams_session`, `idx_ttx_injects_session`, `idx_ttx_injects_slug`, `idx_ttx_responses_team`, `idx_ttx_responses_inject`, `idx_ttx_scores_team`, `idx_ttx_api_log_team`, `idx_ttx_leaderboard_session`.
 
 **Post-launch alter-table migrations (idempotent):** `ttx_sessions.world_state_json`, `ttx_team_members.academy_username`, `ttx_team_members.academy_profile_json`, `ttx_responses.target_grid_json`.
+
+---
+
+## Registration & team formation: designed, not built
+
+**Status: DESIGNED, NOT WIRED. Do not read this document's registration sections as shipped
+behaviour.** Recorded by `gdx-dead-02` (2026-08-01); the wiring decision is carded as `gdx-reg-01`.
+
+What actually exists on disk:
+
+| Artifact | State |
+|---|---|
+| `ttx_registrations`, `ttx_formation_plan` DDL | Present in `tools/db/schema/pg_consolidated.sql` only — **no migration creates them** |
+| `tools/dashboard/templates/ai_gameday/{register,registrations}.html` | Present in both trees (promoted by `gdx-mir-02`), rendered by **no route** |
+| 2 UI routes + 7 API routes documented above | **None registered** — `blueprint.py` has 35 routes, zero of them registration |
+| `apps/ai_gameday/registration.py` (skill matching + snake draft) | **Deleted** by `penta-gd-03` (2026-07-18) as unreachable dead code |
+
+The history is deliberately two-sided and both halves are correct:
+
+- **`penta-gd-03` deleted the implementation.** The 697-line module was reachable from no route, its
+  only caller was a demo script, and it queried two tables absent from the runtime DDL — so it was
+  broken on every fresh database. Deleting unreachable code was right.
+- **`gdx-mir-02` kept the templates and the DDL.** The design is complete and the UI is written;
+  dropping tables that no migration creates would mean a destructive migration against the live
+  PostgreSQL schema to remove something inert. Keeping them is reversible and zero-risk.
+
+Net: the *design* survives (doc + DDL + templates), the *unreachable code* does not. Anyone picking
+up `gdx-reg-01` rebuilds the routes and the matching logic against the DDL and templates already
+here, and adds the two tables to `apps/ai_gameday/db.py` `_DDL` plus a migration so they exist
+outside the consolidated snapshot.
 
 ---
 
@@ -226,16 +265,26 @@ The WGE enhancements satisfy three NIST SP 800-53 Rev 5 controls relevant to the
 
 **How WGE satisfies AC-2:**
 
-The wargame platform implements a structured participant lifecycle through the session registration and team-formation subsystem:
+> **Partial coverage.** The registration/team-formation subsystem is **not built** (see
+> [above](#registration--team-formation-designed-not-built)), so it contributes **nothing** to this
+> control today. The rows below are limited to what is actually wired. Account *creation* and
+> *removal* are the coverage gap; do not cite them as satisfied.
+
+Participant lifecycle controls that are implemented:
 
 | Feature | AC-2 Mapping |
 |---------|-------------|
-| `ttx_registrations` table — captures player name, email, stated skill, and matched role at session join time | Account creation: every participant is registered with identity and role before gaining session access |
 | Join codes on `ttx_sessions` and `ttx_teams` — scoped access tokens that expire with the session | Access activation: participants must present a valid code; no open enrollment |
 | `ttx_team_members.role_id` — each member is bound to a specific role (`military_intel`, `civilian_analyst`, `contractor_swe`, `ciso_lead`) | Role assignment: role-based access aligns with least-privilege and need-to-know principles |
 | `ttx_team_members.academy_username` / `academy_profile_json` — links exercise identity to an authoritative Academy profile | Account linkage: participants are traceable to an authoritative identity store rather than anonymous |
-| `/api/gameday/registration/<registration_id>` DELETE endpoint — removes registrations before session confirmation | Account removal: pre-confirmed registrations can be revoked, supporting timely account disabling |
 | Session state machine (`pending → active → paused → ended`) terminates all access at `ended` state | Account disabling: once a session ends, participation is closed; no further responses or tool invocations are accepted |
+
+**Not satisfied — pending `gdx-reg-01`:**
+
+| Gap | Why it is open |
+|---|---|
+| Account creation via a registration record | `ttx_registrations` is unwired DDL; participants are created ad hoc as `ttx_team_members` with no captured registration identity |
+| Account removal / revocation before confirmation | The `/api/gameday/registration/<registration_id>` DELETE endpoint does not exist |
 
 ---
 
@@ -270,7 +319,7 @@ Input validation is enforced at three layers — schema, state machine, and rece
 
 The scenario loader (`scenario_loader.py`) validates every YAML scenario pack against a strict schema before any content reaches the engine. Required top-level keys (`slug`, `injects`, `personas`, `rubrics`, `scoring_rules`) are checked at load time, and packs that are missing fields, contain malformed inject definitions, or reference undefined rubric slugs are rejected with a descriptive error before any DB write occurs. This prevents malformed exercise content — whether from authoring errors or intentional injection — from corrupting session state.
 
-The session state machine in `session_manager.py` enforces a strict set of valid state transitions (`pending → active → paused → ended`). Any API request that attempts an out-of-sequence or invalid transition is rejected before touching the database. Similarly, the inject response submission endpoint validates that the submitted `session_id`, `team_id`, and `inject_id` form a valid FK chain; orphaned or spoofed identifiers are refused at the API boundary. The AI receipt verification path in `ai_scorer.py` cross-references every submitted `call_id` value against the authoritative `ttx_api_log` table — receipts that cannot be corroborated trigger a zero-multiplier receipt gate (`0.0` vs `1.0` for server-verified calls), effectively quarantining unverified inputs from influencing scored outcomes. The skill-to-role matching confidence threshold stored in `ttx_registrations.match_confidence` provides a further quarantine layer: registrations below the defined confidence floor are flagged for facilitator review rather than auto-assigned, preventing low-quality or ambiguous participant data from silently propagating into team composition.
+The session state machine in `session_manager.py` enforces a strict set of valid state transitions (`pending → active → paused → ended`). Any API request that attempts an out-of-sequence or invalid transition is rejected before touching the database. Similarly, the inject response submission endpoint validates that the submitted `session_id`, `team_id`, and `inject_id` form a valid FK chain; orphaned or spoofed identifiers are refused at the API boundary. The AI receipt verification path in `ai_scorer.py` cross-references every submitted `call_id` value against the authoritative `ttx_api_log` table — receipts that cannot be corroborated trigger a zero-multiplier receipt gate (`0.0` vs `1.0` for server-verified calls), effectively quarantining unverified inputs from influencing scored outcomes. (A further quarantine layer over skill-to-role matching confidence was designed around `ttx_registrations.match_confidence`, but that subsystem is **not built** — see [above](#registration--team-formation-designed-not-built) — so it contributes nothing to this control today.)
 
 | Feature | SI-10 Mapping |
 |---------|-------------|
@@ -278,5 +327,5 @@ The session state machine in `session_manager.py` enforces a strict set of valid
 | Session state machine in `session_manager.py` — invalid transitions rejected before any DB write | State input validation: API callers cannot submit out-of-sequence state changes |
 | AI receipt verification in `ai_scorer.py` — `call_id` cross-referenced against `ttx_api_log`; unverified receipts apply 0.0 gate multiplier | Receipt input validation: self-reported tool receipts are flagged and quarantined from scoring |
 | `/api/gameday/api-log` legacy endpoint — explicitly marked unverified; scoring distinguishes it from `/invoke` | Input provenance tracking: trusted vs. untrusted inputs are differentiated with appropriate scoring penalties |
-| `ttx_registrations.match_confidence` threshold — low-confidence role matches quarantined for human review | Confidence-gated input acceptance: ambiguous registrations are held for facilitator review rather than silently processed |
+| ~~`ttx_registrations.match_confidence` threshold~~ — **NOT BUILT**, contributes nothing to SI-10 today | *(designed only — confidence-gated input acceptance; pending `gdx-reg-01`)* |
 | Inject response submission validates `session_id`, `team_id`, and `inject_id` FK relationships | Referential input validation: orphaned or spoofed identifiers are rejected at the API boundary before DB writes occur |

@@ -529,9 +529,12 @@ def decompose_gap_to_tasks(content_hash: str) -> list[str]:
                     "emitted_at, classification) VALUES (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), content_hash, s["id"], "direct", _now(), "CUI // SP-CTI"),
                 )
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
                 # UNIQUE(gap_hash, task_id) — link already recorded.
-                pass
+                logger.warning(
+                    "decompose_gap_to_tasks: best-effort INSERT into rfi_gap_task_links failed (non-blocking): %s",
+                    exc,
+                )
         conn.execute(
             "UPDATE rfi_capability_gaps SET status='emitted' WHERE content_hash=%s",
             (content_hash,),

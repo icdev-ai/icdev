@@ -29,6 +29,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.feedback_collector")
 
 FEEDBACK_DIR = BASE_DIR / "data" / "genesis" / "feedback"
 
@@ -247,8 +250,8 @@ def collect_all() -> Dict[str, Any]:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("collect_all: best-effort INSERT into genesis_audit failed (non-blocking): %s", exc)
 
     return feedback
 

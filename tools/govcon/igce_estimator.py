@@ -87,6 +87,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.igce_estimator")
 
 # ── Public constants ───────────────────────────────────────────────────
 
@@ -173,9 +176,9 @@ def _audit(
                 None,
             ),
         )
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         # Audit must never break the operation.
-        pass
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ── DB bootstrap ───────────────────────────────────────────────────────

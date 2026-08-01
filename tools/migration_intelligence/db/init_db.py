@@ -15,6 +15,7 @@ never mix ``?``/``%s`` styles (cnr-mi-01).
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -294,4 +295,4 @@ def init_db(db_path: str | None = None) -> None:
         conn.commit()
     finally:
         conn.close()
-    print(f"[mi_init_db] Migration Intelligence DB initialized ({_backend()})")
+    print(f"[mi_init_db] Migration Intelligence DB initialized ({_backend()})", file=sys.stderr)

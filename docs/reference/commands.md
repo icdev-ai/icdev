@@ -401,6 +401,17 @@ python tools/logging/log_query.py --contains timeout --since 2026-06-06 --limit 
 # IQE: POST /logs/api/iqe-query {question}  (collection logs.entries)
 ```
 
+## Swallowed-Persistence Gate (swp-swallow-01)
+```bash
+# Report `except Exception: pass` blocks guarding an INSERT (nothing is written)
+python tools/refactor/fix_swallowed_persistence.py --dry-run --json
+# Rewrite them into logged best-effort handlers (behaviour kept, silence removed)
+python tools/refactor/fix_swallowed_persistence.py --write --json
+python tools/refactor/fix_swallowed_persistence.py --write --path tools/govcon --path icdev/tools/govcon
+# The gate that fails the build if the pattern is reintroduced (fast + full tier)
+python tools/workflow/coherence_checker.py --check swallowed_persistence --json
+```
+
 ---
 
 ## Code Intelligence Commands
@@ -958,6 +969,16 @@ python tools/genesis/reflexes/coherence_sweep.py                                
 # grandfathered in args/doc_command_gate.yaml; NEW broken references fail the gate.
 python tools/workflow/coherence_checker.py --check doc_command_paths --json                         # List unresolved documented commands
 python tools/workflow/coherence_checker.py --check doc_command_paths --gate                         # Fail on any NEW broken reference
+
+# INSERT / Live Schema Parity gate (swp-gate-01) — every column named in a static
+# INSERT under tools/ must exist in the LIVE schema (information_schema on PostgreSQL,
+# PRAGMA table_info on SQLite). `CREATE TABLE IF NOT EXISTS` never alters an existing
+# table, so source DDL and database drift apart silently; the resulting INSERT raises
+# inside `except Exception: pass` and the feature reports success while persisting
+# nothing. The 146-entry pre-existing backlog is grandfathered (WARN) in
+# args/insert_schema_gate.yaml; NEW mismatches FAIL. No live database = WARN, not fail.
+python tools/workflow/coherence_checker.py --check insert_schema_parity --json                      # List INSERT columns absent from the live schema
+python tools/workflow/coherence_checker.py --check insert_schema_parity --gate                      # Fail on any NEW mismatch
 
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout

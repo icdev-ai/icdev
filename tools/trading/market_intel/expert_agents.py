@@ -22,6 +22,9 @@ import uuid
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.trading.market_intel.expert_agents")
 
 
 # =========================================================================
@@ -525,8 +528,8 @@ def run_expert_analysis(ticker: str) -> list[dict]:
                  op["direction"], op["conviction"], op["reasoning"], op["risk_profile"], _now()),
             )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("run_expert_analysis: best-effort INSERT into ad_expert_opinions failed (non-blocking): %s", exc)
     finally:
         conn.close()
 
@@ -606,8 +609,11 @@ def synthesize_recommendation(ticker: str, opinions: list[dict]) -> dict:
              "cis", narrative, active_name, json.dumps(votes), _now()),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "synthesize_recommendation: best-effort INSERT into ad_cis_recommendations failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 
@@ -784,8 +790,8 @@ def generate_daily_brief() -> dict:
              json.dumps(brief["risk_alerts"]), json.dumps(brief["expert_highlights"])),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("generate_daily_brief: best-effort INSERT into ad_daily_briefs failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

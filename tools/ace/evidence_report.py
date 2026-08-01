@@ -25,6 +25,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ace.evidence_report")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _DEFAULT_CLASSIFICATION = "CUI"
@@ -124,8 +127,8 @@ def _write_generate_audit(
             conn.commit()
         finally:
             conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_write_generate_audit: best-effort INSERT into ace_audit_log failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

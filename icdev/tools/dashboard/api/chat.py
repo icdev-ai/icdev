@@ -13,6 +13,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+logger = get_logger("icdev.dashboard.api.chat")
+
 # ---------------------------------------------------------------------------
 # Path setup
 # ---------------------------------------------------------------------------
@@ -1004,8 +1006,12 @@ def activate_chain(chain_id):
                             "validated",
                         ))
                     conn.commit()
-            except Exception:
-                pass  # requirement seeding is best-effort
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # requirement seeding is best-effort
+                logger.warning(
+                    "activate_chain: best-effort INSERT into intake_requirements failed (non-blocking): %s",
+                    _exc,
+                )
 
         # Seed canvas artifacts
         uc_ids = []

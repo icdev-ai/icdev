@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block title %}Instructor Console — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --fa-gold:#FFB800; --fa-green:#00FF88; --fa-blue:#4A90E2;
+  --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
+}
+.ic-hero {
+  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  border-bottom:1px solid var(--fa-border); padding:2rem 2rem 1.5rem;
+}
+.ic-hero h1 { font-size:1.6rem;font-weight:700;color:var(--fa-gold);margin:0 0 .25rem; }
+.ic-hero p  { color:#8899aa;margin:0;font-size:.9rem; }
+.ic-body    { max-width:1180px;margin:0 auto;padding:1.5rem 2rem 4rem; }
+.ic-card {
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;
+}
+.ic-title { font-size:1rem;font-weight:700;color:var(--fa-gold);margin:0 0 1rem; }
+.ic-table { width:100%;border-collapse:collapse; }
+.ic-table th {
+  text-align:left;font-size:.72rem;color:#8899aa;text-transform:uppercase;
+  letter-spacing:.05em;padding:.45rem .6rem;border-bottom:1px solid var(--fa-border);
+}
+.ic-table td { padding:.5rem .6rem;font-size:.85rem;color:#ccd;border-bottom:1px solid rgba(255,255,255,.04); }
+.ic-table tr:last-child td { border-bottom:none; }
+.ic-table a { color:var(--fa-blue);text-decoration:none; }
+.ic-table a:hover { text-decoration:underline; }
+.ic-pill {
+  display:inline-block;padding:.12rem .55rem;border-radius:10px;
+  font-size:.7rem;font-weight:700;letter-spacing:.03em;
+}
+.ic-pill-open   { background:rgba(74,144,226,.15);color:#4A90E2;border:1px solid rgba(74,144,226,.35); }
+.ic-pill-late   { background:rgba(255,68,68,.15);color:#FF4444;border:1px solid rgba(255,68,68,.35); }
+.ic-pill-done   { background:rgba(0,255,136,.12);color:#00FF88;border:1px solid rgba(0,255,136,.3); }
+.ic-pill-cancel { background:rgba(255,255,255,.06);color:#8899aa;border:1px solid rgba(255,255,255,.15); }
+.ic-form { display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.85rem;align-items:end; }
+.ic-field label {
+  display:block;font-size:.72rem;color:#8899aa;text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:.3rem;
+}
+.ic-field select, .ic-field input {
+  width:100%;background:#0a0f1c;border:1px solid var(--fa-border);color:#e0e0e0;
+  border-radius:8px;padding:.5rem .6rem;font-size:.85rem;font-family:inherit;
+}
+.ic-btn {
+  background:var(--fa-gold);color:#000;border:none;padding:.55rem 1.25rem;
+  border-radius:8px;font-weight:700;font-size:.85rem;cursor:pointer;font-family:inherit;
+}
+.ic-btn-ghost {
+  background:rgba(255,255,255,.06);color:#ccd;border:1px solid rgba(255,255,255,.14);
+  padding:.25rem .7rem;border-radius:6px;font-size:.75rem;cursor:pointer;font-family:inherit;
+}
+.ic-msg { margin-top:.85rem;font-size:.85rem;display:none; }
+.ic-bar-bg { background:rgba(255,255,255,.07);border-radius:4px;height:8px;width:110px;display:inline-block;vertical-align:middle; }
+.ic-bar-fill { height:8px;border-radius:4px;background:var(--fa-green); }
+.ic-empty { color:#8899aa;font-size:.85rem;padding:.5rem 0; }
+.ic-note { color:#8899aa;font-size:.78rem;margin-top:.6rem;line-height:1.5; }
+.ic-audit { font-family:ui-monospace,monospace;font-size:.75rem;color:#8899aa; }
+.ic-footer { text-align:center;padding:2rem;font-size:.75rem;color:#555;margin-top:1rem; }
+</style>
+{% include "forge_academy/partials/_chrome_clearance.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="ic-hero">
+  <div style="font-size:.78rem;color:#FFB800;letter-spacing:.1em;text-transform:uppercase;margin-bottom:.25rem;">
+    FORGE ACADEMY
+  </div>
+  <h1>Instructor Console</h1>
+  <p>Assign missions and role tracks, track cohort progress against due dates, and review submitted work.</p>
+</div>
+
+<div class="ic-body">
+
+  <!-- Assign -->
+  <div class="ic-card">
+    <div class="ic-title">Assign Work</div>
+    <form id="ic-assign-form" class="ic-form" onsubmit="return icAssign(event)">
+      <div class="ic-field">
+        <label for="ic-scope">What</label>
+        <select id="ic-scope" onchange="icToggleScope()">
+          <option value="mission">A single mission</option>
+          <option value="track">A whole role track</option>
+        </select>
+      </div>
+      <div class="ic-field" id="ic-mission-field">
+        <label for="ic-mission">Mission</label>
+        <select id="ic-mission">
+          {% for m in missions %}
+          <option value="{{ m.id }}">T{{ m.tier }} — {{ m.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="ic-field" id="ic-track-field" style="display:none;">
+        <label for="ic-track">Track</label>
+        <select id="ic-track">
+          <option value="all">All active missions</option>
+          {% for key, r in roles.items() %}
+          <option value="{{ key }}">{{ r.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="ic-field">
+        <label for="ic-target">To whom</label>
+        <select id="ic-target" onchange="icToggleTarget()">
+          <option value="learner">One learner</option>
+          <option value="cohort">A cohort</option>
+        </select>
+      </div>
+      <div class="ic-field" id="ic-learner-field">
+        <label for="ic-learner">Learner</label>
+        <select id="ic-learner">
+          {% for l in learners %}
+          <option value="{{ l.id }}">{{ l.display_name }} ({{ l.role }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="ic-field" id="ic-cohort-field" style="display:none;">
+        <label for="ic-cohort">Cohort</label>
+        <select id="ic-cohort">
+          <option value="all">Everyone enrolled</option>
+          {% for key, r in roles.items() %}
+          <option value="{{ key }}">{{ r.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="ic-field">
+        <label for="ic-due">Due date</label>
+        <input type="date" id="ic-due">
+      </div>
+      <div class="ic-field">
+        <label for="ic-note">Note</label>
+        <input type="text" id="ic-note" placeholder="optional">
+      </div>
+      <div class="ic-field">
+        <button type="submit" class="ic-btn">Assign</button>
+      </div>
+    </form>
+    <div id="ic-assign-msg" class="ic-msg"></div>
+    <div class="ic-note">
+      Cohort membership is resolved when the board is read, not frozen when you assign —
+      a learner who picks that role later inherits the assignment. Leaving the due date
+      blank means no deadline; an assignment with no deadline never reads as overdue.
+    </div>
+  </div>
+
+  <!-- Assignments -->
+  <div class="ic-card">
+    <div class="ic-title">Assignments ({{ assignments | length }})</div>
+    {% if assignments %}
+    <table class="ic-table">
+      <thead>
+        <tr>
+          <th>Work</th><th>Target</th><th>Due</th><th>Progress</th>
+          <th>Status</th><th>Assigned by</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in assignments %}
+        <tr>
+          <td>{{ a.label }}</td>
+          <td>
+            {% if a.target_type == 'cohort' %}
+              Cohort: {{ roles.get(a.target_role, {}).get('label', a.target_role or 'all') }}
+              <span style="color:#8899aa;">({{ a.target_count }})</span>
+            {% else %}
+              {% for t in a.targets %}
+                <a href="/academy/instructor/learner/{{ t.user_id }}">{{ t.display_name }}</a>
+              {% else %}
+                <span style="color:#8899aa;">learner removed</span>
+              {% endfor %}
+            {% endif %}
+          </td>
+          <td>{{ (a.due_at or '—')[:10] }}</td>
+          <td>
+            <span class="ic-bar-bg"><span class="ic-bar-fill" style="width:{{ a.percent | round(0) | int }}%;display:block;"></span></span>
+            <span style="font-size:.78rem;color:#8899aa;">{{ a.complete_count }}/{{ a.target_count }}</span>
+          </td>
+          <td>
+            {% if a.status == 'cancelled' %}
+              <span class="ic-pill ic-pill-cancel">CANCELLED</span>
+            {% elif a.target_count and a.complete_count >= a.target_count %}
+              <span class="ic-pill ic-pill-done">COMPLETE</span>
+            {% elif a.overdue %}
+              <span class="ic-pill ic-pill-late">OVERDUE</span>
+            {% else %}
+              <span class="ic-pill ic-pill-open">OPEN</span>
+            {% endif %}
+          </td>
+          <td style="color:#8899aa;font-size:.78rem;">{{ a.assigned_by }}</td>
+          <td>
+            {% if a.status == 'open' %}
+            <button class="ic-btn-ghost" onclick="icCancel({{ a.id }})">Cancel</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="ic-empty">Nothing assigned yet. Use the form above to assign a mission or a role track.</div>
+    {% endif %}
+  </div>
+
+  <!-- Roster -->
+  <div class="ic-card">
+    <div class="ic-title">Roster ({{ learners | length }})</div>
+    {% if learners %}
+    <table class="ic-table">
+      <thead>
+        <tr>
+          <th>Learner</th><th>Role</th><th>Rank</th><th>Missions</th>
+          <th>Submissions</th><th>Open</th><th>Overdue</th><th>Last active</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in learners %}
+        <tr>
+          <td><a href="/academy/instructor/learner/{{ l.id }}">{{ l.display_name }}</a></td>
+          <td>{{ roles.get(l.role, {}).get('label', l.role) }}</td>
+          <td>{{ l.level }}</td>
+          <td>{{ l.missions_completed }}/{{ l.total_missions }}</td>
+          <td>{{ l.submissions }}</td>
+          <td>{{ l.open_assignments }}</td>
+          <td>
+            {% if l.overdue_assignments %}
+            <span class="ic-pill ic-pill-late">{{ l.overdue_assignments }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="color:#8899aa;font-size:.78rem;">{{ (l.last_active or '—')[:10] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="ic-empty">No learners enrolled in this tenant yet.</div>
+    {% endif %}
+  </div>
+
+  <!-- Audit -->
+  <div class="ic-card">
+    <div class="ic-title">Recent Instructor Actions</div>
+    {% if audit %}
+    <table class="ic-table">
+      <thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Subject</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for e in audit %}
+        <tr>
+          <td style="color:#8899aa;font-size:.78rem;">{{ (e.created_at or '')[:19] }}</td>
+          <td>{{ e.action }}</td>
+          <td style="color:#8899aa;">{{ e.actor }}{% if e.actor_role %} ({{ e.actor_role }}){% endif %}</td>
+          <td style="color:#8899aa;">{{ e.subject_type }} {{ e.subject_id }}</td>
+          <td class="ic-audit">{{ e.detail_json }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="ic-empty">No instructor actions recorded yet.</div>
+    {% endif %}
+    <div class="ic-note">
+      This log is append-only. Correcting an assignment or an override means recording
+      the correction, not editing what is already here.
+    </div>
+  </div>
+
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+    <a href="/academy/org-readiness" style="background:rgba(74,144,226,.15);color:#4A90E2;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+      Org AI Readiness →
+    </a>
+    <a href="/academy" style="background:rgba(255,255,255,.08);color:#e0e0e0;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+      FORGE Academy →
+    </a>
+  </div>
+
+  <div class="ic-footer">CUI // SP-CTI — FORGE Academy Instructor Console</div>
+</div>
+
+<script>
+function icToggleScope() {
+  var track = document.getElementById('ic-scope').value === 'track';
+  document.getElementById('ic-track-field').style.display   = track ? '' : 'none';
+  document.getElementById('ic-mission-field').style.display = track ? 'none' : '';
+}
+function icToggleTarget() {
+  var cohort = document.getElementById('ic-target').value === 'cohort';
+  document.getElementById('ic-cohort-field').style.display  = cohort ? '' : 'none';
+  document.getElementById('ic-learner-field').style.display = cohort ? 'none' : '';
+}
+function icShow(msg, ok) {
+  var el = document.getElementById('ic-assign-msg');
+  el.textContent = msg;
+  el.style.color = ok ? '#00FF88' : '#FF4444';
+  el.style.display = 'block';
+}
+function icAssign(ev) {
+  ev.preventDefault();
+  var scope  = document.getElementById('ic-scope').value;
+  var target = document.getElementById('ic-target').value;
+  var body = {
+    assignment_type: scope,
+    mission_id: scope === 'mission' ? document.getElementById('ic-mission').value : null,
+    track_key:  scope === 'track'   ? document.getElementById('ic-track').value   : null,
+    target_type: target,
+    target_user_id: target === 'learner' ? document.getElementById('ic-learner').value : null,
+    target_role:    target === 'cohort'  ? document.getElementById('ic-cohort').value  : null,
+    due_at: document.getElementById('ic-due').value,
+    note:   document.getElementById('ic-note').value
+  };
+  fetch('/api/academy/instructor/assign', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+    .then(function (res) {
+      if (res.ok && res.d.ok) { icShow('Assigned.', true); setTimeout(function () { location.reload(); }, 600); }
+      else { icShow(res.d.error || 'Assignment refused.', false); }
+    })
+    .catch(function (e) { icShow('Request failed: ' + e, false); });
+  return false;
+}
+function icCancel(id) {
+  fetch('/api/academy/instructor/assignment/' + id + '/cancel', {method: 'POST'})
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.ok) { location.reload(); } else { icShow(d.error || 'Cancel failed.', false); }
+    });
+}
+</script>
+{% endblock %}

@@ -27,6 +27,9 @@ PROJECTS_DIR = BASE_DIR / "projects"
 # Import project scaffolder
 sys.path.insert(0, str(BASE_DIR))
 from tools.project.project_scaffold import scaffold_project, SCAFFOLDERS  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.project.project_create")
 
 # Import audit logger
 try:
@@ -68,8 +71,8 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def create_project(

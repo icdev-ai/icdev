@@ -362,8 +362,8 @@ def transition(
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("transition: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s", _exc)
 
     # Wire Prometheus metrics — best-effort, never block on metric errors
     if to_state in TERMINAL_STATES:

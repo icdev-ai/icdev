@@ -124,8 +124,9 @@ def _inject_advisory(context_id: str, tasks: list[dict], canvas: str) -> None:
             (msg_id, context_id, "system", body, "build_advisory", now),
         )
         conn.commit()
-    except Exception:
-        pass  # advisory is best-effort
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # advisory is best-effort
+        logger.warning("_inject_advisory: best-effort INSERT into chat_messages failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

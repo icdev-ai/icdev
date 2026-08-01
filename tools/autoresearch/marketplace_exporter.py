@@ -21,6 +21,9 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools.common.helpers import now_iso
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.autoresearch.marketplace_exporter")
 
 
 def _gen_id(prefix="mke"):
@@ -160,8 +163,12 @@ def export_experiment_as_asset(
                         now_iso(),
                     ),
                 )
-            except Exception:
-                pass  # Table may not exist in all environments
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # Table may not exist in all environments
+                logger.warning(
+                    "export_experiment_as_asset: best-effort INSERT into marketplace_assets failed (non-blocking): %s",
+                    _exc,
+                )
 
             # Audit trail
             try:
@@ -182,8 +189,11 @@ def export_experiment_as_asset(
                         now_iso(),
                     ),
                 )
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "export_experiment_as_asset: best-effort INSERT into audit_trail failed (non-blocking): %s",
+                    _exc,
+                )
 
         return {
             "success": True,

@@ -56,6 +56,9 @@ if str(_ROOT) not in sys.path:
 
 from tools.db.storage import get_connection, table_exists  # noqa: E402
 from tools.daemon.base import generate_id, utcnow_iso  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.color_review_simulator")
 
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
@@ -121,8 +124,8 @@ def _audit(conn, action: str, details: str = "", actor: str = "color_review_simu
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (generate_id("aud"), _now(), "govcon.color_review", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _table_exists(conn, table_name: str) -> bool:
@@ -1168,8 +1171,11 @@ def simulate_review(
                 )
                 stored_ids.append(finding_id)
                 finding["id"] = finding_id
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "simulate_review: best-effort INSERT into pg_review_findings failed (non-blocking): %s",
+                    exc,
+                )
 
         _audit(
             conn,

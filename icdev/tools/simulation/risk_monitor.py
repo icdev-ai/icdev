@@ -33,6 +33,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.simulation.risk_monitor")
 
 # ---------------------------------------------------------------------------
 # Composite Risk Formula (Article §Live Risk Correlation)
@@ -362,8 +365,12 @@ def _persist_risk_snapshot(result, risk_type, db_path=None):
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Table may not exist yet — non-blocking
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Table may not exist yet — non-blocking
+        logger.warning(
+            "_persist_risk_snapshot: best-effort INSERT into risk_monitor_history failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

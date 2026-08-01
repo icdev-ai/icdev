@@ -29,6 +29,9 @@ import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.kanban.cli")
 
 _REPO_MARKERS = ("args/projects.yaml", "goals/manifest.md")
 
@@ -137,8 +140,11 @@ def _record_manual_transition(conn, task_id: str, from_status, to_status: str,
                 reason or "tools/kanban/cli.py --set-status", _now(),
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_record_manual_transition: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s",
+            exc,
+        )
 
 
 def _refuses_done(task_id: str) -> str:

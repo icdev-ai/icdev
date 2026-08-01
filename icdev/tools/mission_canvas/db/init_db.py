@@ -7,6 +7,7 @@ DB file: data/mission_canvas.db  |  env: MCAN_STORAGE_BACKEND, MCAN_DB_PATH
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -179,7 +180,7 @@ def init_db() -> None:
         # savepoint (SQLite-only triggers/DDL are skipped without aborting).
         conn.executescript(SCHEMA)
         conn.commit()
-        print("[init_db] Mission Canvas schema ready")
+        print("[init_db] Mission Canvas schema ready", file=sys.stderr)
     finally:
         conn.close()
 
