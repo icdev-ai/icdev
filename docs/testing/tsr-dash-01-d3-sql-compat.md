@@ -74,6 +74,38 @@ failures in these three files, and none were introduced.
 
 `tests/tech_radar/test_tech_radar.py::test_run_full_cycle_persists_ring_change`.
 
+## The gate rejected its own remedy
+
+`coherence_checker.py::check_test_db_isolation` flags a file that patches a DB
+connection factory while a raw `sqlite3.connect` appears anywhere in it. After the
+conversion, `tests/tech_radar/test_tech_radar.py:248` was **still flagged** — the
+patched factory (`_open_conn`) now returns `_sql_compat.connect`, but the file
+retains a raw `sqlite3.connect` at line 90 for schema seeding, which is correct
+and must stay: that connection is never handed to production code.
+
+Left alone, the gate would fail the very change that fixes the defect, and the
+obvious way to silence it (deleting the seeding connection) would be strictly
+worse. So the check now clears a patch call whose replacement is a factory that
+returns a `_sql_compat` connection:
+
+- `_sql_compat_factory_names` — collects local factories that call
+  `_sql_compat.connect`/`translating` **and contain no raw `sqlite3.connect`**.
+  A factory that mixes both stays a violation.
+- `_patch_replacement_names` — reads the replacement out of `side_effect=`,
+  `new=`, `return_value=`, or the trailing positional of `monkeypatch.setattr`.
+
+Only the factory actually named in the patch call is cleared; a second, still-raw
+factory in the same file is still reported.
+
+Verified narrow, not neutering:
+
+| arm | `check_test_db_isolation` on the 3 files | repo-wide violations |
+|---|---|---|
+| before exemption | **fail** (1: `test_tech_radar.py:248`) | 195 |
+| after exemption | **pass** | 195 |
+
+The repo-wide count is unchanged, so no genuine violation was silenced.
+
 ## How these three were found
 
 The DASH slice's own failures are dominated by a *different* cause —

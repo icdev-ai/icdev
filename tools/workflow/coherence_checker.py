@@ -5756,6 +5756,63 @@ def _is_sqlite_connect(call: ast.AST) -> bool:
     )
 
 
+def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
+    """Names of local factories that hand back a ``tests/_sql_compat`` connection.
+
+    ``_sql_compat.connect``/``translating`` ARE the sanctioned wrapper — they
+    delegate to the same ``translate_sql`` the runtime uses. A file that fixes one
+    fixture with them almost always still holds a raw ``sqlite3.connect``
+    elsewhere for schema setup or for its own assertions, and that residue must
+    not keep the file flagged: doing so makes the gate reject its own remedy.
+
+    Only the factory actually named in the patch call is cleared. A second,
+    still-raw factory in the same file stays a violation.
+    """
+    compat_calls: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("_sql_compat"):
+            for alias in node.names:
+                compat_calls.add(alias.asname or alias.name)
+
+    def _returns_compat(fn: ast.AST) -> bool:
+        raw = False
+        compat = False
+        for sub in ast.walk(fn):
+            if _is_sqlite_connect(sub):
+                raw = True
+            elif isinstance(sub, ast.Call):
+                fname = sub.func
+                if isinstance(fname, ast.Name) and fname.id in compat_calls:
+                    compat = True
+                elif (
+                    isinstance(fname, ast.Attribute)
+                    and fname.attr in ("connect", "translating")
+                    and isinstance(fname.value, ast.Name)
+                    and fname.value.id.endswith("_sql_compat")
+                ):
+                    compat = True
+        return compat and not raw
+
+    safe: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _returns_compat(node):
+            safe.add(node.name)
+    return safe
+
+
+def _patch_replacement_names(node: ast.Call) -> Set[str]:
+    """Names supplied as the replacement in a patch/setattr call."""
+    names: Set[str] = set()
+    for kw in node.keywords:
+        if kw.arg in ("side_effect", "new", "return_value") and isinstance(kw.value, ast.Name):
+            names.add(kw.value.id)
+    # monkeypatch.setattr(target, "get_connection", _conn) — trailing positional.
+    for arg in node.args:
+        if isinstance(arg, ast.Name):
+            names.add(arg.id)
+    return names
+
+
 def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Flag tests that hand runtime code a RAW sqlite3 connection while %s SQL is reachable.
 
@@ -5807,6 +5864,8 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
         # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
         # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
         # runtime %s query then hits an untranslated raw sqlite3 connection.
+        safe_factories = _sql_compat_factory_names(tree)
+
         flagged = False
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -5816,6 +5875,8 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
             if not patch_call:
                 continue
             str_args = [a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            if safe_factories and _patch_replacement_names(node) & safe_factories:
+                continue  # patched to a _sql_compat connection — that IS the fix
             if any(s.split(".")[-1] in _DB_FACTORY_NAMES for s in str_args):
                 violations.append(
                     f"{rel}:{getattr(node, 'lineno', 0)}: monkeypatches a DB connection factory "
