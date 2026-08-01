@@ -498,6 +498,10 @@ def _dashboard_reachable() -> bool:
     not _playwright_available() or not _dashboard_reachable(),
     reason="playwright not installed or dashboard not running",
 )
+# The AI-Assist wait below is 45s because a real LLM answers it — longer than
+# the global 30s budget, so without this the class aborts the session rather
+# than failing. Outer budget must exceed every inner wait it contains.
+@pytest.mark.timeout(120)
 class TestProfileCreatorUI:
     """Playwright smoke test for the /coworker/profiles/new page."""
 
