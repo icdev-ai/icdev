@@ -229,6 +229,33 @@ def in_quiet_hours(prefs: dict, now: datetime | None = None) -> bool:
     return hour >= start or hour < end
 
 
+def dispatcher_paused() -> bool:
+    """True when the autonomous kanban dispatcher is currently paused.
+
+    Quiet hours assume the platform is working autonomously and that alerts can
+    wait until morning. A paused dispatcher inverts that: nothing is being
+    picked up, so an alert raised during the pause has no autonomous responder
+    and must not be silently held overnight.
+
+    The kanban import is deliberately lazy and local. Notifications must not
+    take a module-level dependency on the kanban package — that would be a
+    layering inversion and an import cycle risk — so this is a soft, optional
+    probe of runtime state.
+
+    Fails CLOSED toward existing behaviour: any error means "not paused", so
+    quiet hours continue to suppress exactly as they do today. A notification
+    subsystem must never break because a scheduler module moved.
+
+    Patch this symbol directly to control the behaviour in tests.
+    """
+    try:
+        from tools.kanban.scheduler_control import is_paused
+
+        return bool(is_paused())
+    except Exception:
+        return False
+
+
 def resolve_user_channels(
     user_id: str,
     candidate_channels: list[str],
@@ -241,7 +268,11 @@ def resolve_user_channels(
     Intersects ``candidate_channels`` (typically the output of
     ``routing_rules.resolve_channels``) with the user's enabled channels,
     preserving candidate order. During quiet hours all channels are suppressed
-    UNLESS the alert is critical and ``critical_bypasses_quiet_hours`` is set.
+    UNLESS either
+      * the alert is critical and ``critical_bypasses_quiet_hours`` is set, or
+      * the autonomous kanban dispatcher is paused (see
+        :func:`dispatcher_paused`) — with no autonomous responder, a suppressed
+        alert would go unanswered until the pause is noticed by hand.
     A user with no channel preferences accepts all candidates.
     """
     prefs = get_preferences(user_id, tenant_id)
@@ -253,7 +284,10 @@ def resolve_user_channels(
     is_critical = (severity or "").lower() in crit
 
     if in_quiet_hours(prefs, now):
-        if not (is_critical and _defaults()["critical_bypasses_quiet_hours"]):
+        bypass = is_critical and _defaults()["critical_bypasses_quiet_hours"]
+        # A paused dispatcher means no autonomous responder is running, so
+        # holding this until the window closes would leave it unanswered.
+        if not bypass and not dispatcher_paused():
             return []
 
     user_channels = {c.lower() for c in (prefs.get("channels") or [])}

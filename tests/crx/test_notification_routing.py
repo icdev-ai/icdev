@@ -230,7 +230,13 @@ def test_resolve_user_channels_intersects_preferences():
     assert got == ["email"]
 
 
-def test_quiet_hours_suppresses_non_critical_but_critical_bypasses():
+def test_quiet_hours_suppresses_non_critical_but_critical_bypasses(monkeypatch):
+    # dispatcher_paused is pinned False: quiet-hours suppression now also
+    # depends on live scheduler state, and without this the assertion below
+    # would flip whenever the kanban runner happened to be paused while the
+    # suite ran. Patch the module attribute, not the underlying function.
+    monkeypatch.setattr(preferences, "dispatcher_paused", lambda: False)
+
     uid = "user-" + uuid.uuid4().hex[:8]
     preferences.set_preferences(uid, tenant_id="t1", channels=["email"],
                                 quiet_hours_start=0, quiet_hours_end=23,
@@ -242,6 +248,58 @@ def test_quiet_hours_suppresses_non_critical_but_critical_bypasses():
     # Critical bypasses quiet hours (default config).
     assert preferences.resolve_user_channels(
         uid, ["email"], tenant_id="t1", severity="critical", now=midday) == ["email"]
+
+
+def test_paused_dispatcher_bypasses_quiet_hours(monkeypatch):
+    """A paused dispatcher has no autonomous responder, so alerts must land."""
+    uid = "user-" + uuid.uuid4().hex[:8]
+    preferences.set_preferences(uid, tenant_id="t1", channels=["email"],
+                                quiet_hours_start=0, quiet_hours_end=23,
+                                timezone="UTC")
+    midday = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(preferences, "dispatcher_paused", lambda: False)
+    assert preferences.resolve_user_channels(
+        uid, ["email"], tenant_id="t1", severity="high", now=midday) == []
+
+    # Same instant, same non-critical severity — only the pause differs.
+    monkeypatch.setattr(preferences, "dispatcher_paused", lambda: True)
+    assert preferences.resolve_user_channels(
+        uid, ["email"], tenant_id="t1", severity="high", now=midday) == ["email"]
+
+
+def test_paused_dispatcher_still_respects_channel_preferences(monkeypatch):
+    """The bypass lifts quiet hours only — it must not widen channel choice."""
+    monkeypatch.setattr(preferences, "dispatcher_paused", lambda: True)
+    uid = "user-" + uuid.uuid4().hex[:8]
+    preferences.set_preferences(uid, tenant_id="t1", channels=["email"],
+                                quiet_hours_start=0, quiet_hours_end=23,
+                                timezone="UTC")
+    midday = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    got = preferences.resolve_user_channels(
+        uid, ["slack", "email", "telegram"], tenant_id="t1",
+        severity="high", now=midday)
+    assert got == ["email"]
+
+
+def test_dispatcher_paused_fails_closed_when_kanban_unavailable(monkeypatch):
+    """An unimportable/broken scheduler must not break notifications.
+
+    Guards the fail-closed contract: an error means "not paused", so quiet
+    hours keep suppressing exactly as before rather than the probe raising out
+    of resolve_user_channels.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _boom(name, *args, **kwargs):
+        if name.startswith("tools.kanban"):
+            raise ImportError("simulated: scheduler module unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _boom)
+    assert preferences.dispatcher_paused() is False
 
 
 def test_default_prefs_for_unknown_user():
