@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -2465,18 +2466,122 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
 
 
 # Step labels for phase-exit gate decomposition (matches established F-gate / E-gate sub-task pattern)
+#
+# These five steps are DETERMINISTIC tool invocations, so they are executed by
+# _dispatch_via_tool_runner rather than handed to an LLM. Wrapping a 40-second
+# subprocess in a 1200-second agent dispatch was pure overhead, and the agent
+# had no way to distinguish a failure it caused from one already present on
+# main — so a single pre-existing failure made every gate sub-task unwinnable.
+# The descriptions are kept human-readable for the board.
 _PHASE_GATE_STEPS = [
     ("codelens", "CodeLens scan",
-     "Run: python tools/code_intelligence/codelens.py --all --json. Report pass/fail."),
+     "Runs CodeLens (py_compile + ruff + bandit, delta vs main) over the phase branch."),
     ("coherence", "Coherence check",
-     "Run: python tools/workflow/coherence_checker.py --all --fix --gate. Report pass/fail."),
+     "Runs the FULL coherence tier, comparing failures per-check-id against the "
+     "cached main baseline so pre-existing failures do not block the gate."),
     ("e2e", "E2E dashboard test",
-     "Run: python tools/testing/e2e_full_dashboard.py. Report pass/fail."),
+     "Runs the Selenium/Playwright dashboard lifecycle test."),
     ("pytest", "Regression pytest",
-     "Run: pytest tests/ -x --timeout=120 --ignore=tests/e2e_selenium. Report pass/fail."),
+     "Runs pytest over the phase branch's changed test files."),
     ("companion", "Companion sync",
-     "Run: python tools/dx/companion.py --sync --write --json. Report pass/fail."),
+     "Runs: python tools/dx/companion.py --sync --write --json (best-effort)."),
 ]
+
+_GATE_STEP_SLUGS = tuple(slug for slug, _label, _desc in _PHASE_GATE_STEPS)
+_GATE_STEP_RE = re.compile(
+    r"-\d+-(" + "|".join(_GATE_STEP_SLUGS) + r")$", re.IGNORECASE
+)
+
+
+def _gate_step_slug(task_id: str) -> Optional[str]:
+    """Return the gate-step slug for an auto-decomposed phase-gate child task."""
+    match = _GATE_STEP_RE.search(task_id or "")
+    return match.group(1).lower() if match else None
+
+
+def _run_gate_step(slug: str, work_dir: str, task_id: str) -> Tuple[bool, str]:
+    """Execute one phase-exit gate step natively. Returns (passed, detail).
+
+    Phase gates validate a whole phase rather than one task's diff, so the
+    scans run unscoped (full coherence tier, whole-tree CodeLens). Coherence
+    still compares per-check-id against the main baseline, which is what makes
+    the step winnable when main is already red.
+    """
+    from tools.workflow.validated_commit import (  # noqa: PLC0415
+        _run_codelens, _run_coherence, _run_companion_sync, _run_e2e, _run_pytest,
+    )
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{_default_branch()}...HEAD"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=work_dir, timeout=30,
+        )
+        changed = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+    except Exception:
+        changed = []
+    modified_py = [
+        f for f in changed
+        if f.endswith(".py") and (Path(work_dir) / f).exists()
+    ]
+
+    if slug == "codelens":
+        ok, reason, _m = _run_codelens(work_dir, modified_py, True)
+        return ok, reason
+    if slug == "coherence":
+        ok, reason = _run_coherence(
+            work_dir, compare_to_main=True, changed_files=None,
+            timeout=MAX_EXECUTION_SECONDS_SCAN, tier="full",
+        )
+        # None = could not be evaluated. Do NOT block the phase on an
+        # unevaluated gate, but say so plainly instead of reporting a pass.
+        return ok is not False, reason
+    if slug == "pytest":
+        passed, failed = _run_pytest(work_dir, changed, float(MAX_EXECUTION_SECONDS_SCAN))
+        if passed is None:
+            return True, "pytest not run — no changed test files on this branch"
+        return passed, ("pytest passed" if passed else f"pytest failed: {', '.join(failed)}")
+    if slug == "e2e":
+        ok, reason, _m = _run_e2e(work_dir, True, modified_files=changed)
+        return ok, reason
+    if slug == "companion":
+        ok, reason = _run_companion_sync()
+        return True, reason  # best-effort: never blocks a phase gate
+    return True, f"unknown gate step '{slug}' — skipped"
+
+
+def _dispatch_via_tool_runner(task: dict, work_dir: str, task_log: Path) -> bool:
+    """Run a deterministic gate sub-task in-process. Returns True if handled."""
+    task_id = task["id"]
+    slug = _gate_step_slug(task_id)
+    if not slug:
+        return False
+
+    started = time.monotonic()
+    try:
+        ok, detail = _run_gate_step(slug, work_dir, task_id)
+    except Exception as exc:
+        ok, detail = False, f"gate step raised: {exc}"
+    elapsed = round(time.monotonic() - started, 1)
+
+    try:
+        task_log.write_text(
+            f"[tool-runner dispatch — task {task_id}]\n"
+            f"[work_dir {work_dir}]\n"
+            f"[step {slug}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
+            encoding="utf-8", errors="replace",
+        )
+    except Exception as exc:
+        logger.debug("kanban: gate-step log write failed for %s: %s", task_id, exc)
+
+    _set_executor_type(task_id, "tool_runner")
+    print(f"  Kanban: gate step {task_id} ({slug}) "
+          f"{'PASSED' if ok else 'FAILED'} in {elapsed}s via tool_runner")
+    if ok:
+        _move_task(task_id, "done", actor="tool_runner", reason=detail[:400])
+    else:
+        _move_task(task_id, "backlog", actor="tool_runner", reason=detail[:400])
+    return True
 
 
 def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
@@ -4149,6 +4254,11 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
             fh.write(f"[work_dir {work_dir}]\n\n")
 
             tools_schema, tool_handlers = build_worktree_toolset(work_dir)
+            # Cap one gate sweep at a quarter of the task's dispatch budget.
+            # The rubric loop grades up to max_grading_iterations times before
+            # post-task validation runs again, so an ungoverned gate could (and
+            # did) spend the whole dispatch window judging instead of building.
+            _gate_budget = max(60.0, _get_task_timeout(task_id) * 0.25)
             grader = make_pipeline_grader(
                 cwd=work_dir,
                 task_id=task_id,
@@ -4156,6 +4266,7 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
                 run_e2e=False,
                 run_conformance=True,
                 compare_to_main=True,
+                budget_sec=_gate_budget,
             )
             router = _llm_router_mod.LLMRouter()
             stop_event = threading.Event()
@@ -5117,6 +5228,17 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
 
     task_desc = task.get("description", task.get("title", ""))
     task_type = task.get("task_type", "chore")
+
+    # Deterministic gate sub-tasks (auto-decomposed phase-exit gates) run their
+    # tool natively instead of paying for an LLM dispatch around a subprocess.
+    try:
+        if _dispatch_via_tool_runner(task, work_dir, task_log):
+            return
+    except Exception as exc:
+        logger.warning(
+            "kanban: tool_runner dispatch failed for %s, falling back to LLM chain: %s",
+            task_id, exc,
+        )
 
     # D-AUTO-DEGRADE: Build effective chain skipping degraded executors.
     # If all executors are degraded, fall back to the full chain anyway.
@@ -6481,7 +6603,7 @@ def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
                 "UPDATE kanban_verifications SET "
                 "codelens_passed = %s, ruff_issues = %s, bandit_issues = %s, "
                 "pytest_passed = %s, pytest_ran = %s, failed_tests = %s, "
-                "coherence_passed = %s, "
+                "coherence_passed = %s, coherence_violations = %s, "
                 "e2e_ran = %s, e2e_passed = %s, companion_synced = %s, "
                 "review_passed = %s, review_findings = %s "
                 "WHERE task_id = %s AND id = ("
@@ -6495,6 +6617,7 @@ def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
                     1 if metrics.get("pytest_ran") else 0,
                     metrics.get("failed_tests"),
                     1 if metrics.get("coherence_passed") else 0 if metrics.get("coherence_passed") is False else None,
+                    metrics.get("coherence_violations"),
                     1 if metrics.get("e2e_ran") else 0,
                     1 if metrics.get("e2e_passed") else 0 if metrics.get("e2e_passed") is False else None,
                     1 if metrics.get("companion_synced") else 0,

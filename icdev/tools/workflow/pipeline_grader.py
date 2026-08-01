@@ -70,6 +70,7 @@ def make_pipeline_grader(
     run_e2e: bool = False,
     run_conformance: bool = True,
     compare_to_main: bool = True,
+    budget_sec: Optional[float] = None,
 ) -> Callable[[Optional[AgentLoopResult]], RubricGrade]:
     """Build a code grader that runs the delivery-pipeline gates as the rubric.
 
@@ -86,6 +87,10 @@ def make_pipeline_grader(
             returns ``review_passed=None``, which does NOT block — the gate is
             recorded, not enforced, mirroring the record-only default.
         compare_to_main: Coherence only fails on NEW violations vs main.
+        budget_sec: Wall-clock cap for one gate sweep. Defaults to the
+            ``ICDEV_KANBAN_VERIFY_BUDGET_SEC`` value. The kanban runner derives
+            it from the task's dispatch budget so the grader can never spend
+            more time judging the work than building it.
 
     Returns:
         ``grader(result) -> RubricGrade`` suitable for
@@ -111,6 +116,7 @@ def make_pipeline_grader(
                 compare_to_main=compare_to_main,
                 run_e2e=run_e2e,
                 run_companion=False,
+                budget_sec=budget_sec,
             )
         except Exception as exc:  # noqa: BLE001 — infra failure, not the agent's fault
             return RubricGrade(
@@ -125,8 +131,14 @@ def make_pipeline_grader(
             bullets.extend(f"  {b}" for b in _gate_bullets(metrics))
 
         # 2) Spec-conformance review (build-the-right-thing). Never raises.
+        #
+        # Only asked once the mechanical gates are green. While ruff, coherence,
+        # or pytest are still failing the agent already has concrete work queued,
+        # and "did you build the right thing?" is an LLM round-trip whose answer
+        # cannot be acted on yet — it was previously paid on every revision
+        # round of the loop.
         review_passed: Optional[bool] = None
-        if run_conformance:
+        if run_conformance and ok:
             cr = review_conformance(task_id, changed_files=files) or {}
             review_passed = cr.get("review_passed")
             if review_passed is False:
