@@ -25,8 +25,16 @@ from tools.db.storage import get_connection
 CONSTRAINT = "audit_trail_event_type_check"
 
 
-def up() -> None:
-    conn = get_connection()
+def up(conn=None) -> None:
+    """Rebuild the constraint.
+
+    ``conn`` is optional and caller-owned: bootstrap_pg.py and the migration
+    runner pass their own connection, and closing it here would break the rest
+    of their run. Only a connection opened locally is closed locally.
+    """
+    owned = conn is None
+    if owned:
+        conn = get_connection()
     try:
         is_pg = getattr(conn, "_backend", "") == "postgresql"
         if not is_pg:
@@ -48,7 +56,8 @@ def up() -> None:
             f"{len(VALID_EVENT_TYPES)} event types"
         )
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 if __name__ == "__main__":
