@@ -145,8 +145,12 @@
 
     {% if fa_user %}
     <div class="fa-xp-mini">
-      <div style="font-size:.65rem;color:var(--text-secondary);margin-bottom:.4rem;">
-        {{ fa_user.xp|default(0) }} XP · {{ level_ctx.level.label if level_ctx and level_ctx.level else 'Recruit' }}
+      {# aca-ux-07: the bar below fills from EARNED XP, so the number above it has to
+         be the earned figure too. It printed the running total, which made the bar
+         look stuck — 1815 XP over a bar that had barely moved. #}
+      <div style="font-size:.65rem;color:var(--text-secondary);margin-bottom:.4rem;"
+           title="Rank is set by earned XP. Daily-login attendance counts toward your total but not toward rank.">
+        {{ level_ctx.earned_xp|default(0) }} earned XP · {{ level_ctx.level.label if level_ctx and level_ctx.level else 'Recruit' }}
       </div>
       <div class="fa-xp-mini-bar">
         <div class="fa-xp-mini-fill" style="width:{{ level_ctx.pct if level_ctx else 0 }}%"></div>
