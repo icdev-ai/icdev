@@ -6723,3 +6723,52 @@ projects:
     - key: tier
       title: "TIER — Premium gate, team caps, tiered LLM"
       priority: medium
+- key: swp
+  name: SWP - Silent Write Failures and Schema Drift
+  description: 'Sweep for writes that cannot succeed and fail invisibly. Found while
+    fixing the test-suite hang: module_budget_usage held 0 rows on live PostgreSQL
+    because record_module_usage inserted a client-generated string id into a SERIAL
+    column, and every caller wrapped it in "except Exception: pass". The same shape
+    then turned up across tools/govcon, where audit_trail has never received a single
+    row from the subsystem - 3033 rows total, zero from govcon. An automated pass
+    comparing every static INSERT column list in tools/ against the live PostgreSQL
+    schema found 95 statements naming columns that do not exist. These are not
+    hypothetical: each one raises at runtime and is swallowed, so the feature reports
+    success while persisting nothing. Budget gates, audit trails and telemetry all
+    read tables that can never fill.'
+  task_prefix: swp-
+  default_open: true
+  briefs:
+  - 'Verify against the LIVE PostgreSQL schema, not the DDL in the source. Many tables
+    were created by an older migration and never altered - CREATE TABLE IF NOT EXISTS
+    does not change an existing table, so the code and the database disagree silently.
+    information_schema.columns is the source of truth.'
+  - 'Prove the defect before fixing it. Attempt the INSERT against live PG and capture
+    the error, then assert the row IS IN THE DATABASE afterwards. Existing tests pass
+    against functions that persist nothing because they mock the writer or assert only
+    on its return value.'
+  - 'Prefer omitting a client-generated id over widening the column to TEXT. CREATE
+    TABLE IF NOT EXISTS never alters an existing table, so a DDL change repairs nothing
+    already deployed until a migration runs, while omitting the column fixes every
+    existing database immediately. RETURNING id works on PostgreSQL and SQLite 3.35+,
+    so one statement serves both; psycopg2 lastrowid does not - it reports an OID.'
+  - 'Never leave "except Exception: pass" around a persistence call. Log it. That bare
+    pass is the single reason every defect in this card survived. 227 such sites exist
+    in tools/ (AST-verified, migrations excluded); they are the search space, not the
+    defect list - many are legitimately best-effort and only need logging.'
+  - 'A CHECK constraint and its Python constant drift apart. VALID_EVENT_TYPES has 221
+    entries; audit_trail_event_type_check admits 189. Derive the constraint from the
+    constant, per CLAUDE.md, rather than adding to one side.'
+  epics:
+  - key: audit
+    title: "AUDIT - audit_trail event types and constraint drift"
+    priority: critical
+  - key: scan
+    title: "SCAN - triage the 95 column-mismatch INSERTs"
+    priority: high
+  - key: swallow
+    title: "SWALLOW - logging for swallowed persistence"
+    priority: medium
+  - key: gate
+    title: "GATE - coherence check to prevent recurrence"
+    priority: high
