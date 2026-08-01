@@ -4,6 +4,7 @@
 
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+import { logEnvironmentDiagnostics } from './globalSetup';
 
 // Root is always the directory that contains this config file — immune to cwd changes.
 const ROOT = __dirname;
@@ -42,8 +43,11 @@ const DASHBOARD_URL = process.env.ICDEV_DASHBOARD_URL || `http://localhost:${POR
  * Run specific: npx playwright test tests/e2e/dashboard_health.spec.ts
  * Report: npx playwright show-report
  */
-export default defineConfig({
+const config = defineConfig({
   testDir: path.resolve(ROOT, 'tests/e2e'),
+  // Wired as the documented hook, but the report is emitted at config load
+  // instead (see below) — Playwright skips globalSetup for `--list`.
+  globalSetup: path.resolve(ROOT, 'globalSetup.ts'),
   timeout: 60000, // cold-start server + beforeEach login flows need >30s
   fullyParallel: false, // Sequential for Gov/DoD audit traceability
   forbidOnly: !!process.env.CI,
@@ -173,4 +177,24 @@ export default defineConfig({
     },
   },
 });
+
+// tsh-e2e-01-d1: print the local-vs-CI environment diff before anything runs.
+//
+// Called here rather than left to `globalSetup` because Playwright does not run
+// globalSetup for `npx playwright test --list` — and listing is exactly the
+// cheap command you reach for when a local run disagrees with CI. Reading the
+// values back off `config` keeps the report describing the config that is
+// actually in force instead of a second copy of it that could drift.
+//
+// Silence with ICDEV_E2E_ENV_DIAG=0; diff against a real CI run's snapshot with
+// ICDEV_E2E_ENV_BASELINE=<path to e2e-env-diagnostics.json>.
+const webServer = config.webServer as { env?: Record<string, string> } | undefined;
+logEnvironmentDiagnostics({
+  root: ROOT,
+  webServerEnv: webServer?.env,
+  webServerActive: !!webServer,
+  dashboardUrl: DASHBOARD_URL,
+});
+
+export default config;
 // CUI // SP-CTI

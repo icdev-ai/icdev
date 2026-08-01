@@ -576,6 +576,7 @@ jobs:
             .tmp/test_runs/playwright-artifacts/
             .tmp/test_runs/playwright-results-dwo.json
             .tmp/test_runs/playwright-artifacts-dwo/
+            .tmp/test_runs/e2e-env-diagnostics*.json
           retention-days: 30
       # The DWO specs write their evidence to playwright/screenshots/ rather than
       # to outputDir, precisely because Playwright clears outputDir on each run.
