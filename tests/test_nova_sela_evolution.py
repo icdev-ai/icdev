@@ -19,6 +19,8 @@ import pytest
 # Ensure repo root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tests._sql_compat import translating  # noqa: E402
+
 
 # ── In-memory DB fixture ──────────────────────────────────────────────────────
 
@@ -53,28 +55,28 @@ CREATE TABLE IF NOT EXISTS agent_improvement_artifacts (
 """
 
 
-class _NoCloseConn:
-    """Wraps a sqlite3 connection and suppresses close() so tests retain access."""
-
-    def __init__(self, db):
-        self._db = db
-
-    def close(self):
-        pass  # intentionally suppressed — fixture controls lifetime
-
-    def __getattr__(self, name):
-        return getattr(self._db, name)
-
-
 @pytest.fixture()
 def conn():
-    """In-memory SQLite connection with NOVA tables pre-created."""
+    """In-memory SQLite connection with NOVA tables pre-created.
+
+    Handed straight to ``tools.genesis.reflexes.evolution`` via a patched
+    ``tools.db.storage.get_connection``, so it must behave like the
+    ``StorageConnection`` it stands in for: evolution.py authors ``%s``
+    placeholders for PostgreSQL and only that wrapper rewrites them to ``?``.
+    A bare sqlite3 connection made ``_query_low_performing_skills`` raise
+    ``near "%": syntax error`` into its own ``except Exception`` — it logged a
+    warning and returned ``[]``, so the reflex reported "no low performers"
+    and the tests read as a missing feature rather than a broken fixture.
+
+    ``unclosable=True`` replaces the old ``_NoCloseConn`` shim: run_evolution()
+    closes the connection it is given, which would drop this in-memory DB
+    before the test can assert against it.
+    """
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
     db.executescript(_NOVA_SCHEMA)
     db.commit()
-    wrapped = _NoCloseConn(db)
-    yield wrapped
+    yield translating(db, unclosable=True)
     db.close()
 
 
