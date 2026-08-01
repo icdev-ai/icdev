@@ -3621,6 +3621,59 @@ CREATE TABLE IF NOT EXISTS fa_instructor_audit (
     classification  TEXT    DEFAULT 'CUI',
     created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+-- The assessment model (aca-trn-01, migration 324). classify_step runs on every
+-- mission page render, so these have to exist wherever a step row does: a query
+-- against a missing table inside an open transaction aborts that transaction on
+-- PostgreSQL, which is why fa_xp_ledger above is declared here too.
+CREATE TABLE IF NOT EXISTS fa_assessment_items (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id        INTEGER NOT NULL,
+    item_key       TEXT    NOT NULL,
+    prompt         TEXT    NOT NULL,
+    options_json   TEXT    NOT NULL DEFAULT '[]',
+    -- Server-only. Never selected into a client payload.
+    correct_index  INTEGER NOT NULL DEFAULT 0,
+    explanation    TEXT,
+    difficulty     TEXT    DEFAULT 'core',
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id, item_key));
+
+-- Append-only (registered in APPEND_ONLY_TABLES). served_json records which items
+-- were drawn and the permutation mapping displayed option positions back to the
+-- authored ones — without it the indices a client posts are meaningless.
+CREATE TABLE IF NOT EXISTS fa_step_attempts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    step_id        INTEGER NOT NULL,
+    kind           TEXT    NOT NULL DEFAULT 'attempt',
+    attempt_num    INTEGER NOT NULL DEFAULT 1,
+    policy         TEXT    NOT NULL DEFAULT 'practice',
+    served_json    TEXT    NOT NULL DEFAULT '[]',
+    answers_json   TEXT,
+    score_pct      INTEGER,
+    passed         INTEGER,
+    closed_at      TEXT,
+    reason         TEXT,
+    actor          TEXT,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS fa_step_assessment_policy (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id            INTEGER NOT NULL,
+    policy             TEXT    NOT NULL DEFAULT 'practice',
+    -- NULL means "use the constant", so raising a threshold moves every step that
+    -- never asked for something different.
+    items_per_attempt  INTEGER,
+    pass_threshold_pct INTEGER,
+    max_attempts       INTEGER,
+    updated_at         TEXT,
+    created_at         TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id));
 """
 
 

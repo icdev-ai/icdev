@@ -208,7 +208,17 @@
 
       {% set stype = step.step_type|default('coding') %}
 
-      {% if stype == 'coding' %}
+      {# aca-trn-01: a step with an authored item bank renders its questions
+         INSTEAD of its type pane. This mirrors grade_step, where `_grade_items`
+         already takes precedence over the declared step type — with a bank, the
+         step is the questions. Keeping the type pane as well would leave a second,
+         easier completion control ("✓ Understood → Continue") beside the
+         assessment, which is a way to pass a knowledge check without answering it.
+         `assessed_step_ids` comes from the blueprint; the questions themselves come
+         from STEPS[idx].assessment and carry no answer key. #}
+      {% if step.id in assessed_step_ids %}
+      {% include "forge_academy/partials/_step_assessment.html" %}
+      {% elif stype == 'coding' %}
       {% include "forge_academy/partials/_step_coding.html" %}
       {% elif stype == 'configure' %}
       {% include "forge_academy/partials/_step_configure.html" %}
@@ -389,7 +399,7 @@ function faEnrolNotice() {
 // whether it passed: `passed`, `score`, `base_xp`, `mission_xp` and
 // `mission_complete` were all read from this body and all were forgeable
 // (aca-int-01). Only the step id, the submission and the chosen option travel.
-async function submitStep(stepIdx, submission, chosenOption) {
+async function submitStep(stepIdx, submission, chosenOption, answers) {
   if (!FA_USER_ID) { faEnrolNotice(); return null; }
   const step = STEPS[stepIdx];
   const elapsed = Math.round((Date.now() - startTime) / 1000);
@@ -402,6 +412,13 @@ async function submitStep(stepIdx, submission, chosenOption) {
     };
     if (chosenOption !== undefined && chosenOption !== null) {
       payload.chosen_option = chosenOption;
+    }
+    // aca-trn-01: item_key -> the index of the option AS DISPLAYED. The server maps
+    // it back through the permutation it recorded when it served the draw, so these
+    // numbers mean nothing without that row — which is what makes reading the DOM
+    // useless to someone trying to skip the assessment.
+    if (answers && Object.keys(answers).length) {
+      payload.answers = answers;
     }
     const resp = await fetch('/api/academy/step/submit', {
       method:'POST', headers:{'Content-Type':'application/json'},

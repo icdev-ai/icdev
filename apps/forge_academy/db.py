@@ -306,6 +306,63 @@ CREATE TABLE IF NOT EXISTS fa_instructor_audit (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- aca-trn-01: the assessment model. Declared here as well as in migration 324 for
+-- the same reason as fa_xp_ledger — a query against a missing table inside an open
+-- transaction aborts that transaction on PostgreSQL, and classify_step runs on every
+-- mission page render.
+CREATE TABLE IF NOT EXISTS fa_assessment_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id       INTEGER NOT NULL,
+    item_key      TEXT NOT NULL,
+    prompt        TEXT NOT NULL,
+    options_json  TEXT NOT NULL DEFAULT '[]',
+    correct_index INTEGER NOT NULL DEFAULT 0,
+    explanation   TEXT,
+    difficulty    TEXT DEFAULT 'core',
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id     TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(step_id, item_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fa_items_step ON fa_assessment_items(step_id);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). An attempt limit whose ledger can
+-- be edited is not a limit, and fa_xp_ledger cites these rows.
+CREATE TABLE IF NOT EXISTS fa_step_attempts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    step_id      INTEGER NOT NULL,
+    kind         TEXT NOT NULL DEFAULT 'attempt',
+    attempt_num  INTEGER NOT NULL DEFAULT 1,
+    policy       TEXT NOT NULL DEFAULT 'practice',
+    served_json  TEXT NOT NULL DEFAULT '[]',
+    answers_json TEXT,
+    score_pct    INTEGER,
+    passed       INTEGER,
+    closed_at    TEXT,
+    reason       TEXT,
+    actor        TEXT,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id    TEXT,
+    created_at   TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_fa_attempts_user_step ON fa_step_attempts(user_id, step_id);
+
+CREATE TABLE IF NOT EXISTS fa_step_assessment_policy (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id            INTEGER NOT NULL,
+    policy             TEXT NOT NULL DEFAULT 'practice',
+    items_per_attempt  INTEGER,
+    pass_threshold_pct INTEGER,
+    max_attempts       INTEGER,
+    updated_at         TEXT,
+    created_at         TEXT DEFAULT (datetime('now')),
+    UNIQUE(step_id)
+);
+
 CREATE TABLE IF NOT EXISTS fa_oracle_predictions (
     id TEXT PRIMARY KEY,
     lens_id TEXT NOT NULL,
@@ -986,13 +1043,20 @@ def get_step_progress(user_id: int, step_id: int) -> dict:
 
 
 def record_step_attempt(user_id: int, step_id: int, submission: str = "",
-                        passed: bool = True, hints_used: int = 0) -> str:
+                        passed: bool = True, hints_used: int = 0,
+                        score: int | None = None) -> str:
     """Record a submission against a step. Returns the resulting status.
 
     aca-int-05: this used to hardcode status='completed' in BOTH branches, so a
     FAILED submission was filed as a completed step (only `score` recorded the
     failure) and `steps_completed` counted it. A failure is now stored as
     STEP_STATUS_ATTEMPTED, and only a pass sets completed_at.
+
+    aca-trn-01: `score` used to be `100 if passed else 0` unconditionally — a step
+    could not express "2 of 3 items correct". An item-scored step now passes its real
+    percentage; callers with nothing better to say leave it None and get the old
+    binary, which is still correct for a coding step (the runner reports one boolean
+    for the whole suite, see CODING_PASS_THRESHOLD_PCT).
 
     Mastery is never withdrawn: once a step is completed, a later failed
     experiment records the submission but does not downgrade the status or the
@@ -1001,7 +1065,7 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     status = STEP_STATUS_COMPLETED if passed else STEP_STATUS_ATTEMPTED
-    score = 100 if passed else 0
+    score = (100 if passed else 0) if score is None else int(score)
     existing = conn.execute(
         "SELECT id, status, score FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
         (user_id, step_id),
@@ -1017,6 +1081,13 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
             )
             conn.commit()
             return STEP_STATUS_COMPLETED
+        if already_done == STEP_STATUS_COMPLETED:
+            # aca-trn-01: a real percentage makes it possible to PASS a step you have
+            # already passed with a lower score — 100% on the first attempt, then 70%
+            # on a later practice run. Keeping the best score is the same
+            # "mastery is never withdrawn" rule the branch above applies to status.
+            prior = (existing["score"] if hasattr(existing, "keys") else existing[2]) or 0
+            score = max(int(prior), score)
         conn.execute(
             "UPDATE fa_step_progress SET status=%s, submission=%s, score=%s, "
             "hints_used=%s, completed_at=%s WHERE user_id=%s AND step_id=%s",
@@ -1746,6 +1817,32 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
         else:
             gates.append({"name": "Role Tier 2", "met": False,
                           "detail": "Set your role in profile first"})
+
+    # Gate: aggregate assessment score (aca-trn-01)
+    #
+    # This requirement has been declared in CERT_TIERS since the certificates were
+    # written — "Tier 1 complete + full role Tier 2 track + 20-question adaptive
+    # assessment", assessment_score_min: 70 — and NOTHING read it. It fell off the end
+    # of this if-chain, so the Foundation certificate attested to an assessment that
+    # did not exist. It is enforced here now that there is a model behind it.
+    if reqs.get("assessment_score_min"):
+        from apps.forge_academy.assessment import certificate_assessment_score
+
+        result = certificate_assessment_score(user_id)
+        threshold = int(reqs["assessment_score_min"])
+        met = bool(result["graded_steps"]) and result["score"] >= threshold
+        gates.append({
+            "name": f"Assessment Score >= {threshold}",
+            "met": met,
+            # collect_cert_evidence snapshots this string verbatim into
+            # fa_certificate_evidence (aca-int-07), so it has to carry the figures.
+            "detail": (
+                f"Assessment score: {result['score']}% across "
+                f"{result['graded_steps']} graded steps"
+                if result["graded_steps"] else
+                "No graded steps attempted yet — the score cannot be satisfied vacuously"
+            ),
+        })
 
     # Gate: Foundation cert required
     if reqs.get("foundation"):

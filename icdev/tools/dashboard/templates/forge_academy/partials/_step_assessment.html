@@ -1,0 +1,238 @@
+{% set sidx = loop.index0 %}
+{# aca-trn-01: the pane for a step that has an authored item bank.
+
+   This partial is included INSTEAD of the step-type partial, not alongside it,
+   whenever the step has an active bank. That mirrors what grade_step already does:
+   `_grade_items` takes precedence over the declared type, so with a bank the step
+   IS the questions. Rendering the type partial as well would put a second, easier
+   completion control on the page — "✓ Understood → Continue" next to an assessment
+   is a way to pass without answering it, which is exactly the 100/0 pass-by-clicking
+   this model exists to remove.
+
+   Nothing is rendered server-side from an answer key. The questions come from
+   STEPS[idx].assessment, which grading.client_safe_steps built out of
+   assessment.open_attempt — option TEXT in this attempt's permutation and nothing
+   else. There is no correct_index in the payload and no data attribute carrying one;
+   the mapping back to the authored order lives only in fa_step_attempts.served_json.
+   Tests assert that (test_academy_assessment_model.py). #}
+<div class="fa-guided-step">
+  {% if step.content_md %}
+  <div class="fa-step-content">{{ step.content_md | safe }}</div>
+  {% endif %}
+
+  <div style="background:var(--fa-card);border:1px solid var(--fa-border);border-radius:10px;padding:1.5rem;margin-bottom:1rem;"
+       id="assess-{{ sidx }}">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+      <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--fa-purple,#9b59b6);">◆ Knowledge Check</div>
+      <div id="assess-meta-{{ sidx }}" style="font-size:.7rem;color:var(--text-secondary);"></div>
+    </div>
+
+    <div id="assess-items-{{ sidx }}"></div>
+
+    <button id="assess-submit-{{ sidx }}" onclick="submitAssessment({{ sidx }})"
+            style="background:linear-gradient(135deg,#9b59b6,#7d3c98);color:#fff;border:none;border-radius:6px;padding:.55rem 1.4rem;font-size:.82rem;font-weight:700;cursor:pointer;">
+      ◆ Submit Answers
+    </button>
+
+    <div id="assess-feedback-{{ sidx }}"
+         style="display:none;margin-top:1rem;padding:.9rem 1rem;border-radius:8px;font-size:.82rem;"></div>
+  </div>
+
+  <div class="fa-controls">
+    <button class="fa-btn-next" id="next-btn-{{ sidx }}" onclick="nextStep({{ sidx }})" style="display:none;">◆ Next Step →</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  const idx = {{ sidx }};
+  const a = (STEPS[idx] || {}).assessment;
+  const itemsEl = document.getElementById('assess-items-' + idx);
+  const metaEl  = document.getElementById('assess-meta-' + idx);
+  const submitEl = document.getElementById('assess-submit-' + idx);
+
+  if (!a || !a.items || !a.items.length) {
+    // The bank went away under an open page (every item retired, or the table is
+    // unavailable). Say so plainly rather than showing an empty form that cannot
+    // be submitted — and do not offer a Continue button, because there is nothing
+    // here that would earn the completion.
+    itemsEl.innerHTML = '<p style="color:var(--text-secondary);font-size:.82rem;">'
+      + 'This knowledge check is unavailable right now. Reload the page to try again.</p>';
+    submitEl.style.display = 'none';
+    return;
+  }
+
+  let meta = a.items.length + ' question' + (a.items.length === 1 ? '' : 's')
+    + ' · pass at ' + a.pass_threshold_pct + '%';
+  if (a.policy === 'summative' && a.attempts_remaining !== null
+      && a.attempts_remaining !== undefined) {
+    meta += ' · ' + a.attempts_remaining + ' of ' + a.max_attempts + ' attempts left';
+  } else {
+    meta += ' · unlimited practice attempts';
+  }
+  metaEl.textContent = meta;
+
+  // Built with the DOM API rather than an HTML string: prompts and options are
+  // authored content, and concatenating them into innerHTML would make a stray
+  // angle bracket in a question a markup bug at best.
+  a.items.forEach(function(item, qi) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-bottom:1.4rem;';
+    wrap.setAttribute('data-item-key', item.item_key);
+
+    const q = document.createElement('p');
+    q.style.cssText = 'font-size:.95rem;font-weight:600;margin:0 0 .8rem;line-height:1.5;';
+    q.textContent = (qi + 1) + '. ' + item.prompt;
+    wrap.appendChild(q);
+
+    (item.options || []).forEach(function(opt, oi) {
+      const label = document.createElement('label');
+      label.className = 'assess-choice';
+      label.setAttribute('data-option-idx', oi);
+      label.style.cssText = 'display:flex;align-items:flex-start;gap:.7rem;padding:.6rem .9rem;'
+        + 'border:1px solid var(--fa-border);border-radius:8px;cursor:pointer;margin-bottom:.4rem;';
+
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      // Name scoped by step AND item, so two questions on one page cannot share a
+      // radio group and silently overwrite each other's answer.
+      radio.name = 'assess-' + idx + '-' + item.item_key;
+      radio.value = oi;
+      radio.style.cssText = 'margin-top:.2rem;flex-shrink:0;';
+      label.appendChild(radio);
+
+      const text = document.createElement('span');
+      text.style.cssText = 'font-size:.88rem;';
+      text.textContent = opt;
+      label.appendChild(text);
+
+      wrap.appendChild(label);
+    });
+    itemsEl.appendChild(wrap);
+  });
+})();
+
+async function submitAssessment(idx) {
+  const root = document.getElementById('assess-items-' + idx);
+  const submitEl = document.getElementById('assess-submit-' + idx);
+  const feedback = document.getElementById('assess-feedback-' + idx);
+  const groups = root.querySelectorAll('[data-item-key]');
+
+  const answers = {};
+  let unanswered = 0;
+  groups.forEach(function(g) {
+    const picked = g.querySelector('input[type=radio]:checked');
+    if (picked) {
+      answers[g.getAttribute('data-item-key')] = parseInt(picked.value, 10);
+    } else {
+      unanswered++;
+    }
+  });
+
+  // Refuse locally rather than spending one of a summative learner's attempts on a
+  // half-filled form. The server scores an unanswered item wrong either way, so a
+  // blank submission would burn an attempt for nothing.
+  if (unanswered) {
+    feedback.style.display = 'block';
+    feedback.style.background = 'rgba(255,193,7,.06)';
+    feedback.style.border = '1px solid rgba(255,193,7,.25)';
+    feedback.style.color = '#ffca6b';
+    feedback.textContent = 'Answer all ' + groups.length + ' questions before submitting ('
+      + unanswered + ' left).';
+    return;
+  }
+
+  submitEl.disabled = true;
+  submitEl.style.opacity = '.6';
+  feedback.style.display = 'block';
+  feedback.style.background = '';
+  feedback.style.border = '';
+  feedback.style.color = 'var(--text-secondary)';
+  feedback.textContent = 'Checking…';
+
+  const d = await submitStep(idx, 'assessment', null, answers);
+  if (!d) {
+    feedback.textContent = 'Could not record your answers — check your connection and retry.';
+    submitEl.disabled = false;
+    submitEl.style.opacity = '';
+    return;
+  }
+
+  if (d.status === 'attempts_exhausted') {
+    feedback.style.background = 'rgba(255,45,85,.06)';
+    feedback.style.border = '1px solid rgba(255,45,85,.2)';
+    feedback.style.color = '#ff9090';
+    feedback.textContent = d.stderr || 'You have used all your attempts on this assessment.';
+    root.querySelectorAll('input[type=radio]').forEach(function(r) { r.disabled = true; });
+    return;
+  }
+
+  root.querySelectorAll('input[type=radio]').forEach(function(r) { r.disabled = true; });
+
+  // Per-item results are released only now, with the attempt closed. Before that,
+  // this is the answer key.
+  (d.items || []).forEach(function(res) {
+    const g = root.querySelector('[data-item-key="' + res.item_key + '"]');
+    if (!g) return;
+    const chosen = g.querySelector('.assess-choice[data-option-idx="' + res.answered + '"]');
+    if (chosen) {
+      chosen.style.borderColor = res.correct ? 'var(--fa-green)' : '#FF2D55';
+      chosen.style.background = res.correct ? 'rgba(0,255,136,.08)' : 'rgba(255,45,85,.06)';
+    }
+    if (!res.correct && res.correct_option !== null && res.correct_option !== undefined) {
+      const right = g.querySelector('.assess-choice[data-option-idx="' + res.correct_option + '"]');
+      if (right) {
+        right.style.borderColor = 'var(--fa-green)';
+        right.style.background = 'rgba(0,255,136,.05)';
+      }
+    }
+    if (res.explanation) {
+      const ex = document.createElement('p');
+      ex.style.cssText = 'font-size:.78rem;color:var(--text-secondary);margin:.4rem 0 0;line-height:1.5;';
+      ex.textContent = (res.correct ? '✓ ' : '✗ ') + res.explanation;
+      g.appendChild(ex);
+    }
+  });
+
+  const scoreLine = (d.correct !== undefined && d.total !== undefined)
+    ? d.correct + ' of ' + d.total + ' correct (' + d.score + '%, pass at '
+      + d.pass_threshold_pct + '%). '
+    : '';
+
+  if (d.passed) {
+    feedback.style.background = 'rgba(0,255,136,.06)';
+    feedback.style.border = '1px solid rgba(0,255,136,.25)';
+    feedback.style.color = 'var(--fa-green)';
+    const xp = (d.xp_event && d.xp_event.xp_earned) || 0;
+    feedback.textContent = '✓ Passed. ' + scoreLine + (xp ? '+' + xp + ' XP' : '');
+    submitEl.style.display = 'none';
+    document.getElementById('next-btn-' + idx).style.display = 'inline-block';
+    return;
+  }
+
+  feedback.style.background = 'rgba(255,45,85,.06)';
+  feedback.style.border = '1px solid rgba(255,45,85,.2)';
+  feedback.style.color = '#ff9090';
+  const left = (d.attempts_remaining === null || d.attempts_remaining === undefined)
+    ? '' : ' ' + d.attempts_remaining + ' attempt'
+           + (d.attempts_remaining === 1 ? '' : 's') + ' left.';
+  feedback.textContent = '✗ Not yet. ' + scoreLine + 'No XP for this step.' + left;
+
+  // A retry needs a NEW draw, which the server makes on the next render — the
+  // attempt just graded is closed, so reloading opens a fresh one rather than
+  // re-serving the same questions. There is deliberately no client-side reroll:
+  // the draw is the server's to make.
+  if (d.attempts_remaining === null || d.attempts_remaining === undefined
+      || d.attempts_remaining > 0) {
+    submitEl.textContent = '↻ Try Again';
+    submitEl.disabled = false;
+    submitEl.style.opacity = '';
+    submitEl.setAttribute('onclick', 'window.location.reload()');
+  } else {
+    submitEl.style.display = 'none';
+  }
+  // Forward stays available — a failed attempt is recorded, not a dead end. The
+  // step is filed 'attempted' (aca-int-05), so the mission does not count it done.
+  document.getElementById('next-btn-' + idx).style.display = 'inline-block';
+}
+</script>

@@ -327,6 +327,24 @@ def mission_runner(slug):
     tier_locked = not tier_state.get("unlocked", True)
     gating_tier = tier_state.get("gating_tier")
 
+    # aca-int-02/03: the template serialises this into page JavaScript. The raw step
+    # rows carry the grading test and the answer key, so only the sanitised
+    # projection may go into the page.
+    # aca-trn-01: user-scoped, because a step with an item bank serves a per-learner,
+    # per-attempt draw. Passing the user id here is what opens (or resumes) that
+    # attempt; the answer key still never reaches the page.
+    steps_client = client_safe_steps(mission.get("steps", []), fa_user["id"])
+
+    # Which steps render the assessment pane instead of their type pane. Derived from
+    # steps_client rather than re-queried, so the template's routing decision and the
+    # payload it renders from cannot disagree: if open_attempt returned nothing —
+    # every item retired, or the table unavailable — the step keeps its type pane
+    # rather than showing an empty form no one can submit.
+    assessed_step_ids = {
+        s["id"] for s in steps_client
+        if (s.get("assessment") or {}).get("items")
+    }
+
     return render_template(
         "forge_academy/mission.html",
         fa_user=fa_user,
@@ -334,10 +352,8 @@ def mission_runner(slug):
         tier_locked=tier_locked,
         tier_state=tier_state,
         gating_state=tier_info.get(gating_tier, {}) if gating_tier else {},
-        # aca-int-02/03: the template serialises this into page JavaScript. The
-        # raw step rows carry the grading test and the answer key, so only the
-        # sanitised projection may go into the page.
-        steps_client=client_safe_steps(mission.get("steps", [])),
+        steps_client=steps_client,
+        assessed_step_ids=assessed_step_ids,
         progress=progress,
         step_states=step_states,
         level_ctx=level_ctx,
@@ -539,6 +555,9 @@ def api_step_submit():
     # `skill_tag` used to be read from this body; every one of them was forgeable.
     submission = data.get("submission", "")
     chosen_option = data.get("chosen_option")
+    # aca-trn-01: item_key -> DISPLAYED option index. Meaningless without the server's
+    # served_json, which is what makes the option order in the DOM useless.
+    answers = data.get("answers") if isinstance(data.get("answers"), dict) else {}
     elapsed_s = data.get("elapsed_seconds")
     # aca-int-06: the hint count comes from fa_step_progress, where the hint route
     # recorded it. It used to be read from this body, and the browser zeroed its own
@@ -549,7 +568,31 @@ def api_step_submit():
     )
     hints_used = max(0, stored_hints_used)
 
-    verdict = grade_step(step_id, submission, chosen_option=chosen_option)
+    # aca-trn-01: the attempt limit is checked BEFORE grading. Grading first and
+    # discarding the verdict would let a learner burn attempts to enumerate the item
+    # bank, which is exactly what a summative cap exists to prevent.
+    from .assessment import attempt_state
+
+    gate = attempt_state(fa_user["id"], step_id)
+    if not gate["allowed"] and gate["reason"] == "attempts_exhausted":
+        return jsonify({
+            "ok": True,
+            "passed": False,
+            "assessed": True,
+            "status": "attempts_exhausted",
+            "reason": "attempts_exhausted",
+            "policy": gate["policy"],
+            "attempts_used": gate["attempts_used"],
+            "attempts_remaining": 0,
+            "max_attempts": gate["max_attempts"],
+            "stderr": (
+                f"You have used all {gate['max_attempts']} attempts on this "
+                "assessment. An instructor can reset it for you."
+            ),
+        })
+
+    verdict = grade_step(step_id, submission, chosen_option=chosen_option,
+                         answers=answers, user_id=fa_user["id"])
     step = verdict.get("step")
     if step is None:
         return jsonify({"error": "unknown step", "passed": False}), 404
@@ -579,19 +622,29 @@ def api_step_submit():
     # counts as an attempt — not opening its page.
     record_mission_attempt(fa_user["id"], mission_id)
     status = complete_step(fa_user["id"], step_id, submission=submission,
-                           passed=passed, hints_used=hints_used)
+                           passed=passed, hints_used=hints_used,
+                           # aca-trn-01: the real percentage. An item-scored step can
+                           # now record "67", which no longer rounds to a pass.
+                           score=verdict.get("score"))
 
     resp = {
         "ok": True,
         "passed": passed,
         "assessed": verdict["assessed"],
         "status": status,
+        "score": verdict.get("score"),
         "reason": verdict.get("reason", ""),
         "stdout": verdict.get("stdout", ""),
         "stderr": verdict.get("stderr", ""),
         "explanation": verdict.get("explanation", ""),
         "correct_option": verdict.get("correct_option"),
     }
+    # Item-scored steps report per-item feedback and the attempt budget. Released
+    # only here, with the attempt closed - before that this IS the answer key.
+    for key in ("items", "correct", "total", "pass_threshold_pct",
+                "attempts_used", "attempts_remaining"):
+        if verdict.get(key) is not None:
+            resp[key] = verdict[key]
     if not passed:
         # No credit for a failed or ungradeable submission. The learner keeps the
         # feedback and can try again.
@@ -644,6 +697,21 @@ def api_step_submit():
                 "competency recording failed for mission %s", mission_id)
 
     return jsonify(resp)
+
+
+@bp.route("/api/academy/assessment/coverage")
+def api_assessment_coverage():
+    """How much of the catalogue is actually graded (aca-trn-01).
+
+    Exists so the shortfall is a NUMBER on an endpoint rather than a claim in a
+    document. 94% of steps were passive when the assessment model was specified;
+    this reports what that figure is today instead of letting the next audit
+    rediscover it.
+    """
+    _ensure_init()
+    from .assessment import coverage_report
+
+    return jsonify(coverage_report())
 
 
 @bp.route("/api/academy/step/design-assess", methods=["POST"])
