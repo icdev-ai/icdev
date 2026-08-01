@@ -6776,6 +6776,342 @@ def check_doc_command_paths(changed_files: Optional[List[Path]] = None) -> Coher
 
 
 # ---------------------------------------------------------------------------
+# Check 20: INSERT column lists vs the LIVE database schema (swp-gate-01)
+# ---------------------------------------------------------------------------
+#
+# `check_schema_code` compares INSERT columns against the CREATE TABLE text in
+# tools/db/init_icdev_db.py. That misses the failure mode this gate exists for:
+# `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a table
+# created by an older migration keeps its old columns while the DDL in the
+# source moves on. Code and database disagree with nothing in the source tree
+# recording the disagreement. An automated pass against live PostgreSQL found
+# 95 INSERT statements naming columns that do not exist — each one raises at
+# runtime inside `except Exception: pass`, so the feature reports success and
+# persists nothing (module_budget_usage held 0 rows; audit_trail has never
+# received a row from tools/govcon).
+#
+# This check therefore reads the LIVE schema — information_schema.columns on
+# PostgreSQL, PRAGMA table_info on SQLite — not the DDL.
+
+_INSERT_SCHEMA_CONFIG = PROJECT_ROOT / "args" / "insert_schema_gate.yaml"
+
+#: `INSERT [OR REPLACE] INTO [schema.]table (col, ...) VALUES|SELECT`.
+#: The column group excludes parentheses so a function call or a nested SELECT
+#: in the column position simply fails to match rather than mis-parsing.
+_INSERT_COLUMN_LIST_RE = re.compile(
+    r"INSERT\s+(?:OR\s+(?:REPLACE|IGNORE|ABORT|FAIL|ROLLBACK)\s+)?INTO\s+"
+    r'(?:["`\[]?\w+["`\]]?\s*\.\s*)?'  # optional schema/database qualifier
+    r'["`\[]?(?P<table>\w+)["`\]]?\s*'
+    r"\(\s*(?P<cols>[^()]+?)\s*\)\s*(?:VALUES|SELECT)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: Names a module binds when it obtains its own database handle.
+_CONNECTION_FACTORY_NAMES = frozenset({"get_connection", "get_canvas_connection", "get_conn"})
+
+
+def _uses_foreign_database(source: str) -> bool:
+    """True if *source* gets its connection from outside the ICDEV package tree.
+
+    ``tools/ais/ais_importer.py`` imports ``get_connection`` from
+    ``apps.geosigint.models`` and writes to that app's own ``sg_tracks`` — a
+    table whose name also exists, with a completely different shape, in the
+    ICDEV database. Validating it against the ICDEV schema reports nine columns
+    "missing" that are all present in the database the module actually writes
+    to. Canvas ``db/init_db.py`` modules are NOT foreign: every one of them
+    delegates to ``tools.db.storage`` on PostgreSQL, so their tables really do
+    live in the schema this check reads.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if not any(alias.name in _CONNECTION_FACTORY_NAMES for alias in node.names):
+            continue
+        if getattr(node, "level", 0):  # relative import — in-tree by definition
+            continue
+        root = (node.module or "").split(".")[0]
+        if root and root not in ("tools", "icdev"):
+            return True
+    return False
+
+#: A live schema this small is an empty/uninitialised database, not a real one.
+#: Validating against it would report every table as "unknown" (harmless) but
+#: would also let a genuinely broken INSERT pass unnoticed, so warn instead.
+_INSERT_SCHEMA_MIN_TABLES = 20
+
+
+def _extract_insert_column_lists(source: str) -> List[Tuple[int, str, List[str]]]:
+    """Return ``(lineno, table, [columns])`` for every STATIC INSERT in *source*.
+
+    Only fully static statements are returned. If any token in the column list
+    is not a bare SQL identifier — an f-string hole, a ``%s``, a concatenated
+    variable — the statement is dynamic and is skipped entirely rather than
+    guessed at. A dynamic table name (``INSERT INTO {table} (...)``) never
+    matches the pattern in the first place.
+    """
+    found: List[Tuple[int, str, List[str]]] = []
+    for match in _INSERT_COLUMN_LIST_RE.finditer(source):
+        raw_cols = match.group("cols")
+        cols: List[str] = []
+        dynamic = False
+        for token in raw_cols.split(","):
+            col = token.strip().strip('"').strip("`").strip("[]").strip()
+            if not _SQL_IDENTIFIER_RE.match(col):
+                dynamic = True
+                break
+            cols.append(col.lower())
+        if dynamic or not cols:
+            continue
+        lineno = source.count("\n", 0, match.start()) + 1
+        found.append((lineno, match.group("table").lower(), cols))
+    return found
+
+
+def _live_table_columns() -> Tuple[Dict[str, Set[str]], str, str]:
+    """Read ``table -> {columns}`` from the connected database.
+
+    Returns ``(schema, backend, error)``. ``error`` is a non-empty explanation
+    when no usable live schema could be read, in which case ``schema`` is empty
+    and the caller must WARN rather than fail — a gate that fails closed on a
+    missing database would block every commit made without one.
+    """
+    try:
+        from tools.db.storage import (
+            _introspect_backend,
+            _introspect_raw,
+            get_connection,
+            list_tables,
+        )
+    except Exception as exc:  # pragma: no cover - import environment specific
+        return {}, "", f"tools.db.storage unavailable: {exc}"
+
+    conn = None
+    try:
+        conn = get_connection()
+        backend = _introspect_backend(conn)
+        raw = _introspect_raw(conn)
+        schema: Dict[str, Set[str]] = {}
+        if backend == "postgresql":
+            cur = raw.cursor()
+            cur.execute(
+                "SELECT table_name, column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public'"
+            )
+            for row in cur.fetchall():
+                if isinstance(row, dict):
+                    table, column = row["table_name"], row["column_name"]
+                else:
+                    table, column = row[0], row[1]
+                schema.setdefault(str(table).lower(), set()).add(str(column).lower())
+        else:
+            for table in list_tables(conn):
+                if not _SQL_IDENTIFIER_RE.match(table):
+                    continue
+                cur = raw.cursor()
+                cur.execute(f'PRAGMA table_info("{table}")')  # nosec B608 — identifier regex-validated
+                cols = set()
+                for row in cur.fetchall():
+                    name = row["name"] if isinstance(row, dict) else row[1]
+                    cols.add(str(name).lower())
+                if cols:
+                    schema[table.lower()] = cols
+        if len(schema) < _INSERT_SCHEMA_MIN_TABLES:
+            return (
+                {},
+                backend,
+                f"{backend} schema has only {len(schema)} table(s) — database not initialised",
+            )
+        return schema, backend, ""
+    except Exception as exc:
+        return {}, "", f"could not read live schema: {type(exc).__name__}: {exc}"
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _load_insert_schema_gate() -> Tuple[Set[str], Dict[str, str]]:
+    """Load ``(ignored_tables, grandfathered)`` from args/insert_schema_gate.yaml.
+
+    Schema::
+
+        ignore_tables:
+          - some_table_owned_by_another_database
+        grandfathered:
+          "tools/govcon/x.py:audit_trail:actor": "swp-scan-01 backlog"
+
+    Grandfather keys are ``<repo-relative path>:<table>:<column>`` — deliberately
+    line-number-free so an unrelated edit above the statement does not
+    invalidate the entry. A missing file or missing pyyaml yields empty sets:
+    fail-safe CLOSED, so an unreadable allowlist makes the gate stricter.
+    """
+    if not _INSERT_SCHEMA_CONFIG.exists() or not _HAS_YAML:
+        return set(), {}
+    try:
+        raw = yaml.safe_load(_INSERT_SCHEMA_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set(), {}
+    if not isinstance(raw, dict):
+        return set(), {}
+
+    ignored = {
+        str(t).lower()
+        for t in (raw.get("ignore_tables") or [])
+        if isinstance(t, (str, int))
+    }
+    grandfathered: Dict[str, str] = {}
+    entries = raw.get("grandfathered") or {}
+    if isinstance(entries, dict):
+        for key, reason in entries.items():
+            if isinstance(key, str):
+                grandfathered[key.replace("\\", "/")] = str(reason or "")
+    elif isinstance(entries, list):  # tolerate a bare list of keys
+        for key in entries:
+            if isinstance(key, str):
+                grandfathered[key.replace("\\", "/")] = ""
+    return ignored, grandfathered
+
+
+def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Check 20: every static INSERT column list exists in the live schema."""
+    check_id = "insert_schema_parity"
+    check_name = "INSERT / Live Schema Parity"
+    expected = ["every column named in a static INSERT exists in the live database schema"]
+
+    targets = _scan_targets(changed_files, "tools")
+    if not targets:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no Python files under tools/ in scope"],
+            missing=[],
+            extra=[],
+            message="No INSERT statements in scope",
+        )
+
+    schema, backend, error = _live_table_columns()
+    if error:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=expected,
+            actual=[error],
+            missing=[],
+            extra=[],
+            message=(
+                f"Live schema unavailable ({error}) — INSERT column parity NOT verified. "
+                "Point ICDEV_STORAGE_BACKEND at an initialised database to enable this gate."
+            ),
+        )
+
+    ignored_tables, grandfathered = _load_insert_schema_gate()
+
+    new_findings: List[str] = []
+    excused_keys: Set[str] = set()
+    statements = 0
+    validated = 0
+    unknown_tables: Set[str] = set()
+
+    for py_path in targets:
+        if "__pycache__" in str(py_path):
+            continue
+        source = _read_text(py_path)
+        if "INSERT" not in source.upper():
+            continue
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = py_path.name
+        if rel in _SCHEMA_CODE_BACKEND_PINNED or _uses_foreign_database(source):
+            continue
+        for lineno, table, cols in _extract_insert_column_lists(source):
+            statements += 1
+            if table in ignored_tables:
+                continue
+            table_cols = schema.get(table)
+            if table_cols is None:
+                # Not in THIS database — a canvas, tenant, platform or child-app
+                # table. Nothing to validate against; silence beats a guess.
+                unknown_tables.add(table)
+                continue
+            validated += 1
+            absent = sorted(set(cols) - table_cols)
+            for column in absent:
+                key = f"{rel}:{table}:{column}"
+                if key in grandfathered:
+                    excused_keys.add(key)
+                    continue
+                new_findings.append(f"{rel}:{lineno}: INSERT INTO {table} names missing column '{column}'")
+
+    # Stale allowlist entries are only meaningful after a whole-tree scan; a
+    # diff-scoped run has not looked at the files the other entries name.
+    stale: List[str] = []
+    if not changed_files:
+        stale = sorted(set(grandfathered) - excused_keys)
+
+    actual = [
+        f"{statements} static INSERT statement(s) parsed; {validated} validated "
+        f"against {len(schema)} live {backend} table(s)"
+    ]
+
+    if new_findings:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=actual + new_findings,
+            missing=sorted({f.split("names missing column ")[-1].strip("'") for f in new_findings}),
+            extra=new_findings,
+            message=(
+                f"{len(new_findings)} INSERT column(s) do not exist in the live schema "
+                f"({len(excused_keys)} grandfathered). These raise at runtime and are "
+                "usually swallowed — fix the column list, or add a migration that adds "
+                "the column, before merging."
+            ),
+        )
+
+    if excused_keys or stale:
+        bits = []
+        if excused_keys:
+            bits.append(f"{len(excused_keys)} grandfathered mismatch(es) remain")
+        if stale:
+            bits.append(f"{len(stale)} stale allowlist entry(ies) can be removed")
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=expected,
+            actual=actual,
+            missing=sorted(excused_keys),
+            extra=stale,
+            message="No NEW INSERT/schema mismatches — " + "; ".join(bits),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=actual + [f"{len(unknown_tables)} table(s) absent from this database were skipped"],
+        missing=[],
+        extra=[],
+        message=f"All {validated} validated INSERT statement(s) match the live schema",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -6829,6 +7165,7 @@ CHECK_REGISTRY = {
     "icdev_mirror_parity": check_icdev_mirror_parity,
     "mirror_drift": check_mirror_drift,
     "doc_command_paths": check_doc_command_paths,
+    "insert_schema_parity": check_insert_schema_parity,
 }
 
 
@@ -6952,6 +7289,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "profile_sync": "skip",  # profile YAML changes require human review
     "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
     "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
+    "insert_schema_parity": "skip",  # drop the column or write a migration — the choice is the fix
 }
 
 
