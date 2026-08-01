@@ -21,6 +21,7 @@
 | research | GREEN | every 6h | Scrape NIST/CISA/OWASP feeds, export GKP research signals |
 | scout | GREEN | daily 07:00 | Monitor 16 GitHub repos (autoresearch, trivy, ollama, etc.), intel briefs |
 | audit | GREEN | daily 06:00 | Self-scan: code quality + SAST via existing tools |
+| coherence_sweep | GREEN | every 6h | Full-tier coherence sweep on main — runs the whole-app checks the per-task fast-tier gate defers, and refreshes the baseline that gate diffs against |
 | awareness | GREEN | every 3h | Internal self-observation cycle: component graph refresh, health probe, drift detection, gap detection, kanban card promotion |
 | self_monitor | GREEN | every 30m | Project Internal Awareness health snapshots into operator alerts + failure_log so /monitoring reflects real platform health |
 | report | GREEN | weekly Sun 20:00 | Generate weekly status report with promotions/circuit breakers |
@@ -44,6 +45,7 @@
 | Research Reflex | tools/genesis/reflexes/research.py | Scrape NIST/CISA/OWASP feeds, export GKP research signals | config dict | GKP signals |
 | Scout Reflex | tools/genesis/reflexes/scout.py | Monitor GitHub repos for new tools/CVEs, produce intel briefs | config dict | Intel briefs |
 | Audit Reflex | tools/genesis/reflexes/audit.py | Self-scan: code quality + SAST via existing tools | config dict | Audit findings |
+| Coherence Sweep Reflex | tools/genesis/reflexes/coherence_sweep.py | Full-tier coherence sweep on the main checkout: runs all 49 checks (including the whole-app heavies `blueprint_imports`, `openapi_parity`, `llm_router_api` that the per-task fast-tier gate defers) and refreshes the cached `.tmp/coherence_baseline_full_<sha>.json` the gate diffs new failures against. GREEN tier — read-only, no `--fix`. CLI: `python tools/genesis/reflexes/coherence_sweep.py`; ctx accepts `dry_run` and `cwd` | config dict | {failing_checks, failed_count, warned_count, total_checks, elapsed_sec} |
 | Awareness Reflex | tools/genesis/reflexes/awareness.py | Internal self-observation: component graph refresh, health probe, drift, gap, kanban card promotion | config dict | Awareness report |
 | Self-Monitor Reflex | tools/genesis/reflexes/self_monitor.py | Projection layer: reads latest awareness_component_health snapshots, refreshes the cheap http_head probe live, then writes aggregated rows to `alerts` (one per failing category, deduped + auto-resolved) and `failure_log` (one per failing component, deduped) so the operator-facing /monitoring page reflects real platform health. GREEN tier. CLI: `--json [--no-refresh] [--min-fail N]` | config dict | {alerts_opened, alerts_updated, alerts_resolved, alerts_firing, failures_logged} |
 | Report Reflex | tools/genesis/reflexes/report.py | Weekly status report with reflex activity, promotions, circuit breakers | config dict | Markdown report |

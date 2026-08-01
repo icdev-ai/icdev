@@ -6972,3 +6972,65 @@ projects:
   - key: xref
     title: Inter-Document Cross-References
     priority: medium
+- key: gpx
+  name: GPX - Kanban Gate Performance Split (CodeLens / Coherence)
+  description: 'Autonomous kanban builds were timing out at the CodeLens and Coherence
+    gates. Measured root cause: coherence_checker.py --all took 151s warm and 328s
+    on a cold kanban worktree, against a 120s subprocess timeout in
+    validated_commit._run_coherence - so the gate timed out on every task. The
+    TimeoutExpired was caught and returned as True (''coherence skipped''), which
+    recorded coherence_passed=1 for tasks whose coherence had never run: 24 of the
+    last 25 kanban_verifications rows showed a pass, including rows where CodeLens
+    failed. Three further defects compounded it: validate_working_tree joined the
+    coherence future before testing the CodeLens result, so a 4s lint failure still
+    waited out the full timeout; the main baseline was recomputed per task rather
+    than cached; and the baseline comparison was binary (does main also fail), so
+    any single pre-existing failure turned the whole gate into an unconditional
+    pass. Cost was concentrated - 3 of 49 checks (blueprint_imports, openapi_parity,
+    llm_router_api) accounted for ~100s of a ~170s warm run, all of them whole-app
+    checks blind to the diff. SHIPPED in PR feat/gate-perf-split: tiered checks
+    (--tier fast|full) with trigger-surface promotion, diff-scoped file scanners, a
+    4-way parallel run_checks, a tri-state coherence result where a timeout records
+    not_run instead of pass, a per-check-id baseline delta cached by main HEAD sha,
+    stdout protection so the JSON report is parseable, a tool_runner executor so
+    deterministic gate sub-tasks stop paying for an LLM dispatch, and a 6-hourly
+    coherence_sweep reflex carrying the deferred heavy checks. Result: per-task gate
+    328s -> 15.5s; full sweep 328s -> 132.5s. The tasks below are follow-ups, not
+    the shipped work.'
+  task_prefix: gpx-
+  default_open: false
+  briefs:
+  - 'SHIPPED (feat/gate-perf-split): Tier 1 - tri-state coherence result
+    (timeout/cancel/unparseable = not_run, never pass), CodeLens failure cancels the
+    coherence subprocess instead of blocking on it, main baseline cached on disk by
+    HEAD sha, per-check-id delta replaces the binary compare, robust JSON extraction
+    plus stdout protection in the checker CLI. Tier 2 - --tier fast|full,
+    HEAVY_CHECKS with trigger-surface promotion, _scan_targets() diff-scoping for
+    direct_anthropic_import and provider_bypass, ThreadPoolExecutor run_checks
+    (serial under --fix), per-check duration_sec in the report, --changed-files-from
+    for diffs past the argv limit. Tier 3 - conformance review only once the
+    mechanical gates are green, gate budget derived from the task dispatch budget,
+    _dispatch_via_tool_runner for auto-decomposed phase-gate steps, coherence_sweep
+    reflex on a 6h cadence.'
+  - 'FOLLOW-UPS (the tasks on this card): the ~120 [init_db] print() calls across 11
+    canvas modules still write to stdout at import time - the checker CLI now
+    shields its own stdout and the parser tolerates the noise, but the prints
+    themselves belong on stderr. run_checks has no hard per-check kill; a
+    pathological check can still run past the sweep budget without being cancelled,
+    and doing that safely needs process isolation rather than threads. The
+    tool_runner executor currently only handles auto-decomposed phase-gate sub-tasks
+    and could cover other deterministic task shapes. Thread vs process pool for the
+    full tier has not been measured. And
+    tests/test_coherence_checker.py::test_autofix_mode mutates tracked files (it
+    appended 14 unrelated tools to tools/manifest.md during this build) - a test
+    that writes to the repo it is testing.'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: hyg
+    title: Gate Hygiene Follow-ups
+    priority: medium
+  - key: perf
+    title: Further Gate Performance
+    priority: low
