@@ -48,7 +48,8 @@ def fa_conn(monkeypatch):
           level TEXT DEFAULT 'recruit', streak_days INTEGER DEFAULT 0,
           last_active TEXT, tenant_id TEXT);
         CREATE TABLE fa_guilds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT,
-          description TEXT, invite_code TEXT UNIQUE, created_by INTEGER);
+          description TEXT, invite_code TEXT UNIQUE, created_by INTEGER,
+          tenant_id TEXT);
         CREATE TABLE fa_guild_members (id INTEGER PRIMARY KEY AUTOINCREMENT,
           guild_id INTEGER, user_id INTEGER, role TEXT DEFAULT 'member');
         CREATE TABLE fa_daily_logins (id INTEGER PRIMARY KEY AUTOINCREMENT,
