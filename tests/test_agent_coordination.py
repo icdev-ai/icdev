@@ -27,22 +27,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agcoord_ns_key
 """
 
 
-class _NoClose:
-    def __init__(self, conn):
-        self._c = conn
-
-    def __getattr__(self, name):
-        return getattr(self._c, name)
-
-    def close(self):
-        pass
-
-
 def _make_conn():
+    # agent_coordination authors %s placeholders for PostgreSQL; the translating
+    # wrapper stands in for StorageConnection's rewrite, and unclosable keeps the
+    # in-memory DB alive when the code under test closes its connection.
+    from _sql_compat import translating
+
     conn = sqlite3.connect(":memory:")
     conn.executescript(_SCHEMA)
     conn.commit()
-    return _NoClose(conn)
+    return translating(conn, unclosable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +57,7 @@ class TestPostResult:
         conn = _make_conn()
         monkeypatch.setattr(_m, "_get_conn", lambda: conn)
         _m.post_result("ns-b", "mykey", [1, 2, 3])
-        row = conn._c.execute(
+        row = conn.execute(
             "SELECT value_json FROM agent_coordination WHERE namespace='ns-b' AND key='mykey'"
         ).fetchone()
         assert row is not None
@@ -75,7 +69,7 @@ class TestPostResult:
         monkeypatch.setattr(_m, "_get_conn", lambda: conn)
         _m.post_result("ns-c", "k", "first")
         _m.post_result("ns-c", "k", "second")
-        rows = conn._c.execute(
+        rows = conn.execute(
             "SELECT value_json FROM agent_coordination WHERE namespace='ns-c' AND key='k'"
         ).fetchall()
         assert len(rows) == 1
@@ -92,7 +86,7 @@ class TestPostResult:
         conn = _make_conn()
         monkeypatch.setattr(_m, "_get_conn", lambda: conn)
         _m.post_result("ns-d", "item", "val", posted_by="inst-xyz")
-        row = conn._c.execute(
+        row = conn.execute(
             "SELECT posted_by FROM agent_coordination WHERE namespace='ns-d' AND key='item'"
         ).fetchone()
         assert row[0] == "inst-xyz"
@@ -215,7 +209,7 @@ class TestPostResultTool:
         _, handlers = registry.build(["post_result"])
         result = handlers["post_result"]({"key": "analysis", "value": {"score": 0.95}}, None)
         assert "analysis" in result
-        row = conn._c.execute(
+        row = conn.execute(
             "SELECT value_json FROM agent_coordination WHERE key='analysis'"
         ).fetchone()
         assert row is not None

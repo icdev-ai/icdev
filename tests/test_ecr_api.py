@@ -21,6 +21,11 @@ from unittest.mock import patch
 
 import pytest
 
+# The api_key / webhook / admin modules author %s placeholders for PostgreSQL.
+# Handing production code a bare sqlite3 connection drops StorageConnection's
+# rewrite and every statement raises `near "%": syntax error`.
+from _sql_compat import translating as _translating
+
 os.environ.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
 
 # ---------------------------------------------------------------------------
@@ -53,7 +58,7 @@ def _make_conn(tmp_path):
         """
     )
     conn.commit()
-    return conn
+    return _translating(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +238,7 @@ def v1_db(tmp_path):
     conn.row_factory = sqlite3.Row
     conn.executescript(_V1_SCHEMA)
     conn.commit()
-    return conn
+    return _translating(conn)
 
 
 @pytest.fixture()
@@ -322,7 +327,7 @@ def wh_db(tmp_path):
     conn.row_factory = sqlite3.Row
     conn.executescript(_WEBHOOK_SCHEMA)
     conn.commit()
-    return conn
+    return _translating(conn)
 
 
 @pytest.fixture()
