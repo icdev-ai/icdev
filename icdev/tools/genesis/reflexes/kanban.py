@@ -25,7 +25,7 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = get_logger(__name__)
 
@@ -2304,6 +2304,12 @@ def _get_due_tasks() -> list:
 
         if available_slots <= 0:
             return []  # At capacity — don't dispatch any scheduled or backlog tasks
+
+        # Drop tasks the dispatcher would refuse anyway (open PR / just
+        # completed) BEFORE truncating. Truncating first let un-dispatchable
+        # tasks hold slots they could never use and starved everything behind
+        # them — see _drop_respawn_guarded.
+        result = _drop_respawn_guarded(result)
 
         # Cap scheduled results to available slots (prevents burst on restart)
         result = result[:available_slots]
@@ -7706,6 +7712,132 @@ def _has_open_pr(task_id: str) -> bool:
     except Exception:
         pass
     return False
+
+
+_open_pr_branch_cache: Dict[str, Tuple[float, Set[str]]] = {}
+_OPEN_PR_CACHE_TTL_SECONDS = 45.0
+
+
+def _open_pr_head_branches(repo_root: str) -> Set[str]:
+    """Head branch names of every open PR in *repo_root*, cached per cycle.
+
+    ONE `gh` call for the whole board instead of one per candidate task. The
+    per-task _has_open_pr costs a subprocess with a 10s timeout, which is fine
+    as a final check before dispatching a single task but far too expensive to
+    run across every candidate during selection.
+
+    Returns an empty set on any error, matching _has_open_pr's air-gap
+    behaviour: when gh is unavailable we do not filter, and the per-task guard
+    at dispatch time remains the backstop.
+    """
+    cached = _open_pr_branch_cache.get(repo_root)
+    if cached and (time.monotonic() - cached[0]) < _OPEN_PR_CACHE_TTL_SECONDS:
+        return cached[1]
+    branches: Set[str] = set()
+    try:
+        import json as _json
+        import subprocess as _sp
+
+        result = _sp.run(
+            ["gh", "pr", "list", "--state", "open", "--limit", "200",
+             "--json", "headRefName"],
+            capture_output=True, text=True, timeout=20, cwd=repo_root,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            branches = {
+                str(p.get("headRefName"))
+                for p in _json.loads(result.stdout)
+                if p.get("headRefName")
+            }
+    except Exception as exc:
+        logger.debug("open-PR branch listing unavailable for %s: %s", repo_root, exc)
+        return set()
+    _open_pr_branch_cache[repo_root] = (time.monotonic(), branches)
+    return branches
+
+
+def _tasks_with_recent_success(task_ids: List[str], within_minutes: int = 30) -> Set[str]:
+    """Ids from *task_ids* that transitioned to done within the window.
+
+    Batched counterpart to _had_recent_success — one query for the whole
+    candidate set. The cutoff is computed in Python because the per-task
+    version's `datetime('now', ...)` is SQLite dialect and PostgreSQL is the
+    primary backend.
+    """
+    if not task_ids:
+        return set()
+    conn = None
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=within_minutes)).isoformat()
+        placeholders = ",".join(["%s"] * len(task_ids))
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT DISTINCT task_id FROM kanban_status_transitions "
+            f"WHERE task_id IN ({placeholders}) "  # nosec B608 — placeholders only
+            "  AND to_status = 'done' AND recorded_at > %s",
+            (*task_ids, cutoff),
+        ).fetchall()
+        return {dict(r)["task_id"] for r in rows}
+    except Exception as exc:
+        logger.debug("recent-success batch lookup skipped: %s", exc)
+        return set()
+    finally:
+        if conn:
+            conn.close()
+
+
+def _drop_respawn_guarded(tasks: List[dict]) -> List[dict]:
+    """Remove tasks the dispatcher would refuse to dispatch anyway.
+
+    _dispatch_to_claude skips a task that already has an open PR or completed
+    in the last 30 minutes. That check used to run only AFTER _get_due_tasks
+    had truncated the candidate list to available_slots — so a task that could
+    never be dispatched still consumed one of the three slots in the selection
+    window, every cycle, forever.
+
+    Observed on this board: the three highest-priority due tasks all had open
+    PRs. The scheduler selected exactly those three, skipped all three, and
+    dispatched nothing, while thirteen ready tasks behind them were never even
+    considered. The board looked idle for hours with every gate green.
+
+    Filtering here, before the cap, means blocked tasks yield their place. The
+    per-task guards at dispatch time stay as the backstop for state that
+    changes between selection and dispatch.
+    """
+    if not tasks:
+        return tasks
+
+    recent = _tasks_with_recent_success([t.get("id") for t in tasks if t.get("id")])
+
+    # Group by repo root: an external task's PRs live in ITS repo, so one
+    # listing per distinct root rather than one for ICDev and wrong answers
+    # for everything else.
+    pr_branches_by_root: Dict[str, Set[str]] = {}
+    kept: List[dict] = []
+    for task in tasks:
+        task_id = task.get("id")
+        if not task_id:
+            continue
+        if task_id in recent:
+            logger.info(
+                "dispatch window: %s completed within the last 30 min — "
+                "yielding its slot", task_id,
+            )
+            continue
+        try:
+            root = str(_task_repo_root(task_id))
+        except Exception:
+            root = str(BASE_DIR)
+        if root not in pr_branches_by_root:
+            pr_branches_by_root[root] = _open_pr_head_branches(root)
+        if f"kanban/{task_id}" in pr_branches_by_root[root]:
+            logger.info(
+                "dispatch window: %s already has an open PR — yielding its slot "
+                "to a task that can actually run", task_id,
+            )
+            continue
+        kept.append(task)
+    return kept
 
 
 def _had_recent_success(task_id: str, within_minutes: int = 30) -> bool:
