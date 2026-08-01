@@ -53,6 +53,14 @@ CREATE TABLE kanban_tasks (
     failure_count         INTEGER DEFAULT 0,
     last_failure_reason   TEXT,
     last_failure_at       TEXT,
+    -- _record_failure_and_maybe_flag() writes the narrative half of the
+    -- failure story here in the SAME UPDATE that bumps failure_count, and
+    -- wraps the whole block in `except Exception`. Without this column the
+    -- UPDATE raised `no such column: last_run_summary`, was swallowed, and
+    -- failure_count silently stayed 0 — while the explicit reason-only write
+    -- further down the stale-cleanup path still succeeded, so only the
+    -- failure_count assertion failed and it read as an unimplemented bump.
+    last_run_summary      TEXT,
     dispatch_source       TEXT,
     dispatch_attempt_id   TEXT
 );
