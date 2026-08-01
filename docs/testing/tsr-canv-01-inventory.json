@@ -1,0 +1,6540 @@
+{
+  "task": "tsr-canv-01-d1",
+  "root": "C:\\AI\\ICDev\\.tmp\\worktrees\\tsr-canv-01-d1",
+  "regex": "(?<![\\w.])(?:icdev\\.)?tools\\.(?:observability_canvas|canvas_compliance|agentic_ai_canvas|migration_canvas|security_canvas|boundary_canvas|ai_augmentation|canvas_health|infra_canvas|data_canvas|aiml_canvas|dsoc_canvas|qdc_canvas|noc_canvas|ccc_canvas|network|canvas|aadc|aimc)(?![\\w])",
+  "packages_in_scope": [
+    "canvas",
+    "canvas_compliance",
+    "canvas_health",
+    "security_canvas",
+    "data_canvas",
+    "observability_canvas",
+    "migration_canvas",
+    "infra_canvas",
+    "boundary_canvas",
+    "qdc_canvas",
+    "aiml_canvas",
+    "agentic_ai_canvas",
+    "ai_augmentation",
+    "aadc",
+    "aimc",
+    "network",
+    "noc_canvas",
+    "ccc_canvas",
+    "dsoc_canvas"
+  ],
+  "packages_adjacent_excluded": [
+    "mission_canvas",
+    "pmc_canvas",
+    "workflow_canvas"
+  ],
+  "total_test_files_scanned": 2010,
+  "matching_files": 274,
+  "matching_files_top_level": 258,
+  "files_per_package": {
+    "network": 72,
+    "security_canvas": 36,
+    "ai_augmentation": 35,
+    "data_canvas": 33,
+    "observability_canvas": 25,
+    "infra_canvas": 20,
+    "boundary_canvas": 19,
+    "agentic_ai_canvas": 17,
+    "canvas": 17,
+    "migration_canvas": 17,
+    "aiml_canvas": 8,
+    "noc_canvas": 6,
+    "dsoc_canvas": 4,
+    "ccc_canvas": 3,
+    "canvas_compliance": 3,
+    "qdc_canvas": 3,
+    "aimc": 2,
+    "aadc": 1
+  },
+  "adjacent_only_files": [
+    {
+      "file": "tests/test_cnr_mission_canvas.py",
+      "adjacent_packages": [
+        "mission_canvas"
+      ]
+    },
+    {
+      "file": "tests/test_mission_canvas.py",
+      "adjacent_packages": [
+        "mission_canvas"
+      ]
+    },
+    {
+      "file": "tests/test_wfc_canvas_hardening.py",
+      "adjacent_packages": [
+        "workflow_canvas"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "file": "tests/_aadc_canvas.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas.db.init_db import get_connection"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          12,
+          57
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/conftest.py",
+      "top_level": true,
+      "packages": [
+        "ccc_canvas",
+        "dsoc_canvas",
+        "noc_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "ccc_canvas": "from tools.ccc_canvas.db.init_db import init_db, get_connection",
+        "dsoc_canvas": "from tools.dsoc_canvas.db.init_db import init_db, get_connection",
+        "noc_canvas": "from tools.noc_canvas.db.init_db import init_db, get_connection"
+      },
+      "lines": {
+        "ccc_canvas": [
+          3572
+        ],
+        "dsoc_canvas": [
+          3585
+        ],
+        "noc_canvas": [
+          3559
+        ]
+      },
+      "adjacent_packages": [
+        "pmc_canvas"
+      ]
+    },
+    {
+      "file": "tests/e2e_canvas_orchestration.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas",
+        "canvas",
+        "security_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "boundary_canvas": "from tools.boundary_canvas.isa_expiry import check_isa_expiry",
+        "canvas": "from tools.canvas.event_bus import publish",
+        "security_canvas": "from tools.security_canvas.db.init_db import ("
+      },
+      "lines": {
+        "boundary_canvas": [
+          273
+        ],
+        "canvas": [
+          135
+        ],
+        "security_canvas": [
+          240
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/e2e_dual_track_lifecycle.py",
+      "top_level": true,
+      "packages": [
+        "canvas",
+        "network"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "canvas": "from tools.canvas.kg_builder import rebuild_canvas_kg",
+        "network": "from tools.network.network_ingester import ingest_diagram"
+      },
+      "lines": {
+        "canvas": [
+          313
+        ],
+        "network": [
+          162,
+          175,
+          240,
+          323
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/e2e_full_lifecycle_complex.py",
+      "top_level": true,
+      "packages": [
+        "canvas",
+        "network"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "canvas": "from tools.canvas.kg_builder import rebuild_canvas_kg",
+        "network": "from tools.network.network_ingester import ingest_diagram"
+      },
+      "lines": {
+        "canvas": [
+          208
+        ],
+        "network": [
+          130,
+          145,
+          219,
+          284
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/e2e_infra_twin.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.db.init_db import get_connection"
+      },
+      "lines": {
+        "infra_canvas": [
+          123,
+          155
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/e2e_ndc_full_lifecycle.py",
+      "top_level": true,
+      "packages": [
+        "canvas",
+        "network"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "canvas": "from tools.canvas.kg_builder import rebuild_canvas_kg",
+        "network": "from tools.network.network_ingester import ingest_diagram"
+      },
+      "lines": {
+        "canvas": [
+          213
+        ],
+        "network": [
+          133,
+          168,
+          281,
+          436
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/e2e_network_nl_query.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network.nl_query import ("
+      },
+      "lines": {
+        "network": [
+          20
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/e2e_selenium/test_app_migration_module.py",
+      "top_level": false,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "from tools.migration_canvas.post_migration_validator import http_smoke_test"
+      },
+      "lines": {
+        "migration_canvas": [
+          449,
+          457
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_ato_generator.py",
+      "top_level": false,
+      "packages": [
+        "network"
+      ],
+      "match_count": 18,
+      "first_matches": {
+        "network": "\"\"\"Auto-generated tests for tools.network.ato_generator."
+      },
+      "lines": {
+        "network": [
+          3,
+          23,
+          33,
+          42,
+          52,
+          61,
+          71,
+          80,
+          90,
+          99,
+          109,
+          118,
+          129,
+          138,
+          148,
+          157,
+          169,
+          178
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_blueprint.py",
+      "top_level": false,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "data_canvas": "\"\"\"Auto-generated tests for tools.data_canvas.blueprint."
+      },
+      "lines": {
+        "data_canvas": [
+          3,
+          24,
+          34,
+          42,
+          66
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_boundary_engine.py",
+      "top_level": false,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 11,
+      "first_matches": {
+        "boundary_canvas": "\"\"\"Auto-generated tests for tools.boundary_canvas.boundary_engine."
+      },
+      "lines": {
+        "boundary_canvas": [
+          3,
+          23,
+          33,
+          42,
+          52,
+          61,
+          71,
+          80,
+          90,
+          99,
+          112
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_cam_refactor_engine.py",
+      "top_level": false,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 13,
+      "first_matches": {
+        "migration_canvas": "\"\"\"Auto-generated tests for tools.migration_canvas.cam_refactor_engine."
+      },
+      "lines": {
+        "migration_canvas": [
+          3,
+          23,
+          33,
+          42,
+          52,
+          61,
+          71,
+          80,
+          90,
+          99,
+          109,
+          118,
+          128
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_cloud_architecture.py",
+      "top_level": false,
+      "packages": [
+        "network"
+      ],
+      "match_count": 30,
+      "first_matches": {
+        "network": "\"\"\"Auto-generated tests for tools.network.cloud_architecture."
+      },
+      "lines": {
+        "network": [
+          3,
+          23,
+          33,
+          42,
+          53,
+          62,
+          73,
+          82,
+          92,
+          100,
+          109,
+          120,
+          129,
+          140,
+          149,
+          161,
+          170,
+          180,
+          189,
+          200,
+          209,
+          220,
+          229,
+          240,
+          249,
+          260,
+          268,
+          277,
+          288,
+          297
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_compliance.py",
+      "top_level": false,
+      "packages": [
+        "network"
+      ],
+      "match_count": 12,
+      "first_matches": {
+        "network": "\"\"\"Auto-generated tests for tools.network.compliance."
+      },
+      "lines": {
+        "network": [
+          3,
+          23,
+          33,
+          42,
+          54,
+          63,
+          74,
+          83,
+          97,
+          106,
+          120,
+          129
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_iac_generator.py",
+      "top_level": false,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 13,
+      "first_matches": {
+        "infra_canvas": "\"\"\"Auto-generated tests for tools.infra_canvas.iac_generator."
+      },
+      "lines": {
+        "infra_canvas": [
+          3,
+          23,
+          33,
+          42,
+          52,
+          61,
+          71,
+          80,
+          90,
+          99,
+          109,
+          118,
+          131
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_network_migration.py",
+      "top_level": false,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 23,
+      "first_matches": {
+        "migration_canvas": "\"\"\"Auto-generated tests for tools.migration_canvas.network_migration."
+      },
+      "lines": {
+        "migration_canvas": [
+          3,
+          23,
+          33,
+          42,
+          52,
+          61,
+          72,
+          81,
+          92,
+          101,
+          112,
+          121,
+          132,
+          141,
+          151,
+          160,
+          170,
+          178,
+          187,
+          197,
+          206,
+          216,
+          225
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_pattern_classifier.py",
+      "top_level": false,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "ai_augmentation": "\"\"\"Auto-generated tests for tools.ai_augmentation.pattern_classifier."
+      },
+      "lines": {
+        "ai_augmentation": [
+          3,
+          23,
+          33,
+          42,
+          55,
+          64,
+          74,
+          85,
+          96,
+          107
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_security_engine.py",
+      "top_level": false,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 31,
+      "first_matches": {
+        "security_canvas": "\"\"\"Auto-generated tests for tools.security_canvas.security_engine."
+      },
+      "lines": {
+        "security_canvas": [
+          3,
+          23,
+          33,
+          42,
+          52,
+          61,
+          72,
+          81,
+          92,
+          101,
+          111,
+          120,
+          130,
+          139,
+          149,
+          158,
+          168,
+          177,
+          187,
+          196,
+          206,
+          215,
+          225,
+          234,
+          244,
+          253,
+          264,
+          273,
+          284,
+          293,
+          304
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_seed_sops.py",
+      "top_level": false,
+      "packages": [
+        "network"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "network": "\"\"\"Auto-generated tests for tools.network.seed_sops."
+      },
+      "lines": {
+        "network": [
+          3,
+          23,
+          33
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_server_migration.py",
+      "top_level": false,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 24,
+      "first_matches": {
+        "migration_canvas": "\"\"\"Auto-generated tests for tools.migration_canvas.server_migration."
+      },
+      "lines": {
+        "migration_canvas": [
+          3,
+          23,
+          33,
+          42,
+          53,
+          61,
+          70,
+          82,
+          91,
+          101,
+          110,
+          120,
+          129,
+          140,
+          149,
+          159,
+          168,
+          178,
+          187,
+          197,
+          205,
+          214,
+          228,
+          237
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/genesis_auto/test_solution_packs.py",
+      "top_level": false,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "agentic_ai_canvas": "\"\"\"Auto-generated tests for tools.agentic_ai_canvas.solution_packs."
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          3,
+          23,
+          33,
+          42,
+          54,
+          65
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/security/test_dast_gate_fail_closed.py",
+      "top_level": false,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "security_canvas": "drg = importlib.import_module(\"tools.security_canvas.dast_runtime_gates\")"
+      },
+      "lines": {
+        "security_canvas": [
+          20,
+          21,
+          22
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aac_anomaly_thresholds.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.engine import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          4
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aac_llm_http_auth.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.implementations.llm_http_auth import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          28,
+          273
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aac_nlp_ref_extractor.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "ai_augmentation": "\"\"\"Tests for the NLP ref extractor in tools.ai_augmentation.engine."
+      },
+      "lines": {
+        "ai_augmentation": [
+          2,
+          14
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aac_pattern_classifier_anomaly.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.pattern_classifier import AnomalyThresholdDetector"
+      },
+      "lines": {
+        "ai_augmentation": [
+          12,
+          21,
+          31,
+          43,
+          57,
+          69,
+          86,
+          107,
+          119,
+          120
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aac_score_anomalies.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "ai_augmentation": "\"\"\"Tests for detect_score_anomalies() in tools.ai_augmentation.engine."
+      },
+      "lines": {
+        "ai_augmentation": [
+          2
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aac_threshold_anomaly_detection.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.pattern_classifier import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          18,
+          183,
+          240
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aadc_agent_layer.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas.agent_layer import ("
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          8
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aadc_confidence_gate.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas.confidence_gate import ("
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          24,
+          64,
+          286,
+          305
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aadc_governance_layer.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas.governance_layer import ("
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          17,
+          306,
+          353
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aadc_memory_layer.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas.memory_layer import check_memory_layer, get_memory_layer_map"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          4,
+          219
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aadc_model_layer.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas.model_layer import ("
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          19,
+          264,
+          270,
+          284,
+          292,
+          306
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aca_vv_integrity_refusal.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "ai_augmentation": "# tools.ai_augmentation.agent_readiness.checker). The grader is fine; the exercise"
+      },
+      "lines": {
+        "ai_augmentation": [
+          371,
+          377
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_advisory.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 48,
+      "first_matches": {
+        "network": "return patch(\"tools.network.advisory._get_conn\", return_value=fake)"
+      },
+      "lines": {
+        "network": [
+          126,
+          136,
+          142,
+          148,
+          161,
+          162,
+          169,
+          170,
+          180,
+          181,
+          196,
+          206,
+          221,
+          234,
+          242,
+          249,
+          266,
+          278,
+          297,
+          312,
+          326,
+          379,
+          380,
+          386,
+          387,
+          394,
+          395,
+          402,
+          403,
+          410,
+          411,
+          424,
+          425,
+          431,
+          432,
+          443,
+          444,
+          454,
+          460,
+          461,
+          472,
+          478,
+          485,
+          499,
+          504,
+          517,
+          527,
+          536
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_anomaly.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars._base import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          9,
+          140,
+          159
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_anomaly_detector.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 9,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars._base import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          10,
+          191,
+          198,
+          221,
+          228,
+          234,
+          241,
+          247,
+          252
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_base.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 17,
+      "first_matches": {
+        "ai_augmentation": "import tools.ai_augmentation.agent_readiness.pillars._base as m"
+      },
+      "lines": {
+        "ai_augmentation": [
+          11,
+          53,
+          66,
+          76,
+          88,
+          89,
+          105,
+          106,
+          122,
+          136,
+          149,
+          161,
+          173,
+          185,
+          186,
+          203,
+          214
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_base_pillar_threshold.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 7,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars._base import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          9,
+          57,
+          65,
+          75,
+          85,
+          95,
+          109
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_checker.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.checker import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          17,
+          26,
+          245,
+          257,
+          269,
+          287
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_checker_weights.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 7,
+      "first_matches": {
+        "ai_augmentation": "import tools.ai_augmentation.agent_readiness.checker as mod"
+      },
+      "lines": {
+        "ai_augmentation": [
+          15,
+          114,
+          115,
+          142,
+          143,
+          163,
+          164
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_configuration.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 19,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.configuration import _load_thresholds"
+      },
+      "lines": {
+        "ai_augmentation": [
+          47,
+          51,
+          56,
+          63,
+          67,
+          79,
+          109,
+          113,
+          119,
+          125,
+          156,
+          160,
+          166,
+          171,
+          178,
+          209,
+          213,
+          219,
+          225
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_configuration_pillar.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 11,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.configuration import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          10,
+          50,
+          61,
+          77,
+          88,
+          107,
+          125,
+          196,
+          233,
+          276,
+          340
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_dependencies_pillar.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 8,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.dependencies import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          10,
+          46,
+          55,
+          69,
+          80,
+          119,
+          166,
+          223
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_documentation_pillar.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 9,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.documentation import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          9,
+          46,
+          57,
+          73,
+          86,
+          107,
+          170,
+          251,
+          268
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_il_classification_pillar.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.il_classification import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          9,
+          35,
+          56,
+          66,
+          81,
+          93
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_nist_controls_pillar.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 14,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.nist_controls import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          10,
+          41,
+          65,
+          77,
+          93,
+          105,
+          153,
+          170,
+          184,
+          224,
+          240,
+          307,
+          316,
+          323
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_score_anomaly.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 7,
+      "first_matches": {
+        "ai_augmentation": "import tools.ai_augmentation.agent_readiness.pillars._base as mod"
+      },
+      "lines": {
+        "ai_augmentation": [
+          15,
+          86,
+          161,
+          174,
+          183,
+          191,
+          192
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_stig_compliance_pillar.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 33,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.stig_compliance import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          10,
+          65,
+          77,
+          91,
+          104,
+          126,
+          132,
+          139,
+          147,
+          162,
+          177,
+          190,
+          218,
+          251,
+          263,
+          273,
+          286,
+          317,
+          326,
+          341,
+          354,
+          385,
+          397,
+          410,
+          443,
+          454,
+          465,
+          515,
+          548,
+          560,
+          588,
+          601,
+          609
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_stig_pillar.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 13,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.stig_compliance import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          11,
+          35,
+          104,
+          113,
+          124,
+          150,
+          164,
+          188,
+          227,
+          242,
+          268,
+          306,
+          340
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_agent_readiness_structure_pillar.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 8,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars.structure import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          10,
+          46,
+          54,
+          67,
+          77,
+          91,
+          302,
+          313
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aiml_twin.py",
+      "top_level": true,
+      "packages": [
+        "aiml_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "aiml_canvas": "from tools.aiml_canvas import twin as aiml_twin"
+      },
+      "lines": {
+        "aiml_canvas": [
+          10
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ansible_emitter.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.emitters.ansible import ("
+      },
+      "lines": {
+        "infra_canvas": [
+          12
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_append_only_audit_nlp.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "ai_augmentation": "import tools.ai_augmentation.agent_readiness.pillars.append_only_audit as m"
+      },
+      "lines": {
+        "ai_augmentation": [
+          16
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_attack_graph_builder.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.attack_graph_builder import ("
+      },
+      "lines": {
+        "security_canvas": [
+          4
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_attack_graph_db.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "security_canvas": "\"\"\"Tests for tools.security_canvas.attack_graph_db \u2014 6-function CRUD layer.\"\"\""
+      },
+      "lines": {
+        "security_canvas": [
+          2,
+          59,
+          65,
+          210
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_attack_path_twin_predicates.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.attack_path_twin import _safe_eval_predicate"
+      },
+      "lines": {
+        "security_canvas": [
+          15,
+          74
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_attack_surface_mapper.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 22,
+      "first_matches": {
+        "network": "from tools.network.attack_surface_mapper import _criticality_from_cvss"
+      },
+      "lines": {
+        "network": [
+          23,
+          29,
+          35,
+          41,
+          47,
+          54,
+          61,
+          68,
+          73,
+          78,
+          87,
+          98,
+          110,
+          168,
+          197,
+          244,
+          245,
+          268,
+          269,
+          291,
+          292,
+          296
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_aws_rgt_importer.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.importers.aws_rgt import parse"
+      },
+      "lines": {
+        "infra_canvas": [
+          15
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_cato_readiness.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "boundary_canvas": "from tools.boundary_canvas import cato_readiness as cr"
+      },
+      "lines": {
+        "boundary_canvas": [
+          26,
+          314,
+          335,
+          348,
+          362
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_export_pptx.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "boundary_canvas": "from tools.boundary_canvas import export_pptx"
+      },
+      "lines": {
+        "boundary_canvas": [
+          17,
+          206,
+          209,
+          231,
+          258
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_hook_logging.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas",
+        "canvas",
+        "security_canvas"
+      ],
+      "match_count": 8,
+      "first_matches": {
+        "boundary_canvas": "import tools.boundary_canvas.db.init_db  # noqa: F401",
+        "canvas": "_patch(\"tools.canvas.event_bus\", \"publish\", lambda *a, **k: None)",
+        "security_canvas": "_patch(\"tools.security_canvas.agent\", \"on_bdc_design_saved\", _boom)"
+      },
+      "lines": {
+        "boundary_canvas": [
+          50,
+          52,
+          55,
+          121
+        ],
+        "canvas": [
+          87,
+          88,
+          89
+        ],
+        "security_canvas": [
+          95
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_impact_panel.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "boundary_canvas": "from tools.boundary_canvas.blueprint import create_boundary_blueprint"
+      },
+      "lines": {
+        "boundary_canvas": [
+          147,
+          191
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_init_db_sqlite_fallback.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "boundary_canvas": "import tools.boundary_canvas.db.init_db as bdc_init"
+      },
+      "lines": {
+        "boundary_canvas": [
+          26
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_isa_expiry.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas",
+        "canvas"
+      ],
+      "match_count": 15,
+      "first_matches": {
+        "boundary_canvas": "with patch(\"tools.boundary_canvas.db.init_db.get_connection\", side_effect=lambda: _NoClose(bdc_db)):",
+        "canvas": "patch(\"tools.canvas.event_bus.get_connection\", side_effect=lambda **kw: _NoClose(main_db)),"
+      },
+      "lines": {
+        "boundary_canvas": [
+          103,
+          104,
+          113,
+          114,
+          139,
+          146,
+          190,
+          200,
+          221,
+          225,
+          245,
+          250,
+          269
+        ],
+        "canvas": [
+          141,
+          196
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_oscal_exporter.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 7,
+      "first_matches": {
+        "boundary_canvas": "from tools.boundary_canvas import oscal_cato_exporter as ox"
+      },
+      "lines": {
+        "boundary_canvas": [
+          26,
+          258,
+          268,
+          285,
+          300,
+          314,
+          328
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_poam_generator_fk.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "boundary_canvas": "from tools.boundary_canvas.cato_twin import poam_auto_generator as _pag  # noqa: E402"
+      },
+      "lines": {
+        "boundary_canvas": [
+          34,
+          35
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_reflex_smoke.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "boundary_canvas": "isa_mod = importlib.import_module(\"tools.boundary_canvas.isa_expiry\")"
+      },
+      "lines": {
+        "boundary_canvas": [
+          112,
+          134
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdc_twin_honesty.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 18,
+      "first_matches": {
+        "boundary_canvas": "with patch(\"tools.boundary_canvas.twin.get_connection\", return_value=_RaisingConn()):"
+      },
+      "lines": {
+        "boundary_canvas": [
+          77,
+          78,
+          88,
+          89,
+          99,
+          100,
+          108,
+          109,
+          128,
+          138,
+          139,
+          146,
+          152,
+          166,
+          167,
+          189,
+          197,
+          208
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdr_supply_chain_crosslink.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "boundary_canvas": "import tools.boundary_canvas.db.init_db as bdc_init"
+      },
+      "lines": {
+        "boundary_canvas": [
+          80,
+          99,
+          114,
+          130
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bdr_vv_suite.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 12,
+      "first_matches": {
+        "boundary_canvas": "from tools.boundary_canvas.blueprint import create_boundary_blueprint"
+      },
+      "lines": {
+        "boundary_canvas": [
+          80,
+          128,
+          145,
+          227,
+          340,
+          354,
+          368,
+          384,
+          396,
+          590,
+          591,
+          648
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_bgp_predictor.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 27,
+      "first_matches": {
+        "network": "from tools.network.bgp_predictor import _compute_bgp_score"
+      },
+      "lines": {
+        "network": [
+          48,
+          56,
+          63,
+          71,
+          78,
+          85,
+          94,
+          105,
+          106,
+          108,
+          116,
+          117,
+          119,
+          128,
+          129,
+          131,
+          145,
+          146,
+          148,
+          161,
+          162,
+          170,
+          171,
+          179,
+          180,
+          193,
+          194
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_caldera_adapter.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.caldera_adapter import CalderaAdapter"
+      },
+      "lines": {
+        "security_canvas": [
+          13
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_canvas_cards_pg.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas",
+        "canvas_compliance",
+        "data_canvas",
+        "infra_canvas",
+        "security_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "boundary_canvas": "_BDC_INIT = \"tools.boundary_canvas.db.init_db\"",
+        "canvas_compliance": "_COMPLIANCE = \"tools.canvas_compliance.compliance\"",
+        "data_canvas": "_DDC_INIT = \"tools.data_canvas.db.init_db\"",
+        "infra_canvas": "_IDC_INIT = \"tools.infra_canvas.db.init_db\"",
+        "security_canvas": "_SDC_INIT = \"tools.security_canvas.db.init_db\""
+      },
+      "lines": {
+        "boundary_canvas": [
+          31
+        ],
+        "canvas_compliance": [
+          27
+        ],
+        "data_canvas": [
+          32
+        ],
+        "infra_canvas": [
+          33
+        ],
+        "security_canvas": [
+          29
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_capacity_predictor.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 24,
+      "first_matches": {
+        "network": "from tools.network.capacity_predictor import _compute_capacity_score"
+      },
+      "lines": {
+        "network": [
+          47,
+          54,
+          61,
+          68,
+          75,
+          81,
+          88,
+          95,
+          110,
+          111,
+          113,
+          121,
+          122,
+          124,
+          133,
+          134,
+          136,
+          149,
+          150,
+          152,
+          163,
+          164,
+          172,
+          173
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_cato_twin.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "boundary_canvas": "from tools.boundary_canvas.cato_twin.snapshot_writer import write_snapshot"
+      },
+      "lines": {
+        "boundary_canvas": [
+          214,
+          229,
+          248,
+          266,
+          284,
+          312,
+          321,
+          331,
+          340,
+          352
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_change_failure_predictor.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 14,
+      "first_matches": {
+        "network": "from tools.network.change_failure_predictor import _count_blast_radius"
+      },
+      "lines": {
+        "network": [
+          55,
+          62,
+          72,
+          81,
+          89,
+          98,
+          106,
+          116,
+          133,
+          134,
+          147,
+          148,
+          168,
+          169
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_cnr_ops_cache_lookingglass.py",
+      "top_level": true,
+      "packages": [
+        "noc_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "noc_canvas": "mod = importlib.import_module(\"tools.noc_canvas.blueprint\")"
+      },
+      "lines": {
+        "noc_canvas": [
+          48
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_cnr_ops_mutation_auth.py",
+      "top_level": true,
+      "packages": [
+        "noc_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "noc_canvas": "from tools.noc_canvas.blueprint import create_noc_canvas_blueprint"
+      },
+      "lines": {
+        "noc_canvas": [
+          42
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_compliance_drift_predictor.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 20,
+      "first_matches": {
+        "network": "from tools.network.compliance_drift_predictor import _run_stig_checks"
+      },
+      "lines": {
+        "network": [
+          48,
+          56,
+          64,
+          73,
+          91,
+          99,
+          106,
+          120,
+          121,
+          123,
+          133,
+          134,
+          136,
+          146,
+          147,
+          149,
+          163,
+          164,
+          172,
+          173
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_component_registry.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas",
+        "aiml_canvas",
+        "boundary_canvas",
+        "ccc_canvas",
+        "data_canvas",
+        "dsoc_canvas",
+        "infra_canvas",
+        "migration_canvas",
+        "network",
+        "noc_canvas",
+        "observability_canvas",
+        "qdc_canvas",
+        "security_canvas"
+      ],
+      "match_count": 13,
+      "first_matches": {
+        "agentic_ai_canvas": "(\"aadc\", \"ICDEV_AADC_ENABLED\", \"tools.agentic_ai_canvas.blueprint\", \"aadc_bp\"),",
+        "aiml_canvas": "(\"aimc\", \"ICDEV_AIML_CANVAS_ENABLED\", \"tools.aiml_canvas.blueprint\", \"create_aiml_blueprint\"),",
+        "boundary_canvas": "(\"bdc\", \"ICDEV_BDC_ENABLED\", \"tools.boundary_canvas.blueprint\", \"create_boundary_blueprint\"),",
+        "ccc_canvas": "(\"ccc\", \"ICDEV_CCC_ENABLED\", \"tools.ccc_canvas.blueprint\", \"create_ccc_blueprint\"),",
+        "data_canvas": "(\"ddc\", \"ICDEV_DDC_ENABLED\", \"tools.data_canvas.blueprint\", \"create_data_canvas_blueprint\"),",
+        "dsoc_canvas": "(\"dsoc\", \"ICDEV_DSOC_ENABLED\", \"tools.dsoc_canvas.blueprint\", \"create_dsoc_blueprint\"),",
+        "infra_canvas": "(\"idc\", \"ICDEV_IDC_ENABLED\", \"tools.infra_canvas.blueprint\", \"infra_bp\"),",
+        "migration_canvas": "(\"mdc\", \"ICDEV_MIGRATION_CANVAS_ENABLED\", \"tools.migration_canvas.blueprint\", \"create_migration_blueprint\"),",
+        "network": "(\"ndc\", \"ICDEV_NDC_ENABLED\", \"tools.network.blueprint\", \"create_network_blueprint\"),",
+        "noc_canvas": "(\"nocc\", \"ICDEV_NOCC_ENABLED\", \"tools.noc_canvas.blueprint\", \"create_noc_canvas_blueprint\"),",
+        "observability_canvas": "(\"odc\", \"ICDEV_ODC_ENABLED\", \"tools.observability_canvas.blueprint\", \"create_observability_blueprint\"),",
+        "qdc_canvas": "(\"qdc\", \"ICDEV_QDC_ENABLED\", \"tools.qdc_canvas.blueprint\", \"qdc_bp\"),",
+        "security_canvas": "(\"sdc\", \"ICDEV_SDC_ENABLED\", \"tools.security_canvas.blueprint\", \"create_security_blueprint\"),"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          39
+        ],
+        "aiml_canvas": [
+          40
+        ],
+        "boundary_canvas": [
+          33
+        ],
+        "ccc_canvas": [
+          45
+        ],
+        "data_canvas": [
+          36
+        ],
+        "dsoc_canvas": [
+          46
+        ],
+        "infra_canvas": [
+          30
+        ],
+        "migration_canvas": [
+          38
+        ],
+        "network": [
+          31
+        ],
+        "noc_canvas": [
+          43
+        ],
+        "observability_canvas": [
+          35
+        ],
+        "qdc_canvas": [
+          37
+        ],
+        "security_canvas": [
+          32
+        ]
+      },
+      "adjacent_packages": [
+        "mission_canvas",
+        "pmc_canvas"
+      ]
+    },
+    {
+      "file": "tests/test_config_threshold_detector.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 18,
+      "first_matches": {
+        "ai_augmentation": "\"\"\"Tests for tools.ai_augmentation.config_threshold_detector."
+      },
+      "lines": {
+        "ai_augmentation": [
+          2,
+          20,
+          132,
+          145,
+          154,
+          172,
+          182,
+          192,
+          209,
+          212,
+          225,
+          228,
+          248,
+          251,
+          265,
+          268,
+          280,
+          283
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_crx_soar_lite.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas import soar_lite"
+      },
+      "lines": {
+        "security_canvas": [
+          15
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_cvx_sql05_named_params.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "migration_canvas": "for mod in (\"tools.migration_canvas.db.init_db\", \"tools.migration_canvas.server_migration\"):"
+      },
+      "lines": {
+        "migration_canvas": [
+          151,
+          151,
+          153,
+          154
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_cvx_sql06_datacanvas_placeholders.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "data_canvas": "# test in the run resolves tools.data_canvas.db.init_db to that replacement"
+      },
+      "lines": {
+        "data_canvas": [
+          168,
+          179,
+          220,
+          249
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_cvx_sql07_datacanvas_pct_s.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "data_canvas": "# test in the run resolves tools.data_canvas.db.init_db to that replacement"
+      },
+      "lines": {
+        "data_canvas": [
+          170,
+          181,
+          272,
+          274,
+          276
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_cvx_sql_03_canvas_init_rls.py",
+      "top_level": true,
+      "packages": [
+        "aimc",
+        "infra_canvas",
+        "network"
+      ],
+      "match_count": 7,
+      "first_matches": {
+        "aimc": "from tools.aimc.db import init_db as aimc_init",
+        "infra_canvas": "from tools.infra_canvas.db import init_db as idc_init",
+        "network": "from tools.network.db import init_db as nc_init"
+      },
+      "lines": {
+        "aimc": [
+          34,
+          98,
+          99
+        ],
+        "infra_canvas": [
+          57,
+          102,
+          103
+        ],
+        "network": [
+          70
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_data_lineage_route.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "data_canvas": "patch(\"tools.data_canvas.db.init_db.init_db\"),"
+      },
+      "lines": {
+        "data_canvas": [
+          55,
+          56,
+          58,
+          86,
+          87,
+          133,
+          134,
+          159,
+          160,
+          161
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_ai_mapper_llm.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas import ai_mapper"
+      },
+      "lines": {
+        "data_canvas": [
+          25
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_anomaly_detector.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas import anomaly_detector as ad"
+      },
+      "lines": {
+        "data_canvas": [
+          15
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_audit_immutability.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.db import init_db as ddc_init"
+      },
+      "lines": {
+        "data_canvas": [
+          22
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_blueprint_hygiene.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "data_canvas": "with patch(\"tools.data_canvas.db.init_db.init_db\"):"
+      },
+      "lines": {
+        "data_canvas": [
+          35,
+          36
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_blueprint_resilience.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 9,
+      "first_matches": {
+        "data_canvas": "with patch(\"tools.data_canvas.db.init_db.init_db\"):"
+      },
+      "lines": {
+        "data_canvas": [
+          40,
+          41,
+          90,
+          123,
+          125,
+          145,
+          161,
+          174,
+          186
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_conn_sweep.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "data_canvas": "mod = importlib.import_module(\"tools.data_canvas.anomaly_detector\")"
+      },
+      "lines": {
+        "data_canvas": [
+          61,
+          77,
+          87,
+          107,
+          108
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_contract_engine.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.data_mesh import contract_engine as ce"
+      },
+      "lines": {
+        "data_canvas": [
+          13,
+          34,
+          118
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_data_engine.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas import data_engine as de"
+      },
+      "lines": {
+        "data_canvas": [
+          18
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_domain_manager.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.data_mesh import domain_manager as dm"
+      },
+      "lines": {
+        "data_canvas": [
+          11,
+          12,
+          17
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_ext_access_failclosed.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "_GOV = importlib.import_module(\"tools.data_canvas.data_mesh.governance_engine\")"
+      },
+      "lines": {
+        "data_canvas": [
+          22
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_freshness_guardian.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "data_canvas": "``tools.data_canvas.freshness_guardian.check_profile_freshness``:"
+      },
+      "lines": {
+        "data_canvas": [
+          5,
+          22
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_governance_access.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "data_canvas": "``_eval_rule`` in ``tools.data_canvas.governance_engine``:"
+      },
+      "lines": {
+        "data_canvas": [
+          5,
+          19
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_governance_engine.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas import governance_engine as ge"
+      },
+      "lines": {
+        "data_canvas": [
+          17,
+          22,
+          32,
+          138
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_lineage_emitter.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.data_mesh import lineage_emitter as le"
+      },
+      "lines": {
+        "data_canvas": [
+          18,
+          23,
+          41
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_product_registry.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.data_mesh import product_registry as pr"
+      },
+      "lines": {
+        "data_canvas": [
+          12,
+          17
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_profiler_pii.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas import data_profiler, pii_scanner"
+      },
+      "lines": {
+        "data_canvas": [
+          26
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_quality_engine.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas import quality_engine as qe"
+      },
+      "lines": {
+        "data_canvas": [
+          18,
+          24,
+          137
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_query_sandbox.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.query_sandbox import validate_query"
+      },
+      "lines": {
+        "data_canvas": [
+          12
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_route_auth.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.blueprint import create_data_canvas_blueprint"
+      },
+      "lines": {
+        "data_canvas": [
+          40
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dcpr_twin.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas import twin"
+      },
+      "lines": {
+        "data_canvas": [
+          21
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ddc_sync_adapters.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 16,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.sync.datahub_sync import ("
+      },
+      "lines": {
+        "data_canvas": [
+          75,
+          126,
+          161,
+          222,
+          232,
+          259,
+          308,
+          332,
+          362,
+          421,
+          438,
+          448,
+          484,
+          505,
+          523,
+          540
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_diagram_analysis.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "network": "from tools.network.diagram_analysis import ("
+      },
+      "lines": {
+        "network": [
+          16,
+          29,
+          180
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dsoc_canvas.py",
+      "top_level": true,
+      "packages": [
+        "dsoc_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "dsoc_canvas": "import tools.dsoc_canvas.db.init_db as init_mod"
+      },
+      "lines": {
+        "dsoc_canvas": [
+          29,
+          38,
+          140
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dsyn_emit_ndc.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "network": "import tools.network.network_intelligence as ni"
+      },
+      "lines": {
+        "network": [
+          189,
+          221,
+          252
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dsyn_emit_network.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "network": "with patch(\"tools.network.event_emitter.get_connection\", _gc): yield shim"
+      },
+      "lines": {
+        "network": [
+          41,
+          44,
+          55,
+          65,
+          71,
+          75
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dsyn_vv_smoke.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network import event_emitter"
+      },
+      "lines": {
+        "network": [
+          339
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_dwo_bus_subscriber.py",
+      "top_level": true,
+      "packages": [
+        "canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "canvas": "event_bus = importlib.import_module(\"tools.canvas.event_bus\")"
+      },
+      "lines": {
+        "canvas": [
+          80
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_elastic_export.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas.exporters.elastic import sigma_to_eql"
+      },
+      "lines": {
+        "observability_canvas": [
+          15
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_engine_nlp_input_classifier.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "ai_augmentation": "import tools.ai_augmentation.engine as engine"
+      },
+      "lines": {
+        "ai_augmentation": [
+          14
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_eol_predictor.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 29,
+      "first_matches": {
+        "network": "from tools.network.eol_predictor import _lookup_eos"
+      },
+      "lines": {
+        "network": [
+          46,
+          53,
+          60,
+          66,
+          73,
+          83,
+          91,
+          100,
+          109,
+          116,
+          132,
+          133,
+          135,
+          143,
+          144,
+          146,
+          155,
+          156,
+          158,
+          170,
+          171,
+          173,
+          181,
+          182,
+          184,
+          195,
+          196,
+          204,
+          205
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_event_bus_canvas_rls.py",
+      "top_level": true,
+      "packages": [
+        "canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "canvas": "from tools.canvas import event_bus"
+      },
+      "lines": {
+        "canvas": [
+          31,
+          32
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_event_bus_security.py",
+      "top_level": true,
+      "packages": [
+        "canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "canvas": "from tools.canvas.event_bus import ("
+      },
+      "lines": {
+        "canvas": [
+          9,
+          24
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_federal_peering_request.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network.federal_peering_request import ("
+      },
+      "lines": {
+        "network": [
+          17
+        ]
+      },
+      "adjacent_packages": [
+        "pmc_canvas"
+      ]
+    },
+    {
+      "file": "tests/test_freshness_guardian_parity.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "data_canvas": "Not a live outage: both reflex copies import `tools.data_canvas.*`, so the"
+      },
+      "lines": {
+        "data_canvas": [
+          29,
+          31,
+          129,
+          130
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_guardrails.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 18,
+      "first_matches": {
+        "network": "from tools.network.blueprint import create_network_blueprint"
+      },
+      "lines": {
+        "network": [
+          49,
+          66,
+          67,
+          75,
+          84,
+          98,
+          149,
+          171,
+          201,
+          212,
+          251,
+          273,
+          292,
+          318,
+          331,
+          346,
+          359,
+          375
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_helm_emitter.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.emitters.helm import ("
+      },
+      "lines": {
+        "infra_canvas": [
+          23
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_history.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 21,
+      "first_matches": {
+        "network": "\"tools.network.db.init_db\","
+      },
+      "lines": {
+        "network": [
+          128,
+          129,
+          130,
+          131,
+          218,
+          232,
+          241,
+          250,
+          260,
+          275,
+          290,
+          307,
+          318,
+          327,
+          336,
+          354,
+          363,
+          372,
+          381,
+          390,
+          399
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_iac_cli.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "infra_canvas": "\"\"\"Tests for python -m tools.infra_canvas.emit (dt-idc-iac-07).\"\"\""
+      },
+      "lines": {
+        "infra_canvas": [
+          2,
+          9
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_idc_emit_page.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "with patch(\"tools.infra_canvas.blueprint._get_conn\", side_effect=_fake_get_conn), \\"
+      },
+      "lines": {
+        "infra_canvas": [
+          170
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_idc_twin_phase1.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 47,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.terraform_show_importer import import_terraform_show"
+      },
+      "lines": {
+        "infra_canvas": [
+          165,
+          171,
+          178,
+          184,
+          190,
+          197,
+          204,
+          211,
+          220,
+          228,
+          236,
+          244,
+          250,
+          265,
+          274,
+          306,
+          338,
+          344,
+          350,
+          356,
+          362,
+          369,
+          377,
+          385,
+          392,
+          401,
+          412,
+          420,
+          427,
+          435,
+          442,
+          459,
+          467,
+          479,
+          491,
+          504,
+          516,
+          528,
+          543,
+          554,
+          571,
+          591,
+          592,
+          614,
+          615,
+          633,
+          634
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_infra_twin_route.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "with patch(\"tools.infra_canvas.blueprint._get_conn\", side_effect=_fake_get_conn), \\"
+      },
+      "lines": {
+        "infra_canvas": [
+          178
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_intent_validator.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "\"\"\"Unit tests for tools.network.intent_validator \u2014 Intent-Based Validation Engine.\"\"\""
+      },
+      "lines": {
+        "network": [
+          3,
+          10
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ip_address_space.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network.ip_address_space import ("
+      },
+      "lines": {
+        "network": [
+          10
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_iqe_bi_dashboard_adapter.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "a REAL ``tools.data_canvas.query_sandbox.execute_query`` against a seeded SQLite"
+      },
+      "lines": {
+        "data_canvas": [
+          6
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_iqe_ext_governance.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "data_canvas": "_INIT_DB = importlib.import_module(\"tools.data_canvas.db.init_db\")"
+      },
+      "lines": {
+        "data_canvas": [
+          26,
+          27
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_iqe_ext_lineage.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 9,
+      "first_matches": {
+        "data_canvas": "canonical DDC DDL (``tools.data_canvas.db.init_db.SCHEMA``), so column/DDL drift"
+      },
+      "lines": {
+        "data_canvas": [
+          7,
+          26,
+          28,
+          64,
+          80,
+          95,
+          110,
+          124,
+          134
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_iqe_nl_to_iqe.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network.nl_query import ("
+      },
+      "lines": {
+        "network": [
+          20
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_juniper_filter_parsing.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "network": "from tools.network.config_parser import parse_juniper"
+      },
+      "lines": {
+        "network": [
+          83,
+          89,
+          106,
+          115,
+          127,
+          136,
+          145,
+          159,
+          166,
+          174
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mce_compliance_gate.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "\"\"\"Tests for tools.migration_canvas.compliance_gate.\"\"\""
+      },
+      "lines": {
+        "migration_canvas": [
+          2,
+          3
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mce_dossier_advisor.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "\"\"\"Tests for tools.migration_canvas.dossier_advisor.\"\"\""
+      },
+      "lines": {
+        "migration_canvas": [
+          2,
+          3
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mce_inventory_scanner.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "\"\"\"Tests for tools.migration_canvas.inventory_scanner.\"\"\""
+      },
+      "lines": {
+        "migration_canvas": [
+          2,
+          6
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mce_wave_backout_validation.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 7,
+      "first_matches": {
+        "migration_canvas": "from tools.migration_canvas import wave_planner as wp"
+      },
+      "lines": {
+        "migration_canvas": [
+          24,
+          52,
+          63,
+          76,
+          96,
+          112,
+          159
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mce_wave_planner.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "\"\"\"Tests for tools.migration_canvas.wave_planner.\"\"\""
+      },
+      "lines": {
+        "migration_canvas": [
+          2,
+          4
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_migration_canvas_coa.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "from tools.migration_canvas.db import init_db as init_db_mod"
+      },
+      "lines": {
+        "migration_canvas": [
+          14,
+          15
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_migration_canvas_config_map.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 9,
+      "first_matches": {
+        "migration_canvas": "from tools.migration_canvas.db import init_db as init_db_mod"
+      },
+      "lines": {
+        "migration_canvas": [
+          60,
+          61,
+          72,
+          87,
+          100,
+          122,
+          144,
+          149,
+          172
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_migration_canvas_topology.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "from tools.migration_canvas.db import init_db as init_db_mod"
+      },
+      "lines": {
+        "migration_canvas": [
+          13,
+          14
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_migration_dossier_advisor.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "from tools.migration_canvas.db import init_db as init_db_mod"
+      },
+      "lines": {
+        "migration_canvas": [
+          20,
+          21
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_migration_grounding.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "migration_canvas": "from tools.migration_canvas.grounding import GROUNDING_WARNING, assess_response"
+      },
+      "lines": {
+        "migration_canvas": [
+          15,
+          56
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mitre_catalog.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 13,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas import mitre_catalog"
+      },
+      "lines": {
+        "observability_canvas": [
+          16,
+          94,
+          104,
+          122,
+          153,
+          154,
+          165,
+          166,
+          176,
+          177,
+          191,
+          192,
+          203
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mitre_coverage_db.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "observability_canvas": "import tools.observability_canvas.mitre_coverage_db as mod"
+      },
+      "lines": {
+        "observability_canvas": [
+          81
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mitre_coverage_twin.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas import mitre_coverage_twin as mct  # noqa: E402"
+      },
+      "lines": {
+        "observability_canvas": [
+          35,
+          36,
+          44
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_mitre_loader.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas.mitre_loader import MitreTechnique, load_techniques"
+      },
+      "lines": {
+        "observability_canvas": [
+          4
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_nav_llm_01_router_invoke.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation",
+        "noc_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "ai_augmentation": "\"tools.ai_augmentation.implementations.llm_http_auth\",",
+        "noc_canvas": "mod = importlib.import_module(\"tools.noc_canvas.mop_generator\")"
+      },
+      "lines": {
+        "ai_augmentation": [
+          174
+        ],
+        "noc_canvas": [
+          113,
+          128,
+          169
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_nav_sec_05_strategos_rbac.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.blueprint import create_security_blueprint"
+      },
+      "lines": {
+        "security_canvas": [
+          102
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_backend_helpers.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "network": "from tools.network import blueprint_helpers as bh"
+      },
+      "lines": {
+        "network": [
+          19,
+          20,
+          39,
+          154,
+          245
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_blueprint_route_parity.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network.blueprint import create_network_blueprint"
+      },
+      "lines": {
+        "network": [
+          27
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_bus_subscriber.py",
+      "top_level": true,
+      "packages": [
+        "canvas",
+        "network"
+      ],
+      "match_count": 11,
+      "first_matches": {
+        "canvas": "from tools.canvas import event_bus",
+        "network": "return patch(\"tools.network.bus_subscriber.get_connection\", lambda: shim)"
+      },
+      "lines": {
+        "canvas": [
+          220
+        ],
+        "network": [
+          76,
+          83,
+          107,
+          126,
+          153,
+          171,
+          187,
+          196,
+          208,
+          221
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_demo_runner.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network.blueprint import create_network_blueprint"
+      },
+      "lines": {
+        "network": [
+          59
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_enclave_scanner.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "from tools.network import enclave_scanner as es"
+      },
+      "lines": {
+        "network": [
+          25,
+          284
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_failclosed_gates.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "network": "from tools.network.routes import analysis as analysis_routes"
+      },
+      "lines": {
+        "network": [
+          23,
+          24,
+          30,
+          46,
+          48,
+          103
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_graph_cache.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "network": "from tools.network import blueprint_helpers as bh"
+      },
+      "lines": {
+        "network": [
+          25,
+          26,
+          43,
+          190,
+          191,
+          192
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_migration_phases.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network import migration_phases as mp"
+      },
+      "lines": {
+        "network": [
+          22
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_narrative_cache.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "network": "(tools.network.narrative_generator.LLMRouter), mirroring"
+      },
+      "lines": {
+        "network": [
+          19,
+          32,
+          73,
+          74
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_narrative_egress.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "(tools.network.narrative_generator.LLMRouter); the local/cloud decision uses the"
+      },
+      "lines": {
+        "network": [
+          18,
+          30
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_pdf_export.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "from tools.network.pdf_export import ("
+      },
+      "lines": {
+        "network": [
+          24,
+          199
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_pptx_export.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 12,
+      "first_matches": {
+        "network": "from tools.network import blueprint_helpers as bh"
+      },
+      "lines": {
+        "network": [
+          29,
+          42,
+          84,
+          105,
+          120,
+          139,
+          154,
+          162,
+          171,
+          229,
+          247,
+          248
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_sdc_idc_templates.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas",
+        "network",
+        "security_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.blueprint import infra_bp",
+        "network": "from tools.network.blueprint import create_network_blueprint",
+        "security_canvas": "from tools.security_canvas.blueprint import create_security_blueprint"
+      },
+      "lines": {
+        "infra_canvas": [
+          60
+        ],
+        "network": [
+          48
+        ],
+        "security_canvas": [
+          54
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_stencil_importer.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "from tools.network import stencil_importer as si"
+      },
+      "lines": {
+        "network": [
+          24,
+          25
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_topology_validator.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "network": "from tools.network import topology_validator as tv"
+      },
+      "lines": {
+        "network": [
+          23,
+          99,
+          129
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_traffic_flow_schema_reconcile.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "from tools.network.db import init_db as m"
+      },
+      "lines": {
+        "network": [
+          19,
+          20
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_update_routes.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "from tools.network.db import init_db as ndc_init"
+      },
+      "lines": {
+        "network": [
+          37,
+          46
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ndc_visio_export.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "from tools.network.visio_export import export_ops_csvs, export_vsdx"
+      },
+      "lines": {
+        "network": [
+          25,
+          152
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_network_check_constants.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "network": "from tools.network.db import constants as C"
+      },
+      "lines": {
+        "network": [
+          14,
+          15,
+          129,
+          130
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_network_compliance_rname.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network.compliance import validate_hostname_pattern"
+      },
+      "lines": {
+        "network": [
+          4
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_network_config_review.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 12,
+      "first_matches": {
+        "network": "- tools.network.config_review pure functions"
+      },
+      "lines": {
+        "network": [
+          5,
+          6,
+          8,
+          23,
+          33,
+          42,
+          53,
+          65,
+          82,
+          91,
+          175,
+          187
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_network_doc_lifecycle.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 20,
+      "first_matches": {
+        "network": "from tools.network.synthetic_config_gen import generate_topology"
+      },
+      "lines": {
+        "network": [
+          148,
+          154,
+          161,
+          172,
+          179,
+          190,
+          197,
+          206,
+          216,
+          224,
+          232,
+          240,
+          253,
+          256,
+          315,
+          343,
+          370,
+          373,
+          542,
+          569
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_network_ingester_e2e.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 16,
+      "first_matches": {
+        "network": "patch(\"tools.network.network_ingester._extract_via_vision\", return_value=vision_error),"
+      },
+      "lines": {
+        "network": [
+          112,
+          113,
+          114,
+          115,
+          119,
+          154,
+          155,
+          156,
+          157,
+          159,
+          173,
+          174,
+          176,
+          202,
+          203,
+          205
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_network_intelligence.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 27,
+      "first_matches": {
+        "network": "from tools.network.network_ingester import _classify_device_type"
+      },
+      "lines": {
+        "network": [
+          150,
+          154,
+          158,
+          162,
+          166,
+          174,
+          199,
+          200,
+          226,
+          227,
+          238,
+          239,
+          252,
+          256,
+          260,
+          264,
+          268,
+          272,
+          276,
+          280,
+          295,
+          296,
+          297,
+          307,
+          308,
+          322,
+          323
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_network_layout_and_config.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "network": "\"\"\"Tests for tools.network.layout and tools.network.config_import.\"\"\""
+      },
+      "lines": {
+        "network": [
+          2,
+          2,
+          7,
+          12
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_nlp_extractor.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 9,
+      "first_matches": {
+        "ai_augmentation": "\"\"\"Tests for tools.ai_augmentation.nlp_extractor.\"\"\""
+      },
+      "lines": {
+        "ai_augmentation": [
+          2,
+          10,
+          68,
+          79,
+          95,
+          108,
+          125,
+          131,
+          132
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_noc_pg_lifecycle.py",
+      "top_level": true,
+      "packages": [
+        "noc_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "noc_canvas": "from tools.noc_canvas.alarm_correlator import create_alarm"
+      },
+      "lines": {
+        "noc_canvas": [
+          27,
+          28,
+          29
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_nqe_client.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 12,
+      "first_matches": {
+        "network": "from tools.network.nqe_client import NQEClient"
+      },
+      "lines": {
+        "network": [
+          23,
+          92,
+          112,
+          113,
+          121,
+          130,
+          143,
+          149,
+          155,
+          163,
+          171,
+          183
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_observability_mitre_route.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "observability_canvas": "patch(\"tools.observability_canvas.db.init_db.get_connection\", side_effect=_fake_get_conn),"
+      },
+      "lines": {
+        "observability_canvas": [
+          139,
+          140
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_ocr_fallback.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "network": "from tools.network.ocr_fallback import ("
+      },
+      "lines": {
+        "network": [
+          14,
+          340,
+          359,
+          387
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_api_hygiene.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas.blueprint import create_observability_blueprint"
+      },
+      "lines": {
+        "observability_canvas": [
+          32,
+          46,
+          210,
+          230
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_bus_subscriber.py",
+      "top_level": true,
+      "packages": [
+        "canvas",
+        "observability_canvas"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "canvas": "event_bus = importlib.import_module(\"tools.canvas.event_bus\")",
+        "observability_canvas": "init_db_mod = importlib.import_module(\"tools.observability_canvas.db.init_db\")"
+      },
+      "lines": {
+        "canvas": [
+          88,
+          241
+        ],
+        "observability_canvas": [
+          89,
+          125,
+          157,
+          176,
+          194,
+          211,
+          223,
+          236
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_compliance_card.py",
+      "top_level": true,
+      "packages": [
+        "canvas_compliance",
+        "observability_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "canvas_compliance": "_COMPLIANCE = \"tools.canvas_compliance.compliance\"",
+        "observability_canvas": "connection (``tools.observability_canvas.db.init_db.get_connection``)."
+      },
+      "lines": {
+        "canvas_compliance": [
+          22
+        ],
+        "observability_canvas": [
+          8,
+          21
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_coverage_refresh.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "observability_canvas": "init_db = importlib.import_module(\"tools.observability_canvas.db.init_db\")"
+      },
+      "lines": {
+        "observability_canvas": [
+          170
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_coverage_routes.py",
+      "top_level": true,
+      "packages": [
+        "canvas_compliance",
+        "observability_canvas"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "canvas_compliance": "(``tools.canvas_compliance.compliance.get_odc_card``) stayed empty in production.",
+        "observability_canvas": "Un-orphans ``tools.observability_canvas.mitre_coverage_twin``: before this task,"
+      },
+      "lines": {
+        "canvas_compliance": [
+          7,
+          199
+        ],
+        "observability_canvas": [
+          4,
+          121,
+          124,
+          255
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_graceful_pages.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "observability_canvas": "init_db_mod = importlib.import_module(\"tools.observability_canvas.db.init_db\")"
+      },
+      "lines": {
+        "observability_canvas": [
+          106,
+          109
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_kill_chain_rls.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas.blueprint import create_observability_blueprint"
+      },
+      "lines": {
+        "observability_canvas": [
+          125
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_ndc_check.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "observability_canvas": "``tools.observability_canvas.observability_engine``:"
+      },
+      "lines": {
+        "observability_canvas": [
+          5,
+          30,
+          31,
+          34
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_observability_engine.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "observability_canvas": "``tools.observability_canvas.observability_engine``:"
+      },
+      "lines": {
+        "observability_canvas": [
+          5,
+          20,
+          25,
+          30
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_sigma_catalog.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas import sigma_generator as sg  # noqa: E402"
+      },
+      "lines": {
+        "observability_canvas": [
+          29,
+          30
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_sops_runbooks.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 17,
+      "first_matches": {
+        "observability_canvas": "getter (tools.observability_canvas.db.init_db.get_connection) monkeypatched \u2014"
+      },
+      "lines": {
+        "observability_canvas": [
+          14,
+          37,
+          60,
+          78,
+          86,
+          103,
+          120,
+          134,
+          143,
+          155,
+          165,
+          189,
+          207,
+          213,
+          223,
+          240,
+          261
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_twin.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 14,
+      "first_matches": {
+        "observability_canvas": "(tools.observability_canvas.db.init_db.get_connection) is monkeypatched \u2014 shim"
+      },
+      "lines": {
+        "observability_canvas": [
+          17,
+          76,
+          103,
+          128,
+          142,
+          158,
+          165,
+          181,
+          183,
+          204,
+          206,
+          229,
+          247,
+          259
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_odc_twin_snapshots.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "observability_canvas": "init_db_mod = importlib.import_module(\"tools.observability_canvas.db.init_db\")"
+      },
+      "lines": {
+        "observability_canvas": [
+          55,
+          91,
+          112,
+          128,
+          158
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_openmetadata_client.py",
+      "top_level": true,
+      "packages": [
+        "data_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "data_canvas": "from tools.data_canvas.clients.openmetadata import OpenMetadataClient"
+      },
+      "lines": {
+        "data_canvas": [
+          16
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_opportunity_scorer.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.opportunity_scorer import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          14,
+          54
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_oracle_lens_network.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "network": "These tests seed a temp SQLite canvas DB via ``tools.network.db.init_db`` with"
+      },
+      "lines": {
+        "network": [
+          9,
+          55,
+          161
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_patch_planner.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 34,
+      "first_matches": {
+        "network": "from tools.network.patch_planner import _site_from_device"
+      },
+      "lines": {
+        "network": [
+          37,
+          42,
+          47,
+          52,
+          57,
+          62,
+          67,
+          72,
+          82,
+          91,
+          116,
+          165,
+          166,
+          176,
+          177,
+          197,
+          198,
+          200,
+          220,
+          221,
+          223,
+          241,
+          242,
+          244,
+          265,
+          266,
+          268,
+          296,
+          297,
+          299,
+          314,
+          315,
+          336,
+          337
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_path_analyzer.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "network": "\"\"\"Tests for tools.network.path_analyzer \u2014 NDC path reachability engine.\"\"\""
+      },
+      "lines": {
+        "network": [
+          1,
+          5,
+          152,
+          167
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_path_enumerator.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "security_canvas": "\"\"\"Tests for tools.security_canvas.path_enumerator \u2014 6 cases.\"\"\""
+      },
+      "lines": {
+        "security_canvas": [
+          1,
+          4
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pattern_classifier_threshold_ad.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "ai_augmentation": "import tools.ai_augmentation.pattern_classifier as pc"
+      },
+      "lines": {
+        "ai_augmentation": [
+          31
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pdc_routes_misc.py",
+      "top_level": true,
+      "packages": [
+        "canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "canvas": "with patch(\"tools.canvas.collaboration.get_connection\","
+      },
+      "lines": {
+        "canvas": [
+          489,
+          512,
+          535,
+          562
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pdf_import.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "\"\"\"Tests for tools.network.pdf_import \u2014 vector extraction + rasterizer."
+      },
+      "lines": {
+        "network": [
+          2,
+          25
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pdf_stitch_multi.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "network": "from tools.network.pdf_import import import_pdf  # noqa: E402"
+      },
+      "lines": {
+        "network": [
+          33,
+          34
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aadc_auth.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "agentic_ai_canvas": "import tools.agentic_ai_canvas.blueprint as bp  # noqa: E402"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          30
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aadc_compliance.py",
+      "top_level": true,
+      "packages": [
+        "aadc",
+        "agentic_ai_canvas"
+      ],
+      "match_count": 8,
+      "first_matches": {
+        "aadc": "import tools.aadc.compliance_checker as cc  # noqa: E402",
+        "agentic_ai_canvas": "import tools.agentic_ai_canvas.db.init_db as canvas_init_db  # noqa: E402"
+      },
+      "lines": {
+        "aadc": [
+          42,
+          43
+        ],
+        "agentic_ai_canvas": [
+          44,
+          200,
+          207,
+          209,
+          230,
+          234
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aadc_cost.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas",
+        "aiml_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas import cost_estimator as ce  # noqa: E402",
+        "aiml_canvas": "from tools.aiml_canvas.constants import FOUNDATION_MODELS"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          29,
+          30
+        ],
+        "aiml_canvas": [
+          46,
+          117,
+          128
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aadc_engine.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas import agentic_engine as eng  # noqa: E402"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          22,
+          287,
+          297,
+          298
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aadc_initdb.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "agentic_ai_canvas": "mod = importlib.import_module(\"tools.agentic_ai_canvas.db.init_db\")"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          33
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aadc_p2.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 15,
+      "first_matches": {
+        "agentic_ai_canvas": "bp = importlib.import_module(\"tools.agentic_ai_canvas.blueprint\")"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          59,
+          66,
+          67,
+          68,
+          69,
+          70,
+          147,
+          151,
+          176,
+          208,
+          226,
+          241,
+          242,
+          249,
+          250
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aadc_routes.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "agentic_ai_canvas": "import tools.agentic_ai_canvas.blueprint as bp  # noqa: E402"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          40
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aimc_auth.py",
+      "top_level": true,
+      "packages": [
+        "aiml_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "aiml_canvas": "import tools.aiml_canvas.db.init_db as aimc_init"
+      },
+      "lines": {
+        "aiml_canvas": [
+          46,
+          51
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aimc_engine.py",
+      "top_level": true,
+      "packages": [
+        "aiml_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "aiml_canvas": "import tools.aiml_canvas.db.init_db as aimc_init"
+      },
+      "lines": {
+        "aiml_canvas": [
+          16,
+          22
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aimc_nodes.py",
+      "top_level": true,
+      "packages": [
+        "aiml_canvas"
+      ],
+      "match_count": 7,
+      "first_matches": {
+        "aiml_canvas": "import tools.aiml_canvas.db.init_db as aimc_init"
+      },
+      "lines": {
+        "aiml_canvas": [
+          22,
+          49,
+          79,
+          106,
+          122,
+          149,
+          171
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aimc_p2.py",
+      "top_level": true,
+      "packages": [
+        "aiml_canvas"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "aiml_canvas": "import tools.aiml_canvas.db.init_db as aimc_init"
+      },
+      "lines": {
+        "aiml_canvas": [
+          27,
+          32,
+          66,
+          98,
+          127,
+          138
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aimc_routes.py",
+      "top_level": true,
+      "packages": [
+        "aiml_canvas"
+      ],
+      "match_count": 14,
+      "first_matches": {
+        "aiml_canvas": "import tools.aiml_canvas.db.init_db as aimc_init"
+      },
+      "lines": {
+        "aiml_canvas": [
+          24,
+          30,
+          76,
+          105,
+          130,
+          142,
+          161,
+          204,
+          214,
+          225,
+          235,
+          245,
+          256,
+          267
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_penta_aimc_scanner.py",
+      "top_level": true,
+      "packages": [
+        "aimc"
+      ],
+      "match_count": 13,
+      "first_matches": {
+        "aimc": "from tools.aimc.db.init_db import init_db"
+      },
+      "lines": {
+        "aimc": [
+          26,
+          60,
+          84,
+          96,
+          105,
+          126,
+          145,
+          158,
+          167,
+          179,
+          180,
+          186,
+          187
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pipeline_audit_coverage.py",
+      "top_level": true,
+      "packages": [
+        "canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "canvas": "with patch(\"tools.canvas.collaboration.CanvasCollabManager.join\", return_value={\"ok\": True}), \\"
+      },
+      "lines": {
+        "canvas": [
+          202
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pipeline_rbac_sod.py",
+      "top_level": true,
+      "packages": [
+        "canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "canvas": "with patch(\"tools.canvas.collaboration.CanvasCollabManager.push\", return_value=7) as push_mock:"
+      },
+      "lines": {
+        "canvas": [
+          312,
+          331
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pmc_ccc_dsoc_templates.py",
+      "top_level": true,
+      "packages": [
+        "ccc_canvas",
+        "dsoc_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "ccc_canvas": "mod = importlib.import_module(\"tools.ccc_canvas.blueprint\")",
+        "dsoc_canvas": "mod = importlib.import_module(\"tools.dsoc_canvas.blueprint\")"
+      },
+      "lines": {
+        "ccc_canvas": [
+          47,
+          126
+        ],
+        "dsoc_canvas": [
+          52,
+          132
+        ]
+      },
+      "adjacent_packages": [
+        "pmc_canvas"
+      ]
+    },
+    {
+      "file": "tests/test_preapply_gate.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.preapply_gate import _compute_delta, run_gate"
+      },
+      "lines": {
+        "infra_canvas": [
+          5
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pulumi_emitter.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.emitters.pulumi import UnsupportedResourceError, emit_resource"
+      },
+      "lines": {
+        "infra_canvas": [
+          19
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_pulumi_state_importer.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.importers.pulumi_state import parse"
+      },
+      "lines": {
+        "infra_canvas": [
+          15
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_qdc_canvas.py",
+      "top_level": true,
+      "packages": [
+        "qdc_canvas"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "qdc_canvas": "from tools.qdc_canvas.qdc_engine import assess_quality_design"
+      },
+      "lines": {
+        "qdc_canvas": [
+          36,
+          45,
+          52,
+          59,
+          67,
+          77,
+          99,
+          103,
+          115,
+          178
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_remediation_simulator.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 36,
+      "first_matches": {
+        "network": "\"\"\"Unit tests for tools.network.remediation_simulator.simulate_remediation.\"\"\""
+      },
+      "lines": {
+        "network": [
+          2,
+          89,
+          96,
+          103,
+          115,
+          123,
+          131,
+          137,
+          154,
+          155,
+          173,
+          174,
+          189,
+          190,
+          205,
+          206,
+          222,
+          223,
+          238,
+          239,
+          252,
+          253,
+          260,
+          261,
+          272,
+          275,
+          285,
+          288,
+          300,
+          301,
+          309,
+          310,
+          320,
+          321,
+          334,
+          335
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_replay_verify.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "observability_canvas": "\"\"\"Tests for tools.observability_canvas.replay_verify (ODC closed-loop hook)."
+      },
+      "lines": {
+        "observability_canvas": [
+          1,
+          18,
+          30,
+          37,
+          168,
+          207,
+          225,
+          237,
+          275,
+          276
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_roadmap_adaptive_thresholds.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.roadmap_generator import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          19,
+          152
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sc_agent_llm.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "security_canvas": "Security Canvas LLM adapter (``tools.security_canvas.llm_adapter.generate``)."
+      },
+      "lines": {
+        "security_canvas": [
+          5,
+          8,
+          10,
+          20,
+          21
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sc_artifacts.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.artifacts import ("
+      },
+      "lines": {
+        "security_canvas": [
+          29,
+          35,
+          39
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sc_blueprint_errors.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.blueprint import create_security_blueprint"
+      },
+      "lines": {
+        "security_canvas": [
+          30,
+          31,
+          90,
+          91
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sc_llm_adapter.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "adapter = importlib.import_module(\"tools.security_canvas.llm_adapter\")"
+      },
+      "lines": {
+        "security_canvas": [
+          19
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sc_nl_query_llm.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "security_canvas": "routes its open-ended fallback through ``tools.security_canvas.llm_adapter.generate``"
+      },
+      "lines": {
+        "security_canvas": [
+          5,
+          10,
+          12,
+          22,
+          23
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sc_orchestrator_smoke.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas import remediation"
+      },
+      "lines": {
+        "security_canvas": [
+          41,
+          42,
+          43
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sc_posture_summary.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.db import init_db as init_db_mod"
+      },
+      "lines": {
+        "security_canvas": [
+          67,
+          68
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sdc_attackpath_route.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 5,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.db.init_db import SCHEMA"
+      },
+      "lines": {
+        "security_canvas": [
+          23,
+          68,
+          84,
+          98,
+          120
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sdc_auth_apikey.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.blueprint import create_security_blueprint"
+      },
+      "lines": {
+        "security_canvas": [
+          25,
+          26
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sdc_auth_meta.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.blueprint import create_security_blueprint"
+      },
+      "lines": {
+        "security_canvas": [
+          31
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sdc_demo_runner.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.db import init_db as _sc_init"
+      },
+      "lines": {
+        "security_canvas": [
+          150
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sdc_lazy_tables.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.db import lazy_table_inventory as lti"
+      },
+      "lines": {
+        "security_canvas": [
+          25,
+          77
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sdc_schema_parity.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.db import init_db"
+      },
+      "lines": {
+        "security_canvas": [
+          85
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sentinel_export.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas.exporters.sentinel import sigma_to_kql"
+      },
+      "lines": {
+        "observability_canvas": [
+          14
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_sigma_generator.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "observability_canvas": "\"\"\"Unit tests for tools.observability_canvas.sigma_generator \u2014 5 cases.\"\"\""
+      },
+      "lines": {
+        "observability_canvas": [
+          2,
+          6
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_splunk_export.py",
+      "top_level": true,
+      "packages": [
+        "observability_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "observability_canvas": "from tools.observability_canvas.exporters.splunk import sigma_to_spl"
+      },
+      "lines": {
+        "observability_canvas": [
+          14
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_stig_nlp_extractor.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 23,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.agent_readiness.pillars import stig_nlp_extractor  # noqa: F401"
+      },
+      "lines": {
+        "ai_augmentation": [
+          49,
+          52,
+          56,
+          66,
+          72,
+          78,
+          84,
+          90,
+          98,
+          110,
+          119,
+          126,
+          138,
+          151,
+          163,
+          183,
+          195,
+          205,
+          215,
+          225,
+          239,
+          245,
+          254
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_supply_chain_risk_scorer.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 27,
+      "first_matches": {
+        "network": "from tools.network.supply_chain_risk_scorer import _normalize_vendor"
+      },
+      "lines": {
+        "network": [
+          57,
+          64,
+          69,
+          74,
+          79,
+          89,
+          95,
+          101,
+          107,
+          117,
+          126,
+          134,
+          148,
+          153,
+          157,
+          171,
+          172,
+          175,
+          191,
+          192,
+          195,
+          210,
+          212,
+          220,
+          222,
+          230,
+          232
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_system_graph_ndc.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "monkeypatch.setattr(\"tools.network.db.init_db.get_connection\", _boom)"
+      },
+      "lines": {
+        "network": [
+          62
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_terraform_emitter.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "from tools.infra_canvas.emitters.terraform import UnsupportedResourceError, emit_resource"
+      },
+      "lines": {
+        "infra_canvas": [
+          23
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_tfw_narrator.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 18,
+      "first_matches": {
+        "network": "from tools.network.narrative_generator import detect_csp"
+      },
+      "lines": {
+        "network": [
+          96,
+          104,
+          112,
+          123,
+          133,
+          146,
+          168,
+          181,
+          201,
+          214,
+          234,
+          247,
+          265,
+          278,
+          297,
+          334,
+          340,
+          364
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_tfw_personas.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 13,
+      "first_matches": {
+        "network": "from tools.network.narrative_generator import load_personas"
+      },
+      "lines": {
+        "network": [
+          99,
+          124,
+          140,
+          153,
+          176,
+          189,
+          209,
+          246,
+          252,
+          280,
+          294,
+          310,
+          360
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_threshold_advisor.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 10,
+      "first_matches": {
+        "ai_augmentation": "\"\"\"Tests for tools.ai_augmentation.threshold_advisor."
+      },
+      "lines": {
+        "ai_augmentation": [
+          2,
+          15,
+          70,
+          80,
+          91,
+          110,
+          124,
+          141,
+          150,
+          158
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_threshold_anomaly_detector.py",
+      "top_level": true,
+      "packages": [
+        "ai_augmentation"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "ai_augmentation": "from tools.ai_augmentation.pattern_classifier import ("
+      },
+      "lines": {
+        "ai_augmentation": [
+          22
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_traffic_flow_walkthrough.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 16,
+      "first_matches": {
+        "network": "from tools.network.narrative_generator import generate_all"
+      },
+      "lines": {
+        "network": [
+          123,
+          128,
+          150,
+          155,
+          185,
+          198,
+          216,
+          233,
+          265,
+          284,
+          365,
+          370,
+          390,
+          403,
+          417,
+          427
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_twin_airgap_rules.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas",
+        "network"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "infra_canvas": "mod = importlib.import_module(\"tools.infra_canvas.preapply_gate\")",
+        "network": "mod = importlib.import_module(\"tools.network.twin\")"
+      },
+      "lines": {
+        "infra_canvas": [
+          90
+        ],
+        "network": [
+          102
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_twin_core.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "ndc_mod = importlib.import_module(\"tools.network.twin\")"
+      },
+      "lines": {
+        "network": [
+          182
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_twin_core_event_bridge.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas",
+        "canvas",
+        "network"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "boundary_canvas": "bdc = importlib.import_module(\"tools.boundary_canvas.twin\")",
+        "canvas": "The bus (`tools.canvas.event_bus`) is stubbed by capturing publish/subscribe",
+        "network": "ndc = importlib.import_module(\"tools.network.twin\")"
+      },
+      "lines": {
+        "boundary_canvas": [
+          117
+        ],
+        "canvas": [
+          4,
+          23
+        ],
+        "network": [
+          41
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_twin_core_observer.py",
+      "top_level": true,
+      "packages": [
+        "boundary_canvas",
+        "data_canvas",
+        "infra_canvas",
+        "observability_canvas",
+        "security_canvas"
+      ],
+      "match_count": 6,
+      "first_matches": {
+        "boundary_canvas": "mod = importlib.import_module(\"tools.boundary_canvas.twin\")",
+        "data_canvas": "mod = importlib.import_module(\"tools.data_canvas.twin\")",
+        "infra_canvas": "mod = importlib.import_module(\"tools.infra_canvas.preapply_gate\")",
+        "observability_canvas": "mod = importlib.import_module(\"tools.observability_canvas.twin\")",
+        "security_canvas": "mod = importlib.import_module(\"tools.security_canvas.twin\")"
+      },
+      "lines": {
+        "boundary_canvas": [
+          34,
+          50
+        ],
+        "data_canvas": [
+          69
+        ],
+        "infra_canvas": [
+          95
+        ],
+        "observability_canvas": [
+          82
+        ],
+        "security_canvas": [
+          57
+        ]
+      },
+      "adjacent_packages": [
+        "mission_canvas"
+      ]
+    },
+    {
+      "file": "tests/test_twin_freshness_sweep.py",
+      "top_level": true,
+      "packages": [
+        "canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "canvas": "bus = importlib.import_module(\"tools.canvas.event_bus\")"
+      },
+      "lines": {
+        "canvas": [
+          70
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_twin_target_presets.py",
+      "top_level": true,
+      "packages": [
+        "infra_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "infra_canvas": "mod = importlib.import_module(\"tools.infra_canvas.preapply_gate\")"
+      },
+      "lines": {
+        "infra_canvas": [
+          82
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_twx_cov_twins.py",
+      "top_level": true,
+      "packages": [
+        "agentic_ai_canvas",
+        "qdc_canvas"
+      ],
+      "match_count": 2,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas import twin as aadc_twin",
+        "qdc_canvas": "from tools.qdc_canvas import twin as qdc_twin"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          15
+        ],
+        "qdc_canvas": [
+          16
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_vsdx_import.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "network": "from tools.network.export_import import ("
+      },
+      "lines": {
+        "network": [
+          23
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_vuln_predictor.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 15,
+      "first_matches": {
+        "network": "from tools.network.vuln_predictor import _compute_scores"
+      },
+      "lines": {
+        "network": [
+          109,
+          117,
+          125,
+          133,
+          141,
+          149,
+          157,
+          165,
+          173,
+          182,
+          190,
+          202,
+          214,
+          253,
+          254
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_vuln_triage_engine.py",
+      "top_level": true,
+      "packages": [
+        "network"
+      ],
+      "match_count": 28,
+      "first_matches": {
+        "network": "from tools.network.vuln_triage_engine import _compute_priority"
+      },
+      "lines": {
+        "network": [
+          49,
+          58,
+          66,
+          79,
+          88,
+          110,
+          111,
+          119,
+          121,
+          122,
+          131,
+          133,
+          134,
+          185,
+          186,
+          187,
+          189,
+          213,
+          214,
+          215,
+          217,
+          259,
+          260,
+          268,
+          269,
+          287,
+          288,
+          309
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_workload_scanner_performance.py",
+      "top_level": true,
+      "packages": [
+        "migration_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "migration_canvas": "from tools.migration_canvas.inventory_scanner import ("
+      },
+      "lines": {
+        "migration_canvas": [
+          19
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_zig_external_targets.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 8,
+      "first_matches": {
+        "security_canvas": "\"tools.security_canvas.zig_activity_tracker\","
+      },
+      "lines": {
+        "security_canvas": [
+          147,
+          154,
+          219,
+          235,
+          310,
+          327,
+          348,
+          443
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_zig_ingest_adapters.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 71,
+      "first_matches": {
+        "security_canvas": "# The adapter imports from tools.security_canvas.zig_activity_tracker"
+      },
+      "lines": {
+        "security_canvas": [
+          56,
+          57,
+          61,
+          72,
+          78,
+          83,
+          89,
+          94,
+          99,
+          105,
+          115,
+          120,
+          130,
+          139,
+          148,
+          154,
+          163,
+          168,
+          174,
+          181,
+          186,
+          191,
+          200,
+          205,
+          211,
+          217,
+          223,
+          239,
+          271,
+          280,
+          286,
+          291,
+          297,
+          319,
+          324,
+          330,
+          336,
+          350,
+          398,
+          409,
+          415,
+          423,
+          436,
+          444,
+          450,
+          459,
+          468,
+          478,
+          487,
+          498,
+          512,
+          519,
+          528,
+          536,
+          542,
+          549,
+          555,
+          563,
+          570,
+          576,
+          582,
+          591,
+          602,
+          608,
+          613,
+          631,
+          638,
+          645,
+          652,
+          660,
+          668
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_zig_ingest_route.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.constants import ZIG_INGEST_MAX_BYTES"
+      },
+      "lines": {
+        "security_canvas": [
+          14,
+          22,
+          23
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_zig_routes.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 4,
+      "first_matches": {
+        "security_canvas": "import tools.security_canvas.db.init_db as idb"
+      },
+      "lines": {
+        "security_canvas": [
+          51,
+          71,
+          97,
+          119
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_zig_scoring.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 40,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.constants import ZIG_PILLARS  # noqa: E402"
+      },
+      "lines": {
+        "security_canvas": [
+          37,
+          134,
+          135,
+          136,
+          137,
+          217,
+          243,
+          263,
+          275,
+          294,
+          305,
+          324,
+          340,
+          359,
+          375,
+          398,
+          410,
+          433,
+          455,
+          475,
+          494,
+          511,
+          534,
+          548,
+          556,
+          573,
+          588,
+          644,
+          663,
+          680,
+          698,
+          720,
+          729,
+          741,
+          760,
+          778,
+          802,
+          824,
+          825,
+          848
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_zig_sql_placeholders.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 18,
+      "first_matches": {
+        "security_canvas": "from tools.security_canvas.zig_activity_tracker import get_phase_completions"
+      },
+      "lines": {
+        "security_canvas": [
+          178,
+          180,
+          193,
+          198,
+          222,
+          224,
+          236,
+          238,
+          250,
+          252,
+          287,
+          289,
+          301,
+          303,
+          326,
+          328,
+          349,
+          351
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_zt_fail_closed_sweep.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "security_canvas": "import tools.security_canvas.device_compliance_scanner as _dcs"
+      },
+      "lines": {
+        "security_canvas": [
+          38,
+          39,
+          263
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/test_zt_stub_gate.py",
+      "top_level": true,
+      "packages": [
+        "security_canvas"
+      ],
+      "match_count": 1,
+      "first_matches": {
+        "security_canvas": "import tools.security_canvas.device_compliance_scanner as _dcs  # noqa: E402"
+      },
+      "lines": {
+        "security_canvas": [
+          118
+        ]
+      },
+      "adjacent_packages": []
+    },
+    {
+      "file": "tests/viz/test_epic_d_reuse.py",
+      "top_level": false,
+      "packages": [
+        "agentic_ai_canvas",
+        "canvas"
+      ],
+      "match_count": 3,
+      "first_matches": {
+        "agentic_ai_canvas": "from tools.agentic_ai_canvas.export_pdf import generate_pdf",
+        "canvas": "# NOTE: Excalidraw diagram export (tools.canvas.export_utils.export_excalidraw)"
+      },
+      "lines": {
+        "agentic_ai_canvas": [
+          18,
+          28
+        ],
+        "canvas": [
+          33
+        ]
+      },
+      "adjacent_packages": []
+    }
+  ]
+}
