@@ -31370,6 +31370,16 @@ ALTER SEQUENCE public.ttx_api_log_log_id_seq OWNED BY public.ttx_api_log.log_id;
 --
 -- Name: ttx_formation_plan; Type: TABLE; Schema: public; Owner: -
 --
+-- UNWIRED BY DESIGN (gdx-dead-02, 2026-08-01). No module in tools/, icdev/ or apps/
+-- reads or writes this table, and no migration creates it -- it exists only in this
+-- consolidated snapshot. It backs the designed-but-unbuilt GameDay registration /
+-- snake-draft team formation feature, together with ttx_registrations and the
+-- register.html / registrations.html templates. Retained deliberately rather than
+-- dropped: see docs/features/phase-wge-wargame-enhancements.md
+-- ("Registration & team formation: designed, not built"). Wiring is carded as gdx-reg-01.
+-- Do not treat the absence of queries as drift, and do not extend this table without
+-- also landing a migration -- fresh databases do not have it.
+--
 
 CREATE TABLE public.ttx_formation_plan (
     plan_id integer NOT NULL,
@@ -31504,6 +31514,18 @@ ALTER SEQUENCE public.ttx_leaderboard_lb_id_seq OWNED BY public.ttx_leaderboard.
 
 --
 -- Name: ttx_registrations; Type: TABLE; Schema: public; Owner: -
+--
+-- UNWIRED BY DESIGN (gdx-dead-02, 2026-08-01). No module in tools/, icdev/ or apps/
+-- reads or writes this table, and no migration creates it -- it exists only in this
+-- consolidated snapshot. It backs the designed-but-unbuilt GameDay registration /
+-- snake-draft team formation feature, together with ttx_formation_plan and the
+-- register.html / registrations.html templates. The implementation that once used it
+-- (apps/ai_gameday/registration.py) was deleted by penta-gd-03 as unreachable code.
+-- Retained deliberately rather than dropped: see
+-- docs/features/phase-wge-wargame-enhancements.md
+-- ("Registration & team formation: designed, not built"). Wiring is carded as gdx-reg-01.
+-- NOTE: this table is NOT evidence of NIST AC-2 account-management coverage -- nothing
+-- writes to it. That control gap is documented in the feature doc.
 --
 
 CREATE TABLE public.ttx_registrations (
