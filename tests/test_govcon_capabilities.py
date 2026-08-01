@@ -152,11 +152,10 @@ def _build_test_app(tmp_path: Path, seed_rows: list):
     """
     db_path = _make_db(tmp_path, seed_rows)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def _get_db():
-        conn = _sqlite3.connect(str(db_path))
-        conn.row_factory = _sqlite3.Row
+        conn = _tconnect(db_path)
         return conn
 
     flask_app = Flask(__name__, template_folder=str(
@@ -493,11 +492,10 @@ def _build_test_app_with_gaps(tmp_path: Path, pattern_rows: list):
     """Return (flask_app, db_path) for testing the gap list route."""
     db_path = _make_db_with_gaps(tmp_path, pattern_rows)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def _get_db():
-        inner_conn = _sqlite3.connect(str(db_path))
-        inner_conn.row_factory = _sqlite3.Row
+        inner_conn = _tconnect(db_path)
         return inner_conn
 
     flask_app = Flask(__name__, template_folder=str(
@@ -1421,11 +1419,10 @@ class TestAnalyzeGapsSeverityField:
         return _make_gaps_db(tmp_path)
 
     def _run_analyze(self, db_path):
-        import sqlite3 as _sqlite3
+        from _sql_compat import connect as _tconnect
 
         def _fake_get_db():
-            conn = _sqlite3.connect(str(db_path))
-            conn.row_factory = _sqlite3.Row
+            conn = _tconnect(db_path)
             conn.execute("PRAGMA journal_mode=WAL")
             return conn
 
@@ -1669,11 +1666,10 @@ class TestGenerateRecommendationsFunction:
         return _make_gaps_db(tmp_path)
 
     def _run_recommendations(self, db_path):
-        import sqlite3 as _sqlite3
+        from _sql_compat import connect as _tconnect
 
         def _fake_get_db():
-            conn = _sqlite3.connect(str(db_path))
-            conn.row_factory = _sqlite3.Row
+            conn = _tconnect(db_path)
             conn.execute("PRAGMA journal_mode=WAL")
             return conn
 
@@ -1862,11 +1858,10 @@ class TestGetHeatmapFunction:
         return _make_gaps_db(tmp_path)
 
     def _run_heatmap(self, db_path):
-        import sqlite3 as _sqlite3
+        from _sql_compat import connect as _tconnect
 
         def _fake_get_db():
-            conn = _sqlite3.connect(str(db_path))
-            conn.row_factory = _sqlite3.Row
+            conn = _tconnect(db_path)
             conn.execute("PRAGMA journal_mode=WAL")
             return conn
 
@@ -3525,11 +3520,10 @@ def _build_drafts_list_api_app(tmp_path):
     """Return (flask_app, fake_get_db) for testing GET /api/govcon/opportunities/<id>/drafts."""
     db_path = _make_drafts_db(tmp_path)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def _fake_get_db():
-        conn = _sqlite3.connect(str(db_path))
-        conn.row_factory = _sqlite3.Row
+        conn = _tconnect(db_path)
         return conn
 
     from tools.dashboard.api.govcon import govcon_api
@@ -3839,11 +3833,10 @@ def _build_quality_drafts_api_app(tmp_path):
     """Return (flask_app, fake_get_db) for quality_score endpoint tests."""
     db_path = _make_quality_drafts_db(tmp_path)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def _fake_get_db():
-        conn = _sqlite3.connect(str(db_path))
-        conn.row_factory = _sqlite3.Row
+        conn = _tconnect(db_path)
         return conn
 
     from tools.dashboard.api.govcon import govcon_api
@@ -3980,11 +3973,10 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         conn.commit()
         conn.close()
 
-        import sqlite3 as _sqlite3
+        from _sql_compat import connect as _tconnect
 
         def _fake_conn():
-            c = _sqlite3.connect(str(db_path))
-            c.row_factory = _sqlite3.Row
+            c = _tconnect(db_path)
             c.execute("PRAGMA journal_mode=WAL")
             return c
 
@@ -4214,11 +4206,10 @@ class TestDraftQualityScorePresence:
         }]
         db_path = _make_quality_drafts_db(tmp_path, draft_rows=perfect_row, shall_rows=[])
 
-        import sqlite3 as _sqlite3
+        from _sql_compat import connect as _tconnect
 
         def _fake_get_db():
-            c = _sqlite3.connect(str(db_path))
-            c.row_factory = _sqlite3.Row
+            c = _tconnect(db_path)
             return c
 
         from tools.dashboard.api.govcon import govcon_api
@@ -4428,11 +4419,10 @@ def _build_approve_api_app(tmp_path, section_status="not_started", include_secti
     """Return (flask_app, fake_get_db) for approve endpoint tests."""
     db_path = _make_approve_db(tmp_path, section_status=section_status, include_section=include_section)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def fake_get_db():
-        c = _sqlite3.connect(str(db_path))
-        c.row_factory = _sqlite3.Row
+        c = _tconnect(db_path)
         return c
 
     from tools.dashboard.api.govcon import govcon_api
@@ -4821,11 +4811,10 @@ def _build_reject_api_app(tmp_path, section_status="not_started", include_sectio
     """Return (flask_app, fake_get_db, db_path) for reject endpoint tests."""
     db_path = _make_reject_db(tmp_path, section_status=section_status, include_section=include_section)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def fake_get_db():
-        c = _sqlite3.connect(str(db_path))
-        c.row_factory = _sqlite3.Row
+        c = _tconnect(db_path)
         return c
 
     from tools.dashboard.api.govcon import govcon_api
@@ -5218,11 +5207,10 @@ def _build_questions_api_app(tmp_path, rows=None):
     """Return (flask_app, fake_get_db, db_path) for questions list endpoint tests."""
     db_path = _make_questions_db(tmp_path, rows=rows)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def fake_get_db():
-        c = _sqlite3.connect(str(db_path))
-        c.row_factory = _sqlite3.Row
+        c = _tconnect(db_path)
         return c
 
     from tools.dashboard.api.govcon import govcon_api
@@ -5655,11 +5643,10 @@ def _build_question_status_api_app(tmp_path):
     """Return (flask_app, fake_get_db, db_path) for question status transition tests."""
     db_path = _make_question_status_db(tmp_path)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def fake_get_db():
-        c = _sqlite3.connect(str(db_path))
-        c.row_factory = _sqlite3.Row
+        c = _tconnect(db_path)
         return c
 
     from tools.dashboard.api.govcon import govcon_api
@@ -6110,11 +6097,10 @@ def _build_kb_api_app(tmp_path, rows=None):
     """Return (flask_app, fake_get_db, db_path) for knowledge-base endpoint tests."""
     db_path = _make_kb_db(tmp_path, rows=rows)
 
-    import sqlite3 as _sqlite3
+    from _sql_compat import connect as _tconnect
 
     def fake_get_db():
-        c = _sqlite3.connect(str(db_path))
-        c.row_factory = _sqlite3.Row
+        c = _tconnect(db_path)
         return c
 
     from tools.dashboard.api.govcon import govcon_api

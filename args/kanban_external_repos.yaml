@@ -19,6 +19,15 @@ repos:
   idea_lab:
     base_branch: main
     root_env: ICDEV_KANBAN_REPO_IDEA_LAB
+  # CONCORD — the Evidence-to-Investment Studio. The repo does not exist yet, so
+  # ICDEV_KANBAN_REPO_CONCORD is deliberately UNSET: unconfigured external tasks
+  # are skipped by the dispatcher rather than built inside the ICDev checkout,
+  # where they would fail ICDev's tree-scoped gates and churn. Held additionally
+  # behind cncd-gate-00 until the repo is scaffolded.
+  #   $env:ICDEV_KANBAN_REPO_CONCORD = "C:/AI/standalone/concord"
+  concord:
+    base_branch: main
+    root_env: ICDEV_KANBAN_REPO_CONCORD
 
 # Longest matching prefix wins. These are the premium/external product streams
 # that must NOT run through ICDev's build+validate+merge pipeline.
@@ -49,3 +58,13 @@ prefixes:
   # the product prefixes so a probe run can never be mistaken for cpmp/msr/ricoas
   # product work — and so the seed task cannot fall through to the ICDev default.
   prem-vfy: compass
+  # CONCORD's standalone half. Registered BEFORE the repo exists on purpose: an
+  # unregistered cncd- task would resolve to the ICDev default and the dispatcher
+  # would try to build a FastAPI/React app inside the ICDev tree. Because
+  # ICDEV_KANBAN_REPO_CONCORD is unset, these are skipped instead — external and
+  # unconfigured, which is the correct and safe reading.
+  #
+  # NOTE the ICDEV-side engine uses the separate `bom-` prefix and is absent from
+  # this file by design: tools/bom/ genuinely builds in ICDev and must go through
+  # ICDev's gates.
+  cncd: concord

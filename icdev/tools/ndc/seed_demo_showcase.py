@@ -36,6 +36,9 @@ from datetime import datetime, timedelta, timezone
 # Canonical connection abstraction — RLS-safe, backend-portable
 from tools.network.db.init_db import get_connection as nc_conn
 from tools.migration_canvas.db.init_db import get_connection as mc_conn
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ndc.seed_demo_showcase")
 
 NOW = datetime.now(timezone.utc)
 NOW_ISO = NOW.isoformat()
@@ -468,8 +471,11 @@ def ensure_project_links(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_project_links: best-effort INSERT into nc_project_topologies failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(PROJECT_TOPOLOGY_LINKS) - inserted}
 
@@ -548,8 +554,8 @@ def ensure_devices(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("ensure_devices: best-effort INSERT into ni_devices failed (non-blocking): %s", exc)
     conn.commit()
     return {"inserted": inserted, "skipped": len(DEVICES) - inserted}
 
@@ -762,8 +768,11 @@ def ensure_device_configs(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_device_configs: best-effort INSERT into ni_device_configs failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(DEVICE_CONFIGS) - inserted}
 
@@ -805,8 +814,11 @@ def ensure_simulations(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_simulations: best-effort INSERT into simulation_results failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(SIMULATIONS) - inserted}
 
@@ -836,8 +848,11 @@ def ensure_board_reviews(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_board_reviews: best-effort INSERT into nc_board_reviews failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(BOARD_REVIEWS) - inserted}
 
@@ -875,8 +890,11 @@ def ensure_compliance(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_compliance: best-effort INSERT into nc_compliance_checks failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(COMPLIANCE_CHECKS) - inserted}
 
@@ -923,8 +941,11 @@ def ensure_peering(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_peering: best-effort INSERT into nc_peering_agreements failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(PEERING) - inserted}
 
@@ -962,8 +983,11 @@ def ensure_notifications(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_notifications: best-effort INSERT into nc_notifications failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(NOTIFICATIONS) - inserted}
 
@@ -1012,8 +1036,8 @@ def ensure_audit(conn) -> dict:
                 (action, etype, eid, details, user, NOW_ISO),
             )
             inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("ensure_audit: best-effort INSERT into nc_audit failed (non-blocking): %s", exc)
     conn.commit()
     return {"inserted": inserted, "skipped": 0}
 
@@ -1045,8 +1069,11 @@ def ensure_migration_sessions() -> dict:
                     )
                     if conn.execute("SELECT changes()").fetchone()[0]:
                         inserted += 1
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                    logger.warning(
+                        "ensure_migration_sessions: best-effort INSERT into mc_net_sessions failed (non-blocking): %s",
+                        exc,
+                    )
             conn.commit()
     except Exception as e:
         return {"inserted": 0, "skipped": 0, "error": str(e)}

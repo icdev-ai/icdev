@@ -106,8 +106,9 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Auth logging should never break the request
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Auth logging should never break the request
+        logger.warning("log_auth_event: best-effort INSERT into dashboard_auth_log failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

@@ -1380,8 +1380,12 @@ Planning rules:
                                      sop_row["sop_id"], sop_row["title"],
                                      "sop", "auto-linked by keyword match"),
                                 )
-                            except Exception:
-                                pass
+                            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                                logger.warning(
+                                    "nc_api_migration_plan_generate: best-effort INSERT into nc_phase_documents failed "
+                                    "(non-blocking): %s",
+                                    _exc,
+                                )
             conn.commit()
             return jsonify({"phases_created": len(phase_ids), "phase_ids": phase_ids}), 201
         except Exception as exc:

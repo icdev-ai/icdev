@@ -186,6 +186,41 @@ class CortexClient:
 
     # -- Slides (prem-msr-07; scope cortex:slides) -------------------------------
 
+    def bom(self, documents: List[dict], *,
+            timeout: Optional[int] = None) -> Optional[dict]:
+        """Reconcile a pile of documents into one defensible bill of materials.
+
+        Each document is ``{"filename", "content_base64", "role"?,
+        "credibility_tier"?}``. Send the BYTES — there is deliberately no path
+        parameter, because a remote endpoint that accepted one would be an
+        arbitrary-file-read primitive wearing a convenience's clothes.
+
+        ``role`` and ``credibility_tier`` are OPTIONAL and are the human's
+        designation. Omit them and the engine proposes both, with a written
+        rationale, and tells you it is proposing. Only what you pass is treated as
+        binding — silence is never taken for confirmation.
+
+        Runs with NO adjudicating model: the deterministic engine finds the
+        double-counted licence, the subtotal that stopped tracking its own inputs,
+        the line that looks costed and costs nothing, and the copy of a workbook
+        that would otherwise have doubled every figure in it. It cannot
+        hallucinate, because there is nothing in it that could.
+
+        Success shape: ``{"is_a_total", "committed_total", "open_total", "lines",
+        "findings", "sources", "pivots", "llm_calls"}``.
+
+        Read ``is_a_total`` FIRST. When several of the documents each claim to
+        price the same project, it is False and ``committed_total`` is a sum rather
+        than a total — adding competing estimates of one project together is the
+        arithmetic that produced the customer's problem in the first place, and the
+        engine will not quietly do it on their behalf.
+
+        Requires the ``cortex:bom`` scope, which is never in the default grant: the
+        payload is the contents of somebody's bills of materials and quotes, which
+        is the most commercially sensitive material they have.
+        """
+        return self._post("bom", {"documents": documents}, timeout=timeout)
+
     def slides_build(self, slides: List[dict], *, theme: str = "",
                      title: str = "", timeout: Optional[int] = None
                      ) -> Optional[dict]:

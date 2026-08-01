@@ -32,6 +32,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.knowledge.deviation_rules")
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "deviation_rules_config.yaml"
@@ -353,8 +356,12 @@ def _log_deviation_event(result: dict, db_path: Path = None):
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Best effort — never block healing on DB issues
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best effort — never block healing on DB issues
+        logger.warning(
+            "_log_deviation_event: best-effort INSERT into deviation_rule_events failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

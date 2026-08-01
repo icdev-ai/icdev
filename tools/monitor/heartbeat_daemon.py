@@ -628,14 +628,20 @@ def _trigger_kanban_wakeup(db_path: Optional[Path] = None) -> str:  # noqa: ARG0
     except (urllib.error.URLError, OSError, ValueError):
         pass
 
-    # Fallback: call run() directly in-process
-    try:
-        from tools.genesis.reflexes.kanban import run as _kanban_run  # type: ignore[import-untyped]
-
-        _kanban_run({}, None)
-        return "triggered_direct"
-    except Exception as exc:
-        return f"wakeup_failed: {exc}"
+    # NO in-process fallback.
+    #
+    # This used to call the kanban reflex's run() directly, here, in the
+    # heartbeat daemon's own process. The reflex tracks live subprocesses in a
+    # MODULE-GLOBAL dict (_running), so a second process sees {} — and its
+    # _reap_stale_in_progress then looks at the real scheduler's genuinely-live
+    # in_progress rows, finds them "not running", and reaps them to backlog with
+    # failure_count++. The real scheduler's next poll finds the DB status
+    # changed underneath it and kills the subprocess as "stale-cleanup". Those
+    # two reasons together are 51 of 182 recorded task failures on this board.
+    #
+    # A health check must not become an executor. Report the failure and let
+    # check_kanban_genesis_health surface it as a warning instead.
+    return "wakeup_unavailable: dashboard unreachable"
 
 
 def check_kanban_genesis_health(

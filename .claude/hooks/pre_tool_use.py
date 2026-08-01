@@ -90,6 +90,20 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cortex_audit",
         # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)
         "constitutional_audit_log",
+        # Reproduce-or-drop replay evidence (oss-poc-01, migration 295, NIST AU).
+        # Every replay of a dynamic finding, ever — this is what makes a
+        # "confirmed" finding auditable and what proves a reproduction
+        # discriminates. dynamic_findings itself is mutable (status transitions)
+        # and is deliberately NOT listed here.
+        "finding_replay_attempts",
+        # BOM Evidence Engine (migration 322).
+        # bom_match_decisions holds a human's reconciliation verdicts, keyed on a
+        # pair of line hashes. Clusters are a projection recomputed OVER these on
+        # every run — the decisions are the ONLY durable record of what a person
+        # actually approved. Edit one and you have silently rewritten a judgement
+        # the customer's budget was signed off against.
+        "bom_match_decisions",
+        "bom_audit",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
         # FORGE Academy XP provenance (aca-int-07, migration 315). An award is an
@@ -100,6 +114,21 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Revoking a certificate means recording a revocation, not deleting
         # the evidence that it was once issued.
         "fa_certificate_evidence",
+        # Who assigned what, and who overrode which grade (aca-trn-04,
+        # migration 323). An override that can be edited afterwards is not an
+        # audit trail — correcting one means recording the correction.
+        "fa_instructor_audit",
+        # Assessment attempt ledger (aca-trn-01, migration 324). An attempt limit
+        # whose ledger can be UPDATEd away is not a limit, and fa_xp_ledger cites
+        # these rows as the provenance of an award. An instructor forgiving a
+        # learner's attempts appends a kind='reset' row; it never DELETEs the
+        # attempts it forgives, and attempts_used() counts forward from that marker.
+        # The one in-place write is closed_at/score flipping NULL -> set exactly
+        # once when a served attempt is graded (assessment._close_attempt, guarded
+        # by "WHERE closed_at IS NULL") — the intended lifecycle of a row rather
+        # than a rewrite of history, the same exception ad_password_reset_tokens
+        # carries below.
+        "fa_step_attempts",
         # FathomDesk auto-trading (append-only NIST AU)
         "ad_trade_audit",
         "ad_kill_switch",

@@ -239,10 +239,13 @@ def test_foresight_engine_run_persists_signal(tmp_path):
     setup_conn.executescript(_DDL)
     setup_conn.close()
 
+    # foresight_engine authors %s placeholders for PostgreSQL and relies on
+    # StorageConnection to rewrite them; a bare sqlite3 connection drops that
+    # layer and every statement raises `near "%": syntax error`.
+    from _sql_compat import connect as _tconnect
+
     def _open_conn():
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        return _tconnect(db_path)
 
     def _fake_scanner():
         return [sig]

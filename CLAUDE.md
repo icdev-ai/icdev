@@ -62,8 +62,11 @@ python tools/db/storage.py --health --json
 # Companion sync (ALWAYS after code changes)
 python tools/dx/companion.py --sync --write --json
 
-# Coherence check
-python tools/workflow/coherence_checker.py --all --fix --gate
+# Coherence check — tiered (fast = per-task gate, full = nightly sweep)
+python tools/workflow/coherence_checker.py --all --fix --gate                       # full tier + autofix
+python tools/workflow/coherence_checker.py --tier fast --gate --changed-files "tools/foo.py"
+python tools/workflow/coherence_checker.py --tier fast --list-tier                  # which checks the tier runs
+python tools/genesis/reflexes/coherence_sweep.py                                    # full-tier sweep + baseline refresh
 
 # Showcase / Demo Runner
 python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json
@@ -302,6 +305,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 ### Development Rules
 - **Runtime SQL is authored for PostgreSQL; `translate_sql` is a thin SQLite init-fallback ONLY, never load-bearing.** PostgreSQL is the primary backend. Do NOT write SQLite-dialect JSON SQL (`json_extract`, `json_array_length`, `json_each`) in runtime call sites and rely on `tools/db/storage.py::translate_sql` to rewrite it for PG. Instead either (a) **compute in Python** — read the raw JSON column and parse with `json.loads()` (preferred for filters, grouping, existence checks, NOT-IN subqueries; see `tools/cloud/csp_monitor.py::get_status`, `tools/creative/creative_engine.py`, `tools/research/trend_detector.py`, `tools/dashboard/app.py::api_chat_sources`), or (b) **author PG-native `jsonb`** behind an explicit `is_pg` branch with a SQLite fallback alongside (see `tools/network/network_ingester.py` node-id lookup and `tools/dashboard/app.py::components_map_page`). `translate_sql` JSON rules exist solely so init/seed/migrate paths still work when PG is unreachable at startup. The `pg_portability_linter` (pgp-tx-03) gates this — runtime modules (excluding init/seed/migrate/tests) must report zero high-severity JSON findings.
 - **Canvas DB connections MUST use `get_canvas_connection()`** — Canvas-specific tables (e.g. `aac_*`, `dsoc_*`, `ccc_*`) have no `classification`/`tenant_id` columns. Using `get_connection()` directly in a canvas `db/init_db.py` attaches the global RLS predicate and raises `UndefinedColumn` on every query. Always use `from tools.db.storage import get_canvas_connection` in canvas init files. See `tools/ai_augmentation/db/init_db.py` for the canonical pattern.
+- **Every column in an INSERT must exist in the LIVE schema, not just in the source DDL.** `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a table created by an older migration keeps its old columns while the DDL in `init_icdev_db.py` moves on. The INSERT then raises at runtime, is swallowed by the surrounding `except Exception: pass`, and the feature reports success while persisting nothing — that is how `module_budget_usage` held 0 rows and `tools/govcon` never wrote an audit row. Adding a column means writing a migration, not editing the `CREATE TABLE`. Enforced by `coherence_checker.py:check_insert_schema_parity`, which reads `information_schema.columns` (PG) / `PRAGMA table_info` (SQLite); the pre-existing backlog is grandfathered in `args/insert_schema_gate.yaml` — do not add new entries to get a commit through.
 - Always grep `tools/manifest/` shards before writing a new script
 - **Never document a command whose file does not exist.** A documented command that does not exist is worse than an undocumented one: an agent reading CLAUDE.md will confidently run it and burn a cycle deciding whether the tree is broken or the doc is. Before adding a `python tools/...` line to CLAUDE.md or `docs/reference/commands.md`, verify the file is committed. If a tool is a library with no `argparse`/`__main__`, document the import, not a CLI. Enforced by `coherence_checker.py:check_doc_command_paths` (grandfather list: `args/doc_command_gate.yaml`).
 - Verify tool output format before chaining into another tool

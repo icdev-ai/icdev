@@ -185,8 +185,9 @@ def compress(request: Any, config: CompressorConfig) -> Any:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass  # Logging is best-effort; never block the LLM call
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # Logging is best-effort; never block the LLM call
+            logger.warning("compress: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
     logger.info(
         "context_compressor: strategy=%s original=%d saved=%d (%.0f%%)",

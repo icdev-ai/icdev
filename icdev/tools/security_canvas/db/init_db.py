@@ -12,6 +12,7 @@ PostgreSQL is recommended for production multi-user/global deployments.
 import json
 import os
 import sqlite3
+import sys
 import uuid
 from pathlib import Path
 
@@ -1573,7 +1574,7 @@ def _seed_zig(conn):
                 ZIG_PILLARS, ZIG_CAPABILITIES, ZIG_ACTIVITIES,
             )
         except ImportError:
-            print("[init_db] WARNING: Could not import ZIG constants — skipping ZIG seed.")
+            print("[init_db] WARNING: Could not import ZIG constants — skipping ZIG seed.", file=sys.stderr)
             return
 
     ph = "%s" if _SC_BACKEND == "postgresql" else "?"
@@ -1626,7 +1627,7 @@ def _seed_zig(conn):
     if a_added:
         conn.commit()
 
-    print(f"[init_db] ZIG seed: {p_added} pillars, {c_added} capabilities, {a_added} activities added.")
+    print(f"[init_db] ZIG seed: {p_added} pillars, {c_added} capabilities, {a_added} activities added.", file=sys.stderr)
 
 
 def init_db():
@@ -1675,7 +1676,7 @@ def init_db():
                 conn.commit()
             except Exception:
                 pass  # triggers may already exist
-            print("[init_db] Schema created (PostgreSQL)")
+            print("[init_db] Schema created (PostgreSQL)", file=sys.stderr)
         else:
             # SQLite: executescript for all-at-once
             conn.executescript(SCHEMA)
@@ -1696,7 +1697,7 @@ def init_db():
             except Exception:
                 pass
             conn.commit()
-            print(f"[init_db] Schema created at {DB_PATH}")
+            print(f"[init_db] Schema created at {DB_PATH}", file=sys.stderr)
 
         # Runtime migration: add is_stale to sc_threats for existing installs
         try:
@@ -1729,9 +1730,9 @@ def init_db():
                 added += 1
         if added:
             conn.commit()
-            print(f"[init_db] Seeded {added} new templates (total: {count + added}).")
+            print(f"[init_db] Seeded {added} new templates (total: {count + added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {count} templates up to date.")
+            print(f"[init_db] All {count} templates up to date.", file=sys.stderr)
 
         # Seed snippets — batch existence check in Python
         snip_count = conn.execute("SELECT COUNT(*) FROM sc_snippets").fetchone()[0]
@@ -1746,9 +1747,9 @@ def init_db():
                 snip_added += 1
         if snip_added:
             conn.commit()
-            print(f"[init_db] Seeded {snip_added} new snippets (total: {snip_count + snip_added}).")
+            print(f"[init_db] Seeded {snip_added} new snippets (total: {snip_count + snip_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {snip_count} snippets up to date.")
+            print(f"[init_db] All {snip_count} snippets up to date.", file=sys.stderr)
 
         # Seed ZIG framework data
         _seed_zig(conn)

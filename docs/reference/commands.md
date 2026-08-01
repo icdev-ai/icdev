@@ -326,6 +326,33 @@ python tools/security/aggregation_guard.py --health --json
 
 ---
 
+## Reproduce-or-Drop for Dynamic Findings (oss-poc-01)
+```bash
+# Is this reproduction replayable at all? (predicate hygiene + step/kind checks)
+python tools/security/reproduction_validator.py --validate repro.json --json
+
+# Replay one reproduction; exits 2 when the replay was not decisive
+python tools/security/reproduction_validator.py --replay repro.json --json
+
+# Replay against a different build (proves a fix landed)
+python tools/security/reproduction_validator.py --replay repro.json --target http://127.0.0.1:5051 --json
+
+# Apply the rule to a batch — unconfirmed findings are reported but never block
+python tools/security/reproduction_validator.py --enforce findings.json --json
+
+# Gate mode — exits non-zero only for CONFIRMED findings at a blocking severity
+python tools/security/reproduction_validator.py --enforce findings.json --gate
+
+# Classify without writing to dynamic_findings / finding_replay_attempts
+python tools/security/reproduction_validator.py --enforce findings.json --no-persist --json
+```
+
+Replay targets are default-deny allowlisted in `args/reproduction_policy.yaml`
+(loopback only out of the box); widen with `ICDEV_REPRO_TARGET_ALLOWLIST` for a
+self-hosted staging box — own targets only.
+
+---
+
 ## Requirements Intake (RICOAS) Commands
 ```bash
 python tools/requirements/intake_engine.py --project-id "sparkpilot" --customer-name "Name" --customer-org "Org" --impact-level IL4 --json
@@ -372,6 +399,17 @@ python tools/logging/log_query.py --component genesis --level ERROR --json
 python tools/logging/log_query.py --contains timeout --since 2026-06-06 --limit 50
 # Dashboard: /logs  |  JSON API: GET /api/logs?component=&level=&since=&contains=&limit=
 # IQE: POST /logs/api/iqe-query {question}  (collection logs.entries)
+```
+
+## Swallowed-Persistence Gate (swp-swallow-01)
+```bash
+# Report `except Exception: pass` blocks guarding an INSERT (nothing is written)
+python tools/refactor/fix_swallowed_persistence.py --dry-run --json
+# Rewrite them into logged best-effort handlers (behaviour kept, silence removed)
+python tools/refactor/fix_swallowed_persistence.py --write --json
+python tools/refactor/fix_swallowed_persistence.py --write --path tools/govcon --path icdev/tools/govcon
+# The gate that fails the build if the pattern is reintroduced (fast + full tier)
+python tools/workflow/coherence_checker.py --check swallowed_persistence --json
 ```
 
 ---
@@ -920,12 +958,27 @@ python tools/workflow/coherence_checker.py --all --fix --json                   
 python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+python tools/workflow/coherence_checker.py --changed-files-from diff.txt --tier fast --gate         # Read the diff from a file (avoids argv limits)
+python tools/workflow/coherence_checker.py --tier fast --gate                                       # Per-task gate tier (defers whole-app heavies)
+python tools/workflow/coherence_checker.py --tier full --gate                                       # Every check (nightly sweep / post-merge)
+python tools/workflow/coherence_checker.py --tier fast --list-tier                                  # Print the check ids a tier would run
+python tools/genesis/reflexes/coherence_sweep.py                                                    # Full-tier sweep on main + refresh the gate's baseline
 
 # Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
 # CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
 # grandfathered in args/doc_command_gate.yaml; NEW broken references fail the gate.
 python tools/workflow/coherence_checker.py --check doc_command_paths --json                         # List unresolved documented commands
 python tools/workflow/coherence_checker.py --check doc_command_paths --gate                         # Fail on any NEW broken reference
+
+# INSERT / Live Schema Parity gate (swp-gate-01) — every column named in a static
+# INSERT under tools/ must exist in the LIVE schema (information_schema on PostgreSQL,
+# PRAGMA table_info on SQLite). `CREATE TABLE IF NOT EXISTS` never alters an existing
+# table, so source DDL and database drift apart silently; the resulting INSERT raises
+# inside `except Exception: pass` and the feature reports success while persisting
+# nothing. The 146-entry pre-existing backlog is grandfathered (WARN) in
+# args/insert_schema_gate.yaml; NEW mismatches FAIL. No live database = WARN, not fail.
+python tools/workflow/coherence_checker.py --check insert_schema_parity --json                      # List INSERT columns absent from the live schema
+python tools/workflow/coherence_checker.py --check insert_schema_parity --gate                      # Fail on any NEW mismatch
 
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout

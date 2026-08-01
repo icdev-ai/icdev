@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.data_canvas.db.init_db import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.data_canvas.data_mesh.contract_engine")
 
 _ODCS_REQUIRED_FIELDS = ("dataContractSpecification", "id", "info", "models")
 _ODCS_INFO_REQUIRED = ("title", "owner")
@@ -234,8 +237,8 @@ def test_contract(contract_id: str, conn_params: dict | None = None) -> dict:
                  result["result_json"][:4000], result["method"], _now()),
             )
             conn.commit()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("test_contract: best-effort INSERT into dm_contract_test_runs failed (non-blocking): %s", _exc)
 
     result["run_id"] = run_id
     return result

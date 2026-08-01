@@ -5500,6 +5500,49 @@ projects:
   default_open: true
   briefs:
   - 'gate: manual gate held in_progress — PG migrations are false-positive heavy and need per-file verification (pgrt-gate-00)'
+- key: bom_engine
+  name: BOM Evidence Engine (ICDEV core)
+  description: "Open-source engine under tools/bom/ — cell-grid extraction (formulas + coordinates preserved), hidden-data forensics, source credibility, derivative detection, declared-scope coverage, baseline-architecture conformance, reconciliation, cross-tab pivot, themed exports. Exposed via the /bom canvas, Cortex REST and MCP. Nothing in it is IRAD-specific."
+  task_prefix: bom-
+  default_open: true
+  briefs: []
+  epics:
+  - key: schema
+    title: Schema + migration
+    priority: high
+  - key: extract
+    title: Cell-grid extraction
+    priority: high
+  - key: forensic
+    title: Hidden-data forensics
+    priority: high
+  - key: cred
+    title: Credibility + derivative detection
+    priority: high
+  - key: find
+    title: Deterministic findings engine
+    priority: high
+  - key: conform
+    title: Baseline + scope conformance
+    priority: high
+  - key: recon
+    title: Reconciliation (LLM adjudication)
+    priority: medium
+  - key: pivot
+    title: Cross-tab pivot
+    priority: medium
+  - key: export
+    title: XLSX + themed deck export
+    priority: medium
+  - key: cortex
+    title: Cortex REST + MCP surface
+    priority: medium
+- key: concord
+  name: CONCORD — Evidence-to-Investment Studio
+  description: "Standalone premium app at C:/AI/standalone/concord (FastAPI 8020 / React 5175). Owns intent capture, upload, review + approval queues, taxonomy editor, findings register, pivot UI, deck theming and the compass/idea_lab integrations. Calls the ICDEV BOM engine over Cortex REST — no ICDEV imports."
+  task_prefix: cncd-
+  default_open: true
+  briefs: []
   epics:
   - key: gate
     title: Manual gate
@@ -6687,6 +6730,15 @@ projects:
   - 'Verify before fixing, as fga-gd-03 did. Two of the five external-audit GameDay findings
     were already fixed eight days before that audit ran. Reproduce each claim against the
     live app first.'
+  - 'gdx-mir-02 DISPOSITIONED the pre-session registration / snake-draft feature as PROMOTE,
+    not delete. register.html, registrations.html and simulator.html now exist in BOTH trees;
+    ttx_registrations and ttx_formation_plan STAY in the schema. gdx-dead-02 must match that
+    — dropping the tables now contradicts a landed decision. Grounds: the feature is
+    specified end-to-end in docs/features/phase-wge-wargame-enhancements.md (4 routes, 2
+    tables, skill-to-role matching, snake draft), the 116KB of UI is written, and the routes
+    were never in apps/ai_gameday/blueprint.py in ANY commit — so this is unfinished work,
+    not a deliberate revert. Deleting would also force a destructive DROP migration. Wiring
+    is carded as gdx-reg-01, parked in suggested pending a product decision.'
   epics:
   - key: gate
     title: Manual Gate (held)
@@ -6702,6 +6754,9 @@ projects:
     priority: medium
   - key: doc
     title: "DOC — Docs, registry drift & verification"
+    priority: low
+  - key: reg
+    title: "REG — Pre-session registration & snake draft (promoted, unwired)"
     priority: low
 
 - key: sme
@@ -6971,4 +7026,78 @@ projects:
     priority: medium
   - key: xref
     title: Inter-Document Cross-References
+    priority: medium
+- key: gpx
+  name: GPX - Kanban Gate Performance Split (CodeLens / Coherence)
+  description: 'Autonomous kanban builds were timing out at the CodeLens and Coherence
+    gates. Measured root cause: coherence_checker.py --all took 151s warm and 328s
+    on a cold kanban worktree, against a 120s subprocess timeout in
+    validated_commit._run_coherence - so the gate timed out on every task. The
+    TimeoutExpired was caught and returned as True (''coherence skipped''), which
+    recorded coherence_passed=1 for tasks whose coherence had never run: 24 of the
+    last 25 kanban_verifications rows showed a pass, including rows where CodeLens
+    failed. Three further defects compounded it: validate_working_tree joined the
+    coherence future before testing the CodeLens result, so a 4s lint failure still
+    waited out the full timeout; the main baseline was recomputed per task rather
+    than cached; and the baseline comparison was binary (does main also fail), so
+    any single pre-existing failure turned the whole gate into an unconditional
+    pass. Cost was concentrated - 3 of 49 checks (blueprint_imports, openapi_parity,
+    llm_router_api) accounted for ~100s of a ~170s warm run, all of them whole-app
+    checks blind to the diff. SHIPPED in PR feat/gate-perf-split: tiered checks
+    (--tier fast|full) with trigger-surface promotion, diff-scoped file scanners, a
+    4-way parallel run_checks, a tri-state coherence result where a timeout records
+    not_run instead of pass, a per-check-id baseline delta cached by main HEAD sha,
+    stdout protection so the JSON report is parseable, a tool_runner executor so
+    deterministic gate sub-tasks stop paying for an LLM dispatch, and a 6-hourly
+    coherence_sweep reflex carrying the deferred heavy checks. Result: per-task gate
+    328s -> 15.5s; full sweep 328s -> 132.5s. The tasks below are follow-ups, not
+    the shipped work.'
+  task_prefix: gpx-
+  default_open: false
+  briefs:
+  - 'SHIPPED (feat/gate-perf-split): Tier 1 - tri-state coherence result
+    (timeout/cancel/unparseable = not_run, never pass), CodeLens failure cancels the
+    coherence subprocess instead of blocking on it, main baseline cached on disk by
+    HEAD sha, per-check-id delta replaces the binary compare, robust JSON extraction
+    plus stdout protection in the checker CLI. Tier 2 - --tier fast|full,
+    HEAVY_CHECKS with trigger-surface promotion, _scan_targets() diff-scoping for
+    direct_anthropic_import and provider_bypass, ThreadPoolExecutor run_checks
+    (serial under --fix), per-check duration_sec in the report, --changed-files-from
+    for diffs past the argv limit. Tier 3 - conformance review only once the
+    mechanical gates are green, gate budget derived from the task dispatch budget,
+    _dispatch_via_tool_runner for auto-decomposed phase-gate steps, coherence_sweep
+    reflex on a 6h cadence.'
+  - 'FOLLOW-UPS (the tasks on this card): the ~120 [init_db] print() calls across 11
+    canvas modules still write to stdout at import time - the checker CLI now
+    shields its own stdout and the parser tolerates the noise, but the prints
+    themselves belong on stderr. run_checks has no hard per-check kill; a
+    pathological check can still run past the sweep budget without being cancelled,
+    and doing that safely needs process isolation rather than threads. The
+    tool_runner executor currently only handles auto-decomposed phase-gate sub-tasks
+    and could cover other deterministic task shapes. Thread vs process pool for the
+    full tier has not been measured. And
+    tests/test_coherence_checker.py::test_autofix_mode mutates tracked files (it
+    appended 14 unrelated tools to tools/manifest.md during this build) - a test
+    that writes to the repo it is testing.'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: hyg
+    title: Gate Hygiene Follow-ups
+    priority: medium
+  - key: perf
+    title: Further Gate Performance
+    priority: low
+  - key: app
+    title: App scaffold + Cortex client
+    priority: high
+  - key: ui
+    title: Review, findings + pivot UI
+    priority: high
+  - key: deck
+    title: Narrative + deck builder
+    priority: medium
+  - key: integ
+    title: Compass + idea_lab integrations
     priority: medium

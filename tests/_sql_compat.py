@@ -63,7 +63,17 @@ class TranslatingConnection:
     def __enter__(self):
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Mirror StorageConnection.__exit__ exactly. Production code writes
+        # through ``with get_connection() as conn:`` and never calls commit()
+        # itself, so a no-op __exit__ leaves every INSERT in an uncommitted
+        # transaction that the next connection cannot see. The test then reads
+        # None back and looks like a missing feature.
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+        self.close()
         return False
 
     def __getattr__(self, name: str):

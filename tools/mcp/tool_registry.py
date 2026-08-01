@@ -4192,6 +4192,104 @@ TOOL_REGISTRY = {
             "required": ["result_set"],
         },
     },
+    # Reproduce-or-drop for dynamic findings (oss-poc-01)
+    "finding_replay": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_finding_replay",
+        "description": (
+            "Replay one stored reproduction for a DYNAMIC security finding and report whether the "
+            "vulnerability predicate fired. Outcomes: reproduced | not_reproduced | unavailable | "
+            "error | refused. Targets are default-deny allowlisted in args/reproduction_policy.yaml "
+            "(loopback only out of the box) — a non-allowlisted host is refused without a request. "
+            "Response bodies are never returned; observations carry status, length and sha256."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reproduction": {
+                    "type": "object",
+                    "description": (
+                        "Reproduction object: {kind: 'http'|'agent_trace', target, steps[], "
+                        "predicate, description}. The predicate asserts the VULNERABLE behaviour — "
+                        "it must be false once the defect is fixed."
+                    ),
+                },
+                "target": {
+                    "type": "string",
+                    "description": "Optional base-URL override for the reproduction's target",
+                },
+            },
+            "required": ["reproduction"],
+        },
+    },
+    "finding_enforce_reproduction": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_finding_enforce_reproduction",
+        "description": (
+            "Apply the reproduce-or-drop rule across a batch of findings (oss-poc-01). A DYNAMIC "
+            "finding is 'confirmed' and may block a gate only when its stored reproduction replays "
+            "and the vulnerability predicate fires; otherwise it is 'unconfirmed' and is "
+            "structurally incapable of blocking. STATIC findings (bandit/CVSS/STIG) pass through "
+            "untouched. Evidence lands in dynamic_findings + append-only finding_replay_attempts."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "findings": {
+                    "type": "array",
+                    "description": (
+                        "Findings to classify, each {finding_key, severity, analysis_kind, "
+                        "reproduction?, status?}"
+                    ),
+                    "items": {"type": "object"},
+                },
+                "persist": {
+                    "type": "boolean",
+                    "description": "Write verdicts and replay attempts to the database",
+                    "default": True,
+                },
+                "gate": {
+                    "type": "boolean",
+                    "description": "Return an error when any CONFIRMED finding blocks",
+                    "default": False,
+                },
+            },
+            "required": ["findings"],
+        },
+    },
+    "finding_verify_discrimination": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_finding_verify_discrimination",
+        "description": (
+            "Prove a reproduction DISCRIMINATES rather than merely runs (oss-poc-01): replay the "
+            "same reproduction against a target that still has the defect and one where the fix is "
+            "applied. It discriminates only if it fires on the first and stops firing on the "
+            "second. Fires on both = tautology; fires on neither = the finding was never "
+            "established. Both targets must be allowlisted."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reproduction": {"type": "object", "description": "The reproduction to prove"},
+                "vulnerable_target": {
+                    "type": "string",
+                    "description": "Base URL of the build that still has the defect",
+                },
+                "fixed_target": {
+                    "type": "string",
+                    "description": "Base URL of the build with the fix applied",
+                },
+                "finding_key": {
+                    "type": "string",
+                    "description": "When supplied and the proof holds, sets discriminating=1 on the finding",
+                },
+            },
+            "required": ["reproduction", "vulnerable_target", "fixed_target"],
+        },
+    },
     # ============================================================
     # TESTING (6 tools)
     # ============================================================

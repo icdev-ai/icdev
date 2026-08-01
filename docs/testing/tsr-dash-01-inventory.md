@@ -89,6 +89,12 @@ not a DASH one. The tiers separate them.
 **The DASH slice is tier A + tier NAV = 189 files**, written to
 [`tsr-dash-01-slice.txt`](tsr-dash-01-slice.txt), one path per line, repo-relative POSIX.
 
+The file is `text` in `.gitattributes`, so the blob is LF but a Windows checkout renders it CRLF.
+Strip the `\r` before consuming it — `while read -r f; do f="${f%$'\r'}"; ...` or
+`tr -d '\r' < slice.txt | xargs pytest`. Without that, `[ -f "$f" ]` reports all 189 paths missing
+and neither the read nor the test errors, so it reads as "the inventory is wrong" when the inventory
+is fine.
+
 Full per-file record — tier, which DASH packages it imports, which it only references, and which
 non-DASH subsystems it pulls in — is in [`tsr-dash-01-inventory.json`](tsr-dash-01-inventory.json).
 

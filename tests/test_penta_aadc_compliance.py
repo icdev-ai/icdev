@@ -87,6 +87,28 @@ SAFE_GRAPH = {
 }
 
 
+# --- Connection hygiene (aca-hyg-06-d4-d2 finding) -------------------------
+# Investigated whether the ``conn.close()`` calls below (lines ~98 and ~108)
+# close a pooled/shared connection and thereby leak state into
+# test_penta_aadc_p2.py. They do not — closing here is correct on both backends:
+#
+#   * SQLite (what this fixture pins): ``init_db.get_connection`` calls
+#     ``storage._get_sqlite_connection``, which does a fresh ``sqlite3.connect``
+#     per call — no cache, no pool. The returned StorageConnection is owned by
+#     the caller, so not closing it would be the leak (an open handle on a
+#     tmp_path file), not closing it.
+#   * PostgreSQL: ``get_canvas_connection`` hands back a ``_PooledPgConnection``
+#     whose ``close()`` *returns* the connection to the shared pool via
+#     ``putconn`` and is idempotent (``storage.py:1446``) — it never destroys a
+#     pool member. Pool state is therefore not carried between test classes.
+#
+# The leak that actually broke test_penta_aadc_p2.py::TestIlMapping was not a
+# closure at all: this file's old fixture *replaced*
+# ``init_db.get_connection`` with a tmp_path closure, and ``canvas_bridge``
+# (imported lazily by ``assess_design``) captured that closure at module scope,
+# outliving monkeypatch teardown. Fixed in b5ae433cc by pinning ``_BACKEND``/
+# ``DB_PATH`` instead; see tests/_aadc_canvas.py and the regression guard in
+# TestFixtureDoesNotLeakAcrossFiles below. No further closure defect remains.
 def _insert_design(design_id, graph, *, domain="", safety=0, rights=0):
     conn = canvas_init_db.get_connection()
     conn.execute(

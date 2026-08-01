@@ -31,6 +31,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.promoter")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -98,8 +101,9 @@ def _log_audit(event_type: str, gkp_id: str = None, details: Dict = None) -> Non
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Best-effort audit
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best-effort audit
+        logger.warning("_log_audit: best-effort INSERT into genesis_audit failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

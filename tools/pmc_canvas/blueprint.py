@@ -10,6 +10,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify, render_template, request
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.pmc_canvas.blueprint")
 
 
 def create_pmc_blueprint() -> Blueprint:
@@ -79,8 +82,8 @@ def create_pmc_blueprint() -> Blueprint:
                 "INSERT INTO pmc_audit(action,entity_type,entity_id,user_id,ts) VALUES(?,?,?,?,?)",
                 (action, entity_type, entity_id, user_id, _now()),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into pmc_audit failed (non-blocking): %s", exc)
 
     # ── Page routes ────────────────────────────────────────────────────────────
 

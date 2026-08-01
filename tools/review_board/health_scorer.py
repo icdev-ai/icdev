@@ -27,6 +27,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection as _raw_get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.review_board.health_scorer")
 
 
 def _get_connection():
@@ -195,8 +198,11 @@ def compute_health_score() -> Dict[str, Any]:
                 (_gen_id(), score, grade, trend, json.dumps(breakdown), _now()),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "compute_health_score: best-effort INSERT into review_board_health_history failed (non-blocking): %s",
+                exc,
+            )
 
         return result
 

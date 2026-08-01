@@ -34,6 +34,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.bayesian_bid_scorer")
 
 # 6 scoring dimensions (matches existing Proposal Genesis R9)
 DIMENSIONS = [
@@ -119,8 +122,8 @@ def _audit(conn, event_type, action, details, opportunity_id=None):
             conn.execute("RELEASE SAVEPOINT bbs_audit")
         except Exception:
             conn.execute("ROLLBACK TO SAVEPOINT bbs_audit")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _ensure_tables(conn):

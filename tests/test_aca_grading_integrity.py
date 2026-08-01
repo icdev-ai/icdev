@@ -92,7 +92,14 @@ def fa_conn(monkeypatch):
         """
     )
     monkeypatch.setattr(fadb, "get_connection", lambda: conn)
-    return conn
+    # Closed rather than returned — the grader under test leaves the commit to
+    # its caller, so each test ends holding an open write transaction and the
+    # guard in conftest.py fails it (tsh-leak-01). The transaction ends with the
+    # connection.
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 @pytest.fixture

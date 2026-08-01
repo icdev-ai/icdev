@@ -89,8 +89,11 @@ def create_simulation_blueprint() -> Blueprint:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "api_simulate_session: best-effort INSERT into nc_simulation_sessions failed (non-blocking): %s",
+                exc,
+            )
         return jsonify({"session_id": session_id, "canvas_type": canvas_type, "status": "active"})
 
     @bp.route("/api/simulate/message", methods=["POST"])

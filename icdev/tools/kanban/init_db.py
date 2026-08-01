@@ -170,6 +170,12 @@ _KANBAN_TASKS_EXTRA_COLUMNS = [
     ("last_run_metadata",   "ALTER TABLE kanban_tasks ADD COLUMN last_run_metadata    TEXT"),
     # Phase 250b8557 — per-task runtime limit, acceptance criteria, triage prompt
     ("max_runtime_seconds", "ALTER TABLE kanban_tasks ADD COLUMN max_runtime_seconds  INTEGER"),
+    # Observed wall-clock runtime, written by _record_execution_seconds on
+    # completion. _detect_execution_anomalies reads it to derive an adaptive
+    # timeout ceiling; the column was missing on BOTH backends, so that whole
+    # feature silently returned {} and fell back to static constants.
+    # PostgreSQL gets it via migration 319.
+    ("execution_seconds",   "ALTER TABLE kanban_tasks ADD COLUMN execution_seconds    REAL"),
     ("acceptance_criteria", "ALTER TABLE kanban_tasks ADD COLUMN acceptance_criteria  TEXT"),
     ("triage_prompt",       "ALTER TABLE kanban_tasks ADD COLUMN triage_prompt        TEXT"),
     # Trace linkage. PostgreSQL got these via migration; the init fallback never

@@ -27,6 +27,7 @@ Checks:
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
  18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
  19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
+ 20. swallowed_persistence — no `except Exception: pass` guarding an INSERT in tools/; best-effort must log (swp-swallow-01)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -47,10 +48,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import concurrent.futures
 import dataclasses
 import json
+import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -82,6 +86,9 @@ class CoherenceCheck:
     extra: List[str]
     message: str
     fixes_applied: List[str] = dataclasses.field(default_factory=list)
+    # Wall-clock cost of this check, filled in by run_checks. Surfaced in the
+    # JSON report so tier assignment stays evidence-based instead of guessed.
+    duration_sec: float = 0.0
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -157,6 +164,36 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def _scan_targets(
+    changed_files: Optional[List[Path]] = None, subdir: str = "tools"
+) -> List[Path]:
+    """Python files a file-scanning check should read.
+
+    Returns the changed subset under *subdir* when the caller supplied one,
+    otherwise the whole tree.  Diff-scoping is what lets a whole-tree scanner
+    run inside the per-task gate instead of only in the nightly full sweep:
+    the same check costs ~17s over 4k files and milliseconds over a diff.
+    """
+    root = PROJECT_ROOT / subdir
+    if changed_files:
+        picked: List[Path] = []
+        for entry in changed_files:
+            path = entry if isinstance(entry, Path) else Path(str(entry))
+            if not path.is_absolute():
+                path = PROJECT_ROOT / path
+            if path.suffix != ".py" or not path.exists():
+                continue
+            try:
+                path.relative_to(root)
+            except ValueError:
+                continue  # outside the scanned subtree
+            picked.append(path)
+        return sorted(set(picked))
+    if not root.exists():
+        return []
+    return sorted(root.rglob("*.py"))
 
 
 _ROUTE_DECORATOR_RE = re.compile(r"@\w+\.route\s*\(")
@@ -1842,8 +1879,13 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
         "notes": (
             "Adopted the DISCIPLINE — a finding ships with a discriminating "
             "reproduction or it is not a finding (oss-poc-01), and a scope-locked "
-            "self-test over HTTP (oss-redteam-01/02). REJECTED: STRIX's Docker "
-            "sandbox image, Caido, and nuclei. No STRIX code or dependency."
+            "self-test over HTTP (oss-redteam-01/02). Concept only: "
+            "reproduction_validator.py is a stdlib/requests replay engine over the "
+            "existing tools/http client with its own predicate vocabulary, allowlist "
+            "scope lock, and migration-303 tables. REJECTED: STRIX's Docker sandbox "
+            "image, Caido proxy, nuclei bundle, and curl|bash installer — see "
+            "docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md. "
+            "No STRIX code or dependency."
         ),
     },
     # oss-fix-03 introduced tools/quality/review_loop.py, whose docstring cites
@@ -2767,11 +2809,111 @@ def check_sandbox_coverage() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: Swallowed Persistence (swp-swallow-01)
+# ---------------------------------------------------------------------------
+
+
+def check_swallowed_persistence(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """swp-swallow-01 — ban ``except Exception: pass`` around an INSERT.
+
+    A broad handler whose body is exactly ``pass`` over a try block that
+    writes means the write can fail forever and nothing ever reports it.
+    That silence is what let a batch of defects survive undetected long
+    enough to be worth a card of their own.
+
+    Best-effort persistence stays legal — the rule is only that it must be
+    *audible*. Keep the ``except Exception``, add a ``logger.warning``.
+    Narrow handlers, handlers that re-raise or return, and handlers that
+    already log are all untouched by this check.
+
+    Detection is shared with the fixer via
+    :mod:`tools.refactor.swallowed_persistence` so the gate and the tool
+    can never drift apart on what counts as a violation.
+    """
+    check_name = "Swallowed Persistence (swp-swallow-01)"
+    expected = ["no `except Exception: pass` around an INSERT in tools/"]
+
+    try:
+        from tools.refactor.swallowed_persistence import find_sites
+    except ImportError as exc:
+        # A missing detector must not silently pass the very gate it backs.
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=["detector unavailable"],
+            missing=["tools/refactor/swallowed_persistence.py"],
+            extra=[],
+            message=(
+                "cannot import tools.refactor.swallowed_persistence — the "
+                f"swallowed-persistence gate cannot run: {exc}"
+            ),
+        )
+
+    targets = _scan_targets(changed_files, "tools") + _scan_targets(
+        changed_files, "icdev/tools"
+    )
+    if changed_files and not targets:
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no Python files under tools/ in this diff"],
+            missing=[],
+            extra=[],
+            message="no scanned files in diff — swallowed-persistence gate skipped",
+        )
+
+    sites = find_sites(targets, PROJECT_ROOT)
+    if sites:
+        offenders = [
+            f"{site.rel}:{site.handler_lineno}"
+            f" ({site.func_name or '<module>'} -> {site.table})"
+            for site in sites
+        ]
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=[f"{len(sites)} swallowed INSERT site(s)"],
+            missing=[],
+            extra=offenders,
+            message=(
+                f"{len(sites)} `except Exception: pass` block(s) guard an INSERT "
+                "— the write can fail forever and nothing reports it. Keep the "
+                "best-effort behaviour and add a logger.warning (see "
+                "tools/canvas/event_bus.py::_audit_event), or narrow the "
+                f"handler. Offenders: {', '.join(offenders[:5])}"
+                + (" ..." if len(offenders) > 5 else "")
+            ),
+        )
+
+    scope = "diff" if changed_files else f"{len(targets)} files"
+    return CoherenceCheck(
+        check_id="swallowed_persistence",
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=[f"no swallowed INSERT sites ({scope})"],
+        missing=[],
+        extra=[],
+        message=f"no `except Exception: pass` guarding an INSERT ({scope})",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check: Direct Anthropic Import (OPT-44)
 # ---------------------------------------------------------------------------
 
 
-def check_direct_anthropic_import() -> CoherenceCheck:
+def check_direct_anthropic_import(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
     """OPT-44 — ban direct `import anthropic` / `from anthropic` outside
     tools/llm/anthropic_provider.py.
 
@@ -2805,18 +2947,16 @@ def check_direct_anthropic_import() -> CoherenceCheck:
         return hits
 
     violations: List[str] = []
-    tools_root = PROJECT_ROOT / "tools"
-    if tools_root.exists():
-        for py_file in sorted(tools_root.rglob("*.py")):
-            try:
-                rel = py_file.relative_to(PROJECT_ROOT)
-            except ValueError:
-                rel = py_file
-            if rel == allowed:
-                continue  # the one permitted file
-            text = _read_text(py_file)
-            for lineno, stmt in _has_direct_anthropic_import(text):
-                violations.append(f"{rel}:{lineno}: {stmt}")
+    for py_file in _scan_targets(changed_files):
+        try:
+            rel = py_file.relative_to(PROJECT_ROOT)
+        except ValueError:
+            rel = py_file
+        if rel == allowed:
+            continue  # the one permitted file
+        text = _read_text(py_file)
+        for lineno, stmt in _has_direct_anthropic_import(text):
+            violations.append(f"{rel}:{lineno}: {stmt}")
 
     if violations:
         return CoherenceCheck(
@@ -5720,6 +5860,63 @@ def _is_sqlite_connect(call: ast.AST) -> bool:
     )
 
 
+def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
+    """Names of local factories that hand back a ``tests/_sql_compat`` connection.
+
+    ``_sql_compat.connect``/``translating`` ARE the sanctioned wrapper — they
+    delegate to the same ``translate_sql`` the runtime uses. A file that fixes one
+    fixture with them almost always still holds a raw ``sqlite3.connect``
+    elsewhere for schema setup or for its own assertions, and that residue must
+    not keep the file flagged: doing so makes the gate reject its own remedy.
+
+    Only the factory actually named in the patch call is cleared. A second,
+    still-raw factory in the same file stays a violation.
+    """
+    compat_calls: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("_sql_compat"):
+            for alias in node.names:
+                compat_calls.add(alias.asname or alias.name)
+
+    def _returns_compat(fn: ast.AST) -> bool:
+        raw = False
+        compat = False
+        for sub in ast.walk(fn):
+            if _is_sqlite_connect(sub):
+                raw = True
+            elif isinstance(sub, ast.Call):
+                fname = sub.func
+                if isinstance(fname, ast.Name) and fname.id in compat_calls:
+                    compat = True
+                elif (
+                    isinstance(fname, ast.Attribute)
+                    and fname.attr in ("connect", "translating")
+                    and isinstance(fname.value, ast.Name)
+                    and fname.value.id.endswith("_sql_compat")
+                ):
+                    compat = True
+        return compat and not raw
+
+    safe: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _returns_compat(node):
+            safe.add(node.name)
+    return safe
+
+
+def _patch_replacement_names(node: ast.Call) -> Set[str]:
+    """Names supplied as the replacement in a patch/setattr call."""
+    names: Set[str] = set()
+    for kw in node.keywords:
+        if kw.arg in ("side_effect", "new", "return_value") and isinstance(kw.value, ast.Name):
+            names.add(kw.value.id)
+    # monkeypatch.setattr(target, "get_connection", _conn) — trailing positional.
+    for arg in node.args:
+        if isinstance(arg, ast.Name):
+            names.add(arg.id)
+    return names
+
+
 def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Flag tests that hand runtime code a RAW sqlite3 connection while %s SQL is reachable.
 
@@ -5771,6 +5968,8 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
         # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
         # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
         # runtime %s query then hits an untranslated raw sqlite3 connection.
+        safe_factories = _sql_compat_factory_names(tree)
+
         flagged = False
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -5780,6 +5979,8 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
             if not patch_call:
                 continue
             str_args = [a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            if safe_factories and _patch_replacement_names(node) & safe_factories:
+                continue  # patched to a _sql_compat connection — that IS the fix
             if any(s.split(".")[-1] in _DB_FACTORY_NAMES for s in str_args):
                 violations.append(
                     f"{rel}:{getattr(node, 'lineno', 0)}: monkeypatches a DB connection factory "
@@ -6401,7 +6602,9 @@ def _lpx_environ_subscript_key(sub: ast.Subscript) -> Optional[str]:
     return None
 
 
-def check_provider_bypass() -> CoherenceCheck:
+def check_provider_bypass(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
     """lpx-router-03 — no direct-to-provider access outside tools/llm/.
 
     Fails when a runtime module under ``tools/`` (excluding ``tools/llm/`` and the
@@ -6411,33 +6614,31 @@ def check_provider_bypass() -> CoherenceCheck:
     """
     new_violations: List[str] = []
     grandfathered = 0
-    tools_root = PROJECT_ROOT / "tools"
     llm_dir = Path("tools") / "llm"
-    if tools_root.exists():
-        for py_file in sorted(tools_root.rglob("*.py")):
-            try:
-                rel_path = py_file.relative_to(PROJECT_ROOT)
-            except ValueError:
-                rel_path = py_file
-            # Skip the provider layer itself and documented exceptions.
-            if llm_dir in rel_path.parents or rel_path == llm_dir:
+    for py_file in _scan_targets(changed_files):
+        try:
+            rel_path = py_file.relative_to(PROJECT_ROOT)
+        except ValueError:
+            rel_path = py_file
+        # Skip the provider layer itself and documented exceptions.
+        if llm_dir in rel_path.parents or rel_path == llm_dir:
+            continue
+        if rel_path in _LPX_BYPASS_EXEMPT_FILES:
+            continue
+        # Skip test scaffolding that may reference provider vars intentionally.
+        if py_file.name.startswith("test_"):
+            continue
+        text = _read_text(py_file)
+        # Cheap prefilter before paying for an AST parse.
+        if "api." not in text and "generativelanguage" not in text and "_API_KEY" not in text:
+            continue
+        rel_str = str(rel_path).replace("\\", "/")
+        for lineno, token, reason in _lpx_scan_provider_bypass(text, rel_str):
+            signature = f"{rel_str}::{token}"
+            if signature in _LPX_BYPASS_BASELINE:
+                grandfathered += 1
                 continue
-            if rel_path in _LPX_BYPASS_EXEMPT_FILES:
-                continue
-            # Skip test scaffolding that may reference provider vars intentionally.
-            if py_file.name.startswith("test_"):
-                continue
-            text = _read_text(py_file)
-            # Cheap prefilter before paying for an AST parse.
-            if "api." not in text and "generativelanguage" not in text and "_API_KEY" not in text:
-                continue
-            rel_str = str(rel_path).replace("\\", "/")
-            for lineno, token, reason in _lpx_scan_provider_bypass(text, rel_str):
-                signature = f"{rel_str}::{token}"
-                if signature in _LPX_BYPASS_BASELINE:
-                    grandfathered += 1
-                    continue
-                new_violations.append(f"{rel_str}:{lineno}: {reason}")
+            new_violations.append(f"{rel_str}:{lineno}: {reason}")
 
     if new_violations:
         return CoherenceCheck(
@@ -6674,6 +6875,342 @@ def check_doc_command_paths(changed_files: Optional[List[Path]] = None) -> Coher
 
 
 # ---------------------------------------------------------------------------
+# Check 20: INSERT column lists vs the LIVE database schema (swp-gate-01)
+# ---------------------------------------------------------------------------
+#
+# `check_schema_code` compares INSERT columns against the CREATE TABLE text in
+# tools/db/init_icdev_db.py. That misses the failure mode this gate exists for:
+# `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a table
+# created by an older migration keeps its old columns while the DDL in the
+# source moves on. Code and database disagree with nothing in the source tree
+# recording the disagreement. An automated pass against live PostgreSQL found
+# 95 INSERT statements naming columns that do not exist — each one raises at
+# runtime inside `except Exception: pass`, so the feature reports success and
+# persists nothing (module_budget_usage held 0 rows; audit_trail has never
+# received a row from tools/govcon).
+#
+# This check therefore reads the LIVE schema — information_schema.columns on
+# PostgreSQL, PRAGMA table_info on SQLite — not the DDL.
+
+_INSERT_SCHEMA_CONFIG = PROJECT_ROOT / "args" / "insert_schema_gate.yaml"
+
+#: `INSERT [OR REPLACE] INTO [schema.]table (col, ...) VALUES|SELECT`.
+#: The column group excludes parentheses so a function call or a nested SELECT
+#: in the column position simply fails to match rather than mis-parsing.
+_INSERT_COLUMN_LIST_RE = re.compile(
+    r"INSERT\s+(?:OR\s+(?:REPLACE|IGNORE|ABORT|FAIL|ROLLBACK)\s+)?INTO\s+"
+    r'(?:["`\[]?\w+["`\]]?\s*\.\s*)?'  # optional schema/database qualifier
+    r'["`\[]?(?P<table>\w+)["`\]]?\s*'
+    r"\(\s*(?P<cols>[^()]+?)\s*\)\s*(?:VALUES|SELECT)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: Names a module binds when it obtains its own database handle.
+_CONNECTION_FACTORY_NAMES = frozenset({"get_connection", "get_canvas_connection", "get_conn"})
+
+
+def _uses_foreign_database(source: str) -> bool:
+    """True if *source* gets its connection from outside the ICDEV package tree.
+
+    ``tools/ais/ais_importer.py`` imports ``get_connection`` from
+    ``apps.geosigint.models`` and writes to that app's own ``sg_tracks`` — a
+    table whose name also exists, with a completely different shape, in the
+    ICDEV database. Validating it against the ICDEV schema reports nine columns
+    "missing" that are all present in the database the module actually writes
+    to. Canvas ``db/init_db.py`` modules are NOT foreign: every one of them
+    delegates to ``tools.db.storage`` on PostgreSQL, so their tables really do
+    live in the schema this check reads.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if not any(alias.name in _CONNECTION_FACTORY_NAMES for alias in node.names):
+            continue
+        if getattr(node, "level", 0):  # relative import — in-tree by definition
+            continue
+        root = (node.module or "").split(".")[0]
+        if root and root not in ("tools", "icdev"):
+            return True
+    return False
+
+#: A live schema this small is an empty/uninitialised database, not a real one.
+#: Validating against it would report every table as "unknown" (harmless) but
+#: would also let a genuinely broken INSERT pass unnoticed, so warn instead.
+_INSERT_SCHEMA_MIN_TABLES = 20
+
+
+def _extract_insert_column_lists(source: str) -> List[Tuple[int, str, List[str]]]:
+    """Return ``(lineno, table, [columns])`` for every STATIC INSERT in *source*.
+
+    Only fully static statements are returned. If any token in the column list
+    is not a bare SQL identifier — an f-string hole, a ``%s``, a concatenated
+    variable — the statement is dynamic and is skipped entirely rather than
+    guessed at. A dynamic table name (``INSERT INTO {table} (...)``) never
+    matches the pattern in the first place.
+    """
+    found: List[Tuple[int, str, List[str]]] = []
+    for match in _INSERT_COLUMN_LIST_RE.finditer(source):
+        raw_cols = match.group("cols")
+        cols: List[str] = []
+        dynamic = False
+        for token in raw_cols.split(","):
+            col = token.strip().strip('"').strip("`").strip("[]").strip()
+            if not _SQL_IDENTIFIER_RE.match(col):
+                dynamic = True
+                break
+            cols.append(col.lower())
+        if dynamic or not cols:
+            continue
+        lineno = source.count("\n", 0, match.start()) + 1
+        found.append((lineno, match.group("table").lower(), cols))
+    return found
+
+
+def _live_table_columns() -> Tuple[Dict[str, Set[str]], str, str]:
+    """Read ``table -> {columns}`` from the connected database.
+
+    Returns ``(schema, backend, error)``. ``error`` is a non-empty explanation
+    when no usable live schema could be read, in which case ``schema`` is empty
+    and the caller must WARN rather than fail — a gate that fails closed on a
+    missing database would block every commit made without one.
+    """
+    try:
+        from tools.db.storage import (
+            _introspect_backend,
+            _introspect_raw,
+            get_connection,
+            list_tables,
+        )
+    except Exception as exc:  # pragma: no cover - import environment specific
+        return {}, "", f"tools.db.storage unavailable: {exc}"
+
+    conn = None
+    try:
+        conn = get_connection()
+        backend = _introspect_backend(conn)
+        raw = _introspect_raw(conn)
+        schema: Dict[str, Set[str]] = {}
+        if backend == "postgresql":
+            cur = raw.cursor()
+            cur.execute(
+                "SELECT table_name, column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public'"
+            )
+            for row in cur.fetchall():
+                if isinstance(row, dict):
+                    table, column = row["table_name"], row["column_name"]
+                else:
+                    table, column = row[0], row[1]
+                schema.setdefault(str(table).lower(), set()).add(str(column).lower())
+        else:
+            for table in list_tables(conn):
+                if not _SQL_IDENTIFIER_RE.match(table):
+                    continue
+                cur = raw.cursor()
+                cur.execute(f'PRAGMA table_info("{table}")')  # nosec B608 — identifier regex-validated
+                cols = set()
+                for row in cur.fetchall():
+                    name = row["name"] if isinstance(row, dict) else row[1]
+                    cols.add(str(name).lower())
+                if cols:
+                    schema[table.lower()] = cols
+        if len(schema) < _INSERT_SCHEMA_MIN_TABLES:
+            return (
+                {},
+                backend,
+                f"{backend} schema has only {len(schema)} table(s) — database not initialised",
+            )
+        return schema, backend, ""
+    except Exception as exc:
+        return {}, "", f"could not read live schema: {type(exc).__name__}: {exc}"
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _load_insert_schema_gate() -> Tuple[Set[str], Dict[str, str]]:
+    """Load ``(ignored_tables, grandfathered)`` from args/insert_schema_gate.yaml.
+
+    Schema::
+
+        ignore_tables:
+          - some_table_owned_by_another_database
+        grandfathered:
+          "tools/govcon/x.py:audit_trail:actor": "swp-scan-01 backlog"
+
+    Grandfather keys are ``<repo-relative path>:<table>:<column>`` — deliberately
+    line-number-free so an unrelated edit above the statement does not
+    invalidate the entry. A missing file or missing pyyaml yields empty sets:
+    fail-safe CLOSED, so an unreadable allowlist makes the gate stricter.
+    """
+    if not _INSERT_SCHEMA_CONFIG.exists() or not _HAS_YAML:
+        return set(), {}
+    try:
+        raw = yaml.safe_load(_INSERT_SCHEMA_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set(), {}
+    if not isinstance(raw, dict):
+        return set(), {}
+
+    ignored = {
+        str(t).lower()
+        for t in (raw.get("ignore_tables") or [])
+        if isinstance(t, (str, int))
+    }
+    grandfathered: Dict[str, str] = {}
+    entries = raw.get("grandfathered") or {}
+    if isinstance(entries, dict):
+        for key, reason in entries.items():
+            if isinstance(key, str):
+                grandfathered[key.replace("\\", "/")] = str(reason or "")
+    elif isinstance(entries, list):  # tolerate a bare list of keys
+        for key in entries:
+            if isinstance(key, str):
+                grandfathered[key.replace("\\", "/")] = ""
+    return ignored, grandfathered
+
+
+def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Check 20: every static INSERT column list exists in the live schema."""
+    check_id = "insert_schema_parity"
+    check_name = "INSERT / Live Schema Parity"
+    expected = ["every column named in a static INSERT exists in the live database schema"]
+
+    targets = _scan_targets(changed_files, "tools")
+    if not targets:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no Python files under tools/ in scope"],
+            missing=[],
+            extra=[],
+            message="No INSERT statements in scope",
+        )
+
+    schema, backend, error = _live_table_columns()
+    if error:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=expected,
+            actual=[error],
+            missing=[],
+            extra=[],
+            message=(
+                f"Live schema unavailable ({error}) — INSERT column parity NOT verified. "
+                "Point ICDEV_STORAGE_BACKEND at an initialised database to enable this gate."
+            ),
+        )
+
+    ignored_tables, grandfathered = _load_insert_schema_gate()
+
+    new_findings: List[str] = []
+    excused_keys: Set[str] = set()
+    statements = 0
+    validated = 0
+    unknown_tables: Set[str] = set()
+
+    for py_path in targets:
+        if "__pycache__" in str(py_path):
+            continue
+        source = _read_text(py_path)
+        if "INSERT" not in source.upper():
+            continue
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = py_path.name
+        if rel in _SCHEMA_CODE_BACKEND_PINNED or _uses_foreign_database(source):
+            continue
+        for lineno, table, cols in _extract_insert_column_lists(source):
+            statements += 1
+            if table in ignored_tables:
+                continue
+            table_cols = schema.get(table)
+            if table_cols is None:
+                # Not in THIS database — a canvas, tenant, platform or child-app
+                # table. Nothing to validate against; silence beats a guess.
+                unknown_tables.add(table)
+                continue
+            validated += 1
+            absent = sorted(set(cols) - table_cols)
+            for column in absent:
+                key = f"{rel}:{table}:{column}"
+                if key in grandfathered:
+                    excused_keys.add(key)
+                    continue
+                new_findings.append(f"{rel}:{lineno}: INSERT INTO {table} names missing column '{column}'")
+
+    # Stale allowlist entries are only meaningful after a whole-tree scan; a
+    # diff-scoped run has not looked at the files the other entries name.
+    stale: List[str] = []
+    if not changed_files:
+        stale = sorted(set(grandfathered) - excused_keys)
+
+    actual = [
+        f"{statements} static INSERT statement(s) parsed; {validated} validated "
+        f"against {len(schema)} live {backend} table(s)"
+    ]
+
+    if new_findings:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=actual + new_findings,
+            missing=sorted({f.split("names missing column ")[-1].strip("'") for f in new_findings}),
+            extra=new_findings,
+            message=(
+                f"{len(new_findings)} INSERT column(s) do not exist in the live schema "
+                f"({len(excused_keys)} grandfathered). These raise at runtime and are "
+                "usually swallowed — fix the column list, or add a migration that adds "
+                "the column, before merging."
+            ),
+        )
+
+    if excused_keys or stale:
+        bits = []
+        if excused_keys:
+            bits.append(f"{len(excused_keys)} grandfathered mismatch(es) remain")
+        if stale:
+            bits.append(f"{len(stale)} stale allowlist entry(ies) can be removed")
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=expected,
+            actual=actual,
+            missing=sorted(excused_keys),
+            extra=stale,
+            message="No NEW INSERT/schema mismatches — " + "; ".join(bits),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=actual + [f"{len(unknown_tables)} table(s) absent from this database were skipped"],
+        missing=[],
+        extra=[],
+        message=f"All {validated} validated INSERT statement(s) match the live schema",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -6693,6 +7230,7 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "swallowed_persistence": check_swallowed_persistence,
     "reflex_registry": check_reflex_registry,
     "direct_anthropic_import": check_direct_anthropic_import,
     "provider_bypass": check_provider_bypass,
@@ -6727,7 +7265,88 @@ CHECK_REGISTRY = {
     "icdev_mirror_parity": check_icdev_mirror_parity,
     "mirror_drift": check_mirror_drift,
     "doc_command_paths": check_doc_command_paths,
+    "insert_schema_parity": check_insert_schema_parity,
 }
+
+
+# ---------------------------------------------------------------------------
+# Check tiers — the gate/sweep split
+# ---------------------------------------------------------------------------
+
+TIERS = ("fast", "full")
+
+# Checks that import or introspect the ENTIRE application rather than the diff.
+# Measured on a warm checkout these three cost ~100s of a ~170s full run, which
+# is why the per-task coherence gate could never finish inside its subprocess
+# timeout. They are global invariants — a single task can only break one in a
+# way that also shows up in the main baseline — so the fast tier runs a heavy
+# check ONLY when the diff touches its trigger surface. `--tier full` (the
+# nightly sweep and post-merge reflex) always runs every check.
+#
+# NOTE: direct_anthropic_import and provider_bypass used to belong here too;
+# they are now diff-scoped via _scan_targets() and cheap enough to always run.
+HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
+    "blueprint_imports": (
+        "tools/dashboard/",
+        "icdev/tools/dashboard/",
+        "blueprint.py",
+        "args/component_registry.yaml",
+    ),
+    "openapi_parity": (
+        "tools/dashboard/",
+        "icdev/tools/dashboard/",
+        "blueprint.py",
+        "openapi",
+    ),
+    "llm_router_api": (
+        "tools/llm/",
+        "icdev/tools/llm/",
+        "args/llm_config.yaml",
+    ),
+}
+
+
+def _normalised_paths(changed_files: Optional[List[Path]]) -> List[str]:
+    """Changed paths as forward-slash strings for substring trigger matching."""
+    return [str(entry).replace("\\", "/") for entry in (changed_files or [])]
+
+
+def select_checks(
+    tier: str = "full", changed_files: Optional[List[Path]] = None
+) -> List[str]:
+    """Ordered check ids to run for *tier*.
+
+    ``full`` returns every registered check. ``fast`` drops the whole-app
+    heavies in HEAVY_CHECKS, re-adding any whose trigger surface appears in
+    *changed_files*.
+
+    With no diff information the fast tier still drops the heavies — "fast"
+    means fast. Callers that cannot supply a file list and need full coverage
+    should ask for ``full`` explicitly rather than relying on this to guess.
+    """
+    all_ids = list(CHECK_REGISTRY.keys())
+    if tier != "fast":
+        return all_ids
+    touched = _normalised_paths(changed_files)
+    keep: List[str] = []
+    for check_id in all_ids:
+        triggers = HEAVY_CHECKS.get(check_id)
+        if triggers is None:
+            keep.append(check_id)
+        elif any(trigger in path for path in touched for trigger in triggers):
+            keep.append(check_id)
+    return keep
+
+
+def _check_workers() -> int:
+    """Thread count for the parallel check sweep. ``1`` forces serial."""
+    try:
+        configured = int(os.environ.get("ICDEV_COHERENCE_WORKERS", "0"))
+    except ValueError:
+        configured = 0
+    if configured > 0:
+        return configured
+    return max(1, min(4, (os.cpu_count() or 2) - 1))
 
 
 # ---------------------------------------------------------------------------
@@ -6770,6 +7389,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "profile_sync": "skip",  # profile YAML changes require human review
     "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
     "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
+    "insert_schema_parity": "skip",  # drop the column or write a migration — the choice is the fix
 }
 
 
@@ -6881,68 +7501,114 @@ def _apply_fixes(check: CoherenceCheck) -> CoherenceCheck:
     return check
 
 
+def _unknown_check(check_id: str) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=f"Unknown: {check_id}",
+        status="warn",
+        expected=[],
+        actual=[],
+        missing=[],
+        extra=[],
+        message=f"Unknown check: {check_id}",
+    )
+
+
+def _run_one_check(
+    check_id: str, changed_files: Optional[List[Path]]
+) -> CoherenceCheck:
+    """Execute a single check, timing it and converting any raise into a warn."""
+    import inspect
+
+    func = CHECK_REGISTRY.get(check_id)
+    if not func:
+        return _unknown_check(check_id)
+
+    started = time.monotonic()
+    try:
+        if "changed_files" in inspect.signature(func).parameters:
+            result = func(changed_files=changed_files)
+        else:
+            result = func()
+    except Exception as exc:
+        result = CoherenceCheck(
+            check_id=check_id,
+            check_name=check_id,
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message=f"Check error: {exc}",
+        )
+    result.duration_sec = round(time.monotonic() - started, 3)
+    return result
+
+
 def run_checks(
     selected: Optional[List[str]] = None,
     changed_files: Optional[List[Path]] = None,
     autofix: bool = False,
+    tier: Optional[str] = None,
 ) -> CoherenceReport:
     """Run selected coherence checks and produce aggregate report.
 
     Args:
-        selected: specific check IDs to run (None = all)
-        changed_files: restrict import check to these files
+        selected: specific check IDs to run (None = tier selection)
+        changed_files: diff-scope passed to every check that accepts it
         autofix: if True, auto-fix safe issues after detection
+        tier: ``fast`` or ``full``; ignored when *selected* is given.
+
+    Checks run concurrently on a small thread pool — most of the cost is
+    subprocess, file I/O, and imports, all of which release the GIL. Autofix
+    forces the serial path because fixers mutate the tree and two of them
+    landing at once is not something the fix registry is written for.
     """
-    checks_to_run = selected or list(CHECK_REGISTRY.keys())
+    if selected:
+        checks_to_run = list(selected)
+    else:
+        checks_to_run = select_checks(tier or "full", changed_files)
+
     results: List[CoherenceCheck] = []
+    workers = 1 if autofix else min(_check_workers(), max(1, len(checks_to_run)))
+
+    if workers > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_run_one_check, check_id, changed_files): check_id
+                for check_id in checks_to_run
+            }
+            by_id: Dict[str, CoherenceCheck] = {}
+            for future in concurrent.futures.as_completed(futures):
+                check_id = futures[future]
+                try:
+                    by_id[check_id] = future.result()
+                except Exception as exc:  # pragma: no cover — defensive
+                    by_id[check_id] = CoherenceCheck(
+                        check_id=check_id,
+                        check_name=check_id,
+                        status="warn",
+                        expected=[],
+                        actual=[],
+                        missing=[],
+                        extra=[],
+                        message=f"Check error: {exc}",
+                    )
+        # Preserve registry order regardless of completion order.
+        results = [by_id[check_id] for check_id in checks_to_run if check_id in by_id]
+    else:
+        for check_id in checks_to_run:
+            results.append(_run_one_check(check_id, changed_files))
+
     total_fixes = 0
-
-    for check_id in checks_to_run:
-        func = CHECK_REGISTRY.get(check_id)
-        if not func:
-            results.append(
-                CoherenceCheck(
-                    check_id=check_id,
-                    check_name=f"Unknown: {check_id}",
-                    status="warn",
-                    expected=[],
-                    actual=[],
-                    missing=[],
-                    extra=[],
-                    message=f"Unknown check: {check_id}",
-                )
-            )
-            continue
-
-        try:
-            # Pass changed_files to checks that accept it
-            import inspect
-
-            sig = inspect.signature(func)
-            if "changed_files" in sig.parameters:
-                result = func(changed_files=changed_files)
-            else:
-                result = func()
-
-            # Auto-fix if requested and check failed/warned
-            if autofix and result.status in ("fail", "warn"):
+    if autofix:
+        fixed: List[CoherenceCheck] = []
+        for result in results:
+            if result.status in ("fail", "warn"):
                 result = _apply_fixes(result)
                 total_fixes += len(result.fixes_applied)
-
-            results.append(result)
-        except Exception as exc:
-            results.append(
-                CoherenceCheck(
-                    check_id=check_id,
-                    check_name=check_id,
-                    status="warn",
-                    expected=[],
-                    actual=[],
-                    missing=[],
-                    extra=[],
-                    message=f"Check error: {exc}",
-                )
-            )
+            fixed.append(result)
+        results = fixed
 
     passed = sum(1 for r in results if r.status == "pass")
     failed = sum(1 for r in results if r.status == "fail")
@@ -7017,23 +7683,73 @@ def main() -> None:
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     parser.add_argument("--gate", action="store_true", help="Exit 0=pass, 1=fail")
     parser.add_argument("--fix", action="store_true", help="Auto-fix safe issues (imports, append-only)")
-    parser.add_argument("--all", action="store_true", help="Run all checks")
+    parser.add_argument("--all", action="store_true", help="Run all checks (alias for --tier full)")
+    parser.add_argument(
+        "--tier",
+        choices=TIERS,
+        default=None,
+        help=(
+            "fast = per-task gate (drops whole-app heavies unless the diff "
+            "touches them); full = every check (nightly sweep / post-merge). "
+            "Default: full."
+        ),
+    )
     parser.add_argument("--check", type=str, default="", help=f"Specific check: {', '.join(CHECK_REGISTRY.keys())}")
     parser.add_argument("--changed-files", type=str, default="", help="Comma-separated list of changed file paths")
+    parser.add_argument(
+        "--changed-files-from",
+        type=str,
+        default="",
+        help="Read changed file paths (one per line) from a file — avoids the OS argv length limit on large diffs",
+    )
+    parser.add_argument(
+        "--list-tier",
+        action="store_true",
+        help="Print the check ids the selected tier would run, then exit",
+    )
 
     args = parser.parse_args()
 
     selected = None
     if args.check:
         selected = [c.strip() for c in args.check.split(",")]
-    elif args.all:
-        selected = None  # All checks
 
-    changed: Optional[List[Path]] = None
+    tier = args.tier or ("full" if args.all else "full")
+
+    raw_changed: List[str] = []
     if args.changed_files:
-        changed = [PROJECT_ROOT / f.strip() for f in args.changed_files.split(",")]
+        raw_changed += [f.strip() for f in args.changed_files.split(",") if f.strip()]
+    if args.changed_files_from:
+        try:
+            raw_changed += [
+                line.strip()
+                for line in Path(args.changed_files_from).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except OSError as exc:
+            print(f"could not read --changed-files-from: {exc}", file=sys.stderr)
+            sys.exit(2)
+    changed: Optional[List[Path]] = [PROJECT_ROOT / f for f in raw_changed] or None
 
-    report = run_checks(selected, changed, autofix=args.fix)
+    if args.list_tier:
+        for check_id in (selected or select_checks(tier, changed)):
+            print(check_id)
+        sys.exit(0)
+
+    # Checks import application modules that print banners at import time
+    # (canvas `db/init_db.py` emits ~67 lines of "[init_db] ..."). Those landed
+    # on stdout AHEAD of the JSON document, so every downstream
+    # json.loads(stdout) raised and callers silently fell back to "no failure
+    # detail available". Swap stdout for stderr while the checks run so the
+    # report is the only thing on stdout — this covers noisy imports we haven't
+    # met yet, not just today's eleven offenders. sys.stdout is process-global,
+    # so the thread pool inside run_checks is covered too.
+    _real_stdout = sys.stdout
+    try:
+        sys.stdout = sys.stderr
+        report = run_checks(selected, changed, autofix=args.fix, tier=tier)
+    finally:
+        sys.stdout = _real_stdout
 
     if args.human:
         print(_format_human(report))

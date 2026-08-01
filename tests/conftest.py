@@ -3498,6 +3498,38 @@ CREATE TABLE IF NOT EXISTS divergence_idea_scores (
     classification     TEXT NOT NULL DEFAULT 'CUI',
     created_at         TEXT
 );
+CREATE TABLE IF NOT EXISTS dynamic_findings (
+    id                 TEXT PRIMARY KEY,
+    finding_key        TEXT NOT NULL,
+    detector           TEXT NOT NULL DEFAULT '',
+    title              TEXT NOT NULL DEFAULT '',
+    severity           TEXT NOT NULL DEFAULT 'medium',
+    target             TEXT NOT NULL DEFAULT '',
+    status             TEXT NOT NULL DEFAULT 'unconfirmed',
+    reproduction       TEXT DEFAULT '',
+    discriminating     INTEGER NOT NULL DEFAULT 0,
+    last_outcome       TEXT NOT NULL DEFAULT '',
+    last_replayed_at   TEXT,
+    tenant_id          TEXT NOT NULL DEFAULT 'default',
+    classification     TEXT NOT NULL DEFAULT 'CUI',
+    created_at         TEXT,
+    updated_at         TEXT
+);
+CREATE TABLE IF NOT EXISTS finding_replay_attempts (
+    id                 TEXT PRIMARY KEY,
+    finding_id         TEXT NOT NULL,
+    finding_key        TEXT NOT NULL DEFAULT '',
+    outcome            TEXT NOT NULL DEFAULT 'error',
+    target             TEXT NOT NULL DEFAULT '',
+    purpose            TEXT NOT NULL DEFAULT 'confirm',
+    predicate_json     TEXT DEFAULT '',
+    observations_json  TEXT DEFAULT '',
+    detail             TEXT DEFAULT '',
+    duration_ms        INTEGER NOT NULL DEFAULT 0,
+    tenant_id          TEXT NOT NULL DEFAULT 'default',
+    classification     TEXT NOT NULL DEFAULT 'CUI',
+    created_at         TEXT
+);
 
 -- FORGE Academy XP provenance (aca-int-07, migration 315). Append-only: one row per
 -- award, naming what earned it, so a rank can be traced to demonstrated work rather
@@ -3533,8 +3565,115 @@ CREATE TABLE IF NOT EXISTS fa_xp_ledger (
     note           TEXT,
     created_at     TEXT    DEFAULT (datetime('now')),
     classification TEXT    DEFAULT 'CUI',
-    tenant_id      TEXT
+    tenant_id      TEXT);
+
+-- The instructor workflow (aca-trn-04, migration 323). An assignment targets one
+-- learner or a cohort (a role token, or 'all'); cohort membership is resolved at
+-- read time rather than frozen here, so a learner who enrols into the role
+-- afterwards inherits the assignment.
+CREATE TABLE IF NOT EXISTS fa_assignments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_type TEXT    NOT NULL DEFAULT 'mission',
+    mission_id      INTEGER,
+    track_key       TEXT,
+    target_type     TEXT    NOT NULL DEFAULT 'learner',
+    target_user_id  INTEGER,
+    target_role     TEXT,
+    due_at          TEXT,
+    note            TEXT,
+    assigned_by     TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'open',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+-- One human verdict. override_score writes fa_mission_progress.score and never
+-- moves XP; prior_score records what it replaced so the change is reversible by
+-- inspection.
+CREATE TABLE IF NOT EXISTS fa_instructor_reviews (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    mission_id      INTEGER,
+    step_id         INTEGER,
+    assignment_id   INTEGER,
+    verdict         TEXT    NOT NULL,
+    override_score  INTEGER,
+    prior_score     INTEGER,
+    comment         TEXT,
+    reviewer        TEXT    NOT NULL,
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). A grade override that cannot be
+-- attributed to a person is indistinguishable from a bug in the grader.
+CREATE TABLE IF NOT EXISTS fa_instructor_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    action          TEXT    NOT NULL,
+    actor           TEXT    NOT NULL,
+    actor_role      TEXT,
+    subject_type    TEXT,
+    subject_id      TEXT,
+    detail_json     TEXT    DEFAULT '{}',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+-- The assessment model (aca-trn-01, migration 324). classify_step runs on every
+-- mission page render, so these have to exist wherever a step row does: a query
+-- against a missing table inside an open transaction aborts that transaction on
+-- PostgreSQL, which is why fa_xp_ledger above is declared here too.
+CREATE TABLE IF NOT EXISTS fa_assessment_items (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id        INTEGER NOT NULL,
+    item_key       TEXT    NOT NULL,
+    prompt         TEXT    NOT NULL,
+    options_json   TEXT    NOT NULL DEFAULT '[]',
+    -- Server-only. Never selected into a client payload.
+    correct_index  INTEGER NOT NULL DEFAULT 0,
+    explanation    TEXT,
+    difficulty     TEXT    DEFAULT 'core',
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id, item_key));
+
+-- Append-only (registered in APPEND_ONLY_TABLES). served_json records which items
+-- were drawn and the permutation mapping displayed option positions back to the
+-- authored ones — without it the indices a client posts are meaningless.
+CREATE TABLE IF NOT EXISTS fa_step_attempts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    step_id        INTEGER NOT NULL,
+    kind           TEXT    NOT NULL DEFAULT 'attempt',
+    attempt_num    INTEGER NOT NULL DEFAULT 1,
+    policy         TEXT    NOT NULL DEFAULT 'practice',
+    served_json    TEXT    NOT NULL DEFAULT '[]',
+    answers_json   TEXT,
+    score_pct      INTEGER,
+    passed         INTEGER,
+    closed_at      TEXT,
+    reason         TEXT,
+    actor          TEXT,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS fa_step_assessment_policy (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id            INTEGER NOT NULL,
+    policy             TEXT    NOT NULL DEFAULT 'practice',
+    -- NULL means "use the constant", so raising a threshold moves every step that
+    -- never asked for something different.
+    items_per_attempt  INTEGER,
+    pass_threshold_pct INTEGER,
+    max_attempts       INTEGER,
+    updated_at         TEXT,
+    created_at         TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id));
 """
 
 
@@ -3548,6 +3687,42 @@ def icdev_db(tmp_path):
     conn.commit()
     conn.close()
     return db_path
+
+
+@pytest.fixture
+def bom_db(tmp_path, monkeypatch):
+    """SQLite DB with the BOM Evidence Engine tables (migration 267).
+
+    Built by running tools.bom.db.init_db.SCHEMA_PG rather than by pasting the
+    DDL in here. That is deliberate: the CHECK constraints are derived from the
+    tuples in tools/bom/constants.py, and a hand-copied schema in the test
+    harness is exactly how a test starts passing against a table shape that no
+    longer exists in production.
+
+    Goes through storage.get_connection() (not raw sqlite3) so DML in tests hits
+    the same %s->? translation the real code does — a test that talks straight to
+    sqlite3 can pass while the production query it is meant to be guarding is
+    broken.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "bom_test.db"))
+    from tools.bom.db.init_db import init_db
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    init_db(conn)
+    try:
+        yield conn
+    finally:
+        # Close the write transaction the tests leave open. This fixture was
+        # written before the transaction-leak guard landed on main, and a bare
+        # `yield conn` left one open per test — 53 of them, all reported as
+        # "Transaction leak" rather than as anything to do with BOM.
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
 
 
 @pytest.fixture

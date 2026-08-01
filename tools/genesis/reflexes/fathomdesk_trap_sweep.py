@@ -31,6 +31,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.reflexes.fathomdesk_trap_sweep")
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 if str(BASE_DIR) not in sys.path:
@@ -218,8 +221,8 @@ def _mark_cooldown(conn: Any, key: str, now: datetime) -> None:
             (key, now.isoformat()),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_mark_cooldown: best-effort INSERT into ad_reflex_cooldowns failed (non-blocking): %s", exc)
 
 
 # ── Trap event writer ──────────────────────────────────────────────────────────

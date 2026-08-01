@@ -11,6 +11,7 @@ SQLite is the default for dev, air-gap, and single-user deployments.
 import json
 import os
 import re
+import sys
 import uuid
 from pathlib import Path
 
@@ -2796,7 +2797,7 @@ def init_db():
         else:
             conn.executescript(SCHEMA)
             conn.commit()
-            print(f"[init_db] Data Canvas schema created at {DB_PATH}")
+            print(f"[init_db] Data Canvas schema created at {DB_PATH}", file=sys.stderr)
 
         # CAM extension: dd_migration_jobs — tracks live data migration job status
         conn.executescript("""
@@ -2833,7 +2834,7 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
             try:
                 conn.execute(f"ALTER TABLE dm_domains ADD COLUMN {_col} TEXT DEFAULT {_default}")
                 conn.commit()
-                print(f"[init_db] Migration applied: dm_domains.{_col} added.")
+                print(f"[init_db] Migration applied: dm_domains.{_col} added.", file=sys.stderr)
             except Exception as _e:
                 if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
                     pass
@@ -2848,7 +2849,7 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
             try:
                 conn.execute(f"ALTER TABLE dm_data_products ADD COLUMN {_col} TEXT DEFAULT {_default}")
                 conn.commit()
-                print(f"[init_db] Migration applied: dm_data_products.{_col} added.")
+                print(f"[init_db] Migration applied: dm_data_products.{_col} added.", file=sys.stderr)
             except Exception as _e:
                 if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
                     pass
@@ -2859,7 +2860,7 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
         try:
             conn.execute("ALTER TABLE dd_explore_profiles ADD COLUMN anomaly_json TEXT")
             conn.commit()
-            print("[init_db] Migration applied: dd_explore_profiles.anomaly_json added.")
+            print("[init_db] Migration applied: dd_explore_profiles.anomaly_json added.", file=sys.stderr)
         except Exception as e:
             if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
                 pass  # column already present — idempotent
@@ -2870,7 +2871,7 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
         try:
             conn.execute("ALTER TABLE dd_quality_runs ADD COLUMN reflex_run TEXT")
             conn.commit()
-            print("[init_db] Migration applied: dd_quality_runs.reflex_run added.")
+            print("[init_db] Migration applied: dd_quality_runs.reflex_run added.", file=sys.stderr)
         except Exception as e:
             if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
                 pass  # column already present — idempotent
@@ -2896,7 +2897,7 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
                     f"ALTER TABLE {_table} ADD COLUMN {_col} {_coltype} DEFAULT {_default}"
                 )
                 conn.commit()
-                print(f"[init_db] Migration applied: {_table}.{_col} added.")
+                print(f"[init_db] Migration applied: {_table}.{_col} added.", file=sys.stderr)
             except Exception as _e:
                 if "duplicate column" in str(_e).lower() or "already exists" in str(_e).lower():
                     pass  # column already present — idempotent
@@ -2918,9 +2919,9 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
                 added += 1
         if added:
             conn.commit()
-            print(f"[init_db] Seeded {added} new DDC templates (total: {count + added}).")
+            print(f"[init_db] Seeded {added} new DDC templates (total: {count + added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {count} DDC templates up to date.")
+            print(f"[init_db] All {count} DDC templates up to date.", file=sys.stderr)
 
         # Seed snippets (upsert)
         cur.execute("SELECT COUNT(*) FROM dd_snippets")
@@ -2936,9 +2937,9 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
                 snp_added += 1
         if snp_added:
             conn.commit()
-            print(f"[init_db] Seeded {snp_added} new DDC snippets (total: {snp_count + snp_added}).")
+            print(f"[init_db] Seeded {snp_added} new DDC snippets (total: {snp_count + snp_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {snp_count} DDC snippets up to date.")
+            print(f"[init_db] All {snp_count} DDC snippets up to date.", file=sys.stderr)
 
         # Seed runbooks (upsert)
         try:
@@ -2969,9 +2970,9 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
                 rb_added += 1
         if rb_added:
             conn.commit()
-            print(f"[init_db] Seeded {rb_added} new DDC runbooks (total: {rb_count + rb_added}).")
+            print(f"[init_db] Seeded {rb_added} new DDC runbooks (total: {rb_count + rb_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {rb_count} DDC runbooks up to date.")
+            print(f"[init_db] All {rb_count} DDC runbooks up to date.", file=sys.stderr)
 
         # Seed SOPs (upsert)
         try:
@@ -3007,9 +3008,9 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
                 sop_added += 1
         if sop_added:
             conn.commit()
-            print(f"[init_db] Seeded {sop_added} new DDC SOPs (total: {sop_count + sop_added}).")
+            print(f"[init_db] Seeded {sop_added} new DDC SOPs (total: {sop_count + sop_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {sop_count} DDC SOPs up to date.")
+            print(f"[init_db] All {sop_count} DDC SOPs up to date.", file=sys.stderr)
 
     finally:
         conn.close()
@@ -3018,5 +3019,5 @@ CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(sta
 if __name__ == "__main__":
     import sys
     if "--reinit" in sys.argv:
-        print("[init_db] --reinit: applying schema migrations...")
+        print("[init_db] --reinit: applying schema migrations...", file=sys.stderr)
     init_db()

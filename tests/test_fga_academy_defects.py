@@ -54,7 +54,8 @@ def test_stored_invite_code_is_joinable(monkeypatch, tmp_path):
     conn.executescript(
         """
         CREATE TABLE fa_guilds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT,
-          description TEXT, invite_code TEXT UNIQUE, created_by INT);
+          description TEXT, invite_code TEXT UNIQUE, created_by INT,
+          tenant_id TEXT);
         CREATE TABLE fa_guild_members (id INTEGER PRIMARY KEY AUTOINCREMENT,
           guild_id INT, user_id INT, role TEXT);
         CREATE TABLE fa_users (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INT);

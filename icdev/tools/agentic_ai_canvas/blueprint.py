@@ -1812,8 +1812,8 @@ def get_ato(design_id: str):
              s["passed"], s["failed"], s["critical_failed"], _json.dumps(result), now),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("get_ato: best-effort INSERT into aadc_ato_reports failed (non-blocking): %s", exc)
     conn.close()
     return jsonify(result)
 
@@ -1846,8 +1846,8 @@ def get_regulatory(design_id: str):
             (rid, design_id, s["score_pct"], s["compliant"], s["gaps"], s["critical_gaps"], _json.dumps(result), now),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("get_regulatory: best-effort INSERT into aadc_regulatory_gaps failed (non-blocking): %s", exc)
     conn.close()
     return jsonify(result)
 
@@ -2019,8 +2019,8 @@ def get_red_team(design_id: str):
              s["critical_unmitigated"], s["avg_exploitability"], _json.dumps(result), now),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("get_red_team: best-effort INSERT into aadc_red_team_reports failed (non-blocking): %s", exc)
     conn.close()
     return jsonify(result)
 
@@ -2049,8 +2049,8 @@ def get_lint(design_id: str):
             (rid, design_id, s["lint_score"], s["total"], s["critical"], _json.dumps(result), now),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("get_lint: best-effort INSERT into aadc_lint_reports failed (non-blocking): %s", exc)
     conn.close()
     return jsonify(result)
 
@@ -2159,8 +2159,8 @@ def get_patterns_api(design_id: str):
             (rep_id, design_id, result["dominant"], _json.dumps(result)),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("get_patterns_api: best-effort INSERT into aadc_pattern_reports failed (non-blocking): %s", exc)
     conn.close()
     return jsonify(result)
 
@@ -2210,8 +2210,8 @@ def get_impact_api(design_id: str):
              _json.dumps(result)),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("get_impact_api: best-effort INSERT into aadc_impact_reports failed (non-blocking): %s", exc)
     conn.close()
     return jsonify(result)
 

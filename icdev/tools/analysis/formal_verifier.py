@@ -41,6 +41,9 @@ import uuid
 from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.analysis.formal_verifier")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -99,8 +102,11 @@ def _store_result(result: Dict, project_id: str = "") -> None:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_store_result: best-effort INSERT into formal_verification_results failed (non-blocking): %s",
+            exc,
+        )
 
 
 # ---------------------------------------------------------------------------

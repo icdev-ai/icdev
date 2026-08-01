@@ -34,7 +34,12 @@ def conn():
           skill_tag TEXT, hint_allowed INTEGER DEFAULT 1, estimated_seconds INTEGER);
         """
     )
-    return c
+    # Closed rather than returned — the reconcile under test leaves the commit to
+    # its caller, so the test ends holding an open write transaction (tsh-leak-01).
+    try:
+        yield c
+    finally:
+        c.close()
 
 
 def _row(conn, step_num=1):

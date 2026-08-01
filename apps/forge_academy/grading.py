@@ -224,7 +224,44 @@ def _grade_reflect(step: dict, chosen_option) -> dict:
     )
 
 
-def grade_step(step_id: int | str, submission: str = "", *, chosen_option=None) -> dict:
+def _grade_items(user_id: int, step: dict, answers: dict) -> dict:
+    """Score a step against its item bank (aca-trn-01).
+
+    Takes precedence over the step's declared type, because an item bank is what
+    makes a step gradeable: it is how a `watch` lesson becomes assessable without
+    re-labelling it as something it is not (aca-hon-04).
+    """
+    from .assessment import grade_attempt
+
+    result = grade_attempt(user_id, step["id"], answers)
+    if not result.get("ok"):
+        return _verdict(
+            False, assessed=result.get("assessed", True),
+            reason=result.get("reason", "not_graded"), step=step,
+            stderr=(
+                "No questions were served for this attempt - reload the step and "
+                "answer the questions shown."
+                if result.get("reason") == "no_open_attempt" else ""
+            ),
+        )
+    verdict = _verdict(
+        result["passed"], assessed=True,
+        reason=result.get("reason", ""), step=step,
+        items=result.get("items", []),
+        correct=result.get("correct"),
+        total=result.get("total"),
+        pass_threshold_pct=result.get("pass_threshold_pct"),
+        attempts_used=result.get("attempts_used"),
+        attempts_remaining=result.get("attempts_remaining"),
+    )
+    # The real percentage, not the 100/0 `_verdict` defaults to. This is the whole
+    # point of the model: 2 of 3 correct is 67, and 67 is a fail at a 70 threshold.
+    verdict["score"] = result["score"]
+    return verdict
+
+
+def grade_step(step_id: int | str, submission: str = "", *, chosen_option=None,
+               answers: dict | None = None, user_id: int | None = None) -> dict:
     """Authoritative verdict for a submission.
 
     There is intentionally no ``test_code`` parameter â€” a caller cannot supply the
@@ -234,6 +271,15 @@ def grade_step(step_id: int | str, submission: str = "", *, chosen_option=None) 
     step = _load_step(step_id)
     if step is None:
         return _verdict(False, assessed=False, reason="unknown_step")
+
+    # aca-trn-01: a step with an active item bank is graded against it, whatever its
+    # declared type. user_id is required for that path because the served draw and
+    # its option permutation are per-learner, per-attempt state.
+    if user_id is not None:
+        from .assessment import has_item_bank
+
+        if has_item_bank(step["id"]):
+            return _grade_items(user_id, step, answers or {})
 
     step_type = (step.get("step_type") or "coding").strip().lower()
     if step_type == "coding":
@@ -285,7 +331,7 @@ def _safe_config_schema(schema):
     return out
 
 
-def client_safe_steps(steps) -> list[dict]:
+def client_safe_steps(steps, user_id: int | None = None) -> list[dict]:
     """Project step rows down to what the browser may see.
 
     ``mission.html`` serialises the step list into JavaScript. Unfiltered that
@@ -301,5 +347,25 @@ def client_safe_steps(steps) -> list[dict]:
             item["config_schema"] = _safe_config_schema(item["config_schema"])
         # The runner only needs to know whether a Run button can grade anything.
         item["has_test"] = bool((step.get("test_code_path") or "").strip())
+
+        # aca-trn-01: open (or resume) the learner's attempt and attach the items
+        # drawn for it. Only option TEXT in the served permutation crosses the wire;
+        # the mapping back to the authored order - and therefore the answer - lives
+        # only in fa_step_attempts.served_json.
+        if user_id is not None:
+            try:
+                from .assessment import classify_step, open_attempt, step_policy
+
+                attempt = open_attempt(user_id, step.get("id"))
+                if attempt:
+                    item["assessment"] = attempt
+                item["assessment_class"] = classify_step(step)
+                item["attempt_policy"] = step_policy(step)["policy"]
+            except Exception:
+                # A broken bank must not take the mission page down. The step falls
+                # back to its declared type, which grades honestly (an acknowledgement
+                # says assessed: False) rather than pretending to have been assessed.
+                _log.warning("assessment attach failed for step %s",
+                             step.get("id"), exc_info=True)
         safe.append(item)
     return safe

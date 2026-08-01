@@ -36,6 +36,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection as _raw_get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.review_board.remediation_engine")
 
 
 def _get_connection():
@@ -381,8 +384,11 @@ def _log_remediation(log_id: str, finding: Dict, tier: str, result: Dict, dry_ru
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_log_remediation: best-effort INSERT into review_board_remediation_log failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

@@ -1,0 +1,528 @@
+{% extends "base.html" %}
+{% block title %}Registrations — {{ session.scenario_slug.replace('_',' ').title() }}{% endblock %}
+{% block extra_css %}
+<style>
+.rg-hero{background:linear-gradient(135deg,#0d1117 0%,#161b22 50%,#1a1f2e 100%);border-bottom:2px solid #FF6B35;padding:1.6rem 2rem 1.3rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;}
+.rg-hero h1{font-size:1.5rem;font-weight:800;color:#FF6B35;margin:0;}
+.rg-hero .meta{font-size:.84rem;color:#6e7681;margin-top:.2rem;}
+.sc-code{font-family:monospace;color:#58a6ff;letter-spacing:.08em;}
+.rg-body{padding:1.2rem 1.5rem;}
+/* Scenario recommendation banner */
+.scenario-banner{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.2rem 1.5rem;margin-bottom:1.2rem;}
+.scenario-banner .sb-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.8rem;margin-bottom:.9rem;}
+.scenario-banner .sb-title{font-size:.85rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.07em;}
+.tech-bar-wrap{display:flex;align-items:center;gap:.7rem;margin-bottom.8rem;}
+.tech-bar{flex:1;height:8px;background:#21262d;border-radius:4px;overflow:hidden;position:relative;}
+.tech-fill{height:100%;background:linear-gradient(90deg,#A259FF,#4a90d9,#00D4FF);border-radius:4px;transition:width .5s;}
+.tech-label{font-size:.75rem;color:#6e7681;white-space:nowrap;}
+.scenario-cards{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:.8rem;}
+.sc-opt{border:2px solid #30363d;border-radius:8px;padding:.75rem 1rem;cursor:pointer;transition:all .2s;min-width:180px;flex:1;}
+.sc-opt:hover{border-color:#58a6ff;}
+.sc-opt.best-match{border-color:#3fb950;}
+.sc-opt.selected-scenario{border-color:#FF6B35;box-shadow:0 0 0 3px rgba(255,107,53,.18);}
+.sc-opt .so-icon{font-size:1.3rem;margin-bottom:.3rem;}
+.sc-opt .so-name{font-size:.85rem;font-weight:700;color:#e6edf3;margin-bottom:.2rem;}
+.sc-opt .so-desc{font-size:.72rem;color:#6e7681;line-height:1.4;margin-bottom:.4rem;}
+.sc-opt .so-fit{font-size:.7rem;}
+.fit-badge{padding:.1rem .45rem;border-radius:8px;font-weight:600;}
+.fit-high{background:#1f3a1f;color:#3fb950;}
+.fit-mid{background:#302010;color:#FFB800;}
+.fit-low{background:#3a1010;color:#f85149;}
+.current-badge{display:inline-block;font-size:.67rem;background:#21262d;color:#8b949e;padding:.12rem .4rem;border-radius:6px;margin-left:.4rem;}
+.apply-scenario-btn{background:linear-gradient(135deg,#FF6B35,#cc4a1a);color:#fff;border:none;padding:.55rem 1.2rem;border-radius:6px;font-size:.85rem;font-weight:700;cursor:pointer;transition:opacity .2s;white-space:nowrap;}
+.apply-scenario-btn:hover{opacity:.85;}
+.apply-scenario-btn:disabled{opacity:.4;cursor:default;}
+/* Layout */
+.rg-layout{display:grid;grid-template-columns:1fr 1.45fr;gap:1.2rem;}
+@media(max-width:900px){.rg-layout{grid-template-columns:1fr;}}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden;}
+.panel-hd{display:flex;align-items:center;justify-content:space-between;padding:.8rem 1rem;border-bottom:1px solid #21262d;}
+.panel-hd h2{font-size:.85rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.07em;margin:0;}
+.count-pill{font-size:.75rem;background:#21262d;color:#8b949e;padding:.12rem .5rem;border-radius:10px;}
+/* Roster table */
+.reg-table{width:100%;border-collapse:collapse;}
+.reg-table th{font-size:.7rem;text-transform:uppercase;color:#6e7681;padding:.5rem .75rem;background:#0d1117;text-align:left;letter-spacing:.05em;}
+.reg-table td{padding:.5rem .75rem;font-size:.83rem;color:#c9d1d9;border-top:1px solid #21262d;}
+.reg-table tr:hover td{background:#1a1f2e;}
+.role-badge{display:inline-flex;align-items:center;gap:.3rem;font-size:.74rem;font-weight:600;padding:.15rem .5rem;border-radius:10px;}
+.conf-pill{font-size:.68rem;padding:.08rem .38rem;border-radius:8px;}
+.conf-high{background:#1f3a1f;color:#3fb950;}
+.conf-mid{background:#302010;color:#FFB800;}
+.conf-low{background:#3a1010;color:#f85149;}
+.del-btn{background:none;border:none;color:#6e7681;cursor:pointer;font-size:.82rem;padding:.18rem .45rem;border-radius:4px;}
+.del-btn:hover{color:#f85149;background:#3a1010;}
+/* Team cards */
+.team-card{background:#0d1117;border:1px solid #30363d;border-radius:8px;margin:.75rem;padding:.85rem;}
+.tc-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;}
+.tc-name{font-size:.92rem;font-weight:700;color:#e6edf3;}
+.tc-count{font-size:.72rem;color:#6e7681;}
+.member-row{display:flex;align-items:center;gap:.45rem;padding:.22rem 0;font-size:.82rem;color:#c9d1d9;position:relative;}
+.member-row .mr-icon{font-size:.85rem;}
+.member-row .mr-name{font-weight:600;color:#e6edf3;flex:1;}
+.member-row .mr-role{font-size:.73rem;}
+.move-btn{font-size:.7rem;background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.1rem .4rem;border-radius:4px;cursor:pointer;white-space:nowrap;transition:all .15s;flex-shrink:0;}
+.move-btn:hover{border-color:#58a6ff;color:#58a6ff;}
+.move-popup{position:absolute;right:0;top:100%;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:.4rem;z-index:50;min-width:140px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+.move-popup button{display:block;width:100%;text-align:left;background:none;border:none;color:#c9d1d9;padding:.3rem .6rem;cursor:pointer;font-size:.8rem;border-radius:4px;}
+.move-popup button:hover{background:#21262d;color:#e6edf3;}
+/* Action bar */
+.action-bar{display:flex;gap:.7rem;padding:.85rem 1rem;border-top:1px solid #21262d;flex-wrap:wrap;align-items:center;}
+.gd-btn{background:linear-gradient(135deg,#FF6B35,#cc4a1a);color:#fff;border:none;padding:.58rem 1.3rem;border-radius:7px;font-size:.88rem;font-weight:700;cursor:pointer;transition:opacity .2s;}
+.gd-btn:hover{opacity:.85;}
+.gd-btn:disabled{opacity:.4;cursor:default;}
+.gd-btn-outline{background:transparent;border:1px solid #30363d;color:#8b949e;padding:.52rem .95rem;border-radius:6px;font-size:.84rem;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:.3rem;transition:all .2s;}
+.gd-btn-outline:hover{border-color:#FF6B35;color:#FF6B35;}
+.gd-btn-success{background:linear-gradient(135deg,#238636,#196c2e);border:none;color:#fff;padding:.58rem 1.3rem;border-radius:7px;font-size:.88rem;font-weight:700;cursor:pointer;transition:opacity .2s;}
+.gd-btn-success:hover{opacity:.85;}
+.status-msg{font-size:.81rem;padding:.35rem .7rem;border-radius:6px;}
+.status-ok{background:#1f3a1f;color:#3fb950;}
+.status-err{background:#3a1010;color:#f85149;}
+.confirmed-banner{background:#1f3a1f;border:1px solid #3fb950;border-radius:8px;padding:.75rem 1rem;font-size:.87rem;color:#3fb950;display:flex;align-items:center;gap:.5rem;margin:.75rem;}
+.empty-state{text-align:center;padding:2rem;color:#6e7681;font-size:.87rem;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="rg-hero">
+  <div>
+    <h1>📋 Registrations</h1>
+    <div class="meta">
+      {{ session.scenario_slug.replace('_',' ').title() }}
+      &nbsp;·&nbsp; Code: <span class="sc-code">{{ session.join_code }}</span>
+      &nbsp;·&nbsp; <span id="reg-count">{{ registrations|length }}</span> registered
+    </div>
+  </div>
+  <div style="display:flex;gap:.6rem;flex-wrap:wrap;">
+    <a href="/gameday/session/{{ session.session_id }}/register" class="gd-btn-outline" target="_blank">📲 Share Link</a>
+    <a href="/gameday/session/{{ session.session_id }}/facilitate" class="gd-btn-outline">🎮 Facilitator</a>
+  </div>
+</div>
+
+<div class="rg-body">
+
+  <!-- ── Scenario Recommendation ── -->
+  <div class="scenario-banner" id="scenario-banner">
+    <div class="sb-head">
+      <span class="sb-title">🎯 Scenario Selection</span>
+      <div style="display:flex;align-items:center;gap:.6rem;">
+        <span style="font-size:.8rem;color:#6e7681;">Currently:
+          <strong id="current-scenario-label" style="color:#e6edf3;">
+            {{ session.scenario_slug.replace('_',' ').title() }}
+          </strong>
+        </span>
+        <button class="apply-scenario-btn" id="apply-scenario-btn"
+                onclick="applyScenario()" disabled>Apply Selection</button>
+      </div>
+    </div>
+
+    <!-- Tech ratio bar -->
+    <div style="margin-bottom:.9rem;">
+      <div style="display:flex;justify-content:space-between;font-size:.72rem;color:#6e7681;margin-bottom:.3rem;">
+        <span>🏛️ Non-technical</span>
+        <span id="tech-ratio-label">—</span>
+        <span>⚙️ Technical</span>
+      </div>
+      <div class="tech-bar">
+        <div class="tech-fill" id="tech-fill" style="width:50%;"></div>
+      </div>
+      <div id="rec-reasoning" style="font-size:.75rem;color:#6e7681;margin-top:.4rem;font-style:italic;"></div>
+    </div>
+
+    <!-- Scenario option cards -->
+    <div class="scenario-cards" id="scenario-cards">
+      <div style="color:#6e7681;font-size:.85rem;padding:.5rem;">
+        Loading recommendations…
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Two-column layout ── -->
+  <div class="rg-layout">
+
+    <!-- Left: Player Roster -->
+    <div class="panel">
+      <div class="panel-hd">
+        <h2>Player Roster</h2>
+        <span class="count-pill" id="roster-count">{{ registrations|length }} players</span>
+      </div>
+      {% if registrations %}
+      <table class="reg-table">
+        <thead>
+          <tr>
+            <th>Player</th><th>Role</th><th>Conf.</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="roster-tbody">
+          {% for reg in registrations %}
+          <tr id="reg-row-{{ reg.registration_id }}">
+            <td>
+              <div style="font-weight:600;color:#e6edf3;">{{ reg.player_name }}</div>
+              {% if reg.academy_username %}
+              <div style="font-size:.7rem;color:#58a6ff;">🎓 {{ reg.academy_username }}</div>
+              {% endif %}
+              <div style="font-size:.7rem;color:#6e7681;margin-top:.1rem;">
+                {{ reg.stated_skill[:55] }}{% if reg.stated_skill|length > 55 %}…{% endif %}
+              </div>
+            </td>
+            <td>
+              {% set r = roles.get(reg.matched_role_id, {}) %}
+              <span class="role-badge"
+                style="background:color-mix(in srgb,{{ r.get('color','#8b949e') }} 18%,#0d1117);color:{{ r.get('color','#8b949e') }};">
+                {{ r.get('icon','') }} {{ reg.matched_role_label }}
+              </span>
+            </td>
+            <td>
+              {% set pct = (reg.match_confidence * 100)|round(0)|int %}
+              <span class="conf-pill {% if pct >= 70 %}conf-high{% elif pct >= 40 %}conf-mid{% else %}conf-low{% endif %}">
+                {{ pct }}%
+              </span>
+            </td>
+            <td>
+              <button class="del-btn" onclick="deleteReg({{ reg.registration_id }})" title="Remove">✕</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state" id="empty-roster">
+        No registrations yet.<br>
+        Share <code style="font-size:.8rem;">/gameday/session/{{ session.session_id }}/register</code>
+      </div>
+      {% endif %}
+      <div class="action-bar">
+        <button class="gd-btn" onclick="formTeams()">⚡ Form Teams</button>
+        <div style="display:flex;align-items:center;gap:.4rem;">
+          <label style="font-size:.77rem;color:#6e7681;">Max teams</label>
+          <input id="max-teams-input" type="number" min="2" max="{{ session.max_teams }}"
+                 value="{{ session.max_teams }}"
+                 style="width:52px;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.3rem .5rem;border-radius:5px;font-size:.86rem;">
+        </div>
+      </div>
+      <div id="form-status" style="padding:0 1rem .6rem;"></div>
+    </div>
+
+    <!-- Right: Team Formation Preview -->
+    <div class="panel">
+      <div class="panel-hd">
+        <h2>Team Formation Preview</h2>
+        <span class="count-pill" id="team-count">{{ teams|length }} teams</span>
+      </div>
+
+      {% if plan_confirmed %}
+      <div class="confirmed-banner">✅ Teams confirmed — players assigned to session.</div>
+      {% endif %}
+
+      <div id="teams-container">
+        {% if teams %}
+          {% for team in teams %}
+          <div class="team-card" id="team-card-{{ team.team_slot }}">
+            <div class="tc-hd">
+              <span class="tc-name">{{ team.team_name }}</span>
+              <span class="tc-count" id="tc-count-{{ team.team_slot }}">{{ team.members|length }} members</span>
+            </div>
+            {% for m in team.members %}
+            {% set r = roles.get(m.matched_role_id, {}) %}
+            <div class="member-row" id="member-row-{{ m.registration_id }}">
+              <span class="mr-icon">{{ r.get('icon','👤') }}</span>
+              <span class="mr-name">{{ m.player_name }}</span>
+              <span class="mr-role" style="color:{{ r.get('color','#8b949e') }};">{{ m.matched_role_label }}</span>
+              <button class="move-btn"
+                      onclick="toggleMovePopup(event, {{ m.registration_id }}, {{ team.team_slot }})">
+                ↕ Move
+              </button>
+              <div class="move-popup" id="move-popup-{{ m.registration_id }}" style="display:none;"></div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state" id="empty-teams">
+            Click <strong>Form Teams</strong> to generate a balanced draft.
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="action-bar">
+        <button class="gd-btn-success" id="confirm-btn"
+                onclick="confirmTeams()"
+                {% if not teams %}disabled{% endif %}>
+          ✅ Confirm &amp; Create Teams
+        </button>
+        <div id="confirm-status" style="align-self:center;"></div>
+      </div>
+    </div>
+
+  </div><!-- /.rg-layout -->
+</div><!-- /.rg-body -->
+
+<script>
+const SESSION_ID = {{ session.session_id }};
+const ROLES = {{ roles | tojson }};
+const CURRENT_SLUG = "{{ session.scenario_slug }}";
+
+// Team state kept in JS so Move popups know what teams exist
+let teamsState = [];   // [{team_slot, team_name, members:[...]}]
+let selectedScenarioSlug = CURRENT_SLUG;
+
+// ── Scenario Recommendation ─────────────────────────────────────────────────
+
+async function loadRecommendation() {
+  const r = await fetch(`/api/gameday/session/${SESSION_ID}/scenario-recommendation`);
+  const d = await r.json();
+  if(!d.ok) return;
+
+  // Tech bar
+  const pct = Math.round(d.tech_ratio * 100);
+  document.getElementById('tech-fill').style.width = pct + '%';
+  document.getElementById('tech-ratio-label').textContent = `${pct}% technical`;
+  document.getElementById('rec-reasoning').textContent = d.reasoning || '';
+
+  // Option cards
+  const container = document.getElementById('scenario-cards');
+  if(!d.all_options || !d.all_options.length){
+    container.innerHTML = '<div style="color:#6e7681;font-size:.84rem;">No scenarios found on disk.</div>';
+    return;
+  }
+  container.innerHTML = d.all_options.map(opt => {
+    const fitPct = Math.round(opt.fit_score * 100);
+    const isCurrent = opt.slug === CURRENT_SLUG;
+    const isBest    = opt.slug === d.recommended_slug;
+    const fitClass  = fitPct >= 70 ? 'fit-high' : fitPct >= 45 ? 'fit-mid' : 'fit-low';
+    const classes   = ['sc-opt',
+      isBest ? 'best-match' : '',
+      isCurrent ? 'selected-scenario' : '',
+    ].filter(Boolean).join(' ');
+    return `<div class="${classes}" id="sc-opt-${opt.slug}"
+                 onclick="selectScenario('${opt.slug}', '${opt.label.replace(/'/g,"\\'")}')">
+      <div class="so-icon">${opt.icon || '🎯'}</div>
+      <div class="so-name">${opt.label}${isCurrent ? '<span class="current-badge">current</span>' : ''}</div>
+      <div class="so-desc">${opt.description}</div>
+      <div class="so-fit">
+        <span class="fit-badge ${fitClass}">Fit ${fitPct}%</span>
+        <span style="font-size:.67rem;color:#6e7681;margin-left:.3rem;">${opt.audience}</span>
+        ${isBest ? '<span style="font-size:.67rem;color:#3fb950;margin-left:.3rem;">★ recommended</span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectScenario(slug, label) {
+  // Highlight selected card
+  document.querySelectorAll('.sc-opt').forEach(c => c.classList.remove('selected-scenario'));
+  const card = document.getElementById('sc-opt-' + slug);
+  if(card) card.classList.add('selected-scenario');
+  selectedScenarioSlug = slug;
+  const btn = document.getElementById('apply-scenario-btn');
+  btn.disabled = (slug === CURRENT_SLUG);
+}
+
+async function applyScenario() {
+  const btn = document.getElementById('apply-scenario-btn');
+  btn.disabled = true;
+  btn.textContent = 'Applying…';
+  const r = await fetch(`/api/gameday/session/${SESSION_ID}/scenario`, {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({scenario_slug: selectedScenarioSlug}),
+  });
+  const d = await r.json();
+  if(d.ok){
+    btn.textContent = '✓ Applied';
+    document.getElementById('current-scenario-label').textContent = d.scenario || selectedScenarioSlug;
+    // Mark new current
+    document.querySelectorAll('.current-badge').forEach(b=>b.remove());
+    const newCurrent = document.getElementById('sc-opt-' + selectedScenarioSlug);
+    if(newCurrent){
+      const nameEl = newCurrent.querySelector('.so-name');
+      if(nameEl) nameEl.insertAdjacentHTML('beforeend','<span class="current-badge">current</span>');
+    }
+  } else {
+    alert(d.error || 'Failed to update scenario');
+    btn.disabled = false;
+    btn.textContent = 'Apply Selection';
+  }
+}
+
+// ── Roster ────────────────────────────────────────────────────────────────
+
+async function deleteReg(id) {
+  if(!confirm('Remove this registration?')) return;
+  const r = await fetch(`/api/gameday/registration/${id}`, {method:'DELETE'});
+  const d = await r.json();
+  if(d.ok){
+    const row = document.getElementById('reg-row-'+id);
+    if(row) row.remove();
+    updateRosterCount();
+    loadRecommendation(); // refresh recommendation after roster change
+  }
+}
+
+function updateRosterCount(){
+  const n = document.querySelectorAll('#roster-tbody tr').length;
+  document.getElementById('roster-count').textContent = n + ' players';
+  document.getElementById('reg-count').textContent = n;
+}
+
+// ── Team Formation ────────────────────────────────────────────────────────
+
+async function formTeams(){
+  const maxT = parseInt(document.getElementById('max-teams-input').value)||null;
+  const status = document.getElementById('form-status');
+  status.innerHTML = '<span class="status-msg" style="background:#21262d;color:#8b949e;">Drafting…</span>';
+  const r = await fetch(`/api/gameday/session/${SESSION_ID}/form-teams`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({max_teams: maxT}),
+  });
+  const d = await r.json();
+  if(!d.ok){
+    status.innerHTML = `<span class="status-msg status-err">${d.error||'Failed'}</span>`;
+    return;
+  }
+  status.innerHTML = `<span class="status-msg status-ok">✓ ${d.num_teams} teams, ${d.total_players} players</span>`;
+  document.getElementById('team-count').textContent = d.num_teams + ' teams';
+  document.getElementById('confirm-btn').disabled = false;
+  teamsState = d.teams || [];
+  renderTeams(teamsState);
+}
+
+function renderTeams(teams){
+  const container = document.getElementById('teams-container');
+  if(!teams || !teams.length){
+    container.innerHTML = '<div class="empty-state">No registrations to draft.</div>';
+    return;
+  }
+  container.innerHTML = teams.map(team => {
+    const members = team.members.map(m => {
+      const role = ROLES[m.role_id] || {};
+      const icon  = role.icon  || '👤';
+      const color = role.color || '#8b949e';
+      const label = role.label || m.role_id;
+      return `<div class="member-row" id="member-row-${m.registration_id}">
+        <span class="mr-icon">${icon}</span>
+        <span class="mr-name">${m.player_name}</span>
+        <span class="mr-role" style="color:${color};">${label}</span>
+        <button class="move-btn"
+          onclick="toggleMovePopup(event,${m.registration_id},${team.team_slot})">↕ Move</button>
+        <div class="move-popup" id="move-popup-${m.registration_id}" style="display:none;"></div>
+      </div>`;
+    }).join('');
+    return `<div class="team-card" id="team-card-${team.team_slot}">
+      <div class="tc-hd">
+        <span class="tc-name">${team.team_name}</span>
+        <span class="tc-count" id="tc-count-${team.team_slot}">${team.members.length} members</span>
+      </div>
+      ${members}
+    </div>`;
+  }).join('');
+}
+
+// ── Player Move ──────────────────────────────────────────��───────────────
+
+let openPopupId = null;
+
+function toggleMovePopup(evt, regId, currentSlot) {
+  evt.stopPropagation();
+  const popup = document.getElementById('move-popup-' + regId);
+
+  // Close any open popup first
+  if(openPopupId && openPopupId !== regId){
+    const prev = document.getElementById('move-popup-' + openPopupId);
+    if(prev) prev.style.display = 'none';
+  }
+  if(popup.style.display !== 'none'){
+    popup.style.display = 'none';
+    openPopupId = null;
+    return;
+  }
+  openPopupId = regId;
+
+  // Build options: all teams except current
+  const otherTeams = teamsState.filter(t => t.team_slot !== currentSlot);
+  if(!otherTeams.length){
+    popup.innerHTML = '<button disabled style="color:#6e7681;">No other teams</button>';
+  } else {
+    popup.innerHTML = otherTeams.map(t =>
+      `<button onclick="movePlayer(${regId}, ${t.team_slot}, '${t.team_name.replace(/'/g,"\\'")}')">
+        → ${t.team_name}
+      </button>`
+    ).join('');
+  }
+  popup.style.display = 'block';
+}
+
+document.addEventListener('click', () => {
+  if(openPopupId){
+    const p = document.getElementById('move-popup-' + openPopupId);
+    if(p) p.style.display = 'none';
+    openPopupId = null;
+  }
+});
+
+async function movePlayer(regId, targetSlot, targetName) {
+  // Close popup immediately
+  const popup = document.getElementById('move-popup-' + regId);
+  if(popup) popup.style.display = 'none';
+  openPopupId = null;
+
+  const r = await fetch(`/api/gameday/session/${SESSION_ID}/formation-plan/move`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      registration_id:  regId,
+      target_team_slot: targetSlot,
+      target_team_name: targetName,
+    }),
+  });
+  const d = await r.json();
+  if(d.ok){
+    teamsState = d.teams || [];
+    renderTeams(teamsState);
+    document.getElementById('team-count').textContent = teamsState.length + ' teams';
+    document.getElementById('confirm-btn').disabled = false;
+  } else {
+    alert(d.error || 'Move failed');
+  }
+}
+
+// ── Confirm Teams ────────────────────────────────────────────────────────
+
+async function confirmTeams(){
+  const btn = document.getElementById('confirm-btn');
+  const status = document.getElementById('confirm-status');
+  btn.disabled = true; btn.textContent = 'Confirming…';
+  const r = await fetch(`/api/gameday/session/${SESSION_ID}/confirm-teams`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+  });
+  const d = await r.json();
+  if(d.ok){
+    status.innerHTML = `<span class="status-msg status-ok">✅ ${d.teams_created} teams + ${d.members_created} members created</span>`;
+    btn.textContent = '✅ Confirmed';
+    setTimeout(()=>window.location=`/gameday/session/${SESSION_ID}/facilitate`, 1800);
+  } else {
+    status.innerHTML = `<span class="status-msg status-err">${d.error||'Failed'}</span>`;
+    btn.disabled=false; btn.textContent='✅ Confirm & Create Teams';
+  }
+}
+
+// ── Bootstrap ────────────────────────────────────────────────────────────
+
+// Populate teamsState from server-rendered teams (for Move popup to work immediately)
+{% if teams %}
+teamsState = [
+  {% for team in teams %}
+  {
+    team_slot: {{ team.team_slot }},
+    team_name: "{{ team.team_name }}",
+    members: [
+      {% for m in team.members %}
+      {registration_id: {{ m.registration_id }}, player_name: "{{ m.player_name }}", role_id: "{{ m.matched_role_id }}"},
+      {% endfor %}
+    ],
+  },
+  {% endfor %}
+];
+{% endif %}
+
+// Load scenario recommendations on page load
+loadRecommendation();
+</script>
+{% endblock %}

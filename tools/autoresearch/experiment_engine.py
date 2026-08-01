@@ -31,6 +31,9 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools.common.helpers import now_iso
 from tools.db.storage import sql_placeholder
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.autoresearch.experiment_engine")
 
 # Honesty flag: this engine does NOT apply real code modifications between the
 # pre- and post-metric measurements (that requires the Genesis reflex or manual
@@ -113,8 +116,9 @@ def _audit(event_type: str, action: str, details: dict = None, project_id: str =
                     now_iso(),
                 ),
             )
-    except Exception:
-        pass  # Best-effort audit
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best-effort audit
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ── Table Initialization ─────────────────────────────────────────────────────
@@ -564,8 +568,11 @@ def _update_landscape(conn, domain: str, category: str, decision: str, metric_de
                     now,
                 ),
             )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_update_landscape: best-effort INSERT into experiment_landscapes failed (non-blocking): %s",
+            exc,
+        )
 
 
 # ── Autonomous Loop ──────────────────────────────────────────────────────────
@@ -698,8 +705,11 @@ def run_loop(
                         now_iso(),
                     ),
                 )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "run_loop: best-effort INSERT into bayesian_experiment_scores failed (non-blocking): %s",
+                exc,
+            )
 
         # Run experiment (measure current metric)
         run_result = run_experiment(exp_id)

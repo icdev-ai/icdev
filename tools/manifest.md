@@ -176,6 +176,8 @@
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 - [AI Augmentation Canvas (AAC)](manifest/ai-augmentation-canvas.md)
 - [Document Modernization Engine (docmod)](manifest/doc-modernization.md)
+- [FORGE Academy](manifest/forge-academy.md) — learner platform: server-authoritative grading, XP provenance ledger, tier gating (`apps/forge_academy/`)
+- [GeoSIGINT Indo-Pacific Analyzer](manifest/geosigint.md) — 6 OSINT analyzers, 7 pages, 23 APIs (`apps/geosigint/`)
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1218,3 +1220,35 @@
 | Topology Ops | tools\network\routes\topology_ops.py | Auto-registered: routes/topology_ops.py | --json | JSON |
 | Twin Migration | tools\network\routes\twin_migration.py | Auto-registered: routes/twin_migration.py | --json | JSON |
 | Bgp Hijack Monitor | tools\genesis\reflexes\bgp_hijack_monitor.py | Auto-registered: reflexes/bgp_hijack_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Sme Gap Detector | tools\ace\sme_gap_detector.py | Auto-registered: ace/sme_gap_detector.py | --json | JSON |
+| Seed Cdp Kanban | tools\kanban\seed_cdp_kanban.py | Auto-registered: kanban/seed_cdp_kanban.py | --json | JSON |
+| Seed Dwo Kanban | tools\kanban\seed_dwo_kanban.py | Auto-registered: kanban/seed_dwo_kanban.py | --json | JSON |
+| Seed Fga Kanban | tools\kanban\seed_fga_kanban.py | Auto-registered: kanban/seed_fga_kanban.py | --json | JSON |
+| Seed Oss02 Kanban | tools\kanban\seed_oss02_kanban.py | Auto-registered: kanban/seed_oss02_kanban.py | --json | JSON |
+| App Red Team | tools\security\app_red_team.py | Auto-registered: security/app_red_team.py | --json | JSON |
+| Redteam Scope | tools\security\redteam_scope.py | Auto-registered: security/redteam_scope.py | --json | JSON |
+| Dic Inbox Sweep | tools\genesis\reflexes\dic_inbox_sweep.py | Auto-registered: reflexes/dic_inbox_sweep.py | --json | JSON |
+| Memory Maintenance Reflex | tools\genesis\reflexes\memory_maintenance_reflex.py | Auto-registered: reflexes/memory_maintenance_reflex.py | --json | JSON |
+| Observability Retention | tools\genesis\reflexes\observability_retention.py | Auto-registered: reflexes/observability_retention.py | --json | JSON |
+| Odc Coverage Refresh | tools\genesis\reflexes\odc_coverage_refresh.py | Auto-registered: reflexes/odc_coverage_refresh.py | --json | JSON |
+| Change Control | tools\doc_modernization\packs\change_control.py | Auto-registered: packs/change_control.py | --json | JSON |
+| Evidence Currency | tools\doc_modernization\packs\evidence_currency.py | Auto-registered: packs/evidence_currency.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Credibility | tools\bom\credibility.py | Auto-registered: bom/credibility.py | --json | JSON |
+| Derivative | tools\bom\derivative.py | Auto-registered: bom/derivative.py | --json | JSON |
+| Export Categorized | tools\bom\export_categorized.py | Auto-registered: bom/export_categorized.py | --json | JSON |
+| Export Xlsx | tools\bom\export_xlsx.py | Auto-registered: bom/export_xlsx.py | --json | JSON |
+| Extract Grid | tools\bom\extract_grid.py | Auto-registered: bom/extract_grid.py | --json | JSON |
+| Forensics | tools\bom\forensics.py | Auto-registered: bom/forensics.py | --json | JSON |
+| Formula Graph | tools\bom\formula_graph.py | Auto-registered: bom/formula_graph.py | --json | JSON |
+| Seed Bom Concord | tools\kanban\seed_bom_concord.py | Auto-registered: kanban/seed_bom_concord.py | --json | JSON |
+| Brand Deck | tools\slides\brand_deck.py | Auto-registered: slides/brand_deck.py | --json | JSON |

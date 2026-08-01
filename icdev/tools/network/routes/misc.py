@@ -567,8 +567,8 @@ def register_misc_routes(bp):
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit_ato_export: best-effort INSERT into nc_nqe_audit_log failed (non-blocking): %s", exc)
 
     def _ato_safe(text):
         """Coerce to latin-1-safe string for fpdf2 core fonts."""
@@ -1044,8 +1044,11 @@ def register_misc_routes(bp):
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "api_nqe_translate: best-effort INSERT into nc_nqe_audit_log failed (non-blocking): %s",
+                _exc,
+            )
 
         return jsonify({"nql": nql, "confidence": confidence, "source": source})
 
@@ -1117,8 +1120,8 @@ def register_misc_routes(bp):
                 )
                 conn.commit()
                 conn.close()
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning("api_nqe_run: best-effort INSERT into nc_nqe_audit_log failed (non-blocking): %s", _exc)
 
             return jsonify({
                 "rows": rows[:500],

@@ -4,6 +4,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from tools.db.storage import get_canvas_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.data_canvas.twin")
 
 
 def _now() -> str:
@@ -119,8 +122,8 @@ def take_snapshot(design_id: str, label: str | None = None, classification: str 
             (snap_id, design_id, label, table_count, edge_count, classification, taken_at),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("take_snapshot: best-effort INSERT into data_twin_snapshots failed (non-blocking): %s", exc)
     return {"id": snap_id, "design_id": design_id, "label": label,
             "table_count": table_count, "edge_count": edge_count, "created_at": taken_at}
 

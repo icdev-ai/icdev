@@ -1,0 +1,31 @@
+# The circulated workbook's shape.
+#
+# Not the engine's workbook — that one carries every line, every finding and every
+# source, and a reviewer needs it. This is the one that gets EMAILED, and it should
+# look like the workbook the organisation already reads. Handing a team a
+# differently-shaped spreadsheet and asking them to re-learn where the price column
+# is, is how a correct answer gets ignored.
+#
+# Everything here is layout. Nothing here knows what the BOM is FOR — swap these
+# values and the same engine renders a vehicle fleet or a factory line.
+
+# The six columns, in the order the reader's eye already expects them.
+columns:
+  - Item
+  - Description
+  - Qty
+  - Unit Est.
+  - Total Est.
+  - Notes
+
+column_widths: [42, 46, 8, 12, 14, 40]
+
+theme:
+  # Dark banner, white text — one merged row at the top of every category sheet.
+  banner_fill: "1F3864"
+  banner_text: "FFFFFF"
+  # The column-header band, a tint of the banner.
+  header_fill: "D9E2F3"
+  # Whole dollars. Cents in a budget deck are false precision — the estimate is
+  # not accurate to the dollar and printing two decimals implies it is.
+  money_format: '#,##0;[Red]-#,##0'

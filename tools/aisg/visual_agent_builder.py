@@ -20,6 +20,9 @@ from collections import deque
 from typing import Any
 
 from tools.db.storage import get_connection, sql_placeholder
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.aisg.visual_agent_builder")
 
 # goals/ directory lives at repository root (two parents above tools/aisg/)
 _GOALS_DIR = pathlib.Path(__file__).parents[2] / "goals"
@@ -271,8 +274,8 @@ def save_design(
             (design_id, name, canvas_json, trust_tier, created_by),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("save_design: best-effort INSERT into aisg_agent_designs failed (non-blocking): %s", exc)
     finally:
         conn.close()
     return design_id

@@ -28,6 +28,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.proposal_genesis.reflexes.decide")
 
 
 def _utcnow_iso() -> str:
@@ -230,8 +233,11 @@ def _get_bayesian_weights() -> Optional[Dict[str, float]]:
             ("bayesian_score_weights", json.dumps(bayesian_weights), _utcnow_iso()),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_get_bayesian_weights: best-effort INSERT into pg_proposal_genesis_config failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 
@@ -385,8 +391,11 @@ def calibrate_weights() -> Dict[str, Any]:
             ("calibrated_score_weights", _json.dumps(new_weights), now),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "calibrate_weights: best-effort INSERT into pg_proposal_genesis_config failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 
@@ -776,8 +785,11 @@ def _audit_decide(event_type: str, opportunity_id: Optional[str], details: Dict,
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_audit_decide: best-effort INSERT into pg_proposal_genesis_audit failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

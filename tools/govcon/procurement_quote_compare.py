@@ -88,6 +88,9 @@ if str(_ROOT) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.common.helpers import row_to_dict  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.procurement_quote_compare")
 
 
 # ── Constants ─────────────────────────────────────────────────────────
@@ -123,6 +126,14 @@ def _get_db():
     return get_connection()
 
 
+def _rollback_quietly(conn) -> None:
+    """End an open transaction. Never raises — callers are on a failure path."""
+    try:
+        conn.rollback()
+    except Exception:  # noqa: BLE001 - the connection may already be dead
+        pass
+
+
 def _audit(
     conn,
     event_type: str,
@@ -147,9 +158,9 @@ def _audit(
                 None,
             ),
         )
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         # Audit must never break the operation; swallow to keep determinism.
-        pass
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # Equipment category values used for BOM rollup. Operators may add
@@ -587,6 +598,12 @@ def add_quote(
              status, notes, now, now),
         )
     except Exception as exc:
+        # The failed INSERT aborts the statement but not the transaction: SQLite
+        # opened an implicit BEGIN on the first DML and PostgreSQL leaves the
+        # transaction in a failed state. Returning without a rollback abandons a
+        # write lock on the shared DB that every later writer blocks on, and the
+        # caller sees only a tidy error dict (tsh-leak-01).
+        _rollback_quietly(conn)
         # Unique constraint = duplicate quote
         if "UNIQUE" in str(exc) or "unique" in str(exc).lower():
             return {

@@ -115,12 +115,18 @@ def _get_conn(tmp_path):
 
 
 def _patch_get_conn(tmp_path):
-    """Patch get_connection on all modules that import it to use the test DB."""
+    """Patch get_connection on all modules that import it to use the test DB.
+
+    The connection goes to production code, which authors ``%s`` placeholders
+    for PostgreSQL and relies on ``get_connection`` to rewrite them, so it must
+    translate. ``_get_conn`` above stays raw — that one only serves SQL this
+    file writes itself.
+    """
+    from _sql_compat import connect as _tconnect
+
     db = str(tmp_path / "nc_hist.db")
     def _gc():
-        c = sqlite3.connect(db)
-        c.row_factory = sqlite3.Row
-        return c
+        return _tconnect(db)
     from contextlib import ExitStack
     from unittest.mock import patch as _patch
     stack = ExitStack()
