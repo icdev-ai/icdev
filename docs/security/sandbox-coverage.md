@@ -1037,3 +1037,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - `replay.max_steps` (8) bounds a reproduction to session-setup-then-access; it is not a crawler.
   - `TestEvidenceHygiene` asserts no response body — and specifically no seeded secret marker — survives into an observation, which matters because ICDEV is a public repo and these rows are read by dashboards.
 - **Revisit if:** a non-loopback host is added to the shipped allowlist; a reproduction `kind` is added whose replay executes rather than interprets its steps (a registered `_TRACE_REPLAYER` driving a real browser is the likely candidate — that engine must land its own decision); or `_redact()` is relaxed to retain bodies.
+
+### Gap 44 — Swallowed-persistence detector and codemod (`tools/refactor/swallowed_persistence.py`, `fix_swallowed_persistence.py`)
+
+**Modules:** `tools/refactor/swallowed_persistence.py`, `tools/refactor/fix_swallowed_persistence.py` (swp-swallow-01).
+
+**Ingress path:** Repository Python source. The detector reads every `*.py` under the paths it is given, decodes it, and parses it with `ast.parse`. The fixer additionally **writes** rewritten source back to those same files. The content is first-party — it is the checkout the tool is running inside — but the fixer is a maintainer-invoked codemod with write access to the tree, so it is listed here rather than left implicit.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** Source is parsed, never executed. Neither module contains `exec`, `eval`, `compile`, `subprocess`, `os.system`, `importlib`, or any deserialization of the files it reads — `ast.parse` builds a tree and the tools walk it. Nothing read from a scanned file is interpolated into SQL, a shell command, or a path: the only value taken from file *content* is the table name in the log message, and that comes from a `[A-Za-z_][\w.]*` capture group written into a Python string literal. Output paths are always the input path — the fixer rewrites in place and never derives a destination from file content.
+- **Guardrails:**
+  - The fixer re-parses its own output (`ast.parse(new_src)`) before writing and raises rather than emitting a file it just broke; a file whose module logger did not land at module level is refused.
+  - Write is opt-in: `--dry-run` is the default posture and `--write` must be passed explicitly; `run(paths, write=False)` produces the same report with no filesystem effect.
+  - A per-file exception is caught, recorded in `errors[]`, and the sweep continues — one malformed file cannot abort or half-apply the run. The process exits non-zero when `errors` is non-empty.
+  - Scanning excludes `migrations/`, `tests/`, `.tmp/`, `node_modules/`, `__pycache__/`, and the three self-referential modules, so the tool cannot rewrite its own detector or the gate that consumes it.
+  - Line endings and file encoding are preserved (`read_source` normalises to LF for parsing and restores the original newline on write).
+  - `tests/test_coherence_swallowed_persistence.py` pins the detector in both directions and asserts the real tree is clean.
+- **Revisit if:** the fixer gains an LLM-authored rewrite path (source text becoming model output rather than a deterministic transform), starts writing to a path derived from file content, or is wired into an unattended reflex that runs `--write` without review.

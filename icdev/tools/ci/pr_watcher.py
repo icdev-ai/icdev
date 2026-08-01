@@ -157,8 +157,11 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
                  "pr_watcher", reason[:200],
                  datetime.now(timezone.utc).isoformat()),
             )
-        except Exception:  # noqa: BLE001 — audit row is best-effort
-            pass
+        except Exception as _exc:  # noqa: BLE001 — audit row is best-effort
+            logger.warning(
+                "_set_task_status: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s",
+                _exc,
+            )
         conn.commit()
         logger.info("pr_watcher: %s -> %s (%s)", task_id, status, reason)
 

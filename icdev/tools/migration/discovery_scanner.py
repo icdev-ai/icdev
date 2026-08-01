@@ -20,6 +20,9 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.migration.discovery_scanner")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -219,8 +222,9 @@ def run(project_id: str = "default") -> dict:
                 ),
             )
             conn.commit()
-        except Exception:
-            pass  # assessment save is non-blocking
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # assessment save is non-blocking
+            logger.warning("run: best-effort INSERT into mc_assessments failed (non-blocking): %s", exc)
 
         data["summary"] = (
             f"Discovered {len(projects)} project(s), {len(designs)} design(s), "

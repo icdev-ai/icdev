@@ -21,6 +21,9 @@ from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.mbse.model_code_generator")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -1047,8 +1050,8 @@ def _log_audit_event(project_id: str, results: dict, db_path=None) -> None:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_log_audit_event: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

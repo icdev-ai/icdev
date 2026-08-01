@@ -60,6 +60,9 @@ from tools.db.storage import get_connection
 from tools.common.helpers import now_iso
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.creative.creative_engine")
 
 # =========================================================================
 # PATH SETUP
@@ -492,8 +495,11 @@ def _cross_register_to_innovation(db_path=None):
                 {"count": registered, "min_score": min_score},
             )
 
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_cross_register_to_innovation: best-effort INSERT into innovation_signals failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

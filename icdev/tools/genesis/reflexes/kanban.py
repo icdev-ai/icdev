@@ -2914,12 +2914,15 @@ def _record_status_transition(
             conn.commit()
         finally:
             conn.close()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         # Audit-log writes are best-effort. If the table is missing
         # (migration 025 not yet run) or the DB is locked, we do NOT
         # block the primary state transition. The alternative \u2014
         # crashing _move_task on an audit write \u2014 would be worse.
-        pass
+        logger.warning(
+            "_record_status_transition: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s",
+            exc,
+        )
 
 
 def _parent_is_done(task_id: str) -> tuple[bool, str | None]:

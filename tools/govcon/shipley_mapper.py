@@ -36,6 +36,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection, table_exists  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.shipley_mapper")
 
 # ── Constants ─────────────────────────────────────────────────────────
 
@@ -383,8 +386,9 @@ def _audit(conn, event_type, action, details):
                 "VALUES (%s, %s, %s, %s, %s, %s)",
                 (None, event_type, "shipley_mapper", action, det, None),
             )
-        except Exception:
-            pass  # audit is best-effort
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # audit is best-effort
+            logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _safe_table_exists(conn, table_name):

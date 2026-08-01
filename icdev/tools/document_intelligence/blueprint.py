@@ -1151,8 +1151,8 @@ def api_ingest():
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("api_ingest: best-effort INSERT into dic_ingest_jobs failed (non-blocking): %s", _exc)
 
     def _run():
         outcome = None
@@ -2567,8 +2567,8 @@ def _record_review_note(item_id: str, item_type: str, note_text: str, reviewer_i
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_record_review_note: best-effort INSERT into dic_review_notes failed (non-blocking): %s", exc)
 
 
 def _record_publish_override(item_id: str, gate: str, findings: list,

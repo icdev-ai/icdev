@@ -19,6 +19,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.option_period_tracker")
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
@@ -59,8 +62,8 @@ def _audit(conn, action: str, details: str = "", actor: str = "option_tracker"):
             "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "option_tracker"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def list_option_periods(contract_id: str) -> Dict[str, Any]:

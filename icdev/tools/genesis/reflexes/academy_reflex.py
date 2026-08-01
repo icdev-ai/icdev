@@ -34,6 +34,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.reflexes.academy_reflex")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -287,8 +290,8 @@ def _promote_to_kanban(
                 ),
             )
             count += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_promote_to_kanban: best-effort INSERT into kanban_tasks failed (non-blocking): %s", exc)
     if not dry_run:
         try:
             conn.commit()

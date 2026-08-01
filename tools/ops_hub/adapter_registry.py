@@ -12,6 +12,9 @@ import json
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ops_hub.adapter_registry")
 
 if TYPE_CHECKING:
     from tools.ops_hub.adapter_base import OpsAdapter
@@ -186,8 +189,9 @@ def _persist_health(name: str, health: dict, now: str) -> None:
         ))
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Never crash the probe loop due to DB errors
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Never crash the probe loop due to DB errors
+        logger.warning("_persist_health: best-effort INSERT into ohc_adapter_status failed (non-blocking): %s", exc)
 
 
 def probe_oss(persist: bool = True) -> list[dict]:

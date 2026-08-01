@@ -27,6 +27,9 @@ from tools.slides.constants import (
     DEFAULT_TONE, DEFAULT_CITATION_STYLE, DEFAULT_OUTPUT_FORMATS,
     MIN_SLIDES,
 )
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.slides.engine")
 
 
 @dataclass
@@ -412,8 +415,8 @@ class DeckEngine:
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_update_deck_record: best-effort INSERT into slides_slides failed (non-blocking): %s", exc)
 
     def _audit(self, deck_id: int | None, action: str, details: dict) -> None:
         if deck_id is None:
@@ -429,5 +432,5 @@ class DeckEngine:
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into slides_audit failed (non-blocking): %s", exc)

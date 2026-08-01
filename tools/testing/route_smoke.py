@@ -30,6 +30,9 @@ import time
 import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.testing.route_smoke")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -320,8 +323,9 @@ def record_smoke_results(results: List[Dict], base: str = "http://localhost:5050
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Never block smoke runs on DB write failure
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Never block smoke runs on DB write failure
+        logger.warning("record_smoke_results: best-effort INSERT into route_perf failed (non-blocking): %s", exc)
 
 
 def detect_perf_regressions(

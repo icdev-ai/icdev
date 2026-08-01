@@ -21,6 +21,9 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.reflexes.sim_training_export")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -79,8 +82,8 @@ def _log_audit(reflex: str, status: str, payload: dict) -> None:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_log_audit: best-effort INSERT into genesis_audit_log failed (non-blocking): %s", exc)
 
 
 # ── Standalone CLI ─────────────────────────────────────────────────────────────

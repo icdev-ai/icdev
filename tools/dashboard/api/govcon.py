@@ -93,8 +93,8 @@ def _audit(conn, action, details="", actor="govcon_api"):
             conn.execute("RELEASE SAVEPOINT govcon_audit")
         except Exception:
             conn.execute("ROLLBACK TO SAVEPOINT govcon_audit")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # =====================================================================

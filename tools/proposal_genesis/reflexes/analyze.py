@@ -22,6 +22,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.proposal_genesis.reflexes.analyze")
 
 
 def _utcnow_iso() -> str:
@@ -471,8 +474,11 @@ def _audit_analyze(event_type: str, opportunity_id: Optional[str], details: Dict
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_audit_analyze: best-effort INSERT into pg_proposal_genesis_audit failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

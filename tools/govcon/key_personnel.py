@@ -49,6 +49,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.key_personnel")
 
 # The verdicts compass's tools/staffing/qualification.py produces. The CHECK
 # constraint in migration 266 is DERIVED from this tuple rather than repeating it —
@@ -115,10 +118,10 @@ def _audit(conn, action: str, details: str) -> None:
             (_now(), "govcon.key_personnel", "key_personnel",
              action, details, "proposal_genesis"),
         )
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         # Audit is best-effort here; the caller's write must not fail because the
         # audit table is unavailable. The row itself is the record of truth.
-        pass
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def normalize_evidence(evidence: Any) -> List[Dict[str, str]]:

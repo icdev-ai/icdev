@@ -193,8 +193,12 @@ def register_pvm_routes(bp):
                     conn.commit()
                 finally:
                     conn.close()
-            except Exception:
-                pass  # audit failure is non-fatal
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # audit failure is non-fatal
+                logger.warning(
+                    "pvm_triage_approve: best-effort INSERT into nc_nqe_audit_log failed (non-blocking): %s",
+                    _exc,
+                )
 
             return jsonify(row)
         except Exception as exc:
