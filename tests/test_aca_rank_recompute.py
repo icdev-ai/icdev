@@ -53,7 +53,14 @@ def live_shape(monkeypatch):
     conn.commit()
     fadb = importlib.import_module("apps.forge_academy.db")
     monkeypatch.setattr(fadb, "get_connection", lambda *a, **k: conn)
-    return conn, fadb
+    # Closed rather than returned: the migration under test leaves the commit to
+    # its caller, so every test here ends with an open write transaction. The
+    # guard in conftest.py fails on that (tsh-leak-01); the transaction ends with
+    # the connection.
+    try:
+        yield conn, fadb
+    finally:
+        conn.close()
 
 
 def _up():
