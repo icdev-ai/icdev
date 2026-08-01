@@ -41,14 +41,22 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SHIM = _REPO_ROOT / "tools" / "dashboard" / "templates" / "ai_gameday"
 _CANONICAL = _REPO_ROOT / "icdev" / "tools" / "dashboard" / "templates" / "ai_gameday"
 
-# Templates that legitimately exist in only one tree *today*. register.html,
-# registrations.html and simulator.html are mirror-only leftovers of an unbuilt
-# pre-session registration / snake-draft feature; disposition (delete vs
-# promote) is tracked by gdx-mir-02. They are exempt from the file-set check so
-# that this guard fails on NEW asymmetry, not on that known backlog item.
-# Whichever way gdx-mir-02 goes, the exemption stays correct — it permits an
-# asymmetry, it does not require one.
-_KNOWN_ONE_SIDED = frozenset({"register.html", "registrations.html", "simulator.html"})
+# Templates that legitimately exist in only one tree. EMPTY, and it should stay
+# that way: gdx-mir-02 closed the only entries this ever held.
+#
+# register.html, registrations.html and simulator.html were authored straight
+# into the icdev/ mirror and never existed in tools/ on any branch — the
+# mirror-only authoring anti-pattern, whose files the next --clean sync deletes
+# without trace. gdx-mir-02 dispositioned them as PROMOTE: they are now in both
+# trees, so the file-set check below covers them like every other template and
+# the content check pins them byte-for-byte.
+#
+# The pre-session registration / snake-draft feature they belong to is still
+# unwired (no route renders them, and apps/ai_gameday/blueprint.py has never
+# contained a register or form-teams route in any commit). That is tracked as a
+# separate feature card — it is deliberately NOT a reason to re-exempt these
+# files. An unrendered template is inert; an un-mirrored one silently vanishes.
+_KNOWN_ONE_SIDED: frozenset = frozenset()
 
 # Regression markers: substrings that must survive in BOTH copies. These are the
 # exact fixes that the list-only gate let slip.
