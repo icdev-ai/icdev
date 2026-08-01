@@ -137,9 +137,17 @@ def test_request_council_consult_sends_sanitized_payload_not_raw_text(monkeypatc
     assert sent_json["question"].startswith("[REDACTED]")
 
 
-def test_request_council_consult_degrades_gracefully_when_sanitizer_unimportable(monkeypatch):
-    """Redaction failing to import must not block the consult -- falls back
-    to sending the original text rather than raising."""
+def test_request_council_consult_fails_closed_when_sanitizer_unimportable(monkeypatch):
+    """Redaction failing to import must abandon the consult, NOT send raw text.
+
+    This asserted the opposite -- that an unimportable sanitizer falls back to
+    sending the original text -- and had been failing since the fail-open bypass
+    was removed. That bypass contradicted `redaction.fail_closed: true` in
+    args/redaction_config.yaml in the one module that crosses the network
+    boundary with CUI. Degrading to "no consult" costs an advisory third
+    opinion; degrading to "send it raw" costs a spill. Never restore the old
+    behavior to make this pass.
+    """
     monkeypatch.setenv("SPECIALIST_API_KEY", "secret")
     fake_requests = _fake_requests(
         post_response=_resp(json_body={"job_id": "job-6"}),
@@ -148,4 +156,7 @@ def test_request_council_consult_degrades_gracefully_when_sanitizer_unimportable
     with patch.dict(sys.modules, {"requests": fake_requests, "tools.redaction.govcon_sanitizer": None}):
         result = specialist_consult.request_council_consult("govcon", "Should we bid?")
 
-    assert result == {"verdict": "V", "stop_reason": "completed", "source": "icdev_council"}
+    # Consult abandoned -- callers treat None as "consult unavailable".
+    assert result is None
+    # ...and critically, nothing was ever put on the wire.
+    assert not fake_requests.post.called
