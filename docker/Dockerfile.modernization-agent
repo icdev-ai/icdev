@@ -55,6 +55,12 @@ RUN mkdir -p /app/data /app/.tmp && \
 
 ENV PYTHONUNBUFFERED=1
 
+# Repo lives at /app but is never pip-installed into the image, so
+# `python tools/<x>.py` leaves sys.path[0] at /app/tools/<dir> and every
+# `from tools.y import z` raises ModuleNotFoundError — including from each
+# image's own default CMD. Matches Dockerfile.alpine.base.
+ENV PYTHONPATH=/app
+
 # STIG V-230269: Run as non-root
 USER icdev
 
