@@ -241,7 +241,7 @@ jobs:
             exit 0
           fi
           echo "present=true" >> "$GITHUB_OUTPUT"
-          docker compose -f docker-compose.ci.yml up -d --wait --timeout 180
+          docker compose -f docker-compose.ci.yml up -d --build --wait --timeout 180
         # Raised from 5: this step now also BUILDS the dashboard image. The
         # images from build-images are not reachable here — that job runs on a
         # different runner and only `load`s them locally (it pushes to GHCR on

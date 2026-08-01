@@ -29,6 +29,12 @@ services:
       # Its stages are `builder` and an unnamed final stage; naming a
       # nonexistent target fails the build outright.
     image: icdev/dashboard:ci
+    # Always build; never resolve this tag from a registry. Without it compose
+    # tries to pull icdev/dashboard:ci from Docker Hub first (logging a
+    # "pull access denied" warning that reads like the real error), and on any
+    # host that already has the tag it will happily run a STALE image — which
+    # silently tests the wrong code.
+    pull_policy: build
     container_name: icdev-dashboard-ci
     ports:
       # The workflow curls host :5050. app.py's own default is 5050; the
@@ -40,11 +46,11 @@ services:
       ICDEV_PROJECT_ROOT: /app
       PORT: "5050"
       ICDEV_STORAGE_BACKEND: sqlite
-      # Same posture as the E2E job (.github/workflows/icdev-ci.yml) and
-      # playwright.config.ts: /api/health is NOT in dashboard auth's
-      # PUBLIC_ENDPOINTS, so without this the probe gets 401 and the container
-      # never turns healthy.
-      ICDEV_AUTH_BYPASS: "true"
+      # NOTE: ICDEV_AUTH_BYPASS is deliberately NOT set. tools/dashboard/auth.py
+      # does not implement that variable — it is honoured on other surfaces — so
+      # setting it here bought nothing and implied a security posture that was
+      # not real. /api/health is reachable because it is now in that module's
+      # PUBLIC_ENDPOINTS, which is where a load-balancer probe belongs.
       # Defaults keep `docker compose config` valid in validate-compose, which
       # only does `touch .env` and exports nothing.
       ICDEV_DASHBOARD_SECRET: ${ICDEV_DASHBOARD_SECRET:-ci-test-secret-32chars-minimum!!}
@@ -58,9 +64,20 @@ services:
       # as the non-root `icdev` user; mirror docker-compose.yml's overlay.
       - /app/.tmp:size=256m,mode=1777
     healthcheck:
-      # Overrides the image HEALTHCHECK. /api/health is the real probe — it runs
-      # a SELECT 1, so healthy means the DB answered, not merely that Flask
-      # bound a port.
+      # Overrides the image HEALTHCHECK.
+      #
+      # This is a LIVENESS probe, not a readiness one. /api/health returns 200
+      # whether its internal DB check passes or fails — the result only changes
+      # the body ({"status": "ok"|"degraded", "db": bool}) — so a pass proves
+      # the app booted, imported, and is serving, NOT that the database is
+      # reachable. Do not read a healthy container as a healthy database.
+      #
+      # KNOWN: this currently answers {"db": false, "status": "degraded"} in the
+      # container even though the DB is fine — `get_connection().execute
+      # ("SELECT 1")` succeeds from a shell in that same container, on a worker
+      # thread, and inside a test_request_context. Pre-existing and previously
+      # invisible (the endpoint 401'd before it was made public); not diagnosed
+      # here. Making the probe assert "ok" would be the fix once it is.
       test: ["CMD", "curl", "-sf", "http://localhost:5050/api/health"]
       interval: 10s
       timeout: 5s
