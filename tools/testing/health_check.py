@@ -126,15 +126,24 @@ _EXPECTED_TABLES = (
 def _list_tables(conn) -> List[str]:
     """Return every table name reachable from the connection. Tries the
     SQLite catalog first, falls back to the Postgres catalog if the
-    first query fails."""
+    first query fails.
+
+    Raises RuntimeError when BOTH catalog queries fail. It previously returned
+    [] instead, which made "the enumeration query blew up" indistinguishable
+    from "the database is genuinely empty" — both surfaced as
+    ``Missing N tables``, pointing at schema drift when the real fault was the
+    connection or the query. Losing both exceptions is what made this
+    undiagnosable from CI logs.
+    """
+    errors = []
     try:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         )
         return [row[0] for row in cursor.fetchall()]
-    except Exception:
-        pass
+    except Exception as exc:
+        errors.append(f"sqlite_master: {type(exc).__name__}: {exc}")
     try:
         cursor = conn.cursor()
         cursor.execute(
@@ -143,8 +152,9 @@ def _list_tables(conn) -> List[str]:
             "ORDER BY table_name"
         )
         return [row[0] for row in cursor.fetchall()]
-    except Exception:
-        return []
+    except Exception as exc:
+        errors.append(f"information_schema: {type(exc).__name__}: {exc}")
+    raise RuntimeError("; ".join(errors))
 
 
 def check_database() -> CheckResult:
@@ -181,6 +191,15 @@ def check_database() -> CheckResult:
 
     try:
         tables = _list_tables(conn)
+    except Exception as exc:
+        # Report the enumeration failure itself rather than letting it read as
+        # schema drift. `db_path` is included because the most likely causes are
+        # connecting to a different database than the one just initialized, or a
+        # predicate being injected into the system-catalog query.
+        return CheckResult(
+            success=False,
+            error=f"Table enumeration failed against {db_path}: {exc}",
+        )
     finally:
         try:
             conn.close()
@@ -189,10 +208,18 @@ def check_database() -> CheckResult:
 
     missing = [t for t in _EXPECTED_TABLES if t not in tables]
     if missing:
+        # db_path/storage_module pin down the common cause of a surprising
+        # "missing tables": enumerating a DIFFERENT database than the one that
+        # was initialized, e.g. because `tools` resolved to an installed copy
+        # rather than the working tree.
+        import tools.db.storage as _storage_mod
+
         return CheckResult(
             success=False,
             error=f"Missing {len(missing)} tables",
             details={
+                "db_path": db_path,
+                "storage_module": getattr(_storage_mod, "__file__", "?"),
                 "tables_found": len(tables),
                 "missing": missing,
             },
