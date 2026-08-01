@@ -9,6 +9,7 @@ And response_drafter._redaction_fail_closed config read.
 """
 
 import importlib
+from unittest.mock import patch
 
 import pytest
 
@@ -88,7 +89,20 @@ class TestLegitimateSkipsNeverBlock:
 
 
 class TestResponseDrafterConfigRead:
-    def test_default_is_fail_open(self):
+    def test_reads_the_shipped_config(self):
+        """The reader reflects args/redaction_config.yaml, which ships
+        fail_closed: true as of 4ea77afd5 (Pillar 0, policy-routed LLM).
+
+        This asserted `is False` against the pre-Pillar-0 config and had been
+        failing since. The code's fail-OPEN default (unreadable config) is
+        covered by test_unreadable_config_falls_open below.
+        """
         rd = importlib.import_module("tools.govcon.response_drafter")
-        # Real args/redaction_config.yaml ships fail_closed: false
-        assert rd._redaction_fail_closed() is False
+        assert rd._redaction_fail_closed() is True
+
+    def test_unreadable_config_falls_open(self, tmp_path):
+        """An operator must opt IN to fail-closed; a missing/corrupt config
+        never silently blocks drafting."""
+        rd = importlib.import_module("tools.govcon.response_drafter")
+        with patch.object(rd, "_ROOT", tmp_path):  # no args/redaction_config.yaml here
+            assert rd._redaction_fail_closed() is False
