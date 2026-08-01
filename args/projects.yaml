@@ -6923,3 +6923,52 @@ projects:
   - key: xcut
     title: Cross-Cutting — ADR & Close-Out
     priority: low
+- key: docmodx
+  name: DOCMODX Coverage Extension — Doc Drift Domain Packs + Feedback Loops
+  description: 'Extend the shipped Document Modernization (DocMod) engine with the
+    verified-absent P0/P1 coverage gaps identified by an external audit of the DIC
+    + DocDrift + DocMod stack. The framework itself is production-grade and needs
+    domain extension plus feedback loops, not redesign. Scope is two new declarative
+    rulebook packs (architecture patterns, SOP workflows), temporal validity (effective
+    and sunset dates) in the policy rulebook, proactive stale-document notification
+    wired through the existing NotificationGateway, and an inter-document cross-reference
+    table populated at ingest time. Zero-Python rulebook path is unproven in-repo
+    (no shipped pack uses RulebookPack), so the first pack task doubles as the exemplar.
+    Deferred gaps: regen citation gate, link rot, semantic claim persistence, external
+    push feeds, living-document model. SCOPE BOUNDARY: the DocMod engine itself already
+    shipped previously as 32 completed tasks under the older task_prefix "docmod-"
+    (epics bridge, catalog, core, hitl, learner, ops, packs, regen, ux) plus migrations
+    257/258; that prior work is deliberately OUT OF SCOPE for this card and must not be
+    re-conflated with it. This card covers only the new extension work under "docmodx-".
+
+    '
+  task_prefix: docmodx-
+  default_open: true
+  briefs:
+  - 'scope: prior DocMod engine work (32 done tasks under the older docmod- prefix)
+    shipped already and is deliberately out of this card''s scope'
+  - 'gate: manual hold so the runner never auto-dispatches this set; the five impl
+    tasks depend_on the gate — docmodx-gate-00'
+  - 'pack: architecture_patterns rulebook pack (also the RulebookPack exemplar) +
+    sop_workflows tool/command drift pack — docmodx-pack-01/02'
+  - 'temporal: effective_date / sunset_date structured fields in rulebook_policy.yaml
+    + evaluator emits sunset verdicts — docmodx-temporal-01'
+  - 'notify: freshness_engine threshold crossing -> NotificationGateway doc_stale
+    event, owner via dic_collections.owner_id — docmodx-notify-01'
+  - 'xref: dic_cross_references table (RLS) + ingest-time reference parser — docmodx-xref-01'
+  epics:
+  - key: gate
+    title: Manual Gate (held in_progress, pipeline-exempt)
+    priority: high
+  - key: pack
+    title: Domain Rulebook Packs — architecture patterns + SOP workflows
+    priority: high
+  - key: temporal
+    title: Temporal Validity — effective/sunset dates
+    priority: medium
+  - key: notify
+    title: Proactive Stale-Document Notification
+    priority: medium
+  - key: xref
+    title: Inter-Document Cross-References
+    priority: medium
