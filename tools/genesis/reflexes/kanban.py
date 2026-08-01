@@ -3878,11 +3878,37 @@ def _poll_all_channels():
 # arrives mid-session is picked up automatically. The default home-dir fallback
 # is preserved for systems where Claude is installed but not on PATH.
 def _resolve_claude_cli() -> Optional[str]:
+    """Absolute path to the ``claude`` CLI, or None.
+
+    The fallback used to test ``~/.local/bin/claude`` with no extension, which
+    never exists on Windows — the installed binary is ``claude.EXE``. So on
+    Windows resolution depended entirely on ``shutil.which``, i.e. on PATH, and
+    a process started with a thinner environment (a dashboard-spawned
+    scheduler, a service) silently found nothing. ``_claude_code_available()``
+    then returned False, the executor chain fell through gitlab and ollama, and
+    every task dispatched in that window was quarantined to ``suggested`` with
+    "no executor available" — 25 tasks on 2026-08-01 before it was traced.
+
+    Suffixes come from PATHEXT so a ``.cmd``/``.bat`` shim resolves too.
+    """
     found = shutil.which("claude")
     if found:
         return found
-    fallback = Path.home() / ".local" / "bin" / "claude"
-    return str(fallback) if fallback.exists() else None
+    import os as _os
+
+    base = Path.home() / ".local" / "bin" / "claude"
+    suffixes = [""]
+    if _os.name == "nt":
+        suffixes += [
+            e.lower() for e in _os.environ.get(
+                "PATHEXT", ".EXE;.CMD;.BAT;.COM"
+            ).split(_os.pathsep) if e.strip()
+        ]
+    for suffix in suffixes:
+        candidate = base.with_name(base.name + suffix) if suffix else base
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 
 def _claude_code_available() -> bool:
@@ -6997,6 +7023,37 @@ def _split_failure_narrative(reason: Optional[str]) -> Tuple[str, str]:
     return f"UNCLASSIFIED (no failure clause): {narrative}", narrative
 
 
+_main_worktree_cache: Optional[Path] = None
+
+
+def _main_worktree_root() -> Path:
+    """The MAIN git worktree, which is the one whose state is shared.
+
+    ``git worktree list --porcelain`` always names the main working tree first,
+    regardless of which worktree we are running from. Cached: the answer cannot
+    change within a process, and this is called on every reaper sweep.
+    """
+    global _main_worktree_cache
+    if _main_worktree_cache is not None:
+        return _main_worktree_cache
+    root = BASE_DIR
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=10,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if line.startswith("worktree "):
+                    root = Path(line[len("worktree "):].strip())
+                    break
+    except Exception as exc:
+        logger.debug("kanban: main-worktree lookup failed, using BASE_DIR: %s", exc)
+    _main_worktree_cache = root
+    return root
+
+
 def _foreign_scheduler_pid() -> int:
     """PID of a LIVE kanban scheduler that is not this process, or 0.
 
@@ -7009,10 +7066,19 @@ def _foreign_scheduler_pid() -> int:
 
     Reuses the lockfile tools/genesis/kanban_scheduler.py already maintains
     rather than introducing a second ownership mechanism.
+
+    The lockfile is resolved from the MAIN worktree, not from BASE_DIR. A
+    dashboard started inside a git worktree spawns its own scheduler from that
+    worktree, and such a process reading ``BASE_DIR/.tmp/`` would find its own
+    private lockfile, see no foreign owner, and dispatch against the shared
+    board anyway. Observed 2026-08-01: three worktree-spawned schedulers
+    (tsh-e2e-01, aca-trn-04, and a nested aca-trn-03) running alongside the
+    real one. They all write the SAME database, so ownership has to be asked
+    of the one tree they share.
     """
     import os as _os
 
-    lock_path = BASE_DIR / ".tmp" / "kanban_scheduler.pid"
+    lock_path = _main_worktree_root() / ".tmp" / "kanban_scheduler.pid"
     try:
         owner_pid = int(lock_path.read_text(encoding="utf-8").strip())
     except Exception:
