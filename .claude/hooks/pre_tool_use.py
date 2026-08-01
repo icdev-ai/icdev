@@ -96,7 +96,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # discriminates. dynamic_findings itself is mutable (status transitions)
         # and is deliberately NOT listed here.
         "finding_replay_attempts",
-        # BOM Evidence Engine (migration 267).
+        # BOM Evidence Engine (migration 322).
         # bom_match_decisions holds a human's reconciliation verdicts, keyed on a
         # pair of line hashes. Clusters are a projection recomputed OVER these on
         # every run — the decisions are the ONLY durable record of what a person

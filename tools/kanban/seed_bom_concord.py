@@ -36,7 +36,7 @@ ENGINE: list[dict] = [
         "description": (
             "tools/bom/constants.py (closed vocabularies), tools/bom/db/init_db.py "
             "(SCHEMA_PG, 21 tables), emit_migration.py, and migration "
-            "267_bom_evidence_engine.sql GENERATED from SCHEMA_PG so the two cannot "
+            "322_bom_evidence_engine.sql GENERATED from SCHEMA_PG so the two cannot "
             "drift. CHECK constraints are derived from the Python tuples. "
             "bom_match_decisions + bom_audit are append-only.\n\n"
             "Invariants the schema encodes, each because losing it would put a wrong "

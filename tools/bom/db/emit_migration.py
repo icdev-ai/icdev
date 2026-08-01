@@ -19,7 +19,7 @@ from tools.bom.db.init_db import SCHEMA_PG
 
 MIGRATION = (
     Path(__file__).resolve().parents[3]
-    / "tools" / "db" / "migrations" / "267_bom_evidence_engine.sql"
+    / "tools" / "db" / "migrations" / "322_bom_evidence_engine.sql"
 )
 
 HEADER = """-- Migration 267: BOM Evidence Engine.
