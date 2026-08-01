@@ -1,0 +1,501 @@
+# tsr-doc-01-d3 CONTROL cell - stale code 08466d7f3 + FRESHLY SEEDED db (541 tables)
+# isolates whether the single d2->d3 discrepancy is the code delta or the DB state
+CONTROL: stale code 08466d7f3 + freshly seeded DB (541 tables)
+cwd=C:\Users\schuo\AppData\Local\Temp\claude\tsr-doc-d3\wt-control
+==============================================================================
+
+==============================================================================
+[1/9] tests/govcon/test_past_performance_suggester.py  rc=0
+==============================================================================
+.....                                                                    [100%]
+5 passed in 14.09s
+
+
+==============================================================================
+[2/9] tests/browser/test_scope.py  rc=1
+==============================================================================
+.................................................F..                     [100%]
+================================== FAILURES ===================================
+_______ test_browser_event_types_pass_the_audit_trail_check_constraint ________
+
+    def test_browser_event_types_pass_the_audit_trail_check_constraint():
+        """The reused event types must exist in BOTH the Python constant and the
+        SQL CHECK — the failure mode is a row that silently never lands."""
+        from tools.audit import audit_logger
+    
+        ddl = (ROOT / "tools" / "db" / "init_icdev_db.py").read_text(encoding="utf-8")
+        for event_type in ("agent_task_completed", "agent_task_failed"):
+            assert event_type in audit_logger.VALID_EVENT_TYPES
+>           assert f"'{event_type}'" in ddl
+E           assert "'agent_task_completed'" in '#!/usr/bin/env python3\n# CUI // SP-CTI\n"""Initialize the ICDEV™ operational database with full schema."""\n\nimport...Removed existing database: {args.db_path}")\n\n    init_db(args.db_path)\n\n\nif __name__ == "__main__":\n    main()\n'
+
+tests\browser\test_scope.py:560: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/browser/test_scope.py::test_browser_event_types_pass_the_audit_trail_check_constraint - assert "'agent_task_completed'" in '#!/usr/bin/env python3\n# CUI // SP-CTI...
+1 failed, 51 passed in 1.01s
+
+
+==============================================================================
+[3/9] tests/docmod/test_regen_quality_gate.py  rc=1
+==============================================================================
+.......FF.                                                               [100%]
+================================== FAILURES ===================================
+_______________ test_uncited_regeneration_blocked_and_withheld ________________
+
+db = None, patched_generator = {'section': 'TLS 1.3 secures all endpoints.'}
+
+    def test_uncited_regeneration_blocked_and_withheld(db, patched_generator):
+        patched_generator["section"] = "TLS 1.3 secures all endpoints."  # no [source:] tag
+        from tools.doc_modernization.regen_orchestrator import regenerate_document
+        from tools.doc_modernization.regen_orchestrator import BLOCKED_STATUS
+    
+        doc_id = _seed_approved_doc()
+        out = regenerate_document(doc_id)
+    
+>       assert out["blocked"] is True
+E       assert False is True
+
+tests\docmod\test_regen_quality_gate.py:305: AssertionError
+___________________ test_force_override_promotes_and_audits ___________________
+
+db = None, patched_generator = {'section': 'TLS 1.3 secures all endpoints.'}
+
+    def test_force_override_promotes_and_audits(db, patched_generator):
+        patched_generator["section"] = "TLS 1.3 secures all endpoints."  # still uncited → would block
+        from tools.doc_modernization.regen_orchestrator import regenerate_document
+    
+        doc_id = _seed_approved_doc()
+        out = regenerate_document(doc_id, force=True, reviewer="alice")
+    
+>       assert out["forced"] is True
+E       assert False is True
+
+tests\docmod\test_regen_quality_gate.py:321: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/docmod/test_regen_quality_gate.py::test_uncited_regeneration_blocked_and_withheld - assert False is True
+FAILED tests/docmod/test_regen_quality_gate.py::test_force_override_promotes_and_audits - assert False is True
+2 failed, 8 passed in 0.94s
+
+
+==============================================================================
+[4/9] tests/genesis_auto/test_extractors.py  rc=1
+==============================================================================
+.....ssssssssss.F                                                        [100%]
+================================== FAILURES ===================================
+__________________________ test_extractors_constants __________________________
+
+    def test_extractors_constants():
+        """Verify module exports expected constants."""
+        try:
+            import tools.document_intelligence.extractors as mod
+            assert hasattr(mod, "_EASYOCR_READER"), "Missing constant _EASYOCR_READER"
+            assert hasattr(mod, "_EASYOCR_TRIED"), "Missing constant _EASYOCR_TRIED"
+>           assert hasattr(mod, "_YIELD_RICH"), "Missing constant _YIELD_RICH"
+E           AssertionError: Missing constant _YIELD_RICH
+E           assert False
+E            +  where False = hasattr(<module 'tools.document_intelligence.extractors' from 'C:\\Users\\schuo\\AppData\\Local\\Temp\\claude\\tsr-doc-d3\\wt-control\\tools\\document_intelligence\\extractors.py'>, '_YIELD_RICH')
+
+tests\genesis_auto\test_extractors.py:183: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/genesis_auto/test_extractors.py::test_extractors_constants - AssertionError: Missing constant _YIELD_RICH
+1 failed, 6 passed, 10 skipped in 0.56s
+
+
+==============================================================================
+[5/9] tests/test_dic_techwriter.py  rc=1
+==============================================================================
+............................E                                            [100%]
+=================================== ERRORS ====================================
+_ ERROR at teardown of test_import_from_docgen_valid_template_type_returns_500_or_doc_id _
+Transaction leak: tests/test_dic_techwriter.py::test_import_from_docgen_valid_template_type_returns_500_or_doc_id finished with 1 SQLite connection(s) holding an uncommitted write transaction. Commit, roll back, or close the connection before the test ends (the guard rolled them back so later tests are unaffected). If the open transaction is intentional, mark the test with @pytest.mark.allow_open_transaction.
+
+Opened at:
+        opened on thread 'MainThread':
+          app.py:917 in full_dispatch_request
+          app.py:902 in dispatch_request
+          blueprint.py:906 in api_import_from_docgen
+          blueprint.py:203 in _conn
+          storage.py:1695 in get_connection
+          storage.py:1523 in _get_sqlite_connection
+=========================== short test summary info ===========================
+ERROR tests/test_dic_techwriter.py::test_import_from_docgen_valid_template_type_returns_500_or_doc_id - Failed: Transaction leak: tests/test_dic_techwriter.py::test_import_from_do...
+28 passed, 1 error in 12.86s
+
+
+==============================================================================
+[6/9] tests/test_dsyn_consistency.py  rc=1
+==============================================================================
+...........F....                                                         [100%]
+================================== FAILURES ===================================
+___ TestConsistencyFlagPropagation.test_flag_emitted_when_char_delta_large ____
+
+self = <test_dsyn_consistency.TestConsistencyFlagPropagation object at 0x0000019A5E930A50>
+
+    def test_flag_emitted_when_char_delta_large(self):
+        shim = _ShimConn(_make_raw_conn())
+        before = "Short text."
+        after = "This section now covers zero-trust authentication, network segmentation, " \
+                "firewall rules, access control lists, and multi-factor authentication requirements."
+        fake_related = [
+            {"doc_id": "doc-rel", "doc_title": "Related", "collection_id": "col-001",
+             "matching_concepts": ["authentication"], "last_updated": ""}
+        ]
+        import tools.document_intelligence.consistency_checker as cc
+        orig_fr = cc.find_related_docs
+        cc.find_related_docs = MagicMock(return_value=fake_related)
+        try:
+            with _patch_attr("tools.document_intelligence.history_recorder", "get_connection",
+                             MagicMock(return_value=shim)):
+                from tools.document_intelligence.history_recorder import record_edit
+                record_edit("sec-001", "editor", before, after, doc_id="doc-src")
+        finally:
+            cc.find_related_docs = orig_fr
+    
+        events = shim.execute(
+            "SELECT * FROM canvas_events WHERE event_type='dic.consistency_flag'"
+        ).fetchall()
+>       assert len(events) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+
+tests\test_dsyn_consistency.py:255: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dsyn_consistency.py::TestConsistencyFlagPropagation::test_flag_emitted_when_char_delta_large - assert 0 >= 1
+1 failed, 15 passed in 0.70s
+
+
+==============================================================================
+[7/9] tests/test_dsyn_patch_mode.py  rc=1
+==============================================================================
+.........FF.F..........                                                  [100%]
+================================== FAILURES ===================================
+______ TestSuggestionNotifications.test_notification_inserted_for_editor ______
+
+self = <test_dsyn_patch_mode.TestSuggestionNotifications object at 0x000002644B6E0A50>
+
+    def test_notification_inserted_for_editor(self):
+        shim = _make_shim()
+        self._seed_members(shim, ["editor"])
+        with _patch_module_attr("tools.document_intelligence.suggestion_store", "get_connection",
+                                MagicMock(return_value=shim)):
+            from tools.document_intelligence import suggestion_store
+            suggestion_store.create_suggestion(
+                collection_id="col-001", canvas_source="ndc",
+                suggested_content="Updated topology section.", rationale="Topology drift",
+            )
+        rows = shim.execute(
+            "SELECT * FROM notification_log WHERE event_type='dic_suggestion_created'"
+        ).fetchall()
+>       assert len(rows) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+
+tests\test_dsyn_patch_mode.py:166: AssertionError
+_____ TestSuggestionNotifications.test_notification_inserted_for_reviewer _____
+
+self = <test_dsyn_patch_mode.TestSuggestionNotifications object at 0x000002644B6E0B90>
+
+    def test_notification_inserted_for_reviewer(self):
+        shim = _make_shim()
+        self._seed_members(shim, ["reviewer"])
+        with _patch_module_attr("tools.document_intelligence.suggestion_store", "get_connection",
+                                MagicMock(return_value=shim)):
+            from tools.document_intelligence import suggestion_store
+            suggestion_store.create_suggestion(
+                collection_id="col-001", canvas_source="compliance",
+                suggested_content="POAM update.", rationale="POAM overdue",
+            )
+        rows = shim.execute(
+            "SELECT * FROM notification_log WHERE event_type='dic_suggestion_created'"
+        ).fetchall()
+>       assert len(rows) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+
+tests\test_dsyn_patch_mode.py:181: AssertionError
+____ TestSuggestionNotifications.test_notification_canvas_source_in_title _____
+
+self = <test_dsyn_patch_mode.TestSuggestionNotifications object at 0x000002644B632520>
+
+    def test_notification_canvas_source_in_title(self):
+        shim = _make_shim()
+        self._seed_members(shim, ["editor"])
+        with _patch_module_attr("tools.document_intelligence.suggestion_store", "get_connection",
+                                MagicMock(return_value=shim)):
+            from tools.document_intelligence import suggestion_store
+            suggestion_store.create_suggestion(
+                collection_id="col-001", canvas_source="aiify",
+                suggested_content="Grade drop update.", rationale="Score dropped",
+            )
+        rows = shim.execute(
+            "SELECT title FROM notification_log WHERE event_type='dic_suggestion_created'"
+        ).fetchall()
+>       assert len(rows) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+
+tests\test_dsyn_patch_mode.py:211: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_dsyn_patch_mode.py::TestSuggestionNotifications::test_notification_inserted_for_editor - assert 0 >= 1
+FAILED tests/test_dsyn_patch_mode.py::TestSuggestionNotifications::test_notification_inserted_for_reviewer - assert 0 >= 1
+FAILED tests/test_dsyn_patch_mode.py::TestSuggestionNotifications::test_notification_canvas_source_in_title - assert 0 >= 1
+3 failed, 20 passed in 0.63s
+
+
+==============================================================================
+[8/9] tests/test_idr_multi_source.py  rc=1
+==============================================================================
+.................F.                                                      [100%]
+================================== FAILURES ===================================
+____________ TestCoTActivation.test_cot_called_when_evidence_rich _____________
+
+self = <test_idr_multi_source.TestCoTActivation object at 0x0000021FD7195450>
+
+    def test_cot_called_when_evidence_rich(self):
+        from tools.document_intelligence import doc_generator as dg
+    
+        # Patch evidence so it's > 500 chars
+        rich_evidence = "x" * 600
+    
+        cot_calls: list = []
+    
+        def fake_cot(heading, evidence, function="document_qna"):
+            cot_calls.append(heading)
+            return "CoT generated text."
+    
+        def patched_build(*a, **kw):
+            return rich_evidence
+    
+        with patch.object(dg, "_build_evidence_pool", patched_build):
+            with patch.object(dg, "_cot_generate", fake_cot):
+                with patch.object(dg, "_llm_generate") as mock_llm:
+                    mock_llm.return_value = '{"title":"T","sections":[{"heading":"H","summary":"S"}]}'
+                    with patch("tools.document_intelligence.search_engine.DICSearchEngine") as MockEng:
+                        MockEng.return_value.search.return_value = []
+                        with patch("tools.db.storage.get_connection"):
+                            dg.generate_document("q", collection_id=None)
+    
+>       assert len(cot_calls) > 0, "CoT should be called when evidence > 500 chars"
+E       AssertionError: CoT should be called when evidence > 500 chars
+E       assert 0 > 0
+E        +  where 0 = len([])
+
+tests\test_idr_multi_source.py:331: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_idr_multi_source.py::TestCoTActivation::test_cot_called_when_evidence_rich - AssertionError: CoT should be called when evidence > 500 chars
+1 failed, 18 passed in 0.72s
+
+
+==============================================================================
+[9/9] tests/test_rted_conflict_detector.py  rc=1
+==============================================================================
+....FFFFFFF                                                              [100%]
+================================== FAILURES ===================================
+_______________ test_get_section_state_returns_content_and_hash _______________
+
+conn = <test_rted_conflict_detector._FakeConn object at 0x00000296C4DC6900>
+
+    def test_get_section_state_returns_content_and_hash(conn):
+        _insert(conn, "sec-01", "some content")
+>       state = get_section_state(conn, "sec-01")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_rted_conflict_detector.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tools\document_intelligence\conflict_detector.py:40: in get_section_state
+    row = conn.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_rted_conflict_detector._FakeConn object at 0x00000296C4DC6900>
+sql = 'SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1'
+params = ('sec-01',)
+
+    def execute(self, sql, params=()):
+        # conflict_detector passes its caller's conn which uses ?
+>       return self._db.execute(sql, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: near "%": syntax error
+
+tests\test_rted_conflict_detector.py:29: OperationalError
+_______________ test_get_section_state_returns_none_for_missing _______________
+
+conn = <test_rted_conflict_detector._FakeConn object at 0x00000296C567D950>
+
+    def test_get_section_state_returns_none_for_missing(conn):
+>       assert get_section_state(conn, "sec-ghost") is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_rted_conflict_detector.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tools\document_intelligence\conflict_detector.py:40: in get_section_state
+    row = conn.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_rted_conflict_detector._FakeConn object at 0x00000296C567D950>
+sql = 'SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1'
+params = ('sec-ghost',)
+
+    def execute(self, sql, params=()):
+        # conflict_detector passes its caller's conn which uses ?
+>       return self._db.execute(sql, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: near "%": syntax error
+
+tests\test_rted_conflict_detector.py:29: OperationalError
+______________ test_check_conflict_no_conflict_when_hash_matches ______________
+
+conn = <test_rted_conflict_detector._FakeConn object at 0x00000296C567E350>
+
+    def test_check_conflict_no_conflict_when_hash_matches(conn):
+        _insert(conn, "sec-02", "hello")
+        h = compute_hash("hello")
+>       result = check_conflict(conn, "sec-02", h)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_rted_conflict_detector.py:98: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tools\document_intelligence\conflict_detector.py:61: in check_conflict
+    state = get_section_state(conn, section_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tools\document_intelligence\conflict_detector.py:40: in get_section_state
+    row = conn.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_rted_conflict_detector._FakeConn object at 0x00000296C567E350>
+sql = 'SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1'
+params = ('sec-02',)
+
+    def execute(self, sql, params=()):
+        # conflict_detector passes its caller's conn which uses ?
+>       return self._db.execute(sql, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: near "%": syntax error
+
+tests\test_rted_conflict_detector.py:29: OperationalError
+_______________ test_check_conflict_conflict_when_hash_differs ________________
+
+conn = <test_rted_conflict_detector._FakeConn object at 0x00000296C55F7BB0>
+
+    def test_check_conflict_conflict_when_hash_differs(conn):
+        _insert(conn, "sec-03", "new content by someone else")
+        old_hash = compute_hash("my old content")
+>       result = check_conflict(conn, "sec-03", old_hash)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_rted_conflict_detector.py:106: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tools\document_intelligence\conflict_detector.py:61: in check_conflict
+    state = get_section_state(conn, section_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tools\document_intelligence\conflict_detector.py:40: in get_section_state
+    row = conn.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_rted_conflict_detector._FakeConn object at 0x00000296C55F7BB0>
+sql = 'SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1'
+params = ('sec-03',)
+
+    def execute(self, sql, params=()):
+        # conflict_detector passes its caller's conn which uses ?
+>       return self._db.execute(sql, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: near "%": syntax error
+
+tests\test_rted_conflict_detector.py:29: OperationalError
+___________ test_check_conflict_missing_section_returns_no_conflict ___________
+
+conn = <test_rted_conflict_detector._FakeConn object at 0x00000296C57D8050>
+
+    def test_check_conflict_missing_section_returns_no_conflict(conn):
+>       result = check_conflict(conn, "sec-ghost", "deadbeef")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_rted_conflict_detector.py:113: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tools\document_intelligence\conflict_detector.py:61: in check_conflict
+    state = get_section_state(conn, section_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tools\document_intelligence\conflict_detector.py:40: in get_section_state
+    row = conn.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_rted_conflict_detector._FakeConn object at 0x00000296C57D8050>
+sql = 'SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1'
+params = ('sec-ghost',)
+
+    def execute(self, sql, params=()):
+        # conflict_detector passes its caller's conn which uses ?
+>       return self._db.execute(sql, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: near "%": syntax error
+
+tests\test_rted_conflict_detector.py:29: OperationalError
+_________________ test_check_conflict_exposes_current_content _________________
+
+conn = <test_rted_conflict_detector._FakeConn object at 0x00000296C5654170>
+
+    def test_check_conflict_exposes_current_content(conn):
+        _insert(conn, "sec-04", "their version")
+>       result = check_conflict(conn, "sec-04", "aaaaaaaa")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_rted_conflict_detector.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tools\document_intelligence\conflict_detector.py:61: in check_conflict
+    state = get_section_state(conn, section_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tools\document_intelligence\conflict_detector.py:40: in get_section_state
+    row = conn.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_rted_conflict_detector._FakeConn object at 0x00000296C5654170>
+sql = 'SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1'
+params = ('sec-04',)
+
+    def execute(self, sql, params=()):
+        # conflict_detector passes its caller's conn which uses ?
+>       return self._db.execute(sql, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: near "%": syntax error
+
+tests\test_rted_conflict_detector.py:29: OperationalError
+______________________ test_check_conflict_empty_content ______________________
+
+conn = <test_rted_conflict_detector._FakeConn object at 0x00000296C4F7CC00>
+
+    def test_check_conflict_empty_content(conn):
+        _insert(conn, "sec-05", "")
+        h = compute_hash("")
+>       result = check_conflict(conn, "sec-05", h)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_rted_conflict_detector.py:126: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tools\document_intelligence\conflict_detector.py:61: in check_conflict
+    state = get_section_state(conn, section_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tools\document_intelligence\conflict_detector.py:40: in get_section_state
+    row = conn.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_rted_conflict_detector._FakeConn object at 0x00000296C4F7CC00>
+sql = 'SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1'
+params = ('sec-05',)
+
+    def execute(self, sql, params=()):
+        # conflict_detector passes its caller's conn which uses ?
+>       return self._db.execute(sql, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: near "%": syntax error
+
+tests\test_rted_conflict_detector.py:29: OperationalError
+=========================== short test summary info ===========================
+FAILED tests/test_rted_conflict_detector.py::test_get_section_state_returns_content_and_hash - sqlite3.OperationalError: near "%": syntax error
+FAILED tests/test_rted_conflict_detector.py::test_get_section_state_returns_none_for_missing - sqlite3.OperationalError: near "%": syntax error
+FAILED tests/test_rted_conflict_detector.py::test_check_conflict_no_conflict_when_hash_matches - sqlite3.OperationalError: near "%": syntax error
+FAILED tests/test_rted_conflict_detector.py::test_check_conflict_conflict_when_hash_differs - sqlite3.OperationalError: near "%": syntax error
+FAILED tests/test_rted_conflict_detector.py::test_check_conflict_missing_section_returns_no_conflict - sqlite3.OperationalError: near "%": syntax error
+FAILED tests/test_rted_conflict_detector.py::test_check_conflict_exposes_current_content - sqlite3.OperationalError: near "%": syntax error
+FAILED tests/test_rted_conflict_detector.py::test_check_conflict_empty_content - sqlite3.OperationalError: near "%": syntax error
+7 failed, 4 passed in 0.60s
+
