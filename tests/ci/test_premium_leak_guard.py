@@ -41,6 +41,12 @@ _SCAN_DIRS = ("tools", "icdev/tools", "args", "goals", "hardprompts", ".claude")
 _SELF_SUFFIX = "test_premium_leak_guard.py"
 
 
+# `git grep` across six trees can legitimately outlast the global 30s budget
+# from pyproject's `timeout = 30`. Raise THIS test's budget rather than
+# shortening the scan: the subprocess timeout below (120s) must stay inside it,
+# or pytest-timeout fires first and — using the thread method, the only one
+# available on Windows — kills the whole session instead of failing one test.
+@pytest.mark.timeout(180)
 def test_no_premium_identifiers_in_open_repo():
     pattern = "|".join(_PREMIUM_PATTERNS)
     try:

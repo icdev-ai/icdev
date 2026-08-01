@@ -359,10 +359,26 @@ def test_step_id_defaults_to_tool_name(stub_tool):
 
 # ── CLI contract (subprocess — this is what the runner actually does) ───────
 
+#: Subprocess budget, deliberately INSIDE the 30s per-test budget that
+#: pyproject.toml's `timeout = 30` gives every test.
+#:
+#: This was 180 — six times the outer limit — which inverted the two and turned
+#: any slow child into a whole-session abort. pytest-timeout has no signal-based
+#: method on Windows, so it uses the thread method, which dumps stacks and kills
+#: the interpreter rather than failing one test. A full local `pytest tests/`
+#: therefore died at ~18% with a traceback pointing at subprocess.communicate,
+#: reading as a hang in this file when it was really the session being shot.
+#:
+#: An inner timeout must always fire before the outer one, so a slow child fails
+#: THIS test with a legible TimeoutExpired and the run continues. Observed cost of
+#: one invocation is ~3s, so 20s is roughly 6x headroom.
+_CLI_TIMEOUT_S = 20
+
+
 def _cli(*args) -> tuple[int, dict]:
     proc = subprocess.run(
         [sys.executable, str(_SCRIPT), *args],
-        capture_output=True, text=True, cwd=str(_ROOT), timeout=180,
+        capture_output=True, text=True, cwd=str(_ROOT), timeout=_CLI_TIMEOUT_S,
     )
     return proc.returncode, json.loads(proc.stdout)
 
