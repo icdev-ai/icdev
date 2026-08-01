@@ -1673,6 +1673,17 @@ def seed_mission_catalog() -> None:
                 "FORGE Academy: seeded %d mission(s) from discovered content", seeded_from_disk
             )
         conn.commit()
+
+        # aca-trn-01: item banks last, because they resolve (mission_slug, step_num)
+        # to a step id and therefore need the step rows above to exist. Idempotent
+        # and re-run every start-up, so editing the authored YAML corrects the
+        # database — the same self-correcting property the catalogue reconciles
+        # above were added for (aca-hon-02/04/05), applied to assessment content.
+        try:
+            seed_item_banks(conn)
+        except Exception:
+            # A bad bank costs its steps their assessment, not the whole catalogue.
+            _log.warning("item bank seed failed", exc_info=True)
         _log.info("FORGE Academy: seeded/updated %d missions (%d derived from content)",
                   len(catalog), len(catalog) - len(BUILTIN_MISSIONS))
     except Exception as e:
@@ -2360,6 +2371,144 @@ def _md_to_html(text: str) -> str:
         import html
         return f"<pre>{html.escape(text)}</pre>"
     return _sanitize_html(rendered, raw_fallback=text)
+
+
+# ---------------------------------------------------------------------------
+# Item banks (aca-trn-01)
+# ---------------------------------------------------------------------------
+# Banks are authored in YAML next to the lesson they assess, under
+# content/item_banks/<mission-slug>.yaml, and seeded into fa_assessment_items.
+#
+# Authored as content rather than as rows in a migration for the same reason the
+# steps themselves are: a migration is applied once, so correcting a badly-worded
+# question would need a second migration, and the bank would drift out of step with
+# the lesson it belongs to. Seeding is idempotent and re-runs on every start-up, so
+# editing the YAML corrects the database.
+
+ITEM_BANK_ROOT = CONTENT_ROOT / "item_banks"
+
+
+def load_item_banks() -> dict:
+    """Parse every authored item bank. Returns ``{mission_slug: {step_num: [item]}}``.
+
+    Malformed banks are skipped with a warning rather than raising: a bad bank must
+    cost its own step its assessment, not take start-up down with it. The step then
+    classifies as `acknowledged`, which grades honestly (``assessed: False``) instead
+    of pretending to have assessed anything.
+    """
+    if not ITEM_BANK_ROOT.is_dir():
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        _log.warning("PyYAML unavailable — item banks not seeded")
+        return {}
+
+    banks: dict[str, dict[int, list]] = {}
+    for path in sorted(ITEM_BANK_ROOT.glob("*.yaml")):
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            _log.warning("item bank %s is not parseable", path.name, exc_info=True)
+            continue
+        slug = str(doc.get("mission") or path.stem).strip()
+        if not slug:
+            continue
+        for entry in doc.get("steps") or []:
+            try:
+                step_num = int(entry.get("step"))
+            except (TypeError, ValueError):
+                _log.warning("item bank %s has a step with no usable number", path.name)
+                continue
+            items = []
+            for raw in entry.get("items") or []:
+                options = [str(o) for o in (raw.get("options") or [])]
+                items.append({
+                    "item_key": str(raw.get("key") or "").strip(),
+                    "prompt": str(raw.get("prompt") or "").strip(),
+                    "options": options,
+                    "correct_index": raw.get("correct"),
+                    "explanation": str(raw.get("explanation") or "").strip(),
+                    "difficulty": str(raw.get("difficulty") or "core").strip(),
+                })
+            if items:
+                banks.setdefault(slug, {})[step_num] = items
+    return banks
+
+
+def seed_item_banks(conn) -> int:
+    """Upsert authored item banks onto their steps. Returns the item count written.
+
+    Runs on every start-up, after the steps exist, and is idempotent: an item is
+    keyed on ``(step_id, item_key)`` so re-seeding corrects a reworded prompt in
+    place rather than duplicating it. Learner attempts reference ``item_key``, so a
+    corrected item stays the same item in the ledger.
+
+    A bank that fails ``validate_item_bank`` is REFUSED, not partially written — a
+    half-seeded bank would serve a learner a question with no correct answer in it.
+    """
+    banks = load_item_banks()
+    if not banks:
+        return 0
+    from .assessment import validate_item_bank
+
+    written = 0
+    for slug, by_step in banks.items():
+        row = conn.execute(
+            "SELECT id FROM fa_missions WHERE slug=%s", (slug,)
+        ).fetchone()
+        if not row:
+            _log.warning("item bank references unknown mission %r", slug)
+            continue
+        mission_id = row["id"] if hasattr(row, "keys") else row[0]
+
+        for step_num, items in by_step.items():
+            problems = validate_item_bank(items)
+            if problems:
+                # Refused at seed time rather than discovered by a learner
+                # mid-assessment.
+                _log.warning("item bank %s step %s refused: %s",
+                             slug, step_num, "; ".join(problems))
+                continue
+            step_row = conn.execute(
+                "SELECT id FROM fa_mission_steps WHERE mission_id=%s AND step_num=%s",
+                (mission_id, step_num),
+            ).fetchone()
+            if not step_row:
+                _log.warning("item bank %s references missing step %s", slug, step_num)
+                continue
+            step_id = step_row["id"] if hasattr(step_row, "keys") else step_row[0]
+
+            for item in items:
+                existing = conn.execute(
+                    "SELECT id FROM fa_assessment_items WHERE step_id=%s AND item_key=%s",
+                    (step_id, item["item_key"]),
+                ).fetchone()
+                payload = (
+                    item["prompt"], json.dumps(item["options"]),
+                    int(item["correct_index"]), item["explanation"],
+                    item["difficulty"],
+                )
+                if existing:
+                    eid = existing["id"] if hasattr(existing, "keys") else existing[0]
+                    conn.execute(
+                        "UPDATE fa_assessment_items SET prompt=%s, options_json=%s, "
+                        "correct_index=%s, explanation=%s, difficulty=%s, is_active=1 "
+                        "WHERE id=%s",
+                        (*payload, eid),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO fa_assessment_items "
+                        "(step_id, item_key, prompt, options_json, correct_index, "
+                        " explanation, difficulty) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        (step_id, item["item_key"], *payload),
+                    )
+                written += 1
+    if written:
+        conn.commit()
+        _log.info("FORGE Academy: seeded %d assessment item(s)", written)
+    return written
 
 
 def load_step_content(content_path: str) -> dict:
