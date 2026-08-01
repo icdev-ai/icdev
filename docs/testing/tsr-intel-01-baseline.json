@@ -1,0 +1,1092 @@
+{
+  "task": "tsr-intel-01-d1",
+  "date": "2026-08-01",
+  "backend": "sqlite",
+  "pytest_args": "-q -rfE --timeout=120 -p no:cacheprovider (one file per invocation)",
+  "totals": {
+    "files": 75,
+    "failing_files": 8,
+    "failed": 57,
+    "errors": 3,
+    "passed": 1144,
+    "no_tests_collected": 4
+  },
+  "files": [
+    {
+      "file": "tests/e2e_confluence_widget.py",
+      "rc": 5,
+      "failed": 0,
+      "errors": 0,
+      "passed": 0,
+      "skipped": 0,
+      "summary": "",
+      "reasons": [],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/e2e_election_phase_widget.py",
+      "rc": 5,
+      "failed": 0,
+      "errors": 0,
+      "passed": 0,
+      "skipped": 0,
+      "summary": "",
+      "reasons": [],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/e2e_exec_quality_widget.py",
+      "rc": 5,
+      "failed": 0,
+      "errors": 0,
+      "passed": 0,
+      "skipped": 0,
+      "summary": "",
+      "reasons": [],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/e2e_fathomdesk_trap.py",
+      "rc": 1,
+      "failed": 11,
+      "errors": 0,
+      "passed": 12,
+      "skipped": 0,
+      "summary": "11 failed, 12 passed in 0.50s",
+      "reasons": [
+        "AssertionError: 0 != 3",
+        "AssertionError: False is not true",
+        "AssertionError: unexpectedly None",
+        "TypeError: 'NoneType' object is not subscriptable",
+        "TypeError: _trap_sweep() missing 1 required positional argument: 'cfg'"
+      ],
+      "packages": [
+        "fathomdesk"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/e2e_killswitch_widget.py",
+      "rc": 2,
+      "failed": 0,
+      "errors": 1,
+      "passed": 0,
+      "skipped": 0,
+      "summary": "1 error in 0.52s",
+      "reasons": [
+        "ModuleNotFoundError: No module named 'tools.trading.risk'"
+      ],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/genesis_auto/test_coa_generator.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 16,
+      "skipped": 0,
+      "summary": "16 passed in 0.48s",
+      "reasons": [],
+      "packages": [
+        "simulation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/genesis_auto/test_dossier_generator.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 12,
+      "skipped": 0,
+      "summary": "12 passed in 0.38s",
+      "reasons": [],
+      "packages": [
+        "research"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/genesis_auto/test_pain_extractor.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 34,
+      "skipped": 0,
+      "summary": "34 passed in 0.58s",
+      "reasons": [],
+      "packages": [
+        "creative"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/genesis_auto/test_source_scanner.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 27,
+      "skipped": 0,
+      "summary": "27 passed in 0.43s",
+      "reasons": [],
+      "packages": [
+        "research"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/http/test_fetch_extract_retrofit.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 29,
+      "skipped": 0,
+      "summary": "29 passed in 1.83s",
+      "reasons": [],
+      "packages": [
+        "creative",
+        "research"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/innovation/test_kanban_promoter.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 14,
+      "skipped": 0,
+      "summary": "14 passed in 0.38s",
+      "reasons": [],
+      "packages": [
+        "innovation"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/strategos/test_dat.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 9,
+      "skipped": 0,
+      "summary": "9 passed in 0.51s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/strategos/test_intel_brief_routes_apps.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 14,
+      "skipped": 0,
+      "summary": "14 passed in 1.08s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_adversarial_validation.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 21,
+      "skipped": 0,
+      "summary": "21 passed in 0.38s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_adversarial_validator.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 22,
+      "skipped": 0,
+      "summary": "22 passed in 0.57s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_analyst_panel_phaseC.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 12,
+      "skipped": 0,
+      "summary": "12 passed in 11.74s",
+      "reasons": [],
+      "packages": [
+        "fathomdesk"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_bayesian_teacher.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 38,
+      "skipped": 0,
+      "summary": "38 passed in 0.84s",
+      "reasons": [],
+      "packages": [
+        "intelligence"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_ccir_trigger.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 13,
+      "skipped": 0,
+      "summary": "13 passed in 0.59s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_creative_domain_alias.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 2,
+      "skipped": 0,
+      "summary": "2 passed in 0.38s",
+      "reasons": [],
+      "packages": [
+        "creative"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_cyber_feed_refresh.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 10,
+      "skipped": 0,
+      "summary": "10 passed in 0.48s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_data_gateway.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 7,
+      "skipped": 0,
+      "summary": "7 passed in 0.88s",
+      "reasons": [],
+      "packages": [
+        "fathomdesk",
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_drawio_parser.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 5,
+      "skipped": 0,
+      "summary": "5 passed in 0.40s",
+      "reasons": [],
+      "packages": [
+        "simulation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_dvg_benchmark.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 8,
+      "skipped": 0,
+      "summary": "8 passed in 0.41s",
+      "reasons": [],
+      "packages": [
+        "creative"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_dvg_wire_creative_branch.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 10,
+      "skipped": 0,
+      "summary": "10 passed in 0.42s",
+      "reasons": [],
+      "packages": [
+        "creative"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_dvg_wire_solution_divergence.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 7,
+      "skipped": 0,
+      "summary": "7 passed in 0.45s",
+      "reasons": [],
+      "packages": [
+        "innovation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_federated_mesh.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 8,
+      "skipped": 0,
+      "summary": "8 passed in 0.39s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_fga_gd03_scenario_distinctness.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 12,
+      "skipped": 0,
+      "summary": "12 passed in 1.27s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_foundry_harvester.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 9,
+      "skipped": 0,
+      "summary": "9 passed in 0.48s",
+      "reasons": [],
+      "packages": [
+        "innovation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_information_scorer.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 37,
+      "skipped": 0,
+      "summary": "37 passed in 55.59s",
+      "reasons": [],
+      "packages": [
+        "intelligence"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_innovation.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 37,
+      "skipped": 0,
+      "summary": "37 passed in 25.13s",
+      "reasons": [],
+      "packages": [
+        "innovation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_jise_portal.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 18,
+      "skipped": 0,
+      "summary": "18 passed in 0.51s",
+      "reasons": [],
+      "packages": [
+        "intelligence"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_lpx_team_spend.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 5,
+      "skipped": 0,
+      "summary": "5 passed in 4.49s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_nav_llm_01_router_invoke.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 16,
+      "skipped": 0,
+      "summary": "16 passed in 12.09s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_nav_plat_01_simulated_data.py",
+      "rc": 1,
+      "failed": 5,
+      "errors": 2,
+      "passed": 3,
+      "skipped": 0,
+      "summary": "5 failed, 3 passed, 2 errors in 12.61s",
+      "reasons": [
+        "tools.db.backend_guard.SqliteServerRefused: ICDEV dashboard refuses to star..."
+      ],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_nav_plat_02_broker_guard.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 13,
+      "skipped": 0,
+      "summary": "13 passed in 2.56s",
+      "reasons": [],
+      "packages": [
+        "fathomdesk"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_nav_plat_04_macro_fail.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 5,
+      "skipped": 0,
+      "summary": "5 passed in 0.57s",
+      "reasons": [],
+      "packages": [
+        "fathomdesk",
+        "trading"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_nav_strat_01_intsum_grounding.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 5,
+      "skipped": 0,
+      "summary": "5 passed in 0.54s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_nav_strat_02_opord_grounding.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 7,
+      "skipped": 0,
+      "summary": "7 passed in 0.54s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_nav_strat_04_iw_no_sqlite_fallback.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 10,
+      "skipped": 0,
+      "summary": "10 passed in 0.49s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_nav_strat_05_no_legacy_blueprint.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 3,
+      "skipped": 0,
+      "summary": "3 passed in 1.26s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_options_intent_parser.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 28,
+      "skipped": 0,
+      "summary": "28 passed in 0.43s",
+      "reasons": [],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_osint_analyzer.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 51,
+      "skipped": 0,
+      "summary": "51 passed in 0.71s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_penta_aiify_routes.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 19,
+      "skipped": 0,
+      "summary": "19 passed in 1.05s",
+      "reasons": [],
+      "packages": [
+        "innovation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_penta_gd_auth.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 16,
+      "skipped": 0,
+      "summary": "16 passed in 13.63s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_penta_gd_freshness.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 32,
+      "skipped": 0,
+      "summary": "32 passed in 0.88s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_penta_gd_schema.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 6,
+      "skipped": 0,
+      "summary": "6 passed in 2.76s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_penta_gd_scorer_math.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 22,
+      "skipped": 0,
+      "summary": "22 passed in 5.62s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_penta_gd_scoring.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 24,
+      "skipped": 0,
+      "summary": "24 passed in 2.19s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_penta_gd_smoke.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 46,
+      "skipped": 0,
+      "summary": "46 passed in 0.57s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_penta_gd_ttx_scenarios.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 16,
+      "skipped": 0,
+      "summary": "16 passed in 2.99s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_pir_alert_generator.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 7,
+      "skipped": 0,
+      "summary": "7 passed in 0.87s",
+      "reasons": [],
+      "packages": [
+        "intelligence"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_pir_threshold_integration.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 4,
+      "skipped": 0,
+      "summary": "4 passed in 0.70s",
+      "reasons": [],
+      "packages": [
+        "intelligence"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_pkg_subprocess_namespace.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 8,
+      "skipped": 0,
+      "summary": "8 passed in 1.94s",
+      "reasons": [],
+      "packages": [
+        "research"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_portfolio_greeks.py",
+      "rc": 1,
+      "failed": 4,
+      "errors": 0,
+      "passed": 10,
+      "skipped": 0,
+      "summary": "4 failed, 10 passed in 0.52s",
+      "reasons": [
+        "sqlite3.OperationalError: near \"%\": syntax error"
+      ],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_register_external_patterns.py",
+      "rc": 1,
+      "failed": 7,
+      "errors": 0,
+      "passed": 11,
+      "skipped": 0,
+      "summary": "7 failed, 11 passed in 0.64s",
+      "reasons": [
+        "AssertionError: assert 'compliance_evidence' in ('architecture', 'memory', ...",
+        "AssertionError: assert 11 == 10",
+        "AssertionError: assert {'agent-zero'...', 'insforge'} <= {'agent-zero'...',...",
+        "assert 11 == 10"
+      ],
+      "packages": [
+        "innovation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_requirement_5.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 19,
+      "skipped": 0,
+      "summary": "19 passed in 0.43s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_research_engine.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 68,
+      "skipped": 0,
+      "summary": "68 passed in 3.96s",
+      "reasons": [],
+      "packages": [
+        "research"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_rest_api_expansion.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 42,
+      "skipped": 0,
+      "summary": "42 passed in 2.24s",
+      "reasons": [],
+      "packages": [
+        "simulation"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_scout_trending_scanners.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 4,
+      "skipped": 0,
+      "summary": "4 passed in 0.36s",
+      "reasons": [],
+      "packages": [
+        "innovation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_signal_decay.py",
+      "rc": 1,
+      "failed": 1,
+      "errors": 0,
+      "passed": 4,
+      "skipped": 0,
+      "summary": "1 failed, 4 passed in 0.46s",
+      "reasons": [
+        "sqlite3.OperationalError: near \"%\": syntax error"
+      ],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_signal_tuner.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 3,
+      "skipped": 0,
+      "summary": "3 passed in 0.40s",
+      "reasons": [],
+      "packages": [
+        "fathomdesk"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_simulation_engine.py",
+      "rc": 1,
+      "failed": 13,
+      "errors": 0,
+      "passed": 15,
+      "skipped": 0,
+      "summary": "13 failed, 15 passed in 12.66s",
+      "reasons": [
+        "sqlite3.OperationalError: no such table: projects"
+      ],
+      "packages": [
+        "simulation"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_social_trend_scanner.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 16,
+      "skipped": 0,
+      "summary": "16 passed in 0.43s",
+      "reasons": [],
+      "packages": [
+        "research"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_strategos_chat_api.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 31,
+      "skipped": 0,
+      "summary": "31 passed in 1.34s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_ta_patterns.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 12,
+      "skipped": 0,
+      "summary": "12 passed in 0.40s",
+      "reasons": [],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_tenant_isolation.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 5,
+      "skipped": 0,
+      "summary": "5 passed in 0.62s",
+      "reasons": [],
+      "packages": [
+        "ttx"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_threat_analysis_service.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 16,
+      "skipped": 0,
+      "summary": "16 passed in 1.32s",
+      "reasons": [],
+      "packages": [
+        "intelligence"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_threat_level_thresholds.py",
+      "rc": 1,
+      "failed": 16,
+      "errors": 0,
+      "passed": 3,
+      "skipped": 0,
+      "summary": "16 failed, 3 passed in 14.86s",
+      "reasons": [
+        "sqlite3.OperationalError: no such table: indicator_baselines"
+      ],
+      "packages": [
+        "intelligence"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_vuln_triage_engine.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 14,
+      "skipped": 0,
+      "summary": "14 passed in 0.43s",
+      "reasons": [],
+      "packages": [
+        "intelligence"
+      ],
+      "exclusive_to_intel": false
+    },
+    {
+      "file": "tests/test_wargame_advisor.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 26,
+      "skipped": 0,
+      "summary": "26 passed in 0.47s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_wargame_orbat.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 21,
+      "skipped": 0,
+      "summary": "21 passed in 0.79s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/test_wargame_turn_engine.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 20,
+      "skipped": 0,
+      "summary": "20 passed in 0.89s",
+      "reasons": [],
+      "packages": [
+        "strategos"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/trading/test_data_quality.py",
+      "rc": 5,
+      "failed": 0,
+      "errors": 0,
+      "passed": 0,
+      "skipped": 1,
+      "summary": "1 skipped in 0.21s",
+      "reasons": [],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/trading/test_get_signals_ranked.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 3,
+      "skipped": 0,
+      "summary": "3 passed in 0.35s",
+      "reasons": [],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    },
+    {
+      "file": "tests/workflow/test_kph_coherence_checks.py",
+      "rc": 0,
+      "failed": 0,
+      "errors": 0,
+      "passed": 12,
+      "skipped": 0,
+      "summary": "12 passed in 0.55s",
+      "reasons": [],
+      "packages": [
+        "trading"
+      ],
+      "exclusive_to_intel": true
+    }
+  ]
+}
