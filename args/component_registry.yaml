@@ -1176,7 +1176,10 @@ components:
   min_il: IL2
   default_roles: []
   nav:
-    section: Learn
+    # nav.section names the top-level dropdown (nav_tree.sections is keyed by it,
+    # see base.html "nav_tree.sections.get('Canvases')"). FORGE Academy renders in
+    # the Platforms dropdown under the hardcoded "Training" sub-label. (gdx-doc-02)
+    section: Platforms
     label: FORGE Academy
     links:
       - label: Dashboard
@@ -1199,7 +1202,9 @@ components:
   min_il: IL4
   default_roles: []
   nav:
-    section: Learn
+    # Renders in the Platforms dropdown under the "Training" sub-label, alongside
+    # FORGE Academy — base.html:469. (gdx-doc-02)
+    section: Platforms
     label: AI GameDay
   completeness:
     blueprint: true
