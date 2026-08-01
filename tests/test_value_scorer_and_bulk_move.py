@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from tests import _sql_compat as sql_compat  # noqa: E402
 from tools.awareness.value_scorer import (  # noqa: E402
     annotate_tasks_with_value,
     compute_dup_counts,
@@ -232,6 +233,17 @@ def kanban_bulk_client(tmp_path, monkeypatch):
             prediction_type TEXT,
             outcome         TEXT DEFAULT 'pending'
         );
+        -- list_tasks() LEFT JOINs the newest verification per task for
+        -- phantom_ratio (migration 019). Seeded empty: the join is what the
+        -- route needs, not any row. Absent, every /api/kanban/tasks call
+        -- 500s on `no such table` — which the %s syntax error used to mask.
+        CREATE TABLE kanban_verifications (
+            id              TEXT PRIMARY KEY,
+            task_id         TEXT NOT NULL,
+            verified_at     TEXT NOT NULL,
+            result          TEXT NOT NULL,
+            phantom_ratio   REAL DEFAULT 0
+        );
         """
     )
 
@@ -258,9 +270,13 @@ def kanban_bulk_client(tmp_path, monkeypatch):
     conn.close()
 
     def _fake_conn():
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        # Must translate %s -> ?, the way the StorageConnection it stands in
+        # for does. tools/dashboard/api/kanban.py authors PostgreSQL
+        # placeholders throughout; on a bare sqlite3 connection list_tasks()
+        # 500s on `WHERE kt.status = %s`, and the oracle_predictions dismiss
+        # in bulk_move_tasks() raises into its own `except Exception` fallback
+        # so the prediction silently stays 'pending'.
+        return sql_compat.connect(db_path)
 
     from tools.dashboard.api import kanban as kanban_mod
 
