@@ -6808,3 +6808,118 @@ projects:
     - key: e2e
       title: "E2E — ~55 local Playwright failures"
       priority: medium
+- key: lpx
+  name: LPX — LLM Proxy & Provider Key Abstraction
+  description: 'Stand up a server-side LLM proxy so one real provider key is held by
+    infrastructure and never reaches students, tenants, or child apps — the missing
+    piece identified in docs/anthropic-proxy-strategy.md and
+    docs/keycloak-vs-proxy-sequencing.md (both authored 2026-07, both still
+    uncommitted, zero implementation). Verified 2026-07-25: `litellm` appears in
+    exactly 5 files, 3 of which are those docs and 2 are research-corpus JSON. No
+    docker-compose service, no k8s manifest, no requirements entry, no config, no
+    kanban tasks. What DOES exist and must NOT be rebuilt: tools/llm/gateway.py is
+    an in-process guardrail wrapper (injection detection, PII scrub, rate limit,
+    cost cap, llm_gateway_audit) and stays as the client-side layer;
+    tools/llm/proxy_resolver.py is a rotating EGRESS HTTP proxy for corporate
+    networks and is unrelated; tools/llm/rate_gate.py already does concurrency
+    gating; tools/saas/bedrock/bedrock_proxy.py already does BYOK-vs-shared-pool
+    routing with per-tenant token metering and is the closest prior art, but it is
+    Bedrock-only, a library call rather than an HTTP server, and has no virtual
+    keys. The `saas_proxy` entry in args/llm_config.yaml is a routing FUNCTION name,
+    not a proxy. The strategy doc claims integration is a one-line base_url change;
+    that is true for anthropic_provider.py (base_url is already a constructor arg)
+    but FALSE overall — six call sites bypass LLMRouter entirely and POST raw
+    requests to https://api.anthropic.com/v1/messages with ANTHROPIC_API_KEY read
+    straight from os.environ (tools/network/routes/ai.py:272,539,605,
+    tools/network/routes/topology.py:511,803,
+    tools/network/routes/twin_migration.py:1289). A base_url-only integration would
+    silently leave those six paths pointed at the real API with the real key, which
+    is exactly the leak the card exists to close. Router-bypass remediation is
+    therefore a PREREQUISITE, not a follow-up. DEPLOYMENT MODEL (confirmed with the
+    user 2026-07-25, and it is what makes the proxy mandatory rather than optional):
+    there are TWO consumer classes, not one. (1) /academy and /gameday run on ONE
+    SHARED SERVER with 4-5 teams competing against each other — no player ever needs
+    a key, the server holds it, and the real requirement is FAIRNESS: teams are
+    adversaries, so one team exhausting a shared RPM/TPM limit degrades every other
+    team''s exercise even while under budget. ICDEV''s existing cost cap
+    (tools/llm/gateway.py) and concurrency gate (tools/llm/rate_gate.py) are
+    process-global and would throttle everyone when one team overruns — the missing
+    dimension is per-team scoping, not a new cap. (2) ICDEV CANVASES RUN AS LOCAL
+    COPIES, one per person. This is the half that forces a proxy: the real key cannot
+    be distributed into N local .env files (unrevocable per-person, and rotating it
+    breaks every copy at once), so local copies must point base_url at the hosted
+    gateway and authenticate with a per-person virtual key. It also promotes the
+    router-bypass from cleanup to a hard blocker — on a local copy pointed at the
+    gateway, those six sites either fail with no key in env or, worse, work because
+    someone pasted a real key there to fix them. GROUPING UNITS ARE NOT UNIFORM —
+    verified against the schemas, one virtual-key scheme cannot cover all three:
+    gameday uses ttx_teams(team_id, session_id) scoped per exercise via
+    ttx_sessions(session_id, join_code, max_teams DEFAULT 8), and its players are
+    ttx_team_members(player_name, role_id) who join by join_code and have NO
+    dashboard_users account — so per-USER keys are impossible there and per-TEAM is
+    both the right and the only available granularity; academy uses a different unit
+    entirely, fa_guilds/fa_guild_members over fa_users; local canvas copies are
+    individual dashboard users. ttx_api_log(session_id, team_id, tool_slug, endpoint,
+    call_id, result_hash, called_at) already exists and is the natural attribution
+    hook, but it is a CALL log with no token or cost columns — attribution is not
+    half-built, it needs cost/token columns or a join to token_tracker. Hard
+    constraints: the proxy ships OFF by default and air-gap mode
+    (ICDEV_LLM_PROVIDER=ollama, two_tier disabled) must keep working with zero proxy
+    dependency; CUI-classified traffic must continue to honor the existing local-only
+    egress policy and must not gain a new cloud path via the proxy. Keycloak is
+    explicitly OUT OF SCOPE per the sequencing doc — the two systems are independent
+    and the proxy does not need SSO to issue virtual keys. Sources:
+    docs/anthropic-proxy-strategy.md, docs/keycloak-vs-proxy-sequencing.md'
+  task_prefix: lpx-
+  default_open: true
+  briefs:
+  - 'gate: Manual gate held in_progress — nothing dispatches until a human releases it
+    and confirms the proxy product choice (lpx-gate-00)'
+  - 'router: Router-bypass remediation — migrate the 6 hardcoded api.anthropic.com
+    call sites onto LLMRouter and add a coherence gate so new ones cannot land. HARD
+    BLOCKER for the local-copy model, not cleanup (lpx-router-01..03)'
+  - 'proxy: Proxy deployment — compose/k8s service, config, .env contract, and the
+    llm_config.yaml base_url wiring, all opt-in and off by default (lpx-proxy-01..04)'
+  - 'keys: Virtual key lifecycle — issuance, budgets, rotation and revocation across
+    three non-uniform scopes (gameday team, academy guild/user, local-copy person),
+    surfaced as an ICDEV tool not a manual curl (lpx-keys-01..04)'
+  - 'teams: Competition fairness for /academy and /gameday — per-team RPM/TPM ceilings
+    so one team cannot starve its opponents, per-team budget, and per-team spend
+    attribution on the existing ttx_api_log hook (lpx-teams-01..03)'
+  - 'egress: Egress safety — prove air-gap and CUI-local-only paths are unchanged and
+    that the proxy cannot become a new cloud egress for classified content
+    (lpx-egress-01..02)'
+  - 'obs: Spend observability — scrape proxy metrics, attribute cost per key, and
+    reconcile against the existing token_tracker / llm_gateway_audit (lpx-obs-01..02)'
+  - 'vv: V&V — provider-abstraction tests, air-gap regression, and an E2E that proves
+    no real provider key is reachable from an academy session (lpx-vv-01..02)'
+  - 'xcut: Close-out — ADR recording the product choice and what was rejected, commit
+    the two strategy docs, manifest/commands/companion/coherence (lpx-xcut-01)'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: high
+  - key: router
+    title: Router-Bypass Remediation (Prerequisite)
+    priority: critical
+  - key: proxy
+    title: Proxy Deployment & Wiring
+    priority: high
+  - key: keys
+    title: Virtual Key Lifecycle & Budgets
+    priority: high
+  - key: teams
+    title: Competition Fairness — Per-Team Limits & Attribution
+    priority: high
+  - key: egress
+    title: Air-Gap & CUI Egress Safety
+    priority: critical
+  - key: obs
+    title: Spend Observability & Cost Attribution
+    priority: medium
+  - key: vv
+    title: V&V — Key Abstraction Proof
+    priority: high
+  - key: xcut
+    title: Cross-Cutting — ADR & Close-Out
+    priority: low
