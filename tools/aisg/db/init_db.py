@@ -7,6 +7,7 @@ DB file: data/aisg_canvas.db  |  env: AISG_STORAGE_BACKEND, AISG_DB_PATH
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -186,7 +187,7 @@ def init_db() -> None:
         else:
             conn.executescript(SCHEMA)
         conn.commit()
-        print(f"[init_db] AISG schema ready ({_AISG_BACKEND})")
+        print(f"[init_db] AISG schema ready ({_AISG_BACKEND})", file=sys.stderr)
     finally:
         conn.close()
 

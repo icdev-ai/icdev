@@ -11,6 +11,7 @@ Dual-backend: SQLite (default) or PostgreSQL.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -177,9 +178,9 @@ def init_db(conn=None) -> None:
     try:
         _conn.executescript(SCHEMA)
         _conn.commit()
-        print("[ohc-db] Schema initialized OK")
+        print("[ohc-db] Schema initialized OK", file=sys.stderr)
     except Exception as exc:
-        print(f"[ohc-db] Schema init error: {exc}")
+        print(f"[ohc-db] Schema init error: {exc}", file=sys.stderr)
         raise
     finally:
         if conn is None:
@@ -188,4 +189,4 @@ def init_db(conn=None) -> None:
 
 if __name__ == "__main__":
     init_db()
-    print(f"[ohc-db] Database ready at {DB_PATH}")
+    print(f"[ohc-db] Database ready at {DB_PATH}", file=sys.stderr)
