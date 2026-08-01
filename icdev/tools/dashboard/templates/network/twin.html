@@ -87,17 +87,11 @@
 
         <!-- Generate Delta tab -->
         <div id="tabPaneGenDelta">
-          <p class="hint" style="margin:0 0 6px;">Describe the topology change in plain English — AI converts it to simulation JSON.</p>
-          <div style="display:flex;gap:8px;align-items:flex-start;">
-            <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
-              placeholder="e.g. Add a new firewall between the DMZ and the internet gateway, remove the legacy MPLS link to site-b..."></textarea>
-            <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
-          </div>
-          <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
-          <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
-            <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
-          </div>
-          <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
+          {% with chat_bare=True,
+                  chat_hint="Describe the topology change in plain English — AI converts it to simulation JSON.",
+                  chat_placeholder="e.g. Add a new firewall between the DMZ and the internet gateway, remove the legacy MPLS link to site-b..." %}
+            {% include "includes/_twin_chat_panel.html" %}
+          {% endwith %}
         </div>
 
         <!-- Query Topology tab -->
@@ -841,29 +835,11 @@ function renderPathResults(d, inputSrc, inputDst) {
   }
 }
 
-async function sendChatDelta() {
-  const msg = document.getElementById('chatInput').value.trim();
-  if (!msg) return;
-  const spinner = document.getElementById('chatSpinner');
-  const errEl  = document.getElementById('chatError');
-  errEl.style.display = 'none';
-  spinner.style.display = 'inline-block';
-  try {
-    const body = { message: msg };
-    if (_loadedGraphJson) body.graph_json = _loadedGraphJson;
-    const r = await fetch(`/network/api/twin/${PROJECT_ID}/chat-delta`, {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const data = await r.json();
-    if (data.error) { errEl.textContent = data.error; errEl.style.display='block'; return; }
-    document.getElementById('deltaInput').value = JSON.stringify(data.delta, null, 2);
-    if (data.explanation) {
-      document.getElementById('chatExplanationText').textContent = data.explanation;
-      document.getElementById('chatExplanation').style.display = 'block';
-    }
-  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
-  finally { spinner.style.display = 'none'; }
-}
+</script>
+{% with chat_api_prefix="network", chat_id_var="PROJECT_ID" %}
+  {% include "includes/_twin_chat_script.html" %}
+{% endwith %}
+<script>
 
 function switchChatTab(tab) {
   const tabs = { 'gen-delta': ['tabGenDelta','tabPaneGenDelta'], 'query-topo': ['tabQueryTopo','tabPaneQueryTopo'] };

@@ -4055,6 +4055,93 @@ def check_chat_card_inheritance() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: twin_chat_include — twin pages must share the chat panel, not copy it
+# ---------------------------------------------------------------------------
+
+
+def check_twin_chat_include() -> CoherenceCheck:
+    """Stop the digital-twin chat panel being copied into the next canvas.
+
+    This panel and its sendChatDelta() were duplicated verbatim across four
+    twin.html templates. The markup copies differed on exactly two lines (hint,
+    placeholder) and the JS copies on exactly one (the fetch URL); every element
+    id, inline style and handler was identical. Nothing failed when a fifth
+    canvas copied it again, so nothing stopped that happening.
+
+    That is the pattern this repo already demonstrates in both directions:
+    includes/iqe_query_widget.html is gated and reached ~157 templates, while
+    ungated includes reached exactly one — themselves. A shared include here
+    does not survive on merit, only on a check that fails without it.
+
+    A twin template is in scope when it renders the chat surface at all, which
+    is detected by the `sendChatDelta` handler. Templates without it (infra,
+    pipeline) are simply not chat surfaces and are ignored rather than being
+    forced to grow one.
+    """
+    marker_panel = "includes/_twin_chat_panel.html"
+    marker_script = "includes/_twin_chat_script.html"
+    # An inline copy is recognisable by the ids the include owns.
+    inline_markers = ('id="chatInput"', 'async function sendChatDelta')
+
+    violations: List[str] = []
+    checked: List[str] = []
+
+    for prefix in ("", "icdev/"):
+        tpl_root = PROJECT_ROOT / f"{prefix}tools/dashboard/templates"
+        if not tpl_root.exists():
+            continue
+
+        for name in (marker_panel, marker_script):
+            if not (tpl_root / name).exists():
+                violations.append(f"{prefix}tools/dashboard/templates/{name} missing")
+
+        for twin in sorted(tpl_root.glob("*/twin.html")):
+            text = twin.read_text(encoding="utf-8", errors="replace")
+            rel = twin.relative_to(PROJECT_ROOT).as_posix()
+
+            inline = [m for m in inline_markers if m in text]
+            uses_include = marker_panel in text or marker_script in text
+            if not inline and not uses_include:
+                continue  # genuinely not a chat surface (infra, pipeline)
+
+            # Counted whether it passes or fails. Detecting surfaces by the
+            # inline markers ALONE would make this check pass vacuously the
+            # moment the refactor succeeds -- zero surfaces found, zero
+            # violations, green. The include itself must therefore also mark a
+            # file as in scope.
+            checked.append(rel)
+
+            if marker_panel not in text and inline:
+                violations.append(
+                    f"{rel} carries an inline chat panel ({', '.join(inline)}) "
+                    f"instead of including {marker_panel}"
+                )
+            if marker_script not in text and "async function sendChatDelta" in text:
+                violations.append(
+                    f"{rel} defines its own sendChatDelta() instead of including "
+                    f"{marker_script}"
+                )
+
+    status = "fail" if violations else "pass"
+    return CoherenceCheck(
+        check_id="twin_chat_include",
+        check_name="Twin Chat Panel Shared Include",
+        status=status,
+        expected=[
+            "every twin.html with a chat surface includes _twin_chat_panel.html "
+            "and _twin_chat_script.html, in both mirrors"
+        ],
+        actual=[f"{len(violations)} violation(s) across {len(checked)} chat surface(s)"],
+        missing=violations,
+        extra=[],
+        message=(
+            "Twin chat panel is being duplicated again: " + "; ".join(violations)
+        ) if violations else (
+            f"All {len(checked)} twin chat surface(s) use the shared include"
+        ),
+    )
+
+# ---------------------------------------------------------------------------
 # Check: nav_route_parity — every href in base.html nav must have a Flask route
 # ---------------------------------------------------------------------------
 
@@ -6623,6 +6710,7 @@ CHECK_REGISTRY = {
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
     "chat_card_inheritance": check_chat_card_inheritance,
+    "twin_chat_include": check_twin_chat_include,
     "canvas_placeholder_style": check_canvas_placeholder_style,
     "runtime_placeholder_style": check_runtime_placeholder_style,
     "ace_yaml_listen_topics": check_ace_yaml_listen_topics,
