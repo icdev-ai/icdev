@@ -33,7 +33,19 @@ WORKDIR /app
 COPY --chown=icdev:icdev . .
 
 # STIG: Set restrictive permissions
-RUN chmod -R 750 /app && \
+#
+# The chown is load-bearing, not cleanup. `WORKDIR /app` creates /app owned by
+# root, and `COPY --chown` above only sets ownership on the copied CONTENTS —
+# never on /app itself. `chmod -R 750` then clears the other-bits of a
+# root-owned directory, so uid 1000 (icdev) matches neither owner nor group and
+# cannot traverse /app at all. Every `python tools/...` under USER icdev died
+# with:
+#     can't open file '/app/tools/db/init_icdev_db.py': [Errno 13] Permission denied
+# i.e. this image could not run as the non-root user it declares. It went
+# unnoticed because the CI smoke test only runs `python --version` / `echo`,
+# neither of which reads /app.
+RUN chown -R icdev:icdev /app && \
+    chmod -R 750 /app && \
     find /app -type f -name "*.py" -exec chmod 640 {} +
 
 # Data directory for SQLite (mounted as volume in production)

@@ -36,7 +36,14 @@ WORKDIR /app
 COPY --chown=icdev:icdev . .
 
 # STIG: Set restrictive permissions
-RUN chmod -R 750 /app && \
+# chown is load-bearing, not cleanup: WORKDIR created /app as root and
+# COPY --chown only covers the copied CONTENTS, so `chmod -R 750` clears
+# the other-bits of a root-owned /app and uid 1000 (icdev) cannot traverse
+# it — every `python tools/...` under USER icdev fails with EACCES. The
+# image could not run as the non-root user it declares. Verified by
+# reproduction; see Dockerfile.dashboard for the full note.
+RUN chown -R icdev:icdev /app && \
+    chmod -R 750 /app && \
     find /app -type f -name "*.py" -exec chmod 640 {} +
 
 # Data directory for SQLite (mounted as volume in production)
