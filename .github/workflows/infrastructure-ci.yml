@@ -26,7 +26,20 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/icdev
+  # Fully qualified, including the registry host. Previously this was just
+  # "<owner>/icdev", so the build tags resolved to `icdev-ai/icdev/<image>`
+  # with NO registry — Docker defaults that to Docker Hub, and every push on
+  # main died with "push access denied" even though the Log in to GHCR step
+  # had authenticated to ghcr.io correctly. The tag simply never pointed there.
+  # The host is written literally because a workflow-level `env:` entry cannot
+  # reference another `env:` entry (${{ env.REGISTRY }} is not resolvable here).
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/icdev
+
+# Least privilege by default; the two jobs that publish images to GHCR opt into
+# packages:write individually. Without this the default GITHUB_TOKEN is
+# read-only, which is the second half of the "push access denied" failure.
+permissions:
+  contents: read
 
 jobs:
   # ── Validate: YAML syntax + compose config ─────────────────────────────
@@ -98,6 +111,9 @@ jobs:
     name: Build Infrastructure Images
     runs-on: ubuntu-latest
     needs: validate-compose
+    permissions:
+      contents: read
+      packages: write   # required to push images to ghcr.io on main
     strategy:
       fail-fast: false
       matrix:
@@ -256,6 +272,9 @@ jobs:
     needs: provision-ci-stack
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
+    permissions:
+      contents: read
+      packages: write   # re-tags and pushes the SHORT_SHA image to ghcr.io
     env:
       ICDEV_CLASSIFICATION: CUI
       IMPACT_LEVEL: IL4
@@ -308,7 +327,7 @@ jobs:
               "builder", "compliance", "security", "infrastructure",
               "api-gateway", "iac"
             ],
-            "registry": "${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}"
+            "registry": "${{ env.IMAGE_PREFIX }}"
           }
           EOF
           cat artifacts/deployment-manifest.json
