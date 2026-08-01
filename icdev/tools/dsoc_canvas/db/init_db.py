@@ -7,6 +7,7 @@ DB file: data/dsoc_canvas.db  |  env: DSOC_STORAGE_BACKEND, DSOC_DB_PATH
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[4]
@@ -191,7 +192,7 @@ def init_db() -> None:
             if stmt:
                 conn.execute(stmt)
         conn.commit()
-        print(f"[init_db] DSOC schema ready ({'postgresql' if pg else 'sqlite'})")
+        print(f"[init_db] DSOC schema ready ({'postgresql' if pg else 'sqlite'})", file=sys.stderr)
     finally:
         conn.close()
 

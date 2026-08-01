@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -675,7 +676,11 @@ def init_db(verbose: bool = True) -> None:
         if verbose:
             tpl_count = conn.execute("SELECT COUNT(*) FROM aiml_templates").fetchone()[0]
             snp_count = conn.execute("SELECT COUNT(*) FROM aiml_snippets").fetchone()[0]
-            print(f"[AIMC init_db] Schema ready. {tpl_count} templates, {snp_count} snippets.")
+            print(
+                f"[AIMC init_db] Schema ready. {tpl_count} templates, "
+                f"{snp_count} snippets.",
+                file=sys.stderr,
+            )
     finally:
         conn.close()
 

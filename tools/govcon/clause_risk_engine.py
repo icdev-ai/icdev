@@ -51,6 +51,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.clause_risk_engine")
 
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
@@ -457,8 +460,8 @@ def _audit(conn, action: str, details: str = "") -> None:
                 "govcon",
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def persist(report: ClauseRiskReport, *, tenant_id: str = "default", classification: str = "CUI") -> str:
@@ -500,8 +503,8 @@ def persist(report: ClauseRiskReport, *, tenant_id: str = "default", classificat
             f"opp={report.opportunity_id} level={report.risk_level} score={report.risk_score}",
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("persist: best-effort INSERT into govcon_clause_risk_assessments failed (non-blocking): %s", exc)
     return row_id
 
 

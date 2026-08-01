@@ -131,6 +131,66 @@ MISSION_STATUSES = (
 )
 
 # ---------------------------------------------------------------------------
+# Assessment model (aca-trn-01)
+# ---------------------------------------------------------------------------
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Before this, a step was 100 or 0 — grading._verdict and db.record_step_attempt
+# both hardcoded it — attempts were unbounded and uncounted, and the
+# assessment_score_min declared in CERT_TIERS below was never read by
+# check_cert_eligibility. Nothing here may be hardcoded at a call site.
+
+# Fraction of an item-scored step's served items that must be correct.
+# Deliberately equal to CERT_ASSESSMENT_THRESHOLD_PCT: a learner meets one
+# standard, not two.
+STEP_PASS_THRESHOLD_PCT = 70
+
+# A test suite is all-or-nothing BECAUSE THE RUNNER SAYS SO: code_runner.run_code
+# returns a single boolean for the whole script, so partial credit would be invented
+# rather than measured. Named as a constant rather than left implicit in `if passed`
+# so there is one place to change when the runner reports per-test results.
+CODING_PASS_THRESHOLD_PCT = 100
+
+# Fraction of a mission's GRADED steps that must be passed for the mission to count
+# as 'demonstrated'. This does NOT gate completion: since aca-int-05 a failed step is
+# filed 'attempted', never 'completed', so "all steps completed" already implies
+# "all assessed steps passed" — a percentage here would be strictly weaker. It
+# classifies what a completed mission is evidence OF. See assessment.py.
+MISSION_ASSESSMENT_THRESHOLD_PCT = 80
+
+# Wires the previously-dead assessment_score_min in CERT_TIERS.
+CERT_ASSESSMENT_THRESHOLD_PCT = 70
+
+# Items drawn per attempt. Three is the smallest draw for which a 70% threshold is
+# not degenerate: 2/3 = 67% fails, 3/3 passes. With one item a "threshold" is just
+# the binary pass/fail this model exists to remove.
+ASSESSMENT_ITEMS_PER_ATTEMPT = 3
+
+# A bank must exceed the draw or every attempt serves the same items and the
+# randomisation is decorative. Enforced by assessment.validate_item_bank.
+ASSESSMENT_MIN_BANK_SIZE = 5
+
+# Attempt policy. 'practice' is formative — retry until it clicks, which is what
+# practice is for. 'summative' is a check that gates a certificate.
+ATTEMPT_POLICY_PRACTICE  = "practice"
+ATTEMPT_POLICY_SUMMATIVE = "summative"
+ATTEMPT_POLICIES = (ATTEMPT_POLICY_PRACTICE, ATTEMPT_POLICY_SUMMATIVE)
+
+SUMMATIVE_MAX_ATTEMPTS = 3
+
+# Step assessment classes (derived at runtime by assessment.classify_step, never
+# stored, so they cannot drift from the row they describe).
+STEP_CLASS_GRADED       = "graded"        # server can compute a real score
+STEP_CLASS_UNGRADED     = "ungraded"      # assessed type with nothing to grade against
+STEP_CLASS_ACKNOWLEDGED = "acknowledged"  # real work, but not evidence of a skill
+
+# Mission assessment classification.
+MISSION_ASSESSMENT_DEMONSTRATED = "demonstrated"
+MISSION_ASSESSMENT_ATTESTED     = "attested"
+MISSION_ASSESSMENT_PARTIAL      = "partial"
+MISSION_ASSESSMENT_INCOMPLETE   = "incomplete"
+
+# ---------------------------------------------------------------------------
 # XP multipliers
 # ---------------------------------------------------------------------------
 XP_MULT_FIRST_TRY_NO_HINTS = 1.5

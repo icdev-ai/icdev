@@ -23,6 +23,9 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.migration.migration_executor")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -326,8 +329,8 @@ def run(project_id: str = "default") -> dict:
                 ),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("run: best-effort INSERT into mc_runbooks failed (non-blocking): %s", exc)
 
         # ── Pre-flight gates ──────────────────────────────────────────────────
         gates = [

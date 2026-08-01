@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}{{ learner.display_name }} — Instructor Console{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --fa-gold:#FFB800; --fa-green:#00FF88; --fa-blue:#4A90E2;
+  --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
+}
+.il-hero {
+  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  border-bottom:1px solid var(--fa-border); padding:2rem 2rem 1.5rem;
+}
+.il-hero h1 { font-size:1.6rem;font-weight:700;color:var(--fa-gold);margin:0 0 .25rem; }
+.il-hero p  { color:#8899aa;margin:0;font-size:.9rem; }
+.il-body    { max-width:1100px;margin:0 auto;padding:1.5rem 2rem 4rem; }
+.il-card {
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;
+}
+.il-title { font-size:1rem;font-weight:700;color:var(--fa-gold);margin:0 0 1rem; }
+.il-chips { display:flex;gap:.75rem;flex-wrap:wrap; }
+.il-chip {
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:.5rem .95rem;font-size:.78rem;color:#8899aa;text-align:center;
+}
+.il-chip strong { display:block;font-size:1.35rem;font-weight:700;color:#e0e0e0; }
+.il-table { width:100%;border-collapse:collapse; }
+.il-table th {
+  text-align:left;font-size:.72rem;color:#8899aa;text-transform:uppercase;
+  letter-spacing:.05em;padding:.45rem .6rem;border-bottom:1px solid var(--fa-border);
+}
+.il-table td { padding:.5rem .6rem;font-size:.85rem;color:#ccd;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top; }
+.il-table tr:last-child td { border-bottom:none; }
+.il-pill { display:inline-block;padding:.12rem .55rem;border-radius:10px;font-size:.7rem;font-weight:700; }
+.il-pill-ok    { background:rgba(0,255,136,.12);color:#00FF88;border:1px solid rgba(0,255,136,.3); }
+.il-pill-warn  { background:rgba(255,184,0,.12);color:#FFB800;border:1px solid rgba(255,184,0,.3); }
+.il-pill-bad   { background:rgba(255,68,68,.15);color:#FF4444;border:1px solid rgba(255,68,68,.35); }
+.il-pill-mute  { background:rgba(255,255,255,.06);color:#8899aa;border:1px solid rgba(255,255,255,.15); }
+.il-code {
+  font-family:ui-monospace,monospace;font-size:.72rem;color:#8899aa;
+  background:#0a0f1c;border:1px solid rgba(255,255,255,.06);border-radius:6px;
+  padding:.4rem .55rem;max-height:140px;overflow:auto;white-space:pre-wrap;margin:0;
+}
+.il-form { display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.85rem;align-items:end; }
+.il-field label {
+  display:block;font-size:.72rem;color:#8899aa;text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:.3rem;
+}
+.il-field select, .il-field input {
+  width:100%;background:#0a0f1c;border:1px solid var(--fa-border);color:#e0e0e0;
+  border-radius:8px;padding:.5rem .6rem;font-size:.85rem;font-family:inherit;
+}
+.il-btn {
+  background:var(--fa-gold);color:#000;border:none;padding:.55rem 1.25rem;
+  border-radius:8px;font-weight:700;font-size:.85rem;cursor:pointer;font-family:inherit;
+}
+.il-msg { margin-top:.85rem;font-size:.85rem;display:none; }
+.il-empty { color:#8899aa;font-size:.85rem;padding:.5rem 0; }
+.il-note { color:#8899aa;font-size:.78rem;margin-top:.6rem;line-height:1.5; }
+.il-footer { text-align:center;padding:2rem;font-size:.75rem;color:#555;margin-top:1rem; }
+</style>
+{% include "forge_academy/partials/_chrome_clearance.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="il-hero">
+  <div style="font-size:.78rem;color:#FFB800;letter-spacing:.1em;text-transform:uppercase;margin-bottom:.25rem;">
+    <a href="/academy/instructor" style="color:#FFB800;text-decoration:none;">← INSTRUCTOR CONSOLE</a>
+  </div>
+  <h1>{{ learner.display_name }}</h1>
+  <p>{{ learner.username }} — {{ roles.get(learner.role, {}).get('label', learner.role) }} · rank {{ learner.level }}</p>
+</div>
+
+<div class="il-body">
+
+  <div class="il-card">
+    <div class="il-chips">
+      <div class="il-chip"><strong>{{ summary.completed }}/{{ summary.total_missions }}</strong>Missions</div>
+      <div class="il-chip"><strong>{{ summary.steps_completed }}</strong>Steps done</div>
+      <div class="il-chip"><strong>{{ learner.xp }}</strong>Total XP</div>
+      <div class="il-chip"><strong>{{ learner.streak_days }}</strong>Day streak</div>
+      <div class="il-chip"><strong>{{ assignments | length }}</strong>Assignments</div>
+      <div class="il-chip"><strong>{{ reviews | length }}</strong>Reviews</div>
+    </div>
+  </div>
+
+  <!-- Assignments -->
+  <div class="il-card">
+    <div class="il-title">Assigned Work</div>
+    {% if assignments %}
+    <table class="il-table">
+      <thead><tr><th>Work</th><th>Due</th><th>Progress</th><th>Status</th><th>Assigned by</th></tr></thead>
+      <tbody>
+        {% for a in assignments %}
+        {% set mine = a.targets | selectattr('user_id', 'equalto', learner.id) | list | first %}
+        <tr>
+          <td>{{ a.label }}{% if a.note %}<div style="color:#8899aa;font-size:.78rem;">{{ a.note }}</div>{% endif %}</td>
+          <td>{{ (a.due_at or '—')[:10] }}</td>
+          <td>{{ mine.completed if mine else 0 }}/{{ mine.total if mine else 0 }}</td>
+          <td>
+            {% if a.status == 'cancelled' %}<span class="il-pill il-pill-mute">CANCELLED</span>
+            {% elif mine and mine.complete %}<span class="il-pill il-pill-ok">COMPLETE</span>
+            {% elif a.overdue %}<span class="il-pill il-pill-bad">OVERDUE</span>
+            {% else %}<span class="il-pill il-pill-warn">OPEN</span>{% endif %}
+          </td>
+          <td style="color:#8899aa;font-size:.78rem;">{{ a.assigned_by }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="il-empty">Nothing assigned to this learner.</div>
+    {% endif %}
+  </div>
+
+  <!-- Submissions -->
+  <div class="il-card">
+    <div class="il-title">Submissions ({{ submissions | length }})</div>
+    {% if submissions %}
+    <table class="il-table">
+      <thead><tr><th>Mission</th><th>Step</th><th>Type</th><th>Status</th><th>Score</th><th>Hints</th><th>Work</th></tr></thead>
+      <tbody>
+        {% for s in submissions %}
+        <tr>
+          <td>{{ s.mission_title }}<div style="color:#8899aa;font-size:.75rem;">T{{ s.tier }}</div></td>
+          <td>{{ s.step_num }}. {{ s.step_title }}</td>
+          <td>
+            {{ s.step_type }}
+            {% if not s.assessed %}
+            <div><span class="il-pill il-pill-mute" title="watch/configure/verify/deploy steps are acknowledgements, not assessments">NOT GRADED</span></div>
+            {% endif %}
+          </td>
+          <td>
+            {% if s.status == 'completed' %}<span class="il-pill il-pill-ok">COMPLETED</span>
+            {% elif s.status == 'attempted' %}<span class="il-pill il-pill-warn">ATTEMPTED</span>
+            {% else %}<span class="il-pill il-pill-mute">{{ s.status | upper }}</span>{% endif %}
+          </td>
+          <td>{{ s.score }}</td>
+          <td>{{ s.hints_used }}</td>
+          <td style="min-width:220px;">
+            {% if s.has_submission %}
+            <pre class="il-code">{{ s.submission }}</pre>
+            {% else %}
+            <span style="color:#8899aa;font-size:.78rem;">no text submitted</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="il-empty">This learner has not started any step yet.</div>
+    {% endif %}
+    <div class="il-note">
+      Only <code>coding</code> and <code>reflect</code> steps are machine-graded. The rest are
+      acknowledgements — completable, but not evidence of a demonstrated skill.
+    </div>
+  </div>
+
+  <!-- Verified evidence -->
+  <div class="il-card">
+    <div class="il-title">Verified Evidence ({{ evidence | length }})</div>
+    {% if evidence %}
+    <table class="il-table">
+      <thead><tr><th>When</th><th>Kind</th><th>What</th><th>Value</th></tr></thead>
+      <tbody>
+        {% for e in evidence %}
+        <tr>
+          <td style="color:#8899aa;font-size:.78rem;">{{ (e.created_at or e.issued_at or '')[:19] }}</td>
+          <td>
+            {% if e.kind == 'certificate' %}<span class="il-pill il-pill-ok">CERTIFICATE</span>
+            {% elif e.is_attendance %}<span class="il-pill il-pill-mute">ATTENDANCE</span>
+            {% else %}<span class="il-pill il-pill-warn">EARNED XP</span>{% endif %}
+          </td>
+          <td>
+            {% if e.kind == 'certificate' %}{{ e.cert_tier }}
+            {% else %}{{ e.reason }}{% if e.source_type %} <span style="color:#8899aa;">({{ e.source_type }} {{ e.source_id }})</span>{% endif %}{% endif %}
+          </td>
+          <td>{% if e.kind == 'certificate' %}—{% else %}{{ e.xp_delta }} XP{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="il-empty">No ledger entries or certificates recorded for this learner.</div>
+    {% endif %}
+    <div class="il-note">
+      Read straight from the append-only XP ledger — the record of what each point was
+      paid for. Attendance is shown separately because it does not count toward rank.
+    </div>
+  </div>
+
+  <!-- Review -->
+  <div class="il-card">
+    <div class="il-title">Record a Review</div>
+    <form id="il-review-form" class="il-form" onsubmit="return ilReview(event)">
+      <div class="il-field">
+        <label for="il-verdict">Verdict</label>
+        <select id="il-verdict">
+          {% for v in verdicts %}<option value="{{ v }}">{{ v.replace('_', ' ') }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="il-field">
+        <label for="il-mission">Mission</label>
+        <select id="il-mission">
+          <option value="">— none (general comment) —</option>
+          {% for s in submissions | groupby('mission_id') %}
+          <option value="{{ s.grouper }}">{{ s.list[0].mission_title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="il-field">
+        <label for="il-score">Score override (0–100)</label>
+        <input type="number" id="il-score" min="0" max="100" placeholder="leave blank">
+      </div>
+      <div class="il-field">
+        <label for="il-comment">Comment</label>
+        <input type="text" id="il-comment" placeholder="what you saw">
+      </div>
+      <div class="il-field">
+        <button type="submit" class="il-btn">Record</button>
+      </div>
+    </form>
+    <div id="il-review-msg" class="il-msg"></div>
+    <div class="il-note">
+      A score override rewrites the recorded mission score and keeps the value it replaced,
+      attributed to you in the append-only audit log. It deliberately does <strong>not</strong>
+      move XP: every point in the ledger names the work that earned it, and an
+      instructor-mintable XP path would make a rank purchasable again.
+      A mission the learner has never opened cannot be overridden — there is no score there to change.
+    </div>
+  </div>
+
+  <!-- Review history -->
+  <div class="il-card">
+    <div class="il-title">Review History</div>
+    {% if reviews %}
+    <table class="il-table">
+      <thead><tr><th>When</th><th>Verdict</th><th>Mission</th><th>Score</th><th>Comment</th><th>Reviewer</th></tr></thead>
+      <tbody>
+        {% for r in reviews %}
+        <tr>
+          <td style="color:#8899aa;font-size:.78rem;">{{ (r.created_at or '')[:19] }}</td>
+          <td>
+            {% if r.verdict == 'approved' %}<span class="il-pill il-pill-ok">APPROVED</span>
+            {% elif r.verdict == 'rejected' %}<span class="il-pill il-pill-bad">REJECTED</span>
+            {% else %}<span class="il-pill il-pill-warn">NEEDS REWORK</span>{% endif %}
+          </td>
+          <td>{{ r.mission_title or '—' }}</td>
+          <td>
+            {% if r.override_score is not none %}
+              {{ r.prior_score if r.prior_score is not none else '—' }} → <strong>{{ r.override_score }}</strong>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ r.comment or '' }}</td>
+          <td style="color:#8899aa;font-size:.78rem;">{{ r.reviewer }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="il-empty">No reviews recorded for this learner yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="il-footer">CUI // SP-CTI — FORGE Academy Instructor Console</div>
+</div>
+
+<script>
+function ilReview(ev) {
+  ev.preventDefault();
+  var el = document.getElementById('il-review-msg');
+  var body = {
+    user_id: {{ learner.id }},
+    verdict: document.getElementById('il-verdict').value,
+    mission_id: document.getElementById('il-mission').value || null,
+    override_score: document.getElementById('il-score').value || null,
+    comment: document.getElementById('il-comment').value
+  };
+  fetch('/api/academy/instructor/review', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+    .then(function (res) {
+      el.style.display = 'block';
+      if (res.ok && res.d.ok) {
+        el.textContent = 'Review recorded.'; el.style.color = '#00FF88';
+        setTimeout(function () { location.reload(); }, 600);
+      } else {
+        el.textContent = res.d.error || 'Review refused.'; el.style.color = '#FF4444';
+      }
+    })
+    .catch(function (e) {
+      el.style.display = 'block'; el.style.color = '#FF4444';
+      el.textContent = 'Request failed: ' + e;
+    });
+  return false;
+}
+</script>
+{% endblock %}

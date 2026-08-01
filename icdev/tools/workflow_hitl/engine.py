@@ -335,8 +335,8 @@ class WorkflowEngine:
                     (approval_id, instance_id, stage_config["name"], None, None, "approved", trace_id, _now(), _now()),
                 )
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning("_open_approval: best-effort INSERT into wf_approvals failed (non-blocking): %s", _exc)
             finally:
                 conn.close()
             # Auto-advance past automated stages immediately

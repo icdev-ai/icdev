@@ -251,7 +251,10 @@ _TEMPLATES = {
     "player": TPL / "ai_gameday" / "player.html",
     "simulate": TPL / "ai_gameday" / "simulate.html",
     "leaderboard": TPL / "ai_gameday" / "leaderboard.html",
-    "session": TPL / "gameday" / "session.html",
+    # gdx-dead-01: the "session" entry pointed at gameday/session.html, an
+    # orphaned template no route ever rendered (it fetched the dead
+    # /gameday/api/sessions* prefix). Deleted with the template — the live
+    # session surfaces are player/facilitator/simulate, already covered above.
 }
 
 # User/attacker-controlled sinks that MUST be esc()-wrapped in each template.
@@ -260,7 +263,6 @@ _REQUIRED_ESCAPED = {
     "player": ["esc(inj.title)", "esc(r.tool)", "esc(row.team_name)"],
     "simulate": ["esc(r.team_name)", "esc(t.team_name)", "esc(label)"],
     "leaderboard": ["esc(row.team_name)"],
-    "session": ["esc(r.player_name)", "esc(t.team_name)", "esc(m.player_name)", "esc(r.match_reasoning)"],
 }
 
 # Bare (unescaped) interpolations that must NOT appear anymore.
@@ -269,7 +271,6 @@ _FORBIDDEN_BARE = {
     "player": ["${inj.title}", "${row.team_name}"],
     "simulate": ["${r.team_name}", "${t.team_name}"],
     "leaderboard": ["${row.team_name}"],
-    "session": ["${r.player_name}", "${t.team_name}", "${m.player_name}"],
 }
 
 

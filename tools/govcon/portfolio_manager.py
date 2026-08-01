@@ -110,8 +110,8 @@ def _audit(conn, action, details="", actor="portfolio_manager"):
             "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _record_status_change(conn, entity_type, entity_id, old_status, new_status, changed_by=None, reason=None):
@@ -604,8 +604,12 @@ def transition_from_opportunity(opportunity_id, created_by=None):
                 conn, "deliverable", deliv_id, None, "not_started", "system", "Seeded from compliance matrix"
             )
             deliverables_seeded += 1
-    except Exception:
-        pass  # compliance matrix may not exist
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # compliance matrix may not exist
+        logger.warning(
+            "transition_from_opportunity: best-effort INSERT into cpmp_deliverables failed (non-blocking): %s",
+            _exc,
+        )
 
     # 5. Create initial WBS from proposal volumes
     wbs_seeded = 0
@@ -633,8 +637,8 @@ def transition_from_opportunity(opportunity_id, created_by=None):
             )
             _record_status_change(conn, "wbs", wbs_id, None, "not_started", "system", "Seeded from proposal volume")
             wbs_seeded += 1
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("transition_from_opportunity: best-effort INSERT into cpmp_wbs failed (non-blocking): %s", _exc)
 
     _audit(
         conn,

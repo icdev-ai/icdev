@@ -31,6 +31,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.innovation.kanban_promoter")
 
 CONFIG_PATH = BASE_DIR / "args" / "innovation_promoter.yaml"
 
@@ -201,8 +204,9 @@ def promote_signals(conn, signals: list[dict], config: dict, dry_run: bool = Fal
                    VALUES (%s, %s, %s, %s, NOW())""",
                 ("decision_made", "kanban_promoter", "innovation.kanban_promote", details),
             )
-        except Exception:
-            pass  # audit is best-effort
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # audit is best-effort
+            logger.warning("promote_signals: best-effort INSERT into audit_trail failed (non-blocking): %s", _exc)
         conn.commit()
 
     return {

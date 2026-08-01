@@ -3566,6 +3566,114 @@ CREATE TABLE IF NOT EXISTS fa_xp_ledger (
     created_at     TEXT    DEFAULT (datetime('now')),
     classification TEXT    DEFAULT 'CUI',
     tenant_id      TEXT);
+
+-- The instructor workflow (aca-trn-04, migration 323). An assignment targets one
+-- learner or a cohort (a role token, or 'all'); cohort membership is resolved at
+-- read time rather than frozen here, so a learner who enrols into the role
+-- afterwards inherits the assignment.
+CREATE TABLE IF NOT EXISTS fa_assignments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_type TEXT    NOT NULL DEFAULT 'mission',
+    mission_id      INTEGER,
+    track_key       TEXT,
+    target_type     TEXT    NOT NULL DEFAULT 'learner',
+    target_user_id  INTEGER,
+    target_role     TEXT,
+    due_at          TEXT,
+    note            TEXT,
+    assigned_by     TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'open',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One human verdict. override_score writes fa_mission_progress.score and never
+-- moves XP; prior_score records what it replaced so the change is reversible by
+-- inspection.
+CREATE TABLE IF NOT EXISTS fa_instructor_reviews (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    mission_id      INTEGER,
+    step_id         INTEGER,
+    assignment_id   INTEGER,
+    verdict         TEXT    NOT NULL,
+    override_score  INTEGER,
+    prior_score     INTEGER,
+    comment         TEXT,
+    reviewer        TEXT    NOT NULL,
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). A grade override that cannot be
+-- attributed to a person is indistinguishable from a bug in the grader.
+CREATE TABLE IF NOT EXISTS fa_instructor_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    action          TEXT    NOT NULL,
+    actor           TEXT    NOT NULL,
+    actor_role      TEXT,
+    subject_type    TEXT,
+    subject_id      TEXT,
+    detail_json     TEXT    DEFAULT '{}',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+-- The assessment model (aca-trn-01, migration 324). classify_step runs on every
+-- mission page render, so these have to exist wherever a step row does: a query
+-- against a missing table inside an open transaction aborts that transaction on
+-- PostgreSQL, which is why fa_xp_ledger above is declared here too.
+CREATE TABLE IF NOT EXISTS fa_assessment_items (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id        INTEGER NOT NULL,
+    item_key       TEXT    NOT NULL,
+    prompt         TEXT    NOT NULL,
+    options_json   TEXT    NOT NULL DEFAULT '[]',
+    -- Server-only. Never selected into a client payload.
+    correct_index  INTEGER NOT NULL DEFAULT 0,
+    explanation    TEXT,
+    difficulty     TEXT    DEFAULT 'core',
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id, item_key));
+
+-- Append-only (registered in APPEND_ONLY_TABLES). served_json records which items
+-- were drawn and the permutation mapping displayed option positions back to the
+-- authored ones — without it the indices a client posts are meaningless.
+CREATE TABLE IF NOT EXISTS fa_step_attempts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    step_id        INTEGER NOT NULL,
+    kind           TEXT    NOT NULL DEFAULT 'attempt',
+    attempt_num    INTEGER NOT NULL DEFAULT 1,
+    policy         TEXT    NOT NULL DEFAULT 'practice',
+    served_json    TEXT    NOT NULL DEFAULT '[]',
+    answers_json   TEXT,
+    score_pct      INTEGER,
+    passed         INTEGER,
+    closed_at      TEXT,
+    reason         TEXT,
+    actor          TEXT,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS fa_step_assessment_policy (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id            INTEGER NOT NULL,
+    policy             TEXT    NOT NULL DEFAULT 'practice',
+    -- NULL means "use the constant", so raising a threshold moves every step that
+    -- never asked for something different.
+    items_per_attempt  INTEGER,
+    pass_threshold_pct INTEGER,
+    max_attempts       INTEGER,
+    updated_at         TEXT,
+    created_at         TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id));
 """
 
 

@@ -33,6 +33,9 @@ import math
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.strategos.iw_bayesian")
 
 
 def _now() -> str:
@@ -192,8 +195,11 @@ class BayesianIWUpdater:
                     ),
                 )
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "_persist: best-effort INSERT into sg_bayesian_war_posteriors failed (non-blocking): %s",
+                    exc,
+                )
         finally:
             conn.close()
 

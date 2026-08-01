@@ -95,7 +95,16 @@
     <!-- AI Tool Quick Links -->
     <div style="font-size:.75rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">AI Tools</div>
     {% for tool in ai_tools %}
+    {% if tool.navigable %}
     <a class="ai-tool-btn" href="{{ tool.endpoint }}" target="_blank" data-slug="{{ tool.slug }}">{{ tool.icon }} {{ tool.label }}</a>
+    {% else %}
+    {# POST-only API: a click would open a tab that 405s. Show the endpoint so a
+       player can still call it from their own tooling. #}
+    <span class="ai-tool-btn" data-slug="{{ tool.slug }}" title="POST {{ tool.endpoint }} — call this from your own client, not the browser"
+          style="opacity:.75;cursor:default;display:block;">{{ tool.icon }} {{ tool.label }}
+      <span style="font-size:.62rem;color:#6e7681;display:block;">POST {{ tool.endpoint }}</span>
+    </span>
+    {% endif %}
     {% endfor %}
     <div style="font-size:.72rem;color:#6e7681;margin-top:.5rem;">Click a tool, then submit your receipt token to earn bonus points.</div>
   </div>

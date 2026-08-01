@@ -114,6 +114,21 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Revoking a certificate means recording a revocation, not deleting
         # the evidence that it was once issued.
         "fa_certificate_evidence",
+        # Who assigned what, and who overrode which grade (aca-trn-04,
+        # migration 323). An override that can be edited afterwards is not an
+        # audit trail — correcting one means recording the correction.
+        "fa_instructor_audit",
+        # Assessment attempt ledger (aca-trn-01, migration 324). An attempt limit
+        # whose ledger can be UPDATEd away is not a limit, and fa_xp_ledger cites
+        # these rows as the provenance of an award. An instructor forgiving a
+        # learner's attempts appends a kind='reset' row; it never DELETEs the
+        # attempts it forgives, and attempts_used() counts forward from that marker.
+        # The one in-place write is closed_at/score flipping NULL -> set exactly
+        # once when a served attempt is graded (assessment._close_attempt, guarded
+        # by "WHERE closed_at IS NULL") — the intended lifecycle of a row rather
+        # than a rewrite of history, the same exception ad_password_reset_tokens
+        # carries below.
+        "fa_step_attempts",
         # FathomDesk auto-trading (append-only NIST AU)
         "ad_trade_audit",
         "ad_kill_switch",

@@ -24,6 +24,9 @@ import os
 from tools.db.storage import get_connection, table_exists
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.compliance_populator")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -49,8 +52,8 @@ def _audit(conn, action, details="", actor="compliance_populator"):
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (_now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ── compliance matrix population ──────────────────────────────────────
@@ -108,8 +111,12 @@ def populate_compliance_matrix(opportunity_id):
                         ),
                     )
                     populated += 1
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "populate_compliance_matrix: best-effort INSERT into proposal_compliance_items failed "
+                    "(non-blocking): %s",
+                    exc,
+                )
 
     _audit(
         conn,

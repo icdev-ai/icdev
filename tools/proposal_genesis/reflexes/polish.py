@@ -23,6 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.proposal_genesis.reflexes.polish")
 
 # ---------------------------------------------------------------------------
 # Module-level fallback constants — all overridable from proposal_genesis_config.yaml
@@ -606,8 +609,11 @@ def _store_quality_score(opp_id: str, draft_id: str, composite: float, checks: D
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_store_quality_score: best-effort INSERT into pg_proposal_quality_scores failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
     return score_id

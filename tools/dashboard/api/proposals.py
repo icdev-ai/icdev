@@ -19,6 +19,9 @@ from pathlib import Path
 from flask import Blueprint, jsonify, make_response, request
 
 from tools.common.helpers import now_iso
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.proposals")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -2901,8 +2904,8 @@ def create_annotation(sec_id):
                 (str(uuid.uuid4()), ts, "proposals.annotation.create", body.get("author", "reviewer"),
                  "create_annotation", f"section={sec_id} category={category}", "proposals"),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("create_annotation: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
         conn.commit()
         row = conn.execute(
             "SELECT * FROM proposal_section_annotations WHERE id = %s", (ann_id,)
