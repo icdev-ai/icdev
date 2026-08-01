@@ -1,0 +1,722 @@
+{
+  "packages": [
+    "strategos",
+    "intelligence",
+    "research",
+    "innovation",
+    "creative",
+    "trading",
+    "fathomdesk",
+    "simulation",
+    "ttx"
+  ],
+  "regex": "(?<![\\w.])(?:icdev\\.)?tools\\.(strategos|intelligence|research|innovation|creative|trading|fathomdesk|simulation|ttx)(?![\\w])",
+  "file_count": 75,
+  "per_package_match": {
+    "trading": 14,
+    "fathomdesk": 6,
+    "simulation": 4,
+    "research": 6,
+    "creative": 5,
+    "innovation": 7,
+    "strategos": 18,
+    "intelligence": 8,
+    "ttx": 10
+  },
+  "per_package_import": {
+    "trading": 10,
+    "fathomdesk": 6,
+    "simulation": 3,
+    "research": 4,
+    "creative": 3,
+    "innovation": 6,
+    "strategos": 13,
+    "intelligence": 7,
+    "ttx": 8
+  },
+  "files": {
+    "tests/e2e_confluence_widget.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/e2e_election_phase_widget.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/e2e_exec_quality_widget.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/e2e_fathomdesk_trap.py": {
+      "packages": [
+        "fathomdesk"
+      ],
+      "imported": [
+        "fathomdesk"
+      ],
+      "patch_only": []
+    },
+    "tests/e2e_killswitch_widget.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/genesis_auto/test_coa_generator.py": {
+      "packages": [
+        "simulation"
+      ],
+      "imported": [
+        "simulation"
+      ],
+      "patch_only": []
+    },
+    "tests/genesis_auto/test_dossier_generator.py": {
+      "packages": [
+        "research"
+      ],
+      "imported": [
+        "research"
+      ],
+      "patch_only": []
+    },
+    "tests/genesis_auto/test_pain_extractor.py": {
+      "packages": [
+        "creative"
+      ],
+      "imported": [
+        "creative"
+      ],
+      "patch_only": []
+    },
+    "tests/genesis_auto/test_source_scanner.py": {
+      "packages": [
+        "research"
+      ],
+      "imported": [
+        "research"
+      ],
+      "patch_only": []
+    },
+    "tests/http/test_fetch_extract_retrofit.py": {
+      "packages": [
+        "creative",
+        "research"
+      ],
+      "imported": [
+        "creative",
+        "research"
+      ],
+      "patch_only": []
+    },
+    "tests/innovation/test_kanban_promoter.py": {
+      "packages": [
+        "innovation"
+      ],
+      "imported": [
+        "innovation"
+      ],
+      "patch_only": []
+    },
+    "tests/strategos/test_dat.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/strategos/test_intel_brief_routes_apps.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_adversarial_validation.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_adversarial_validator.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_analyst_panel_phaseC.py": {
+      "packages": [
+        "fathomdesk"
+      ],
+      "imported": [
+        "fathomdesk"
+      ],
+      "patch_only": []
+    },
+    "tests/test_bayesian_teacher.py": {
+      "packages": [
+        "intelligence"
+      ],
+      "imported": [
+        "intelligence"
+      ],
+      "patch_only": []
+    },
+    "tests/test_ccir_trigger.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_creative_domain_alias.py": {
+      "packages": [
+        "creative"
+      ],
+      "imported": [
+        "creative"
+      ],
+      "patch_only": []
+    },
+    "tests/test_cyber_feed_refresh.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [],
+      "patch_only": [
+        "strategos"
+      ]
+    },
+    "tests/test_data_gateway.py": {
+      "packages": [
+        "fathomdesk",
+        "trading"
+      ],
+      "imported": [
+        "fathomdesk"
+      ],
+      "patch_only": [
+        "trading"
+      ]
+    },
+    "tests/test_drawio_parser.py": {
+      "packages": [
+        "simulation"
+      ],
+      "imported": [
+        "simulation"
+      ],
+      "patch_only": []
+    },
+    "tests/test_dvg_benchmark.py": {
+      "packages": [
+        "creative"
+      ],
+      "imported": [],
+      "patch_only": [
+        "creative"
+      ]
+    },
+    "tests/test_dvg_wire_creative_branch.py": {
+      "packages": [
+        "creative"
+      ],
+      "imported": [],
+      "patch_only": [
+        "creative"
+      ]
+    },
+    "tests/test_dvg_wire_solution_divergence.py": {
+      "packages": [
+        "innovation"
+      ],
+      "imported": [],
+      "patch_only": [
+        "innovation"
+      ]
+    },
+    "tests/test_federated_mesh.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_fga_gd03_scenario_distinctness.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [
+        "ttx"
+      ],
+      "patch_only": []
+    },
+    "tests/test_foundry_harvester.py": {
+      "packages": [
+        "innovation"
+      ],
+      "imported": [
+        "innovation"
+      ],
+      "patch_only": []
+    },
+    "tests/test_information_scorer.py": {
+      "packages": [
+        "intelligence"
+      ],
+      "imported": [
+        "intelligence"
+      ],
+      "patch_only": []
+    },
+    "tests/test_innovation.py": {
+      "packages": [
+        "innovation"
+      ],
+      "imported": [
+        "innovation"
+      ],
+      "patch_only": []
+    },
+    "tests/test_jise_portal.py": {
+      "packages": [
+        "intelligence"
+      ],
+      "imported": [
+        "intelligence"
+      ],
+      "patch_only": []
+    },
+    "tests/test_lpx_team_spend.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [],
+      "patch_only": [
+        "ttx"
+      ]
+    },
+    "tests/test_nav_llm_01_router_invoke.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [],
+      "patch_only": [
+        "strategos"
+      ]
+    },
+    "tests/test_nav_plat_01_simulated_data.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [],
+      "patch_only": [
+        "trading"
+      ]
+    },
+    "tests/test_nav_plat_02_broker_guard.py": {
+      "packages": [
+        "fathomdesk"
+      ],
+      "imported": [
+        "fathomdesk"
+      ],
+      "patch_only": []
+    },
+    "tests/test_nav_plat_04_macro_fail.py": {
+      "packages": [
+        "fathomdesk",
+        "trading"
+      ],
+      "imported": [
+        "fathomdesk"
+      ],
+      "patch_only": [
+        "trading"
+      ]
+    },
+    "tests/test_nav_strat_01_intsum_grounding.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_nav_strat_02_opord_grounding.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [],
+      "patch_only": [
+        "strategos"
+      ]
+    },
+    "tests/test_nav_strat_04_iw_no_sqlite_fallback.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [],
+      "patch_only": [
+        "strategos"
+      ]
+    },
+    "tests/test_nav_strat_05_no_legacy_blueprint.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [],
+      "patch_only": [
+        "strategos"
+      ]
+    },
+    "tests/test_options_intent_parser.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/test_osint_analyzer.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_penta_aiify_routes.py": {
+      "packages": [
+        "innovation"
+      ],
+      "imported": [
+        "innovation"
+      ],
+      "patch_only": []
+    },
+    "tests/test_penta_gd_auth.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [
+        "ttx"
+      ],
+      "patch_only": []
+    },
+    "tests/test_penta_gd_freshness.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [
+        "ttx"
+      ],
+      "patch_only": []
+    },
+    "tests/test_penta_gd_schema.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [
+        "ttx"
+      ],
+      "patch_only": []
+    },
+    "tests/test_penta_gd_scorer_math.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [
+        "ttx"
+      ],
+      "patch_only": []
+    },
+    "tests/test_penta_gd_scoring.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [
+        "ttx"
+      ],
+      "patch_only": []
+    },
+    "tests/test_penta_gd_smoke.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [],
+      "patch_only": [
+        "ttx"
+      ]
+    },
+    "tests/test_penta_gd_ttx_scenarios.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [
+        "ttx"
+      ],
+      "patch_only": []
+    },
+    "tests/test_pir_alert_generator.py": {
+      "packages": [
+        "intelligence"
+      ],
+      "imported": [
+        "intelligence"
+      ],
+      "patch_only": []
+    },
+    "tests/test_pir_threshold_integration.py": {
+      "packages": [
+        "intelligence"
+      ],
+      "imported": [
+        "intelligence"
+      ],
+      "patch_only": []
+    },
+    "tests/test_pkg_subprocess_namespace.py": {
+      "packages": [
+        "research"
+      ],
+      "imported": [],
+      "patch_only": [
+        "research"
+      ]
+    },
+    "tests/test_portfolio_greeks.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/test_register_external_patterns.py": {
+      "packages": [
+        "innovation"
+      ],
+      "imported": [
+        "innovation"
+      ],
+      "patch_only": []
+    },
+    "tests/test_requirement_5.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_research_engine.py": {
+      "packages": [
+        "research"
+      ],
+      "imported": [],
+      "patch_only": [
+        "research"
+      ]
+    },
+    "tests/test_rest_api_expansion.py": {
+      "packages": [
+        "simulation"
+      ],
+      "imported": [],
+      "patch_only": [
+        "simulation"
+      ]
+    },
+    "tests/test_scout_trending_scanners.py": {
+      "packages": [
+        "innovation"
+      ],
+      "imported": [
+        "innovation"
+      ],
+      "patch_only": []
+    },
+    "tests/test_signal_decay.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/test_signal_tuner.py": {
+      "packages": [
+        "fathomdesk"
+      ],
+      "imported": [
+        "fathomdesk"
+      ],
+      "patch_only": []
+    },
+    "tests/test_simulation_engine.py": {
+      "packages": [
+        "simulation"
+      ],
+      "imported": [
+        "simulation"
+      ],
+      "patch_only": []
+    },
+    "tests/test_social_trend_scanner.py": {
+      "packages": [
+        "research"
+      ],
+      "imported": [
+        "research"
+      ],
+      "patch_only": []
+    },
+    "tests/test_strategos_chat_api.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_ta_patterns.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/test_tenant_isolation.py": {
+      "packages": [
+        "ttx"
+      ],
+      "imported": [
+        "ttx"
+      ],
+      "patch_only": []
+    },
+    "tests/test_threat_analysis_service.py": {
+      "packages": [
+        "intelligence"
+      ],
+      "imported": [
+        "intelligence"
+      ],
+      "patch_only": []
+    },
+    "tests/test_threat_level_thresholds.py": {
+      "packages": [
+        "intelligence"
+      ],
+      "imported": [
+        "intelligence"
+      ],
+      "patch_only": []
+    },
+    "tests/test_vuln_triage_engine.py": {
+      "packages": [
+        "intelligence"
+      ],
+      "imported": [],
+      "patch_only": [
+        "intelligence"
+      ]
+    },
+    "tests/test_wargame_advisor.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_wargame_orbat.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/test_wargame_turn_engine.py": {
+      "packages": [
+        "strategos"
+      ],
+      "imported": [
+        "strategos"
+      ],
+      "patch_only": []
+    },
+    "tests/trading/test_data_quality.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/trading/test_get_signals_ranked.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [
+        "trading"
+      ],
+      "patch_only": []
+    },
+    "tests/workflow/test_kph_coherence_checks.py": {
+      "packages": [
+        "trading"
+      ],
+      "imported": [],
+      "patch_only": [
+        "trading"
+      ]
+    }
+  }
+}
