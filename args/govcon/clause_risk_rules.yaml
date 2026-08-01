@@ -1,0 +1,225 @@
+# CUI // SP-CTI
+# ICDEV(TM) GovCon -- Contract Clause Risk Rulebook (crx-gov-02)
+#
+# Deterministic-first clause risk scoring for incoming solicitations / contracts.
+# Modeled on the DocMod rulebook shape (args/docmod/rulebook_*.yaml): a flat,
+# reviewable catalog of regex indicators + combination risk rules. The
+# deterministic pass produces the score; the optional LLM narrative EXPLAINS
+# only and never changes the score.
+#
+# TRUST: every indicator and rule cites its FAR/DFARS clause source. Seeded ONLY
+# from PUBLIC FAR/DFARS knowledge (acquisition.gov). No customer/contract data.
+#
+# Schema:
+#   indicators[]:
+#     id            unique indicator id (cited in findings as [source: indicator:<id>])
+#     label         human-readable name
+#     pattern       Python regex (re.IGNORECASE recommended via (?i)); matched against text
+#     clause_source FAR/DFARS citation this indicator is grounded in
+#   risk_rules[]:
+#     id            unique rule id (cited as [source: rule:<id>])
+#     name          short name
+#     severity      critical | high | medium | low
+#     all_of        list of indicator ids that must ALL be present for the rule to fire
+#     any_of        (optional) at least one of these indicator ids must be present
+#     none_of       (optional) rule suppressed if any of these indicators present
+#     rationale     why the combination is toxic (grounded, deterministic)
+#     mitigation    concrete negotiation / bid-decision suggestion
+#     clause_source FAR/DFARS clause(s) that ground the rule
+
+version: 1
+
+# Severity -> numeric weight used to build the deterministic aggregate score.
+severity_weights:
+  critical: 4
+  high: 3
+  medium: 2
+  low: 1
+
+# Aggregate-score thresholds -> overall risk level. Evaluated in Python:
+# any critical rule => critical; else score-based bands below.
+score_bands:
+  high: 6      # total weighted score >= 6 (and no critical) => high
+  medium: 3    # >= 3 => medium
+  low: 1       # >= 1 => low; 0 => none
+
+indicators:
+  # ---- Contract type indicators ----
+  - id: ind-ffp
+    label: Firm-Fixed-Price contract type
+    pattern: '(?i)\b(firm[\s-]?fixed[\s-]?price|FFP)\b'
+    clause_source: "FAR 16.202"
+  - id: ind-tm
+    label: Time-and-Materials / Labor-Hour contract type
+    pattern: '(?i)\b(time[\s-]?and[\s-]?materials|T&M|labor[\s-]?hour)\b'
+    clause_source: "FAR 16.601"
+  - id: ind-cost-reimb
+    label: Cost-reimbursement contract type
+    pattern: '(?i)\b(cost[\s-]?plus|cost[\s-]?reimburs\w*|CPFF|CPIF|CPAF)\b'
+    clause_source: "FAR 16.301"
+
+  # ---- Scope / requirements-definition indicators ----
+  - id: ind-unbounded-scope
+    label: Unbounded / open-ended scope language
+    pattern: '(?i)(all\s+necessary|as\s+(?:may\s+be\s+)?required|other\s+duties\s+as\s+assigned|open[\s-]?ended|without\s+limitation|any\s+and\s+all|as\s+needed\s+to\s+(?:complete|accomplish)|whatever\s+is\s+(?:necessary|required))'
+    clause_source: "FAR 11.002 / FAR 11.101 (define needs)"
+  - id: ind-undefined-deliverables
+    label: Undefined or to-be-determined deliverables
+    pattern: '(?i)(to\s+be\s+determined|\bTBD\b|deliverables?\s+(?:will\s+be|to\s+be)\s+(?:defined|determined)|scope\s+may\s+(?:expand|change)\s+at\s+the\s+government.?s\s+discretion)'
+    clause_source: "FAR 11.002"
+
+  # ---- Liability / indemnification indicators ----
+  - id: ind-unlimited-liability
+    label: Unlimited / uncapped liability
+    pattern: '(?i)(unlimited\s+liability|liability\s+(?:shall|will)\s+not\s+be\s+(?:limited|capped)|no\s+(?:limitation|cap)\s+(?:on|of)\s+liability|without\s+(?:any\s+)?limitation\s+of\s+liability)'
+    clause_source: "FAR 46.8 (Contractor Liability for Loss of/Damage to Property)"
+  - id: ind-broad-indemnification
+    label: Broad / open-ended indemnification obligation
+    pattern: '(?i)(indemnif\w+\s+(?:and\s+hold\s+harmless\s+)?(?:the\s+government|against\s+all)|hold\s+harmless\s+from\s+(?:any\s+and\s+)?all)'
+    clause_source: "FAR 28.106 / FAR 50 (indemnification is tightly constrained for the Government)"
+
+  # ---- Liquidated damages / schedule pressure indicators ----
+  - id: ind-liquidated-damages
+    label: Liquidated damages term present
+    pattern: '(?i)(liquidated\s+damages|\bLDs?\b(?=\s|,|\.)|assess\w*\s+damages\s+of\s+\$?\d)'
+    clause_source: "FAR 11.5 / FAR 52.211-11"
+  - id: ind-aggressive-ld-rate
+    label: Aggressive per-day liquidated-damages rate
+    pattern: '(?i)(\$\s?[\d,]{3,}\s+per\s+(?:calendar\s+)?day|[\d.]+%?\s+per\s+day\s+of\s+delay|per[\s-]?day\s+(?:penalt|assessment))'
+    clause_source: "FAR 11.502 (LD rate must be reasonable, not a penalty)"
+
+  # ---- Rights / warranty / other risk indicators ----
+  - id: ind-unlimited-data-rights
+    label: Government demands unlimited data rights
+    pattern: '(?i)(unlimited\s+(?:rights|data\s+rights)|government\s+(?:shall|will)\s+(?:have|receive|own)\s+(?:all|unlimited)\s+(?:rights|data\s+rights))'
+    clause_source: "DFARS 252.227-7013 / DFARS 227.71"
+  - id: ind-extended-warranty
+    label: Extended / open-ended warranty obligation
+    pattern: '(?i)(warrant\w+\s+(?:for|of)\s+(?:the\s+)?(?:life|lifetime)|perpetual\s+warranty|warrant\w+\s+(?:against\s+all\s+defects|for\s+\d{2,}\s+years))'
+    clause_source: "FAR 46.7 (Warranties)"
+  - id: ind-personal-guarantee
+    label: Personal / uncapped performance guarantee
+    pattern: '(?i)(personal\s+guarantee|guarantee\w*\s+(?:completion|performance)\s+at\s+(?:no\s+additional|its\s+own)\s+cost)'
+    clause_source: "FAR 46.4"
+
+risk_rules:
+  - id: rule-ffp-unbounded-scope
+    name: FFP with unbounded scope
+    severity: high
+    all_of: [ind-ffp]
+    any_of: [ind-unbounded-scope, ind-undefined-deliverables]
+    rationale: >-
+      A firm-fixed-price contract places 100% of cost/performance risk on the
+      contractor. Combined with open-ended or undefined scope language, there is
+      no price-adjustment mechanism as work expands, exposing the contractor to
+      unbounded, unrecoverable cost growth.
+    mitigation: >-
+      Negotiate a bounded SOW/PWS with an explicit deliverable list and an
+      assumptions/exclusions section; price a management reserve; or move
+      undefined work to a T&M/cost-reimbursement CLIN. Request a scope-change
+      / equitable-adjustment procedure per FAR 43 before award.
+    clause_source: "FAR 16.202-1; FAR 11.002; FAR 43.2"
+
+  - id: rule-unlimited-liability
+    name: Unlimited or uncapped liability
+    severity: critical
+    all_of: [ind-unlimited-liability]
+    rationale: >-
+      Uncapped liability transfers unbounded financial exposure to the
+      contractor and is frequently uninsurable. Commercial-item contracts under
+      FAR Part 12 normally limit liability; an unlimited-liability term is a
+      material red flag.
+    mitigation: >-
+      Negotiate a liability cap (e.g., a multiple of contract value), carve out
+      consequential/indirect damages, and confirm insurance coverage. For
+      commercial items, invoke FAR 12.302 limits on tailoring.
+    clause_source: "FAR 46.8; FAR 12.302; FAR 52.212-4(k)"
+
+  - id: rule-broad-indemnification-fixed
+    name: Broad indemnification on fixed-price work
+    severity: high
+    all_of: [ind-broad-indemnification]
+    any_of: [ind-ffp, ind-unlimited-liability]
+    rationale: >-
+      Open-ended "indemnify and hold harmless against any and all" language on
+      fixed-price work stacks unbounded third-party risk on top of fixed pricing.
+      Government indemnification of contractors is tightly constrained, so the
+      obligation typically runs one direction only.
+    mitigation: >-
+      Limit indemnification to third-party IP/bodily-injury claims caused by the
+      contractor's negligence; cap the amount; exclude Government-directed
+      designs and consequential damages.
+    clause_source: "FAR 28.106; FAR 50.4; FAR 52.227-3 (patent indemnity scope)"
+
+  - id: rule-aggressive-ld
+    name: Aggressive liquidated damages
+    severity: high
+    all_of: [ind-liquidated-damages, ind-aggressive-ld-rate]
+    rationale: >-
+      Liquidated damages must be a reasonable forecast of probable delay cost,
+      not a penalty. A high per-day rate compounds schedule risk and can exceed
+      the contract's profit within days of slippage; an unreasonable rate is
+      also legally challengeable.
+    mitigation: >-
+      Benchmark the LD rate against actual anticipated Government delay cost;
+      negotiate a grace period, an aggregate cap, and excusable-delay carve-outs
+      (FAR 52.249-14). Document that the rate is not punitive.
+    clause_source: "FAR 11.501; FAR 11.502; FAR 52.211-11"
+
+  - id: rule-ld-ffp-unbounded
+    name: FFP + LD + unbounded scope (compound schedule/cost trap)
+    severity: critical
+    all_of: [ind-ffp, ind-liquidated-damages]
+    any_of: [ind-unbounded-scope, ind-undefined-deliverables]
+    rationale: >-
+      The worst-case combination: fixed price (no cost recovery), liquidated
+      damages (schedule penalty), and open-ended scope (expanding work). Scope
+      growth drives schedule slip, which triggers LDs against a price that
+      cannot be adjusted -- a compounding, potentially unrecoverable exposure.
+    mitigation: >-
+      Do not bid without (a) a bounded, deliverable-based SOW, (b) an equitable-
+      adjustment / scope-change clause, and (c) an LD cap with excusable-delay
+      protection. Escalate to a bid/no-bid gate review.
+    clause_source: "FAR 16.202-1; FAR 11.502; FAR 43.2; FAR 52.249-14"
+
+  - id: rule-unlimited-data-rights
+    name: Government demands unlimited data rights
+    severity: medium
+    all_of: [ind-unlimited-data-rights]
+    rationale: >-
+      An unlimited-data-rights demand can force disclosure of privately funded
+      IP and background technology, eroding the contractor's competitive
+      position and future licensing value. Rights assertions must match funding.
+    mitigation: >-
+      Assert limited/restricted rights for privately funded IP; deliver a DFARS
+      252.227-7017 rights-assertion list; negotiate Government Purpose Rights
+      where full funding did not occur.
+    clause_source: "DFARS 252.227-7013; DFARS 252.227-7017; DFARS 227.71"
+
+  - id: rule-extended-warranty-fixed
+    name: Extended warranty on fixed-price work
+    severity: medium
+    all_of: [ind-extended-warranty]
+    any_of: [ind-ffp]
+    rationale: >-
+      A lifetime or open-ended warranty on a fixed-price award creates an
+      unpriced long-tail obligation that outlives the contract and its funding.
+    mitigation: >-
+      Bound the warranty period and scope to defects in workmanship; exclude
+      normal wear, Government misuse, and Government-furnished-property defects;
+      price the warranty explicitly per FAR 46.703 cost-benefit.
+    clause_source: "FAR 46.7; FAR 46.703; FAR 52.246-17/18"
+
+  - id: rule-personal-guarantee
+    name: Uncapped personal/performance guarantee
+    severity: high
+    all_of: [ind-personal-guarantee]
+    rationale: >-
+      A guarantee to complete "at no additional cost" or a personal guarantee
+      converts fixed-price performance into an unbounded obligation and may
+      pierce corporate liability protections.
+    mitigation: >-
+      Replace with a standard performance/payment bond (FAR 28.1) capped at
+      contract value; strike personal-guarantee language; limit to the
+      contractor entity, not individuals.
+    clause_source: "FAR 28.1; FAR 46.4"

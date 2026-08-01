@@ -13,7 +13,12 @@ import zlib
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlencode
-from xml.etree import ElementTree as ET
+from xml.etree import ElementTree as ET  # nosec B405 # construction only; parse via defusedxml
+
+# The IdP-supplied SAMLResponse is untrusted input. Parse it with defusedxml,
+# which forbids entity expansion (billion-laughs) and external DTD/entity
+# references (XXE). Stdlib ET above is used only to BUILD XML we emit.
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 
 _SAML = "urn:oasis:names:tc:SAML:2.0:assertion"
 _SAMLP = "urn:oasis:names:tc:SAML:2.0:protocol"
@@ -138,8 +143,10 @@ def process_acs_response(
     except Exception as exc:
         raise ValueError("Invalid base64 SAMLResponse") from exc
     try:
-        root = ET.fromstring(xml_bytes)
-    except ET.ParseError as exc:
+        root = _safe_fromstring(xml_bytes)
+    except (ET.ParseError, ValueError) as exc:
+        # ValueError covers defusedxml's DefusedXmlException subclasses
+        # (EntitiesForbidden / DTDForbidden / ExternalReferenceForbidden).
         raise ValueError("Invalid SAMLResponse XML") from exc
 
     name_id_el = root.find(f".//{{{_SAML}}}NameID")

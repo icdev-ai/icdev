@@ -381,6 +381,17 @@
   <span class="sg-sep">|</span>
   <span id="sg-event-count">0 events visible</span>
 </div>
+
+<!-- IQE Query Widget (cvx-tch: completeness component 7/8) -->
+{% set iqe_canvas = "strategos" %}
+{% set iqe_api_route = "/api/strategos/iqe-query" %}
+{% set iqe_title = "IQE Query — Strategos Intelligence" %}
+{% set iqe_examples = [
+  {"label": "High-priority unread signals", "query": "foreach s in strategos.signals where s.is_read == 0 where s.composite_score > 0.6 select s.title, s.source, s.composite_score, s.geo_hint order_by s.composite_score desc"},
+  {"label": "Conflict events by theater", "query": "foreach e in strategos.conflict_events where e.goldstein_scale < 0 select e.event_type, e.actor1, e.actor2, e.aoi, e.goldstein_scale order_by e.goldstein_scale asc"},
+  {"label": "High-threat leadership briefs", "query": "foreach b in strategos.leadership_briefs where b.threat_tier == \"HIGH\" or b.threat_tier == \"CRITICAL\" select b.theater, b.threat_tier, b.p_war_posterior, b.generated_at order_by b.generated_at desc"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 {% endblock %}
 
 {% block scripts %}

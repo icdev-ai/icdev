@@ -17,6 +17,12 @@ ALARM_SOURCES = [
     "nagios", "zabbix", "prtg", "custom",
 ]
 
+# MOP provenance — source of truth for the noc_mops.generated_by CHECK enum
+# (see tools/db/schema/pg_consolidated.sql + migration 278). 'ai' = LLM-authored
+# steps; 'ai_template' = LLM unavailable, deterministic template fallback (the
+# common CI path); 'manual' = human-authored.
+MOP_GENERATED_BY = ["manual", "ai", "ai_template"]
+
 INCIDENT_SEVERITIES = {
     "p1": {
         "label": "P1 — Critical",

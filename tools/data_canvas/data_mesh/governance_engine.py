@@ -32,13 +32,28 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 
+def _governance_fail_closed() -> bool:
+    """Read the governance fail-closed toggle at call time (not import time).
+
+    Default OFF to preserve the historical local pass-through behavior. When ON
+    (``ICDEV_GOVERNANCE_FAIL_CLOSED`` in ``{"1", "true", "yes"}``, case-insensitive)
+    and no OPA server is configured, ``check_ext_access`` denies by default instead
+    of allowing. Read at call time so tests can toggle it via monkeypatch/env.
+    """
+    return os.environ.get("ICDEV_GOVERNANCE_FAIL_CLOSED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 # ── Policy CRUD ───────────────────────────────────────────────────────────────
 
 def list_policies(domain_id: str | None = None) -> list[dict]:
     with get_connection() as conn:
         if domain_id:
             rows = conn.execute(
-                "SELECT * FROM dm_opa_policies WHERE domain_id=%s ORDER BY name",
+                "SELECT * FROM dm_opa_policies WHERE domain_id=? ORDER BY name",
                 (domain_id,),
             ).fetchall()
         else:
@@ -51,7 +66,7 @@ def list_policies(domain_id: str | None = None) -> list[dict]:
 def get_policy(policy_id: str) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM dm_opa_policies WHERE id=%s", (policy_id,)
+            "SELECT * FROM dm_opa_policies WHERE id=?", (policy_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -69,11 +84,20 @@ def create_policy(data: dict) -> dict:
         "created_at": now,
         "updated_at": now,
     }
+    # Positional ? + ordered tuple: get_connection() is HYBRID (raw sqlite3 on the
+    # SQLite branch — no translate wrapper; StorageConnection on PG). translate_sql
+    # only rewrites ?→%s (never :name), and StorageCursor wraps a dict param into a
+    # 1-tuple, so a :name mapping never reaches either driver. Column order MUST
+    # match _DM_OPA_COLS.
+    _DM_OPA_COLS = (
+        "id", "domain_id", "name", "rego_text", "policy_path", "enabled",
+        "created_at", "updated_at",
+    )
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO dm_opa_policies (id, domain_id, name, rego_text, policy_path, enabled, created_at, updated_at) "
-            "VALUES (:id, :domain_id, :name, :rego_text, :policy_path, :enabled, :created_at, :updated_at)",
-            row,
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            tuple(row[c] for c in _DM_OPA_COLS),
         )
         conn.commit()
     return row
@@ -83,12 +107,12 @@ def update_policy(policy_id: str, data: dict) -> dict | None:
     now = _now()
     with get_connection() as conn:
         existing = conn.execute(
-            "SELECT * FROM dm_opa_policies WHERE id=%s", (policy_id,)
+            "SELECT * FROM dm_opa_policies WHERE id=?", (policy_id,)
         ).fetchone()
         if not existing:
             return None
         conn.execute(
-            "UPDATE dm_opa_policies SET name=%s, domain_id=%s, rego_text=%s, policy_path=%s, enabled=%s, updated_at=%s WHERE id=%s",
+            "UPDATE dm_opa_policies SET name=?, domain_id=?, rego_text=?, policy_path=?, enabled=?, updated_at=? WHERE id=?",
             (
                 data.get("name", existing["name"]),
                 data.get("domain_id", existing["domain_id"]),
@@ -100,13 +124,13 @@ def update_policy(policy_id: str, data: dict) -> dict | None:
             ),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM dm_opa_policies WHERE id=%s", (policy_id,)).fetchone()
+        row = conn.execute("SELECT * FROM dm_opa_policies WHERE id=?", (policy_id,)).fetchone()
     return dict(row) if row else None
 
 
 def delete_policy(policy_id: str) -> bool:
     with get_connection() as conn:
-        cur = conn.execute("DELETE FROM dm_opa_policies WHERE id=%s", (policy_id,))
+        cur = conn.execute("DELETE FROM dm_opa_policies WHERE id=?", (policy_id,))
         conn.commit()
     return cur.rowcount > 0
 
@@ -165,7 +189,7 @@ def _log_audit(user_attrs: dict, resource: dict, result: dict) -> None:
         with get_connection() as conn:
             conn.execute(
                 "INSERT INTO dm_policy_audit_log (id, policy_id, user, resource, decision, reason, method, classification, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     _uid(),
                     result.get("policy_id") or "",
@@ -195,8 +219,10 @@ def check_ext_access(
 ) -> dict:
     """Governance gate for IQE ext.* collection reads.
 
-    Local mode (ICDEV_OPA_URL blank): always allows and writes a pass-through
-    audit entry — no OPA server is configured.
+    Local mode (ICDEV_OPA_URL blank): default (fail-open) allows and writes a
+    pass-through audit entry — no OPA server is configured. When the
+    ``ICDEV_GOVERNANCE_FAIL_CLOSED`` toggle is ON, local mode instead DENIES and
+    still writes an audit entry (fail-closed posture for IL4+ deployments).
     OPA mode: evaluates the datamesh policy and writes an audit entry.
 
     Args:
@@ -218,12 +244,20 @@ def check_ext_access(
     effective_user = user_attrs or {"user": "system", "clearance": "CUI"}
 
     if not _OPA_URL:
-        result: dict = {
-            "allowed": True,
-            "reason": "local pass-through — no OPA server configured",
-            "method": "local",
-            "policy_id": None,
-        }
+        if _governance_fail_closed():
+            result: dict = {
+                "allowed": False,
+                "reason": "governance fail-closed: no OPA server configured",
+                "method": "local",
+                "policy_id": None,
+            }
+        else:
+            result = {
+                "allowed": True,
+                "reason": "local pass-through — no OPA server configured",
+                "method": "local",
+                "policy_id": None,
+            }
         _log_audit(effective_user, resource, result)
         return result
 
@@ -237,10 +271,10 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
     with get_connection() as conn:
         if domain_id:
             total = conn.execute(
-                "SELECT count(*) FROM dm_domains WHERE id=%s", (domain_id,)
+                "SELECT count(*) FROM dm_domains WHERE id=?", (domain_id,)
             ).fetchone()[0]
             with_policy = conn.execute(
-                "SELECT count(DISTINCT domain_id) FROM dm_opa_policies WHERE enabled=1 AND domain_id=%s",
+                "SELECT count(DISTINCT domain_id) FROM dm_opa_policies WHERE enabled=1 AND domain_id=?",
                 (domain_id,),
             ).fetchone()[0]
         else:
@@ -277,7 +311,7 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
 def get_policy_audit_log(domain_id: str | None = None, limit: int = 50) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM dm_policy_audit_log ORDER BY created_at DESC LIMIT %s",
+            "SELECT * FROM dm_policy_audit_log ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]

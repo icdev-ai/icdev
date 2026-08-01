@@ -97,11 +97,10 @@ def _audit(conn, event_type, action, details, project_id=None):
     try:
         conn.execute(
             "INSERT INTO audit_trail "
-            "(id, timestamp, event_type, actor, action, "
+            "(created_at, event_type, actor, action, "
             "details, project_id, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                _gen_id("aud"),
                 _now(),
                 event_type,
                 "talent_intelligence",

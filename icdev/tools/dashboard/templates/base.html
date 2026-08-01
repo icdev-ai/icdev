@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {%- if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{%- endif %}
     <title>{% block title %}{{ brand.product_name if brand is defined else "ICDEV™" }} Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
@@ -18,6 +19,72 @@
     {%- endif %}
     {% block head %}{% endblock %}
     {% block extra_css %}{% endblock %}
+    <script>
+    // cvx-nav-01: single registry-derived path→canvas map (ComponentRegistry
+    // .get_iqe_path_canvas), injected once and shared by the IQE mini-bar and
+    // the AI-brief banner. Each entry is [regex_source, canvas_key]; first match
+    // wins. Replaces the two divergent hardcoded PATH_CANVAS copies.
+    window.__ICDEV_PATH_CANVAS__ = {{ iqe_path_canvas_json | safe }};
+    </script>
+    <script>
+    // cnr-plat-01: CSRF double-submit shim. Centralized wrapper around fetch()
+    // and XMLHttpRequest so every same-origin mutating request from any page
+    // automatically carries the X-CSRF-Token header — no per-fetch edits needed.
+    // Token is read from the <meta name="csrf-token"> tag (or the icdev_csrf
+    // cookie as a fallback). Cross-origin requests are left untouched so the
+    // token is never leaked to third parties.
+    (function() {
+        function csrfToken() {
+            var m = document.querySelector('meta[name="csrf-token"]');
+            if (m && m.content) return m.content;
+            var match = document.cookie.match(/(?:^|;\s*)icdev_csrf=([^;]+)/);
+            return match ? decodeURIComponent(match[1]) : '';
+        }
+        function sameOrigin(url) {
+            try {
+                var u = new URL(url, window.location.href);
+                return u.origin === window.location.origin;
+            } catch (e) { return true; }  // relative URL → same origin
+        }
+        var UNSAFE = /^(POST|PUT|PATCH|DELETE)$/i;
+        // Wrap fetch
+        if (window.fetch) {
+            var _origFetch = window.fetch;
+            window.fetch = function(input, init) {
+                init = init || {};
+                var method = (init.method || (input && input.method) || 'GET');
+                var url = (typeof input === 'string') ? input : (input && input.url) || '';
+                if (UNSAFE.test(method) && sameOrigin(url)) {
+                    var tok = csrfToken();
+                    if (tok) {
+                        var headers = new Headers(init.headers || (input && input.headers) || {});
+                        if (!headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', tok);
+                        init.headers = headers;
+                    }
+                }
+                return _origFetch.call(this, input, init);
+            };
+        }
+        // Wrap XMLHttpRequest
+        if (window.XMLHttpRequest) {
+            var _open = XMLHttpRequest.prototype.open;
+            var _send = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function(method, url) {
+                this.__csrfUnsafe = UNSAFE.test(method || '') && sameOrigin(url || '');
+                return _open.apply(this, arguments);
+            };
+            XMLHttpRequest.prototype.send = function(body) {
+                if (this.__csrfUnsafe) {
+                    var tok = csrfToken();
+                    if (tok) {
+                        try { this.setRequestHeader('X-CSRF-Token', tok); } catch (e) {}
+                    }
+                }
+                return _send.apply(this, arguments);
+            };
+        }
+    })();
+    </script>
     <script>
     // Apply theme before render to prevent FOUC
     (function() {
@@ -175,7 +242,7 @@
                     <li class="nav-section-label">Monitor</li>
                     <li><a href="/monitoring">Monitoring</a></li>
                     <li><a href="/platform-health">Platform Health</a></li>
-                    <li><a href="/health/canvases">Canvas Health</a></li>
+                    <li><a href="/health/canvases" title="Canvas Health — file-existence / wiring QA for every registered canvas (template, route, module, IQE, …). For runtime compliance posture see Canvas Posture under Canvases.">Canvas Health</a></li>
                     <li><a href="/cache-savings">Cache Savings</a></li>
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/il5">IL5 Ingestion</a></li>
@@ -236,7 +303,7 @@
                         {% endif %}
                     {% endfor %}
                     <li class="nav-section-label">Cross-Canvas</li>
-                    <li><a href="/canvas-compliance">Canvas Posture</a></li>
+                    <li><a href="/canvas-compliance" title="Canvas Posture — runtime compliance posture (scores, POA&amp;Ms, findings) across the design canvases. For file-existence / wiring QA see Canvas Health under Monitor.">Canvas Posture</a></li>
                     {% if canvas_kg_enabled %}<li><a href="/canvas-kg">Canvas KG</a></li>{% endif %}
                 </ul>
             </li>
@@ -291,7 +358,7 @@
                     <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
                     <li><a href="/security/demo" style="color:#27ae60;">SDC Demo Runner</a></li>
                     <li><a href="/security-scan">Security Scans</a></li>
-                    <li><a href="/integrity">Software Integrity (SIPA)</a></li>
+                    {% if integrity_enabled %}<li><a href="/integrity">Software Integrity (SIPA)</a></li>{% endif %}
                     <li><a href="/logs">Centralized Logs</a></li>
                     <li><a href="/stig-manager">STIG Manager</a></li>
                     <li><a href="/pr-intel">PR Intelligence</a></li>
@@ -370,7 +437,7 @@
 
             <!-- ── Platforms ─────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/fathomdesk','/fathomdesk/trap-events','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon','/cpmp'] or request.path.startswith('/foundry') or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path or '/info-ops' in request.path or request.path.startswith('/cpmp/') %}active{% endif %}">Platforms ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/fathomdesk','/fathomdesk/trap-events','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon','/cpmp'] or request.path.startswith('/foundry') or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path or request.path.startswith('/cpmp/') %}active{% endif %}">Platforms ▾</a>
                 <ul class="nav-dropdown-menu">
                     {% if not airgap_mode %}
                     <li class="nav-section-label">Market &amp; AI</li>
@@ -378,7 +445,7 @@
                     <li><a href="/fathomdesk/trap-events" style="color:#f87171;">&#9888; Trap Events</a></li>
                     <li><a href="/genesis">Genesis</a></li>
                     <li><a href="/oracle">Oracle</a></li>
-                    <li><a href="/foundry" style="color:#b388ff;">Foundry (ACF)</a></li>
+                    {% if foundry_enabled %}<li><a href="/foundry" style="color:#b388ff;">Foundry (ACF)</a></li>{% endif %}
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     <li class="nav-section-label">Geospatial</li>
@@ -389,12 +456,6 @@
                     <li><a href="/geosigint/amphibious">Amphibious Assessment</a></li>
                     <li><a href="/geosigint/militia">Militia Classifier</a></li>
                     <li><a href="/geosigint/semiconductor">Semiconductor Chain</a></li>
-                    <li class="nav-dropdown-divider"></li>
-                    <li class="nav-section-label">Info Ops</li>
-                    <li><a href="/info-ops/" style="color:#a78bfa;">Info Ops Platform</a></li>
-                    <li><a href="/info-ops/dashboard">Dashboard</a></li>
-                    <li><a href="/info-ops/analysis">Analysis</a></li>
-                    <li><a href="/info-ops/osint">OSINT</a></li>
                     {% if govcon_enabled %}
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">GovCon</li>
@@ -535,6 +596,12 @@
 
     <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
     {% include "includes/assistant_widget.html" ignore missing %}
+    {# Shared chat action-card renderer (sme-card-03).
+       Included UNGATED, deliberately: this is the one globally-reachable slot,
+       so every page that renders chat turns inherits every card type. The
+       path-gated pattern used for the Strategos panel below is exactly why that
+       panel reaches one route and nothing else. #}
+    {% include "includes/_chat_action_card.html" ignore missing %}
     <!-- Interactive CLI-bridge prompt panel — slide-out (ucb-widget-02) -->
     {% include "includes/cli_bridge_panel.html" ignore missing %}
     <!-- STRATEGOS floating chat panel (only on Strategos pages) -->
@@ -629,6 +696,11 @@
     <script defer src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/api.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/ux.js') }}"></script>
+    <!-- nav-sec-08: DOMPurify (air-gap, no CDN) + shared XSS-safe escaping/markdown
+         helpers (window.escHtml / escAttr / safeMarkdown). Loaded globally and early
+         so every page script can sanitize untrusted (user/LLM/API) content. -->
+    <script defer src="{{ url_for('static', filename='vendor/dompurify/purify.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/esc.js') }}"></script>
     <script defer src="{{ url_for('static', filename='vendor/mermaid/mermaid.min.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/mermaid-icdev.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/charts.js') }}"></script>
@@ -650,7 +722,8 @@
     <!-- Onboarding Wizard JS (ECR-ONB) -->
     <script defer src="{{ url_for('static', filename='js/onboarding.js') }}"></script>
     {% if '/strategos' in request.path %}
-    <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages) -->
+    <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages).
+         DOMPurify is now loaded globally above (nav-sec-08). -->
     <script defer src="{{ url_for('static', filename='js/strategos-chat.js') }}"></script>
     {% endif %}
     {% block scripts %}{% endblock %}
@@ -782,64 +855,16 @@
         var results = document.getElementById('iqe-mb-results');
         var _open = false;
 
-        var PATH_CANVAS = [
-            [/^\/network|^\/twin/, 'ndc'],
-            [/^\/zta/, 'zta'],
-            [/^\/security/, 'sdc'],
-            [/^\/devops/, 'pdc'],
-            [/^\/data/, 'ddc'],
-            [/^\/infra/, 'idc'],
-            [/^\/observability/, 'odc'],
-            [/^\/boundary/, 'bdc'],
-            [/^\/simulate\/chat.*canvas=cam/, 'cam'],
-            [/^\/migration-canvas\/projects/, 'cam'],
-            [/^\/migration-canvas/, 'mc'],
-            [/^\/agentic-ai/, 'aadc'],
-            [/^\/ai-ml/, 'aimc'],
-            [/^\/ops/, 'ohc'],
-            [/^\/govlift/, 'govlift'],
-            [/^\/kanban/, 'kanban'],
-            [/^\/compliance/, 'compliance'],
-            [/^\/agents/, 'agents'],
-            [/^\/projects/, 'projects'],
-            [/^\/ai-observatory/, 'ai_observatory'],
-            [/^\/ontology/, 'ontology'],
-            [/^\/cache-savings/, 'cache_savings'],
-            [/^\/strategos/, 'strategos'],
-            [/^\/supply.chain/, 'supply_chain'],
-            [/^\/noc/, 'nocc'],
-            [/^\/pmc/, 'pmc'],
-            [/^\/ccc/, 'ccc'],
-            [/^\/dsoc/, 'dsoc'],
-            [/^\/ai-ify/, 'aiify'],
-            [/^\/document-intelligence/, 'dic'],
-            [/^\/integrity/, 'integrity'],
-            [/^\/logs/, 'logs'],
-            [/^\/demo-runner/, 'demo_runner'],
-            [/^\/innovation/, 'innovation'],
-            [/^\/mission-canvas/, 'mission_canvas'],
-            [/^\/proposals/, 'govcon'],
-            [/^\/govcon/, 'govcon'],
-            [/^\/cpmp\/deliverables/, 'govcon'],
-            [/^\/cpmp/, 'govcon'],
-            [/^\/slides/, 'slides'],
-            [/^\/coworker/, 'ace'],
-            [/^\/foundry/, 'foundry'],
-            [/^\/ai-|^\/dashboard\/.*-view/, 'aisg'],
-            [/^\/dat/, 'dat'],
-            [/^\/mcip/, 'dat'],
-            [/^\/updates/, 'updates'],
-            [/^\/docgen/, 'docgen'],
-            [/^\/monitoring\/forecast/, 'forecast'],
-            [/^\/monitoring/, 'logs'],
-            [/^\/me/, 'second_brain'],
-            [/^\/bi_dashboard/, 'bi_dashboard'],
-        ];
+        // cvx-nav-01: registry-derived, injected once in <head> as
+        // window.__ICDEV_PATH_CANVAS__ = [[regex_source, canvas_key], ...].
+        var PATH_CANVAS = window.__ICDEV_PATH_CANVAS__ || [];
 
         function detectCanvas() {
             var p = window.location.pathname;
             for (var i = 0; i < PATH_CANVAS.length; i++) {
-                if (PATH_CANVAS[i][0].test(p)) return PATH_CANVAS[i][1];
+                try {
+                    if (new RegExp(PATH_CANVAS[i][0]).test(p)) return PATH_CANVAS[i][1];
+                } catch (e) { /* skip malformed pattern */ }
             }
             return 'ndc';
         }

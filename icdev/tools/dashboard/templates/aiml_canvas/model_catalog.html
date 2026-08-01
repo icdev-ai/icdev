@@ -13,16 +13,49 @@
 .filter-btn.active { background:#6366f1; border-color:#6366f1; color:#fff; }
 .air-gap-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:10px; font-size:.68rem; font-weight:600; }
 .ag-yes { background:#d1fae5; color:#065f46; } .ag-no { background:#fee2e2; color:#7f1d1d; }
+.source-badge { display:inline-flex; align-items:center; gap:5px; padding:2px 10px; border-radius:10px; font-size:.68rem; font-weight:600; }
+.src-catalog { background:#1e293b; color:#a5b4fc; border:1px solid #4338ca; }
+.src-scanned { background:#052e16; color:#4ade80; border:1px solid #166534; }
+.scanned-panel { background:#0f172a; border:1px solid #334155; border-left:3px solid #22c55e; border-radius:10px; padding:16px 18px; margin-bottom:22px; }
+.scanned-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; }
 </style>
 {% endblock %}
 {% block content %}
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
   <div>
-    <h1 style="margin:0 0 4px;font-size:1.4rem;color:#e0e7ff;">Foundation Model Catalog</h1>
+    <h1 style="margin:0 0 4px;font-size:1.4rem;color:#e0e7ff;display:flex;align-items:center;gap:10px;">
+      Foundation Model Catalog
+      <span class="source-badge src-catalog">catalog</span>
+    </h1>
     <p style="margin:0;color:#64748b;font-size:.85rem;">{{ models|length }} models — IL suitability, VRAM, cost, and air-gap compatibility.</p>
   </div>
   <a href="/ai-ml/" style="color:#6366f1;font-size:.85rem;text-decoration:none;">&larr; Back to AIMC</a>
 </div>
+
+{# Real scanned inventory (aimc_models) — shown only when the scanner reported
+   real rows. Empty / no-data inventory renders nothing here. #}
+{% if scanned and scanned.status == 'success' %}
+{% set inv = scanned.inventory %}
+<div class="scanned-panel">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+    <span class="source-badge src-scanned">● scanned</span>
+    <h2 style="margin:0;font-size:1rem;color:#e2e8f0;">Scanned Model Inventory</h2>
+    <span style="color:#475569;font-size:.72rem;">project: {{ scanned_project_id }}</span>
+  </div>
+  <div class="scanned-grid">
+    <div class="model-stat" style="border:none;"><span class="k">Model Count</span><span class="v">{{ inv.model_count }}</span></div>
+    <div class="model-stat" style="border:none;"><span class="k">Governance Score</span><span class="v">{{ scanned.governance_score }}/100</span></div>
+    <div class="model-stat" style="border:none;"><span class="k">Frameworks</span><span class="v">{{ scanned.frameworks | join(', ') if scanned.frameworks else '—' }}</span></div>
+    <div class="model-stat" style="border:none;"><span class="k">Deploy Targets</span><span class="v">{{ scanned.deployment_targets | join(', ') if scanned.deployment_targets else '—' }}</span></div>
+  </div>
+  {% if scanned.missing_controls %}
+  <div style="margin-top:12px;font-size:.72rem;color:#94a3b8;">
+    Missing MLOps controls:
+    {% for c in scanned.missing_controls %}<span style="background:#1e293b;border:1px solid #334155;padding:1px 7px;border-radius:4px;margin-right:5px;display:inline-block;margin-top:4px;">{{ c.label }}</span>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 {# Filters #}
 <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">

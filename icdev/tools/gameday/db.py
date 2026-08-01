@@ -171,7 +171,7 @@ def save_artifact(
     artifact_type: str,
     content: str,
     tokens_used: int = 0,
-    model_used: str = "qwen3.5:9b",
+    model_used: str = "",
     latency_ms: int = 0,
 ) -> dict:
     conn = get_connection()

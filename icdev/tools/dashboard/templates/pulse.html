@@ -562,8 +562,44 @@ async function rejectPost(id) {
 
 async function publishPost(id) {
     if (!confirm('Publish this post? This will also push to WordPress/Hostinger.')) return;
-    const res = await fetch('/api/pulse/posts/' + id + '/publish', {method: 'POST'});
+    const res = await fetch('/api/pulse/posts/' + id + '/publish', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({}),
+    });
     const data = await res.json();
+    // nav-intel-09: RED judge verdict (or no verdict) HARD-BLOCKS publishing.
+    if (res.status === 409 && data.blocked) {
+        const verdict = (data.verdict || 'none').toUpperCase();
+        const reason = data.reason || 'Publishing is blocked by the LLM judge.';
+        // Admin HITL override: force_publish + documented reason.
+        const forceReason = prompt(
+            'BLOCKED — judge verdict is ' + verdict + '.\n\n' + reason +
+            '\n\nAdmin override: type a documented reason to force-publish anyway, ' +
+            'or leave blank to cancel.'
+        );
+        if (!forceReason || !forceReason.trim()) return;
+        const fres = await fetch('/api/pulse/posts/' + id + '/publish', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({force_publish: true, force_reason: forceReason.trim()}),
+        });
+        const fdata = await fres.json();
+        if (fres.status === 403) {
+            alert('Force-publish denied: ' + (fdata.reason || 'admin role required.'));
+            return;
+        }
+        if (!fres.ok || fdata.blocked) {
+            alert('Force-publish failed: ' + (fdata.reason || fdata.error || 'unknown error'));
+            return;
+        }
+        location.reload();
+        return;
+    }
+    if (!res.ok) {
+        alert('Publish failed: ' + (data.reason || data.error || 'unknown error'));
+        return;
+    }
     if (data.hostinger && data.hostinger.status === 'error') {
         alert('Published locally but WordPress push failed: ' + data.hostinger.message);
     }

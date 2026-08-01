@@ -194,30 +194,30 @@ def get_cloud_instances(provider: str = "", filters: dict | None = None) -> list
     filters = filters or {}
     clauses, params = [], []
     if provider:
-        clauses.append("provider = ?")
+        clauses.append("provider = %s")
         params.append(provider)
     if filters.get("min_vcpus"):
-        clauses.append("vcpus >= ?")
+        clauses.append("vcpus >= %s")
         params.append(int(filters["min_vcpus"]))
     if filters.get("max_vcpus"):
-        clauses.append("vcpus <= ?")
+        clauses.append("vcpus <= %s")
         params.append(int(filters["max_vcpus"]))
     if filters.get("min_ram_gb"):
-        clauses.append("ram_gb >= ?")
+        clauses.append("ram_gb >= %s")
         params.append(float(filters["min_ram_gb"]))
     if filters.get("max_ram_gb"):
-        clauses.append("ram_gb <= ?")
+        clauses.append("ram_gb <= %s")
         params.append(float(filters["max_ram_gb"]))
     if filters.get("govcloud_only"):
         clauses.append("govcloud = 1")
     if filters.get("family"):
-        clauses.append("family = ?")
+        clauses.append("family = %s")
         params.append(filters["family"])
     if filters.get("cost_tier"):
-        clauses.append("cost_tier = ?")
+        clauses.append("cost_tier = %s")
         params.append(filters["cost_tier"])
     eol = filters.get("eol_status", "active")
-    clauses.append("eol_status = ?")
+    clauses.append("eol_status = %s")
     params.append(eol)
 
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
@@ -1157,16 +1157,25 @@ def sync_cloud_catalog(providers: list[str] | None = None, force: bool = False) 
 
     try:
         now = _now()
+        # Positional %s placeholders (PG-native).  Named :name binds are NOT
+        # portable: translate_sql only rewrites ?→%s, and StorageCursor.execute
+        # wraps a dict param into a 1-tuple, so a psycopg2 %(name)s / SQLite
+        # :name mapping never reaches the driver.  Column order below MUST match
+        # _UPSERT_COLS so the ordered param tuple lines up.
+        _UPSERT_COLS = (
+            "provider", "instance_type", "family", "vcpus", "ram_gb",
+            "local_storage_gb", "storage_type", "network_gbps",
+            "premium_disk_opt", "cost_tier", "govcloud", "il_support",
+            "use_case_tags", "eol_status", "compliance_certs",
+            "last_refreshed_at",
+        )
         upsert_sql = (
             "INSERT OR REPLACE INTO mc_cloud_instances "
             "(provider, instance_type, family, vcpus, ram_gb, local_storage_gb, "
             "storage_type, network_gbps, premium_disk_opt, cost_tier, govcloud, "
             "il_support, use_case_tags, eol_status, compliance_certs, "
             "source, last_refreshed_at) "
-            "VALUES (:provider,:instance_type,:family,:vcpus,:ram_gb,:local_storage_gb,"
-            ":storage_type,:network_gbps,:premium_disk_opt,:cost_tier,:govcloud,"
-            ":il_support,:use_case_tags,:eol_status,:compliance_certs,"
-            "'api',:last_refreshed_at)"
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'api',%s)"
         )
         for prov in active:
             if prov not in fetchers:
@@ -1178,7 +1187,7 @@ def sync_cloud_catalog(providers: list[str] | None = None, force: bool = False) 
                     row.setdefault("compliance_certs", "{}")
                     row.setdefault("local_storage_gb", 0)
                     row["last_refreshed_at"] = now
-                    conn.execute(upsert_sql, row)
+                    conn.execute(upsert_sql, tuple(row.get(c) for c in _UPSERT_COLS))
                 total_upserted += len(rows)
                 if rows:
                     synced.append(prov)
@@ -1346,18 +1355,18 @@ def get_cloud_instances_advanced(
         params: list = []
 
         if provider and provider != "all":
-            where.append("provider=?")
+            where.append("provider=%s")
             params.append(provider)
         if vcpu_min:
-            where.append("vcpus >= ?")
+            where.append("vcpus >= %s")
             params.append(vcpu_min)
         if ram_min:
-            where.append("ram_gb >= ?")
+            where.append("ram_gb >= %s")
             params.append(ram_min)
 
         for f_filters in (filters or {}).items():
             col, val = f_filters
-            where.append(f"{col}=?")
+            where.append(f"{col}=%s")
             params.append(val)
 
         # If pricing column exists and is not null, filter to those rows for non-on-demand

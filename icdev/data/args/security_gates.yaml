@@ -115,6 +115,28 @@ acceptance_validation:
     - acceptance_criteria_unverified
     - page_content_empty
 
+# Governed Delivery Pipeline gates (Phase 2). These RUN and RECORD per task in
+# kanban_verifications and surface in the /kanban pipeline view. They are
+# non-blocking by default; enforcement (blocking `done`) is toggled at runtime
+# by the KANBAN_PIPELINE_ENFORCE env flag, not by this catalog.
+conformance_review:
+  blocking: []            # enforced only when KANBAN_PIPELINE_ENFORCE=1
+  warning:
+    - conformance_review_failed        # implementation drifted from acceptance criteria
+    - conformance_review_not_run       # no acceptance criteria / no diff / LLM unavailable
+  note: >
+    "Did we build the right thing?" — LLM judge over the branch diff vs the task's
+    acceptance criteria (tools/testing/conformance_reviewer.py, routed via the
+    conformance_review LLM function). Distinct from V&V. Records review_passed /
+    review_findings on kanban_verifications.
+unit_tests:
+  blocking: []            # enforced only when KANBAN_PIPELINE_ENFORCE=1
+  warning:
+    - unit_tests_failed                # pytest on changed test files failed
+  note: >
+    pytest gate — runs only the task's CHANGED test files (validated_commit._run_pytest).
+    Records pytest_passed / pytest_ran / failed_tests on kanban_verifications.
+
 # Aggregation Guard Gate — blocks when a result set's derived classification exceeds
 # the surface ceiling or the requesting user's clearance_level.
 # Run: python tools/security/aggregation_guard.py --gate --json
@@ -1531,6 +1553,74 @@ loop_engineering:
   gepa_min_composite_score: 0.60
   gepa_min_score_delta: 0.05
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MCP tool allowlist for Studio workflow steps (dwo-mcp-02)
+#
+# A `node_type: mcp` workflow step dispatches an MCP tool in-process through
+# tools/mcp/tool_registry.py. That registry exposes 500+ tools, many of them
+# destructive or classification-sensitive, so the workflow surface is
+# DEFAULT-DENY: a tool is callable from a workflow step only when it is named
+# below. Anything else is refused before import/dispatch and audited.
+#
+#   default            — policy for any tool not named here. Always `deny`.
+#   allowed            — dispatched with no human gate. Read-only / advisory
+#                        tools only: they must not mutate state, spend money,
+#                        deploy, or move data across a classification boundary.
+#   requires_approval  — dispatched only after an approved `node_type: human`
+#                        gate in the same run. State-changing, destructive,
+#                        or egress-bearing tools.
+#
+# Rules for editing this list:
+#   * Names must match tool_registry.py keys exactly — a typo silently reads as
+#     "not allowlisted" and the step is refused at runtime, not at edit time.
+#   * A tool appears in at most ONE of the two lists.
+#   * Adding a tool that writes, deletes, deploys, or egresses to `allowed` is
+#     a gate violation; it belongs in `requires_approval`.
+#   * IL and role limits are NOT restated here. They come from the tool's own
+#     registry metadata plus args/component_registry.yaml (min_il /
+#     default_roles), evaluated per-dispatch alongside this allowlist.
+#   * Refusals and approvals are both audited append-only with tool name,
+#     params digest, run id, step id and actor.
+mcp_workflow_tools:
+  default: deny
+  nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
+
+  # Read-only: query, inspect, report. Safe to run unattended inside a workflow.
+  allowed:
+    - health_check          # platform health probe, no writes
+    - get_status            # project/agent status read
+    - project_status        # compliance + deployment posture read
+    - rag_search            # retrieval over the existing index
+    - kg_search             # knowledge-graph query
+    - search_knowledge      # learning knowledge-base lookup
+    - trace_query           # requirement/artifact traceability read
+    - nist_lookup           # control catalog lookup
+    - crosswalk_query       # framework crosswalk read
+    - stig_check            # STIG evaluation, report-only
+    - code_analyze          # static analysis, report-only
+    - scan_dependencies     # dependency audit, report-only
+    - classification_check  # marking validation, report-only
+    - kanban_list_tasks     # board read
+    - kanban_get_task       # board read
+    - studio_list_workflows # workflow catalog read
+
+  # State-changing, destructive, or egress-bearing: a human gate must be
+  # approved in the same run before the executor dispatches these.
+  requires_approval:
+    - terraform_apply       # mutates cloud infrastructure
+    - k8s_deploy            # deploys workloads to a cluster
+    - ansible_run           # executes playbooks against hosts
+    - rollback              # tears down / reverts a deployment
+    - self_heal             # applies unattended remediation
+    - kanban_delete_task    # destructive board write
+    - rag_delete_source     # destructive index write
+    - sandbox_execute       # runs caller-supplied code
+    - send_command          # issues a command to a remote agent
+    - install_asset         # installs third-party marketplace code
+    - publish_asset         # publishes outward to the marketplace
+    - emass_sync            # egress of compliance data to eMASS
+    - xacta_sync            # egress of compliance data to Xacta
+
 # Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
 gates:
   - id: AI-TRACE-001
@@ -1552,6 +1642,22 @@ gates:
     warn_on: [no_tls, missing_classification]
     tool: tools/mcp/mcp_scanner.py
     nist_controls: [SC-8, AC-3, AU-12]
+
+  - id: MCP-WF-001
+    name: MCP Workflow Tool Allowlist Gate
+    description: Refuses a workflow step that dispatches an MCP tool absent from mcp_workflow_tools.allowed, blocks a mcp_workflow_tools.requires_approval tool until its human gate is approved, and refuses a caller whose impact level or roles do not meet the limits the tool's owning component declares in args/component_registry.yaml. Policy lives in the mcp_workflow_tools section of this file.
+    severity: HIGH
+    block_on:
+      - mcp_tool_not_allowlisted
+      - mcp_tool_awaiting_human_approval
+      - mcp_tool_approval_rejected
+      - mcp_tool_approval_gate_unavailable
+      - mcp_tool_exceeds_caller_il
+      - mcp_tool_missing_required_role
+    warn_on:
+      - mcp_tool_unknown_to_registry
+    policy: mcp_workflow_tools
+    nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
 
   - id: URL-SEC-001
     name: URL Scheme Validation Gate (B310)
@@ -1680,3 +1786,62 @@ gates:
     table: nc_vuln_predictions
     query: "SELECT COUNT(*) FROM nc_vuln_predictions p WHERE p.risk_score_composite >= 0.90 AND NOT EXISTS (SELECT 1 FROM nc_triage_queue t WHERE t.advisory_id = p.advisory_id) AND p.predicted_at < NOW() - INTERVAL '24 hours'"
     nist_controls: [RA-5, IR-4, SI-2]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Constitutional AI rule set (agx-verify-02)
+#
+# The SINGLE-SOURCE, data-driven encoding of the constitutional rules that
+# tools/quality/constitutional_ai.py critiques LLM-drafted artifacts against,
+# rule-by-rule. This is NOT a new parallel policy: each rule restates an
+# invariant that already exists elsewhere (the merge_gates block_on/warn_on keys
+# above, the CUI/classification marking rules, and the TRUST invariants —
+# citation/placeholder/numeric-consistency). `source` names the origin.
+#
+# severity mirrors the gate lists: `block` = mandatory control (any failure fails
+# the artifact — see compose_overall's any-block-fail policy); `warn` = advisory.
+# applies_to filters which drafted artifact types the rule is critiqued against.
+constitution:
+  vocabulary_version: const-1.0
+  rules:
+    - id: missing_cui_markings_if_required
+      severity: block
+      source: "merge_gates.block_on + classification marking rules"
+      applies_to: [any]
+      principle: >-
+        The artifact must carry the required CUI (or higher) marking/banner when
+        its classification requires it. A CUI artifact without its banner fails.
+    - id: classification_markings_inconsistent
+      severity: warn
+      source: "merge_gates.warn_on + classification marking rules"
+      applies_to: [any]
+      principle: >-
+        Classification markings must be internally consistent — no section may
+        carry a banner that conflicts with the artifact's declared classification.
+    - id: uncited_claim
+      severity: block
+      source: "TRUST invariant (citation_guard / citation_grounding)"
+      applies_to: [proposal, rfi, dic, tech_writer]
+      principle: >-
+        Every factual or quantitative claim must carry an inline [source: ...]
+        citation attributable to the provided evidence. Unsourced claims fail.
+    - id: unresolved_placeholder
+      severity: block
+      source: "TRUST invariant (placeholder_guard / content_grounding)"
+      applies_to: [proposal, rfi, dic, tech_writer]
+      principle: >-
+        The artifact must contain no unresolved [BRACKETED] placeholder tokens
+        (e.g. [UEI_NUMBER]); every placeholder must be filled or removed.
+    - id: numeric_contradiction
+      severity: warn
+      source: "TRUST invariant (content_grounding.check_numeric_claims)"
+      applies_to: [proposal, rfi]
+      principle: >-
+        Numeric claims that recur across sections (ROM totals, prototype
+        timelines) must agree; contradictory figures must be reconciled.
+    - id: unsupported_superlative
+      severity: warn
+      source: "Karpathy pre-design heuristic (state assumptions; avoid overreach)"
+      applies_to: [proposal, rfi, dic, tech_writer]
+      principle: >-
+        Absolute or superlative claims ("guaranteed", "the only", "always")
+        must be evidenced or softened; unsupported superlatives are flagged.

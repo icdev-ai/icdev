@@ -16,7 +16,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
-from pptx.util import Inches, Pt
+from pptx.util import Emu, Inches, Pt
 
 from tools.slides.constants import THEME_PALETTES, DEFAULT_THEME
 
@@ -33,6 +33,78 @@ _OUTPUT_DIR = _ICDEV_ROOT / "tools" / "presentations" / "slides"
 def _rgb(palette: dict, key: str) -> RGBColor:
     r, g, b = palette[key]
     return RGBColor(r, g, b)
+
+
+def _opt(palette: dict, key: str, fallback: str) -> RGBColor:
+    """A colour that a theme MAY define, falling back to one it must.
+
+    This is what lets a light theme coexist with the dark ones without a flag on
+    every call site: a dark theme never sets "card" or "band_text", so it inherits
+    the old behaviour; a light theme sets them and gets white cards and a white
+    band title. No theme has to know the others exist.
+    """
+    return _rgb(palette, key if key in palette else fallback)
+
+
+def _card_fill(palette: dict) -> RGBColor:
+    # Dark themes fill cards with "dark"; a light theme fills them white via "card".
+    return _opt(palette, "card", "dark")
+
+
+def _band_text(palette: dict) -> RGBColor:
+    # Title colour ON the navy header band. Blue-on-navy is unreadable, so a light
+    # theme overrides to white; dark themes keep the accent they always used.
+    return _opt(palette, "band_text", "accent")
+
+
+def _on_card_text(palette: dict) -> RGBColor:
+    """Body colour that is legible on the card fill, whichever way it goes.
+
+    A white card needs dark text; a navy card needs light text. Decide from the
+    card's own luminance rather than from a per-theme flag, so a new theme cannot
+    forget to set it and ship black-on-black.
+    """
+    r, g, b = palette.get("card", palette["dark"])
+    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return _rgb(palette, "text") if luminance < 140 else _rgb(palette, "dark")
+
+
+def _rotation(palette: dict) -> list[RGBColor]:
+    """The per-card accent cycle. A theme without one just reuses its accent."""
+    rot = palette.get("rotation")
+    if not rot:
+        return [_rgb(palette, "accent")]
+    return [RGBColor(*c) for c in rot]
+
+
+def _is_light(palette: dict) -> bool:
+    r, g, b = palette["bg"]
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) >= 140
+
+
+def _tint(color: RGBColor, amount: float = 0.85) -> RGBColor:
+    """Mix a colour toward white — the pale phase-box fills in the reference deck.
+
+    Computed, not per-theme: a light tint of whatever accent a phase carries, so a
+    theme that adds a fifth rotation colour gets a matching box for free.
+    """
+    return RGBColor(
+        round(color[0] + (255 - color[0]) * amount),
+        round(color[1] + (255 - color[1]) * amount),
+        round(color[2] + (255 - color[2]) * amount),
+    )
+
+
+def _shade(color: RGBColor, amount: float = 0.35) -> RGBColor:
+    """Mix a colour toward black. A rotation accent as a pale box fill is bright —
+    green in particular clears barely 2.8:1 as small text on its own tint — so the
+    date LABEL on the box is a darkened version of the accent, legible by
+    construction rather than by luck."""
+    return RGBColor(
+        round(color[0] * (1 - amount)),
+        round(color[1] * (1 - amount)),
+        round(color[2] * (1 - amount)),
+    )
 
 
 # ── Primitives (identical to generate_exec_deck.py) ──────────────────────────
@@ -122,15 +194,21 @@ def _notes(slide, text: str) -> None:
     tf.text = text
 
 
-def _card(slide, l, t, w, h, heading: str, body: str, palette: dict) -> None:
-    dark = _rgb(palette, "dark")
-    accent = _rgb(palette, "accent")
+def _card(slide, l, t, w, h, heading: str, body: str, palette: dict,
+          accent: RGBColor | None = None) -> None:
+    accent = accent or _rgb(palette, "accent")
     subtext = _rgb(palette, "subtext")
-    _rect(slide, l, t, w, h, dark, accent)
-    pad = Inches(0.12)
-    _box(slide, l + pad, t + pad, w - pad * 2, Inches(0.38),
-         heading, size=12, bold=True, color=accent)
-    _box(slide, l + pad, t + Inches(0.42), w - pad * 2, h - Inches(0.54),
+    border = _opt(palette, "border", "accent")
+    body_c = _on_card_text(palette)
+    # White card with a hairline border and a coloured LEFT accent bar — the
+    # reference deck's signature. On a dark theme the fill is "dark" and the effect
+    # is a subtly bordered panel; same code, both worlds.
+    _rect(slide, l, t, w, h, _card_fill(palette), border)
+    _rect(slide, l, t, Inches(0.08), h, accent)          # left accent bar
+    pad = Inches(0.18)
+    _box(slide, l + pad, t + Inches(0.10), w - pad * 2, Inches(0.38),
+         heading, size=13, bold=True, color=body_c)
+    _box(slide, l + pad, t + Inches(0.50), w - pad * 2, h - Inches(0.62),
          body, size=10, color=subtext, wrap=True)
 
 
@@ -138,24 +216,36 @@ def _card(slide, l, t, w, h, heading: str, body: str, palette: dict) -> None:
 
 def _build_title_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
     s = _blank(prs)
-    _bg(s, _rgb(palette, "bg"))
     accent = _rgb(palette, "accent")
-    text_c = _rgb(palette, "text")
-    subtext = _rgb(palette, "subtext")
 
-    # Top + bottom accent bars
+    # A cover wants a deep field behind a bright title. Dark themes already have
+    # that in "bg"; a light theme's "bg" is white, which makes a flat cover — so a
+    # light theme covers in its navy "dark" instead and sets the title white. Both
+    # are decided from luminance, not a flag, so a new theme cannot get it wrong.
+    br, bgc, bb = palette["bg"]
+    is_light = (0.2126 * br + 0.7152 * bgc + 0.0722 * bb) >= 140
+    cover_bg = _rgb(palette, "dark") if is_light else _rgb(palette, "bg")
+    title_c = _band_text(palette) if is_light else accent
+    text_c = _band_text(palette) if is_light else _rgb(palette, "text")
+    subtext = _opt(palette, "subtext", "subtext")
+
+    _bg(s, cover_bg)
+
+    # Top + bottom accent bars. The bottom uses the last rotation colour (amber in
+    # the corporate theme) for the reference's two-tone rule; falls back to accent.
+    rot = _rotation(palette)
     _rect(s, 0, 0, W, Inches(0.1), accent)
-    _rect(s, 0, H - Inches(0.1), W, Inches(0.1), accent)
+    _rect(s, 0, H - Inches(0.1), W, Inches(0.1), rot[-1])
 
     title = slide_data.get("title", "ICDEV™")
     _box(s, LM, Inches(1.0), CW, Inches(2.0),
-         title, size=44, bold=True, color=accent, align=PP_ALIGN.CENTER)
+         title, size=44, bold=True, color=title_c, align=PP_ALIGN.CENTER)
     _rect(s, Inches(3.8), Inches(3.2), Inches(5.73), Inches(0.03), accent)
 
     subtitle = slide_data.get("speaker_notes", "")[:120]
+    tagline = slide_data.get("subtitle") or "ICDEV™  ·  A System That Builds Systems"
     _box(s, LM, Inches(3.35), CW, Inches(0.5),
-         "ICDEV™  ·  A System That Builds Systems", size=14,
-         color=text_c, align=PP_ALIGN.CENTER)
+         tagline, size=14, color=text_c, align=PP_ALIGN.CENTER)
     if subtitle:
         _box(s, LM, Inches(3.9), CW, Inches(0.4),
              subtitle[:100], size=12, color=subtext, align=PP_ALIGN.CENTER, italic=True)
@@ -172,11 +262,12 @@ def _build_content_slide(
     # Left accent stripe
     _rect(s, 0, 0, Inches(0.12), H, accent)
 
-    # Title bar
+    # Title bar — full-width navy band, title in the theme's band colour (white on
+    # a light theme, accent on the dark themes).
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
 
     # Accent underline
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
@@ -268,7 +359,7 @@ def _build_mermaid_slide(prs: Presentation, slide_data: dict, n: int, palette: d
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     mermaid_code = slide_data.get("mermaid_code") or ""
@@ -307,7 +398,7 @@ def _build_svg_slide(prs: Presentation, slide_data: dict, n: int, palette: dict)
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     svg_code = slide_data.get("svg_code") or ""
@@ -341,7 +432,7 @@ def _build_three_placeholder_slide(prs: Presentation, slide_data: dict, n: int, 
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     cfg = slide_data.get("three_scene_config") or {}
@@ -374,7 +465,7 @@ def _build_excalidraw_placeholder_slide(prs: Presentation, slide_data: dict, n: 
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     _rect(s, LM, Inches(1.1), CW, Inches(4.2), dark)
@@ -394,6 +485,110 @@ def _build_excalidraw_placeholder_slide(prs: Presentation, slide_data: dict, n: 
         _notes(s, notes_text)
 
 
+def _build_roadmap_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
+    """A phased timeline: a horizontal spine, numbered circles, and phase boxes
+    that alternate above and below the line.
+
+    This is the reference deck's milestone slide. Each phase takes the next colour
+    in the rotation, so the circles and boxes march blue → purple → green → amber;
+    the boxes are a pale tint of that colour on a light theme, or the card fill on
+    a dark one, so the same layout reads on either.
+
+    slide_data["phases"] = [{"label","title","body","date"}], up to 5.
+    """
+    s = _blank(prs)
+    _bg(s, _rgb(palette, "bg"))
+    accent = _rgb(palette, "accent")
+    dark = _rgb(palette, "dark")
+    subtext = _rgb(palette, "subtext")
+    rotation = _rotation(palette)
+    light = _is_light(palette)
+
+    _rect(s, 0, 0, Inches(0.12), H, accent)
+    _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
+    _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
+         slide_data.get("title", "")[:80], size=22, bold=True, color=_band_text(palette))
+    _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
+
+    phases = [p for p in (slide_data.get("phases") or []) if isinstance(p, dict)][:5]
+    if not phases:
+        _box(s, LM, Inches(1.5), CW, Inches(2.0),
+             "No phases — pass slide_data['phases'] = [{label,title,body,date}].",
+             size=14, color=subtext)
+        _footer(s, n, palette)
+        return
+
+    # The spine, centred vertically in the body area.
+    line_y = Inches(4.0)
+    line_h = Inches(0.06)
+    spine = _rgb(palette, "dark") if light else _rgb(palette, "subtext")
+    _rect(s, LM, line_y, CW, line_h, spine)
+    # Arrowhead at the right end.
+    _rect(s, W - LM, line_y - Inches(0.09), Inches(0.18), Inches(0.24), spine)
+
+    seg = CW / len(phases)
+    circle_d = Inches(0.5)
+    box_w = min(Inches(2.9), seg - Inches(0.25))
+    box_h = Inches(1.55)
+    gap = Inches(0.55)   # circle-to-box vertical gap
+
+    for i, ph in enumerate(phases):
+        color = rotation[i % len(rotation)]
+        cx = LM + seg * i + seg / 2
+        circle_l = cx - circle_d / 2
+        circle_t = line_y + line_h / 2 - circle_d / 2
+
+        above = (i % 2 == 0)   # alternate: 1 above, 2 below, 3 above ...
+
+        # Connector stub between the circle and its box.
+        stub_x = cx - Inches(0.01)
+        if above:
+            box_t = circle_t - gap - box_h
+            _rect(s, stub_x, box_t + box_h, Inches(0.02), gap, color)
+        else:
+            box_t = circle_t + circle_d + gap
+            _rect(s, stub_x, circle_t + circle_d, Inches(0.02), gap, color)
+
+        # The phase box: tinted fill on a light theme, card fill on a dark one.
+        box_l = cx - box_w / 2
+        fill = _tint(color, 0.86) if light else _card_fill(palette)
+        _rect(s, box_l, box_t, box_w, box_h, fill, color, lw=Pt(1.5))
+        pad = Inches(0.14)
+        title_c = _rgb(palette, "dark") if light else _on_card_text(palette)
+        _box(s, box_l + pad, box_t + Inches(0.10), box_w - pad * 2, Inches(0.35),
+             str(ph.get("title", ""))[:40], size=13, bold=True, color=title_c)
+        _box(s, box_l + pad, box_t + Inches(0.48), box_w - pad * 2, Inches(0.62),
+             str(ph.get("body", ""))[:90], size=10, color=subtext, wrap=True)
+        date = str(ph.get("date", ""))[:28]
+        if date:
+            # Darken the accent for the label on a light (tinted) box; on a dark
+            # theme the bright accent already reads against the dark card fill.
+            date_c = _shade(color) if light else color
+            _box(s, box_l + pad, box_t + box_h - Inches(0.30), box_w - pad * 2,
+                 Inches(0.26), date, size=10, bold=True, color=date_c)
+
+        # The numbered circle sits ON TOP of the spine, drawn last so it wins.
+        circ = s.shapes.add_shape(9, circle_l, circle_t, circle_d, circle_d)  # 9 = oval
+        circ.fill.solid()
+        circ.fill.fore_color.rgb = color
+        circ.line.color.rgb = _rgb(palette, "bg")
+        circ.line.width = Pt(2.5)
+        ctf = circ.text_frame
+        ctf.word_wrap = False
+        cp = ctf.paragraphs[0]
+        cp.alignment = PP_ALIGN.CENTER
+        crun = cp.add_run()
+        crun.text = str(ph.get("label", i + 1)).replace("Phase", "").strip() or str(i + 1)
+        crun.font.size = Pt(16)
+        crun.font.bold = True
+        crun.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    _footer(s, n, palette)
+    notes_text = slide_data.get("speaker_notes", "")
+    if notes_text:
+        _notes(s, notes_text)
+
+
 def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
     """3-column card grid (investment overview / capability comparison)."""
     s = _blank(prs)
@@ -401,13 +596,13 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
     accent = _rgb(palette, "accent")
     dark = _rgb(palette, "dark")
     subtext = _rgb(palette, "subtext")
-    teal = _rgb(palette.get("teal") and palette or {"teal": (0x00, 0xB4, 0xD8)}, "teal") if "teal" in palette else accent
+    rotation = _rotation(palette)
 
     _rect(s, 0, 0, Inches(0.12), H, accent)
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=_band_text(palette))
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     bullets = slide_data.get("bullets", [])
@@ -437,20 +632,24 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
         cl = LM + col * (card_w + Inches(0.12))
         ct = start_y + row * (card_h + Inches(0.08))
 
+        # An explicit per-card colour wins; otherwise cycle the theme's rotation so
+        # adjacent cards differ (blue → purple → green → amber) instead of every
+        # card wearing the same accent.
         card_accent_hex = card.get("accent_color", "")
         if card_accent_hex and card_accent_hex.startswith("#") and len(card_accent_hex) >= 7:
             try:
-                cr = int(card_accent_hex[1:3], 16)
-                cg = int(card_accent_hex[3:5], 16)
-                cb_ = int(card_accent_hex[5:7], 16)
-                ca = RGBColor(cr, cg, cb_)
+                ca = RGBColor(int(card_accent_hex[1:3], 16),
+                              int(card_accent_hex[3:5], 16),
+                              int(card_accent_hex[5:7], 16))
             except Exception:
-                ca = teal
+                ca = rotation[ci % len(rotation)]
         else:
-            ca = teal
+            ca = rotation[ci % len(rotation)]
 
-        _rect(s, cl, ct, card_w, card_h, dark)
-        _rect(s, cl, ct, card_w, Inches(0.05), ca)  # top accent bar
+        border = _opt(palette, "border", "accent")
+        title_c = _on_card_text(palette)
+        _rect(s, cl, ct, card_w, card_h, _card_fill(palette), border)
+        _rect(s, cl, ct, card_w, Inches(0.06), ca)  # top accent bar
 
         label = str(card.get("label", ""))[:10]
         title_text = str(card.get("title", ""))[:50]
@@ -458,19 +657,19 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
         meta_text = str(card.get("meta", ""))[:60]
 
         if label:
-            _box(s, cl + pad, ct + Inches(0.07), card_w - pad * 2, Inches(0.28),
+            _box(s, cl + pad, ct + Inches(0.10), card_w - pad * 2, Inches(0.28),
                  label, size=11, bold=True, color=ca)
-        body_top = ct + Inches(0.07 + (0.28 if label else 0))
+        body_top = ct + Inches(0.10 + (0.28 if label else 0))
         if title_text:
             _box(s, cl + pad, body_top, card_w - pad * 2, Inches(0.28),
-                 title_text, size=9, bold=True, color=_rgb(palette, "text"))
-            body_top += Inches(0.28)
+                 title_text, size=11, bold=True, color=title_c)
+            body_top += Inches(0.30)
         if body_text:
-            _box(s, cl + pad, body_top, card_w - pad * 2, card_h - (body_top - ct) - Inches(0.25),
-                 body_text, size=8, color=subtext, wrap=True)
+            _box(s, cl + pad, body_top, card_w - pad * 2, card_h - (body_top - ct) - Inches(0.28),
+                 body_text, size=10, color=subtext, wrap=True)
         if meta_text:
-            _box(s, cl + pad, ct + card_h - Inches(0.22), card_w - pad * 2, Inches(0.2),
-                 meta_text, size=7, color=ca, wrap=False)
+            _box(s, cl + pad, ct + card_h - Inches(0.24), card_w - pad * 2, Inches(0.2),
+                 meta_text, size=9, bold=True, color=ca, wrap=False)
 
     _footer(s, n, palette)
     notes_text = slide_data.get("speaker_notes", "")
@@ -478,6 +677,33 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
         _notes(s, notes_text)
 
 
+def _table_fit(n_body_rows: int, has_hf: int, avail_h) -> tuple[int, int]:
+    """Choose a font size that lets the rows FIT, and how many body rows fit at it.
+
+    A native PowerPoint table grows each row to fit its wrapped text — so a fixed
+    row height is only a minimum, and enough rows push the table straight off the
+    bottom of the slide, where the last rows and the footer are simply gone. That
+    is the "cutoff" nobody put there on purpose.
+
+    So instead of a fixed height, pick the largest font at which every row fits,
+    and if even the smallest font cannot hold them all, say how many were dropped
+    rather than letting them fall off the edge.
+    """
+    avail = avail_h / 914400.0   # EMU → inches
+    for pt in (12, 11, 10, 9, 8):
+        # A body cell may wrap to ~2 lines; header/footer to 1. Row height ≈ two
+        # lines of this font plus the tight cell margins we set below.
+        body_row_in = (pt * 1.28 * 2) / 72.0 + 0.10
+        hf_row_in = (pt * 1.28) / 72.0 + 0.10
+        max_body = int((avail - has_hf * hf_row_in) / body_row_in)
+        if max_body >= n_body_rows:
+            return pt, n_body_rows
+    # Smallest font, capped — caller appends a "+N more" note.
+    pt = 8
+    body_row_in = (pt * 1.28 * 2) / 72.0 + 0.10
+    hf_row_in = (pt * 1.28) / 72.0 + 0.10
+    max_body = max(1, int((avail - has_hf * hf_row_in) / body_row_in))
+    return pt, max_body
 # "No Style, No Grid" — the one built-in table style that imposes nothing.
 _NO_TABLE_STYLE = "{2D5ABB26-0587-4C30-8999-92F81FD0307C}"
 
@@ -603,12 +829,13 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
     dark = _rgb(palette, "dark")
     subtext = _rgb(palette, "subtext")
     text_c = _rgb(palette, "text")
+    band_c = _band_text(palette)          # readable on the navy band AND the cells
 
     _rect(s, 0, 0, Inches(0.12), H, accent)
     _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
     title = slide_data.get("title", "")[:80]
     _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
-         title, size=22, bold=True, color=accent)
+         title, size=22, bold=True, color=band_c)
     _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
 
     tbl_data = slide_data.get("bullets") or {}
@@ -620,91 +847,91 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
             tbl_data = {}
 
     headers = tbl_data.get("headers", []) if isinstance(tbl_data, dict) else []
-    rows = tbl_data.get("rows", []) if isinstance(tbl_data, dict) else []
+    rows = list(tbl_data.get("rows", []) if isinstance(tbl_data, dict) else [])
     footer = tbl_data.get("footer", []) if isinstance(tbl_data, dict) else []
 
-    all_rows = ([headers] if headers else []) + rows + ([footer] if footer else [])
-    if not all_rows:
+    if not (headers or rows or footer):
         _box(s, LM, Inches(1.5), CW, Inches(1.0), "No table data.", size=14, color=subtext)
         _footer(s, n, palette)
         return
 
-    # A slide is a fixed rectangle, and PowerPoint does not care what height you
-    # asked for.
-    #
-    # add_table() takes a height as a HINT. If the text in a cell wraps, PowerPoint
-    # grows the row to fit it and keeps growing — so a long description in a narrow
-    # column silently pushes the bottom of the table off the bottom of the slide.
-    # Setting row_h smaller does not help; it is not a constraint, it is a request.
-    #
-    # The only reliable fix is to put less in the table: fewer rows, shorter cells,
-    # a smaller font. So the table is FITTED to the slide before it is built, and
-    # anything that does not fit is declared rather than dropped — a table that
-    # silently shows the first twelve of eighteen rows is worse than one that says
-    # it is doing so.
-    num_cols = max(len(r) for r in all_rows) if all_rows else 1
-    body, footer_row, dropped = _fit_rows(all_rows, headers, footer)
-    font_pt = _fit_font(len(body), num_cols)
-    body = [
-        [_clip(str(v), num_cols, font_pt) for v in row] for row in body
-    ]
+    top = Inches(0.95)
+    # Emu subclasses int, but `/` is true division: a height that reaches the XML
+    # as cy="5029200.0" is not a valid ST_PositiveCoordinate (xsd:long), so
+    # PowerPoint reports the deck as needing repair and python-pptx raises on
+    # .height — with no error at write time. This expression is int-only, but
+    # the guard is kept explicit so a future divisor here cannot silently
+    # reintroduce the corruption main fixed.
+    avail_h = Emu(int(H - top - Inches(0.5)))   # leave room for the page footer
+    has_hf = (1 if headers else 0) + (1 if footer else 0)
+    font_pt, max_body = _table_fit(len(rows), has_hf, avail_h)
 
-    if dropped:
-        note = f"+ {dropped} more row(s) — see the workbook"
-        body.append([note] + [""] * (num_cols - 1))
+    # Cap rows to what fits, and SAY what was cut instead of clipping it off-slide.
+    dropped = 0
+    if len(rows) > max_body:
+        dropped = len(rows) - max_body
+        rows = rows[:max_body]
 
-    all_rows = body
+    all_rows = ([headers] if headers else []) + rows + ([footer] if footer else [])
     num_rows = len(all_rows)
-    # EMU are integers. Dividing produces a float, and python-pptx will hand that
-    # straight to lxml, which refuses it — but only when the table happens to be
-    # big enough for the division to be inexact.
-    row_h = int(min(Inches(0.42), (H - Inches(1.6)) / max(num_rows, 1)))
+    num_cols = max(len(r) for r in all_rows)
 
-    tbl_shape = s.shapes.add_table(num_rows, num_cols, LM, Inches(0.9), CW, row_h * num_rows)
+    tbl_shape = s.shapes.add_table(num_rows, num_cols, LM, top, CW, avail_h)
     tbl = tbl_shape.table
+    tbl.first_row = bool(headers)         # let the table style bar the header row
 
     _neutralize_table_style(tbl)
 
     for ri, row_data in enumerate(all_rows):
         is_header = ri == 0 and bool(headers)
         is_footer = ri == len(all_rows) - 1 and bool(footer)
+        band = is_header or is_footer
         for ci in range(num_cols):
             cell = tbl.cell(ri, ci)
-            val = str(row_data[ci]) if ci < len(row_data) else ""
-            cell.text = val
+            cell.text = str(row_data[ci]) if ci < len(row_data) else ""
+            # Tight margins + explicit wrap: less forced wrapping, shorter rows,
+            # and no horizontal clipping of a long cell.
+            cell.margin_left = Inches(0.08)
+            cell.margin_right = Inches(0.08)
+            cell.margin_top = Inches(0.03)
+            cell.margin_bottom = Inches(0.03)
+            tf = cell.text_frame
+            tf.word_wrap = True
 
-            fill = dark if (is_header or is_footer) else _rgb(palette, "bg")
+            fill = dark if band else _rgb(palette, "bg")
             cell.fill.solid()
             cell.fill.fore_color.rgb = fill
 
-            # Header rows use the theme's accent — unless a human cannot read it
-            # against this fill, in which case they get the body colour instead.
-            # Two of the shipped themes put their accent on the dark header at
-            # under 4.5:1, and a header nobody can read is not a header.
-            colour = (
-                _readable(accent, fill, text_c) if (is_header or is_footer) else text_c
-            )
-            size = Pt(font_pt)
+            # Banded rows take the theme accent — unless a human cannot read it
+            # against this fill, in which case they get the body colour. Two of
+            # the shipped themes put their accent on the dark header at under
+            # 4.5:1, and a header nobody can read is not a header.
+            colour = _readable(band_c, fill, text_c) if band else text_c
+            size = Pt(font_pt - 1 if band else font_pt)
 
-            para = cell.text_frame.paragraphs[0]
+            para = tf.paragraphs[0]
             para.font.size = size
-            para.font.bold = is_header or is_footer
+            para.font.bold = band
             para.font.color.rgb = colour
 
             # Set the colour on the RUN as well, not only the paragraph.
             #
-            # This is the whole bug. A paragraph-level colour is a DEFAULT, and a
-            # PowerPoint table's own style supplies run-level formatting that beats
-            # it. So the builder painted a dark fill, set white paragraph text, and
-            # PowerPoint rendered the table style's dark text on top of it: every
-            # table came out black-on-black. The data was all there in the XML —
-            # which is exactly why it survived, because reading a .pptx back with
-            # python-pptx shows you the text and tells you nothing about whether a
-            # human can SEE it.
+            # A paragraph-level colour is a DEFAULT, and a PowerPoint table's own
+            # style supplies run-level formatting that beats it. Without this the
+            # builder painted a dark fill, set light paragraph text, and
+            # PowerPoint rendered the table style's dark text on top: every table
+            # came out black-on-black. The data was all in the XML, which is why
+            # it survived — reading a .pptx back with python-pptx shows you the
+            # text and tells you nothing about whether a human can SEE it.
             for run in para.runs:
                 run.font.size = size
-                run.font.bold = is_header or is_footer
+                run.font.bold = band
                 run.font.color.rgb = colour
+
+    if dropped:
+        _box(s, LM, H - Inches(0.5), CW, Inches(0.22),
+             f"+ {dropped} more row(s) — full table in the workbook",
+             size=9, italic=True, color=subtext)
 
     _footer(s, n, palette)
     notes_text = slide_data.get("speaker_notes", "")
@@ -769,6 +996,8 @@ def build(
             _build_excalidraw_placeholder_slide(prs, slide_data, n, palette)
         elif slide_type == "card_grid":
             _build_card_grid_slide(prs, slide_data, n, palette)
+        elif slide_type == "roadmap":
+            _build_roadmap_slide(prs, slide_data, n, palette)
         elif slide_type == "table":
             _build_table_slide(prs, slide_data, n, palette)
         else:

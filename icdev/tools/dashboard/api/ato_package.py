@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -87,20 +87,7 @@ def _get_db():
 
 def _table_exists(conn, table_name):
     """Check if a table exists (works for both SQLite and PostgreSQL)."""
-    try:
-        if _is_pg(conn):
-            row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
-                (table_name,),
-            ).fetchone()
-            return row is not None
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-        return row is not None
-    except Exception:
-        return False
+    return table_exists(conn, table_name)
 
 
 def _check_step_status(conn, step_id, project_id):

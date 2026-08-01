@@ -90,9 +90,9 @@ def _content_hash(text):
 def _audit(conn, action, details="", actor="knowledge_base"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.knowledge_base", actor, action, details, "govcon"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.knowledge_base", actor, action, details, "govcon"),
         )
     except Exception:
         pass
@@ -282,7 +282,6 @@ def seed_from_catalog():
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    str(uuid.uuid4()),
                     prod_name,
                     overview,
                     "product_overview",
@@ -314,7 +313,6 @@ def seed_from_catalog():
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    str(uuid.uuid4()),
                     f"{prod_name} — Customer Value",
                     cv_content,
                     "customer_value",

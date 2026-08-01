@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from icdev.tools.daemon.base import TrustKernelBase
-from icdev.tools.db.storage import get_connection
+from icdev.tools.db.storage import get_connection, sql_placeholder
 from icdev.tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -61,10 +61,43 @@ class CoWorkerSpec:
 
 _VAR_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
 
+# Intrinsic engine capabilities — always callable, never require an explicit
+# grant in ``spec.tool_permissions``.
+#
+# ``llm_step.invoke`` is the engine asking its OWN configured LLM to carry out a
+# step. It opens no file, spawns no process, and reaches nothing outside the
+# router that the co-worker was already constructed with, so gating it behind a
+# per-role grant protects nothing.
+#
+# Treating it as permissioned was a latent deadlock: CoWorkerThread._normalise_step
+# rewrites every bare-string step into a ``llm_step.invoke`` call, but only two of
+# the ninety shipped role YAMLs listed that dotted path in ``tool_permissions``.
+# For the other eighty-eight, run() raised ToolPermissionDeniedError on every
+# step; because _normalise_step also marks those steps ``required: False``, the
+# error was swallowed as ``step_failed_optional`` and the co-worker finished
+# ``state='complete'`` having produced nothing at all.
+#
+# Real agency is unaffected and still gated elsewhere: filesystem writes go
+# through ``folder_access`` (FileAccessBroker) and process execution through
+# ``icdev_tools`` (ToolRunner). Read/Write/Edit/Bash remain permissioned here.
+_INTRINSIC_TOOLS: frozenset[str] = frozenset({
+    "icdev.tools.ace.llm_step.invoke",
+    "tools.ace.llm_step.invoke",
+})
+
 _AUDIT_TABLE_CREATED: set[str] = set()
 
-_AUDIT_DDL = """
-CREATE TABLE IF NOT EXISTS ace_audit_log (
+# Step-level execution audit trail. This table is DISTINCT from the ACE canvas
+# ``ace_audit_log`` (instance_id/coworker_id/action/detail/... created by
+# tools/ace/db/init_db.py via get_canvas_connection). This one is written via
+# get_connection() (the platform DB) and records per-step tool invocations
+# (step_id/tool/trust_tier/success/skipped/error/duration_ms). The two tables
+# previously shared the name ``ace_audit_log`` and collided; renamed to
+# ``ace_step_audit_log`` so both can coexist on the same PostgreSQL backend.
+_AUDIT_TABLE = "ace_step_audit_log"
+
+SCHEMA_SQLITE = """
+CREATE TABLE IF NOT EXISTS ace_step_audit_log (
     id          TEXT    PRIMARY KEY,
     step_id     TEXT    NOT NULL,
     tool        TEXT    NOT NULL,
@@ -77,13 +110,29 @@ CREATE TABLE IF NOT EXISTS ace_audit_log (
 )
 """
 
+SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS ace_step_audit_log (
+    id          TEXT             PRIMARY KEY,
+    step_id     TEXT             NOT NULL,
+    tool        TEXT             NOT NULL,
+    trust_tier  TEXT             NOT NULL,
+    success     INTEGER          NOT NULL,
+    skipped     INTEGER          NOT NULL DEFAULT 0,
+    error       TEXT,
+    duration_ms DOUBLE PRECISION,
+    created_at  TEXT             NOT NULL
+)
+"""
+
 
 def _ensure_audit_table(conn: Any) -> None:
-    if "ace_audit_log" in _AUDIT_TABLE_CREATED:
+    if _AUDIT_TABLE in _AUDIT_TABLE_CREATED:
         return
-    conn.execute(_AUDIT_DDL)
+    from icdev.tools.db.storage import is_pg
+
+    conn.execute(SCHEMA_PG if is_pg(conn) else SCHEMA_SQLITE)
     conn.commit()
-    _AUDIT_TABLE_CREATED.add("ace_audit_log")
+    _AUDIT_TABLE_CREATED.add(_AUDIT_TABLE)
 
 
 def _emit_audit(
@@ -104,11 +153,12 @@ def _emit_audit(
     try:
         conn = get_connection()
         _ensure_audit_table(conn)
+        ph = sql_placeholder(conn)
         conn.execute(
-            """
-            INSERT INTO ace_audit_log
+            f"""
+            INSERT INTO ace_step_audit_log
                 (id, step_id, tool, trust_tier, success, skipped, error, duration_ms, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
             """,
             (
                 row_id,
@@ -124,7 +174,7 @@ def _emit_audit(
         )
         conn.commit()
     except Exception as exc:
-        logger.debug("ace_audit_log write failed: %s", exc)
+        logger.debug("ace_step_audit_log write failed: %s", exc)
         pass  # audit must never crash the caller
 
 
@@ -274,7 +324,7 @@ class StepExecutor:
         Side effects:
         - Mutates *context* by storing the result under ``step['output_var']``
           if that key is present and the step was not skipped.
-        - Appends one row to ``ace_audit_log`` after each call (including
+        - Appends one row to ``ace_step_audit_log`` after each call (including
           skipped and failed steps).
 
         Raises:
@@ -304,8 +354,8 @@ class StepExecutor:
             )
             return None
 
-        # 2. Verify tool is whitelisted in spec
-        if tool_path not in spec.tool_permissions:
+        # 2. Verify tool is whitelisted in spec (intrinsic engine calls exempt)
+        if tool_path not in _INTRINSIC_TOOLS and tool_path not in spec.tool_permissions:
             err = f"Tool '{tool_path}' not in spec.tool_permissions for '{getattr(spec, 'name', 'ace-coworker')}'"
             _emit_audit(
                 step_id=step_id,

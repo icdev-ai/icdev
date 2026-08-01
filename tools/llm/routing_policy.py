@@ -119,11 +119,11 @@ it belongs with the provider config, not the routing policy.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.llm.routing_policy")
 
 # Rung identifiers. Tests assert on these, and every refusal names the rung that
 # fired — "it routed local" is not a useful thing to debug; "airgap fired" is.

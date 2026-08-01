@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% set active = "amphibious" %}
+{% set static_reference = true %}
 {% block title %}Amphibious Threat Assessment — GeoSIGINT{% endblock %}
 
 {% block head %}
@@ -32,6 +33,7 @@ table.zone-table td { padding:.35rem .5rem; border-bottom:1px solid #1f2937; ver
 {% endblock %}
 
 {% block content %}
+{% include "_geosigint_reference_badge.html" %}
 <div class="page-header page-header--compact">
     <h1>Amphibious Threat Assessment</h1>
     <span style="font-size:.8rem;color:#6b7280">PLAN Lift Capacity · Taiwan Bathymetry · Weather Windows · Detection Curves</span>

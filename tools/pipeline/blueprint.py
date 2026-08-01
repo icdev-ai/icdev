@@ -16,6 +16,7 @@ Usage in ICDEV dashboard app.py:
 
 import json
 import os
+import re
 import uuid as _uuid
 from functools import wraps
 from pathlib import Path
@@ -46,6 +47,7 @@ from tools.pipeline.constants import (  # noqa: E402
     compute_owasp_coverage,
     estimate_pipeline_cost,
     estimate_execution_time,
+    stage_from_type,
 )
 from tools.common.helpers import row_to_dict, now_isoformat  # noqa: E402
 from tools.pipeline.db.init_db import get_connection, init_db  # noqa: E402
@@ -89,8 +91,21 @@ except Exception:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
+class AuditUnavailable(Exception):
+    """Raised by ``_audit_strict`` when an audit row cannot be persisted.
+
+    Destructive routes catch this and fail closed (HTTP 500, no mutation) so a
+    delete/approve/reject can never happen without an audit record (NIST AU).
+    """
+
+
 def _audit(action, entity_type, entity_id, details="", user_id=None):
-    """Write an audit log entry."""
+    """Write an audit log entry (best-effort).
+
+    Failures are logged at ERROR and swallowed — appropriate for non-destructive
+    writes where losing the mutation would be worse than a missing audit row.
+    Destructive routes must use ``_audit_strict`` instead (fail-closed).
+    """
     try:
         conn = get_connection()
         conn.execute(
@@ -100,7 +115,42 @@ def _audit(action, entity_type, entity_id, details="", user_id=None):
         conn.commit()
         conn.close()
     except Exception as exc:
-        logger.warning("Audit write failed: %s", exc)
+        logger.error("Audit write failed: %s", exc)
+
+
+def _audit_strict(action, entity_type, entity_id, details="", user_id=None, conn=None):
+    """Write an audit row, RAISING ``AuditUnavailable`` on failure (fail-closed).
+
+    Two modes:
+      * ``conn`` provided — the INSERT runs on the caller's connection and is NOT
+        committed here, so the caller can commit audit + mutation atomically. If
+        the INSERT raises, the exception propagates as ``AuditUnavailable`` and
+        the caller aborts (rolls back) the whole transaction — no un-audited
+        mutation can commit.
+      * ``conn`` is None — a dedicated connection is opened and committed here.
+        Any failure raises ``AuditUnavailable`` so a route can fail closed BEFORE
+        invoking a mutation that runs on a separate connection (e.g. SOP
+        delete/approve/reject in tools/pipeline/sops.py).
+    """
+    owning = conn is None
+    try:
+        if owning:
+            conn = get_connection()
+        conn.execute(
+            "INSERT INTO pc_audit (action, entity_type, entity_id, details, user_id, ts) VALUES (%s, %s, %s, %s, %s, %s)",
+            (action, entity_type, entity_id, details, user_id or session.get("user_id", "system"), now_isoformat()),
+        )
+        if owning:
+            conn.commit()
+            conn.close()
+    except Exception as exc:
+        if owning and conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        logger.error("Audit write failed (fail-closed): %s", exc)
+        raise AuditUnavailable(str(exc)) from exc
 
 
 # ── Module-level analysis helpers (also used by twin.py) ─────────────────────
@@ -262,17 +312,255 @@ def run_compliance_check(nodes, edges):
     return {"passed": passed, "failed": failed, "findings": findings, "total": passed + failed}
 
 
+# ── graph_json validation / parsing (stored-XSS + corruption defense) ─────────
+
+
+def validate_graph_json_payload(raw):
+    """Validate + canonicalize an incoming graph_json payload at the write boundary.
+
+    Accepts a JSON string or a dict. Requires a JSON object containing ``nodes``
+    and ``edges`` lists. Returns the canonical ``json.dumps()`` string so only a
+    well-formed graph is ever persisted (defeats stored-XSS payloads smuggled in
+    as an arbitrary string). Raises ``ValueError`` with a human-readable message
+    on any violation; callers translate that into HTTP 422.
+    """
+    if isinstance(raw, (str, bytes, bytearray)):
+        try:
+            obj = json.loads(raw)
+        except (ValueError, TypeError):
+            raise ValueError("graph_json is not valid JSON")
+    elif isinstance(raw, dict):
+        obj = raw
+    else:
+        raise ValueError("graph_json must be a JSON object")
+    if not isinstance(obj, dict):
+        raise ValueError("graph_json must be a JSON object")
+    if not isinstance(obj.get("nodes"), list) or not isinstance(obj.get("edges"), list):
+        raise ValueError("graph_json must contain nodes[] and edges[]")
+    return json.dumps(obj)
+
+
+def _graph_json_sha256(raw):
+    """Stable sha256 over a graph_json value, insensitive to key ordering.
+
+    Used by the PUT save-path (pdx-perf-01) to decide whether the graph actually
+    changed. When it did not, ALL post-save side-effects (KG reindex, auto-
+    snapshot, Security-Canvas assessment, KG rebuild, provenance) are skipped —
+    they are amplified by the client's auto-save timer and are pure no-ops when
+    the graph is identical. Falls back to hashing the raw string for non-JSON.
+    """
+    try:
+        obj = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+        canon = json.dumps(obj, sort_keys=True, separators=(",", ":"))
+    except (ValueError, TypeError):
+        canon = raw if isinstance(raw, str) else json.dumps(raw, sort_keys=True, default=str)
+    import hashlib as _hashlib
+    return _hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def parse_graph_json(raw):
+    """Defensively parse a stored graph_json value into a graph dict.
+
+    Raises ``ValueError`` if the stored blob is not valid JSON or not an object.
+    Request handlers translate that into HTTP 422 ('corrupt graph') rather than
+    surfacing an unhandled 500.
+    """
+    try:
+        graph = json.loads(raw) if isinstance(raw, (str, bytes, bytearray)) else raw
+    except (ValueError, TypeError):
+        raise ValueError("corrupt graph")
+    if not isinstance(graph, dict):
+        raise ValueError("corrupt graph")
+    return graph
+
+
+# ── RBAC — role sets + session-derived identity (pdx-sec-03) ──────────────────
+#
+# Every route below runs inside the ICDEV dashboard, whose auth layer
+# (tools/dashboard/auth.py::_auth_before_request) populates ``g.current_user``
+# with a ``role`` and sets ``session['user_id']``. Before this fix the pipeline
+# canvas only checked ``session['user_id']`` (pc_login_required), so ANY
+# authenticated user of ANY role could delete pipelines, approve/reject/delete
+# SOPs, and generate deploy bundles. These sets mirror the established dashboard
+# RBAC_MATRIX:
+#   * PC_WRITE_ROLES  == RBAC_MATRIX["cicd"] — the pipeline canvas IS the CI/CD
+#     design surface; developer/pm/isso/admin may mutate designs.
+#   * PC_ELEVATED_ROLES == RBAC_MATRIX["gateway"] — the most-restricted
+#     operational surface; only platform admin + the ISSO security authority may
+#     perform destructive / governance actions (pipeline DELETE, SOP
+#     approve/reject/delete).
+# Roles are always sourced from server-side auth state (g.current_user, then the
+# signed session cookie) — NEVER from the request body. Missing/unknown role
+# fails closed (403).
+PC_WRITE_ROLES = ("admin", "isso", "pm", "developer")
+PC_ELEVATED_ROLES = ("admin", "isso")
+
+# ── Input-validation enums (pdx-fix-03) ───────────────────────────────────────
+#
+# The pipeline canvas is an IL4 surface (min_il: IL4 in the component registry,
+# "CUI // SP-CTI" banner). constants.py exposes no classification/CSP enum, so the
+# allowed sets are defined here from the values actually used across the schema
+# (tools/pipeline/db/init_db.py) and the UI:
+#   * classification — pipelines.classification defaults to 'public'; snippets carry
+#     'public' | 'CUI' | 'SECRET'; the SOP/boundary banner uses 'CUI // SP-CTI'.
+#   * target_csp — deploy_generator recognizes aws/azure/gcp/oci/ibm/on_prem plus
+#     the 'auto' detector; pipelines.target_csp defaults to 'generic'.
+# Default CHOICE (documented, pdx-fix-03): we KEEP the existing create defaults of
+# classification='public' and target_csp='generic' rather than forcing CUI. This
+# preserves backward compatibility (existing rows, the PUT-as-PATCH partial-update
+# contract, and the put_partial regression tests that round-trip non-enum csp
+# labels like 'aws-il5'/'onprem-dod' on UPDATE). Enum validation is enforced at
+# CREATE only; PUT keeps free-form PATCH semantics so it never rejects a value an
+# older client legitimately stored. 'public'/'generic' are members of the allowed
+# sets, so the defaults always pass.
+PC_ALLOWED_CLASSIFICATIONS = frozenset(
+    {"public", "CUI", "CUI // SP-CTI", "SECRET"}
+)
+PC_ALLOWED_TARGET_CSPS = frozenset(
+    {"generic", "auto", "aws", "azure", "gcp", "oci", "ibm", "on_prem"}
+)
+
+# ── Child-row delete order for pipeline DELETE (pdx-data-02) ───────────────────
+#
+# The pipeline FK children in tools/pipeline/db/init_db.py are declared WITHOUT
+# ON DELETE CASCADE (only pc_collab_sessions has it). SQLite runs with
+# PRAGMA foreign_keys=ON and PostgreSQL enforces FKs, so deleting a pipeline that
+# still has children raises IntegrityError (HTTP 500). Because auto-snapshot fires
+# on every save, every real pipeline has at least one pdc_snapshots child — so the
+# DELETE always 500'd. We delete child rows explicitly (deterministic across both
+# backends, and — unlike editing the DDL to CASCADE — it also works on already
+# deployed DBs whose tables were created before any CASCADE clause). Order matters:
+# rows are deleted children-first so intra-canvas FKs hold —
+# pc_compliance_findings before pc_compliance_checks (findings REFERENCES checks),
+# and pdc_simulations before pdc_snapshots (simulations REFERENCES snapshots).
+# pc_stages and pc_project_pipelines also REFERENCE pipelines(id); they are
+# included for completeness so no residual child can raise IntegrityError.
+# pc_audit is intentionally ABSENT: it is an append-only audit trail and has NO FK
+# to pipelines(id) (entity_id is a plain TEXT value), so its rows survive the
+# delete and remain queryable by the deleted pipeline's id (NIST AU).
+# (table_name, fk_column) — column is the pipeline reference on that table.
+_PC_CHILD_DELETE_TABLES = (
+    ("pc_compliance_findings", "pipeline_id"),
+    ("pc_compliance_checks", "pipeline_id"),
+    ("pdc_simulations", "pipeline_id"),
+    ("pdc_snapshots", "pipeline_id"),
+    ("pc_versions", "pipeline_id"),
+    ("pc_boundaries", "pipeline_id"),
+    ("pc_change_requests", "pipeline_id"),
+    ("pc_stages", "pipeline_id"),
+    ("pc_project_pipelines", "pipeline_id"),
+    ("pc_collab_sessions", "design_id"),
+)
+
+
+def _pc_current_role():
+    """Resolve the caller's role from server-side auth state only.
+
+    Prefers ``g.current_user['role']`` (set by the dashboard auth layer); falls
+    back to the signed-session ``role`` claim. Returns ``""`` when no role can be
+    established so callers fail closed. Never reads the request body/query.
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        role = user.get("role") or ""
+    elif user is not None:
+        try:
+            role = user["role"] or ""
+        except (KeyError, TypeError, IndexError):
+            role = ""
+    else:
+        role = ""
+    if not role:
+        role = session.get("role", "") or ""
+    return role
+
+
+def _pc_identity():
+    """Resolve the caller's identity from server-side auth state only.
+
+    Used for audit attribution, SOP approver identity, and collaboration
+    membership. Sourced from ``g.current_user`` (id → display_name) then the
+    session cookie ``user_id`` — NEVER from the request body (defeats identity
+    spoofing / self-approval bypass). Returns ``""`` when unknown.
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        ident = user.get("id") or user.get("display_name") or ""
+        if ident:
+            return ident
+    return session.get("user_id", "") or ""
+
+
+def pc_role_required(*roles):
+    """Fail-closed RBAC decorator for pipeline write / governance routes.
+
+    Restricts the wrapped route to callers whose server-derived role
+    (``g.current_user`` / session — never the request body) is in ``roles``.
+    Missing or unknown role -> 403. Stack this *below* ``@pc_login_required`` so
+    an unauthenticated caller is rejected with 401 by the auth gate first.
+    """
+    allowed = frozenset(roles)
+
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            role = _pc_current_role()
+            if role not in allowed:
+                _audit(
+                    "RBAC_DENY",
+                    "route",
+                    request.path,
+                    f"required={sorted(allowed)} had={role or 'none'}",
+                    user_id=_pc_identity() or "anonymous",
+                )
+                return jsonify({"error": "Forbidden: insufficient role"}), 403
+            return f(*args, **kwargs)
+
+        return decorated
+
+    return decorator
+
+
 # ── Blueprint Factory ─────────────────────────────────────────────────────────
 
 
 def create_pipeline_blueprint():
     """Create and return the Pipeline Design Canvas Blueprint.
 
-    Returns None if ICDEV_PIPELINE_ENABLED is false.
+    Feature-flag gate, aligned with the unified component registry (pdx-fix-03 /
+    deferred pdx-ops-01). The registry (args/component_registry.yaml, key ``pdc``)
+    declares ``env_flag: ICDEV_PDC_ENABLED`` with ``default_enabled: false`` and
+    lists ``ICDEV_PIPELINE_ENABLED`` as a legacy ``extra_env_flag``. Previously
+    this factory gated on ``ICDEV_PIPELINE_ENABLED`` defaulting to *true*, so the
+    canvas was silently ON while the registry considered it OFF.
+
+    New rule — the canvas activates only if a flag is EXPLICITLY enabled:
+        enabled = truthy(ICDEV_PDC_ENABLED, default False)
+                  OR (ICDEV_PIPELINE_ENABLED explicitly set AND truthy)
+    The silent default is now registry-consistent OFF. Truth table:
+        PDC unset,  PIPELINE unset  -> OFF   (registry default)
+        PDC true,   PIPELINE *      -> ON
+        PDC unset,  PIPELINE true   -> ON    (legacy explicit)
+        PDC false,  PIPELINE true   -> ON    (legacy explicit truthy)
+        PDC *,      PIPELINE false  -> OFF unless PDC true
+        PDC false,  PIPELINE unset  -> OFF
+
+    Returns None (canvas disabled) when neither flag is explicitly enabled.
     """
-    enabled = os.environ.get("ICDEV_PIPELINE_ENABLED", "true").lower()
-    if enabled not in ("true", "1", "yes"):
-        logger.info("Pipeline Canvas disabled (ICDEV_PIPELINE_ENABLED=%s)", enabled)
+    def _truthy(val):
+        return str(val).strip().strip('"').strip("'").lower() in ("true", "1", "yes", "on")
+
+    pdc_raw = os.environ.get("ICDEV_PDC_ENABLED")
+    legacy_raw = os.environ.get("ICDEV_PIPELINE_ENABLED")
+    # Primary flag: registry-consistent default OFF (only ON when truthy).
+    pdc_on = _truthy(pdc_raw) if pdc_raw is not None else False
+    # Legacy flag: activates ONLY when explicitly set truthy (no silent default-on).
+    legacy_on = legacy_raw is not None and _truthy(legacy_raw)
+    if not (pdc_on or legacy_on):
+        logger.info(
+            "Pipeline Canvas disabled (ICDEV_PDC_ENABLED=%s, ICDEV_PIPELINE_ENABLED=%s)",
+            pdc_raw, legacy_raw,
+        )
         return None
 
     # Initialize DB
@@ -397,16 +685,32 @@ def create_pipeline_blueprint():
     @bp.route("/api/pipelines", methods=["GET"])
     @pc_login_required
     def pc_api_list():
+        # pdx-perf-01: this list was unbounded. Add limit (default 50, max 200)
+        # and offset paging. Validate the ints FIRST (garbage -> 400), then clamp
+        # — mirrors the pc_api_ai_trace pattern (pdx-fix-03).
+        try:
+            limit = int(request.args.get("limit", 50))
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit must be an integer"}), 400
+        try:
+            offset = int(request.args.get("offset", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "offset must be an integer"}), 400
+        limit = min(max(limit, 1), 200)
+        offset = max(offset, 0)
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, name, description, classification, target_csp, "
-            "created_at, updated_at FROM pipelines ORDER BY updated_at DESC"
+            "created_at, updated_at FROM pipelines ORDER BY updated_at DESC "
+            "LIMIT %s OFFSET %s",
+            (limit, offset),
         ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
 
     @bp.route("/api/pipelines", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create():
         data = request.get_json(force=True, silent=True) or {}
         # Input validation
@@ -414,6 +718,30 @@ def create_pipeline_blueprint():
             return jsonify({"error": "Payload too large"}), 413
         pipe_id = str(_uuid.uuid4())
         name = data.get("name", "Untitled Pipeline")[:200]  # Limit name length
+        # Validate graph_json at the write boundary: reject anything that is not a
+        # well-formed {nodes:[], edges:[]} object, and persist a canonical dump so
+        # a stored-XSS payload can never round-trip into the canvas renderer.
+        try:
+            graph_json = validate_graph_json_payload(
+                data.get("graph_json", '{"nodes":[],"edges":[]}')
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 422
+        # Validate classification / target_csp against the allowed enums. Unknown
+        # values are rejected (422) rather than silently persisted. Defaults
+        # 'public'/'generic' are members of the sets, so an omitted field passes.
+        classification = data.get("classification", "public")
+        target_csp = data.get("target_csp", "generic")
+        if classification not in PC_ALLOWED_CLASSIFICATIONS:
+            return jsonify({
+                "error": f"invalid classification: {classification!r}",
+                "allowed": sorted(PC_ALLOWED_CLASSIFICATIONS),
+            }), 422
+        if target_csp not in PC_ALLOWED_TARGET_CSPS:
+            return jsonify({
+                "error": f"invalid target_csp: {target_csp!r}",
+                "allowed": sorted(PC_ALLOWED_TARGET_CSPS),
+            }), 422
         logger.info("Creating pipeline: %s (%s)", name, pipe_id)
         conn = get_connection()
         conn.execute(
@@ -423,9 +751,9 @@ def create_pipeline_blueprint():
                 pipe_id,
                 name,
                 data.get("description", ""),
-                data.get("graph_json", '{"nodes":[],"edges":[]}'),
-                data.get("classification", "public"),
-                data.get("target_csp", "generic"),
+                graph_json,
+                classification,
+                target_csp,
                 now_isoformat(),
                 now_isoformat(),
             ),
@@ -433,9 +761,14 @@ def create_pipeline_blueprint():
         conn.commit()
         conn.close()
         _audit("CREATE", "pipeline", pipe_id, name)
-        # Hook: refresh PDC KG so /ask reflects the new design immediately
-        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
-        reindex_canvas_on_save("pdc")
+        # Hook: refresh PDC KG so /ask reflects the new design immediately.
+        # Guarded (pdx-perf-01): an ImportError / KG failure must NOT 500 a create
+        # whose row already committed above.
+        try:
+            from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+            reindex_canvas_on_save("pdc")
+        except Exception as exc:
+            logger.warning("PDC KG reindex hook failed on create (%s): %s", pipe_id, exc)
         return jsonify({"id": pipe_id, "name": name}), 201
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["GET"])
@@ -450,6 +783,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["PUT"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_update(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
         if len(json.dumps(data)) > 5_000_000:
@@ -457,80 +791,135 @@ def create_pipeline_blueprint():
         logger.info("Updating pipeline: %s", pipe_id)
         conn = get_connection()
 
+        # Fetch the current graph_json BEFORE the UPDATE so we can (a) 404 early
+        # on an unknown id and (b) decide whether the save actually changed the
+        # graph. The five post-save side-effects below (KG reindex, auto-snapshot,
+        # Security-Canvas assessment, KG rebuild, blockchain provenance) are heavy
+        # and are hammered by the client's 3s auto-save timer — they are pure
+        # no-ops when the graph is unchanged, so we skip ALL of them in that case
+        # (pdx-perf-01).
+        existing_row = conn.execute(
+            "SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)
+        ).fetchone()
+        if existing_row is None:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        old_graph_json = (
+            existing_row["graph_json"]
+            if not isinstance(existing_row, (list, tuple))
+            else existing_row[0]
+        )
+
         # PUT-as-PATCH semantics: only update fields the client explicitly sent.
         # The auto-save timer in pipeline-canvas.js sends {name, graph_json} only;
         # a partial PUT must NOT clobber description/classification/target_csp
         # back to defaults. (Fixes bug where opening a canvas auto-reset
         # classification="public", target_csp="generic", description="".)
-        _UNSET = object()
         sets = []
         params = []
+        new_graph_json = None
         for col in ("name", "description", "graph_json", "classification", "target_csp"):
             if col in data:
-                sets.append(f"{col}=?")
-                params.append(data[col])
+                if col == "graph_json":
+                    # Validate + canonicalize at the write boundary (stored-XSS defense).
+                    try:
+                        value = validate_graph_json_payload(data[col])
+                    except ValueError as exc:
+                        conn.close()
+                        return jsonify({"error": str(exc)}), 422
+                    new_graph_json = value
+                else:
+                    value = data[col]
+                sets.append(f"{col}=%s")
+                params.append(value)
         if not sets:
+            conn.close()
             return jsonify({"error": "No updatable fields provided"}), 400
-        sets.append("updated_at=?")
+        sets.append("updated_at=%s")
         params.append(now_isoformat())
         params.append(pipe_id)
-        conn.execute(
+        cur = conn.execute(
             f"UPDATE pipelines SET {', '.join(sets)} WHERE id=%s",
             params,
         )
+        # 404 when the target pipeline does not exist: the UPDATE matched no rows.
+        # (Belt-and-suspenders with the early SELECT above — covers a concurrent
+        # delete between the SELECT and the UPDATE.)
+        if getattr(cur, "rowcount", -1) == 0:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
         conn.commit()
         conn.close()
         _audit("UPDATE", "pipeline", pipe_id, data.get("name", ""))
-        # Hook: refresh PDC KG so /ask reflects the edit immediately
-        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
-        reindex_canvas_on_save("pdc")
-        # Hook: auto-snapshot on every pipeline save (PDC twin)
-        try:
-            from tools.pipeline.twin import take_snapshot as _twin_snapshot
-            _twin_snapshot(
-                pipe_id,
-                label=f"auto-save-{now_isoformat()[:10]}",
-                user_id=session.get("user_id", "system"),
-            )
-        except Exception:
-            pass  # snapshot failure must never block saves
-        # Hook: notify Security Design Canvas of pipeline change
+
+        # Did the graph actually change? Only then do we run the post-save hooks.
+        # A metadata-only PUT (no graph_json in the payload) never touches the
+        # graph, and a graph_json that is byte-equivalent to what was stored is a
+        # no-op save from the auto-save timer.
+        graph_changed = new_graph_json is not None and (
+            _graph_json_sha256(new_graph_json) != _graph_json_sha256(old_graph_json)
+        )
+
         sdc_assessment = None
-        try:
-            from tools.security_canvas.agent import on_pdc_pipeline_saved
-
-            graph_raw = data.get("graph_json", "{}")
-            graph = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
-            result = on_pdc_pipeline_saved(pipe_id, graph)
-            if result and result.get("status") != "error":
-                sdc_assessment = {
-                    "risk_score": result.get("risk_score"),
-                    "posture_grade": result.get("posture_grade"),
-                    "cat1_count": result.get("cat1_count", 0),
-                    "cat2_count": result.get("cat2_count", 0),
-                    "cat3_count": result.get("cat3_count", 0),
-                    "total_findings": result.get("total_findings", 0),
-                }
-        except Exception:
-            pass  # Security Canvas is optional
-        # Incremental KG update: re-extract only if graph_json changed
-        try:
-            from tools.canvas.kg_builder import rebuild_canvas_kg
-
-            rebuild_canvas_kg("pdc", pipe_id)
-        except Exception:
-            pass
-        # Blockchain provenance
-        try:
-            from tools.canvas.provenance import register_canvas_provenance
-            register_canvas_provenance(
-                canvas_key="pdc",
-                design_id=pipe_id,
-                graph_json=data.get("graph_json", {}),
-                project_id=data.get("project_id", ""),
+        if not graph_changed:
+            logger.info(
+                "Pipeline %s save: graph_json unchanged — skipping post-save hooks", pipe_id
             )
-        except Exception:
-            pass
+        else:
+            # Hook: refresh PDC KG so /ask reflects the edit immediately (guarded:
+            # an ImportError must not 500 a save whose row already committed).
+            try:
+                from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+                reindex_canvas_on_save("pdc")
+            except Exception as exc:
+                logger.warning("PDC KG reindex hook failed on update (%s): %s", pipe_id, exc)
+            # Hook: auto-snapshot on pipeline save (PDC twin). take_snapshot itself
+            # de-dups and bounds retention (pdx-perf-01).
+            try:
+                from tools.pipeline.twin import take_snapshot as _twin_snapshot
+                _twin_snapshot(
+                    pipe_id,
+                    label=f"auto-save-{now_isoformat()[:10]}",
+                    user_id=session.get("user_id", "system"),
+                )
+            except Exception as exc:
+                logger.warning("PDC auto-snapshot hook failed (%s): %s", pipe_id, exc)
+            # Hook: notify Security Design Canvas of pipeline change
+            try:
+                from tools.security_canvas.agent import on_pdc_pipeline_saved
+
+                graph_raw = data.get("graph_json", "{}")
+                graph = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+                result = on_pdc_pipeline_saved(pipe_id, graph)
+                if result and result.get("status") != "error":
+                    sdc_assessment = {
+                        "risk_score": result.get("risk_score"),
+                        "posture_grade": result.get("posture_grade"),
+                        "cat1_count": result.get("cat1_count", 0),
+                        "cat2_count": result.get("cat2_count", 0),
+                        "cat3_count": result.get("cat3_count", 0),
+                        "total_findings": result.get("total_findings", 0),
+                    }
+            except Exception as exc:
+                logger.warning("PDC Security Canvas hook failed (%s): %s", pipe_id, exc)
+            # Incremental KG update: re-extract only if graph_json changed
+            try:
+                from tools.canvas.kg_builder import rebuild_canvas_kg
+
+                rebuild_canvas_kg("pdc", pipe_id)
+            except Exception as exc:
+                logger.warning("PDC KG rebuild hook failed (%s): %s", pipe_id, exc)
+            # Blockchain provenance
+            try:
+                from tools.canvas.provenance import register_canvas_provenance
+                register_canvas_provenance(
+                    canvas_key="pdc",
+                    design_id=pipe_id,
+                    graph_json=data.get("graph_json", {}),
+                    project_id=data.get("project_id", ""),
+                )
+            except Exception as exc:
+                logger.warning("PDC provenance hook failed (%s): %s", pipe_id, exc)
         resp = {"updated": True}
         if sdc_assessment is not None:
             resp["sdc_assessment"] = sdc_assessment
@@ -538,13 +927,43 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["DELETE"])
     @pc_login_required
+    @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_delete(pipe_id):
         logger.info("Deleting pipeline: %s", pipe_id)
         conn = get_connection()
-        conn.execute("DELETE FROM pipelines WHERE id=%s", (pipe_id,))
-        conn.commit()
+        # Fail-closed (NIST AU): the child-row deletes, the pipeline delete and the
+        # audit INSERT all share THIS transaction. If the audit raises, the whole
+        # cascade is rolled back and never commits — no un-audited delete, and no
+        # orphaned/partial child removal.
+        try:
+            # Explicit child-row deletes (see _PC_CHILD_DELETE_TABLES) — the DDL has
+            # no ON DELETE CASCADE, and every real pipeline has children (auto-
+            # snapshot fires on save), so without these the FKs raise IntegrityError.
+            for _tbl, _col in _PC_CHILD_DELETE_TABLES:
+                conn.execute(f"DELETE FROM {_tbl} WHERE {_col}=%s", (pipe_id,))
+            cur = conn.execute("DELETE FROM pipelines WHERE id=%s", (pipe_id,))
+            # 404 when the pipeline row did not exist: nothing was deleted. Roll back
+            # the (no-op) child deletes and return without writing a delete-audit row
+            # for a pipeline that never existed.
+            if getattr(cur, "rowcount", -1) == 0:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                conn.close()
+                return jsonify({"error": "Not found"}), 404
+            # pc_audit is append-only and is NEVER deleted here (no FK to
+            # pipelines(id)) — audit rows for this pipeline id remain after delete.
+            _audit_strict("DELETE", "pipeline", pipe_id, "", user_id=_pc_identity(), conn=conn)
+            conn.commit()
+        except AuditUnavailable:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            conn.close()
+            return jsonify({"error": "audit trail unavailable"}), 500
         conn.close()
-        _audit("DELETE", "pipeline", pipe_id, "")
         return jsonify({"deleted": True})
 
     # ══════════════════════════════════════════════════════════════════════
@@ -586,6 +1005,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/templates/<tpl_id>/load", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_load_template(tpl_id):
         conn = get_connection()
         row = conn.execute("SELECT * FROM pc_templates WHERE id=%s", (tpl_id,)).fetchone()
@@ -594,15 +1014,25 @@ def create_pipeline_blueprint():
             return jsonify({"error": "Not found"}), 404
         tpl = row_to_dict(row)
         pipe_id = str(_uuid.uuid4())
+        # Propagate the template's classification / target_csp onto the new
+        # pipeline instead of dropping them (which defaulted every template-derived
+        # pipeline to public/generic even for DoD/IL5 templates). `.get()` falls
+        # back to the create defaults when the source row lacks the column (the
+        # current pc_templates schema has no classification/target_csp column, so
+        # this is forward-compatible: it activates as soon as those columns exist
+        # without re-touching this route).
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, template_id, "
-            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            "classification, target_csp, created_at, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 pipe_id,
                 f"{tpl['name']} (copy)",
                 tpl.get("description", ""),
                 tpl["graph_json"],
                 tpl_id,
+                tpl.get("classification") or "public",
+                tpl.get("target_csp") or "generic",
                 now_isoformat(),
                 now_isoformat(),
             ),
@@ -648,6 +1078,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/snippets/<snip_id>/load", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_load_snippet(snip_id):
         """Create a new pipeline from a snippet (like template load)."""
         conn = get_connection()
@@ -657,15 +1088,21 @@ def create_pipeline_blueprint():
             return jsonify({"error": "Not found"}), 404
         snip = row_to_dict(row)
         pipe_id = str(_uuid.uuid4())
+        # Propagate the snippet's classification (from classification_level) and
+        # target_csp onto the new pipeline. Snippets carry real DoD levels
+        # (public/CUI/SECRET, IL2–IL6), so dropping them defaulted IL5/SECRET
+        # snippets to public. target_csp defaults to generic when the snippet row
+        # has no such column (current schema).
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, classification, "
-            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            "target_csp, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 pipe_id,
                 f"{snip['name']} (copy)",
                 snip.get("description", ""),
                 snip["graph_json"],
                 snip.get("classification_level", "CUI"),
+                snip.get("target_csp") or "generic",
                 now_isoformat(),
                 now_isoformat(),
             ),
@@ -726,7 +1163,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
 
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
         node_types = [n.get("type", "") for n in nodes]
@@ -782,14 +1222,18 @@ def create_pipeline_blueprint():
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            conn.close()
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
 
         result = _run_compliance_check(nodes, edges)
 
         # Persist findings
-        check_id = str(_uuid.uuid4())[:8]
+        check_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO pc_compliance_checks (id, pipeline_id, check_type, passed, failed, findings_json, ran_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s)",
@@ -837,6 +1281,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/versions/<pipe_id>", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_version(pipe_id):
         conn = get_connection()
         row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
@@ -847,7 +1292,7 @@ def create_pipeline_blueprint():
             "SELECT COALESCE(MAX(version_num), 0) FROM pc_versions WHERE pipeline_id=%s", (pipe_id,)
         ).fetchone()[0]
         data = request.get_json(force=True, silent=True) or {}
-        ver_id = str(_uuid.uuid4())[:8]
+        ver_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO pc_versions (id, pipeline_id, version_num, label, graph_json, created_by, notes, created_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
@@ -864,6 +1309,10 @@ def create_pipeline_blueprint():
         )
         conn.commit()
         conn.close()
+        _audit(
+            "CREATE_VERSION", "version", ver_id,
+            f"pipeline={pipe_id} v{max_ver + 1}", user_id=_pc_identity(),
+        )
         return jsonify({"id": ver_id, "version_num": max_ver + 1}), 201
 
     # ══════════════════════════════════════════════════════════════════════
@@ -880,9 +1329,26 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/boundaries/<pipe_id>", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_boundary(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
-        bid = str(_uuid.uuid4())[:8]
+        bid = str(_uuid.uuid4())
+        # Validate the numeric geometry fields: a client-supplied non-numeric
+        # value (e.g. pos_x="abc") returns 400 rather than a DB type error / 500.
+        _num_defaults = (
+            ("fill_opacity", 0.08, float),
+            ("pos_x", 0, float),
+            ("pos_y", 0, float),
+            ("width", 400, float),
+            ("height", 300, float),
+        )
+        nums = {}
+        for field, default, caster in _num_defaults:
+            raw = data.get(field, default)
+            try:
+                nums[field] = caster(raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": f"{field} must be a number"}), 400
         conn = get_connection()
         conn.execute(
             "INSERT INTO pc_boundaries (id, pipeline_id, label, classification, color, "
@@ -894,26 +1360,33 @@ def create_pipeline_blueprint():
                 data.get("label", "Stage Boundary"),
                 data.get("classification", "CUI"),
                 data.get("color", "#e94560"),
-                data.get("fill_opacity", 0.08),
+                nums["fill_opacity"],
                 json.dumps(data.get("node_ids", [])),
                 data.get("boundary_type", "security_zone"),
-                data.get("pos_x", 0),
-                data.get("pos_y", 0),
-                data.get("width", 400),
-                data.get("height", 300),
+                nums["pos_x"],
+                nums["pos_y"],
+                nums["width"],
+                nums["height"],
             ),
         )
         conn.commit()
         conn.close()
+        _audit(
+            "CREATE_BOUNDARY", "boundary", bid,
+            f"pipeline={pipe_id} label={data.get('label', 'Stage Boundary')}",
+            user_id=_pc_identity(),
+        )
         return jsonify({"id": bid}), 201
 
     @bp.route("/api/boundaries/<pipe_id>/<bid>", methods=["DELETE"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_delete_boundary(pipe_id, bid):
         conn = get_connection()
         conn.execute("DELETE FROM pc_boundaries WHERE id=%s AND pipeline_id=%s", (bid, pipe_id))
         conn.commit()
         conn.close()
+        _audit("DELETE_BOUNDARY", "boundary", bid, f"pipeline={pipe_id}", user_id=_pc_identity())
         return jsonify({"deleted": True})
 
     # ══════════════════════════════════════════════════════════════════════
@@ -931,7 +1404,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         pipe = row_to_dict(row)
-        graph = json.loads(pipe["graph_json"])
+        try:
+            graph = parse_graph_json(pipe["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
         fmt = data.get("format", "gitlab_ci")
 
@@ -940,11 +1416,12 @@ def create_pipeline_blueprint():
 
             result = export_pipeline(graph, pipe["name"], fmt)
         except ImportError:
-            result = {
-                "format": fmt,
-                "content": f"# Export format '{fmt}' — module not yet loaded",
-                "filename": f"pipeline.{fmt}",
-            }
+            # The export module is genuinely unavailable — fail with 501 rather
+            # than returning HTTP 200 with a placeholder body + a real .<fmt>
+            # filename (which a caller would save/download as if it were a valid
+            # export). 501 Not Implemented signals the capability is absent.
+            logger.error("Export module unavailable for pipeline %s (fmt=%s)", pipe_id, fmt)
+            return jsonify({"error": "export module unavailable"}), 501
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -966,8 +1443,18 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         pipe = row_to_dict(row)
-        graph = json.loads(pipe["graph_json"])
+        try:
+            graph = parse_graph_json(pipe["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
+
+        # Guard the int() cast on a client-supplied query/body param: garbage
+        # (e.g. "abc") returns 400, not an unhandled 500.
+        try:
+            max_layer = int(data.get("max_layer", 3))
+        except (TypeError, ValueError):
+            return jsonify({"error": "max_layer must be an integer"}), 400
 
         try:
             from tools.pipeline.iac_validator import validate_deploy_bundle_from_generator
@@ -976,12 +1463,12 @@ def create_pipeline_blueprint():
                 graph,
                 pipe["name"],
                 target_csp=data.get("target_csp", "auto"),
-                max_layer=int(data.get("max_layer", 3)),
+                max_layer=max_layer,
             )
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-        _audit("VALIDATE_IAC", "pipeline", pipe_id, f"gate={result.get('validation', {}).get('gate', '?')}")
+        _audit("VALIDATE_IAC", "pipeline", pipe_id, f"gate={result.get('validation', {}).get('gate', 'unknown')}")
         return jsonify(result)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -998,7 +1485,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         pipe = row_to_dict(row)
-        graph = json.loads(pipe["graph_json"])
+        try:
+            graph = parse_graph_json(pipe["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
         fixes = data.get("fixes", [])
 
@@ -1070,6 +1560,7 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/deploy/<pipe_id>", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_deploy(pipe_id):
         """Generate IaC deployment bundle."""
         logger.info("Generating deploy bundle for pipeline %s", pipe_id)
@@ -1079,7 +1570,10 @@ def create_pipeline_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         pipe = row_to_dict(row)
-        graph = json.loads(pipe["graph_json"])
+        try:
+            graph = parse_graph_json(pipe["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         data = request.get_json(force=True, silent=True) or {}
 
         try:
@@ -1120,7 +1614,11 @@ def create_pipeline_blueprint():
             buf.seek(0)
             from flask import send_file
 
-            safe = pipe["name"].replace(" ", "-").lower()[:30]
+            # Sanitize the download filename to [a-z0-9._-] — the pipeline name is
+            # user-controlled and flows into the Content-Disposition header; strip
+            # path separators and any other characters that could enable header
+            # injection or path traversal in a downloaded filename.
+            safe = re.sub(r"[^a-z0-9._-]", "", pipe["name"].replace(" ", "-").lower())[:30] or "pipeline"
             return send_file(
                 buf,
                 mimetype="application/zip",
@@ -1151,8 +1649,47 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
+
+        # Findings are sourced from pc_compliance_findings (written by the QDC
+        # gate bus subscriber), NOT from node config. They are attributed at the
+        # PIPELINE level — ``affected_entity`` holds a QDC gate id, not a PDC
+        # node id — so we report an honest pipeline-level count instead of the
+        # old ``config.findings_count`` (which nothing ever set → permanent 0)
+        # or a fabricated per-node distribution.
+        if heatmap_type == "findings":
+            fconn = get_connection()
+            try:
+                frows = fconn.execute(
+                    "SELECT severity, status FROM pc_compliance_findings WHERE pipeline_id=%s",
+                    (pipe_id,),
+                ).fetchall()
+            finally:
+                fconn.close()
+            total = 0
+            open_count = 0
+            by_severity: dict = {}
+            for fr in frows:
+                fd = row_to_dict(fr)
+                total += 1
+                sev = (fd.get("severity") or "unknown")
+                status = (fd.get("status") or "open")
+                by_severity[sev] = by_severity.get(sev, 0) + 1
+                if status == "open":
+                    open_count += 1
+            return jsonify({
+                "type": "findings",
+                "scope": "pipeline",
+                "data": {},  # findings are not node-attributed — no per-node overlay
+                "total": total,
+                "open": open_count,
+                "by_severity": by_severity,
+                "color": _findings_color(open_count),
+            })
 
         heatmap = {}
         for node in nodes:
@@ -1161,9 +1698,6 @@ def create_pipeline_blueprint():
             if heatmap_type == "execution_time":
                 minutes = config.get("avg_execution_min", 5)
                 heatmap[nid] = {"value": minutes, "color": _time_color(minutes)}
-            elif heatmap_type == "findings":
-                findings = config.get("findings_count", 0)
-                heatmap[nid] = {"value": findings, "color": _findings_color(findings)}
             elif heatmap_type == "compliance":
                 pct = config.get("compliance_pct", 100)
                 heatmap[nid] = {"value": pct, "color": _compliance_color(pct)}
@@ -1172,6 +1706,35 @@ def create_pipeline_blueprint():
                 heatmap[nid] = {"value": age_days, "color": _age_color(age_days)}
 
         return jsonify({"type": heatmap_type, "data": heatmap})
+
+    @bp.route("/api/pipelines/<pipe_id>/findings", methods=["GET"])
+    @pc_login_required
+    def pc_api_pipeline_findings(pipe_id):
+        """Raw compliance findings for a pipeline (read-only, paginated LIMIT 100).
+
+        Reads pc_compliance_findings — the table written by the QDC gate bus
+        subscriber that was previously write-only (nothing read it). Supports an
+        ``?offset=`` cursor; newest first.
+        """
+        try:
+            offset = max(0, int(request.args.get("offset", 0)))
+        except (TypeError, ValueError):
+            offset = 0
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM pc_compliance_findings WHERE pipeline_id=%s "
+                "ORDER BY created_at DESC LIMIT 100 OFFSET %s",
+                (pipe_id, offset),
+            ).fetchall()
+        finally:
+            conn.close()
+        return jsonify({
+            "pipeline_id": pipe_id,
+            "offset": offset,
+            "count": len(rows),
+            "findings": [row_to_dict(r) for r in rows],
+        })
 
     # ══════════════════════════════════════════════════════════════════════
     # API — CHANGE REQUESTS
@@ -1189,9 +1752,10 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/change-requests/<pipe_id>", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_cr(pipe_id):
         data = request.get_json(force=True, silent=True) or {}
-        cr_id = str(_uuid.uuid4())[:8]
+        cr_id = str(_uuid.uuid4())
         conn = get_connection()
         conn.execute(
             "INSERT INTO pc_change_requests (id, pipeline_id, cr_number, cr_type, status, "
@@ -1210,6 +1774,11 @@ def create_pipeline_blueprint():
         )
         conn.commit()
         conn.close()
+        _audit(
+            "CREATE_CR", "change_request", cr_id,
+            f"pipeline={pipe_id} cr={data.get('cr_number', f'CR-{cr_id[:4]}')}",
+            user_id=_pc_identity(),
+        )
         return jsonify({"id": cr_id}), 201
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1262,7 +1831,10 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
         node_types = [n.get("type", "") for n in nodes]
@@ -1281,6 +1853,12 @@ def create_pipeline_blueprint():
             antipatterns = detect_antipatterns(nodes, edges)
         except Exception:
             antipatterns = []
+
+        # Stage coverage: the save path never persists a node ``stage`` (only
+        # ``type``), so derive the stage from the type server-side. Explicit
+        # stage wins when present; otherwise inferred from the type taxonomy.
+        _covered = {stage_from_type(n.get("type", ""), n.get("stage")) for n in nodes}
+        _covered.discard(None)
 
         scorecard = {
             "security_coverage": owasp,
@@ -1302,7 +1880,7 @@ def create_pipeline_blueprint():
             "execution_time": exec_time,
             "node_count": len(nodes),
             "edge_count": len(edges),
-            "stages_covered": len(set(n.get("stage", "") for n in nodes if n.get("stage"))),
+            "stages_covered": len(_covered),
             "total_stages": len(PIPELINE_STAGES),
         }
         return jsonify(scorecard)
@@ -1323,29 +1901,41 @@ def create_pipeline_blueprint():
         _edges = graph_data.get("edges", [])
         _types = [n.get("type", "").lower() for n in _nodes]
         _labels = [str(n.get("label", "")).lower() for n in _nodes]
+        # Derived stages (server-side) — the save path never persists ``stage``.
+        _stages_present = {stage_from_type(n.get("type", ""), n.get("stage")) for n in _nodes}
+        _stages_present.discard(None)
 
+        # Predicate helpers. ``_any`` matches type PREFIXES, ``_typ`` matches
+        # exact PDC type keys (from constants.py), ``_stage`` checks a derived
+        # stage is present, and ``_lbl`` is the secondary label-keyword signal.
+        # The pre-fix predicates checked src-/bld-/tst-/sast-/reg-/dep- prefixes
+        # that belong to a DIFFERENT canvas taxonomy and never matched PDC types
+        # (scm-/build-/scan-/registry-/deploy- …), so scores survived only on
+        # incidental label keywords. These are rewritten against the real keys.
         def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in _types)
+        def _typ(*keys): return any(t in frozenset(keys) for t in _types)
+        def _stage(*ss): return any(s in _stages_present for s in ss)
         def _lbl(*kws): return any(kw in l for l in _labels for kw in kws)
 
         CHECKS = [
-            ("Source Control Defined",           "Source Control",   "CAT1", _any("src-","git-","vcs-") or _lbl("git","gitlab","github","bitbucket","svn","vcs","source control")),
-            ("Automated Build Stage",            "CI/CD Pipeline",   "CAT1", _any("bld-","build-","ci-") or _lbl("build","compile","make","gradle","maven","npm build","docker build")),
-            ("Automated Test Stage",             "CI/CD Pipeline",   "CAT1", _any("tst-","test-") or _lbl("test","pytest","jest","junit","mocha","rspec","automated test")),
-            ("SAST Integration",                 "Security",         "CAT1", _any("sast-","sec-") or _lbl("sast","sonar","semgrep","bandit","snyk","veracode","checkmarx")),
-            ("Container Image Scanning",         "Security",         "CAT1", _lbl("trivy","snyk","aqua","anchore","image scan","clair","container scan")),
-            ("SCA / Dependency Scanning",        "Security",         "CAT2", _lbl("sca","dependency","sbom","cyclonedx","dependency-check","owasp dependency")),
-            ("Secrets Detection",                "Security",         "CAT1", _lbl("secret detect","truffleH","detect-secrets","gitleaks","credscan")),
-            ("Artifact Registry Defined",        "CI/CD Pipeline",   "CAT2", _any("reg-","art-") or _lbl("registry","nexus","artifactory","ecr","acr","gcr","harbor")),
-            ("Deployment Stage",                 "CI/CD Pipeline",   "CAT1", _any("dep-","deploy-","cd-") or _lbl("deploy","release","rollout","helm","argocd","flux","eks deploy")),
-            ("Environment Promotion Gates",      "CI/CD Pipeline",   "CAT2", _lbl("staging","prod","promote","env gate","approval","manual gate","dev→staging")),
-            ("SLSA L2 or Higher",                "Supply Chain",     "CAT2", _lbl("slsa","provenance","build attestation","sigstore","cosign","rekor")),
-            ("SBOM Generation",                  "Supply Chain",     "CAT2", _lbl("sbom","cyclonedx","spdx","bill of materials","bom")),
-            ("IaC Scanning / Policy",            "Security",         "CAT2", _lbl("terrascan","checkov","tflint","opa","sentinel","policy as code","iac scan")),
-            ("Pipeline Execution Monitoring",    "Observability",    "CAT2", _lbl("monitor","pipeline log","metrics","duration","observ","grafana","datadog pipeline")),
-            ("Failure Alerting",                 "Observability",    "CAT2", _lbl("alert","notify","pagerduty","slack notify","webhook","on failure")),
-            ("Rollback / Blue-Green / Canary",   "Resilience",       "CAT2", _lbl("rollback","blue-green","canary","progressive","feature flag")),
-            ("Compliance Gate (FedRAMP/CMMC)",   "Compliance",       "CAT1", _lbl("fedramp","cmmc","stig","il4","il5","rmf","ato","compliance gate")),
-            ("DoD DevSecOps Ref Arch Aligned",   "Compliance",       "CAT2", _lbl("devsecops","dod","enterprise devsecops","p-ato","continuous ato","c-ato")),
+            ("Source Control Defined",           "Source Control",   "CAT1", _any("scm-") or _typ("aws-codecommit","az-repos","gcp-source","oci-code-repos","branch-policy","commit-signing") or _lbl("git","gitlab","github","bitbucket","svn","vcs","source control")),
+            ("Automated Build Stage",            "CI/CD Pipeline",   "CAT1", _any("cicd-","build-") or _typ("aws-codepipeline","aws-codebuild","az-pipelines","gcp-cloudbuild","oci-devops","ibm-cd") or _lbl("build","compile","make","gradle","maven","npm build","docker build")),
+            ("Automated Test Stage",             "CI/CD Pipeline",   "CAT1", _any("scan-") or _stage("test") or _lbl("test","pytest","jest","junit","mocha","rspec","automated test")),
+            ("SAST Integration",                 "Security",         "CAT1", _typ("scan-sast","scan-sonarqube","scan-semgrep","scan-codeql","scan-bandit","scan-spotbugs","aws-codeguru") or _lbl("sast","sonar","semgrep","bandit","snyk","veracode","checkmarx")),
+            ("Container Image Scanning",         "Security",         "CAT1", _typ("scan-container","scan-anchore","scan-neuvector","scan-trivy","aws-inspector","az-defender","gcp-artifact-analysis","ibm-vuln-advisor") or _lbl("trivy","snyk","aqua","anchore","image scan","clair","container scan")),
+            ("SCA / Dependency Scanning",        "Security",         "CAT2", _typ("scan-sca","scan-trivy","scan-grype","scan-snyk","scan-dep-check") or _lbl("sca","dependency","sbom","cyclonedx","dependency-check","owasp dependency")),
+            ("Secrets Detection",                "Security",         "CAT1", _typ("scan-secret","scan-gitleaks","scan-trufflehog","scan-detect-secrets") or _lbl("secret detect","truffleH","detect-secrets","gitleaks","credscan")),
+            ("Artifact Registry Defined",        "CI/CD Pipeline",   "CAT2", _any("registry-") or _typ("aws-ecr","az-acr","gcp-gar","oci-cr","ibm-cr","sbom-store","package-repo") or _lbl("registry","nexus","artifactory","ecr","acr","gcr","harbor")),
+            ("Deployment Stage",                 "CI/CD Pipeline",   "CAT1", _any("deploy-","gitops-","k8s-") or _typ("aws-eks","az-aks","gcp-gke","oci-oke","ibm-iks","openshift","rke2","k3s","aws-codedeploy","gcp-deploy") or _lbl("deploy","release","rollout","helm","argocd","flux","eks deploy")),
+            ("Environment Promotion Gates",      "CI/CD Pipeline",   "CAT2", _typ("gate-manual","gate-automated","gate-deploy-window") or _stage("approval") or _lbl("staging","prod","promote","env gate","approval","manual gate","dev→staging")),
+            ("SLSA L2 or Higher",                "Supply Chain",     "CAT2", _typ("attest-slsa-gen","verify-slsa","attest-in-toto","sign-cosign","sign-notation","gcp-binary-auth") or _lbl("slsa","provenance","build attestation","sigstore","cosign","rekor")),
+            ("SBOM Generation",                  "Supply Chain",     "CAT2", _typ("sbom-syft","sbom-cyclonedx","sbom-spdx","sbom-store","sc-cargo-auditable") or _lbl("sbom","cyclonedx","spdx","bill of materials","bom")),
+            ("IaC Scanning / Policy",            "Security",         "CAT2", _typ("scan-iac","scan-checkov","scan-tfsec","scan-kics","policy-opa","policy-kyverno","policy-gatekeeper","policy-kubewarden") or _lbl("terrascan","checkov","tflint","opa","sentinel","policy as code","iac scan")),
+            ("Pipeline Execution Monitoring",    "Observability",    "CAT2", _any("mon-") or _typ("aws-cloudwatch","az-monitor","gcp-monitoring") or _stage("monitor") or _lbl("monitor","pipeline log","metrics","duration","observ","grafana","datadog pipeline")),
+            ("Failure Alerting",                 "Observability",    "CAT2", _typ("mon-pagerduty","mon-soar","aws-guardduty") or _lbl("alert","notify","pagerduty","slack notify","webhook","on failure")),
+            ("Rollback / Blue-Green / Canary",   "Resilience",       "CAT2", _typ("deploy-canary","deploy-bluegreen","deploy-feature-flag") or _lbl("rollback","blue-green","canary","progressive","feature flag")),
+            ("Compliance Gate (FedRAMP/CMMC)",   "Compliance",       "CAT1", _any("comp-") or _typ("aws-config","az-policy","aws-securityhub","aws-audit","az-defender-cloud","ibm-scc") or _stage("compliance") or _lbl("fedramp","cmmc","stig","il4","il5","rmf","ato","compliance gate")),
+            ("DoD DevSecOps Ref Arch Aligned",   "Compliance",       "CAT2", _typ("deploy-bigbang","registry-ironbank") or _lbl("devsecops","dod","enterprise devsecops","p-ato","continuous ato","c-ato")),
         ]
 
         PILLARS = ["Source Control", "CI/CD Pipeline", "Security", "Supply Chain", "Observability", "Resilience", "Compliance"]
@@ -1478,7 +2068,11 @@ def create_pipeline_blueprint():
             conn.close()
             return jsonify({"error": "Not found"}), 404
 
-        graph = json.loads(row["graph_json"])
+        try:
+            graph = parse_graph_json(row["graph_json"])
+        except ValueError:
+            conn.close()
+            return jsonify({"error": "corrupt graph"}), 422
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
 
@@ -1517,51 +2111,76 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/collab/<design_id>/join", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_collab_join(design_id):
         """Join a collaborative PDC editing session."""
         body = request.json or {}
-        user_id = body.get("user_id", str(_uuid_mod.uuid4())[:8])
+        # Identity is server-derived (session / g.current_user), NEVER the body:
+        # trusting body.user_id let a caller join a session as an arbitrary user.
+        user_id = _pc_identity() or str(_uuid_mod.uuid4())
         user_name = body.get("user_name", "")
-        return jsonify(_pdc_collab.join(design_id, user_id, user_name))
+        result = _pdc_collab.join(design_id, user_id, user_name)
+        _audit("COLLAB_JOIN", "collab", design_id, f"user={user_id}", user_id=user_id)
+        return jsonify(result)
 
     @bp.route("/api/collab/<design_id>/leave", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_collab_leave(design_id):
         """Leave a PDC collaborative session."""
-        body = request.json or {}
-        user_id = body.get("user_id", "")
+        # Server-derived identity only — a caller may only remove themselves.
+        user_id = _pc_identity()
         _pdc_collab.leave(design_id, user_id)
+        _audit("COLLAB_LEAVE", "collab", design_id, f"user={user_id}", user_id=user_id)
         return jsonify({"ok": True})
 
     @bp.route("/api/collab/<design_id>/push", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_collab_push(design_id):
         """Push an operation into a PDC collaborative session."""
         body = request.json or {}
-        user_id = body.get("user_id", "")
+        # Attribute the op to the authenticated caller, not body.user_id
+        # (identity spoofing — a caller could forge ops as another participant).
+        user_id = _pc_identity()
         op_type = body.get("op_type", "")
         data = body.get("data", {})
-        seq = _pdc_collab.push(design_id, user_id, op_type, data)
-        return jsonify({"seq": seq})
+        # CanvasCollabManager.push(design_id, user_id, operation: dict) is the real,
+        # shared interface (other canvases depend on it). Bundle op_type + payload
+        # into the single operation dict it expects rather than passing 4 positional
+        # args (which raised TypeError before pdx-hyg-01).
+        result = _pdc_collab.push(design_id, user_id, {"op_type": op_type, "data": data})
+        _audit("COLLAB_PUSH", "collab", design_id, f"user={user_id} op={op_type}", user_id=user_id)
+        return jsonify(result)
 
     @bp.route("/api/collab/<design_id>/poll", methods=["GET"])
     @pc_login_required
     def pc_collab_poll(design_id):
-        """Poll for PDC collaborative operations since a sequence number."""
-        since = int(request.args.get("since", 0))
-        user_id = request.args.get("user_id", "")
-        cx = request.args.get("cx")
-        cy = request.args.get("cy")
-        if user_id and cx is not None and cy is not None:
-            _pdc_collab.update_cursor(design_id, user_id, float(cx), float(cy))
-        ops, participants, latest_seq = _pdc_collab.poll(design_id, since)
-        return jsonify({"operations": ops, "participants": participants, "latest_seq": latest_seq})
+        """Poll for PDC collaborative session participants."""
+        # Guard the int() cast on a client-supplied query param: garbage -> 400.
+        # CanvasCollabManager.poll() is participant-oriented (no server-side op log
+        # or cursor tracking), so `since` is validated for a clean 400 but does not
+        # slice an operation stream.
+        try:
+            int(request.args.get("since", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "since must be an integer"}), 400
+        # CanvasCollabManager.poll(design_id) -> {"participants": [...], "polled_at": ...}
+        result = _pdc_collab.poll(design_id)
+        return jsonify(
+            {
+                "operations": [],
+                "participants": result.get("participants", []),
+                "polled_at": result.get("polled_at"),
+            }
+        )
 
     @bp.route("/api/collab/<design_id>/participants", methods=["GET"])
     @pc_login_required
     def pc_collab_participants(design_id):
         """Return current participants in a PDC collaborative session."""
-        return jsonify({"participants": _pdc_collab.get_participants(design_id)})
+        # CanvasCollabManager exposes participants() (not get_participants()).
+        return jsonify({"participants": _pdc_collab.participants(design_id)})
 
     # ══════════════════════════════════════════════════════════════════════
     # SOPs — Standard Operating Procedures
@@ -1596,58 +2215,110 @@ def create_pipeline_blueprint():
 
     @bp.route("/api/sops", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_create_sop():
         """Create a new pipeline SOP."""
         data = request.json or {}
         sop = _pdc_create_sop(data)
+        _audit(
+            "SOP_CREATE", "sop", (sop or {}).get("id", ""),
+            (sop or {}).get("title", ""), user_id=_pc_identity(),
+        )
         return jsonify(sop), 201
 
     @bp.route("/api/sops/<sop_id>", methods=["PUT"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_update_sop(sop_id):
         """Update an existing pipeline SOP."""
         data = request.json or {}
         sop = _pdc_update_sop(sop_id, data)
         if not sop:
             return jsonify({"error": "Not found"}), 404
+        _audit("SOP_UPDATE", "sop", sop_id, "", user_id=_pc_identity())
         return jsonify(sop)
 
     @bp.route("/api/sops/<sop_id>", methods=["DELETE"])
     @pc_login_required
+    @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_delete_sop(sop_id):
-        """Delete a pipeline SOP."""
-        deleted = _pdc_delete_sop(sop_id)
-        if not deleted:
+        """Delete a pipeline SOP (governance action — elevated role only).
+
+        Fail-closed (NIST AU): the audit row is written BEFORE the delete, so if
+        the audit write fails the SOP is never deleted (500, no mutation).
+        """
+        if not _pdc_get_sop_by_id(sop_id):
             return jsonify({"error": "Not found"}), 404
+        try:
+            _audit_strict("SOP_DELETE", "sop", sop_id, "", user_id=_pc_identity())
+        except AuditUnavailable:
+            return jsonify({"error": "audit trail unavailable"}), 500
+        _pdc_delete_sop(sop_id)
         return jsonify({"ok": True})
 
     @bp.route("/api/sops/<sop_id>/submit", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_WRITE_ROLES)
     def pc_api_submit_sop(sop_id):
         """Submit a pipeline SOP for review (draft → pending_review)."""
         sop, err = _pdc_submit_for_review(sop_id)
         if err:
             return jsonify({"error": err}), 400
+        _audit("SOP_SUBMIT", "sop", sop_id, "draft->pending_review", user_id=_pc_identity())
         return jsonify(sop)
 
     @bp.route("/api/sops/<sop_id>/approve", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_approve_sop(sop_id):
-        """Approve a pending pipeline SOP."""
-        body = request.json or {}
-        approved_by = body.get("approved_by", "")
-        sop, err = _pdc_approve_sop(sop_id, approved_by=approved_by)
+        """Approve a pending pipeline SOP.
+
+        Separation of duties (NIST AC-5): the approver identity is taken from
+        the authenticated session — NEVER the request body — and an approver may
+        not approve a SOP they own/authored (self-approval -> 403).
+        """
+        sop = _pdc_get_sop_by_id(sop_id)
+        if not sop:
+            return jsonify({"error": "Not found"}), 404
+        approver = _pc_identity()
+        owner = (sop.get("owner") or "").strip()
+        if approver and owner and owner.lower() == approver.lower():
+            _audit(
+                "SOP_SELF_APPROVAL_DENY",
+                "sop",
+                sop_id,
+                f"approver={approver} owner={owner}",
+                user_id=approver,
+            )
+            return jsonify(
+                {"error": "Separation of duties: you may not approve a SOP you own"}
+            ), 403
+        # Fail-closed (NIST AU): record the approval BEFORE mutating state, so an
+        # approval can never commit without an audit row.
+        try:
+            _audit_strict("SOP_APPROVE", "sop", sop_id, f"approved_by={approver}", user_id=approver)
+        except AuditUnavailable:
+            return jsonify({"error": "audit trail unavailable"}), 500
+        sop, err = _pdc_approve_sop(sop_id, approved_by=approver)
         if err:
             return jsonify({"error": err}), 400
         return jsonify(sop)
 
     @bp.route("/api/sops/<sop_id>/reject", methods=["POST"])
     @pc_login_required
+    @pc_role_required(*PC_ELEVATED_ROLES)
     def pc_api_reject_sop(sop_id):
-        """Reject a pending pipeline SOP."""
+        """Reject a pending pipeline SOP (governance action — elevated role only)."""
         body = request.json or {}
         reason = body.get("reason", "")
-        rejected_by = body.get("rejected_by", "")
+        # Rejecter identity is server-derived, never the request body.
+        rejected_by = _pc_identity()
+        # Fail-closed (NIST AU): record the rejection BEFORE mutating state, so a
+        # governance rejection can never commit without an audit row.
+        try:
+            _audit_strict("SOP_REJECT", "sop", sop_id, f"rejected_by={rejected_by}", user_id=rejected_by)
+        except AuditUnavailable:
+            return jsonify({"error": "audit trail unavailable"}), 500
         sop, err = _pdc_reject_sop(sop_id, reason=reason, rejected_by=rejected_by)
         if err:
             return jsonify({"error": err}), 400
@@ -1678,10 +2349,12 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_twin_snapshot(pipe_id):
         """Take a DAG snapshot of the current pipeline state."""
-        from tools.pipeline.twin import take_snapshot
+        from tools.pipeline.twin import take_snapshot, CorruptGraphError
         data = request.get_json(force=True, silent=True) or {}
         try:
             snap = take_snapshot(pipe_id, label=data.get("label"), user_id=session.get("user_id", "system"))
+        except CorruptGraphError:
+            return jsonify({"error": "corrupt graph"}), 422
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 404
         _audit("twin_snapshot", "pipeline", pipe_id, f"snap={snap['id']}", session.get("user_id"))
@@ -1703,7 +2376,7 @@ def create_pipeline_blueprint():
             delta_graph: {"nodes": [...], "edges": [...]}
             baseline_snap_id: (optional) snapshot ID to diff against
         """
-        from tools.pipeline.twin import simulate_delta
+        from tools.pipeline.twin import simulate_delta, CorruptGraphError
         data = request.get_json(force=True, silent=True) or {}
         if len(json.dumps(data)) > 5_000_000:
             return jsonify({"error": "Payload too large"}), 413
@@ -1717,6 +2390,8 @@ def create_pipeline_blueprint():
                 baseline_snap_id=baseline_snap_id,
                 user_id=session.get("user_id", "system"),
             )
+        except CorruptGraphError:
+            return jsonify({"error": "corrupt graph"}), 422
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 404
         _audit("twin_simulate", "pipeline", pipe_id, f"sim={result['id']} verdict={result['verdict']}", session.get("user_id"))
@@ -1739,18 +2414,25 @@ def create_pipeline_blueprint():
     @bp.route("/twin")
     @pc_login_required
     def pc_twin_list():
-        """PDC Twin dashboard — all pipelines with last snapshot."""
-        from tools.pipeline.twin import list_snapshots as _ls
+        """PDC Twin dashboard — all pipelines with last snapshot.
+
+        pdx-perf-01: previously this loaded every pipeline then called
+        list_snapshots() once per pipeline (an N+1 query) just to use the two
+        newest snapshots. Now a single windowed query fetches the two newest
+        snapshots for all pipelines at once.
+        """
+        from tools.pipeline.twin import latest_snapshots_by_pipeline
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, name, description, classification, updated_at "
             "FROM pipelines ORDER BY updated_at DESC"
         ).fetchall()
         conn.close()
+        snaps_by_pipeline = latest_snapshots_by_pipeline(per_pipeline=2)
         pipelines = []
         for row in rows:
             p = row_to_dict(row)
-            snaps = _ls(p["id"])
+            snaps = snaps_by_pipeline.get(p["id"], [])
             p["last_snapshot"] = snaps[0] if snaps else None
             p["prev_snapshot"] = snaps[1] if len(snaps) > 1 else None
             pipelines.append(p)
@@ -1823,11 +2505,16 @@ def create_pipeline_blueprint():
     def pdc_api_ask():
         from tools.knowledge_graph.canvas_ask import handle_ask_request
         data = request.get_json(silent=True) or {}
+        # Guard the int() cast on a client-supplied param: garbage -> 400.
+        try:
+            top_k = int(data.get("top_k", 10))
+        except (TypeError, ValueError):
+            return jsonify({"error": "top_k must be an integer"}), 400
         payload = handle_ask_request(
             query=data.get("query", ""),
             graph_id="pdc-designs",
             profile="provenance",
-            top_k=int(data.get("top_k", 10)),
+            top_k=top_k,
             narrate=bool(data.get("narrate", False)),
             canvas_label="CI/CD pipeline",
         )
@@ -1871,7 +2558,14 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_ai_trace():
         """Return recent AI decisions made by PDC assessment engines."""
-        limit = min(int(request.args.get("limit", 50)), 200)
+        # Validate the int FIRST, then clamp: min() must be applied to an already
+        # validated int (min("abc", 200) would compare str<int on py2 / raise on
+        # py3, and int("abc") raises). Garbage -> 400.
+        try:
+            limit = int(request.args.get("limit", 50))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+        limit = min(max(limit, 1), 200)
         record_id = request.args.get("record_id")
         try:
             from tools.db.storage import get_connection as _gc

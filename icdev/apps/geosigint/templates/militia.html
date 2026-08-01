@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% set active = "militia" %}
+{% set static_reference = true %}
 {% block title %}Maritime Militia Classifier — GeoSIGINT{% endblock %}
 
 {% block head %}
@@ -35,6 +36,7 @@ table.result-table td { padding:.35rem .5rem; border-bottom:1px solid #1f2937; v
 {% endblock %}
 
 {% block content %}
+{% include "_geosigint_reference_badge.html" %}
 <div class="page-header page-header--compact">
     <h1>Maritime Militia Classifier</h1>
     <span style="font-size:.8rem;color:#6b7280">Three-layer detection: Fishing Anomaly · Formation Coherence · AIS Darkness</span>

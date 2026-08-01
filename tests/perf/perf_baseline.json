@@ -1,0 +1,20 @@
+{
+  "schema": "icdev.perf_baseline/1",
+  "_comment": "PLACEHOLDER baseline. CI has no live dashboard, so these values are zeroed. Capture a REAL baseline against a running instance with: python tools/testing/perf_benchmark.py --update-baseline (with the dashboard running at ICDEV_PERF_BASE_URL). Zeroed endpoints are treated as 'unbaselined' by compare_to_baseline and never produce regression alarms. Perf numbers are only comparable like-for-like: the 'backend' field MUST match the run's backend (sqlite vs postgresql) or comparison is refused.",
+  "generated_at": null,
+  "backend": "sqlite",
+  "base_url": "http://127.0.0.1:5050",
+  "samples_per_endpoint": 0,
+  "endpoints": [
+    {"endpoint": "/", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/kanban", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/govcon", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/proposals", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/compliance", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/health", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/api/kanban/tasks", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/api/projects", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/api/agents", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0},
+    {"endpoint": "/api/govcon/opportunities", "count": 0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0, "mean_ms": 0.0, "failures": 0}
+  ]
+}

@@ -73,6 +73,24 @@ class TestIsTransient:
 # Retry behavior tests (patch _invoke_chain to control outcomes)
 # ---------------------------------------------------------------------------
 
+def _request(prompt: str = "write a hello world function"):
+    """A REAL LLMRequest, not a MagicMock.
+
+    `invoke()` runs `_pre_invoke_redaction` before dispatching, which regexes
+    the message text. A MagicMock is not str/bytes, so the scan raised, and
+    `redaction.fail_closed` correctly converted that into a blocked call --
+    every test here then failed on RedactionUnavailableError before reaching
+    the retry logic it was written to exercise.
+
+    Failing closed is the right production behaviour, so the fixture is what
+    changes: these tests assert backoff, and they should hand the router the
+    request shape it actually contracts on.
+    """
+    from tools.llm.provider import LLMRequest
+
+    return LLMRequest(messages=[{"role": "user", "content": prompt}])
+
+
 class TestRouterBackoff:
     """Test invoke() retry logic with _invoke_chain patched out."""
 
@@ -102,7 +120,7 @@ class TestRouterBackoff:
         with patch.object(router, "_invoke_chain", side_effect=_fail):
             with patch("time.sleep"):
                 with pytest.raises(LLMUnavailableError):
-                    router.invoke("code_generation", MagicMock(), max_retries=2)
+                    router.invoke("code_generation", _request(), max_retries=2)
 
         assert attempt_count[0] == 3  # 1 initial + 2 retries
 
@@ -122,7 +140,7 @@ class TestRouterBackoff:
         with patch.object(router, "_invoke_chain", side_effect=_fail):
             with patch("time.sleep") as mock_sleep:
                 with pytest.raises(LLMUnavailableError):
-                    router.invoke("code_generation", MagicMock(), max_retries=2)
+                    router.invoke("code_generation", _request(), max_retries=2)
 
         assert attempt_count[0] == 1
         mock_sleep.assert_not_called()
@@ -140,7 +158,7 @@ class TestRouterBackoff:
         with patch.object(router, "_invoke_chain", side_effect=_fail):
             with patch("time.sleep") as mock_sleep:
                 with pytest.raises(CrossGraderViolation):
-                    router.invoke("code_generation", MagicMock(), max_retries=2)
+                    router.invoke("code_generation", _request(), max_retries=2)
 
         assert attempt_count[0] == 1
         mock_sleep.assert_not_called()
@@ -163,7 +181,7 @@ class TestRouterBackoff:
 
         with patch.object(router, "_invoke_chain", side_effect=_maybe_fail):
             with patch("time.sleep") as mock_sleep:
-                result = router.invoke("code_generation", MagicMock(), max_retries=2)
+                result = router.invoke("code_generation", _request(), max_retries=2)
 
         assert result is mock_response
         assert calls[0] == 2
@@ -186,7 +204,7 @@ class TestRouterBackoff:
 
         with patch.object(router, "_invoke_chain", side_effect=_maybe_fail):
             with patch("time.sleep") as mock_sleep:
-                result = router.invoke("code_generation", MagicMock(), max_retries=2)
+                result = router.invoke("code_generation", _request(), max_retries=2)
 
         assert result is mock_response
         assert calls[0] == 3
@@ -205,7 +223,7 @@ class TestRouterBackoff:
         with patch.object(router, "_invoke_chain", side_effect=_fail):
             with patch("time.sleep") as mock_sleep:
                 with pytest.raises(LLMUnavailableError):
-                    router.invoke("code_generation", MagicMock(), max_retries=0)
+                    router.invoke("code_generation", _request(), max_retries=0)
 
         mock_sleep.assert_not_called()
 
@@ -223,7 +241,7 @@ class TestRouterBackoff:
         with patch.object(router, "_invoke_chain", side_effect=_fail):
             with patch("time.sleep", side_effect=lambda s: sleep_calls.append(s)):
                 with pytest.raises(LLMUnavailableError):
-                    router.invoke("code_generation", MagicMock(), max_retries=2)
+                    router.invoke("code_generation", _request(), max_retries=2)
 
         assert len(sleep_calls) == 2
         assert sleep_calls[1] >= sleep_calls[0]
@@ -243,7 +261,7 @@ class TestRouterBackoff:
         with patch.object(router, "_invoke_chain", side_effect=_fail):
             with patch("time.sleep", side_effect=lambda s: sleep_calls.append(s)):
                 with pytest.raises(LLMUnavailableError):
-                    router.invoke("code_generation", MagicMock(), max_retries=2)
+                    router.invoke("code_generation", _request(), max_retries=2)
 
         assert sleep_calls == [1, 2]
 
@@ -264,6 +282,6 @@ class TestRouterBackoff:
             with patch("time.sleep"):
                 with pytest.raises(LLMUnavailableError):
                     # Caller requests 3 but config caps at 1
-                    router.invoke("code_generation", MagicMock(), max_retries=3)
+                    router.invoke("code_generation", _request(), max_retries=3)
 
         assert attempt_count[0] == 2  # 1 initial + 1 retry (capped by config)

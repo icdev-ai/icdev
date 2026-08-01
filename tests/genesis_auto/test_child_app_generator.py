@@ -7,6 +7,7 @@ Tests validate importability, function signatures, return types,
 and basic invocation patterns.
 """
 
+import ast
 import sys
 from pathlib import Path
 
@@ -393,3 +394,295 @@ def test_child_app_generator_step_13_production_audit_signature():
         assert "blueprint" in params, f'Missing parameter "blueprint" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
+
+# --- Dashboard stub: banned raw-sqlite3 pattern (cvx-gen-03 / FORGE-12) ---
+
+
+def _generate_stub_app(tmp_path):
+    """Generate a dashboard stub into tmp_path and return the emitted source."""
+    from tools.builder.child_app_generator import _generate_dashboard_stub
+
+    blueprint = {
+        "app_name": "acme-child",
+        "classification": "CUI",
+        "agents": [],
+        "capabilities": {"compliance": True, "document_intelligence": True},
+        "demo_mode": False,
+    }
+    assert _generate_dashboard_stub(tmp_path, blueprint) is True
+    app_py = tmp_path / "tools" / "dashboard" / "app.py"
+    assert app_py.is_file(), "dashboard stub app.py was not written"
+    return app_py.read_text(encoding="utf-8")
+
+
+def test_dashboard_stub_has_no_raw_sqlite3(tmp_path):
+    """cvx-gen-03: the emitted dashboard stub must not use raw sqlite3.
+
+    PostgreSQL is the primary backend; a raw ``sqlite3.connect()`` bypasses
+    ``get_connection()``/RLS. FORGE-12 (added by cvx-gen-01) FAILs on this
+    pattern, so the generator must never emit it.
+    """
+    try:
+        source = _generate_stub_app(tmp_path)
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    assert "import sqlite3" not in source, "stub still emits 'import sqlite3'"
+    assert "sqlite3.connect" not in source, "stub still emits a raw sqlite3.connect()"
+    # The stub is a placeholder with no DB access, but it must point developers
+    # at the correct abstraction when they add data-backed routes.
+    assert "get_connection" in source, "stub should reference get_connection() guidance"
+
+
+def test_dashboard_stub_passes_forge12(tmp_path):
+    """The generated stub must PASS FORGE-12 in forge_validator."""
+    try:
+        _generate_stub_app(tmp_path)
+        from tools.builder.forge_validator import _check_db_patterns
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    checks = _check_db_patterns(tmp_path)
+    forge12 = [c for c in checks if c.check_id == "FORGE-12"]
+    assert forge12, "FORGE-12 check did not run"
+    assert forge12[0].status == "pass", (
+        f"FORGE-12 failed on generated stub: {forge12[0].message}"
+    )
+
+
+# --- cvx-gen-05: emitted stubs must compile clean (latent NameError guard) ---
+
+
+def test_dashboard_stub_compiles_and_imports_os(tmp_path):
+    """cvx-gen-05: the emitted dashboard stub must compile as a whole and, since
+    its ``__main__`` block reads ``os.environ``, it must ``import os`` (else a
+    latent NameError when a generated child dashboard is run directly)."""
+    try:
+        source = _generate_stub_app(tmp_path)
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    # Compiles clean as a whole module (no SyntaxError).
+    compile(source, "child_dashboard_app.py", "exec")
+
+    # The __main__ block uses os.environ -> os must be imported.
+    assert "os.environ" in source, "stub __main__ should read os.environ"
+    tree = ast.parse(source)
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    assert "os" in imported, "dashboard stub uses os but never imports it"
+
+
+def test_mcp_stub_compiles_and_has_no_undefined_logger(tmp_path):
+    """cvx-gen-05: emitted MCP server stub must compile and not reference an
+    undefined ``get_logger`` (it imports ``logging`` and must call
+    ``logging.getLogger``)."""
+    try:
+        from tools.builder.child_app_generator import _generate_mcp_stubs
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    mcp_dir = tmp_path / "mcp"
+    mcp_dir.mkdir(parents=True, exist_ok=True)
+    blueprint = {"app_name": "acme-child", "classification": "CUI"}
+    agents = [{"name": "builder", "port": 8445, "role": "builder"}]
+    assert _generate_mcp_stubs(mcp_dir, agents, "acme-child", blueprint) >= 1
+
+    stubs = list(mcp_dir.glob("*.py"))
+    assert stubs, "no MCP stub emitted"
+    for stub in stubs:
+        source = stub.read_text(encoding="utf-8")
+        compile(source, stub.name, "exec")
+        assert "get_logger(" not in source, f"{stub.name} references undefined get_logger"
+        assert "logging.getLogger(" in source, f"{stub.name} should use logging.getLogger"
+
+
+def test_a2a_callback_client_compiles_and_has_no_undefined_logger(tmp_path):
+    """cvx-gen-05: emitted A2A callback client must compile and use
+    ``logging.getLogger`` rather than an undefined ``get_logger``."""
+    try:
+        from tools.builder.child_app_generator import step_08_a2a_callback_client
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    blueprint = {
+        "app_name": "acme-child",
+        "classification": "CUI",
+        "parent_callback": {
+            "enabled": True,
+            "url": "https://parent.example/a2a",
+            "auth": "mtls",
+        },
+    }
+    result = step_08_a2a_callback_client(tmp_path, blueprint)
+    client = Path(result["client_path"])
+    source = client.read_text(encoding="utf-8")
+    compile(source, client.name, "exec")
+    assert "get_logger(" not in source, "a2a client references undefined get_logger"
+    assert "logging.getLogger(" in source, "a2a client should use logging.getLogger"
+
+
+# ---------------------------------------------------------------------------
+# cvx-gen-04: TRUST re-inheritance refresh
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_parent(root: Path) -> Path:
+    """Build a minimal fake parent repo with a CURRENT content_grounding.py
+    (has ground_content) plus a PARENT_ONLY dir (tools/saas) that must never
+    be re-inherited."""
+    quality = root / "tools" / "quality"
+    quality.mkdir(parents=True, exist_ok=True)
+    (quality / "content_grounding.py").write_text(
+        "def ground_content(text, evidence):\n"
+        "    '''semantic grounding upgrade (trust-cite-05)'''\n"
+        "    return {'grounded': True}\n",
+        encoding="utf-8",
+    )
+    (quality / "citation_grounding.py").write_text(
+        "def parse_citations(text):\n    return []\n", encoding="utf-8"
+    )
+    workflow = root / "tools" / "workflow"
+    workflow.mkdir(parents=True, exist_ok=True)
+    (workflow / "coherence_checker.py").write_text(
+        "def check_all():\n    return True\n", encoding="utf-8"
+    )
+    # PARENT_ONLY_DIRS invariant: tools/saas must NOT be copied.
+    saas = root / "tools" / "saas"
+    saas.mkdir(parents=True, exist_ok=True)
+    (saas / "billing.py").write_text("SECRET = 'parent-only'\n", encoding="utf-8")
+    return root
+
+
+def _make_stale_child(root: Path) -> Path:
+    """Child app whose content_grounding.py is STALE (no ground_content)."""
+    quality = root / "tools" / "quality"
+    quality.mkdir(parents=True, exist_ok=True)
+    (quality / "content_grounding.py").write_text(
+        "def old_grounding(text):\n    '''pre-upgrade snapshot'''\n    return None\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_refresh_trust_function_exists():
+    """refresh_trust_modules must exist and be callable."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+    assert callable(refresh_trust_modules)
+
+
+def test_refresh_trust_dry_run_reports_stale_update(tmp_path):
+    """Dry-run reports the stale content_grounding.py as 'would update' and
+    writes nothing to the child."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    parent = _make_fake_parent(tmp_path / "parent")
+    child = _make_stale_child(tmp_path / "child")
+
+    result = refresh_trust_modules(
+        child, icdev_root=parent, dirs=["tools/quality", "tools/workflow"], dry_run=True
+    )
+    assert result["status"] == "success"
+    assert result["dry_run"] is True
+    assert result["applied"] is False
+    assert "tools/quality/content_grounding.py" in result["updated"]
+    # workflow + citation_grounding are absent in child -> reported as added.
+    assert "tools/quality/citation_grounding.py" in result["added"]
+    assert "tools/workflow/coherence_checker.py" in result["added"]
+    assert result["would_change"] >= 3
+
+    # Nothing written: child still lacks ground_content.
+    stale = (child / "tools" / "quality" / "content_grounding.py").read_text(encoding="utf-8")
+    assert "ground_content" not in stale
+    assert not (child / "tools" / "workflow" / "coherence_checker.py").exists()
+
+
+def test_refresh_trust_apply_updates_stale_and_reinherits(tmp_path):
+    """--apply (dry_run=False) writes the current API into the child."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    parent = _make_fake_parent(tmp_path / "parent")
+    child = _make_stale_child(tmp_path / "child")
+
+    result = refresh_trust_modules(
+        child, icdev_root=parent, dirs=["tools/quality", "tools/workflow"], dry_run=False
+    )
+    assert result["status"] == "success"
+    assert result["applied"] is True
+
+    # Re-check: current API is now present in the child.
+    refreshed = (child / "tools" / "quality" / "content_grounding.py").read_text(encoding="utf-8")
+    assert "ground_content" in refreshed
+    assert (child / "tools" / "workflow" / "coherence_checker.py").exists()
+
+    # Idempotency: a second dry-run reports no changes.
+    again = refresh_trust_modules(
+        child, icdev_root=parent, dirs=["tools/quality", "tools/workflow"], dry_run=True
+    )
+    assert again["would_change"] == 0
+
+
+def test_refresh_trust_never_copies_parent_only_dirs(tmp_path):
+    """PARENT_ONLY_DIRS (e.g. tools/saas) must never be re-inherited, even if
+    explicitly requested."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    parent = _make_fake_parent(tmp_path / "parent")
+    child = tmp_path / "child"
+    child.mkdir()
+
+    # Default dirs -> saas not in scope at all.
+    default = refresh_trust_modules(child, icdev_root=parent, dry_run=False)
+    assert not any("tools/saas" in f for f in default["added"] + default["updated"])
+    assert not (child / "tools" / "saas").exists()
+
+    # Even when explicitly asked, the parent-only guard skips it.
+    forced = refresh_trust_modules(
+        child, icdev_root=parent, dirs=["tools/saas"], dry_run=False
+    )
+    assert not (child / "tools" / "saas" / "billing.py").exists()
+    assert any(s["dir"] == "tools/saas" and s["reason"] == "parent_only" for s in forced["skipped"])
+
+
+def test_refresh_trust_dirs_are_always_on_and_not_parent_only():
+    """Every TRUST_REFRESH_DIRS entry must be always-on (in DIRECTORY_TREE) and
+    never a PARENT_ONLY_DIR."""
+    try:
+        from tools.builder.child_app_generator import (
+            TRUST_REFRESH_DIRS,
+            DIRECTORY_TREE,
+            PARENT_ONLY_DIRS,
+        )
+    except ImportError:
+        pytest.skip("Module not importable")
+
+    for d in TRUST_REFRESH_DIRS:
+        assert d in DIRECTORY_TREE, f"{d} not always-on"
+        assert d not in PARENT_ONLY_DIRS, f"{d} is parent-only"
+
+
+def test_refresh_trust_missing_app_dir_errors(tmp_path):
+    """A non-existent child dir returns an error status, not a crash."""
+    try:
+        from tools.builder.child_app_generator import refresh_trust_modules
+    except ImportError:
+        pytest.skip("Module not importable")
+    result = refresh_trust_modules(tmp_path / "does-not-exist", icdev_root=tmp_path, dry_run=True)
+    assert result["status"] == "error"

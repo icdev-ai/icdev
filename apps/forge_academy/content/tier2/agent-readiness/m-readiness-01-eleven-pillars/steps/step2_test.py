@@ -1,35 +1,37 @@
-"""Tests for the readiness check reporter."""
-import subprocess
-import sys
-from pathlib import Path
+# Auto-grader — runner idiom.
+#
+# aca-vv-01: this file used to be a pytest module (def test_*, importlib/subprocess to
+# load the starter from disk). The Academy runner concatenates the learner's code and
+# this grader into ONE script and runs it with `python -I`, so:
+#   * importlib/subprocess are rejected by the sandbox AST allowlist (penta-aca-02),
+#     which made this step impossible to complete; and
+#   * even unblocked, `def test_*` functions are never called by plain python, so it
+#     would have passed everything.
+# The learner's module-level names are already in scope here. Assert on those.
 
+# The pytest version shelled out to run the starter as a CLI and grepped stdout.
+# subprocess is blocked, and the runner already executed the learner's __main__ block
+# above, so grade the function the CLI is built on instead.
+_fn = globals().get("check_and_report")
+assert callable(_fn), "check_and_report() must be defined."
 
-def test_script_runs_without_error(tmp_path):
-    script = Path(__file__).parent / "step2_starter.py"
-    result = subprocess.run(
-        [sys.executable, str(script), str(Path(__file__).parents[6])],
-        capture_output=True,
-        text=True,
-    )
-    assert "AGENT READINESS REPORT" in result.stdout
+import io as _io
+import sys as _sys
 
+_buf = _io.StringIO()
+_stdout = _sys.stdout
+_sys.stdout = _buf
+try:
+    _rc = _fn(".")
+finally:
+    _sys.stdout = _stdout
+_out = _buf.getvalue()
 
-def test_exit_code_reflects_threshold(tmp_path):
-    script = Path(__file__).parent / "step2_starter.py"
-    result = subprocess.run(
-        [sys.executable, str(script), str(tmp_path)],
-        capture_output=True,
-        text=True,
-    )
-    # An empty directory should score very low → exit 1
-    assert result.returncode == 1
-
-
-def test_output_shows_pillar_status(tmp_path):
-    script = Path(__file__).parent / "step2_starter.py"
-    result = subprocess.run(
-        [sys.executable, str(script), str(Path(__file__).parents[6])],
-        capture_output=True,
-        text=True,
-    )
-    assert "PASS" in result.stdout or "FAIL" in result.stdout
+assert "AGENT READINESS REPORT" in _out, (
+    "check_and_report() should print a report headed 'AGENT READINESS REPORT'."
+)
+assert ("PASS" in _out) or ("FAIL" in _out), (
+    "The report should show per-pillar PASS/FAIL status."
+)
+assert _rc in (0, 1), "check_and_report() should return an exit code of 0 or 1."
+print("PASS: readiness report produced with per-pillar status.")

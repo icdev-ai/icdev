@@ -50,6 +50,23 @@ jobs:
           pip install -r requirements.txt
           pip install -e . 2>/dev/null || true
       - name: Run core unit tests
+        # NOTE: this list is a shell line-continuation chain -- do NOT put `#`
+        # comments between the entries. A comment after a trailing `\` swallows
+        # the remaining paths and silently shrinks the gate.
+        #
+        # test_component_registry.py guards the registry-derived PATH_CANVAS /
+        # IQE map against drift between args/component_registry.yaml and the
+        # pages registered directly in app.py. It earns a slot because it caught
+        # a real divergence that then sat red on main for a day while every
+        # gated check stayed green (#636). ~6s, pure Python, no DB/LLM/network.
+        #
+        # test_init_goals_and_selective.py pins icdev/data/claude_bootstrap/
+        # CLAUDE.md byte-for-byte against the repo's CLAUDE.md. That copy is
+        # only refreshed when someone runs prebuild_bootstrap, so editing
+        # CLAUDE.md alone makes `icdev init` scaffold a stale instruction file
+        # for installed users -- which is exactly what shipped in #960. Off the
+        # gate the drift is invisible; on it, the fix is one prebuild run.
+        # ~13s, pure Python, no DB/LLM/network.
         run: |
           _abort() {
             echo "CI: abort signal received — terminating pytest children"
@@ -72,6 +89,41 @@ jobs:
             tests/test_manifest_loader.py \
             tests/test_session_context_builder.py \
             tests/test_code_analyzer.py \
+            tests/test_component_registry.py \
+            tests/test_migration_version_uniqueness.py \
+            tests/test_verifier_contract.py \
+            tests/test_dic_chat_memory_schema.py \
+            tests/test_dic_chat_surfaces_send_session_id.py \
+            tests/test_dic_citation_publish_gate.py \
+            tests/test_migration_engine_detection.py \
+            tests/test_claim_grounding.py \
+            tests/test_docgen_bridge_scrub.py \
+            tests/test_publish_gates.py \
+            tests/test_dic_cove_gate.py \
+            tests/test_mirror_drift_baseline.py \
+            tests/test_freshness_guardian_parity.py \
+            tests/test_data_canvas_mirror_parity.py \
+            tests/test_quality_monitor_parity.py \
+            tests/test_no_direct_provider_calls.py \
+            tests/test_coordination_lease_namespaces.py \
+            tests/test_dic_claim_grounding_wiring.py \
+            tests/test_reflex_registry_integrity.py \
+            tests/test_memory_maintenance_reflex.py \
+            tests/test_memory_read_db.py \
+            tests/test_memory_tier_measure.py \
+            tests/test_notification_worthiness.py \
+            tests/test_localai_provider.py \
+            tests/browser/test_backend.py \
+            tests/browser/test_driver_manager_airgap.py \
+            tests/browser/test_driver_staleness.py \
+            tests/browser/test_browser_locator.py \
+            tests/browser/cdp/test_preflight.py \
+            tests/browser/cdp/test_session.py \
+            tests/browser/cdp/test_driver.py \
+            tests/browser/cdp/test_webdriver.py \
+            tests/browser/cdp/test_ws_client.py \
+            tests/test_context_budget.py \
+            tests/test_init_goals_and_selective.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
@@ -268,8 +320,16 @@ jobs:
       ICDEV_GOVCON_ENABLED: "true"
       ICDEV_MIGRATION_CANVAS_ENABLED: "true"
       ICDEV_AUTH_BYPASS: "true"
+      # nav-sec-01: E2E previously authenticated via the unconditional env-key
+      # auto-login (the P0 bypass this wave removed). The CI test server now
+      # opts into dev auto-login explicitly — the documented use of this flag.
+      ICDEV_DASHBOARD_DEV_AUTOLOGIN: "true"
       ICDEV_MISSION_CANVAS_ENABLED: "true"
       ICDEV_OPS_HUB_ENABLED: "true"
+      # NOC Operations Canvas — required by tests/e2e/noc_canvas.spec.ts (cnr-ops-02).
+      # Registry default_enabled is false, so without this flag the noc_canvas
+      # blueprint never registers and every /noc route 404s / redirects.
+      ICDEV_NOCC_ENABLED: "true"
       ICDEV_AIML_CANVAS_ENABLED: "true"
       ICDEV_AISG_ENABLED: "true"
       ICDEV_ACE_ENABLED: "true"
@@ -423,6 +483,47 @@ jobs:
           }
           trap _abort SIGTERM SIGINT
           npx playwright test
+      - name: Run DWO V&V specs (dwo-vv-03-d5)
+        # The three DWO V&V specs live in tests/e2e/ and are collected by the
+        # sweep above, but each self-skips unless its own env var is set. They are
+        # held out of that sweep deliberately: dwo_restart_durability spawns a
+        # dashboard on a free port, kills it, and starts it again, which does not
+        # belong in an invocation that ~800 other tests share. Giving them their
+        # own `npx playwright test` call is the wiring dwo-vv-03-d5 asks for — CI
+        # exercises all three, and the shared sweep is untouched.
+        #
+        # This runs BEFORE "Stop dashboard server" on purpose: dwo_mcp_step_execution
+        # and dwo_trigger_linkage drive the job's dashboard through baseURL.
+        # ICDEV_NO_SERVER=1 is inherited from the job env, so Playwright starts no
+        # second server of its own.
+        #
+        # ICDEV_PW_RUN_TAG gives this invocation its own report + artifact paths.
+        # Without it Playwright would clear outputDir and overwrite the
+        # results.json the sweep just wrote, and the uploaded artifact would
+        # describe only this handful of specs.
+        #
+        # Expected today: dwo_mcp_step_execution and dwo_restart_durability PASS;
+        # dwo_trigger_linkage SKIPS at its probe until dwo-evt-04 registers
+        # /api/studio/event-sources and /api/studio/triggers. A skip is a pass to
+        # `playwright test`, so this step goes green now and starts exercising the
+        # trigger path for real the moment that surface merges — no edit here.
+        env:
+          ICDEV_E2E_DWO_RESTART: "1"
+          ICDEV_E2E_DWO_TRIGGER: "1"
+          ICDEV_E2E_DWO_MCP: "1"
+          ICDEV_PW_RUN_TAG: dwo
+        run: |
+          _abort() {
+            echo "CI: abort signal received during DWO E2E — terminating Playwright children"
+            children=$(ps -o pid= --ppid $$ 2>/dev/null || true)
+            for child in $children; do kill "$child" 2>/dev/null || true; done
+            kill -- -$$ 2>/dev/null || true
+          }
+          trap _abort SIGTERM SIGINT
+          npx playwright test \
+            tests/e2e/dwo_restart_durability.spec.ts \
+            tests/e2e/dwo_mcp_step_execution.spec.ts \
+            tests/e2e/dwo_trigger_linkage.spec.ts
       - name: Stop dashboard server
         if: always()
         run: |
@@ -460,7 +561,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: .tmp/test_runs/playwright-report/
+          path: |
+            .tmp/test_runs/playwright-report/
+            .tmp/test_runs/playwright-report-dwo/
           retention-days: 30
       - name: Upload Playwright artifacts
         if: always()
@@ -470,7 +573,20 @@ jobs:
           path: |
             .tmp/test_runs/playwright-results.json
             .tmp/test_runs/playwright-artifacts/
+            .tmp/test_runs/playwright-results-dwo.json
+            .tmp/test_runs/playwright-artifacts-dwo/
           retention-days: 30
+      # The DWO specs write their evidence to playwright/screenshots/ rather than
+      # to outputDir, precisely because Playwright clears outputDir on each run.
+      # Upload them so a CI failure has the same screenshots a local run produces.
+      - name: Upload DWO V&V screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwo-vv-screenshots
+          path: playwright/screenshots/dwo-*.png
+          retention-days: 30
+          if-no-files-found: warn
 
   # ── Tier 3: Docker Build (main branch only) ─────────────────────────────
   docker-build:

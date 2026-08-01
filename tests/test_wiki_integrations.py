@@ -10,6 +10,15 @@ Item 5: ACE session end cross-role wiki links via _file_session_to_wiki
 
 import tempfile
 import unittest
+
+from tools.memory.claude_memory_path import project_slug
+
+# These fixtures used to hardcode the literal 'C--AI-ICDev'. That is the slug for
+# exactly one checkout on one machine, and it only ever matched because Windows
+# compares paths case-insensitively (the real directory is lowercase). The tests
+# passed by mirroring the bug they were meant to guard. Derive it the same way
+# the implementation does (ahx-path-01).
+_PROJECT_SLUG = project_slug()
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,7 +47,7 @@ class TestFileQaToWiki(unittest.TestCase):
                 # Patch auto_dir derivation inside function
                 from pathlib import Path as _Path
 
-                auto_path = _Path(td) / ".claude/projects/C--AI-ICDev/memory"
+                auto_path = _Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
                 auto_path.mkdir(parents=True, exist_ok=True)
                 (auto_path / "MEMORY.md").write_text("# Index\n", encoding="utf-8")
 
@@ -55,7 +64,7 @@ class TestFileQaToWiki(unittest.TestCase):
     def test_skips_if_file_already_exists(self):
         from tools.document_intelligence.search_engine import _file_qa_to_wiki, _qa_slug
         with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / ".claude/projects/C--AI-ICDev/memory"
+            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
             auto_path.mkdir(parents=True, exist_ok=True)
             (auto_path / "MEMORY.md").write_text("# Index\n", encoding="utf-8")
 
@@ -84,7 +93,7 @@ class TestCheckWikiCache(unittest.TestCase):
     def test_exact_slug_hit_returns_answer(self):
         from tools.document_intelligence.search_engine import _check_wiki_cache, _qa_slug
         with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / ".claude/projects/C--AI-ICDev/memory"
+            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
             auto_path.mkdir(parents=True, exist_ok=True)
             slug = _qa_slug("what is RLS?", None)
             content = (
@@ -106,7 +115,7 @@ class TestCheckWikiCache(unittest.TestCase):
     def test_miss_returns_none(self):
         from tools.document_intelligence.search_engine import _check_wiki_cache
         with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / ".claude/projects/C--AI-ICDev/memory"
+            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
             auto_path.mkdir(parents=True, exist_ok=True)
 
             with patch.dict("os.environ", {"USERPROFILE": td}):
@@ -123,7 +132,7 @@ class TestCheckWikiCache(unittest.TestCase):
     def test_fuzzy_hit_via_keyword_search(self):
         from tools.document_intelligence.search_engine import _check_wiki_cache
         with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / ".claude/projects/C--AI-ICDev/memory"
+            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
             auto_path.mkdir(parents=True, exist_ok=True)
             # Create a Q&A file with different slug but overlapping keywords
             (auto_path / "dic-qa-aaabbbcccdddee.md").write_text(
@@ -202,7 +211,7 @@ class TestACEWikiHelpers(unittest.TestCase):
     def test_query_role_wiki_returns_string(self):
         from icdev.tools.ace.controller import ACEController
         with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / ".claude/projects/C--AI-ICDev/memory"
+            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
             auto_path.mkdir(parents=True, exist_ok=True)
             (auto_path / "project-ace.md").write_text(
                 "# ACE Coworker\nai_developer role builds code and runs tests.",
@@ -222,7 +231,7 @@ class TestACEWikiHelpers(unittest.TestCase):
     def test_file_session_to_wiki_creates_entry(self):
         from icdev.tools.ace.controller import ACEController
         with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / ".claude/projects/C--AI-ICDev/memory"
+            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
             auto_path.mkdir(parents=True, exist_ok=True)
             (auto_path / "MEMORY.md").write_text("# Index\n", encoding="utf-8")
 
@@ -244,7 +253,7 @@ class TestACEWikiHelpers(unittest.TestCase):
     def test_file_session_to_wiki_idempotent(self):
         from icdev.tools.ace.controller import ACEController
         with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / ".claude/projects/C--AI-ICDev/memory"
+            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
             auto_path.mkdir(parents=True, exist_ok=True)
             (auto_path / "MEMORY.md").write_text("# Index\n", encoding="utf-8")
 

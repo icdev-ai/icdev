@@ -1,0 +1,21 @@
+{
+  "_comment": "Section 508 / WCAG accessibility baseline. Grandfathers existing violations, keyed by page -> [axe rule id]. Any (page, rule) NOT listed here counts as a NEW violation. Default posture is warn-only; set ICDEV_A11Y_ENFORCE=1 to fail on NEW critical violations. Regenerate against a live dashboard with: python tools/testing/a11y_sweep.py --update-baseline",
+  "axe_version": "4.10.2",
+  "pages": {
+    "/": [],
+    "/kanban": [],
+    "/chat": [],
+    "/projects": [],
+    "/agents": [],
+    "/compliance": [],
+    "/knowledge-search": [],
+    "/components-map": [],
+    "/security/": [],
+    "/data/": [],
+    "/observability/": [],
+    "/devops/": [],
+    "/cortex/": [],
+    "/document-intelligence/techwriter": [],
+    "/bi_dashboard": []
+  }
+}

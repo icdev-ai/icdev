@@ -16,12 +16,25 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 
+def _safe_int(value) -> int:
+    """Best-effort int coercion for maturity levels (dcpr-fix-08).
+
+    Legacy rows may hold a non-numeric label (e.g. the string 'defined') in the
+    INTEGER maturity_level column. Treat any unparseable value as 0 (lowest)
+    rather than raising ValueError and crashing the whole score.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def list_policies(domain_id: str | None = None) -> list:
     """List governance policies, optionally filtered by domain (applies_to)."""
     with get_connection() as conn:
         if domain_id:
             rows = conn.execute(
-                "SELECT * FROM dm_governance_policies WHERE applies_to IN (%s, 'all') AND status='active' ORDER BY name",
+                "SELECT * FROM dm_governance_policies WHERE applies_to IN (?, 'all') AND status='active' ORDER BY name",
                 (domain_id,),
             ).fetchall()
         else:
@@ -59,12 +72,21 @@ def create_policy(data: dict) -> dict:
         "created_at": now,
         "updated_at": now,
     }
+    # Positional ? + ordered tuple: get_connection() is HYBRID (raw sqlite3 on the
+    # SQLite branch — no translate wrapper; StorageConnection on PG). translate_sql
+    # only rewrites ?→%s (never :name), and StorageCursor wraps a dict param into a
+    # 1-tuple, so a :name mapping never reaches either driver. Column order MUST
+    # match _DM_POLICY_COLS.
+    _DM_POLICY_COLS = (
+        "id", "name", "policy_type", "rules_json", "applies_to", "status",
+        "classification", "created_at", "updated_at",
+    )
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO dm_governance_policies
                (id, name, policy_type, rules_json, applies_to, status, classification, created_at, updated_at)
-               VALUES (:id, :name, :policy_type, :rules_json, :applies_to, :status, :classification, :created_at, :updated_at)""",
-            row,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            tuple(row[c] for c in _DM_POLICY_COLS),
         )
         conn.commit()
     return row
@@ -92,13 +114,32 @@ def _eval_rule(actual, op: str, expected) -> bool:
             return False
     if op == "exists":
         return actual is not None
-    return True  # unknown op — default allow
+    return False  # unknown op — fail closed (default deny)
+
+
+def _is_sensitive_resource(resource: dict) -> bool:
+    """A resource is sensitive unless explicitly marked non-sensitive.
+
+    Fail-closed: only resources explicitly classified PUBLIC/UNCLASSIFIED (or
+    flagged sensitive=False) are treated as non-sensitive. Missing or unknown
+    classification is treated as sensitive so access defaults to deny.
+    """
+    if resource.get("sensitive") is True:
+        return True
+    if resource.get("sensitive") is False:
+        return False
+    classification = str(resource.get("classification") or "").strip().upper()
+    return classification not in ("PUBLIC", "UNCLASSIFIED")
 
 
 def check_access(user_attrs: dict | None, resource: dict | None) -> dict:
     """OPA-style ABAC access check against active governance policies.
 
     Returns {"allowed": bool, "reason": str, "matched_policies": list}.
+
+    Default-deny: when no policy matches a sensitive resource, access is denied
+    (fail closed). Only explicitly non-sensitive (PUBLIC/UNCLASSIFIED) resources
+    default to allow when no policy applies.
     """
     user_attrs = user_attrs or {}
     resource = resource or {}
@@ -106,7 +147,17 @@ def check_access(user_attrs: dict | None, resource: dict | None) -> dict:
 
     policies = list_policies(domain_id=domain_id)
     if not policies:
-        return {"allowed": True, "reason": "No applicable policies — default allow", "matched_policies": []}
+        if _is_sensitive_resource(resource):
+            return {
+                "allowed": False,
+                "reason": "No matching policy — default deny",
+                "matched_policies": [],
+            }
+        return {
+            "allowed": True,
+            "reason": "No applicable policies — non-sensitive resource, default allow",
+            "matched_policies": [],
+        }
 
     violations: list[str] = []
     matched: list[dict] = []
@@ -141,7 +192,7 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
     with get_connection() as conn:
         if domain_id:
             domain_rows = conn.execute(
-                "SELECT * FROM dm_domains WHERE id=%s", (domain_id,)
+                "SELECT * FROM dm_domains WHERE id=?", (domain_id,)
             ).fetchall()
         else:
             domain_rows = conn.execute(
@@ -183,7 +234,7 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
             pts += 25
         if any(p["applies_to"] in ("all", did) for p in active_policies):
             pts += 25
-        if int(maturity_by_domain.get(did) or d.get("maturity_level", 0) or 0) >= 2:
+        if _safe_int(maturity_by_domain.get(did) or d.get("maturity_level", 0) or 0) >= 2:
             pts += 25
         if d.get("owner") and d.get("steward"):
             pts += 25

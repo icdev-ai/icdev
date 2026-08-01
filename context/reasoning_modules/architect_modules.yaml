@@ -1,0 +1,88 @@
+# CUI // SP-CTI
+# Reasoning-module bank for the Self-Discover architecture (agx-search-01).
+#
+# Self-Discover composes a TASK-SPECIFIC reasoning structure from a bank of
+# generic reasoning modules (Zhou et al., "Self-Discover: Large Language Models
+# Self-Compose Reasoning Structures", 2024). The bank is DATA, not code: the LLM
+# SELECTS module ids appropriate to the task, Python validates the selection
+# against this bank (dropping unknown ids — the deterministic-picker guarantee),
+# and Python ASSEMBLES the selected modules into an ordered reasoning structure.
+#
+# Seeded from ICDEV's own pre-design discipline: modules k1-k5 are the Karpathy
+# pre-design heuristics (hardprompts/karpathy_principles.md), which every build /
+# bug-fix / refactor / review workflow already applies. The remaining modules are
+# the general-purpose Self-Discover reasoning operators most relevant to the
+# ANVIL Architect phase (design, decomposition, risk, verification).
+#
+# Add modules by appending here — no code change. Each module: a stable `id`, a
+# short `name`, and a `description` the model reads when adapting it to the task.
+
+modules:
+  # --- Karpathy pre-design heuristics (ICDEV's existing constitution) ---
+  - id: k1_state_assumptions
+    name: State assumptions
+    description: >-
+      Name the constraints, inputs, and invariants you are relying on before
+      designing. What is the caller guaranteed to pass? What does the system
+      guarantee here (transaction open, RLS active)? What can change vs. is fixed?
+  - id: k2_enumerate_interpretations
+    name: Enumerate interpretations
+    description: >-
+      For any ambiguous requirement, list 2-4 ways it could be read and pick one
+      with a load-bearing reason. Surface the choice when the wrong reading is
+      expensive to undo.
+  - id: k3_prefer_simpler
+    name: Prefer the simpler design
+    description: >-
+      Choose the simplest design that meets the requirement. No speculative
+      abstraction, no design for hypothetical future needs (YAGNI). If two
+      approaches are equally correct, pick the one a junior can read.
+  - id: k4_bound_scope
+    name: Bound the edit scope
+    description: >-
+      Decide exactly which components the change may touch and commit to that
+      boundary. No drive-by refactors or speculative surrounding cleanup.
+  - id: k5_success_criteria
+    name: Define success criteria first
+    description: >-
+      State how you will know the design is correct and complete before
+      producing it — the acceptance check or test that must pass.
+
+  # --- General Self-Discover reasoning operators for design tasks ---
+  - id: decompose
+    name: Decompose into sub-problems
+    description: >-
+      Break the task into smaller sub-problems that can be designed and verified
+      independently, then note how they compose back together.
+  - id: identify_constraints
+    name: Identify hard constraints
+    description: >-
+      Enumerate the non-negotiable constraints the design must satisfy
+      (compliance/classification, performance budgets, backward compatibility,
+      air-gap operation) and mark which are load-bearing.
+  - id: enumerate_options
+    name: Enumerate design options
+    description: >-
+      List the distinct viable approaches before committing, with the key
+      trade-off that distinguishes each. Avoids premature convergence on branchy
+      problems.
+  - id: risk_failure_modes
+    name: Reason about failure modes
+    description: >-
+      Ask how the design fails: the failure modes, blast radius of each, and the
+      guardrail or fallback that contains it.
+  - id: map_to_existing
+    name: Map to existing tools and patterns
+    description: >-
+      Before proposing new components, identify existing tools, modules, and
+      patterns the design should reuse rather than reinvent.
+  - id: sequence_steps
+    name: Sequence the implementation
+    description: >-
+      Order the implementation steps by dependency, identifying the prerequisite
+      that unblocks the rest and any step that must come last.
+  - id: define_verification
+    name: Define per-step verification
+    description: >-
+      For each step of the plan, state the concrete check that proves the step
+      achieved its claimed effect (test passes, file exists, route responds).

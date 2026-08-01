@@ -16,9 +16,63 @@ For Terraform, Ansible, and OSCAL export, delegates to existing ICDEV modules:
 - tools/compliance/oscal_generator.py
 """
 
+import csv
+import io
+import json
+import re
 from datetime import datetime, timezone
+from xml.sax.saxutils import escape as _xml_escape
+from xml.sax.saxutils import quoteattr as _xml_quoteattr
 
 from tools.pipeline.constants import PIPELINE_STAGES
+
+
+# ── Sanitizers (pdx-sec-06: prevent injection from user-controlled labels) ──────
+
+
+def _sanitize_identifier(value, seen=None, fallback="job"):
+    """Reduce an arbitrary string to a safe CI identifier ([A-Za-z0-9_-] only).
+
+    User-controlled node labels must never be able to inject sibling YAML keys,
+    break document structure (``:`` / newline / ``#``), or collide. When ``seen``
+    (a set) is supplied, duplicate identifiers receive a numeric suffix so no two
+    jobs share the same YAML key.
+    """
+    base = re.sub(r"[^A-Za-z0-9_-]", "-", str(value))
+    base = re.sub(r"-{2,}", "-", base).strip("-_")
+    if not base:
+        base = fallback
+    if seen is None:
+        return base
+    candidate = base
+    i = 2
+    while candidate in seen:
+        candidate = f"{base}-{i}"
+        i += 1
+    seen.add(candidate)
+    return candidate
+
+
+def _shell_safe(text):
+    """Strip characters that would break a double-quoted shell echo or span lines."""
+    return re.sub(r'[\r\n"]', " ", str(text)).strip()
+
+
+def _dump_yaml(doc, header_lines):
+    """Serialize a mapping to YAML (insertion order preserved) with a comment header.
+
+    Routing every dynamic value through the YAML serializer guarantees that any
+    ``:``/``#``/newline/quote in user input is safely quoted rather than altering
+    document structure. Falls back to JSON (a valid YAML subset) if PyYAML is
+    unavailable so output is always parseable.
+    """
+    try:
+        import yaml
+
+        body = yaml.safe_dump(doc, sort_keys=False, default_flow_style=False, width=4096)
+    except ImportError:
+        body = json.dumps(doc, indent=2)
+    return "\n".join(header_lines) + "\n" + body
 
 
 def export_pipeline(graph, name, fmt):
@@ -154,35 +208,31 @@ def _to_gitlab_ci(nodes, edges, name):
     stages_map = _group_by_stage(nodes)
     ordered = sorted(stages_map.keys(), key=_get_stage_order)
 
-    lines = [
+    # Stage identifiers are sanitized so a user-supplied node.stage cannot inject
+    # structure into the `stages:` list or a job's `stage:` value.
+    stage_ids = {s: _sanitize_identifier(s, fallback="stage") for s in ordered}
+
+    doc = {"stages": [stage_ids[s] for s in ordered]}
+    seen_jobs = set()
+    for stage_key in ordered:
+        for node in stages_map[stage_key]:
+            raw = node.get("label", node.get("type", "job"))
+            job_name = _sanitize_identifier(str(raw).replace(" ", "_").lower(), seen=seen_jobs, fallback="job")
+            job = {
+                "stage": stage_ids[stage_key],
+                "script": [f'echo "Running {_shell_safe(node.get("label", "step"))}"'],
+            }
+            config = node.get("config") or {}
+            if config.get("tool"):
+                job["variables"] = {"TOOL": str(config["tool"])}
+            doc[job_name] = job
+
+    header = [
         f"# Auto-generated from Pipeline Design Canvas: {name}",
         f"# Generated: {datetime.now(timezone.utc).isoformat()}",
         "",
-        "stages:",
     ]
-    for s in ordered:
-        lines.append(f"  - {s}")
-    lines.append("")
-
-    for stage_key in ordered:
-        stage_nodes = stages_map[stage_key]
-        for node in stage_nodes:
-            job_name = node.get("label", node.get("type", "job")).replace(" ", "_").lower()
-            lines.extend(
-                [
-                    f"{job_name}:",
-                    f"  stage: {stage_key}",
-                    f"  # Tool: {node.get('type', 'unknown')}",
-                    "  script:",
-                    f'    - echo "Running {node.get("label", "step")}"',
-                ]
-            )
-            config = node.get("config") or {}
-            if config.get("tool"):
-                lines.append(f"    # Tool config: {config['tool']}")
-            lines.append("")
-
-    return "\n".join(lines)
+    return _dump_yaml(doc, header)
 
 
 # ── GitHub Actions ────────────────────────────────────────────────────────────
@@ -192,46 +242,36 @@ def _to_github_actions(nodes, edges, name):
     stages_map = _group_by_stage(nodes)
     ordered = sorted(stages_map.keys(), key=_get_stage_order)
 
-    lines = [
-        f"# Auto-generated from Pipeline Design Canvas: {name}",
-        f"name: {name}",
-        "",
-        "on:",
-        "  push:",
-        "    branches: [main]",
-        "  pull_request:",
-        "    branches: [main]",
-        "",
-        "jobs:",
-    ]
-
+    jobs = {}
     prev_jobs = []
+    seen_ids = set()
     for stage_key in ordered:
         stage_nodes = stages_map[stage_key]
-        job_id = stage_key.replace("_", "-")
+        job_id = _sanitize_identifier(stage_key.replace("_", "-"), seen=seen_ids, fallback="job")
         job_name = PIPELINE_STAGES.get(stage_key, {}).get("label", stage_key)
-        lines.extend(
-            [
-                f"  {job_id}:",
-                f"    name: {job_name}",
-                "    runs-on: ubuntu-latest",
-            ]
-        )
+        job = {"name": job_name, "runs-on": "ubuntu-latest"}
         if prev_jobs:
-            lines.append(f"    needs: [{', '.join(prev_jobs)}]")
-        lines.append("    steps:")
-        lines.append("      - uses: actions/checkout@v4")
+            job["needs"] = list(prev_jobs)
+        steps = [{"uses": "actions/checkout@v4"}]
         for node in stage_nodes:
-            lines.extend(
-                [
-                    f"      - name: {node.get('label', 'Step')}",
-                    f'        run: echo "Running {node.get("type", "tool")}"',
-                ]
+            steps.append(
+                {
+                    "name": node.get("label", "Step"),
+                    "run": f'echo "Running {_shell_safe(node.get("type", "tool"))}"',
+                }
             )
-        lines.append("")
+        job["steps"] = steps
+        jobs[job_id] = job
         prev_jobs = [job_id]
 
-    return "\n".join(lines)
+    doc = {
+        "name": name,
+        # Quote the "on" key: YAML 1.1 resolves a bare `on` to boolean true.
+        "on": {"push": {"branches": ["main"]}, "pull_request": {"branches": ["main"]}},
+        "jobs": jobs,
+    }
+    header = [f"# Auto-generated from Pipeline Design Canvas: {name}"]
+    return _dump_yaml(doc, header)
 
 
 # ── Jenkinsfile ───────────────────────────────────────────────────────────────
@@ -369,7 +409,9 @@ def _to_azure_pipelines(nodes, edges, name):
 def _to_drawio(nodes, edges, name):
     cells = ['<?xml version="1.0" encoding="UTF-8"?>']
     cells.append(f'<mxfile host="pipeline-canvas" modified="{datetime.now(timezone.utc).isoformat()}">')
-    cells.append(f'  <diagram name="{name}" id="pipeline">')
+    # quoteattr() returns the value WITH surrounding double quotes and escapes
+    # &, <, >, and quotes so user-supplied labels/ids cannot break the XML.
+    cells.append(f"  <diagram name={_xml_quoteattr(str(name))} id=\"pipeline\">")
     cells.append("    <mxGraphModel>")
     cells.append("      <root>")
     cells.append('        <mxCell id="0"/>')
@@ -380,16 +422,17 @@ def _to_drawio(nodes, edges, name):
         y = node.get("y", 200)
         label = node.get("label", node.get("type", ""))
         cells.append(
-            f'        <mxCell id="{node.get("id", i)}" value="{label}" '
+            f"        <mxCell id={_xml_quoteattr(str(node.get('id', i)))} value={_xml_quoteattr(str(label))} "
             f'style="rounded=1;whiteSpace=wrap;" vertex="1" parent="1">'
-            f'<mxGeometry x="{x}" y="{y}" width="120" height="60" as="geometry"/></mxCell>'
+            f"<mxGeometry x={_xml_quoteattr(str(x))} y={_xml_quoteattr(str(y))} "
+            f'width="120" height="60" as="geometry"/></mxCell>'
         )
 
     for j, edge in enumerate(edges):
         cells.append(
-            f'        <mxCell id="e{j}" value="{edge.get("label", "")}" '
+            f'        <mxCell id="e{j}" value={_xml_quoteattr(str(edge.get("label", "")))} '
             f'style="edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" '
-            f'source="{edge["source"]}" target="{edge["target"]}"/>'
+            f"source={_xml_quoteattr(str(edge['source']))} target={_xml_quoteattr(str(edge['target']))}/>"
         )
 
     cells.append("      </root>")
@@ -402,13 +445,24 @@ def _to_drawio(nodes, edges, name):
 # ── SVG ──────────────────────────────────────────────────────────────────────
 
 
+def _svg_coord(value, default=0):
+    """Coerce a (possibly user-supplied) coordinate to a number for safe geometry."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+
 def _to_svg(nodes, edges, name):
-    max_x = max((n.get("x", 0) for n in nodes), default=0) + 200
-    max_y = max((n.get("y", 0) for n in nodes), default=0) + 150
+    max_x = max((_svg_coord(n.get("x", 0)) for n in nodes), default=0) + 200
+    max_y = max((_svg_coord(n.get("y", 0)) for n in nodes), default=0) + 150
 
     lines = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{max_x}" height="{max_y}" viewBox="0 0 {max_x} {max_y}">',
-        f"<title>{name}</title>",
+        f"<title>{_xml_escape(str(name))}</title>",
         "<style>",
         "  rect { fill: #1a1a2e; stroke: #3498db; stroke-width: 2; rx: 6; }",
         "  text { fill: #eaeaea; font-family: sans-serif; font-size: 11px; text-anchor: middle; }",
@@ -421,20 +475,22 @@ def _to_svg(nodes, edges, name):
 
     node_map = {n.get("id"): n for n in nodes}
     for node in nodes:
-        x = node.get("x", 100)
-        y = node.get("y", 100)
+        x = _svg_coord(node.get("x", 100), 100)
+        y = _svg_coord(node.get("y", 100), 100)
         label = node.get("label", node.get("type", ""))
+        # Escape label as XML text content: an unescaped `<script>` in a label
+        # would otherwise be stored XSS when the SVG is rendered inline.
         lines.append(f'<rect x="{x}" y="{y}" width="110" height="50"/>')
-        lines.append(f'<text x="{x + 55}" y="{y + 30}">{label}</text>')
+        lines.append(f'<text x="{x + 55}" y="{y + 30}">{_xml_escape(str(label))}</text>')
 
     for edge in edges:
         src = node_map.get(edge["source"])
         tgt = node_map.get(edge["target"])
         if src and tgt:
-            x1 = src.get("x", 0) + 110
-            y1 = src.get("y", 0) + 25
-            x2 = tgt.get("x", 0)
-            y2 = tgt.get("y", 0) + 25
+            x1 = _svg_coord(src.get("x", 0)) + 110
+            y1 = _svg_coord(src.get("y", 0)) + 25
+            x2 = _svg_coord(tgt.get("x", 0))
+            y2 = _svg_coord(tgt.get("y", 0)) + 25
             lines.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"/>')
 
     lines.append("</svg>")
@@ -445,13 +501,17 @@ def _to_svg(nodes, edges, name):
 
 
 def _to_csv(nodes, edges):
-    lines = ["id,label,type,stage,x,y"]
+    # Use the csv module so labels/types containing commas, quotes, or newlines
+    # are properly quoted instead of breaking the column structure.
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(["id", "label", "type", "stage", "x", "y"])
     for n in nodes:
         stage = n.get("stage") or _infer_stage(n.get("type", ""))
-        lines.append(
-            f"{n.get('id', '')},{n.get('label', '')},{n.get('type', '')},{stage},{n.get('x', 0)},{n.get('y', 0)}"
+        writer.writerow(
+            [n.get("id", ""), n.get("label", ""), n.get("type", ""), stage, n.get("x", 0), n.get("y", 0)]
         )
-    return "\n".join(lines)
+    return buf.getvalue().rstrip("\n")
 
 
 # ── AWS CloudFormation ───────────────────────────────────────────────────────
@@ -741,8 +801,27 @@ def _to_openslo(nodes, edges, name):
     return "\n".join(lines)
 
 
+def _yaml_squote(value):
+    """Return a YAML single-quoted scalar, safely escaping embedded quotes.
+
+    In YAML single-quoted style a literal single quote is escaped by doubling it.
+    Callers interpolate arbitrary UI-supplied strings (e.g. a runbook
+    ``trigger_pattern`` regex, which routinely contains quotes/backslashes) into
+    emitted YAML; without escaping, a value like ``it's``  would break the
+    document. Backslashes need no escaping in single-quoted style.
+    """
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def _openslo_service_block(service, target=99.9, slo_type="availability"):
     """Generate a single OpenSLO service + SLO + SLI block."""
+    # Coerce target to float: SLO node config comes from the UI, where the
+    # `target` field arrives as a string (e.g. "99.9"). `target / 100` on a str
+    # raises TypeError. Fall back to the 99.9 default on any non-numeric value.
+    try:
+        target = float(target)
+    except (TypeError, ValueError):
+        target = 99.9
     return [
         "apiVersion: openslo/v1",
         "kind: Service",
@@ -875,8 +954,8 @@ def _to_runbook_manifest(nodes, edges, name):
             lines.extend(
                 [
                     f"  - name: {rb_name}",
-                    f"    description: {config.get('description', rb.get('label', ''))}",
-                    f"    trigger_pattern: '{config.get('trigger_pattern', '.*')}'",
+                    f"    description: {_yaml_squote(config.get('description', rb.get('label', '')))}",
+                    f"    trigger_pattern: {_yaml_squote(config.get('trigger_pattern', '.*'))}",
                     f"    risk_level: {config.get('risk_level', 'green')}",
                     f"    auto_execute: {str(config.get('auto_execute', True)).lower()}",
                     "    steps:",

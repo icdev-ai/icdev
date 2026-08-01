@@ -33,6 +33,7 @@ registry-driven, template-driven architecture.
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Enable/Disable | `tools/cli/enable.py` | `icdev enable/disable/status/list` derived from registry env flags. | toggle names, `--env-file`, `--json` | Updated `.env` + status JSON |
+| Setup TUI | `tools/cli/setup.py` | `icdev setup` — stdlib-only interactive feature-toggle TUI (primary browser-free on/off surface). Registry-driven; groups by kind with live counts, shows env_flag + sub-pages, arrow/SPACE/p/w/q; degrades to a plain numbered menu when not a TTY. Writes `.env` + `log_component_audit` per change. | `--env-file`, `--plain`, `--json` | Updated `.env` + audit events |
 | Profile CLI | `tools/cli/profile.py` | `icdev profile list/show/apply` for core profiles. | profile name, `--env-file`, `--dry-run` | Written/previewed env overrides |
 | Scaffold CLI | `tools/cli/scaffold.py` | `icdev scaffold canvas` and `icdev scaffold child-app`. | key, `--template`, `--flavor`, `--out` | Scaffolded tree |
 | Backfill Manifests | `tools/cli/backfill_manifests.py` | Creates `data/templates/canvases/{key}/manifest.yaml` stubs for all registered canvases that lack one. Makes existing canvases discoverable and diff-able against the template baseline. | `[--dry-run]` `[--key <canvas-key>]` `[--json]` | Created/skipped stubs per canvas |

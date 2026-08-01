@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""`icdev profile` — inspect and apply enterprise core profiles.
+"""`icdev profile` — inspect and apply enterprise core profiles, and manage
+directory-based operator profiles for the standalone agent (sag-prof-01).
 
 Subcommands:
-  icdev profile list                  List available profiles
+  icdev profile list                  List core + isolation profiles
   icdev profile show [<name>]         Show profile details (active profile by default)
-  icdev profile apply <name>          Append profile env overrides to .env
+  icdev profile apply <name>          Append core-profile env overrides to .env
   icdev profile apply <name> --dry-run  Preview overrides without writing
+  icdev profile create <name>         Scaffold an isolated operator profile
+                                        (~/.icdev/profiles/<name>/: env overlay + skills/)
+  icdev profile use [<name>]          Set the sticky active profile the SAG runtime
+                                        reads at startup ('default' clears isolation)
+  icdev profile which                 Print the current sticky active profile
+  icdev profile remove <name>         Deregister an isolation profile (--purge to
+                                        also delete its state directory)
 """
 
 from __future__ import annotations
@@ -57,6 +65,25 @@ def _build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--env-file", default=".env", help="Path to .env file")
     apply.add_argument("--dry-run", action="store_true", help="Preview without writing")
     apply.add_argument("--json", action="store_true", help="Emit JSON")
+
+    create = sub.add_parser("create", help="Scaffold an isolated operator profile")
+    create.add_argument("name", help="Profile name (lowercase, - / _)")
+    create.add_argument("--description", default="", help="Optional description")
+    create.add_argument("--use", action="store_true", help="Also make it the active profile")
+    create.add_argument("--json", action="store_true", help="Emit JSON")
+
+    use = sub.add_parser("use", help="Set the sticky active profile")
+    use.add_argument("name", nargs="?", default="default",
+                     help="Profile name, or 'default' to clear isolation")
+    use.add_argument("--json", action="store_true", help="Emit JSON")
+
+    which = sub.add_parser("which", help="Print the current sticky active profile")
+    which.add_argument("--json", action="store_true", help="Emit JSON")
+
+    remove = sub.add_parser("remove", help="Deregister an isolation profile")
+    remove.add_argument("name", help="Profile name")
+    remove.add_argument("--purge", action="store_true", help="Also delete the state directory")
+    remove.add_argument("--json", action="store_true", help="Emit JSON")
 
     return parser
 
@@ -158,12 +185,87 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.action == "list":
         result = _list_profiles()
+        try:
+            from tools.agent_runtime import profiles as _iso
+
+            result["isolation_profiles"] = _iso.list_profiles()
+        except Exception:  # noqa: BLE001 — isolation registry is best-effort
+            result["isolation_profiles"] = []
         if args.json:
-            print(json.dumps(result, indent=2))
+            print(json.dumps(result, indent=2, default=str))
         else:
             print("Available core profiles:")
             for p in result["profiles"]:
                 print(f"  {p['name']:<14} {p['description']}")
+            iso = result.get("isolation_profiles") or []
+            if iso:
+                print("\nIsolation profiles (~/.icdev/profiles/):")
+                for p in iso:
+                    mark = " *active" if p.get("active") else ""
+                    print(f"  {p['name']:<14} {p.get('description', '') or p.get('state_dir', '')}{mark}")
+        return 0
+
+    if args.action == "create":
+        from tools.agent_runtime import profiles as _iso
+
+        try:
+            info = _iso.create_profile(args.name, args.description)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        if args.use:
+            _iso.set_active(args.name)
+            info["active"] = True
+        if args.json:
+            print(json.dumps(info, indent=2, default=str))
+        else:
+            print(f"Created isolation profile '{args.name}' at {info['state_dir']}")
+            print(f"  env overlay: {info['env']}")
+            print(f"  skills dir:  {info['skills']}")
+            if args.use:
+                print(f"  now active (SAG runtime will use '{args.name}')")
+        return 0
+
+    if args.action == "use":
+        from tools.agent_runtime import profiles as _iso
+
+        try:
+            active = _iso.set_active(args.name)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        if args.json:
+            print(json.dumps({"active": active}, indent=2))
+        else:
+            if _iso.is_default(active):
+                print("Cleared active profile (isolation off — using default).")
+            else:
+                print(f"Active profile is now '{active}'.")
+        return 0
+
+    if args.action == "which":
+        from tools.agent_runtime import profiles as _iso
+
+        active = _iso.active_profile() or "default"
+        if args.json:
+            print(json.dumps({"active": active}, indent=2))
+        else:
+            print(active)
+        return 0
+
+    if args.action == "remove":
+        from tools.agent_runtime import profiles as _iso
+
+        try:
+            existed = _iso.remove_profile(args.name, purge=args.purge)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        if args.json:
+            print(json.dumps({"removed": existed, "purged": args.purge}, indent=2))
+        else:
+            print(f"Removed isolation profile '{args.name}'." if existed
+                  else f"No such isolation profile '{args.name}'.")
         return 0
 
     if args.action == "show":

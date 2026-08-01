@@ -133,9 +133,25 @@ DECK_STATUSES: list[str] = [
     "generating", # Phase 3: writing slide content
     "graphics",   # Phase 4: generating images
     "building",   # Phase 5: assembling PPTX/exports
-    "completed",  # PPTX ready for download
+    "completed",  # PPTX ready for download — real LLM content end-to-end
+    "degraded",   # PPTX ready, but some slides/research fell back (honesty flag)
+    "template",   # PPTX ready, but the outline itself is a canned static fallback
     "failed",     # Pipeline error
     "auto",       # Genesis daemon auto-generated
+]
+
+# Deck statuses that still yield a downloadable/presentable artifact.
+# Degraded/template decks are honestly flagged but remain usable.
+DECK_READY_STATUSES: list[str] = ["completed", "degraded", "template", "auto"]
+
+# ── Slide content provenance ─────────────────────────────────────────────────
+# Tracks how each slide's content was produced so degraded decks are never
+# silently reported as fully generated (wave honesty standard).
+PROVENANCE_LLM        = "llm"          # Real LLM-generated content
+PROVENANCE_FALLBACK   = "fallback"     # LLM unavailable/failed → canned content
+PROVENANCE_STRUCTURAL = "structural"   # Intentionally templated title/outro slide
+SLIDE_PROVENANCES: list[str] = [
+    PROVENANCE_LLM, PROVENANCE_FALLBACK, PROVENANCE_STRUCTURAL,
 ]
 
 # ── DB CHECK Constraint strings (derive from Python constants above) ──────────
@@ -332,6 +348,37 @@ PALETTE_INVESTMENT_DECK = {
     "purple":  (0x7B, 0x2F, 0xBE),   # #7B2FBE AI/ML accent
 }
 
+# A LIGHT corporate status-deck theme — white slides, a navy header band, and
+# white cards with a coloured top stripe. Modelled on a real Peraton status deck.
+#
+# Every theme above is dark-background; this is the first light one, which is why
+# it carries two keys the others do not need:
+#   "card"      — card fill (here white, distinct from the white page so a thin
+#                 border reads); dark themes let this default to "dark".
+#   "band_text" — text colour ON the navy header band. On a light theme the title
+#                 must be white, not the blue "accent" (blue-on-navy is unreadable).
+#                 Dark themes let this default to "accent".
+#   "rotation"  — the signature: card accents cycle blue → purple → green → amber
+#                 instead of every card looking the same.
+# The builder falls back gracefully, so adding these keys changes nothing for the
+# existing dark themes.
+PALETTE_CORPORATE_STATUS = {
+    "bg":        (0xFF, 0xFF, 0xFF),   # white page
+    "accent":    (0x25, 0x63, 0xEB),   # #2563EB primary blue
+    "text":      (0x1E, 0x29, 0x3B),   # #1E293B slate — body text
+    "subtext":   (0x6B, 0x72, 0x80),   # #6B7280 muted gray
+    "dark":      (0x1A, 0x3A, 0x5C),   # #1A3A5C navy — header band
+    "card":      (0xFF, 0xFF, 0xFF),   # white cards (border supplies the edge)
+    "border":    (0xCB, 0xD5, 0xE1),   # #CBD5E1 hairline card border
+    "band_text": (0xFF, 0xFF, 0xFF),   # white title on the navy band
+    "teal":      (0x25, 0x63, 0xEB),   # keep the card-grid teal fallback on-brand
+    # The accent rotation, in the reference deck's order.
+    "rotation":  [(0x25, 0x63, 0xEB),  # blue
+                  (0x7C, 0x3A, 0xED),  # purple
+                  (0x16, 0xA3, 0x4A),  # green
+                  (0xF5, 0x9E, 0x0B)], # amber
+}
+
 THEME_PALETTES: dict[str, dict] = {
     "midnight_executive":    PALETTE_MIDNIGHT,
     "govcon_proposal":       PALETTE_GOVCON,
@@ -342,6 +389,7 @@ THEME_PALETTES: dict[str, dict] = {
     "minimal_mono":          PALETTE_MINIMAL_MONO,
     "bold_neon":             PALETTE_BOLD_NEON,
     "investment_deck":       PALETTE_INVESTMENT_DECK,
+    "corporate_status":      PALETTE_CORPORATE_STATUS,
 }
 
 # ── Defaults ───────────────────────────────────────────────────────────────────

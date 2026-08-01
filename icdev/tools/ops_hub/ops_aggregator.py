@@ -19,12 +19,14 @@ def get_ops_overview() -> dict[str, Any]:
     from tools.ops_hub.llmops_engine import get_llmops_summary
     from tools.ops_hub.mlops_engine import get_mlops_summary
     from tools.ops_hub.aiops_engine import get_aiops_summary
-    from tools.ops_hub.adapter_registry import probe_all
+    from tools.ops_hub.adapter_registry import probe_all_cached
 
     llmops = _safe(get_llmops_summary)
     mlops = _safe(get_mlops_summary)
     aiops = _safe(get_aiops_summary)
-    adapters = _safe(lambda: probe_all(persist=True))
+    # cnr-ops-02: TTL-cached probe so /ops GETs don't re-probe the network + write
+    # to the DB on every page load.
+    adapters = _safe(lambda: probe_all_cached(persist=True))
 
     health_score = _compute_health_score(llmops, mlops, aiops, adapters or [])
     top_alerts = _extract_top_alerts(llmops, mlops, aiops)

@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}DocDrift — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">🛰️ DocDrift — Is this document still true?</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Drift → document impact → grounded regeneration (HITL) → NIST 800-53 re-map. Fed by every docmod pack: network, crypto, software, policy, approved changes, and cited evidence.</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/document-intelligence/techwriter" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">Tech Writer →</a>
+    <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+  </div>
+</div>
+
+<!-- How this page gets data — DocDrift is a sink, not an upload surface -->
+<div style="background:#0d1b2e;border:1px solid #1a3560;border-left:3px solid #7ab3f0;border-radius:8px;padding:14px 16px;margin-bottom:18px;">
+  <div style="color:#9bb8d8;font-size:13px;font-weight:600;margin-bottom:6px;">How this page gets data</div>
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;line-height:1.55;">
+    <strong style="color:#9bb8d8;">There is nothing to upload here.</strong> DocDrift is fed automatically: docmod packs
+    check your documents against reality — network topologies, EOL catalogs, crypto rules, approved change records and the
+    evidence each document cites — and tell you which documents and NIST 800-53 controls that drift made wrong.
+    To upload a document use <a href="/document-intelligence/" style="color:#7ab3f0;">Document Intelligence</a>;
+    to write one use <a href="/document-intelligence/techwriter" style="color:#7ab3f0;">Tech Writer</a>;
+    to rebuild one from multiple sources use <a href="/docgen/new" style="color:#7ab3f0;">DocGen</a>.
+  </p>
+  <p style="color:#7a8cb0;font-size:12px;margin:0;line-height:1.55;">
+    Drift is a <em>comparison</em>, so it needs a baseline: (1) a topology in the
+    <a href="/network/projects" style="color:#7ab3f0;">Network Canvas</a>, (2) a saved baseline version of it,
+    (3) a later change to that topology. The <code style="color:#9bb8d8;">ndc_topology_drift</code> reflex then runs every 4h — or use the button below.
+  </p>
+  {% if topologies and baselines_saved == 0 %}
+  <div style="margin-top:10px;padding:8px 10px;background:#2a1a1a;border:1px solid #6a3030;border-radius:5px;color:#e0a0a0;font-size:12px;">
+    ⚠ None of your {{ topologies|length }} topologies has a saved baseline yet, so no drift can be detected.
+    Pick one below and choose <strong>Save as baseline</strong> to start tracking it.
+  </div>
+  {% endif %}
+</div>
+
+<!-- dic-drift-trigger: run the REAL detector on demand (not a seeder) -->
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:12px 14px;margin-bottom:22px;">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <label for="docdrift-topo" style="color:#9bb8d8;font-size:12px;">Topology</label>
+    <select id="docdrift-topo" style="background:#0d1b2e;color:#cfe3f7;border:1px solid #1a3560;border-radius:5px;padding:6px 10px;font-size:12px;min-width:280px;">
+      {% for t in topologies %}
+      <option value="{{ t.id }}">{{ t.name }}{% if not t.has_baseline %} — no baseline{% endif %}</option>
+      {% else %}
+      <option value="">No topologies found</option>
+      {% endfor %}
+    </select>
+    <button id="docdrift-save-baseline" {% if not topologies %}disabled{% endif %}
+      style="background:#0f3460;color:#7ab3f0;border:1px solid #1a3560;border-radius:5px;padding:7px 14px;font-size:12px;cursor:pointer;">
+      Save as baseline
+    </button>
+    <button id="docdrift-run-drift" {% if not topologies %}disabled{% endif %}
+      style="background:#123a5e;color:#9bd0ff;border:1px solid #1f4d7a;border-radius:5px;padding:7px 14px;font-size:12px;cursor:pointer;">
+      Run drift check now
+    </button>
+    <span id="docdrift-status" style="color:#7a8cb0;font-size:12px;"></span>
+  </div>
+</div>
+
+<!-- Pipeline stages -->
+<div style="display:flex;gap:10px;align-items:stretch;margin:18px 0 24px;flex-wrap:wrap;">
+  {% for stage in ['Drift detected','Impact scored','Regen queued','NIST re-mapped'] %}
+  <div style="flex:1;min-width:170px;background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:12px 14px;text-align:center;">
+    <div style="font-size:11px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.6px;">Stage {{ loop.index }}</div>
+    <div style="font-size:13px;color:#9bb8d8;margin-top:4px;">{{ stage }}</div>
+  </div>
+  {% if not loop.last %}<div style="display:flex;align-items:center;color:#3a6090;font-size:18px;">→</div>{% endif %}
+  {% endfor %}
+</div>
+
+<!-- Drift events -->
+<h3 style="color:#9bb8d8;font-size:13px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;">Drift Events</h3>
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;margin-bottom:22px;">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:#08112a;color:#6090b0;">
+      <th style="padding:7px 10px;text-align:left;">Source</th><th style="padding:7px 10px;text-align:left;">Entity</th>
+      <th style="padding:7px 10px;text-align:left;">Severity</th><th style="padding:7px 10px;text-align:left;">Detected</th>
+    </tr></thead>
+    <tbody>
+    {% for d in drift_events %}
+      <tr style="border-top:1px solid #0d1e30;color:#a8c8e0;">
+        <td style="padding:6px 10px;">{{ d.source }}</td><td style="padding:6px 10px;">{{ d.entity }}</td>
+        <td style="padding:6px 10px;">{{ d.severity }}</td><td style="padding:6px 10px;">{{ d.detected_at }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" style="padding:14px;text-align:center;color:#3a6080;">
+        No drift events yet. Drift is detected by comparing a topology against its saved baseline —
+        {% if baselines_saved == 0 %}and no baseline is saved yet, so there is nothing to compare.
+        Use <strong>Save as baseline</strong> above, change the topology, then run the check.
+        {% else %}nothing has changed since the last baseline.{% endif %}
+        <a href="/network/projects" style="color:#7ab3f0;">Open Network Canvas</a>
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Regen queue -->
+<h3 style="color:#9bb8d8;font-size:13px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;">Regeneration Queue (HITL)</h3>
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;margin-bottom:22px;">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:#08112a;color:#6090b0;">
+      <th style="padding:7px 10px;text-align:left;">Document</th><th style="padding:7px 10px;text-align:left;">Impact</th>
+      <th style="padding:7px 10px;text-align:left;">State</th><th style="padding:7px 10px;text-align:left;">Queued</th>
+    </tr></thead>
+    <tbody>
+    {% for r in regen_queue %}
+      <tr style="border-top:1px solid #0d1e30;color:#a8c8e0;">
+        <td style="padding:6px 10px;">{{ r.document_id }}</td><td style="padding:6px 10px;">{{ r.impact_level }}</td>
+        <td style="padding:6px 10px;">{{ r.state }}</td><td style="padding:6px 10px;">{{ r.queued_at }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" style="padding:14px;text-align:center;color:#3a6080;">
+        Queue empty. A document is queued here only when drift is detected <em>and</em> that topology maps to a
+        DIC collection (tag mapping lives in <code>args/dic_canvas_integrations.yaml</code>).
+        Nothing is regenerated without your approval.
+        <a href="/document-intelligence/collections" style="color:#7ab3f0;">Tag a collection</a>
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- NIST re-map / SSP fragments -->
+<h3 style="color:#9bb8d8;font-size:13px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;">NIST 800-53 Re-map &amp; SSP Fragments</h3>
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:#08112a;color:#6090b0;">
+      <th style="padding:7px 10px;text-align:left;">Control</th><th style="padding:7px 10px;text-align:left;">Document</th>
+      <th style="padding:7px 10px;text-align:left;">Status</th>
+    </tr></thead>
+    <tbody>
+    {% for s in ssp_fragments %}
+      <tr style="border-top:1px solid #0d1e30;color:#a8c8e0;">
+        <td style="padding:6px 10px;">{{ s.control_id }}</td><td style="padding:6px 10px;">{{ s.document_id }}</td>
+        <td style="padding:6px 10px;">{{ s.status }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3" style="padding:14px;text-align:center;color:#3a6080;">
+        No control re-maps yet. SSP fragments are drafted from a queued regeneration item and always land as
+        <code>pending_review</code> — CoD-verified, AI-labeled, and never auto-published.
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% set iqe_canvas = "dic" %}
+{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_title = "IQE Query — DocDrift" %}
+{% set iqe_examples = [
+  {"label": "Critical drift", "query": "foreach d in dic.drift_events where d.severity == \"critical\" select d.source, d.entity, d.detected_at"},
+  {"label": "Open regen", "query": "foreach r in dic.regen_queue where r.state == \"queued\" select r.document_id, r.impact_level"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+// dic-drift-trigger — drives the REAL pipeline. "Save as baseline" reuses the
+// Network Canvas version API; "Run drift check" calls the same reflex the
+// daemon runs on its 4h cadence. Neither fabricates data.
+(function () {
+  var sel = document.getElementById('docdrift-topo');
+  var statusEl = document.getElementById('docdrift-status');
+  var saveBtn = document.getElementById('docdrift-save-baseline');
+  var runBtn = document.getElementById('docdrift-run-drift');
+  if (!sel || !saveBtn || !runBtn) return;
+
+  function say(msg, color) {
+    statusEl.textContent = msg;
+    statusEl.style.color = color || '#7a8cb0';
+  }
+
+  saveBtn.addEventListener('click', function () {
+    var tid = sel.value;
+    if (!tid) return;
+    say('Saving baseline…');
+    fetch('/network/api/versions/' + encodeURIComponent(tid), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'baseline', phase: 'as-is', notes: 'DocDrift drift baseline' })
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { say('Baseline failed: ' + (res.j.error || 'unknown'), '#e0a0a0'); return; }
+        say('Baseline saved. Change the topology, then run the drift check.', '#8fd08f');
+        setTimeout(function () { location.reload(); }, 1200);
+      })
+      .catch(function (e) { say('Baseline failed: ' + e, '#e0a0a0'); });
+  });
+
+  runBtn.addEventListener('click', function () {
+    var tid = sel.value;
+    say('Running drift check…');
+    fetch('/document-intelligence/api/docdrift/drift-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topology_ids: tid ? [tid] : [] })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.error) { say('Drift check failed: ' + j.error, '#e0a0a0'); return; }
+        if ((j.baselines_missing || []).length) {
+          say('No baseline saved for that topology — save one first.', '#e0c080');
+          return;
+        }
+        if (!j.drift_events_recorded) {
+          say('No drift: current config matches the baseline.', '#7a8cb0');
+          return;
+        }
+        say(j.drift_events_recorded + ' drift event(s) recorded, ' +
+            (j.regen_enqueued || 0) + ' document(s) queued.', '#8fd08f');
+        setTimeout(function () { location.reload(); }, 1200);
+      })
+      .catch(function (e) { say('Drift check failed: ' + e, '#e0a0a0'); });
+  });
+})();
+</script>
+{% endblock %}

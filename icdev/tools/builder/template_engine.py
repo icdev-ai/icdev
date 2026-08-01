@@ -44,9 +44,14 @@ import argparse
 import ast
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
+
+# Repo root, resolved from this file rather than cwd: render_tree is called from
+# the CLI, from tests and from worktrees, so cwd is not a reliable anchor.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from tools.logging.icdev_logger import get_logger
 
@@ -226,6 +231,40 @@ def render_tree(
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             dest_path.write_text(rendered_text, encoding="utf-8")
         rendered.append(dest_name)
+
+    # `copy:` — verbatim copies of REAL repo files (src is repo-root-relative),
+    # for code a generated tree must inherit rather than re-declare. The
+    # anti-hallucination grounding modules are the motivating case: templating
+    # them would fork live TRUST code into a .j2 that silently drifts from the
+    # original. Copying keeps one source of truth.
+    for copy_entry in manifest.get("copy", []):
+        src_rel = copy_entry.get("src")
+        dest_tmpl = copy_entry.get("dest") or src_rel
+        if not src_rel:
+            errors.append(f"Invalid copy entry (missing src): {copy_entry}")
+            continue
+        if not _eval_when(copy_entry.get("when"), context):
+            skipped.append(_render_string(dest_tmpl, context))
+            continue
+
+        dest_rel = _render_string(dest_tmpl, context)
+        dest_path = out_dir / dest_rel
+        if skip_existing and dest_path.exists():
+            skipped.append(dest_rel)
+            continue
+
+        src_path = REPO_ROOT / src_rel
+        if not src_path.exists():
+            # An error, not a warning: a manifest asking for a file that isn't
+            # there means the generated tree is missing something it declared
+            # it needs.
+            errors.append(f"Copy source not found: {src_path}")
+            continue
+
+        if not dry_run:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_path, dest_path)
+        rendered.append(dest_rel)
 
     result = {
         "manifest": manifest,

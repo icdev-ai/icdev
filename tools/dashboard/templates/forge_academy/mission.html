@@ -107,9 +107,14 @@
   to   { transform:translateX(0);    opacity:1; }
 }
 </style>
+{% include "forge_academy/partials/_a11y.html" %}
+{% include "forge_academy/partials/_chrome_clearance.html" %}
 {% endblock %}
 
 {% block content %}
+{# aca-trn-06: the step list is the first thing in tab order, so a keyboard user had
+   to pass every step to reach the work. #}
+<a href="#step-main" class="fa-skip-link">Skip to the current step</a>
 <div class="fa-mission-layout">
   <!-- Sidebar -->
   <div class="fa-sidebar">
@@ -120,12 +125,19 @@
       · <span style="color:var(--fa-gold)">+{{ mission.xp_reward }} XP</span>
     </div>
 
-    <ul class="fa-step-nav" id="step-nav">
+    {# aca-trn-06: these were <li onclick> with no role, tabindex or key handling, so
+       the only way through a mission was a mouse. role="button" + tabindex makes each
+       step focusable and operable, aria-current marks the one being shown, and the
+       completed state is announced rather than left to the green tint and the glyph. #}
+    <ul class="fa-step-nav" id="step-nav" aria-label="Mission steps">
       {% for step in mission.steps %}
       {% set s_state = step_states.get(step.id, 'pending') %}
       <li class="{% if loop.first %}active{% endif %} {% if s_state=='completed' %}done{% endif %}"
-          data-step-idx="{{ loop.index0 }}" onclick="goStep({{ loop.index0 }})">
-        <span class="step-num">{% if s_state=='completed' %}✓{% else %}{{ loop.index }}{% endif %}</span>
+          data-step-idx="{{ loop.index0 }}" onclick="goStep({{ loop.index0 }})"
+          role="button" tabindex="0"
+          {% if loop.first %}aria-current="step"{% endif %}
+          aria-label="Step {{ loop.index }} of {{ mission.steps|length }}: {{ step.title }}{% if s_state=='completed' %} (completed){% endif %}">
+        <span class="step-num" aria-hidden="true">{% if s_state=='completed' %}✓{% else %}{{ loop.index }}{% endif %}</span>
         <span>{{ step.title }}</span>
       </li>
       {% endfor %}
@@ -133,8 +145,12 @@
 
     {% if fa_user %}
     <div class="fa-xp-mini">
-      <div style="font-size:.65rem;color:var(--text-secondary);margin-bottom:.4rem;">
-        {{ fa_user.xp|default(0) }} XP · {{ level_ctx.level.label if level_ctx and level_ctx.level else 'Recruit' }}
+      {# aca-ux-07: the bar below fills from EARNED XP, so the number above it has to
+         be the earned figure too. It printed the running total, which made the bar
+         look stuck — 1815 XP over a bar that had barely moved. #}
+      <div style="font-size:.65rem;color:var(--text-secondary);margin-bottom:.4rem;"
+           title="Rank is set by earned XP. Daily-login attendance counts toward your total but not toward rank.">
+        {{ level_ctx.earned_xp|default(0) }} earned XP · {{ level_ctx.level.label if level_ctx and level_ctx.level else 'Recruit' }}
       </div>
       <div class="fa-xp-mini-bar">
         <div class="fa-xp-mini-fill" style="width:{{ level_ctx.pct if level_ctx else 0 }}%"></div>
@@ -148,7 +164,38 @@
   </div>
 
   <!-- Main step area -->
-  <div class="fa-main" id="step-main">
+  {# tabindex="-1" so the skip link can actually move focus here; without it the
+     browser scrolls but focus stays behind, and the next Tab returns to the nav. #}
+  {# role="region", not "main": base.html already declares role="main" on
+     #main-content, and a second main landmark is itself a violation. #}
+  <div class="fa-main" id="step-main" tabindex="-1" role="region" aria-label="Step content">
+    {% if tier_locked %}
+    {# aca-ux-04: locked-but-readable. The content below is fully readable; the
+       server refuses credit (api_step_submit), so state that plainly rather than
+       letting a learner work through it and wonder where the XP went. #}
+    <div role="status" style="background:#14141f;border:1px solid #4a4a5e;border-left:3px solid #d98b12;
+                border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.2rem;font-size:.85rem;
+                color:#c9cede;">
+      <strong style="color:#ffce7a;">&#128274; Tier {{ mission.tier }} is not unlocked yet.</strong>
+      Read and experiment freely &mdash; nothing here is hidden &mdash; but steps will not
+      earn XP or count toward a certificate until it unlocks.
+      {% if gating_state and tier_state.required_pct %}
+      <div style="margin-top:.5rem;color:var(--text-secondary);">
+        Requires <strong>{{ tier_state.required_pct }}%</strong> of Tier
+        {{ tier_state.gating_tier }} &mdash; you are at
+        <strong>{{ gating_state.pct }}%</strong>
+        ({{ gating_state.completed }}/{{ gating_state.completable }} missions
+        {%- if gating_state.total and gating_state.total > gating_state.completable %},
+        excluding {{ gating_state.total - gating_state.completable }} not yet authored
+        {%- endif -%}).
+      </div>
+      {% endif %}
+      <div style="margin-top:.5rem;">
+        <a href="/academy/missions?tier={{ tier_state.gating_tier or 1 }}"
+           style="color:var(--fa-cyan);">Go to Tier {{ tier_state.gating_tier or 1 }} missions &rarr;</a>
+      </div>
+    </div>
+    {% endif %}
     {% set steps = mission.steps %}
     {% if steps %}
     {% for step in steps %}
@@ -182,15 +229,22 @@
     {% endfor %}
     {% else %}
     <div style="padding:3rem;text-align:center;color:var(--text-secondary);">
-      No steps found for this mission. Content is being authored.
+      <strong>Coming soon.</strong><br>This mission is on the roadmap but its content has not been authored yet. Nothing here is broken — there is simply nothing to do on it yet.
     </div>
     {% endif %}
   </div>
 </div>
 
 <script>
-const STEPS = {{ mission.steps | tojson }};
-const MISSION = {{ mission | tojson }};
+// aca-int-01/02/03: this payload used to be `mission.steps | tojson`, which
+// shipped every step's grading test AND the multiple-choice answer key to the
+// person being graded. `steps_client` is the sanitised projection built by
+// grading.client_safe_steps; the server holds the test and the key.
+const STEPS = {{ steps_client | tojson }};
+// Minimal projection — `mission | tojson` re-serialised mission.steps (tests and
+// answer keys included) right back into the page.
+const MISSION = {id: {{ mission.id | tojson }}, slug: {{ mission.slug | tojson }},
+                 tier: {{ mission.tier | tojson }}};
 const FA_USER_ID = {{ fa_user.id if fa_user else 'null' }};
 let currentStep = 0;
 let hintsUsed = 0;
@@ -200,11 +254,35 @@ function goStep(idx) {
   document.querySelectorAll('.fa-step-pane').forEach((p,i) => p.style.display = i===idx ? '' : 'none');
   document.querySelectorAll('#step-nav li').forEach((li,i) => {
     li.classList.toggle('active', i===idx);
+    // aca-trn-06: the active step was signalled by a class and its colour only.
+    if (i === idx) li.setAttribute('aria-current', 'step');
+    else li.removeAttribute('aria-current');
   });
   currentStep = idx;
   startTime = Date.now();
   hintsUsed = 0;
 }
+
+// aca-trn-06: the step list is operable from the keyboard — Enter/Space to open a
+// step, arrows/Home/End to move between them. Without this the sidebar was
+// mouse-only, so a keyboard user could not reach step 2 of any mission.
+document.addEventListener('keydown', function (e) {
+  const li = e.target.closest && e.target.closest('#step-nav li');
+  if (!li) return;
+  const items = Array.from(document.querySelectorAll('#step-nav li'));
+  const i = items.indexOf(li);
+  let next = null;
+  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault();
+    goStep(parseInt(li.dataset.stepIdx, 10));
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = items[i + 1];
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = items[i - 1];
+  else if (e.key === 'Home') next = items[0];
+  else if (e.key === 'End') next = items[items.length - 1];
+  if (next) { e.preventDefault(); next.focus(); }
+});
 
 async function runCode(stepIdx) {
   const ta = document.getElementById('code-editor-' + stepIdx);
@@ -218,16 +296,21 @@ async function runCode(stepIdx) {
   out.className = 'fa-output-panel';
   out.textContent = 'Executing...';
   try {
+    // Only the step id travels — the server loads that step's own test.
     const resp = await fetch('/api/academy/code/run', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({code, test_code: STEPS[stepIdx].test_code || ''})
+      body: JSON.stringify({code, step_id: STEPS[stepIdx].id})
     });
     const d = await resp.json();
     out.textContent = (d.stdout || '') + (d.stderr ? '\n\nSTDERR:\n' + d.stderr : '');
     out.className = 'fa-output-panel ' + (d.passed ? 'passed' : 'failed');
     if (d.passed) {
-      await submitStep(stepIdx, code, true);
-      document.getElementById('next-btn-' + stepIdx).style.display = 'inline-block';
+      // The server re-grades on submit; this call records the attempt and is the
+      // only thing that can award XP.
+      const verdict = await submitStep(stepIdx, code);
+      if (!verdict || verdict.passed) {
+        document.getElementById('next-btn-' + stepIdx).style.display = 'inline-block';
+      }
     }
   } catch(e) {
     out.textContent = 'Error: ' + e.message;
@@ -237,57 +320,120 @@ async function runCode(stepIdx) {
   btn.textContent = '▶ Run';
 }
 
+// aca-trn-06: a live region that is already in the DOM and gets its text written
+// afterwards. Injecting a node that is populated at creation time is the common way
+// to get this wrong — many screen readers only announce mutations to a region they
+// were already observing, so the whole toast passes silently. The enrolment notice
+// (faEnrolNotice) had role="status" and was the pattern to follow here.
+function faLiveRegion() {
+  let live = document.getElementById('fa-live');
+  if (!live) {
+    live = document.createElement('div');
+    live.id = 'fa-live';
+    live.setAttribute('role', 'status');
+    live.setAttribute('aria-live', 'polite');
+    live.setAttribute('aria-atomic', 'true');
+    // Visually hidden, but not display:none — that removes it from the a11y tree.
+    live.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;' +
+      'padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;';
+    document.body.appendChild(live);
+  }
+  return live;
+}
+
+// Registered at load, not on first use. A live region has to be under observation
+// BEFORE the mutation it should announce, and creating it inside the first
+// announcement leaves only the gap below for the screen reader to pick it up — so the
+// least reliable announcement was a learner's first completed step, which is the one
+// that most needs to land. Verified in the browser: this used to report
+// liveRegionExistedBefore: false.
+document.addEventListener('DOMContentLoaded', faLiveRegion);
+
+function faAnnounce(message) {
+  const live = faLiveRegion();
+  live.textContent = '';
+  setTimeout(() => { live.textContent = message; }, 50);
+}
+
 function showXPToast(xp, label) {
+  faAnnounce((label || 'Step Complete') + (xp ? ': ' + xp + ' XP earned' : ''));
   const t = document.createElement('div');
   t.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:linear-gradient(135deg,#12192b,#1a2540);border:1px solid rgba(255,107,53,.5);border-radius:10px;padding:.9rem 1.4rem;font-size:.88rem;font-weight:700;color:#FF6B35;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,.5);display:flex;gap:.7rem;align-items:center;animation:slideInRight .3s ease';
+  // The visual toast is hidden from assistive tech because faAnnounce already said
+  // it; exposing both announces the same event twice.
+  t.setAttribute('aria-hidden', 'true');
   t.innerHTML = '<span style="font-size:1.3rem;">⬡</span><div><div style="font-size:1.1rem">+' + xp + ' XP</div><div style="font-size:.72rem;color:#aaa;font-weight:400">' + (label||'Step Complete') + '</div></div>';
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(),400); }, 2800);
 }
 
-async function submitStep(stepIdx, submission, passed) {
-  if (!FA_USER_ID) return;
-  const step = STEPS[stepIdx];
-  const elapsed = Math.round((Date.now() - startTime) / 1000);
-  const isLast = stepIdx === STEPS.length - 1;
-  try {
-    const resp = await fetch('/api/academy/step/submit', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        step_id: step.id,
-        mission_id: MISSION.id,
-        mission_slug: MISSION.slug,
-        submission: submission,
-        passed: passed,
-        hints_used: hintsUsed,
-        elapsed_seconds: elapsed,
-        base_xp: step.xp_partial || 50,
-        step_type: step.step_type || 'coding',
-        skill_tag: step.skill_tag || '',
-        mission_complete: isLast,
-        mission_xp: MISSION.xp_reward || 100,
-      })
-    });
-    const d = await resp.json();
-    if (d.ok && d.xp_event) {
-      const xp = d.xp_event.xp_awarded || d.xp_event.xp || (step.xp_partial || 50);
-      showXPToast(xp, elapsed < 90 ? '⚡ Speed Bonus!' : 'Step Complete');
-      if (d.xp_event.level_up) {
-        setTimeout(() => showXPToast(0, '🎖 Rank Up: ' + d.xp_event.level_up), 1000);
-      }
-    }
-  } catch(e) { /* non-blocking */ }
-  // Mark nav item done
-  const navItems = document.querySelectorAll('#step-nav li');
-  if (navItems[stepIdx]) navItems[stepIdx].classList.add('done');
+// An unenrolled visitor used to get a silent no-op here: the button appeared to
+// work, no XP was recorded, and nothing said why (fga-fix-07). Tell them, and
+// give them the way out.
+function faEnrolNotice() {
+  let el = document.getElementById('fa-enrol-notice');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fa-enrol-notice';
+    el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;left:50%;bottom:1.5rem;transform:translateX(-50%);' +
+      'background:#1a1206;border:1px solid #d98b12;color:#ffce7a;border-radius:8px;' +
+      'padding:.75rem 1.1rem;font-size:.85rem;z-index:9999;max-width:32rem;';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = 'Your progress is not being saved — you are not enrolled in the Academy. ' +
+    '<a href="/academy/profile" style="color:#ffce7a;text-decoration:underline;">Set up your profile</a> to earn XP.';
 }
 
+// Submits an attempt and returns the SERVER's verdict. The caller no longer says
+// whether it passed: `passed`, `score`, `base_xp`, `mission_xp` and
+// `mission_complete` were all read from this body and all were forgeable
+// (aca-int-01). Only the step id, the submission and the chosen option travel.
+async function submitStep(stepIdx, submission, chosenOption) {
+  if (!FA_USER_ID) { faEnrolNotice(); return null; }
+  const step = STEPS[stepIdx];
+  const elapsed = Math.round((Date.now() - startTime) / 1000);
+  try {
+    const payload = {
+      step_id: step.id,
+      submission: submission,
+      hints_used: hintsUsed,
+      elapsed_seconds: elapsed,
+    };
+    if (chosenOption !== undefined && chosenOption !== null) {
+      payload.chosen_option = chosenOption;
+    }
+    const resp = await fetch('/api/academy/step/submit', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await resp.json();
+    if (d.ok && d.passed && d.xp_event) {
+      const xp = d.xp_event.xp_earned || d.xp_event.xp_awarded || 0;
+      showXPToast(xp, d.xp_event.speed_bonus ? '⚡ Speed Bonus!' : 'Step Complete');
+      if (d.xp_event.leveled_up) {
+        setTimeout(() => showXPToast(0, '🎖 Rank Up: ' + d.xp_event.new_level), 1000);
+      }
+    }
+    // Only a real pass marks the step done in the sidebar.
+    if (d.passed) {
+      const navItems = document.querySelectorAll('#step-nav li');
+      if (navItems[stepIdx]) navItems[stepIdx].classList.add('done');
+    }
+    return d;
+  } catch(e) {
+    return null;
+  }
+}
+
+// The server counts the hint (against fa_step_progress) and quotes the real cost.
+// `hintsUsed` here is display-only now: it used to be the authoritative count and
+// goStep() reset it to 0, so hints were laundered by navigating away (aca-int-06).
 async function getHint(stepIdx) {
   const step = STEPS[stepIdx];
   const panel = document.getElementById('hint-panel-' + stepIdx);
   panel.style.display = 'block';
   panel.textContent = '⚙ FORGE Sensei is analyzing...';
-  hintsUsed++;
   const code = (window.editors && window.editors[stepIdx])
     ? window.editors[stepIdx].getValue()
     : '';
@@ -297,6 +443,7 @@ async function getHint(stepIdx) {
     const resp = await fetch('/api/academy/coach/hint', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
+        step_id: step.id,
         mission_slug: MISSION.slug,
         question: 'I need a hint for: ' + step.title,
         context: code.substring(0, 300),
@@ -304,7 +451,16 @@ async function getHint(stepIdx) {
       })
     });
     const d = await resp.json();
-    panel.innerHTML = '<strong style="color:var(--fa-orange)">FORGE Sensei</strong> (−10 XP)<br><br>' + (d.hint || 'Keep analyzing the requirements.');
+    if (typeof d.hints_used === 'number') { hintsUsed = d.hints_used; }
+    let cost = '';
+    if (d.projected) {
+      const p = d.projected;
+      cost = ' — this step now pays <strong>' + p.xp_if_you_stop_now
+           + ' XP</strong> instead of ' + p.xp_without_hints
+           + ' (' + p.hints_used + ' hint' + (p.hints_used === 1 ? '' : 's') + ')';
+    }
+    panel.innerHTML = '<strong style="color:var(--fa-orange)">FORGE Sensei</strong>'
+      + cost + '<br><br>' + (d.hint || 'Keep analyzing the requirements.');
   } catch(e) {
     panel.textContent = 'Hint unavailable. Trust your training.';
   }
@@ -350,6 +506,13 @@ document.addEventListener('codemirror-ready', function() {
       lineWrapping: false, autofocus: idx == 0,
     });
     cm.setSize(null, 300);
+    // aca-trn-06: fromTextArea HIDES the labelled textarea and types into a private
+    // one of its own, so the <label for> on the original stops reaching the control
+    // the learner actually focuses. Name that input directly.
+    const field = cm.getInputField && cm.getInputField();
+    if (field) {
+      field.setAttribute('aria-label', ta.getAttribute('aria-label') || 'Code editor');
+    }
     window.editors[idx] = cm;
   });
 });

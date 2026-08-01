@@ -25,6 +25,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -60,6 +61,22 @@ a claim, omit it rather than inventing it."""
 
 # Minimum evidence length to justify CoT (cheaper direct call below this)
 _COT_EVIDENCE_THRESHOLD = 500
+
+# Confidence bands — coupled to the shared TRUST bands rather than re-hardcoded.
+# citation_grounding is the single source of truth (>=0.7 include, 0.4-0.69 flag
+# + HITL, <0.4 abstain); that module's docstring already records that it
+# "Mirrors the DIC doc_generator thresholds. Kept here so every surface uses the
+# same bands." Importing the constants here closes the loop so DIC drafting and
+# the citation gate cannot silently drift apart when the bands are retuned. The
+# literal fallback keeps this module importable if quality/ is unavailable.
+try:
+    from tools.quality.citation_grounding import (
+        CONF_ABSTAIN as _CONF_ABSTAIN,
+        CONF_INCLUDE as _CONF_INCLUDE,
+    )
+except Exception:  # pragma: no cover — defensive; preserves historical values
+    _CONF_INCLUDE = 0.7
+    _CONF_ABSTAIN = 0.4
 
 
 def _dic_cot_enabled() -> bool:
@@ -100,6 +117,7 @@ class GenerateResult:
     origin: str = "ai_generated"
     status: str = "pending_review"
     error: str = ""
+    quality_gate: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -125,6 +143,7 @@ class GenerateResult:
             "origin": self.origin,
             "status": self.status,
             "error": self.error,
+            "quality_gate": self.quality_gate,
         }
 
 
@@ -421,15 +440,30 @@ def _cod_compress(text: str, heading: str, *, function: str = "document_qna") ->
 
 
 def _compute_section_confidence(verdict) -> float:
-    """Compute a [0, 1] confidence score from a verifier VerifyResult."""
+    """Compute a [0, 1] confidence score from a verifier ``VerifyResult``.
+
+    Only *cited* claims count. An uncited sentence makes no attributed
+    assertion, so scoring it as supported inflates confidence — which is how
+    every section came to score 1.0 and sail through the CONF_INCLUDE /
+    CONF_ABSTAIN bands.
+
+    A scoring failure returns 0.0, not 1.0. If we cannot tell whether a section
+    is grounded, the safe reading is "not grounded"; the previous 1.0 meant an
+    exception here silently published an unverified section at full confidence.
+    """
+    if verdict is None or getattr(verdict, "abstained", False):
+        return 0.0
     try:
-        claims = getattr(verdict, "claims", [])
-        if not claims:
-            return 1.0 if not getattr(verdict, "abstained", False) else 0.0
-        supported = [c for c in claims if getattr(c, "supported", False)]
-        return len(supported) / len(claims)
-    except Exception:
-        return 1.0
+        claims = getattr(verdict, "claims", None) or []
+        cited = [c for c in claims if getattr(c, "method", "") != "uncited"]
+        if not cited:
+            # Nothing was actually checked against a source.
+            return 0.0
+        supported = [c for c in cited if getattr(c, "supported", False)]
+        return len(supported) / len(cited)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("doc_generator: confidence scoring failed: %s", exc)
+        return 0.0
 
 
 def _parse_outline(raw: str | None) -> dict:
@@ -456,8 +490,16 @@ def generate_document(
     supplemental_text: str = "",
     kg_chunks: list[dict] | None = None,
     target_doc_id: str | None = None,
+    quality_gate=None,
 ) -> "GenerateResult":
     """Generate a document draft grounded in DIC search results.
+
+    ``quality_gate`` (optional): a callable invoked right before persistence with
+    ``(sections, allowed_source_ids, full_text)`` that returns the status string
+    the version should be persisted with. Lets a caller (e.g. the modernization
+    regeneration gate) withhold ``pending_review`` from a defective draft without
+    the gate itself mutating dic_versions. Default None preserves the historical
+    unconditional ``pending_review`` behavior for every other caller.
 
     Steps:
       1. Retrieve top chunks via DICSearchEngine (full-KB when collection_id=None;
@@ -590,9 +632,15 @@ def generate_document(
                     raw_text = "(Abstained — insufficient evidence to support this section.)"
                 else:
                     raw_text = vr.verified_text or raw_text
-                    verified = True
+                    # `verified` must reflect the verdict, not merely the fact
+                    # that verify() returned without raising.
+                    verified = vr.verified
             except Exception as exc:
+                # A verifier failure is not a pass. Leave verified False and
+                # drop confidence to 0 so the HITL bands below can act on it.
                 logger.warning("doc_generator: verifier error: %s", exc)
+                confidence = 0.0
+                verified = False
 
         # TRUST: scrub AFTER the verifier (which may reintroduce reasoning by
         # replacing raw_text with its verified_text) so the final stored/published
@@ -629,12 +677,12 @@ def generate_document(
                 )
                 flagged_headings.append(heading)
                 raw_text = f"{raw_text}\n\n> {hitl_note}"
-            if confidence >= 0.7:
+            if confidence >= _CONF_INCLUDE:
                 pass  # include normally
-            elif confidence >= 0.4:
+            elif confidence >= _CONF_ABSTAIN:
                 low_confidence = True
                 hitl_note = (
-                    f"⚠ Confidence {confidence:.0%} — below 0.7 threshold; "
+                    f"⚠ Confidence {confidence:.0%} — below {_CONF_INCLUDE:.0%} threshold; "
                     f"verify against source documents before publishing."
                 )
                 if heading not in flagged_headings:
@@ -645,8 +693,8 @@ def generate_document(
                 abstained = True
                 confidence = confidence
                 logger.info(
-                    "doc_generator: section '%s' excluded — confidence %.2f < 0.4",
-                    heading, confidence,
+                    "doc_generator: section '%s' excluded — confidence %.2f < %.2f",
+                    heading, confidence, _CONF_ABSTAIN,
                 )
 
         # halluc-03: non-blocking confabulation assessment (fabricated-citation
@@ -697,6 +745,23 @@ def generate_document(
         )
         sha = hashlib.sha256(full_text.encode()).hexdigest()
 
+        # Pre-persist quality gate (optional): a caller may withhold the
+        # pending_review status from a defective draft. The gate decides the
+        # INITIAL persisted status (an append, not a dic_versions mutation);
+        # default None keeps the historical unconditional pending_review.
+        persist_status = "pending_review"
+        if quality_gate is not None:
+            try:
+                allowed_source_ids = {
+                    str(getattr(r, "chunk_id", "")) for r in search_results
+                    if getattr(r, "chunk_id", None) is not None
+                }
+                gate_status = quality_gate(generated_sections, allowed_source_ids, full_text)
+                if gate_status:
+                    persist_status = gate_status
+            except Exception as exc:
+                logger.warning("doc_generator: quality_gate hook error: %s", exc)
+
         conn = get_connection()
         try:
             version_no = 1
@@ -706,12 +771,17 @@ def generate_document(
                     (target_doc_id,),
                 ).fetchone()
                 version_no = int((dict(row).get("vmax") if row else 0) or 0) + 1
+            # An empty collection_id guaranteed an invisible document: the
+            # Collections UI enumerates dic_collections, so "" has no container.
+            # Fall back to "default" like every other ingest path, then register it.
+            collection_id = (collection_id or "").strip() or "default"
+            ensure_collection(conn, collection_id, tenant_id=tenant_id, classification=classification)
             conn.execute(
                 "INSERT OR IGNORE INTO dic_documents "
                 "(doc_id, collection_id, source_id, filename, content_type, provider, title, "
                 "byte_size, content_sha256, page_count, created_at, tenant_id, classification) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (doc_id, collection_id or "", doc_id, "ai_generated.md", "text/markdown",
+                (doc_id, collection_id, doc_id, "ai_generated.md", "text/markdown",
                  "ai_generator", title, len(full_text), sha, 1, _now_utc(), tenant_id, classification),
             )
             conn.execute(
@@ -719,7 +789,7 @@ def generate_document(
                 "(version_id, doc_id, version_no, origin, status, assigned_to, review_notes, content_sha256, "
                 "created_at, created_by, tenant_id, classification) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (version_id, doc_id, version_no, "ai_generated", "pending_review", None, None, sha,
+                (version_id, doc_id, version_no, "ai_generated", persist_status, None, None, sha,
                  _now_utc(), created_by, tenant_id, classification),
             )
             for idx, sec in enumerate(generated_sections, start=1):
@@ -730,7 +800,7 @@ def generate_document(
                     "created_at, created_by, tenant_id, classification) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (section_id, version_id, doc_id, sec.heading, sec.content,
-                     json.dumps(sec.citations), "pending_review", "ai_generated",
+                     json.dumps(sec.citations), persist_status, "ai_generated",
                      _now_utc(), created_by, tenant_id, classification),
                 )
             conn.commit()
@@ -739,6 +809,7 @@ def generate_document(
 
         result.doc_id = doc_id
         result.version_id = version_id
+        result.status = persist_status
     except Exception as exc:
         logger.warning("doc_generator: DB write failed: %s", exc)
         result.error = str(exc)

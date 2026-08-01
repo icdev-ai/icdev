@@ -50,13 +50,36 @@ from tools.il5.il5_ingestion_service import (
 
 
 class _UnclosableConn:
-    """Wraps in-memory conn so tested code's finally-close() doesn't destroy it."""
+    """Wraps in-memory conn so tested code's finally-close() doesn't destroy it.
+
+    Also applies the placeholder translation a real connection would. The
+    ingester authors ``%s`` for PostgreSQL and it is StorageConnection that
+    rewrites it to ``?`` for SQLite; a bare sqlite3 connection skips that, so
+    every statement raised ``near "%": syntax error``. Where the caller
+    swallows exceptions the symptom was instead "0 rows written", which is why
+    the failures here look like missing features rather than a broken fixture.
+
+    Delegates to tools.db.storage.translate_sql — the same function the runtime
+    uses — rather than doing its own regex, so the test cannot drift from the
+    behaviour it is standing in for.
+    """
 
     def __init__(self, conn: sqlite3.Connection):
         self._c = conn
 
     def close(self):
         pass
+
+    def execute(self, sql, params=None):
+        from tools.db.storage import translate_sql
+
+        sql = translate_sql(sql, "sqlite")
+        return self._c.execute(sql) if params is None else self._c.execute(sql, params)
+
+    def executemany(self, sql, seq):
+        from tools.db.storage import translate_sql
+
+        return self._c.executemany(translate_sql(sql, "sqlite"), seq)
 
     def __getattr__(self, name):
         return getattr(self._c, name)

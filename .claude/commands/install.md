@@ -200,7 +200,7 @@ nohup python tools/dashboard/app.py > .tmp/dashboard.log 2>&1 &
 sleep 2
 ```
 ```bash
-python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:5000/health', timeout=5); print('Dashboard healthy:', r.read().decode())" 2>/dev/null || echo "Dashboard starting..."
+python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:5050/health', timeout=5); print('Dashboard healthy:', r.read().decode())" 2>/dev/null || echo "Dashboard starting..."
 ```
 
 ## Report
@@ -213,11 +213,11 @@ After completing all steps, report:
 - **Compliance frameworks that failed**: List any that errored (with brief reason)
 - **Security baseline**: Prompt injection detector, AI telemetry, AI BOM status
 - **Test results**: Number of tests passed/failed
-- **Dashboard**: URL at `http://localhost:5000`
+- **Dashboard**: URL at `http://localhost:5050`
 - **Next steps**:
   - Instruct user to create `.env` from `.env.sample` if it doesn't exist
   - Mention: Run `/icdev-status` to see full project status
   - Mention: Run `/icdev-init` to initialize a specific project with compliance scaffolding
   - Mention: Run `/prime` to re-orient if you lose context
   - Mention: Run `/start` to launch the dashboard if it stops
-  - Mention: Visit `http://localhost:5000/wizard` for the Getting Started wizard
+  - Mention: Visit `http://localhost:5050/wizard` for the Getting Started wizard

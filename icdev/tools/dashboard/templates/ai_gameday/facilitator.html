@@ -157,6 +157,11 @@
 <script>
 const SESSION_ID={{ session.session_id }};
 
+// XSS guard: escape attacker-influenced strings (team/player names, response
+// text, inject titles) before interpolating into innerHTML. Authenticated
+// players control these values and facilitators view them.
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
 async function setState(state){
   const r=await fetch('/api/gameday/session/'+SESSION_ID+'/state',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})});
   if((await r.json()).ok)location.reload();
@@ -178,7 +183,7 @@ async function refreshLeaderboard(){
   tbody.innerHTML=d.leaderboard.map(row=>`
     <tr>
       <td style="color:${rankColors[row.rank]||'#6e7681'};font-weight:700;">${row.rank}</td>
-      <td style="color:#e6edf3;font-weight:600;">${row.team_name}</td>
+      <td style="color:#e6edf3;font-weight:600;">${esc(row.team_name)}</td>
       <td style="text-align:right;color:#FF6B35;font-weight:700;">${row.total_score}</td>
       <td style="text-align:right;color:#58a6ff;">${row.receipt_pts}</td>
       <td style="text-align:right;color:#3fb950;">${row.judge_pts}</td>
@@ -199,11 +204,11 @@ async function refreshResponses(){
     return;
   }
   monitor.innerHTML=d.responses.map(resp=>{
-    const aadc=resp.is_aadc?`<span style="color:#58a6ff;font-weight:700;">AADC: ${resp.aadc_score}/100</span>`:`<span style="color:#3fb950;">Judge: ${resp.judge_pts||0}</span>`;
+    const aadc=resp.is_aadc?`<span style="color:#58a6ff;font-weight:700;">AADC: ${resp.aadc_score}/100</span>`:(resp.judge_unscored?`<span style="color:#f0883e;" title="LLM judge unavailable — left unscored, not a real 0">Judge: ⚠️ unscored</span>`:`<span style="color:#3fb950;">Judge: ${resp.judge_pts||0}</span>`);
     return `<div style="padding:.5rem .75rem;border-bottom:1px solid #21262d;display:flex;gap:.6rem;align-items:flex-start;">
       <div style="flex:1;min-width:0;">
-        <div style="color:#e6edf3;font-weight:600;font-size:.78rem;">${resp.team_name||'?'} <span style="color:#6e7681;font-weight:400;">→ ${resp.inject_title||'?'}</span></div>
-        <div style="color:#8b949e;font-size:.72rem;margin:.1rem 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${resp.response_preview||''}</div>
+        <div style="color:#e6edf3;font-weight:600;font-size:.78rem;">${esc(resp.team_name||'?')} <span style="color:#6e7681;font-weight:400;">→ ${esc(resp.inject_title||'?')}</span></div>
+        <div style="color:#8b949e;font-size:.72rem;margin:.1rem 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(resp.response_preview||'')}</div>
       </div>
       <div style="text-align:right;white-space:nowrap;font-size:.75rem;">
         ${aadc}<br>

@@ -8,11 +8,14 @@
 
 Merges all domain ontologies into a single ICDEV Core Ontology graph,
 resolves equivalent classes across domains, adds cross-domain properties,
-and enables SPARQL-like queries over the unified graph.
+and enables heuristic keyword/pattern queries over the unified graph.
+
+NOTE: query_federation is a heuristic keyword/pattern matcher over ontology
+terms — it is NOT a SPARQL evaluator and does not parse or execute SPARQL.
 
 Functions:
     build_federation      — Merge domain ontologies into ICDEV Core
-    query_federation      — SPARQL-like query over the unified graph
+    query_federation      — Heuristic keyword/pattern query over the unified graph (not SPARQL)
     resolve_equivalents   — Resolve equivalent classes across domains
     subclass_closure      — Pre-compute transitive closure of rdfs:subClassOf
 
@@ -630,7 +633,7 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
 
 
 # =========================================================================
-# 2. SPARQL-LIKE QUERY ENGINE
+# 2. HEURISTIC KEYWORD QUERY ENGINE (NOT SPARQL)
 # =========================================================================
 
 
@@ -638,20 +641,23 @@ def query_federation(
     query_text: str,
     db_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Execute a SPARQL-like query over the unified ontology graph.
+    """Heuristic keyword/pattern search over the unified ontology graph.
 
-    Supports natural-language-style patterns:
+    This is a keyword/pattern matcher over ontology terms — it is NOT a SPARQL
+    evaluator. It does not parse SPARQL syntax, variables, or triple patterns.
+    It recognizes a small set of hard-coded natural-language shapes via
+    substring matching (see ``_parse_query_patterns``) and looks up matching
+    kg_nodes, e.g.:
         "Show all designs referencing AWS VPCs that contain SECRET-classified tables"
 
-    The engine parses the query into a graph pattern and evaluates it against
-    the unified ontology + any linked kg_nodes from the knowledge graph.
-
     Args:
-        query_text: Natural-language or structured query string.
+        query_text: Natural-language query string (keyword/pattern matched).
         db_path: Optional database path override.
 
     Returns:
-        Dict with matched entities, bindings, and explanation.
+        Dict with matched entities and the detected patterns. The payload
+        carries ``engine="heuristic_keyword_matcher"`` and ``sparql=False`` so
+        callers never mistake this for a SPARQL query result.
     """
     start_ms = int(time.time() * 1000)
     conn = _get_db(db_path)
@@ -683,7 +689,7 @@ def query_federation(
             etypes = [c.split(":")[-1].lower() for c in search_classes]
             etypes += [c.replace(":", "_").lower() for c in search_classes]
 
-            ph = ",".join("?" for _ in etypes)
+            ph = ",".join("%s" for _ in etypes)
             rows = conn.execute(
                 f"SELECT id, graph_id, label, entity_type, properties FROM kg_nodes "  # nosec B608 -- internal constants
                 f"WHERE LOWER(entity_type) IN ({ph})",
@@ -717,7 +723,7 @@ def query_federation(
             etypes = [c.split(":")[-1].lower() for c in search_classes]
             etypes += [c.replace(":", "_").lower() for c in search_classes]
 
-            ph = ",".join("?" for _ in etypes)
+            ph = ",".join("%s" for _ in etypes)
             rows = conn.execute(
                 f"SELECT id, graph_id, label, entity_type, properties FROM kg_nodes "  # nosec B608 -- internal constants
                 f"WHERE LOWER(entity_type) IN ({ph}) LIMIT 100",
@@ -744,6 +750,9 @@ def query_federation(
         return {
             "status": "ok",
             "query": query_text,
+            "engine": "heuristic_keyword_matcher",
+            "sparql": False,
+            "engine_note": "Keyword/pattern matching over ontology terms — not a SPARQL evaluator.",
             "patterns_detected": patterns,
             "results_count": len(results),
             "results": results[:50],
@@ -754,7 +763,7 @@ def query_federation(
 
 
 def _parse_query_patterns(qlower: str) -> Dict[str, str]:
-    """Heuristic parser for SPARQL-like natural language queries."""
+    """Heuristic keyword/substring parser for natural language queries (not SPARQL)."""
     patterns: Dict[str, str] = {}
 
     # designs referencing X
@@ -1054,7 +1063,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Cross-canvas Ontology Federation")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--build-federation", action="store_true", help="Build unified ontology")
-    group.add_argument("--query", metavar="TEXT", help="SPARQL-like query")
+    group.add_argument("--query", metavar="TEXT", help="Heuristic keyword/pattern query (not SPARQL)")
     group.add_argument("--list-domains", action="store_true", help="List ontology domains")
     group.add_argument("--list-classes", action="store_true", help="List ontology classes")
     group.add_argument("--integrate-kg", action="store_true", help="Sync with KG federation")

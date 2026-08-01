@@ -419,6 +419,44 @@ def bid_recommendation(opp_id):
         return jsonify({"error": str(e)}), 500
 
 
+@govcon_api.route("/opportunities/<opp_id>/clause-risk", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
+def clause_risk(opp_id):
+    """POST /api/govcon/opportunities/<id>/clause-risk — deterministic clause risk scan.
+
+    Body (all optional): {"text": "...", "assist": false, "persist": true}.
+    Falls back to the opportunity's stored ``description`` when no text is given.
+    Deterministic rulebook produces the score; the optional LLM narrative
+    (assist=true) EXPLAINS the findings and never changes the score.
+    """
+    try:
+        from tools.govcon.clause_risk_engine import assess, persist
+
+        data = request.get_json(silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            conn = _get_db()
+            try:
+                row = conn.execute(
+                    "SELECT description FROM proposal_opportunities WHERE id = %s",
+                    (opp_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row:
+                text = (row[0] if not isinstance(row, dict) else row.get("description")) or ""
+        if not text.strip():
+            return jsonify({"error": "no solicitation text available for this opportunity"}), 400
+
+        report = assess(text, opportunity_id=opp_id, use_llm=bool(data.get("assist")))
+        result = report.to_dict()
+        if data.get("persist", True):
+            result["assessment_id"] = persist(report)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # =====================================================================
 # AI Drafting → proposal_section_drafts
 # =====================================================================

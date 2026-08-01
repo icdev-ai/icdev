@@ -1,0 +1,87 @@
+# CUI // SP-CTI — Twin target-environment presets (twx-fed-02)
+# Sequoia Patterns 1+5: a twin simulation can be run "against a target
+# environment". Each preset bundles a service catalog (CSP + region + region
+# scope + classification), a compliance framework, and network constraints
+# (air-gap engages the twx-fed-01 rules). The twin then flags any referenced
+# service that is NOT available in the target, plus air-gap deployment blockers.
+#
+# PUBLIC-DATA-ONLY: this file + context/cloud/csp_service_registry.json carry
+# only public CSP service-availability facts. Sensitive / classified-region
+# catalogs are NOT committed to this PUBLIC repo — set ICDEV_CSP_CATALOG_PATH to
+# a customer-side catalog to override at runtime (see target_presets.py).
+#
+# Staleness (docs risk #1): each preset carries reviewed_at; the twin warns when
+# a preset OR the service catalog is older than staleness_warn_days.
+
+staleness_warn_days: 180
+
+# Path to the service capability catalog (public baseline). Overridable at
+# runtime via the ICDEV_CSP_CATALOG_PATH env var for customer-side catalogs.
+service_catalog: context/cloud/csp_service_registry.json
+
+presets:
+  aws_govcloud_west:
+    display_name: "AWS GovCloud (US-West)"
+    csp: aws
+    region: us-gov-west-1
+    region_scope: government        # matches csp_service_registry regions.government
+    classification: CUI
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: false
+    reviewed_at: "2026-07-01"
+
+  aws_govcloud_east:
+    display_name: "AWS GovCloud (US-East)"
+    csp: aws
+    region: us-gov-east-1
+    region_scope: government
+    classification: CUI
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: false
+    reviewed_at: "2026-07-01"
+
+  aws_govcloud_il5:
+    display_name: "AWS GovCloud IL5"
+    csp: aws
+    region: us-gov-west-1
+    region_scope: government
+    classification: SECRET
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: false
+    reviewed_at: "2026-07-01"
+
+  aws_high_side_airgap:
+    display_name: "AWS High-Side (air-gapped)"
+    csp: aws
+    region: us-gov-west-1
+    region_scope: government
+    classification: SECRET
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: true                  # engages twx-fed-01 air-gap rules
+    reviewed_at: "2026-07-01"
+
+  azure_gov:
+    display_name: "Azure Government"
+    csp: azure
+    region: usgovvirginia
+    region_scope: government
+    classification: CUI
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: false
+    reviewed_at: "2026-07-01"
+
+  azure_gov_il5:
+    display_name: "Azure Government IL5"
+    csp: azure
+    region: usgovvirginia
+    region_scope: government
+    classification: SECRET
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: false
+    reviewed_at: "2026-07-01"

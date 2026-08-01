@@ -3,6 +3,13 @@
 Operating ICDEV™ inside an air-gapped / IL5+ / SECRET enclave. Covers install,
 network config, mTLS, and validation. Referenced from `CLAUDE.md`.
 
+> **New to a pip-only air-gap install?** Start with
+> [airgap-pip-install.md](airgap-pip-install.md) — the step-by-step offline
+> wheelhouse install, the mandatory `icdev init`, `icdev setup` for toggling
+> features, and a troubleshooting section (leading with "a page/canvas is
+> missing from the menu → it's default-OFF"). This runbook covers the broader
+> enclave operations below.
+
 ---
 
 ## 1. Install from a private PyPI mirror

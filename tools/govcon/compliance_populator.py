@@ -21,8 +21,7 @@ Usage:
 import argparse
 import json
 import os
-import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,9 +45,9 @@ def _now():
 def _audit(conn, action, details="", actor="compliance_populator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )
     except Exception:
         pass
@@ -75,10 +74,9 @@ def populate_compliance_matrix(opportunity_id):
 
     conn = _get_db()
 
-    # Check if proposal_compliance_items table exists (from GovProposal)
-    has_table = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='proposal_compliance_items'"
-    ).fetchone()
+    # Check if proposal_compliance_items table exists (from GovProposal).
+    # Backend-aware probe — works on PG + SQLite without translate_sql.
+    has_table = table_exists(conn, "proposal_compliance_items")
 
     populated = 0
     if has_table:
@@ -99,7 +97,6 @@ def populate_compliance_matrix(opportunity_id):
                         "compliance_notes, evidence_reference, created_at, updated_at) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (
-                            str(uuid.uuid4()),
                             "",  # Will be linked when section is created
                             item.get("shall_id", ""),
                             item["statement"][:500],

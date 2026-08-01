@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+name: Promote Decision Rubric
+inject_type: promote_decision
+description: Evaluates the promote/block decision against the TRUST citation-gate policy.
+max_score: 100
+dimensions:
+- id: policy_consistency
+  weight: 0.4
+  prompt: Is the decision consistent with the citation-guard policy (ungrounded claims block promote unless
+    an audited HITL force override is recorded)? 10 = fully consistent; 5 = partially; 0 = violates policy.
+- id: audit_evidence
+  weight: 0.3
+  prompt: Did the team specify the provenance + citation records to attach so the call is defensible?
+    10 = concrete, complete; 5 = vague; 0 = none.
+- id: residual_risk
+  weight: 0.2
+  prompt: Is residual risk named with a follow-up owner? 10 = yes; 5 = risk only; 0 = none.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Was Cortex Govern used to gate the decision? 10 = yes, receipt drives the call; 5 = present,
+    unused; 0 = none.

@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import io
 import base64
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -43,59 +42,89 @@ logger = get_logger(__name__)
 # --------------------------------------------------------------------------- #
 # Layout-aware extraction requires optional libraries that pull heavy backends
 # (PaddlePaddle / torch) and download model weights over the network on first
-# use — neither is air-gap safe by default. We probe their importability once at
-# module-load time inside a guarded try/except: any failure (missing package,
-# broken backend, blocked network fetch during import) is logged and the module
-# falls back to the always-present 'flat-ocr' path so ingestion never breaks.
+# use — neither is air-gap safe by default.
+#
+# The probe is therefore IMPORT-ONLY: `importlib.util.find_spec` asks the import
+# system whether a module could be loaded WITHOUT executing its body. The
+# earlier version called `importlib.import_module`, which runs the package at
+# DIC module-load time — exactly the network fetch and multi-second torch import
+# this probe exists to avoid, on a code path that runs whether or not anyone
+# ever extracts a document. In an air-gapped deployment that is a startup hang,
+# not a graceful degrade.
+#
+# Only ONE backend is needed for layout-aware extraction, so the first available
+# candidate wins. Requiring all of them meant a complete PaddleOCR install still
+# degraded to flat-ocr because an unrelated second package was absent.
 
-LAYOUT_MODE_AWARE = "layout-aware"   # region/table/column segmentation available
-LAYOUT_MODE_FLAT = "flat-ocr"        # sequential text only — air-gap baseline
+LAYOUT_MODE_STRUCTURED = "structured"  # region/table/column segmentation available
+LAYOUT_MODE_FLAT_OCR = "flat-ocr"      # sequential text only — air-gap baseline
 
-_LAYOUT_LIBS = ("paddleocr", "doclayout_yolo")
+#: Back-compat aliases for the pre-rename constant names.
+LAYOUT_MODE_AWARE = LAYOUT_MODE_STRUCTURED
+LAYOUT_MODE_FLAT = LAYOUT_MODE_FLAT_OCR
+
+#: ``(module_name, pip_name)``, in priority order.
+_LAYOUT_BACKENDS = (
+    ("paddleocr", "paddleocr"),
+    ("doclayout_yolo", "doclayout-yolo"),
+)
 
 
-def _probe_layout_libs():
-    """Detect whether every layout-detection library imports cleanly.
+def _probe_layout_backend():
+    """Find the first importable layout backend, without importing it.
 
-    Returns ``(mode, missing)``: ``mode`` is :data:`LAYOUT_MODE_AWARE` only when
-    all libraries import without error, otherwise :data:`LAYOUT_MODE_FLAT`.
-    Never raises — callers rely on this to choose a fallback, not to fail.
+    Returns ``(mode, backend_name)`` — :data:`LAYOUT_MODE_STRUCTURED` plus the
+    module name when a candidate spec is found, otherwise
+    :data:`LAYOUT_MODE_FLAT_OCR` and ``None``.
+
+    Never raises. A broken native install can make ``find_spec`` itself throw
+    (it may execute a package's ``__init__`` while resolving a namespace
+    parent), and callers rely on this to choose a fallback, not to fail.
     """
-    import importlib
+    import importlib.util
 
-    missing: list[str] = []
-    for lib in _LAYOUT_LIBS:
+    for module_name, _pip_name in _LAYOUT_BACKENDS:
         try:
-            importlib.import_module(lib)
-        except Exception as exc:
-            missing.append(lib)
-            logger.debug("dic.extractors: layout lib %r unavailable: %s", lib, exc)
-    if missing:
-        return LAYOUT_MODE_FLAT, missing
-    return LAYOUT_MODE_AWARE, []
+            if importlib.util.find_spec(module_name) is not None:
+                return LAYOUT_MODE_STRUCTURED, module_name
+        except Exception as exc:  # noqa: BLE001 - broken install must degrade
+            logger.debug(
+                "dic.extractors: probing layout backend %r failed: %s", module_name, exc
+            )
+    return LAYOUT_MODE_FLAT_OCR, None
 
 
 try:
-    LAYOUT_MODE, _LAYOUT_MISSING = _probe_layout_libs()
+    LAYOUT_MODE, LAYOUT_BACKEND = _probe_layout_backend()
 except Exception as exc:  # defensive: the probe itself must never break import
     logger.error(
         "dic.extractors: layout-detection probe failed (%s) — forcing 'flat-ocr' fallback",
         exc,
     )
-    LAYOUT_MODE, _LAYOUT_MISSING = LAYOUT_MODE_FLAT, list(_LAYOUT_LIBS)
+    LAYOUT_MODE, LAYOUT_BACKEND = LAYOUT_MODE_FLAT_OCR, None
 
-if LAYOUT_MODE == LAYOUT_MODE_FLAT:
+if LAYOUT_MODE == LAYOUT_MODE_FLAT_OCR:
     logger.warning(
-        "dic.extractors: layout-detection libraries unavailable (%s) — using "
+        "dic.extractors: no layout-detection backend available (%s) — using "
         "'flat-ocr' fallback (no region/table/column segmentation). For "
-        "layout-aware extraction install: pip install paddleocr doclayout-yolo",
-        ", ".join(_LAYOUT_MISSING) or "none",
+        "layout-aware extraction install one of: %s",
+        ", ".join(m for m, _ in _LAYOUT_BACKENDS),
+        ", ".join(f"pip install {p}" for _, p in _LAYOUT_BACKENDS),
     )
 
 
-def layout_mode() -> str:
-    """Return the active layout-extraction mode ('layout-aware' or 'flat-ocr')."""
+def get_layout_mode() -> str:
+    """Return the active layout-extraction mode ('structured' or 'flat-ocr')."""
     return LAYOUT_MODE
+
+
+def layout_detection_available() -> bool:
+    """True when a layout backend was found and segmentation is possible."""
+    return LAYOUT_MODE == LAYOUT_MODE_STRUCTURED
+
+
+#: Back-compat alias for the pre-rename accessor.
+layout_mode = get_layout_mode
 
 
 @dataclass
@@ -484,15 +513,6 @@ def assess_text_parse_quality(text: str) -> TextParseQualityReport:
 # Extractor implementations
 # --------------------------------------------------------------------------- #
 
-def _strip_html(raw: str) -> str:
-    raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
-    raw = re.sub(r"(?s)<[^>]+>", " ", raw)
-    raw = re.sub(r"&nbsp;", " ", raw)
-    raw = re.sub(r"[ \t]+", " ", raw)
-    raw = re.sub(r"\n{3,}", "\n\n", raw)
-    return raw.strip()
-
-
 def _extract_text(path: Path) -> Extraction:
     raw = path.read_text(encoding="utf-8", errors="replace")
     warnings: list[str] = []
@@ -511,15 +531,60 @@ def _extract_text(path: Path) -> Extraction:
     )
 
 
+#: Below this raw-HTML size, boilerplate pruning is assumed to be doing more
+#: harm than good: a document this small has no nav bar or link farm to strip,
+#: so anything the pruner removes is body copy. Sized well above a heading +
+#: a few paragraphs and well below any real page with chrome.
+_HTML_PRUNE_MIN_CHARS = 2000
+
+
 def _extract_html(path: Path) -> Extraction:
+    """Extract a local HTML file via the two-pass ``page_extract`` filter.
+
+    Pass 2 is skipped (no query at ingestion time), so this is pass-1 pruning:
+    nav, cookie banners and link farms are dropped, headings/lists/tables survive
+    as markdown.  ``to_text`` is the degraded fallback — never a regex tag strip.
+    """
+    from tools.http import page_extract
+
     raw = path.read_text(encoding="utf-8", errors="replace")
-    text = _strip_html(raw)
+    warnings: list[str] = []
+    title = path.stem
+    try:
+        result = page_extract.extract(raw)
+        fit = (result["fit_markdown"] or "").strip()
+        raw_text = (result["raw_text"] or "").strip()
+        # `page_extract` is tuned for SCRAPED web pages: it drops nav, cookie
+        # banners and link farms, and with them any very short paragraph that
+        # looks like chrome. A local HTML document has no such chrome, so on a
+        # small file that heuristic deletes real body copy — "<p>Hello world</p>"
+        # disappears and only the heading survives.
+        #
+        # Below the size at which boilerplate is even plausible, keep whichever
+        # retains more text. Ingestion silently discarding body content is the
+        # failure this whole layer exists to prevent, and it is invisible
+        # downstream: the chunk simply never contains the answer.
+        if raw_text and len(raw) <= _HTML_PRUNE_MIN_CHARS and len(raw_text) > len(fit):
+            text = raw_text
+            warnings.append(
+                "html_prune_bypassed — boilerplate pruning removed body text from a "
+                f"small document ({len(fit)} of {len(raw_text)} chars retained); "
+                "kept the unpruned text"
+            )
+        else:
+            text = fit or raw_text
+        title = result["title"] or title
+    except Exception as exc:  # noqa: BLE001 - extraction must not fail an ingest
+        text = page_extract.to_text(raw)
+        warnings.append(f"page_extract failed ({type(exc).__name__}: {exc}) — used plain-text fallback")
+
     return Extraction(
         text=text,
         provider="builtin-html",
         content_type="text/html",
         page_count=1,
-        title=path.stem,
+        title=title,
+        warnings=warnings,
     )
 
 
@@ -802,6 +867,39 @@ def _try_pdfplumber(path: Path) -> tuple[str, int]:
 
 
 def _extract_pdf(path: Path) -> Extraction:
+    """Extract PDF text, then append any tables recovered structurally.
+
+    The four-pass text chain (_extract_pdf_text) all ends in extract_text(), so
+    a table arrives as whatever reading order the text layer happened to have —
+    columns interleave and a row's cells scatter. pdfplumber's extract_tables()
+    recovers the grid, and the markdown rendering is appended so the SAME chunk
+    carries both the prose and a correctly-associated version of the table.
+
+    Additive by construction: tables are appended, never substituted, so a
+    regression in table detection cannot cost us text we already had. When
+    pdfplumber is unavailable the extraction is byte-identical to before.
+    """
+    extraction = _extract_pdf_text(path)
+    try:
+        from tools.document_intelligence.table_extract import tables_as_markdown
+
+        tables_md = tables_as_markdown(path)
+    except Exception as exc:  # noqa: BLE001 - enhancement must not fail the document
+        logger.debug("dic.extractors: table extraction unavailable (%s)", exc)
+        return extraction
+
+    if not tables_md.strip():
+        return extraction
+
+    extraction.text = (extraction.text or "").rstrip() + "\n" + tables_md
+    extraction.provider = f"{extraction.provider}+tables"
+    logger.debug(
+        "dic.extractors: appended %d chars of recovered tables", len(tables_md)
+    )
+    return extraction
+
+
+def _extract_pdf_text(path: Path) -> Extraction:
     """Extract text from PDF using a four-pass fallback chain.
 
     Pass 1: pymupdf/fitz    — gold standard; handles CID-mapped fonts, complex encodings
@@ -1177,57 +1275,69 @@ def get_extractor(ext: str) -> callable | None:
 # Web URL and YouTube extractors (non-file, dual-mode)
 # --------------------------------------------------------------------------- #
 
-def extract_url(url: str) -> Extraction:
+def extract_url(url: str, query: str | None = None) -> Extraction:
     """Fetch and extract text from a web URL.
 
-    Online: full HTTP fetch + HTML strip.
-    Air-gap / network failure: returns empty Extraction with a warning so the
+    Online: central-client fetch → two-pass ``page_extract`` → injection scan.
+    Air-gap / network failure: returns an empty Extraction with a warning so the
     caller can still create a placeholder source entry.
+
+    Args:
+        url: the page to ingest (untrusted third-party content).
+        query: optional retrieval question.  When supplied, pass 2 keeps only the
+            blocks that answer it; otherwise the whole pruned page is kept.
+
+    The byte cap comes from ``fetch.max_bytes`` in ``args/http_client.yaml``, and
+    the title comes from the parsed document rather than a ``<title>`` regex —
+    which matched the first ``</title>`` anywhere in the file, including inside
+    a comment or an inline SVG.
     """
-    import urllib.request
-    import urllib.error
+    from tools.http.fetch_extract import fetch_page
 
-    title = url
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 ICDEV/1.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = resp.read(2 * 1024 * 1024).decode("utf-8", errors="replace")  # 2 MB cap
-        content_type = resp.headers.get_content_type() or "text/html"
+    page = fetch_page(url, query=query)
 
-        # Extract <title>
-        import re as _re
-        m = _re.search(r"<title[^>]*>(.*?)</title>", raw, _re.I | _re.S)
-        title = _re.sub(r"\s+", " ", m.group(1)).strip() if m else url
-
-        text = _strip_html(raw)
-        return Extraction(
-            text=text,
-            provider="builtin-url",
-            content_type=content_type,
-            page_count=1,
-            title=title,
-            metadata={"source_url": url},
-        )
-    except urllib.error.URLError as exc:
+    if not page.ok:
         return Extraction(
             text="",
             provider="builtin-url",
-            content_type="text/html",
+            content_type=page.content_type or "text/html",
             page_count=0,
-            title=title,
-            warnings=[f"URL fetch failed (network unavailable or blocked): {exc}"],
+            title=url,
+            warnings=[f"URL fetch failed (network unavailable or blocked): {page.error}"],
             metadata={"source_url": url},
         )
-    except Exception as exc:
+
+    if page.blocked:
         return Extraction(
             text="",
             provider="builtin-url",
-            content_type="text/html",
+            content_type=page.content_type or "text/html",
             page_count=0,
-            title=title,
-            warnings=[f"URL extraction error: {exc}"],
-            metadata={"source_url": url},
+            title=page.title or url,
+            warnings=[
+                "Content dropped: prompt-injection scan reported a critical finding "
+                f"({', '.join(sorted({str(f.get('category')) for f in page.injection_findings}))})"
+            ],
+            metadata={"source_url": url, "injection_findings": page.injection_findings},
         )
+
+    warnings: list[str] = []
+    if page.truncated:
+        warnings.append("Response body reached fetch.max_bytes — page may be incomplete.")
+    if page.injection_findings:
+        warnings.append(
+            f"Injection scan reported {len(page.injection_findings)} non-critical finding(s)."
+        )
+
+    return Extraction(
+        text=page.text,
+        provider="builtin-url",
+        content_type=page.content_type or "text/html",
+        page_count=1,
+        title=page.title or url,
+        warnings=warnings,
+        metadata={"source_url": url, "extraction_reason": page.reason},
+    )
 
 
 def _is_youtube_url(url: str) -> bool:
@@ -1303,7 +1413,8 @@ def extract_video(url: str) -> Extraction:
     Priority:
       1. YouTube transcript API  — for YouTube URLs (online only)
       2. yt-dlp subtitles        — for YouTube + 1000+ other sites + IPTV descriptions
-      3. URL text extraction     — fall back to the video page's text (trafilatura)
+      3. URL text extraction     — fall back to the video page's text via
+         ``extract_url`` (central HTTP client + two-pass ``page_extract``)
 
     Works in air-gap for yt-dlp (subtitles cached locally) and URL text extraction.
     IPTV m3u8/HLS streams: extracts playlist description via yt-dlp dump-json.
@@ -1322,16 +1433,20 @@ def extract_video(url: str) -> Extraction:
                 text = " ".join(
                     (s.text if hasattr(s, "text") else s["text"]) for s in fetched
                 )
-                # Attempt oEmbed title
+                # Attempt oEmbed title (via the central HTTP client, not raw urllib)
+                title = f"YouTube: {video_id}"
                 try:
                     import json as _json
-                    import urllib.request as _ur
-                    with _ur.urlopen(
-                        f"https://www.youtube.com/oembed?url={url}&format=json", timeout=5
-                    ) as r:
-                        title = _json.loads(r.read()).get("title", f"YouTube: {video_id}")
+
+                    from tools.http.fetch_extract import fetch_raw
+
+                    oembed = fetch_raw(
+                        f"https://www.youtube.com/oembed?url={url}&format=json"
+                    )
+                    if oembed.ok:
+                        title = _json.loads(oembed.raw_text).get("title", title)
                 except Exception:
-                    title = f"YouTube: {video_id}"
+                    pass
                 if text:
                     return Extraction(
                         text=text, provider="youtube-transcript", content_type="text/plain",

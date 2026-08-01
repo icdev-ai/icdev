@@ -162,11 +162,14 @@ def test_append_only_tables_registered_in_hook():
 
 # ── pack loader ───────────────────────────────────────────────────────────────
 
-def test_load_packs_loads_four_launch_packs():
+def test_load_packs_loads_all_enabled_packs():
     from tools.doc_modernization.pack_loader import load_packs
 
     packs = load_packs(force=True)
-    assert set(packs) == {"crypto_protocols", "network_hardware", "software", "policy_refs"}
+    assert set(packs) == {
+        "crypto_protocols", "network_hardware", "software", "policy_refs",
+        "change_control", "evidence_currency",
+    }
 
 
 def test_load_packs_validation_errors(tmp_path, monkeypatch):

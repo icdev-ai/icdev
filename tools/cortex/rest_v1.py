@@ -3,13 +3,14 @@
 
 The ``/cortex`` canvas and the programmatic REST API share ONE
 ``Blueprint("cortex")`` (the canvas blueprint in ``blueprint.py``).
-``register_rest_v1(cortex_bp)`` attaches the six governed v1 endpoints to that
+``register_rest_v1(cortex_bp)`` attaches the seven governed v1 endpoints to that
 blueprint, so both the web canvas and the machine surface live under one prefix
 and one auth path — no second blueprint, no double registration.
 
     POST /cortex/api/v1/search     unified retrieval (strategy router + CRAG)
     POST /cortex/api/v1/ask        Cortex Analyst (IQE / NL->SQL)
     POST /cortex/api/v1/complete   free-form completion (governed)
+    POST /cortex/api/v1/reason     multi-step reasoning: cot / debate / council (governed)
     POST /cortex/api/v1/classify   single-label classification (governed)
     POST /cortex/api/v1/extract    structured extraction (governed)
     POST /cortex/api/v1/govern     run the TRUST governance chain over text
@@ -1017,9 +1018,7 @@ def api_v1_health():
             "status": "healthy",
             "airgap": bool(airgap_active(None)),
             "operations": [
-                "search", "ask", "complete", "classify", "extract", "govern",
-                "intake", "slides", "win_themes", "staffing_matrix", "cost_volume",
-                "dashboard", "award", "bom",
+                "search", "ask", "complete", "reason", "classify", "extract", "govern", "intake", "slides", "win_themes", "staffing_matrix", "cost_volume", "dashboard", "award", "bom",
             ],
         })
     except Exception as exc:  # noqa: BLE001

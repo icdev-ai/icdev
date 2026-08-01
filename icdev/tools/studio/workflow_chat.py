@@ -48,10 +48,19 @@ steps:
     depends_on: [step_1]
     node_type: "human"
     role: "isso"
+  - id: step_3
+    name: "<name>"
+    tool: ""
+    depends_on: [step_2]
+    node_type: "mcp"
+    mcp_tool: "<registered MCP tool name, e.g. scan_dependencies>"
+    mcp_params: {{}}
 
-node_type values: tool, human, approval
+node_type values: tool, human, approval, mcp
 role values (human/approval): stakeholder, program_manager, isso, contracting_officer, developer, reviewer, approver
 approval_policy (approval nodes only): any, all, majority
+mcp_tool (mcp nodes only): name of a registered MCP tool — required for node_type: mcp
+mcp_params (mcp nodes only): mapping of arguments forwarded to that tool
 
 Rules:
 - Each step id must be unique (step_1, step_2, step_3, ...)

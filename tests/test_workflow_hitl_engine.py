@@ -142,9 +142,13 @@ def tmp_db(tmp_path):
     conn.close()
 
     def _get_conn():
+        # Wrapped in StorageConnection so the module's PG-native %s SQL is
+        # translated for SQLite (same pattern as tests/test_cato_twin.py).
+        from tools.db.storage import StorageConnection
+
         c = sqlite3.connect(str(db_path))
         c.row_factory = sqlite3.Row
-        return c
+        return StorageConnection(c, "sqlite")
 
     with patch("tools.db.storage.get_connection", side_effect=_get_conn):
         yield db_path

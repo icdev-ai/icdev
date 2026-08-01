@@ -51,6 +51,7 @@ GRAPH_SOURCES = [
     "goals",           # goals/ directory scan
     "migrations",      # tools/db/migrations/ dependency chain
     "codebase",        # routes, blueprints, db_tables, agents from tools/
+    "ndc",             # Network Design Canvas — canvas node + tables/route/SDC edges
 ]
 
 # Ontology class mappings for KG enrichment

@@ -33,6 +33,21 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.boundary_canvas.poam_auto_generator")
+
+
+def _row_id(row: Any) -> Any:
+    """Extract the ``id`` value from a RETURNING result row.
+
+    Works across backends: psycopg2 DictRow and sqlite3.Row both support
+    key access (``row["id"]``); a bare tuple falls back to positional access.
+    """
+    try:
+        return row["id"]
+    except (TypeError, KeyError, IndexError):
+        return row[0]
+
 _SEVERITY_DAYS = {
     "critical": 15,
     "high": 30,
@@ -114,7 +129,7 @@ def generate_from_violations(
         conn:        Optional existing DB connection (for tests).
 
     Returns:
-        dict with keys: new_items, skipped_items, snapshot_id
+        dict with keys: new_items, skipped_items, snapshot_id, errors
     """
     _own_conn = conn is None
     if _own_conn:
@@ -129,7 +144,12 @@ def generate_from_violations(
         ).fetchall()
 
         if not violations:
-            return {"new_items": 0, "skipped_items": 0, "snapshot_id": snapshot_id}
+            return {
+                "new_items": 0,
+                "skipped_items": 0,
+                "snapshot_id": snapshot_id,
+                "errors": [],
+            }
 
         # Load existing POAM weakness IDs for dedup
         existing = {
@@ -142,6 +162,7 @@ def generate_from_violations(
 
         new_count = 0
         skipped_count = 0
+        errors: list[str] = []
 
         for viol in violations:
             v = dict(viol)
@@ -159,12 +180,16 @@ def generate_from_violations(
             corrective = _corrective_action(violation_type, control_id, framework)
             milestone = _milestone_date(severity)
 
+            # RETURNING id is PG-native and correct on both backends. cur.lastrowid
+            # is UNSAFE on psycopg2 — it returns the table OID (or 0), not the
+            # serial PK — which would write a wrong poam_id FK below.
             cur = conn.execute(
                 """INSERT INTO poam_items
                    (project_id, weakness_id, weakness_description, severity,
                     source, control_id, status, corrective_action,
                     milestone_date, responsible_party, resources_required)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING id""",
                 (
                     project_id,
                     weakness_id,
@@ -179,25 +204,45 @@ def generate_from_violations(
                     "Staff time, compliance tooling",
                 ),
             )
-            new_poam_id = cur.lastrowid
+            inserted = cur.fetchone()
+            if inserted is None:
+                # INSERT ... RETURNING must yield the new PK; a None row means the
+                # insert did not land. Surface it — never silently continue.
+                msg = (
+                    f"POAM insert for weakness_id={weakness_id} returned no id "
+                    f"(snapshot_id={snapshot_id}, project_id={project_id})"
+                )
+                logger.error(msg)
+                errors.append(msg)
+                continue
+
+            new_poam_id = _row_id(inserted)
             existing.add(weakness_id)
             new_count += 1
 
-            # Link violation → POAM (best-effort; violations table is append-only
-            # so we update only the poam_id FK — a non-audit column)
+            # Link violation → POAM. The violations table is append-only except
+            # for this poam_id FK (a non-audit column). A failure here must NOT
+            # be swallowed: the POAM item exists but the linkage is missing, so
+            # the error is logged and surfaced in the returned result.
             try:
                 conn.execute(
                     "UPDATE compliance_twin_violations SET poam_id = %s WHERE id = %s",
                     (new_poam_id, v["id"]),
                 )
-            except Exception:
-                pass  # Fail silently — the POAM item is still created
+            except Exception as exc:
+                msg = (
+                    f"Failed to link violation id={v['id']} to poam_id={new_poam_id} "
+                    f"(weakness_id={weakness_id}): {exc}"
+                )
+                logger.exception(msg)
+                errors.append(msg)
 
         conn.commit()
         return {
             "new_items": new_count,
             "skipped_items": skipped_count,
             "snapshot_id": snapshot_id,
+            "errors": errors,
         }
 
     finally:
@@ -221,6 +266,8 @@ def main():
     else:
         print(f"New POAM items created: {result['new_items']}")
         print(f"Skipped (existing): {result['skipped_items']}")
+        for err in result.get("errors", []):
+            print(f"ERROR: {err}")
 
 
 if __name__ == "__main__":

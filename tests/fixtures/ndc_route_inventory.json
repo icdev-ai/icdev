@@ -1,0 +1,3291 @@
+[
+  {
+    "endpoint": "network_canvas.nc_index",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/"
+  },
+  {
+    "endpoint": "network_canvas.nc_advisory_history",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/advisory-history"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_advisories_export",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/advisories/export"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_advisory_export_ato",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/advisory/<int:advisory_id>/export-ato"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_chat",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ai-chat"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_chat_prep",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ai-chat-prep"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_context_create",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ai-context"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_context_messages",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ai-context/<ctx_id>/messages"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_generate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ai-generate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_history",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ai-history"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_history_delete",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/ai-history/<hist_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_history_get",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ai-history/<hist_id>"
+  },
+  {
+    "endpoint": "network_canvas.ai_review",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ai-review/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ai_trace",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ai-trace"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_alert_events",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/alert-events"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_run_alert_check",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/alert-events/run-check"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_alert_rule",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/alert-rules"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_alert_rules",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/alert-rules"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_alert_rule",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/alert-rules/<rid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ask",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ask"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ato_generate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ato/<topo_id>/generate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ato_list",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ato/<topo_id>/packages"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ato_delete",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/ato/<topo_id>/packages/<pkg_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ato_detail",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ato/<topo_id>/packages/<pkg_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_backup",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/backups"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_backups",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/backups"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_restore_backup",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/backups/<backup_id>/restore"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_boundary",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/boundaries/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_boundaries",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/boundaries/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_boundary",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/boundaries/<topo_id>/<bid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_boundary",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/boundaries/<topo_id>/<bid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_auto_fence",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/boundaries/<topo_id>/auto-fence"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_budget_forecast",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/budget-forecast"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_cable_plant_report",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/cable-plant-report/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_cable",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/cables"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_cables",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/cables"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_cable",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/cables/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_cable",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/cables/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_capture_start",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/captures"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_captures_list",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/captures"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_capture_get",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/captures/<cap_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_capture_download",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/captures/<cap_id>/download"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_capture_stop",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/captures/<cap_id>/stop"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_carrier_avail",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/carrier-availability"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_carrier_avail",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/carrier-availability"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_chart_capacity_overview",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/charts/capacity-overview"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_chart_compliance_snapshot",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/charts/compliance-snapshot"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_chart_compliance_trend",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/charts/compliance-trend"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_chart_cost_breakdown",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/charts/cost-breakdown"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_circuit",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/circuits"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_circuits",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/circuits"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_circuit",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/circuits/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_circuit",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/circuits/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_classify_nodes",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/classify-nodes"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_cloud_objects",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/cloud-objects"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_cloud_overlay",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/cloud-overlay/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_collab_join",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/collab/<design_id>/join"
+  },
+  {
+    "endpoint": "network_canvas.nc_collab_leave",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/collab/<design_id>/leave"
+  },
+  {
+    "endpoint": "network_canvas.nc_collab_participants",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/collab/<design_id>/participants"
+  },
+  {
+    "endpoint": "network_canvas.nc_collab_poll",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/collab/<design_id>/poll"
+  },
+  {
+    "endpoint": "network_canvas.nc_collab_push",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/collab/<design_id>/push"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_collected_configs",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/collected-configs"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_store_collected_config",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/collected-configs"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_collected_config",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/collected-configs/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_run_compliance_audit",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/compliance/<topo_id>/audit"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_compliance_export",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/compliance/<topo_id>/export"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_fips_report",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/compliance/<topo_id>/fips-report"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_compliance_fix",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/compliance/<topo_id>/fix"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_compliance_profile",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/compliance/<topo_id>/profile"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stig_import",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/compliance/<topo_id>/stig-import"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stig_import_history",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/compliance/<topo_id>/stig-imports"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_config_review_create",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/config-review"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_config_review_get",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/config-review/<review_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_config_review_analyze",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/config-review/<review_id>/analyze"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_config_review_export_config",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/config-review/<review_id>/export-config"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_config_review_export_topology",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/config-review/<review_id>/export-topology"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_config_review_progress",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/config-review/<review_id>/progress"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_config_to_canvas",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/config-to-canvas/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_check_conflicts",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/conflicts"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_conflicts_resolutions",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/conflicts/resolutions"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_conflicts_resolve",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/conflicts/resolve"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_connect_collect",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/connect-collect"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_c2c_patterns",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/connectivity/c2c-patterns"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_connectivity_matrix",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/connectivity/matrix"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_onprem_pattern",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/connectivity/onprem-pattern"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_cross_connect",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/cross-connects"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_cross_connects",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/cross-connects"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_cross_connect",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/cross-connects/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_cross_connect",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/cross-connects/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_cross_validate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/cross-validate/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_customer",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/customers"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_customers",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/customers"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_customer",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/customers/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_customer",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/customers/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_demo_run",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/demo-run"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_demo_runs",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/demo-runs"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_design_rules",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/design-rules"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_device_geo",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/device-geo"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_set_device_geo",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/device-geo"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_device_geo",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/device-geo/<gid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_bulk_set_geo",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/device-geo/bulk"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_device_profile",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/device-profiles"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_device_profiles",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/device-profiles"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_device_profile",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/device-profiles/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_device_profile",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/device-profiles/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_device_profile",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/device-profiles/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_discovery_config",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/discovery-configs"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_discovery_configs",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/discovery-configs"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_discovery_config",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/discovery-configs/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_enterprise_summary_api",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/enterprise-summary"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_exception_approve",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/exception/<exc_id>/approve"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_exception_file",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/exception/file"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_executive_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/executive-summary"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/export/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export_ansible",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/export/<topo_id>/ansible"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export_csv",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/export/<topo_id>/csv"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export_device_configs",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/export/<topo_id>/device-configs"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export_device_configs_preview",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/export/<topo_id>/device-configs/preview"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export_inventory",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/export/<topo_id>/inventory"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export_terraform",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/export/<topo_id>/terraform"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export_visio",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/export/<topo_id>/visio"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_export_vsdx",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/export/<topo_id>/vsdx"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_facility",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/facilities"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_facilities",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/facilities"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_facility",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/facilities/<fid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_add_favorite",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/favorites"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_favorites",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/favorites"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_favorite",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/favorites/<fid>"
+  },
+  {
+    "endpoint": "network_canvas.api_network_fcc",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/fcc/<check_type>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_fiber",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/fiber-inventory"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_fiber",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/fiber-inventory"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_geo_links",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/geo-links"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_geo_sites",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/geo-sites"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_global_canvas_data",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/global-canvas-data"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_global_topology",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/global-topology"
+  },
+  {
+    "endpoint": "network_canvas.governance_dashboard",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/governance/dashboard"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_group",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/groups/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_groups",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/groups/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_group",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/groups/<topo_id>/<gid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_group",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/groups/<topo_id>/<gid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_hardware_profile",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/hardware-profiles"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_hardware_profiles",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/hardware-profiles"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_hardware_profile",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/hardware-profiles/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_hardware_profile",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/hardware-profiles/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_health",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/health"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_heatmap",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/heatmap/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_import",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/import"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_import_wizard",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/import-wizard"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_import_and_audit",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/import/audit"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_bulk_import",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/import/bulk"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_import_extract_data",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/import/extract-data"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stitch_topologies",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/import/stitch"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_ideas",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/innovation-ideas"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_submit_idea",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/innovation-ideas"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_idea",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/innovation-ideas/<iid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_idea",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/innovation-ideas/<iid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_vote_idea",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/innovation-ideas/<iid>/vote"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_add_interconnect",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/interconnects"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_interconnect",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/interconnects/<ic_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_ip_space_definition",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ip-space-definitions"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_ip_space_definitions",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ip-space-definitions"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_ip_space_definition",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_acknowledge_ip_space_definition",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>/acknowledge"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_approve_ip_space_definition",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>/approve"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ip_space_definition_document",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>/document"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_add_ip_space_prefix",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>/prefixes"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_remove_ip_space_prefix",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>/prefixes/<int:idx>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_reject_ip_space_definition",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>/reject"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_set_ip_space_routing_policy",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>/routing-policy"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_submit_ip_space_definition",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ip-space-definitions/<did>/submit"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_ipam",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/ipam"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_ipam",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ipam"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_ipam",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/ipam/<bid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_ipam",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/ipam/<bid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ipv6_readiness",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/ipv6-readiness/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_iqe_query",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/iqe-query"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_add_lesson",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/lessons-learned"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_lessons",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/lessons-learned"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_lesson",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/lessons-learned/<lid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_run_mc",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/mc/run/<scenario_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_mc_runs",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/mc/runs/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_mc_run",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/mc/runs/<topo_id>/<run_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_mc_scenario",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/mc/scenarios/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_mc_scenarios",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/mc/scenarios/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.migration_hub_data",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/migration-hub/data"
+  },
+  {
+    "endpoint": "network_canvas.migration_hub_link_doc",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/migration-hub/phase-docs"
+  },
+  {
+    "endpoint": "network_canvas.migration_hub_unlink_doc",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/migration-hub/phase-docs/<doc_link_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_migration_phase_status",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/migration-phases/<topo_id>/<phase_id>/status"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_migration_phases_data",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/migration-phases/<topo_id>/data"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_migration_phases_export",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/migration-phases/<topo_id>/export/<phase_key>/<fmt>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_migration_plan_generate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/migration-plan/generate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_morning_dashboard",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/morning-dashboard"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_naming_convention",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/naming-conventions"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_naming_conventions",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/naming-conventions"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_naming_convention",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/naming-conventions/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_naming_convention",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/naming-conventions/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_naming_convention",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/naming-conventions/<cid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_generate_name",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/naming-conventions/<cid>/generate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_validate_name",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/naming-conventions/<cid>/validate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_project_quick",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nc-projects"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_projects_quick",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/nc-projects"
+  },
+  {
+    "endpoint": "network_canvas.ni_analyses",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network-intelligence/analyses/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_availability",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network-intelligence/availability/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_blast_radius",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/blast-radius/<topology_id>/<device_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_capacity",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/capacity/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_circuits",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network-intelligence/circuits/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_compliance",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/compliance/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_config",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/config/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_cost_projection",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/cost-projection/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_devices",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network-intelligence/devices/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_eol",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/eol/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_impact",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/impact/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_ingest",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/ingest"
+  },
+  {
+    "endpoint": "network_canvas.ni_latency",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network-intelligence/latency/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_query",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/query"
+  },
+  {
+    "endpoint": "network_canvas.ni_redundancy",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network-intelligence/redundancy/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.ni_vendor_risk",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network-intelligence/vendor-risk/<topology_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_adapters",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/adapters"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_test_adapter",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/adapters/test"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ingest_file",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/ingest"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ingest_config",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/ingest/config"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ingestion_log",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/ingest/log"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ingest_nms",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/ingest/nms"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_ingestion_status",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/ingest/status"
+  },
+  {
+    "endpoint": "network_canvas.pna_predict_all",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/predict/all"
+  },
+  {
+    "endpoint": "network_canvas.pna_get_bgp",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/bgp"
+  },
+  {
+    "endpoint": "network_canvas.pna_predict_bgp",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/predict/bgp"
+  },
+  {
+    "endpoint": "network_canvas.pna_bgp_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/bgp/summary"
+  },
+  {
+    "endpoint": "network_canvas.pna_get_capacity",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/capacity"
+  },
+  {
+    "endpoint": "network_canvas.pna_predict_capacity",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/predict/capacity"
+  },
+  {
+    "endpoint": "network_canvas.pna_capacity_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/capacity/summary"
+  },
+  {
+    "endpoint": "network_canvas.pna_get_change",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/change"
+  },
+  {
+    "endpoint": "network_canvas.pna_predict_change",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/predict/change"
+  },
+  {
+    "endpoint": "network_canvas.pna_change_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/change/summary"
+  },
+  {
+    "endpoint": "network_canvas.pna_get_compliance",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/compliance"
+  },
+  {
+    "endpoint": "network_canvas.pna_predict_compliance",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/predict/compliance"
+  },
+  {
+    "endpoint": "network_canvas.pna_compliance_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/compliance/summary"
+  },
+  {
+    "endpoint": "network_canvas.pna_get_eol",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/eol"
+  },
+  {
+    "endpoint": "network_canvas.pna_predict_eol",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/predict/eol"
+  },
+  {
+    "endpoint": "network_canvas.pna_eol_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/eol/summary"
+  },
+  {
+    "endpoint": "network_canvas.pna_get_supply_chain",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/supply-chain"
+  },
+  {
+    "endpoint": "network_canvas.pna_score_supply_chain",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/network/predict/supply-chain"
+  },
+  {
+    "endpoint": "network_canvas.pna_supply_chain_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/network/predict/supply-chain/summary"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_notifications",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/notifications"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_mark_notifications_read",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/notifications/mark-read"
+  },
+  {
+    "endpoint": "network_canvas.pvm_get_attack_surface",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/nqe/attack-surface"
+  },
+  {
+    "endpoint": "network_canvas.pvm_map_attack_surface",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/attack-surface"
+  },
+  {
+    "endpoint": "network_canvas.api_nqe_audit_log",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/audit-log"
+  },
+  {
+    "endpoint": "network_canvas.api_nqe_collections",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/nqe/collections"
+  },
+  {
+    "endpoint": "network_canvas.api_nqe_cross_validate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/cross-validate"
+  },
+  {
+    "endpoint": "network_canvas.api_nqe_explain",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/explain"
+  },
+  {
+    "endpoint": "network_canvas.api_nqe_hitl_approve",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/hitl-approve"
+  },
+  {
+    "endpoint": "network_canvas.pvm_create_patch_plan",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/patch-plan"
+  },
+  {
+    "endpoint": "network_canvas.pvm_patch_plan_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/nqe/patch-plan-summary/<plan_id>"
+  },
+  {
+    "endpoint": "network_canvas.pvm_get_patch_plans",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/nqe/patch-plans"
+  },
+  {
+    "endpoint": "network_canvas.pvm_predict_risks",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/predict-risks"
+  },
+  {
+    "endpoint": "network_canvas.pvm_risk_trajectory",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/nqe/risk-trajectory/<int:advisory_id>"
+  },
+  {
+    "endpoint": "network_canvas.api_nqe_run",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/run"
+  },
+  {
+    "endpoint": "network_canvas.pvm_score_triage",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/score-triage"
+  },
+  {
+    "endpoint": "network_canvas.pvm_top_risks",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/nqe/top-risks"
+  },
+  {
+    "endpoint": "network_canvas.api_nqe_translate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/translate"
+  },
+  {
+    "endpoint": "network_canvas.pvm_triage_approve",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/triage-approve"
+  },
+  {
+    "endpoint": "network_canvas.pvm_triage_defer",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/nqe/triage-defer"
+  },
+  {
+    "endpoint": "network_canvas.pvm_triage_queue",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/nqe/triage-queue"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_partner",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/partners"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_partners",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/partners"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_partner",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/partners/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_partner",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/partners/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_partner_unified_view",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/partners/<pid>/unified-view"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_partner_by_asn",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/partners/by-asn"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_peering",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/peering-agreements"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_peering",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/peering-agreements"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_peering",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/peering-agreements/<aid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_peering",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/peering-agreements/<aid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_amend_agreement",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/peering-agreements/<aid>/amend"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_amendments",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/peering-agreements/<aid>/amendments"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_approve_agreement",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/peering-agreements/<aid>/approve"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_agreement_document",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/peering-agreements/<aid>/document"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_agreement_sync_to_pmc",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/peering-agreements/<aid>/sync-to-pmc"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_peering_cost_benefit",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/peering-cost-benefit/<aid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_peering_eval",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/peering-evaluations"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_peering_evals",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/peering-evaluations"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_peering_session",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/peering-sessions/<aid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_peering_sessions",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/peering-sessions/<aid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_poam_export",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/poam/export"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_poam_generate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/poam/generate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_port_inventory",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/port-inventory"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_set_port_inventory",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/port-inventory"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_pps_enclaves",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/pps/<topo_id>/enclaves"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_pps_export",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/pps/<topo_id>/export"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_pps_generate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/pps/<topo_id>/generate"
+  },
+  {
+    "endpoint": "network_canvas.ndc_list_projects",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/projects"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_auto_refresh_plan",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/projects/<pid>/auto-refresh-plan"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_clone_project",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/projects/<pid>/clone"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_decompose_to_safe",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/projects/<pid>/decompose"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_project_presentation",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/projects/<pid>/presentation"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_add_refresh_item",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/projects/<pid>/refresh-plan"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_refresh_plan",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/projects/<pid>/refresh-plan"
+  },
+  {
+    "endpoint": "network_canvas.nc_select_coa",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/projects/<pid>/select-coa"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_rack",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/racks"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_racks",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/racks"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_rack",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/racks/<rid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_readiness_check",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/readiness-check/<pid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_refresh_item",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/refresh-plan/<rid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_add_replacement",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/replacement-map"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_replacement_map",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/replacement-map"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_replacement",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/replacement-map/<rid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_routing_entries",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/routing-entries"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_store_routing_entries",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/routing-entries"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_generate_routing_topology",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/routing-topology"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_runbooks_create",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/runbooks"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_runbooks_list",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/runbooks"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_runbook_delete",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/runbooks/<rb_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_runbook_get",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/runbooks/<rb_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_runbook_update",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/runbooks/<rb_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_clear_all_simulations",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/simulations/clear-all"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_site",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/sites"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_sites",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/sites"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_site",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/sites/<sid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_site",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/sites/<sid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_snippets",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/snippets"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_snippet",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/snippets/<snippet_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_sops_list",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/sops"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_sop_get",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/sops/<sop_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_sop_history",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/sops/<sop_id>/history"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stencil_catalog",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/stencils/catalog/<vendor>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stencil_import_url",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/stencils/import-url"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stencil_libraries",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/stencils/libraries"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stencil_library_delete",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/stencils/libraries/<lib_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stencil_shapes",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/stencils/shapes"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stencil_shape_icon",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/stencils/shapes/<shape_id>/icon"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stencil_upload",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/stencils/upload"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_stencil_vendors",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/stencils/vendors"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_subnet_calc",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/subnet-calc"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_save_subnet_calc",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/subnet-calc"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_subnet_calc",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/subnet-calc/<entry_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_tech_debt",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/tech-debt/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_add_tech_radar",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/tech-radar"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_tech_radar",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/tech-radar"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_tech_radar",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/tech-radar/<tid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_tech_radar",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/tech-radar/<tid>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_templates",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/templates"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_template",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/templates/<tpl_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_template",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/templates/<tpl_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_template_docs",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/templates/<tpl_id>/docs"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_load_template",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/templates/<tpl_id>/load"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_topology",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_topologies",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/topologies"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_delete_topology",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/topologies/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_get_topology",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/topologies/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_update_topology",
+    "methods": [
+      "PUT"
+    ],
+    "rule": "/network/api/topologies/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.analysis_export",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/analysis/export"
+  },
+  {
+    "endpoint": "network_canvas.risk_matrix",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/analysis/risk-matrix"
+  },
+  {
+    "endpoint": "network_canvas.analysis_summary",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/analysis/summary"
+  },
+  {
+    "endpoint": "network_canvas.topology_health",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/analysis/topology-health"
+  },
+  {
+    "endpoint": "network_canvas.analysis_trend",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/analysis/trend"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_bom",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/bom"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_executive_briefing",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/briefing"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_capacity_plan",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/capacity"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_compliance_check",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/compliance"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_lab",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/create-lab"
+  },
+  {
+    "endpoint": "network_canvas.change_requests",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/governance/change-requests"
+  },
+  {
+    "endpoint": "network_canvas.change_request_detail",
+    "methods": [
+      "DELETE",
+      "GET",
+      "PATCH"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/governance/change-requests/<cr_id>"
+  },
+  {
+    "endpoint": "network_canvas.intent_policies",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/governance/intent-policies"
+  },
+  {
+    "endpoint": "network_canvas.validate_intent_policy",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/governance/intent-policies/<policy_id>/validate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_plan_ips",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/plan-ips"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_generate_runbook",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/runbook"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_save_as",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/save-as"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_save_as_template",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/save-as-template"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_simulate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topologies/<topo_id>/simulate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_clear_all_topologies",
+    "methods": [
+      "DELETE"
+    ],
+    "rule": "/network/api/topologies/clear-all"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_topology_diff",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topology-diff"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_enrich_topology",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topology/<tid>/enrich"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_save_template_enricher",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topology/<tid>/save-template"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_validate_topology",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/topology/<tid>/validate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_analyze_path",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/analyze-path"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_blast_radius",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/blast-radius"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_chat_delta",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/chat-delta"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_current_topology",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/twin/<topo_id>/current-topology"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_domain_policy_templates",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/twin/<topo_id>/domain-policy-templates"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_iqe_query",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/iqe-query"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_nl_query",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/nl-query"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_node_domain_policy",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/nodes/<node_id>/domain-policy"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_persona_definitions",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/twin/<topo_id>/persona-definitions"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_simulate",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/simulate"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_snapshot",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/snapshot"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_traffic_flows",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/traffic-flows"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_tfw_assign_phase",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/traffic-flows/<flow_id>/assign-phase"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_twin_tfw_walkthrough",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/twin/<topo_id>/traffic-flows/<flow_id>/walkthrough"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_create_version",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/versions/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_list_versions",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/versions/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_diff_versions",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/versions/<topo_id>/diff"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_whatif_add_link",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/what-if/add-link"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_whatif_device_failure",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/what-if/device-failure"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_whatif_link_failure",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/what-if/link-failure"
+  },
+  {
+    "endpoint": "network_canvas.nc_api_wizard_new_build",
+    "methods": [
+      "POST"
+    ],
+    "rule": "/network/api/wizard/new-build"
+  },
+  {
+    "endpoint": "network_canvas.nc_ask_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/ask"
+  },
+  {
+    "endpoint": "network_canvas.nc_budget",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/budget"
+  },
+  {
+    "endpoint": "network_canvas.nc_cables",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/cables"
+  },
+  {
+    "endpoint": "network_canvas.nc_canvas_edit",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/canvas/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_canvas_new",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/canvas/new"
+  },
+  {
+    "endpoint": "network_canvas.nc_capacity_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/capacity"
+  },
+  {
+    "endpoint": "network_canvas.nc_charts_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/charts"
+  },
+  {
+    "endpoint": "network_canvas.nc_circuits",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/circuits"
+  },
+  {
+    "endpoint": "network_canvas.nc_cloud_topology",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/cloud-topology"
+  },
+  {
+    "endpoint": "network_canvas.nc_collect_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/collect"
+  },
+  {
+    "endpoint": "network_canvas.nc_compliance_audit_index",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/compliance-audit"
+  },
+  {
+    "endpoint": "network_canvas.nc_compliance_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/compliance/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_config_review",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/config-review"
+  },
+  {
+    "endpoint": "network_canvas.nc_conflicts_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/conflicts"
+  },
+  {
+    "endpoint": "network_canvas.nc_connectivity_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/connectivity"
+  },
+  {
+    "endpoint": "network_canvas.nc_cross_connects",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/cross-connects"
+  },
+  {
+    "endpoint": "network_canvas.nc_customers",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/customers"
+  },
+  {
+    "endpoint": "network_canvas.nc_demo_runner",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/demo-runner"
+  },
+  {
+    "endpoint": "network_canvas.nc_design_patterns",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/design-patterns"
+  },
+  {
+    "endpoint": "network_canvas.nc_design_rules",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/design-rules"
+  },
+  {
+    "endpoint": "network_canvas.nc_device_profiles_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/device-profiles"
+  },
+  {
+    "endpoint": "network_canvas.nc_diagram_analysis",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/diagram-analysis"
+  },
+  {
+    "endpoint": "network_canvas.nc_discovery_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/discovery"
+  },
+  {
+    "endpoint": "network_canvas.nc_documents",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/documents"
+  },
+  {
+    "endpoint": "network_canvas.nc_enterprise",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/enterprise"
+  },
+  {
+    "endpoint": "network_canvas.nc_exceptions",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/exceptions"
+  },
+  {
+    "endpoint": "network_canvas.nc_exceptions_file_form",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/exceptions/file"
+  },
+  {
+    "endpoint": "network_canvas.nc_executive_dashboard",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/executive-dashboard"
+  },
+  {
+    "endpoint": "network_canvas.nc_facilities_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/facilities"
+  },
+  {
+    "endpoint": "network_canvas.network_fcc",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/fcc"
+  },
+  {
+    "endpoint": "network_canvas.nc_global",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/global"
+  },
+  {
+    "endpoint": "network_canvas.nc_global_canvas",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/global/canvas"
+  },
+  {
+    "endpoint": "network_canvas.nc_hardware_profiles_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/hardware-profiles"
+  },
+  {
+    "endpoint": "network_canvas.nc_ingestion_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/ingestion"
+  },
+  {
+    "endpoint": "network_canvas.nc_innovation_hub",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/innovation"
+  },
+  {
+    "endpoint": "network_canvas.nc_intelligence",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/intelligence"
+  },
+  {
+    "endpoint": "network_canvas.nc_ipam",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/ipam"
+  },
+  {
+    "endpoint": "network_canvas.nc_logout",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/logout"
+  },
+  {
+    "endpoint": "network_canvas.nc_map_view",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/map"
+  },
+  {
+    "endpoint": "network_canvas.migration_hub",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/migration-hub"
+  },
+  {
+    "endpoint": "network_canvas.nc_migration_phases_hub",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/migration-phases"
+  },
+  {
+    "endpoint": "network_canvas.nc_migration_phases",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/migration-phases/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_migration_wizard",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/migration-wizard"
+  },
+  {
+    "endpoint": "network_canvas.nc_montecarlo_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/montecarlo/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_netbox",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/netbox"
+  },
+  {
+    "endpoint": "network_canvas.pna_dashboard",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/network/predictive-analytics"
+  },
+  {
+    "endpoint": "network_canvas.pvm_dashboard",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/network/vulnerability-intelligence"
+  },
+  {
+    "endpoint": "network_canvas.nqe_translator_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/nqe-translator"
+  },
+  {
+    "endpoint": "network_canvas.nc_partners_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/partners"
+  },
+  {
+    "endpoint": "network_canvas.nc_peering_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/peering"
+  },
+  {
+    "endpoint": "network_canvas.nc_poam",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/poam"
+  },
+  {
+    "endpoint": "network_canvas.nc_port_mapping_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/port-mapping"
+  },
+  {
+    "endpoint": "network_canvas.nc_pps_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/pps/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_projects",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/projects"
+  },
+  {
+    "endpoint": "network_canvas.nc_project_presentation",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/projects/<pid>/presentation"
+  },
+  {
+    "endpoint": "network_canvas.nc_project_detail",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/projects/<proj_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_project_dashboard",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/projects/<project_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_project_compare",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/projects/compare"
+  },
+  {
+    "endpoint": "network_canvas.nc_topology_diff_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/projects/diff"
+  },
+  {
+    "endpoint": "network_canvas.nc_replacements",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/replacements"
+  },
+  {
+    "endpoint": "network_canvas.nc_runbooks",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/runbooks"
+  },
+  {
+    "endpoint": "network_canvas.nc_simulation_detail",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/simulation/<sim_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_sops_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/sops"
+  },
+  {
+    "endpoint": "network_canvas.nc_stencils_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/stencils"
+  },
+  {
+    "endpoint": "network_canvas.nc_subnet_calc",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/subnet-calc"
+  },
+  {
+    "endpoint": "network_canvas.nc_template_edit",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/template/<tpl_id>/edit"
+  },
+  {
+    "endpoint": "network_canvas.nc_templates",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/templates"
+  },
+  {
+    "endpoint": "network_canvas.nc_twin_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/twin/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_versions_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/versions/<topo_id>"
+  },
+  {
+    "endpoint": "network_canvas.nc_wave_planner",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/wave-planner"
+  },
+  {
+    "endpoint": "network_canvas.nc_whatif",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/what-if"
+  },
+  {
+    "endpoint": "network_canvas.nc_wizard_page",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/wizard"
+  },
+  {
+    "endpoint": "static",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/static/<path:filename>"
+  }
+]

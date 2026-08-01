@@ -1,0 +1,50 @@
+{
+  "library": "CodeMirror",
+  "version": "5.65.16",
+  "license": "MIT",
+  "minified": false,
+  "fetched_from": {
+    "primary": "https://unpkg.com/codemirror@5.65.16",
+    "crosscheck": "https://cdn.jsdelivr.net/npm/codemirror@5.65.16"
+  },
+  "integrity_method": "each asset fetched from two independent npm registries and SHA-256 compared; a mismatch aborts without writing",
+  "assets": {
+    "codemirror.js": {
+      "npm_path": "lib/codemirror.js",
+      "primary_url": "https://unpkg.com/codemirror@5.65.16/lib/codemirror.js",
+      "crosscheck_url": "https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js",
+      "bytes": 402012,
+      "sha256": "0644e6418c4129c9584b9b772b8b8bdb0b4fbab1efd848a98baf1fe147381f22",
+      "crosscheck_identical": true
+    },
+    "codemirror.css": {
+      "npm_path": "lib/codemirror.css",
+      "primary_url": "https://unpkg.com/codemirror@5.65.16/lib/codemirror.css",
+      "crosscheck_url": "https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.css",
+      "bytes": 8720,
+      "sha256": "eb494ea972d2661ef86f7f6ac656dd6786d721e49c9c1b46e1eb967e4b6f9bf3",
+      "crosscheck_identical": true
+    },
+    "python.js": {
+      "npm_path": "mode/python/python.js",
+      "primary_url": "https://unpkg.com/codemirror@5.65.16/mode/python/python.js",
+      "crosscheck_url": "https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/python/python.js",
+      "bytes": 14984,
+      "sha256": "19a59ca387addb04e95002c9adbe2b8c231427ce49369ac537107e3088a6947c",
+      "crosscheck_identical": true
+    },
+    "dracula.css": {
+      "npm_path": "theme/dracula.css",
+      "primary_url": "https://unpkg.com/codemirror@5.65.16/theme/dracula.css",
+      "crosscheck_url": "https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/dracula.css",
+      "bytes": 2042,
+      "sha256": "02fdf6049608ddd8d0d7cf6403b6e5b251330740dfc393774f68bb64727b3c6e",
+      "crosscheck_identical": true
+    },
+    "LICENSE": {
+      "primary_url": "https://unpkg.com/codemirror@5.65.16/LICENSE",
+      "bytes": 1113,
+      "sha256": "168a4becc968f5001e2ee2e0291b6e4daabafc1894a11ade1e11d56e96096e07"
+    }
+  }
+}

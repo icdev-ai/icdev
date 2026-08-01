@@ -64,6 +64,14 @@ def _selenium_glob() -> str:
     return str(PROJECT_ROOT / "tests" / "e2e_selenium" / "test_*.py")
 
 
+def _selenium_script_glob() -> str:
+    # Standalone selenium e2e scripts live at the tests/ root as e2e_*.py with a
+    # main() entry + exit-code contract. They are NOT pytest-collectable — their
+    # test_* functions take positional args (driver, results), so pytest would
+    # raise fixture errors — hence they are executed directly via `python <file>`.
+    return str(PROJECT_ROOT / "tests" / "e2e_*.py")
+
+
 def _native_glob() -> str:
     return str(PROJECT_ROOT / "tests" / "e2e" / "*.spec.ts")
 
@@ -80,8 +88,100 @@ def discover_mcp_tests() -> List[str]:
     return sorted(glob.glob(_mcp_glob()))
 
 
+def discover_selenium_scripts() -> List[str]:
+    """Standalone tests/e2e_*.py selenium scripts (main()-driven, run as scripts)."""
+    return sorted(glob.glob(_selenium_script_glob()))
+
+
 def discover_selenium_tests() -> List[str]:
-    return sorted(glob.glob(_selenium_glob()))
+    # Inventory both the pytest-style selenium suite under tests/e2e_selenium/ and
+    # the standalone tests/e2e_*.py scripts so `--driver selenium --discover` lists
+    # every selenium e2e test (e.g. e2e_odc_lifecycle, e2e_observability_mitre).
+    return sorted(
+        set(glob.glob(_selenium_glob())) | set(glob.glob(_selenium_script_glob()))
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Standalone script allowlist (oxf-e2e-01)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _allowlist_path() -> Path:
+    return PROJECT_ROOT / "args" / "e2e_script_allowlist.yaml"
+
+
+def _load_allowlist_doc(logger: Optional[logging.Logger] = None) -> Dict[str, Any]:
+    """Parse args/e2e_script_allowlist.yaml. Missing/broken → {} with a warning.
+
+    Never raises: a missing or malformed allowlist degrades gracefully so that
+    ``--include-scripts`` is a no-op rather than an error.
+    """
+    path = _allowlist_path()
+    if not path.exists():
+        if logger:
+            logger.warning(
+                "e2e_runner: script allowlist not found at %s — "
+                "--include-scripts will run no standalone scripts",
+                path,
+            )
+        return {}
+    try:
+        import yaml
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully on any parse error
+        if logger:
+            logger.warning(
+                "e2e_runner: cannot parse script allowlist %s: %s", path, exc
+            )
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load_script_allowlist(logger: Optional[logging.Logger] = None) -> set:
+    """Return the set of allowlisted standalone-script names (no .py suffix)."""
+    doc = _load_allowlist_doc(logger)
+    names = doc.get("allowlist") or []
+    return {str(n).strip() for n in names if str(n).strip()}
+
+
+def load_script_exclusions(logger: Optional[logging.Logger] = None) -> Dict[str, str]:
+    """Return the {script_name: reason} exclusion map from the allowlist doc."""
+    doc = _load_allowlist_doc(logger)
+    excluded = doc.get("excluded") or {}
+    if not isinstance(excluded, dict):
+        return {}
+    return {str(k).strip(): str(v) for k, v in excluded.items()}
+
+
+def discover_allowlisted_scripts(
+    logger: Optional[logging.Logger] = None,
+) -> List[str]:
+    """Standalone tests/e2e_*.py scripts present on disk AND in the allowlist.
+
+    Logs the skipped/excluded count so truncation is never silent. Scripts on
+    disk but not allowlisted are skipped; allowlisted names with no file are
+    reported as missing.
+    """
+    allow = load_script_allowlist(logger)
+    on_disk = discover_selenium_scripts()
+    disk_names = {os.path.basename(s)[:-3] for s in on_disk}
+
+    included = [s for s in on_disk if os.path.basename(s)[:-3] in allow]
+    skipped = len(on_disk) - len(included)
+    missing = sorted(allow - disk_names)
+
+    if logger:
+        logger.info(
+            "e2e_runner: allowlist → include=%d skipped=%d (of %d on disk)",
+            len(included), skipped, len(on_disk),
+        )
+        if missing:
+            logger.warning(
+                "e2e_runner: %d allowlisted script(s) not found on disk: %s",
+                len(missing), ", ".join(missing),
+            )
+    return sorted(included)
 
 
 def discover_e2e_tests(mode: str = "auto") -> List[str]:
@@ -714,6 +814,77 @@ def _parse_pytest_output(
     return results
 
 
+def _is_selenium_script(test_file: str) -> bool:
+    """True for a standalone tests/e2e_*.py selenium script (main()-driven).
+
+    These are executed directly via ``python <file>`` rather than pytest, because
+    their ``test_*`` functions take positional args (driver, results) and are not
+    pytest fixtures — pytest collection would raise fixture errors.
+    """
+    p = Path(test_file)
+    return (
+        p.suffix == ".py"
+        and p.name.startswith("e2e_")
+        and p.parent.name == "tests"
+    )
+
+
+def run_selenium_script(
+    run_id: str,
+    logger: logging.Logger,
+    script: str,
+) -> List[E2ETestResult]:
+    """Run a standalone selenium e2e script (tests/e2e_*.py) via ``python <file>``.
+
+    The script's ``main()`` returns 0 on pass / non-zero on failure. Requires a
+    live dashboard + a browser driver; the caller gates on ``check_selenium_driver``.
+    """
+    name = os.path.basename(script).replace(".py", "")
+    logger.info("e2e_runner: running selenium script %s", name)
+    cmd = [sys.executable, script]
+
+    env = os.environ.copy()
+    root_str = str(PROJECT_ROOT)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_SELENIUM_TIMEOUT_SECONDS,
+            cwd=str(PROJECT_ROOT),
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        msg = f"selenium script timed out after {_SELENIUM_TIMEOUT_SECONDS} seconds"
+        logger.error("e2e_runner: %s", msg)
+        return [E2ETestResult(
+            test_name=name, status="failed", test_path=script, error=msg,
+        )]
+    except FileNotFoundError:
+        msg = f"Python interpreter not found: {sys.executable}"
+        logger.error("e2e_runner: %s", msg)
+        return [E2ETestResult(
+            test_name=name, status="failed", test_path=script, error=msg,
+        )]
+
+    logger.info("e2e_runner: %s exit code %s", name, proc.returncode)
+    status = "passed" if proc.returncode == 0 else "failed"
+    error = None
+    if status == "failed":
+        error = (
+            f"script exited {proc.returncode}: "
+            f"{((proc.stderr or proc.stdout) or '')[:500]}"
+        )
+    return [E2ETestResult(
+        test_name=name, status=status, test_path=script, error=error,
+    )]
+
+
 def run_selenium(
     run_id: str,
     logger: logging.Logger,
@@ -723,7 +894,14 @@ def run_selenium(
 
     Caller must check ``check_selenium_driver()`` first and handle the
     absent-driver case; this function assumes the driver is present.
+
+    A standalone ``tests/e2e_*.py`` script passed as ``test_file`` is dispatched to
+    ``run_selenium_script`` (executed directly), since such scripts are main()-driven
+    and not pytest-collectable.
     """
+    if test_file and _is_selenium_script(test_file):
+        return run_selenium_script(run_id, logger, test_file)
+
     logger.info("e2e_runner: running tests via Selenium (pytest)")
     target = test_file or str(PROJECT_ROOT / "tests" / "e2e_selenium")
     cmd = [sys.executable, "-m", "pytest", target, "-v", "--tb=short", "-q"]
@@ -804,6 +982,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default="chromium",
         help="Playwright browser project (chromium, firefox, webkit)",
     )
+    parser.add_argument(
+        "--include-scripts",
+        action="store_true",
+        help=(
+            "With --driver selenium --run-all, additionally execute the standalone "
+            "tests/e2e_*.py scripts listed in args/e2e_script_allowlist.yaml. "
+            "Opt-in; default --run-all behavior is unchanged."
+        ),
+    )
     parser.add_argument("--validate-screenshots", action="store_true")
     parser.add_argument(
         "--vision-assertions", action="append",
@@ -860,6 +1047,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.run_all or args.test_file:
             target = args.test_file if args.test_file else None
             results = run_selenium(run_id, logger, test_file=target)
+            # Opt-in: additionally run allowlisted standalone scripts on --run-all.
+            # Default behavior (flag absent) is unchanged.
+            if args.run_all and getattr(args, "include_scripts", False):
+                scripts = discover_allowlisted_scripts(logger)
+                logger.info(
+                    "e2e_runner: --include-scripts → executing %d allowlisted "
+                    "standalone script(s)", len(scripts),
+                )
+                for script in scripts:
+                    results.extend(run_selenium_script(run_id, logger, script))
         else:
             parser.print_help()
             return 1

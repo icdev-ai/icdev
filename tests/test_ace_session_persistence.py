@@ -115,3 +115,9 @@ def test_duplicate_resume_token_raises(ace_db, instance_id):
             "INSERT INTO ace_sessions (session_id, instance_id, conversation_history, resume_token) VALUES (?, ?, ?, ?)",
             (str(uuid.uuid4()), instance_id, "[]", token),
         )
+
+    # The failed INSERT opened an implicit transaction that the exception left
+    # dangling. The test's intent is "the UNIQUE constraint fires", not "leave a
+    # write transaction open" — so close it rather than suppress the leak guard
+    # added in #1066, which is correctly reporting a real leak here.
+    ace_db.rollback()

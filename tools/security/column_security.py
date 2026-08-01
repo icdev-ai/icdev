@@ -22,6 +22,7 @@ Strategies:
 
 import hashlib
 import json
+import threading
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -46,19 +47,69 @@ def _resolve_config_path() -> Path:
     return _PACKAGED_CONFIG_PATH
 
 
+#: Memoized parse of the security config, keyed on the file's identity
+#: (path, mtime, size). ``_apply_column_masking`` in tools/db/storage.py calls
+#: ``get_column_policies_for_role`` once per fetched ROW, so an uncached parse
+#: here re-read and re-parsed ~11KB of YAML thousands of times per request —
+#: enough to turn a high-row-count dashboard route into an 86-second request.
+#: The stat() below is microseconds against ~14ms for the parse, and keeping
+#: mtime in the key preserves hot-reload: edit the YAML and the next call
+#: re-parses without a restart.
+_CONFIG_CACHE: dict[str, Any] = {}
+
+#: Guards the compare-and-swap on ``_CONFIG_CACHE``. The dashboard is threaded;
+#: without this, concurrent first-touch requests each parse the file.
+_CONFIG_CACHE_LOCK = threading.Lock()
+
+
+def _config_cache_key(path: Path) -> tuple:
+    """Identity of the config file: re-parse only when one of these changes."""
+    st = path.stat()
+    return (str(path), st.st_mtime_ns, st.st_size)
+
+
+def reset_config_cache() -> None:
+    """Drop the memoized config. For tests and for explicit reload hooks."""
+    with _CONFIG_CACHE_LOCK:
+        _CONFIG_CACHE.clear()
+
+
 def _load_config() -> dict:
+    """Return the parsed security config.
+
+    The returned dict is the shared cached object and MUST be treated as
+    read-only. Callers that hand policy data outward copy it first (see
+    ``get_column_policies_for_role``); keep it that way — mutating this dict
+    would corrupt masking policy for every later request in the process.
+    """
     path = _resolve_config_path()
     if not path.exists():
         logger.warning("column masking: security_config.yaml not found (looked in %s, %s)",
                        _CONFIG_PATH, _PACKAGED_CONFIG_PATH)
         return {}
     try:
+        key = _config_cache_key(path)
+    except OSError:
+        logger.exception("column masking: failed to stat %s", path)
+        return {}
+
+    cached = _CONFIG_CACHE.get("entry")
+    if cached is not None and cached[0] == key:
+        return cached[1]
+
+    try:
         import yaml  # type: ignore[import-untyped]
         with open(path, "r", encoding="utf-8") as fh:
-            return yaml.safe_load(fh) or {}
+            parsed = yaml.safe_load(fh) or {}
     except Exception:
         logger.exception("column masking: failed to load %s", path)
+        # Deliberately not cached: a transient read error must not pin an
+        # empty (fail-open, unmasked) policy set for the life of the process.
         return {}
+
+    with _CONFIG_CACHE_LOCK:
+        _CONFIG_CACHE["entry"] = (key, parsed)
+    return parsed
 
 
 # ---------------------------------------------------------------------------

@@ -11,11 +11,24 @@ HIGH   — Must be zero before merge (pgp-tx-03 gate blocks CI)
            * json_each(      — SQLite-only table-valued function
            * json_array_length(json_extract(  — nested SQLite JSON funcs
            * sqlite3.connect(  — bare connection (sibling exemptions apply)
+           * sqlite_master usage that does NOT match a translate_sql rule-14
+             shape — bypasses translation and raises / silently mis-answers on PG
+           * introspection PRAGMA other than ``PRAGMA table_info(X)`` (the only
+             shape translate_sql rule-1 rewrites) — silently no-ops to SELECT 1 on PG
 MEDIUM — Tracked; add to baseline to allow (debt-snapshot model)
            * json_extract(   — standalone SQLite JSON extraction
            * json_array_length(  — standalone SQLite JSON length
-           * PRAGMA           — SQLite PRAGMA statements
-           * sqlite_master    — SQLite system catalogue
+           * PRAGMA           — SQLite config PRAGMA (no-op on PG) / table_info
+           * sqlite_master    — rule-14-matching system-catalogue query
+
+Rule-14 / rule-1 shapes translate_sql DOES rewrite (kept MEDIUM):
+    * SELECT 1|name|count(*) FROM sqlite_master WHERE type='table' AND name = ?/%s
+    * SELECT name FROM sqlite_master WHERE type='table'
+    * SELECT count(*) FROM sqlite_master WHERE type='table'
+    * PRAGMA table_info(X)
+Anything else that touches sqlite_master / an introspection PRAGMA is HIGH — use
+the backend-aware helpers tools.db.storage.table_exists / list_tables /
+column_exists instead.
 
 Exemptions
 ----------
@@ -40,6 +53,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -155,6 +170,59 @@ _MEDIUM_PATTERNS: list[tuple[str, str, str]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# translate_sql rule-14 / rule-1 shape detection
+# ---------------------------------------------------------------------------
+# translate_sql (tools/db/storage.py) rewrites ONLY these exact sqlite_master
+# shapes (rule 14) and ONLY ``PRAGMA table_info(X)`` (rule 1) to PG
+# information_schema. Every other sqlite_master / introspection-PRAGMA usage
+# bypasses translation and raises (or silently mis-answers) on PostgreSQL — the
+# same failure mode that silently skipped every compliance framework in
+# cato_twin for months. Those bypassing forms are escalated to HIGH.
+
+_RULE14_SQLITE_MASTER_SHAPES: tuple = (
+    # SELECT 1|name|count(*) FROM sqlite_master WHERE type='table' AND name = ?/%s
+    re.compile(
+        r"select\s+(?:1|name|count\(\s*\*\s*\))\s+from\s+sqlite_master\s+"
+        r"where\s+type\s*=\s*'table'\s+and\s+name\s*=\s*(?:\?|%s)",
+        re.IGNORECASE,
+    ),
+    # SELECT name FROM sqlite_master WHERE type='table'
+    re.compile(
+        r"select\s+name\s+from\s+sqlite_master\s+where\s+type\s*=\s*'table'",
+        re.IGNORECASE,
+    ),
+    # SELECT count(*) FROM sqlite_master WHERE type='table'
+    re.compile(
+        r"select\s+count\(\s*\*\s*\)\s+from\s+sqlite_master\s+where\s+type\s*=\s*'table'",
+        re.IGNORECASE,
+    ),
+)
+
+_RULE1_PRAGMA_TABLE_INFO = re.compile(r"pragma\s+table_info\s*\(", re.IGNORECASE)
+
+# Introspection PRAGMAs that translate_sql does NOT handle (rule 1 covers only
+# table_info) — on PG they collapse to a no-op ``SELECT 1`` and mis-answer.
+_PRAGMA_INTROSPECTION = re.compile(
+    r"pragma\s+(?:index_list|index_info|index_xinfo|foreign_key_list|"
+    r"foreign_key_check|table_xinfo|table_info_all|database_list|collation_list)\b",
+    re.IGNORECASE,
+)
+
+
+def _sqlite_master_bypasses_rule14(line: str) -> bool:
+    """True if a sqlite_master line matches NO translate_sql rule-14 shape."""
+    return not any(rx.search(line) for rx in _RULE14_SQLITE_MASTER_SHAPES)
+
+
+def _pragma_bypasses_translation(line: str) -> bool:
+    """True if a PRAGMA line is an introspection PRAGMA translate_sql cannot rewrite
+    (anything other than the rule-1 ``PRAGMA table_info(X)`` shape)."""
+    if _RULE1_PRAGMA_TABLE_INFO.search(line):
+        return False
+    return bool(_PRAGMA_INTROSPECTION.search(line))
+
+
 def _in_docstring_context(lines: list[str], lineno_0: int) -> bool:
     """Return True if *lineno_0* (0-based) is inside a triple-quoted string."""
     in_triple_single = False
@@ -244,14 +312,33 @@ def scan_file(filepath: Path) -> list[dict]:
                     already_high = any(hp in line for hp, _, _ in _HIGH_PATTERNS)
                     if already_high:
                         break
+                    # Escalate introspection usages that bypass translate_sql's
+                    # narrow rule-14 (sqlite_master) / rule-1 (PRAGMA table_info)
+                    # shapes — those raise or silently mis-answer on PostgreSQL.
+                    eff_severity, eff_fix = severity, fix
+                    if pattern == "sqlite_master" and _sqlite_master_bypasses_rule14(line):
+                        eff_severity = "high"
+                        eff_fix = (
+                            "Bypasses translate_sql rule-14 (only 3 exact shapes are "
+                            "rewritten to information_schema); use "
+                            "tools.db.storage.table_exists()/list_tables() instead"
+                        )
+                    elif pattern == "PRAGMA " and _pragma_bypasses_translation(line):
+                        eff_severity = "high"
+                        eff_fix = (
+                            "Introspection PRAGMA not handled by translate_sql rule-1 "
+                            "(only PRAGMA table_info is rewritten); it no-ops to "
+                            "SELECT 1 on PG — use tools.db.storage.column_exists()/"
+                            "table_exists() or a backend-aware query instead"
+                        )
                     findings.append(
                         {
                             "file": fp_norm,
                             "line": lineno,
                             "col": line.index(pattern) + 1,
                             "pattern": pattern,
-                            "severity": severity,
-                            "fix": fix,
+                            "severity": eff_severity,
+                            "fix": eff_fix,
                             "text": stripped,
                         }
                     )
@@ -280,6 +367,19 @@ def _load_baseline(baseline_path: Path) -> set[tuple]:
 
 def _finding_key(f: dict) -> tuple:
     return (f["file"], f["line"], f["pattern"])
+
+
+def _rel(file: str, root) -> str:
+    """Repo-relative posix path — keeps the baseline portable across checkouts/CI."""
+    try:
+        return os.path.relpath(file, str(root)).replace("\\", "/")
+    except ValueError:  # e.g. different drive on Windows
+        return _normalise(file)
+
+
+def _rel_key(f: dict, root) -> tuple:
+    """Root-relative finding key so a committed baseline matches any checkout."""
+    return (_rel(f["file"], root), f["line"], f["pattern"])
 
 
 # ---------------------------------------------------------------------------
@@ -358,18 +458,21 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.write_baseline:
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        # Store repo-relative paths so the committed baseline matches any checkout
+        # (worktrees, CI) rather than this machine's absolute paths.
+        rel_findings = [{**f, "file": _rel(f["file"], root)} for f in findings]
         data = {
             "linter": "pg_portability_linter",
-            "root": _normalise(str(root)),
-            "finding_count": len(findings),
-            "findings": findings,
+            "root": ".",
+            "finding_count": len(rel_findings),
+            "findings": rel_findings,
         }
         baseline_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        print(f"pg_portability_linter: baseline written to {baseline_path} ({len(findings)} findings)")
+        print(f"pg_portability_linter: baseline written to {baseline_path} ({len(rel_findings)} findings)")
         return 0
 
     baseline = _load_baseline(baseline_path)
-    new_findings = [f for f in findings if _finding_key(f) not in baseline]
+    new_findings = [f for f in findings if _rel_key(f, root) not in baseline]
     new_highs = [f for f in new_findings if f["severity"] == "high"]
 
     if args.json_output:

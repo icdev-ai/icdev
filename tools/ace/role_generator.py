@@ -93,6 +93,23 @@ _CAPABILITY_MAP: list[tuple[list[str], list[str]]] = [
 _DEFAULT_CAPABILITIES = ["task_execution", "status_reporting", "context_retrieval"]
 
 
+def _clip(text: str, limit: int = 120) -> str:
+    """Shorten *text* to *limit* chars without cutting a word in half.
+
+    A bare ``[:120]`` produced descriptions that stopped mid-word with an
+    unclosed bracket — e.g. the Cortex registry entry ended
+    "...(complete/classify/extract/search/ask". These strings are written into
+    committed role YAML, so the damage is durable rather than cosmetic.
+    """
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    if " " in cut:
+        cut = cut[: cut.rindex(" ")]
+    return cut.rstrip(" ,;:-(") + "…"
+
+
 def _pick_capabilities(canvas_key: str, display_name: str, description: str) -> list[str]:
     """Return 2–3 capability strings based on canvas identity."""
     combined = f"{canvas_key} {display_name} {description}".lower()
@@ -151,7 +168,7 @@ def generate_role(
     """
     role_id = f"{canvas_key}_analyst"
     capabilities = _pick_capabilities(canvas_key, display_name, description)
-    short_desc = (description or f"Canvas for {display_name} operations in ICDEV.")[:120]
+    short_desc = _clip(description or f"Canvas for {display_name} operations in ICDEV.")
 
     return {
         "role_id": role_id,

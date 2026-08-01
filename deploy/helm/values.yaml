@@ -300,6 +300,25 @@ platformDb:
       memory: 2Gi
 
 # -----------------------------------------------------------------------
+# RAG + Knowledge Graph
+# -----------------------------------------------------------------------
+# When enabled, the platform database MUST provide pgvector: ICDEV stores
+# embeddings in a `vector` column, so a stock postgres image cannot host the
+# RAG schema and every embedding write fails.
+rag:
+  enabled: true
+  # Image used for the platform DB when rag.enabled. Override with your own
+  # mirrored/hardened build in air-gapped or registry-restricted clusters.
+  vectorImage: pgvector/pgvector:pg16
+  # Dimension is a property of the EMBEDDING provider, not the chat model.
+  # 768 matches every air-gap provider (nomic / gemini-004 / ibm-slate);
+  # 1536 matches only cloud OpenAI. Changing this after data exists needs a
+  # schema migration, so it is deliberately explicit.
+  embeddingDim: 768
+  knowledgeGraph:
+    enabled: true
+
+# -----------------------------------------------------------------------
 # License
 # -----------------------------------------------------------------------
 license:

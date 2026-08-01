@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Cortex MCP server — 7 tools exposing the unified ICDEV Cortex facade.
+"""Cortex MCP server — 8 tools exposing the unified ICDEV Cortex facade.
 
 The Cortex facade (``tools/cortex/api.py``) is the platform's unified AI layer
 over LLMRouter / RAG / KG / DIC / IQE / ACE with a single enforced TRUST
@@ -13,6 +13,7 @@ Each handler is a thin one-liner into ``tools.cortex``:
     cortex_search        -> cortex.search()            -> [CortexSearchResult]
     cortex_ask           -> cortex.ask()               -> CortexResult
     cortex_complete      -> cortex.complete()          -> CortexResult
+    cortex_reason        -> cortex.reason()            -> CortexResult
     cortex_classify      -> cortex.classify()          -> CortexResult
     cortex_extract       -> cortex.extract()           -> CortexResult
     cortex_govern        -> cortex.govern()            -> GovernanceReport
@@ -174,6 +175,34 @@ def handle_cortex_complete(arguments: Dict[str, Any]) -> Dict[str, Any]:
             return _blocked_response(exc)
     except ImportError:
         return {"error": "Cortex complete subsystem not available"}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_cortex_reason(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Multi-step reasoning (cot | debate | council) via the governed Cortex chain."""
+    prompt = arguments.get("prompt", "")
+    if not prompt:
+        return {"error": "prompt is required"}
+
+    try:
+        from tools.cortex import reason
+        from tools.cortex.governance import GovernanceBlockedError
+
+        try:
+            result = reason(
+                prompt,
+                mode=arguments.get("mode") or "cot",
+                ctx=_build_context(arguments),
+                system_prompt=arguments.get("system_prompt") or "",
+                max_tokens=arguments.get("max_tokens"),
+                temperature=arguments.get("temperature"),
+            )
+            return {"classification": _CLASSIFICATION, **result.to_dict()}
+        except GovernanceBlockedError as exc:
+            return _blocked_response(exc)
+    except ImportError:
+        return {"error": "Cortex reason subsystem not available"}
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -410,7 +439,7 @@ def _schema(properties: Dict[str, Any], required: list) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# MCPServer — register all 7 Cortex tools
+# MCPServer — register all 8 Cortex tools
 # ---------------------------------------------------------------------------
 CORTEX_TOOLS = (
     {
@@ -467,6 +496,28 @@ CORTEX_TOOLS = (
         ),
         "properties": {
             "prompt": {"type": "string", "description": "User prompt text"},
+            "system_prompt": {"type": "string", "description": "Optional system prompt"},
+            "max_tokens": {"type": "integer", "description": "Max output tokens (optional)"},
+            "temperature": {"type": "number", "description": "Sampling temperature (optional)"},
+        },
+        "required": ["prompt"],
+    },
+    {
+        "name": "cortex_reason",
+        "handler": handle_cortex_reason,
+        "description": (
+            "Multi-step reasoning via the router's chain orchestration, governed end to end. "
+            "mode selects the strategy: 'cot' (chain of thought), 'debate' (proposer/critic rounds), "
+            "'council' (fixed-perspective advisors + chairman synthesis). Returns a CortexResult with "
+            "provider/model/cost/latency accounting, metadata.reason_mode, and the GovernanceReport."
+        ),
+        "properties": {
+            "prompt": {"type": "string", "description": "Reasoning prompt text"},
+            "mode": {
+                "type": "string",
+                "description": "Reasoning strategy: cot | debate | council (default cot)",
+                "default": "cot",
+            },
             "system_prompt": {"type": "string", "description": "Optional system prompt"},
             "max_tokens": {"type": "integer", "description": "Max output tokens (optional)"},
             "temperature": {"type": "number", "description": "Sampling temperature (optional)"},
@@ -560,7 +611,7 @@ CORTEX_TOOLS = (
 
 
 def build_server() -> MCPServer:
-    """Build and return a configured Cortex MCP server (7 tools)."""
+    """Build and return a configured Cortex MCP server (8 tools)."""
     server = MCPServer(name="icdev-cortex", version="1.0.0")
     for tool in CORTEX_TOOLS:
         server.register_tool(

@@ -218,9 +218,23 @@
 .dc-score-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-weight: bold; font-size: 13px; }
 </style>
 
+<!-- Initial graph data (cnr-qdc-02): rendered as HTML-safe JSON in a data
+     island and parsed by JS — never interpolated into executable script, so
+     an attacker-controlled graph_json (via api_save_design) cannot break out
+     of a <script> block with a </script> payload. -->
+<script type="application/json" id="qdc-initial-graph">{{ (design.graph_json if design and design.graph_json else '{}')|tojson }}</script>
+
 <script>
 (function() {
   'use strict';
+
+  // ── HTML escape helper (cnr-qdc-02) — for any dynamic string placed into
+  //    innerHTML (server error messages, exception text). ───────────────
+  function qdcEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
 
   // ── Global config ─────────────────────────────────────────────
   window.DESIGN_ID = {{ (design.id|tojson) if design and design.id else 'null' }};
@@ -334,12 +348,12 @@
           renderAssessment(d.assessment);
           setStatus('Assessment complete');
         } else {
-          document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Assessment failed: ' + (d.error || 'Unknown') + '</p>';
+          document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Assessment failed: ' + qdcEsc(d.error || 'Unknown') + '</p>';
           setStatus('Assessment failed');
         }
       })
       .catch(function(e) {
-        document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + e.message + '</p>';
+        document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + qdcEsc(e.message) + '</p>';
         setStatus('Error');
       });
   };
@@ -352,7 +366,7 @@
     fetch(API_BASE + '/designs/' + DESIGN_ID + '/governance', {method: 'POST'})
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        if (d.error) { document.getElementById('dc-panel-body').innerHTML = '<p style="color:#e74c3c;">' + d.error + '</p>'; return; }
+        if (d.error) { document.getElementById('dc-panel-body').innerHTML = '<p style="color:#e74c3c;">' + qdcEsc(d.error) + '</p>'; return; }
         var score = d.score || 0;
         var grade = d.grade || '?';
         var maturity = d.maturity || {};
@@ -383,7 +397,7 @@
         setStatus('Governance check complete');
       })
       .catch(function(e) {
-        document.getElementById('dc-panel-body').innerHTML = '<p style="color:#e74c3c;">Error: ' + e.message + '</p>';
+        document.getElementById('dc-panel-body').innerHTML = '<p style="color:#e74c3c;">Error: ' + qdcEsc(e.message) + '</p>';
         setStatus('Error');
       });
   };
@@ -399,11 +413,11 @@
           renderGaps(d.gaps || []);
           setStatus('Gap analysis complete');
         } else {
-          document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">' + (d.error || 'No gaps data') + '</p>';
+          document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">' + qdcEsc(d.error || 'No gaps data') + '</p>';
         }
       })
       .catch(function(e) {
-        document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + e.message + '</p>';
+        document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + qdcEsc(e.message) + '</p>';
       });
   };
 
@@ -416,11 +430,11 @@
         if (d.status === 'ok') {
           renderUQS(d);
         } else {
-          document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">' + (d.error || 'No UQS data') + '</p>';
+          document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">' + qdcEsc(d.error || 'No UQS data') + '</p>';
         }
       })
       .catch(function(e) {
-        document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + e.message + '</p>';
+        document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + qdcEsc(e.message) + '</p>';
       });
   };
 
@@ -433,11 +447,11 @@
         if (d.status === 'ok') {
           renderGates(d.gates || []);
         } else {
-          document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">' + (d.error || 'No gate data') + '</p>';
+          document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">' + qdcEsc(d.error || 'No gate data') + '</p>';
         }
       })
       .catch(function(e) {
-        document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + e.message + '</p>';
+        document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + qdcEsc(e.message) + '</p>';
       });
   };
 
@@ -578,13 +592,13 @@
     .then(function(d) {
       var body = document.getElementById('dc-panel-body');
       if (d.status === 'ok') {
-        body.innerHTML = '<p class="dc-result-pass">Runbook executed successfully.</p><pre style="background:#16213e;padding:8px;border-radius:4px;font-size:11px;color:#eaeaea;white-space:pre-wrap;">' + JSON.stringify(d.result, null, 2) + '</pre>';
+        body.innerHTML = '<p class="dc-result-pass">Runbook executed successfully.</p><pre style="background:#16213e;padding:8px;border-radius:4px;font-size:11px;color:#eaeaea;white-space:pre-wrap;">' + qdcEsc(JSON.stringify(d.result, null, 2)) + '</pre>';
       } else {
-        body.innerHTML = '<p class="dc-result-fail">Execution failed: ' + (d.error || 'Unknown') + '</p>';
+        body.innerHTML = '<p class="dc-result-fail">Execution failed: ' + qdcEsc(d.error || 'Unknown') + '</p>';
       }
     })
     .catch(function(e) {
-      document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + e.message + '</p>';
+      document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + qdcEsc(e.message) + '</p>';
     });
   };
 
@@ -726,11 +740,18 @@
     });
   }
 
-  // ── Load initial graph from design data ─────────────────────
-  var _initialGraph = {{ (design.graph_json if design and design.graph_json else '{}')|safe }};
-  if (typeof _initialGraph === 'string') {
-    try { _initialGraph = JSON.parse(_initialGraph); } catch(e) { _initialGraph = {nodes:[], edges:[]}; }
-  }
+  // ── Load initial graph from design data (cnr-qdc-02: parse the JSON data
+  //    island rather than interpolating graph_json into script source) ──
+  var _initialGraph = {nodes:[], edges:[]};
+  try {
+    var _rawEl = document.getElementById('qdc-initial-graph');
+    var _raw = _rawEl ? JSON.parse(_rawEl.textContent || '""') : '';
+    if (typeof _raw === 'string') {
+      _initialGraph = _raw ? JSON.parse(_raw) : {nodes:[], edges:[]};
+    } else if (_raw && typeof _raw === 'object') {
+      _initialGraph = _raw;
+    }
+  } catch(e) { _initialGraph = {nodes:[], edges:[]}; }
   if (_initialGraph && (_initialGraph.nodes || []).length > 0) {
     renderGraphNodes(_initialGraph);
   } else {

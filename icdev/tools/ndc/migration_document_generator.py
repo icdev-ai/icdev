@@ -31,10 +31,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _nc_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_NC_DB), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+def _nc_conn():
+    # PG-primary via the Network Canvas helper (NC_STORAGE_BACKEND); SQLite is a
+    # guarded fallback. Returns a StorageConnection so %s placeholders translate.
+    from tools.network.db.init_db import get_connection
+
+    return get_connection()
 
 
 def _get_device(conn: sqlite3.Connection, device_id: str) -> Optional[Dict[str, Any]]:

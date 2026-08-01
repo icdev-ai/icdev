@@ -238,9 +238,14 @@ def _calibrate_vuln_threshold(cfg: Dict[str, Any]) -> Dict[str, Any]:
             f'Reply with JSON only: {{"verdict": "adaptive_ok" or "revert_to_base", '
             f'"reason": "one sentence", "recommended_threshold": <number {min_floor}-{max_cap}>}}'
         )
-        req = LLMRequest(prompt=prompt, model=model, max_tokens=120, temperature=0.1)
-        resp = LLMRouter().complete(req, function="anomaly_detection")
-        m = _re.search(r"\{.*\}", resp.text, _re.DOTALL)
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            max_tokens=120,
+            temperature=0.1,
+        )
+        resp = LLMRouter().invoke("anomaly_detection", req)
+        m = _re.search(r"\{.*\}", resp.content, _re.DOTALL)
         if m:
             parsed = json.loads(m.group())
             verdict = parsed.get("verdict", "adaptive_ok")

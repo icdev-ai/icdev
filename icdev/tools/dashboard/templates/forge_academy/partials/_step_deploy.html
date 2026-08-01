@@ -55,7 +55,7 @@ async function runDeploy(idx) {
       panel.style.border = '1px solid rgba(0,255,136,.3)';
       panel.style.color = 'var(--fa-green)';
       panel.innerHTML = '<strong>🚀 Agent Deployed</strong><br><br>Your AI agent is live in the ICDEV environment.<br>Pattern: ' + (config.pattern_id || 'custom');
-      await submitStep(idx, JSON.stringify(d), true);
+      await submitStep(idx, JSON.stringify(d));
       document.getElementById('next-btn-' + idx).style.display = 'inline-block';
     } else {
       panel.style.background = 'rgba(255,45,85,.06)';
@@ -63,7 +63,7 @@ async function runDeploy(idx) {
       panel.style.color = '#ff9090';
       panel.textContent = 'Deploy note: ' + (d.message || 'Check system configuration');
       // Still allow advance
-      await submitStep(idx, 'deploy-attempted', true);
+      await submitStep(idx, 'deploy-attempted');
       document.getElementById('next-btn-' + idx).style.display = 'inline-block';
     }
   } catch(e) {

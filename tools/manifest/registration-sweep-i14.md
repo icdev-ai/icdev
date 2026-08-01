@@ -54,7 +54,6 @@ module's docstring.
 | Integrations | tools/govlift/integrations.py | GovLift — External Interface Integration Registry and Health Module. | `--json` / (library) | JSON / objects |
 | Rbac | tools/govlift/rbac.py | GovLift RBAC — Role-Based Access Control (AC-2, AC-3, AC-6). | `--json` / (library) | JSON / objects |
 | Iac Generator | tools/idc/iac_generator.py | Infrastructure IaC Generator — IDC Workflow Step 3. | `--json` / (library) | JSON / objects |
-| Blueprint | tools/info_ops/blueprint.py | Info Ops Platform — Flask Blueprint. | `--json` / (library) | JSON / objects |
 | Bus Subscriber | tools/infra_canvas/bus_subscriber.py | IDC Cross-Canvas Event Bus Subscriber. | `--json` / (library) | JSON / objects |
 | Dockerfile Generator | tools/infra_canvas/dockerfile_generator.py | Infrastructure Canvas — Dockerfile & Docker Compose Generator. | `--json` / (library) | JSON / objects |
 | Cam | tools/iqe/adapters/cam.py | IQE Cloud Application Migration (CAM) collection adapters. | `--json` / (library) | JSON / objects |
@@ -91,9 +90,8 @@ module's docstring.
 | Iac Generator | tools/odc/iac_generator.py | ODC IaC Generator — ODC Workflow Step 3. | `--json` / (library) | JSON / objects |
 | Iac Generator | tools/ohc/iac_generator.py | Ops Hub IaC Generator — OHC Workflow Step 3. | `--json` / (library) | JSON / objects |
 | Blueprint | tools/ontology/blueprint.py | Ontology Explorer Flask blueprint. | `--json` / (library) | JSON / objects |
-| Iac Generator | tools/pdc/iac_generator.py | PDC IaC Generator — PDC Workflow Step 3. | `--json` / (library) | JSON / objects |
+| Studio Steps | tools/pipeline/studio_steps.py | PDC Studio workflow steps (scan/antipattern/iac) — reads live pipelines table, runs the live analysis engine, fails loud on missing design. Replaced the retired fabricated-result tools/pdc trio. | `--step <scan\|antipattern\|iac> --project-id <id> --json` | JSON w/ gate + artifacts |
 | Bus Subscriber | tools/pipeline/bus_subscriber.py | PDC Cross-Canvas Event Bus Subscriber. | `--json` / (library) | JSON / objects |
-| Sla Handler | tools/pipeline/sla_handler.py | pipeline module — sla handler. | `--json` / (library) | JSON / objects |
 | Enforce | tools/pki/enforce.py | mTLS Enforcement Middleware — reject inbound requests lacking a valid client certificate. | `--json` / (library) | JSON / objects |
 | Generate | tools/pki/generate.py | PKI Certificate Management — generate CA, server, and client certificates. | `--json` / (library) | JSON / objects |
 | Validate | tools/pki/validate.py | PKI Certificate Validation — verify chain, expiry, and mTLS configuration. | `--json` / (library) | JSON / objects |
@@ -113,6 +111,7 @@ module's docstring.
 | Source Registry | tools/strategos/source_registry.py | Source Registry — STANAG 2022 Intelligence Source Grading. | `--json` / (library) | JSON / objects |
 | Ansible Executor | tools/studio/executors/ansible_executor.py | Ansible Executor — Shared Workflow Step. | `--json` / (library) | JSON / objects |
 | Aws Config Executor | tools/studio/executors/aws_config_executor.py | AWS Config Executor — Shared Workflow Executor (canvas-agnostic). | `--json` / (library) | JSON / objects |
+| MCP Executor | tools/studio/executors/mcp_executor.py | Generic MCP tool executor — dispatches any `tool_registry.TOOL_REGISTRY` entry in-process (importlib module + handler), validating params against the entry's `input_schema` first. Unknown tool → exit 1 with closest matches. Results persist to run memory under `step:<step_id>` when `tools.studio.run_memory` (dwo-mem-01) is available. Authorization gating is dwo-mcp-02 — not yet a registered workflow node type. | `--tool <name> --params '<json>' [--run-id --step-id --project-id --json]` | JSON `{status, tool, category, handler, duration_ms, result, step_id, memory_key, memory_written}` |
 | Migration Reporter | tools/studio/executors/migration_reporter.py | Migration Reporter — Shared Workflow Step. | `--json` / (library) | JSON / objects |
 | Terraform Apply | tools/studio/executors/terraform_apply.py | Terraform Apply — Shared Workflow Executor (canvas-agnostic). | `--json` / (library) | JSON / objects |
 | Terraform Destroy | tools/studio/executors/terraform_destroy.py | Terraform Destroy — Shared Workflow Executor (canvas-agnostic). | `--json` / (library) | JSON / objects |

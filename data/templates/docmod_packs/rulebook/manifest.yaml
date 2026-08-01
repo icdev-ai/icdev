@@ -1,0 +1,36 @@
+# CUI // SP-CTI
+# Rulebook docmod pack — YAML only, zero Python.
+# The generated pack points at the shared RulebookPack evaluator, so a domain
+# owner writes rules, not code.
+name: rulebook
+kind: docmod_pack
+description: Rules-driven document currency pack for a new domain (YAML only, no Python).
+variables:
+  key:
+    type: string
+    required: true
+    description: Pack id / domain key (e.g. "safety_standards").
+  display_name:
+    type: string
+    required: true
+    description: Human-facing pack name (e.g. "Safety Standards").
+  entity_type:
+    type: string
+    default: "term"
+    description: KG entity type the rules extract (e.g. protocol, standard, term).
+  finding_type:
+    type: string
+    default: "deprecated_tech"
+    description: Default finding_type for rules that omit one. Must be in constants.FINDING_TYPES.
+
+files:
+  - src: pack.yaml.j2
+    dest: "args/docmod/packs/{{ key }}.yaml"
+  - src: rulebook.yaml.j2
+    dest: "args/docmod/rulebook_{{ key }}.yaml"
+
+validators:
+  - type: file_exists
+    path: "args/docmod/packs/{{ key }}.yaml"
+  - type: file_exists
+    path: "args/docmod/rulebook_{{ key }}.yaml"

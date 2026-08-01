@@ -55,7 +55,9 @@ def _load_config() -> dict:
     try:
         import yaml
 
-        config_path = BASE_DIR / "args" / "rag_config.yaml"
+        from tools.rag.config_path import rag_config_path
+
+        config_path = rag_config_path()
         if config_path.exists():
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}

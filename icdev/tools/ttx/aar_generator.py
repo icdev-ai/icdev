@@ -4,6 +4,7 @@
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import json
 from pathlib import Path
 
 from tools.db.storage import get_connection
@@ -93,9 +94,16 @@ def generate_aar(session_id: int) -> str:
                 resp = dict(resp)
                 team_name = teams.get(resp["team_id"], {}).get("team_name", f"Team {resp['team_id']}")
                 preview = (resp.get("response_text") or "")[:80].replace("|", "\\|").replace("\n", " ")
+                # Render an LLM-unscored response distinctly instead of as a real 0
+                # (fail-loud marker persisted in judge_rationale_json).
+                try:
+                    _unscored = json.loads(resp.get("judge_rationale_json") or "{}").get("unscored")
+                except Exception:
+                    _unscored = False
+                judge_cell = "_unscored_" if _unscored else f"{resp.get('judge_pts', 0)}"
                 _h(
                     f"| {team_name} | {preview}… | "
-                    f"{resp.get('receipt_pts', 0)} | {resp.get('judge_pts', 0)} | "
+                    f"{resp.get('receipt_pts', 0)} | {judge_cell} | "
                     f"{resp.get('time_bonus_pts', 0)} | **{resp.get('total_pts', 0)}** |"
                 )
         else:

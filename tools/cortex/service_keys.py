@@ -47,7 +47,8 @@ API_KEY_PREFIX = "icdev_ctx_"
 # The REST v1 operations a key can be scoped to (tools/cortex/rest_v1.py).
 # ``agent`` is deliberately absent from the REST surface — team launches are
 # same-machine MCP only (cortex_agent_launch).
-REST_OPERATIONS = ("search", "ask", "complete", "classify", "extract", "govern",
+REST_OPERATIONS = ("search", "ask", "complete", "reason", "classify", "extract",
+                   "govern",
                    # Deterministic deck assembly from a caller-supplied spec —
                    # no LLM spend, so it rides in the default grant.
                    "slides")
@@ -96,7 +97,7 @@ ALL_SCOPES = (CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + STAFFING_SCOPES
               + PRICING_SCOPES + DASHBOARD_SCOPES + AWARD_SCOPES + BOM_SCOPES
               + DATABRIDGE_SCOPES)
 
-# Default scopes for a newly created key: the six REST operations (the
+# Default scopes for a newly created key: the core REST operations (the
 # spend-heavier feeds/write scopes are granted explicitly).
 DEFAULT_SCOPES = CORTEX_SCOPES
 

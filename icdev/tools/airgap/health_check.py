@@ -92,6 +92,9 @@ def check_database() -> Dict[str, Any]:
         from tools.db.storage import get_connection
 
         with get_connection() as conn:
+            # pg-portability: sqlite-only path — air-gap health check gated on the
+            # data/icdev.db file existing (checked above), i.e. a SQLite deployment;
+            # a pure-PG deployment returns "Database not found" before reaching here.
             tables = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
         return {"status": "pass", "table_count": tables}
     except Exception as exc:

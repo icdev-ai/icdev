@@ -2,16 +2,25 @@
 """Tests for icdev.tools.ace.step_executor.StepExecutor."""
 from __future__ import annotations
 
+import sqlite3
 import types
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 
+import icdev.tools.ace.step_executor as step_executor
+from icdev.tools.ace.db.init_db import (
+    COWORKER_STATES,
+    INSTANCE_STATES,
+    SCHEMA,
+    repair_state_constraints,
+)
 from icdev.tools.ace.step_executor import (
     StepExecutor,
     ToolPermissionDeniedError,
     TrustKernelDeniedError,
+    _emit_audit,
     _eval_condition,
     _substitute,
 )
@@ -78,8 +87,21 @@ def _fake_module(fn_name: str, return_value: Any = "ok"):
 
 
 class TestSubstitute:
-    def test_whole_var_preserves_type(self):
-        assert _substitute("$count", {"count": 42}) == 42
+    def test_whole_var_is_stringified_like_inline(self):
+        """Both substitution forms stringify — see _substitute's docstring.
+
+        Previously asserted `== 42`, i.e. that a whole-var reference preserves
+        the context value's type. _substitute has stringified both forms since
+        its first commit and documents why: step arguments originate in
+        JSON/YAML and are text by the time a tool receives them. The assertion
+        was added long afterwards and never matched the code.
+
+        Renamed rather than deleted: type-preserving whole-var substitution is
+        a defensible design (Ansible and GitHub Actions both do it), so if it
+        is wanted it should be a deliberate change to _substitute and its
+        docstring, not a lone test asserting a behaviour nothing implements.
+        """
+        assert _substitute("$count", {"count": 42}) == "42"
 
     def test_inline_var_stringified(self):
         assert _substitute("prefix_$name", {"name": "foo"}) == "prefix_foo"
@@ -252,3 +274,143 @@ class TestStepExecutorRun:
             self.executor.run(step, {}, spec, CaptureTK())
 
         assert calls == [("red", "my-step-id")]
+
+
+# ---------------------------------------------------------------------------
+# ACE canvas schema — every declared state must satisfy its CHECK constraint
+# (hcx-ace-08: live PG constraint had drifted away from these constants)
+# ---------------------------------------------------------------------------
+
+
+class TestAceStateSchema:
+    def _fresh_schema_conn(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(SCHEMA)
+        conn.commit()
+        return conn
+
+    def test_all_instance_states_insertable(self):
+        conn = self._fresh_schema_conn()
+        try:
+            for i, state in enumerate(INSTANCE_STATES):
+                conn.execute(
+                    "INSERT INTO ace_instances (id, state) VALUES (?, ?)",
+                    (f"inst-{i}", state),
+                )
+            conn.commit()
+            n = conn.execute("SELECT COUNT(*) FROM ace_instances").fetchone()[0]
+            assert n == len(INSTANCE_STATES)
+        finally:
+            conn.close()
+
+    def test_all_coworker_states_insertable(self):
+        conn = self._fresh_schema_conn()
+        try:
+            conn.execute("INSERT INTO ace_instances (id, state) VALUES ('inst-x', 'active')")
+            for i, state in enumerate(COWORKER_STATES):
+                conn.execute(
+                    "INSERT INTO ace_coworkers (id, instance_id, role_id, state) "
+                    "VALUES (?, 'inst-x', 'r', ?)",
+                    (f"cw-{i}", state),
+                )
+            conn.commit()
+            n = conn.execute("SELECT COUNT(*) FROM ace_coworkers").fetchone()[0]
+            assert n == len(COWORKER_STATES)
+        finally:
+            conn.close()
+
+    def test_bogus_state_rejected(self):
+        conn = self._fresh_schema_conn()
+        try:
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute(
+                    "INSERT INTO ace_instances (id, state) VALUES ('bad', 'nonexistent_state')"
+                )
+                conn.commit()
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# repair_state_constraints — idempotent, no-op on SQLite (hcx-ace-08)
+# ---------------------------------------------------------------------------
+
+
+class TestRepairStateConstraints:
+    def test_sqlite_is_noop_and_idempotent(self):
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(SCHEMA)
+        conn.commit()
+        try:
+            first = repair_state_constraints(conn)
+            second = repair_state_constraints(conn)
+            assert first == second
+            assert all(v == "skipped:sqlite" for v in first.values())
+            assert set(first) == {"ace_instances", "ace_coworkers"}
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# _emit_audit — writes to ace_step_audit_log (renamed off ace_audit_log) (hcx-ace-01)
+# ---------------------------------------------------------------------------
+
+
+class TestEmitAudit:
+    def test_writes_row_to_step_audit_log(self, monkeypatch):
+        conn = sqlite3.connect(":memory:")
+        # Clear the module-level "table created" cache so _ensure_audit_table
+        # actually builds the table in this fresh in-memory connection.
+        step_executor._AUDIT_TABLE_CREATED.clear()
+        monkeypatch.setattr(step_executor, "get_connection", lambda: conn)
+        try:
+            _emit_audit(
+                step_id="s-1",
+                tool="fake.tool.fn",
+                trust_tier="green",
+                success=True,
+                skipped=False,
+                error=None,
+                duration_ms=12.5,
+            )
+            row = conn.execute(
+                "SELECT step_id, tool, trust_tier, success, skipped, duration_ms "
+                "FROM ace_step_audit_log"
+            ).fetchone()
+            assert row is not None
+            assert row[0] == "s-1"
+            assert row[1] == "fake.tool.fn"
+            assert row[2] == "green"
+            assert row[3] == 1
+            assert row[4] == 0
+            assert row[5] == 12.5
+        finally:
+            step_executor._AUDIT_TABLE_CREATED.clear()
+            conn.close()
+
+    def test_no_legacy_ace_audit_log_table_created(self, monkeypatch):
+        """The step executor must NOT create/write the canvas ace_audit_log."""
+        conn = sqlite3.connect(":memory:")
+        step_executor._AUDIT_TABLE_CREATED.clear()
+        monkeypatch.setattr(step_executor, "get_connection", lambda: conn)
+        try:
+            _emit_audit(
+                step_id="s-2",
+                tool="t",
+                trust_tier="green",
+                success=True,
+                skipped=False,
+                error=None,
+                duration_ms=1.0,
+            )
+            names = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            assert "ace_step_audit_log" in names
+            assert "ace_audit_log" not in names
+        finally:
+            step_executor._AUDIT_TABLE_CREATED.clear()
+            conn.close()

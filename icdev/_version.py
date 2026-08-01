@@ -1,3 +1,3 @@
 """ICDEV™ version — single source of truth."""
 
-__version__ = "1.2.36"
+__version__ = "1.2.42"

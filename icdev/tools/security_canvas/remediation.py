@@ -361,7 +361,12 @@ def generate_poam_entries(remediation_plan: dict) -> list:
     now = datetime.now(timezone.utc)
     seq = 1
 
-    for phase_num, phase in sorted(remediation_plan.get("phases", {}).items()):
+    # ``generate_remediation_plan`` emits ``phases`` as a LIST of phase dicts
+    # (each carrying its own ``phase`` number), which is the shape every other
+    # consumer — ``generate_poam_artifact``, ``generate_sar_artifact``, and the
+    # blueprint export routes — reads. Iterate that list directly.
+    for phase in remediation_plan.get("phases", []):
+        phase_num = phase.get("phase", "")
         deadline = phase.get("deadline", now.isoformat())
         for action in phase.get("actions", []):
             entry = {

@@ -18,7 +18,8 @@ Architecture:
   1. SDCComplianceGraph — loads sdc-compliance-kg from DB into memory
   2. classify_query()   — intent detection via regex patterns
   3. Deterministic handlers — graph traversal (no LLM required)
-  4. LLMQueryEngine     — Ollama fallback for open-ended questions
+  4. LLMQueryEngine     — governed LLMRouter fallback (via llm_adapter) for
+                          open-ended questions
   5. answer_query()     — public API: (question, design_id=None) → dict
 
 Usage:
@@ -31,7 +32,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
-import os
 import re
 import sys
 from collections import defaultdict, deque
@@ -42,26 +42,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-try:
-    import requests as _requests
-
-    from tools.http.client import request as _http_request
-
-    _HAS_REQUESTS = True
-except ImportError:
-    _requests = None  # type: ignore[assignment]
-    _http_request = None  # type: ignore[assignment]
-    _HAS_REQUESTS = False
-
 logger = get_logger("icdev.security_canvas.nl_query")
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-_OLLAMA_MODEL = os.environ.get("OLLAMA_NL_QUERY_MODEL", os.environ.get("OLLAMA_TOPO_MODEL", "qwen3.5:latest"))
-_LLM_TIMEOUT = int(os.environ.get("OLLAMA_NL_QUERY_TIMEOUT", "60"))
-
 # STRIDE metadata (kept local to avoid circular imports)
 _STRIDE_LABELS = {
     "S": "Spoofing",
@@ -1069,56 +1054,58 @@ def _handle_inventory(
 # ---------------------------------------------------------------------------
 
 
-def _llm_query(question: str, graph: SDCComplianceGraph) -> Dict[str, Any]:
-    """Fallback to Ollama for open-ended questions."""
-    if not _HAS_REQUESTS:
-        return {
-            "intent": "general",
-            "answer": ("Could not classify your question deterministically. Install 'requests' for LLM fallback."),
-            "llm_used": False,
-        }
+_LLM_SYSTEM_PROMPT = (
+    "You are a NIST 800-53 and SDC compliance expert. Answer questions about the "
+    "Security Design Canvas compliance graph concisely and accurately, citing "
+    "specific NIST controls or STRIDE categories."
+)
 
+
+def _llm_query(question: str, graph: SDCComplianceGraph) -> Dict[str, Any]:
+    """Fallback to the governed LLM router for open-ended questions.
+
+    Routes through ``tools.security_canvas.llm_adapter.generate`` (LLMRouter
+    function ``security_canvas``) — no direct provider calls or model IDs here.
+    When the adapter returns ``None`` (router/provider unavailable, redaction
+    refusal, budget block, etc.) we degrade to the deterministic guidance
+    message, exactly as the previous provider-unreachable path did.
+    """
     context = graph.compact_context()
     prompt = (
-        "You are a NIST 800-53 and SDC compliance expert. "
         "Answer the following question about the Security Design Canvas compliance graph.\n\n"
         f"GRAPH CONTEXT:\n{context}\n\n"
         f"QUESTION: {question}\n\n"
         "Provide a concise, accurate answer citing specific NIST controls or STRIDE categories."
     )
 
-    try:
-        resp = _http_request(  # type: ignore[union-attr]
-            "POST",
-            f"{_OLLAMA_HOST}/api/chat",
-            json={
-                "model": _OLLAMA_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": {"num_predict": 512},
-            },
-            timeout=_LLM_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        answer = data.get("message", {}).get("content", "") or data.get("response", "") or "No answer returned."
+    from tools.security_canvas import llm_adapter
+
+    answer = llm_adapter.generate(
+        prompt,
+        purpose="nl_query",
+        system=_LLM_SYSTEM_PROMPT,
+        max_tokens=512,
+    )
+
+    if answer:
         return {
             "intent": "general",
             "answer": answer.strip(),
             "llm_used": True,
-            "model": _OLLAMA_MODEL,
         }
-    except Exception as exc:  # noqa: BLE001
-        return {
-            "intent": "general",
-            "answer": (
-                f"LLM unavailable ({exc}). "
-                "Try a more specific question using STRIDE codes (S/T/R/I/D/E), "
-                "SDC control types (ctrl-firewall, ctrl-kms, etc.), "
-                "or framework names (fedramp, cmmc, il5)."
-            ),
-            "llm_used": False,
-        }
+
+    # Adapter returned None → LLM unavailable. Same deterministic fallback the
+    # module used when the provider was unreachable.
+    return {
+        "intent": "general",
+        "answer": (
+            "LLM unavailable. "
+            "Try a more specific question using STRIDE codes (S/T/R/I/D/E), "
+            "SDC control types (ctrl-firewall, ctrl-kms, etc.), "
+            "or framework names (fedramp, cmmc, il5)."
+        ),
+        "llm_used": False,
+    }
 
 
 # ---------------------------------------------------------------------------

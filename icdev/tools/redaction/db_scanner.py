@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 from tools.redaction.detector import RedactionDetector  # noqa: E402
 
 logger = get_logger("icdev.redaction.db_scanner")
@@ -109,13 +109,14 @@ class DBScanner:
 
     def _scan_table(self, conn, table: str) -> Optional[Dict[str, Any]]:
         """Scan a single table."""
-        # Check if table exists
-        exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
-        if not exists:
+        # Check if table exists — backend-aware probe (pgrt-sweep-06).
+        if not table_exists(conn, table):
             return None
 
-        # Get text columns
-        pragma = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        # Get text columns. PRAGMA table_info is translated to information_schema on
+        # PG by the StorageConnection wrapper (rule 1); no shared list-columns helper
+        # exists, so this stays as a translated probe (needs both name AND type).
+        pragma = conn.execute(f"PRAGMA table_info({table})").fetchall()  # noqa: S608 — table from GOVCON_TABLES constant
         text_columns = [
             col["name"]
             for col in pragma

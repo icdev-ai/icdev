@@ -1,0 +1,70 @@
+# CUI // SP-CTI
+# ICDEV™ Notification Routing Rules (crx-not-01)
+#
+# Evaluated at SEND time by tools/notifications/routing_rules.py::resolve_channels.
+# Rules map (severity x component x tenant) -> channel set. This is the small,
+# stable contract consumed by crx-gen-02 and DMX dmx-loop-01. Channel names are
+# the same adapter keys the NotificationGateway (tools/notifications/gateway.py)
+# understands (slack, teams, email, telegram, webhook, ...).
+#
+# Matching semantics (deterministic):
+#   * A rule matches when EVERY dimension it specifies matches the send-time
+#     value. A dimension omitted, null, or set to "*"/["*"] matches anything.
+#   * Channels from ALL matching rules are unioned in rule order, de-duplicated,
+#     preserving first-seen order.
+#   * If no rule matches, `default_channels` is used.
+
+# Ordered rules. Put the most specific / highest-severity rules first for
+# readable precedence (order only affects channel ordering, not membership).
+rules:
+  - name: critical-any
+    severity: [critical]
+    component: "*"
+    tenant: "*"
+    channels: [slack, telegram, email]
+
+  - name: high-security
+    severity: [high]
+    component: [security, compliance, stig, poam]
+    tenant: "*"
+    channels: [slack, email]
+
+  - name: high-default
+    severity: [high]
+    component: "*"
+    tenant: "*"
+    channels: [slack]
+
+  - name: medium-default
+    severity: [medium]
+    component: "*"
+    tenant: "*"
+    channels: [telegram]
+
+# Fallback when no rule matches (e.g. info/low severity).
+default_channels: [telegram]
+
+# --- Escalation (tools/notifications/escalation.py) ---------------------------
+# Unacknowledged alerts at one of `critical_severities` re-route to
+# `default_escalation_channels` after `timeout_minutes`. process_escalations()
+# is a synchronous sweep meant to be invoked by an existing reflex/scheduler —
+# NOT an always-on daemon.
+escalation:
+  timeout_minutes: 30
+  critical_severities: [critical]
+  default_escalation_channels: [slack, telegram, email]
+  # Public base URL used to build the one-click acknowledgement link.
+  ack_base_url: ""   # e.g. https://icdev.local/api/notifications/ack
+
+# --- Per-user preference defaults (tools/notifications/preferences.py) --------
+# Applied when a user has no stored notification_preferences row.
+preferences:
+  default_channels: [email]
+  # Quiet hours are LOCAL wall-clock hours [start, end). Empty = no quiet hours.
+  quiet_hours_start: null   # int 0-23
+  quiet_hours_end: null     # int 0-23
+  timezone: UTC
+  digest_opt_in: false
+  digest_frequency: daily
+  # Critical alerts bypass quiet-hours suppression by default.
+  critical_bypasses_quiet_hours: true

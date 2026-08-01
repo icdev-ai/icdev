@@ -42,30 +42,27 @@ REQUIRED_CAPABILITIES = {"network_egress", "dynamic_code", "obfuscation"}
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "integrity_backdoor_pkg"
 
 
-class _PersistentConn(sqlite3.Connection):
-    """In-memory connection whose ``close()`` is a no-op so a single instance can
-    be shared across engine + blueprint calls within one test."""
-
-    def close(self):  # noqa: D401 — intentional no-op; torn down via _hard_close
-        pass
-
-    def _hard_close(self):
-        super().close()
-
-
 @pytest.fixture
 def shared_conn(monkeypatch):
     """One shared in-memory DB, wired in as the result of ``get_connection`` for
     both the engine pipeline writes and the blueprint reads."""
     import importlib
 
+    from _sql_compat import translating
+
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("ICDEV_INTEGRITY_ENABLED", "true")
 
     from tools.integrity.db import init_db as init_db_mod
 
-    conn = sqlite3.connect(":memory:", factory=_PersistentConn)
-    conn.row_factory = sqlite3.Row
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+
+    # The integrity engine and blueprint author ``%s`` for PostgreSQL; a bare
+    # sqlite3 connection bypasses ``storage.translate_sql`` and every statement
+    # raises ``near "%": syntax error``. ``unclosable`` keeps the in-memory DB
+    # alive across the ``close()`` both layers call in their finally blocks.
+    conn = translating(raw, unclosable=True)
     init_db_mod.init_db(conn)
 
     # The root ``tools.*`` namespace is a compat shim redirecting to
@@ -74,7 +71,7 @@ def shared_conn(monkeypatch):
     storage = importlib.import_module("tools.db.storage")
     monkeypatch.setattr(storage, "get_connection", lambda *a, **k: conn)
     yield conn
-    conn._hard_close()
+    raw.close()
 
 
 @pytest.fixture

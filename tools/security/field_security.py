@@ -34,7 +34,13 @@ _DB_PATH_DEFAULT = str(Path(__file__).resolve().parent.parent.parent / "data" / 
 
 
 def _write_field_audit(schema: str, role: str, filtered_fields: list) -> None:
-    """Append one row to field_filter_audit. Never raises."""
+    """Append one row to field_filter_audit. Never raises.
+
+    Placeholders are `?`, not `%s`: this opens a RAW ``sqlite3`` connection and
+    never passes through ``translate_sql``, so it must speak sqlite's dialect.
+    With `%s` every insert raised, the bare ``except`` swallowed it, and the
+    audit table stayed empty while reporting as enabled.
+    """
     try:
         import sqlite3 as _sq
         from datetime import datetime, timezone
@@ -42,7 +48,7 @@ def _write_field_audit(schema: str, role: str, filtered_fields: list) -> None:
         _ac = _sq.connect(_db, timeout=5)
         _ac.execute(
             "INSERT INTO field_filter_audit (schema_name, role, filtered_fields, recorded_at)"
-            " VALUES (%s, %s, %s, %s)",
+            " VALUES (?, ?, ?, ?)",
             (schema, role, json.dumps(filtered_fields), datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()

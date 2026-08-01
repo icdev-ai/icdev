@@ -1,83 +1,168 @@
 # CUI // SP-CTI
-"""Executive view data — ROI summary, agent activity digest, cost breakdown."""
+"""Executive view data — ROI summary, agent activity digest, cost breakdown.
+
+Every metric is computed from the ``aisg_roi_events`` table. Metrics with no
+real backing data (e.g. an AI-maturity score) are reported as *unavailable*
+rather than fabricated. An empty table yields an explicit empty-state payload;
+a DB failure yields a degraded error payload — a broken database must never
+render as a healthy executive dashboard.
+"""
 from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 
 from tools.db.storage import get_connection
 
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.aisg.executive_view")
+
+COST_PER_HOUR = 150.0
+
+# Number of days since an agent's last logged event within which it is "active".
+_ACTIVE_WINDOW_DAYS = 7
+
+# Human-readable category label per ROI action_type (for cost breakdown).
+_CATEGORY_LABELS: dict[str, str] = {
+    "self_heal": "Self-Healing",
+    "compliance_check": "Compliance Checks",
+    "security_scan": "Security Scans",
+    "test_run": "Test Automation",
+    "evidence_collect": "Evidence Collection",
+    "pattern_deploy": "Pattern Deployment",
+    "fine_tune_eval": "Fine-Tune Evaluation",
+    "genesis_reflex": "Genesis Reflexes",
+}
+
+
+def _fetch_all_events() -> list[dict]:
+    """Return every ROI event (newest first). Raises on DB error."""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute(
+            "SELECT action_type, time_saved_minutes, description, triggered_by, occurred_at "
+            "FROM aisg_roi_events ORDER BY occurred_at DESC"
+        )
+        return [dict(r) for r in c.fetchall()]
+    finally:
+        conn.close()
+
+
+def _base_payload(state: str, message: str) -> dict:
+    """Skeleton payload with all template keys zeroed / emptied."""
+    return {
+        "state": state,
+        "empty": state == "empty",
+        "error": state == "error",
+        "message": message,
+        "hours_saved": 0.0,
+        "cost_avoided": 0.0,
+        "roi_events": [],
+        "cost_breakdown": [],
+        "agent_activity": [],
+        "maturity_trend": [],
+        "maturity_available": False,
+        "maturity_score": None,
+        "maturity_level": "Not available",
+        "agents_active": 0,
+        "total_tasks_automated": 0,
+    }
+
+
+def _parse_dt(occurred_at: str):
+    """Best-effort parse of an ISO / SQLite datetime string to aware UTC."""
+    s = (occurred_at or "").strip().replace(" ", "T")
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        # Fall back to the date portion only.
+        try:
+            dt = datetime.fromisoformat(s[:10])
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
 
 def get_executive_data() -> dict:
-    """Return ROI summary, activity digest, and cost breakdown for the executive view."""
-    hours_saved = 0
-    cost_avoided = 0.0
-    events: list[dict] = []
+    """Return ROI summary, activity digest, and cost breakdown for the exec view.
 
+    Payload ``state`` is one of ``"ok"`` / ``"empty"`` / ``"error"``.
+    """
     try:
-        conn = get_connection()
-        try:
-            c = conn.cursor()
-            c.execute(
-                "SELECT action_type, time_saved_minutes, description, triggered_by, occurred_at "
-                "FROM aisg_roi_events ORDER BY occurred_at DESC LIMIT 50"
-            )
-            rows = c.fetchall()
-            for r in rows:
-                d = dict(r)
-                events.append(d)
-                hours_saved += float(d.get("time_saved_minutes") or 0) / 60
-                cost_avoided += (float(d.get("time_saved_minutes") or 0) / 60) * 150.0
-        finally:
-            conn.close()
-    except Exception:
-        pass
+        events = _fetch_all_events()
+    except Exception as exc:
+        logger.warning("get_executive_data: DB error reading aisg_roi_events: %s", exc)
+        return _base_payload("error", "Executive ROI data is temporarily unavailable.")
 
-    # Fallback demo values when no ROI events exist yet
     if not events:
-        hours_saved = 342.5
-        cost_avoided = 51_375.0
-        events = [
-            {"action_type": "self_heal", "time_saved_minutes": 30, "description": "Auto-remediated stale dependency", "triggered_by": "coherence_checker", "occurred_at": "2026-05-01T14:22:00"},
-            {"action_type": "compliance_check", "time_saved_minutes": 45, "description": "IL4 NIST 800-53 control verification", "triggered_by": "icdev-comply", "occurred_at": "2026-05-01T10:05:00"},
-            {"action_type": "security_scan", "time_saved_minutes": 60, "description": "SAST scan across 3 modules", "triggered_by": "icdev-secure", "occurred_at": "2026-04-30T16:45:00"},
-            {"action_type": "genesis_reflex", "time_saved_minutes": 45, "description": "Autonomous research reflex completed", "triggered_by": "genesis_v2", "occurred_at": "2026-04-30T08:30:00"},
-            {"action_type": "test_run", "time_saved_minutes": 20, "description": "Full regression suite automated", "triggered_by": "test_orchestrator", "occurred_at": "2026-04-29T15:00:00"},
-        ]
+        return _base_payload("empty", "No ROI events recorded yet")
 
+    hours_saved = sum(float(e.get("time_saved_minutes") or 0) / 60.0 for e in events)
+    cost_avoided = hours_saved * COST_PER_HOUR
+    total_hours = hours_saved
+
+    # Cost breakdown by action-type category (real aggregates).
+    by_type: dict[str, float] = {}
+    for e in events:
+        at = e.get("action_type") or "other"
+        by_type[at] = by_type.get(at, 0.0) + float(e.get("time_saved_minutes") or 0) / 60.0
     cost_breakdown = [
-        {"category": "Self-Healing", "hours": round(hours_saved * 0.18, 1), "pct": 18},
-        {"category": "Compliance Checks", "hours": round(hours_saved * 0.24, 1), "pct": 24},
-        {"category": "Security Scans", "hours": round(hours_saved * 0.22, 1), "pct": 22},
-        {"category": "Test Automation", "hours": round(hours_saved * 0.14, 1), "pct": 14},
-        {"category": "Evidence Collection", "hours": round(hours_saved * 0.12, 1), "pct": 12},
-        {"category": "Genesis Reflexes", "hours": round(hours_saved * 0.10, 1), "pct": 10},
+        {
+            "category": _CATEGORY_LABELS.get(at, at.replace("_", " ").title()),
+            "hours": round(hrs, 1),
+            "pct": round((hrs / total_hours * 100) if total_hours else 0),
+        }
+        for at, hrs in sorted(by_type.items(), key=lambda x: -x[1])
     ]
 
-    agent_activity = [
-        {"agent": "Compliance Agent", "tasks_completed": 47, "last_run": "2026-05-03T08:00:00", "status": "active"},
-        {"agent": "Security Agent", "tasks_completed": 31, "last_run": "2026-05-03T06:30:00", "status": "active"},
-        {"agent": "Genesis Agent", "tasks_completed": 24, "last_run": "2026-05-02T22:15:00", "status": "idle"},
-        {"agent": "Test Agent", "tasks_completed": 58, "last_run": "2026-05-03T07:45:00", "status": "active"},
-        {"agent": "Deploy Agent", "tasks_completed": 12, "last_run": "2026-05-01T14:00:00", "status": "idle"},
-    ]
+    # Agent activity digest derived from triggered_by (real).
+    now = datetime.now(timezone.utc)
+    active_cutoff = now - timedelta(days=_ACTIVE_WINDOW_DAYS)
+    agents: dict[str, dict] = {}
+    for e in events:
+        agent = e.get("triggered_by") or "unknown"
+        occurred = str(e.get("occurred_at") or "")
+        a = agents.setdefault(agent, {"tasks_completed": 0, "last_run": ""})
+        a["tasks_completed"] += 1
+        if occurred > a["last_run"]:
+            a["last_run"] = occurred
 
-    maturity_trend = [
-        {"month": "Nov", "score": 62},
-        {"month": "Dec", "score": 67},
-        {"month": "Jan", "score": 71},
-        {"month": "Feb", "score": 75},
-        {"month": "Mar", "score": 79},
-        {"month": "Apr", "score": 83},
-        {"month": "May", "score": 87},
-    ]
+    agent_activity = []
+    agents_active = 0
+    for agent, a in sorted(agents.items(), key=lambda x: -x[1]["tasks_completed"]):
+        dt = _parse_dt(a["last_run"])
+        is_active = dt is not None and dt >= active_cutoff
+        if is_active:
+            agents_active += 1
+        agent_activity.append(
+            {
+                "agent": agent,
+                "tasks_completed": a["tasks_completed"],
+                "last_run": a["last_run"],
+                "status": "active" if is_active else "idle",
+            }
+        )
 
     return {
+        "state": "ok",
+        "empty": False,
+        "error": False,
+        "message": "",
         "hours_saved": round(hours_saved, 1),
         "cost_avoided": round(cost_avoided, 0),
         "roi_events": events[:10],
         "cost_breakdown": cost_breakdown,
         "agent_activity": agent_activity,
-        "maturity_trend": maturity_trend,
-        "maturity_score": 87,
-        "maturity_level": "Scaling",
-        "agents_active": 3,
-        "total_tasks_automated": 172,
+        # AI-maturity has no real data source yet — report as unavailable rather
+        # than fabricate a score.
+        "maturity_trend": [],
+        "maturity_available": False,
+        "maturity_score": None,
+        "maturity_level": "Not available",
+        "agents_active": agents_active,
+        "total_tasks_automated": len(events),
     }

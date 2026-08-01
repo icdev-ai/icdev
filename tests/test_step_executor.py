@@ -354,8 +354,13 @@ class TestCase5DbWriteFailure:
         step = {"id": "s", "tool": "fake.module.se.fn", "args": {}}
 
         mock_fn = MagicMock(return_value="x")
+        # _emit_audit acquires its connection via get_connection (module-level
+        # binding), not get_canvas_connection. Patching the latter never took
+        # effect — the test only "failed the write" because the old ? placeholder
+        # was itself invalid on PostgreSQL. Inject the failure where the audit
+        # path actually reads it so this genuinely tests DB-down logging.
         with patch("icdev.tools.ace.step_executor._resolve_tool", return_value=mock_fn), \
-             patch("icdev.tools.db.storage.get_canvas_connection",
+             patch("icdev.tools.ace.step_executor.get_connection",
                    side_effect=RuntimeError("no db")), \
              patch("icdev.tools.ace.step_executor.logger") as mock_logger:
             self.executor.run(step, {}, spec, self.tk)

@@ -30,12 +30,23 @@ _MIN_TOKENS = ingest._NEAR_DUP_MIN_TOKENS
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_conn(rows: list[tuple[str, str, str]]) -> sqlite3.Connection:
+def _make_conn(rows: list[tuple[str, str, str]]):
     """Build an in-memory SQLite DB seeded with dic_documents rows.
 
     Each row is (doc_id, filename, title); created_at is set to now.
+
+    Returns a ``StorageConnection``, NOT a bare ``sqlite3.Connection``. The code
+    under test authors PostgreSQL-dialect SQL (`%s` placeholders) — correct,
+    since PG is the primary backend — which sqlite3 cannot parse. A raw
+    connection made every query raise, the function's `except` returned `[]`,
+    and three tests in this file passed *on that empty list* while asserting
+    nothing: "no outlier -> []" and "sorted descending" are both trivially true
+    of a result the detector never produced.
     """
-    conn = sqlite3.connect(":memory:")
+    from tools.db.storage import StorageConnection
+
+    raw = sqlite3.connect(":memory:")
+    conn = StorageConnection(raw, "sqlite")
     conn.execute(
         """
         CREATE TABLE dic_documents (

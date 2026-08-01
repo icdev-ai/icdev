@@ -16,6 +16,20 @@ from flask import Blueprint, jsonify, request
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
+# Backend-appropriate DB error tuple. On PostgreSQL a query failure surfaces as
+# psycopg2.Error, not sqlite3.Error; catching only the latter let PG errors
+# escape as unhandled Flask 500 HTML instead of the intended JSON payload.
+# psycopg2 is optional (absent in some SQLite-only / air-gap installs), so the
+# import is lazy. tools/db/storage.py exports no shared error alias, so this is
+# defined locally (mirrors the obx-trc-02 / PR #466 _DB_ERRORS convention).
+_DB_ERRORS: tuple = (sqlite3.Error,)
+try:  # pragma: no cover - depends on optional dependency
+    import psycopg2  # noqa: F401
+
+    _DB_ERRORS = (sqlite3.Error, psycopg2.Error)
+except ImportError:
+    pass
+
 try:
     from tools.compat.db_utils import get_db_connection
 except ImportError:
@@ -43,8 +57,23 @@ class _PGCompatConn:
 
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
-        return _PGCompatConn(get_db_connection(DB_PATH))
-    conn = get_connection(db_path=str(DB_PATH))
+        conn = get_db_connection(DB_PATH)
+    else:
+        conn = get_connection(db_path=str(DB_PATH))
+    # rls-bypass: otel_spans, shap_attributions, and prov_* are platform-wide
+    # observability tables that have a classification column but NO tenant_id
+    # column. Both get_db_connection() and get_connection() auto-attach the Flask
+    # request security context, whose RLS injector unconditionally appends
+    # `tenant_id = ?` (and a classification predicate) to every query — producing
+    # UndefinedColumn (PG) / "no such column: tenant_id" (SQLite) 500s on
+    # authenticated /api/traces/*, /api/provenance/*, and /api/xai/* requests.
+    # Detach the context so no predicate injection fires — same deliberate bypass
+    # documented in tools/observability/health_blueprint.py and used by
+    # get_canvas_connection().
+    try:
+        conn.set_security_context(None)  # rls-bypass: observability tables have no tenant_id; injection produced 500s on authenticated /api/traces, /api/provenance and /api/xai
+    except AttributeError:
+        pass
     return _PGCompatConn(conn)
 
 
@@ -95,7 +124,7 @@ def list_traces():
                 "offset": offset,
             }
         )
-    except sqlite3.Error as e:
+    except _DB_ERRORS as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -122,7 +151,7 @@ def get_trace(trace_id: str):
                 "spans": [dict(s) for s in spans],
             }
         )
-    except sqlite3.Error as e:
+    except _DB_ERRORS as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -164,7 +193,7 @@ def trace_stats():
 
         conn.close()
         return jsonify(stats)
-    except sqlite3.Error as e:
+    except _DB_ERRORS as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -196,7 +225,7 @@ def list_entities():
 
         conn.close()
         return jsonify({"entities": [dict(e) for e in entities], "total": total})
-    except sqlite3.Error as e:
+    except _DB_ERRORS as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -223,7 +252,7 @@ def list_activities():
 
         conn.close()
         return jsonify({"activities": [dict(a) for a in activities], "total": total})
-    except sqlite3.Error as e:
+    except _DB_ERRORS as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -245,7 +274,7 @@ def list_relations():
 
         conn.close()
         return jsonify({"relations": [dict(r) for r in relations]})
-    except sqlite3.Error as e:
+    except _DB_ERRORS as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -333,7 +362,7 @@ def get_shap(trace_id: str):
                 "attributions": [dict(r) for r in rows],
             }
         )
-    except sqlite3.Error as e:
+    except _DB_ERRORS as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -401,5 +430,5 @@ def xai_summary():
 
         conn.close()
         return jsonify(summary)
-    except sqlite3.Error as e:
+    except _DB_ERRORS as e:
         return jsonify({"error": str(e)}), 500

@@ -173,13 +173,15 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     _mount(provenance_api, v1_prefix="/api/v1/provenance")
     _mount(xai_api, v1_prefix="/api/v1/xai")
 
-    # Blockchain provenance verification API (orphaned, now registered)
+    # GovChain / blockchain provenance verification API — mounted at
+    # /api/govchain-provenance so it no longer shares /api/provenance (and the
+    # blueprint name) with the W3C PROV-AGENT provenance_api above.
     try:
-        from tools.dashboard.pages.provenance import provenance_api as blockchain_provenance_api
-        _mount_inline(blockchain_provenance_api)
-        logger.info("blockchain_provenance_api registered at /api/provenance/*")
+        from tools.dashboard.pages.provenance import govchain_provenance_api
+        _mount_inline(govchain_provenance_api)
+        logger.info("govchain_provenance_api registered at /api/govchain-provenance/*")
     except Exception as exc:
-        logger.warning("blockchain_provenance_api skipped: %s", exc)
+        logger.warning("govchain_provenance_api skipped: %s", exc)
 
     from tools.dashboard.api.oscal import oscal_api
     _mount(oscal_api, v1_prefix="/api/v1/oscal")
@@ -281,11 +283,38 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.studio import studio_api
     _mount(studio_api, v1_prefix="/api/v1/studio")
 
+    # Wire canvas_bus event sources onto the cross-canvas bus (dwo-evt-01-d5)
+    try:
+        from tools.studio.bus_subscriber import register as _register_studio_bus
+
+        _register_studio_bus()
+    except Exception as exc:
+        logger.warning("studio bus subscriber registration skipped: %s", exc)
+
     try:
         from tools.dashboard.api.news import news_api
         _mount_inline(news_api)   # inline routes: /api/news/*
     except Exception as exc:
         logger.warning("news_api skipped: %s", exc)
+
+    # Extracted from app.py inline routes (nav-misc-03) — paths unchanged.
+    try:
+        from tools.dashboard.api.pulse import pulse_api
+        _mount_inline(pulse_api)   # inline routes: /pulse, /api/pulse/*
+    except Exception as exc:
+        logger.warning("pulse_api skipped: %s", exc)
+
+    try:
+        from tools.dashboard.api.research import research_api
+        _mount_inline(research_api)   # inline routes: /api/research/*
+    except Exception as exc:
+        logger.warning("research_api skipped: %s", exc)
+
+    try:
+        from tools.dashboard.api.clawhub import clawhub_api
+        _mount_inline(clawhub_api)   # inline routes: /api/clawhub/*
+    except Exception as exc:
+        logger.warning("clawhub_api skipped: %s", exc)
 
     try:
         from tools.fathomdesk.blueprint import fathomdesk_api

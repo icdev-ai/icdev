@@ -3,13 +3,13 @@
 Verify the ICDEV™ dashboard agents page displays the agent grid with status indicators, and the monitoring page displays health checks, status icons, and metric areas.
 
 ## Prerequisites
-- Flask dashboard running on http://localhost:5000
+- Flask dashboard running on http://localhost:5050
 - Database initialized with agent registry data
 
 ## Steps
 
 ### Agents Page
-1. Navigate to http://localhost:5000/agents
+1. Navigate to http://localhost:5050/agents
 2. Wait for the page to fully load
 3. Screenshot the agents page
 4. Assert the CUI banner "CUI // SP-CTI" is visible at top and bottom
@@ -20,7 +20,7 @@ Verify the ICDEV™ dashboard agents page displays the agent grid with status in
 9. Check for extended agents: MBSE, Modernization, Requirements, Supply Chain, Simulation
 
 ### Agents Navigation
-10. Navigate to http://localhost:5000/
+10. Navigate to http://localhost:5050/
 11. Click on the "Agents" navigation link
 12. Wait for the agents page to load
 13. Assert the URL contains /agents
@@ -28,7 +28,7 @@ Verify the ICDEV™ dashboard agents page displays the agent grid with status in
 15. Assert CUI banner is present
 
 ### Monitoring Page
-16. Navigate to http://localhost:5000/monitoring
+16. Navigate to http://localhost:5050/monitoring
 17. Wait for the monitoring page to load
 18. Screenshot the monitoring overview
 19. Assert CUI banner "CUI // SP-CTI" is visible
@@ -43,7 +43,7 @@ Verify the ICDEV™ dashboard agents page displays the agent grid with status in
 26. Screenshot the metrics area
 
 ### Monitoring Navigation
-27. Navigate to http://localhost:5000/
+27. Navigate to http://localhost:5050/
 28. Click on the "Monitoring" navigation link (may appear as "Monitor")
 29. Wait for the monitoring page to load
 30. Assert the URL contains /monitoring

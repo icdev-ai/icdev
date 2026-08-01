@@ -5,13 +5,30 @@
   {% endif %}
 
   <div class="fa-editor-wrap">
-    <textarea class="fa-cm-target" data-step-idx="{{ sidx }}" id="code-editor-{{ sidx }}">{{ step.starter_code | default('# Write your solution here\n') }}</textarea>
+    {# aca-trn-06: the editor had no accessible name at all. The label is real rather
+       than an aria-label so it is visible to everyone, not only to screen readers. #}
+    <label for="code-editor-{{ sidx }}"
+           style="display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;
+                  color:var(--text-secondary);margin-bottom:.35rem;">
+      Your solution — {{ step.title }}
+    </label>
+    <textarea class="fa-cm-target" data-step-idx="{{ sidx }}" id="code-editor-{{ sidx }}"
+              aria-label="Code editor for {{ step.title }}">{{ step.starter_code | default('# Write your solution here\n') }}</textarea>
   </div>
 
   <div class="fa-controls">
     <button class="fa-btn-run" id="run-btn-{{ sidx }}" onclick="runCode({{ sidx }})">▶ Run Code</button>
     <button class="fa-btn-next" id="next-btn-{{ sidx }}" onclick="nextStep({{ sidx }})">✓ Next Step →</button>
-    <button class="fa-btn-hint" onclick="getHint({{ sidx }})">💡 Ask Sensei (−10 XP)</button>
+    {# The cost is quoted by the server (see getHint) rather than hardcoded here:
+       this button used to advertise only the flat penalty, while a first hint
+       really costs 48 XP on a 50 XP step because it also forfeits the no-hints
+       multiplier (aca-ux-02). #}
+    {# aca-hyg-04: honour hint_allowed. It was written for all 212 steps as 1 and
+       then ignored here, so the column meant nothing. Default to allowed when the
+       key is absent, so older seeded rows keep working. #}
+    {% if step.hint_allowed is not defined or step.hint_allowed %}
+    <button class="fa-btn-hint" onclick="getHint({{ sidx }})">💡 Ask Sensei (costs XP)</button>
+    {% endif %}
   </div>
 
   <div class="fa-output-panel" id="output-{{ sidx }}">// Output will appear here after Run</div>

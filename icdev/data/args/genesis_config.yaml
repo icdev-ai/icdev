@@ -18,11 +18,25 @@ classification: "CUI // SP-CTI"
 # layer adapt them over time without code changes.
 
 defaults:
-  # Watchdog timeout for any reflex that doesn't set its own timeout_seconds.
+  # Watchdog timeout for any reflex that doesn't set its own cap.
+  # Per-reflex override (crx-gen-03): set `reflexes.<name>.max_execution_seconds`
+  # (preferred) or the legacy alias `timeout_seconds`. The watchdog in
+  # daemon.run_reflex_impl hard-enforces it (thread join-with-timeout); a breach
+  # is recorded as a genesis_audit failure row and counts toward the circuit breaker.
   reflex_timeout_seconds: 300
   # Lines-of-code heuristics for stub detection in _classify_reflex_impl.
   stub_loc_min: 10
   stub_loc_full: 15
+
+# ── Intra-cycle reflex ordering (crx-gen-03) ─────────────────────────────────
+# A reflex may declare `depends_on: [other_reflex, ...]` under its `reflexes.<name>`
+# entry so it runs AFTER those reflexes within the same scheduler cycle (when they
+# are also due). This is best-effort intra-cycle ordering — a dependency that is
+# not due this cycle is ignored — NOT a cross-cycle blocking DAG. Example:
+#   reflexes:
+#     doc_modernization_sweep:
+#       depends_on: [dep_health_reflex]   # run after the dependency, if both due
+#       max_execution_seconds: 900        # hard per-reflex execution cap
 
 # ── A2A Fan-Out ──────────────────────────────────────────────────────────────
 # When enabled, reflexes tagged `a2a_eligible: true` are dispatched to an
@@ -233,6 +247,83 @@ reflexes:
       name: violations
       threshold: 0
       operator: gte  # Informational — 0 violations is healthy, >0 triggers POAM
+
+  sdc_control_expiry:
+    enabled: true
+    risk_tier: green
+    schedule: "every 4h"
+    interval: 14400  # seconds (4 h)
+    description: "SDC security control-expiry sweep: flag sc_controls whose review_date is inside an IQR-derived anomaly window (or past); optional Claude Haiku severity triage"
+    success_metric:
+      name: expiring_controls
+      threshold: 0
+      operator: gte  # Informational — 0 expiring is healthy, >0 publishes sdc.control.expiring events
+
+  observability_retention:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval: 86400  # seconds (24 h)
+    description: "Observability retention: archive-then-prune otel_spans/prov_*/shap_attributions older than the configured window into cold *_archive twins (append-only preserved) so list_traces/trace_stats stay fast. Windows/batch in args/observability_config.yaml trace_retention."
+    success_metric:
+      name: total_archived
+      threshold: 0
+      operator: gte  # Informational — 0 archived means nothing was old enough yet
+
+  retention_sweep:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval: 86400  # seconds (24 h)
+    description: "Config-driven retention/archival (crx-db-03): applies args/retention_policies.yaml per-table policies. Non-append-only operational tables (agent_execution_traces, kanban_verifications, a2a_task_history) are pruned past keep_days under a per-run cap; append-only/audit tables are archive-to-cold ONLY (never pruned); RAG/observability/PDC self-managed retention excluded. dry_run defaults TRUE (flip in args/retention_policies.yaml after review); every action logged to append-only retention_action_log."
+    success_metric:
+      name: total_affected
+      threshold: 0
+      operator: gte  # Informational — 0 affected means nothing was old enough (or dry_run)
+
+  agent_cron_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 1m"
+    interval: 60  # seconds (1 min) — near-minute cron resolution
+    description: "User-facing cron (sag-cron-01): drains every due job in the durable agent_cron_jobs store. Two exec modes — agent (single-shot SAG runtime turn) and script (allowlisted python tools/... command). Retry with exponential backoff; delivery via log / email (SMTP or on-file outbox) / gateway best-effort. Every run recorded to the append-only agent_cron_runs log."
+    success_metric:
+      name: ran
+      threshold: 0
+      operator: gte  # Informational — 0 means nothing was due this tick
+
+  sag_skill_curator:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval: 86400  # seconds (24 h)
+    dry_run: true  # report-only until reviewed; flip after confirming what it would archive
+    description: "SAG auto-skill curator (sag-skl-01): archives (never deletes) idle, unpinned .agents/skills/icdev-auto-* skills after N idle days; pinned skills retained indefinitely. Tracks use_count/last_activity in sag_skill_registry. Skill PROMOTION stays strictly HITL — this reflex only curates already-promoted skills. dry_run defaults TRUE."
+    success_metric:
+      name: archived
+      threshold: 0
+      operator: gte  # Informational — 0 means nothing was idle enough (or dry_run)
+
+  bgp_hijack_monitor:
+    enabled: true
+    risk_tier: green
+    schedule: "every 1h"
+    interval: 3600  # seconds (1 h)
+    description: "DSOC BGP hijack monitor: withdraw expired RTBH entries (rtbh_manager.auto_expire_rtbh) every 1h; best-effort BGP hijack/route-leak sweep when a pmacct feed with BGP ASN data is reachable (skips gracefully otherwise)."
+    success_metric:
+      name: actions
+      threshold: 0
+      operator: gte  # Informational — 0 means nothing expired and no hijack detected
+  odc_coverage_refresh:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval: 21600  # seconds (6 h)
+    description: "ODC coverage refresh (obx-cov-02): scheduled MITRE ATT&CK coverage recompute per observability design (mitre_coverage_twin.compute_gap_score). Flags designs whose coverage dropped more than the configured threshold (default 15 pts) as od_audit drift events + status=suggested kanban cards. Threshold/cap in args/observability_config.yaml coverage_drift."
+    success_metric:
+      name: drifted_designs
+      threshold: 0
+      operator: gte  # Informational — 0 drifted designs is healthy
 
   ingest:
     timeout_seconds: 90   # network fetch — cut hangs fast so the loop proceeds
@@ -496,6 +587,17 @@ reflexes:
     description: "Dead code sweep — orphan files, dead functions, import cycles → [DEAD-CODE] kanban tasks"
     success_metric:
       name: dead_items_found
+      threshold: 0
+      operator: gte
+
+  kanban_stranded_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval_seconds: 86400
+    description: "Reconcile done/validating kanban tasks vs origin/main; file [STRANDED] suggested cards for branches with unmerged commits (built-but-never-merged)"
+    success_metric:
+      name: stranded_tasks_found
       threshold: 0
       operator: gte
 
@@ -924,6 +1026,22 @@ reflexes:
       threshold: 0
       operator: gte         # 0 new capabilities = clean; >0 surfaces real drift (always succeeds)
 
+  # ── Harness (eval-harness metrics/degradation sweep + co-learning) ──────────
+
+  harness:
+    timeout_seconds: 300     # check_gates + 30d metric windows + optional LLM co-learning/meta passes
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — evaluation gates change slowly
+    cooldown_minutes: 120
+    description: "Eval-harness metrics/degradation sweep — check_gates() over 30-day windows opens a Kanban degradation card per metric below threshold (deduped); when ICDEV_HARNESS_COLEARN is enabled, runs NOVA ECHO batch reflexion + heuristic co-learning + daily meta-harness review to propose amendments"
+    dry_run: false           # when true, computes gates without creating cards / proposals
+    success_metric:
+      name: harness_degradation_cards
+      threshold: 0
+      operator: gte          # 0 new cards = all gates healthy; >0 surfaces real degradation (always succeeds)
+
   # ── Skill Security Monitor (SkillSpector scan of ICDEV skills) ────────────────
 
   skill_security_monitor:
@@ -956,6 +1074,86 @@ reflexes:
       threshold: 0
       operator: gte          # 0 emitted = nothing novel passed the gates (healthy); >0 = net-new capability seeded
 
+  # ── NDC Topology Drift → ACOIC (producer for the DIC compliance path) ───────
+
+  ndc_topology_drift:
+    timeout_seconds: 180     # config generation + diff across all topologies
+    enabled: true
+    risk_tier: green         # read-only against NDC; writes only ACOIC drift rows
+    schedule: "every 4h"
+    interval_seconds: 14400  # matches CADENCE_HOURS = 4 in the reflex module
+    cooldown_minutes: 60
+    description: "NDC topology config drift -> ACOIC: diff each topology's generated device configs against its saved nc_versions baseline, record dic_drift_events, enqueue impacted DIC documents for HITL regeneration, and publish ndc.topology.drift_detected (target_canvas=dic) for the editorial suggestion path."
+    dry_run: false           # when true, detects and reports drift without writing
+    success_metric:
+      name: drift_events_recorded
+      threshold: 0
+      operator: gte          # 0 = no drift or no baselines saved (healthy); >0 = real drift recorded
+
+  # ── BDC ISA Expiry Alerting (bdr-ops-1 — was registered-but-undispatched) ────
+
+  bdc_isa_expiry:
+    timeout_seconds: 120     # single BDC table scan + canvas event publish + Telegram fire-and-forget
+    enabled: true
+    risk_tier: green         # read-only against bd_isa_tracker; writes only append-only canvas events
+    schedule: "every 24h"
+    interval_seconds: 86400  # 24 hours — daily ISA-expiry sweep
+    cooldown_minutes: 240
+    description: "BDC ISA expiry alerting: query bd_isa_tracker for ISAs expiring within 90 days, publish bdc/isa_expiring_soon canvas events, and send Telegram notifications for ISAs expiring within 30 days. Delegates to tools.boundary_canvas.isa_expiry.check_isa_expiry."
+    dry_run: false           # when true, checks and reports without publishing events / notifications
+    success_metric:
+      name: isas_checked
+      threshold: 0
+      operator: gte          # Informational — 0 ISAs tracked is healthy; >0 checked is normal operation
+
+  # ── cATO Twin Continuous Monitoring (bdr-ops-1 — enabled after query soak) ───
+
+  cato_twin:
+    timeout_seconds: 300     # per-project compliance snapshot + IQE seed queries + POA&M auto-gen across frameworks
+    enabled: true            # bdr-vv-2: enabled after operational smoke — dispatch contract + PG transaction hardening verified end-to-end
+    risk_tier: green         # writes compliance twin snapshots + POA&M items; append-only audit_trail
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 60
+    description: "cATO Twin continuous monitoring (NIST SP 800-137): for each active project, write a compliance twin snapshot, run seed IQE queries to detect violations, auto-generate POA&M items for new violations, run AI anomaly detection, and log a per-project summary to audit_trail. Delegates to tools.boundary_canvas.cato_twin.*."
+    dry_run: false           # when true, counts prospective snapshots without persisting them
+    success_metric:
+      name: snapshots_written
+      threshold: 0
+      operator: gte          # Informational — 0 when no active projects; >0 is normal operation
+
+  # ── PDC Pipeline Staleness Alert (pdx-ops-01 — was implemented-but-undispatched) ─
+
+  pdc_pipeline_stale:
+    timeout_seconds: 120     # pipelines table scan + IQR stats + optional LLM anomaly pass + canvas event publish
+    enabled: true
+    risk_tier: green         # read-only against pipelines; writes only append-only canvas events + pc_compliance_findings
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 60
+    description: "PDC pipeline staleness alerting: scan Pipeline Design Canvas pipelines, compute an IQR-based dynamic staleness threshold (Tukey's fence, STALE_DAYS_FLOOR=14 floor), optionally validate candidates with claude-haiku anomaly detection (air-gap safe), and publish pdc.pipeline.stale canvas events consumed by tools.pipeline.bus_subscriber. Delegates to tools.genesis.reflexes.pdc_pipeline_stale.run."
+    dry_run: false           # when true, detects and reports stale pipelines without publishing events
+    success_metric:
+      name: pipelines_checked
+      threshold: 0
+      operator: gte          # Informational — 0 pipelines is healthy; >0 checked is normal operation
+
+  # ── Cross-Canvas Twin Freshness Sweep (twx-cov-02) ───────────────────────────
+
+  twin_freshness_sweep:
+    timeout_seconds: 120     # observer runs a cheap count/MAX(created_at) per canvas twin table
+    enabled: true
+    risk_tier: green         # read-only: observes twin snapshot tables; writes only append-only canvas events
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 60
+    description: "Cross-canvas twin freshness: run the twin_core observer and publish twin.snapshot.stale for any registered twin whose newest snapshot is stale/absent (fills the AADC/Mission/residual refresh gap generically — future twins covered automatically). Delegates to tools.genesis.reflexes.twin_freshness_sweep.run."
+    dry_run: false           # when true, detects stale twins without publishing events
+    success_metric:
+      name: twins_checked
+      threshold: 0
+      operator: gte          # Informational — number of registered twins observed
+
   # ── DIC Integration (Canvas Synergy — dsyn-reflex-02) ────────────────────────
 
   dic_integration:
@@ -984,10 +1182,117 @@ reflexes:
     cooldown_minutes: 720      # minimum 12h between runs
     description: "DIC Review Cadence: check each collection with review_interval_days set; emit dic.review_overdue canvas_events and notify editors/reviewers when last HITL approval exceeds the configured interval."
     dry_run: false
+
+  doc_modernization_sweep:
+    timeout_seconds: 300
+    enabled: true
+    risk_tier: green
+    schedule: "daily 03:30"
+    interval_seconds: 86400    # nightly
+    cooldown_minutes: 720      # minimum 12h between runs
+    description: "Document Modernization Sweep: refresh EOL caches + de facto deployment standards, incrementally scan DIC documents for stale/EOL/deprecated content, draft capped TRUST-gated redlines, emit suggested kanban rollups."
+    dry_run: false
     success_metric:
       name: dic_overdue_events_emitted
       threshold: 0
       operator: gte
+
+  # ── Confidence Sampler (audit what the system was already sure about) ───────
+  # TRUST gates on confidence, and confidence is a self-report. Items above the
+  # gate flow through automatically and nobody re-reads them, so errors in the
+  # trusted band are not rare — they are structurally unobservable. This draws an
+  # unbiased sample so a human is forced to look at what nothing else surfaces.
+  #
+  # Writes measurement rows only (harness_eval, outcome NULL until judged). It
+  # never promotes, resolves or modifies the item it samples: an audit that
+  # changes its subject is not an audit.
+  confidence_sampler:
+    timeout_seconds: 120
+    enabled: true
+    risk_tier: green         # read-only against the sampled surface
+    schedule: "daily 04:00"
+    interval_seconds: 86400
+    cooldown_minutes: 720
+    description: "Confidence sampler: stratified random audit sample of scored decisions, recorded as pending harness_eval rows for human verdict. Measures whether confidence predicts correctness."
+    dry_run: false
+    surface: "oracle_triage"
+    # Bands include values BELOW the 0.7 promotion gate on purpose. Every live
+    # oracle_prediction is >=0.7 because the gate filters before the row is
+    # written — measuring only what passed can confirm the gate but never test
+    # it. A threshold is a claim about both sides of itself.
+    bands: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    band_width: 0.1
+    # Per band, not total: a flat draw returns mostly 1.0 rows (173 of 420 live)
+    # and starves the bands that need estimating. Small by default — reviewer
+    # time is the scarce resource, not database rows.
+    per_band: 3
+    success_metric:
+      name: confidence_samples_drawn
+      threshold: 0
+      operator: gte
+
+  # ── DIC GraphRAG Community Refresh ──────────────────────────────────────────
+  # The community engine clusters the DIC knowledge graph and summarises each
+  # theme (dic_community_summaries), which chat consults for global/thematic
+  # questions ("what are the main themes across these documents"). As documents
+  # are ingested the graph changes and the summaries drift stale; this rebuilds
+  # them on a cadence. build_communities is idempotent (content-stable ids,
+  # prefix-delete before rewrite), so a refresh replaces rather than accumulates.
+  community_refresh:
+    timeout_seconds: 600     # LLM-summarises each community across all DIC graphs
+    enabled: true
+    risk_tier: green         # rewrites derived summaries only; idempotent
+    schedule: "daily 03:45"
+    interval_seconds: 86400
+    cooldown_minutes: 720
+    description: "DIC GraphRAG community refresh: re-cluster the DIC knowledge graph and re-summarise each theme into dic_community_summaries, so global/thematic chat answers stay current as documents change."
+    dry_run: false
+    success_metric:
+      name: dic_communities_refreshed
+      threshold: 0
+      operator: gte
+
+  # ── DIC Inbox Sweep (the drop folder finally gets someone watching it) ───────
+  # tools/document_intelligence/inbox.py was built for teams who pull documents
+  # out of SharePoint with a browser session and had nowhere to put them. It
+  # works and is tested, but had no caller anywhere in the repo — no reflex, no
+  # daemon, no route. This is its launcher.
+  #
+  # Minutes, not hours: a drop folder, not a nightly sweep. A CR approved this
+  # morning should not wait until 03:30 to become evidence.
+  #
+  # These keys reach the reflex as its `context` — the daemon passes this config
+  # dict straight to module.run().
+  dic_inbox_sweep:
+    timeout_seconds: 600     # a drop can be many files; each is a full ingest
+    enabled: true
+    risk_tier: green         # ingests operator-provided files into one collection
+    schedule: "every 5m"
+    interval_seconds: 300
+    cooldown_minutes: 0      # a drop folder should not sit waiting on a cooldown
+    description: "DIC Inbox Sweep: ingest anything new in the DIC drop folder (data/dic_inbox) into its collection with RAG chunks + KG bridge. Content-hash dedup, so a re-downloaded file is skipped but a revised one re-ingests. Acquisition-agnostic — it does not scrape or authenticate; files arrive by whatever means the operator already uses."
+    dry_run: false           # when true, reports what would ingest and writes nothing
+    watch_dir: ""            # empty -> inbox default (data/dic_inbox)
+    collection_id: "change-records"
+    recursive: false
+    move_processed: false    # true -> move ingested files to <watch_dir>/processed
+    success_metric:
+      name: dic_inbox_files_ingested
+      threshold: 0
+      operator: gte
+
+  review_loop:
+    timeout_seconds: 300     # bounded — coherence(changed) + SIPA subprocesses
+    enabled: true
+    risk_tier: green         # REPORT-ONLY drift probe — never edits the checkout
+    schedule: "every 6h"
+    interval_seconds: 21600  # low cadence; the real greening is per-task (pre-PR/pre-commit)
+    cooldown_minutes: 0
+    description: "review_loop drift probe — report-only review-until-green over the working tree (ruff + changed-files coherence + SIPA); no autofix. Cheap no-op on a clean checkout. Per-task greening lives in git_ops pre-PR preflight + the pre-commit hook. Config: args/review_loop_config.yaml"
+    success_metric:
+      name: review_loop_errors
+      threshold: 0
+      operator: eq
 
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
@@ -1208,6 +1513,18 @@ reflexes:
       threshold: 0
       operator: gte  # 0 = nothing to do (healthy), > 0 = drafts or tasks created
 
+  academy_oracle_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600   # 6h — Academy telemetry doesn't shift faster than this
+    cooldown_minutes: 360     # 6h minimum gap — match COOLDOWN_HOURS in the reflex
+    description: "Run the in-app 7-lens AcademyOracleRunner (learner-risk, content-quality, skill-gap, AADC-readiness, staleness, ACE-skill-gap, agent-readiness) and persist predictions + convergence to fa_oracle_predictions / fa_oracle_convergence_events. Replaces the dead forge_academy_oracle reflex, which queried the wrong (global) table and was never dispatched."
+    success_metric:
+      name: persisted
+      threshold: 0
+      operator: gte  # 0 = nothing new to persist (healthy), > 0 = fresh predictions
+
   wiki_lint:
     enabled: true
     risk_tier: green
@@ -1246,6 +1563,26 @@ reflexes:
       name: semantic_facts_written
       threshold: 0
       operator: gte
+
+# ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
+# Turns critical-reflex failures into operator alerts on the /monitoring page
+# (via the shared `alerts` table) and backs the reflex health-trend queries in
+# tools/genesis/reflex_health.py. Wires the previously-inert
+# circuit_breaker.notify_on_trip intent.
+reflex_health:
+  enabled: true
+  default_severity: critical          # alerts severity for bare critical_reflexes entries
+  cooldown_minutes: 60                 # min window; a flapping reflex alerts once per window
+  failure_threshold: 3                 # failures within the window before an alert fires
+  # Reflexes worth paging on. Bare name → default_severity; {name: severity} to override.
+  # Per-reflex `reflexes.<name>.alert_severity` also promotes a reflex to critical.
+  critical_reflexes:
+    - heal                             # self-healing loop — silent failure is high-impact
+    - comply                           # compliance drift must not go unnoticed
+    - integrity_monitor
+    - cato_monitor
+    - kanban                           # delivery pipeline dispatch
+    - redaction_scan_reflex: warning   # PII sweep — warn rather than page
 
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
@@ -1357,8 +1694,23 @@ audit:
 # Thresholds moved from hardcoded Python constants to config so the
 # anomaly_detection layer can adapt them without code changes.
 harness:
+  # Which reflexes check_gates() evaluates. This was a literal
+  # `for reflex in ("oracle_triage", "heal")` in eval_harness.py, so everything
+  # else that gates on confidence — citation grounding, docmod findings, the AADC
+  # proceed/escalate gate, the awareness promotion priors — went unmeasured, not
+  # by decision but because a tuple in one loop never named it.
+  #
+  # A surface only produces metrics once it writes to harness_eval, so listing
+  # one costs nothing until it has data. An empty list falls back to the default
+  # pair rather than silently gating nothing.
+  gated_reflexes:
+    - oracle_triage
+    - heal
   gates:
     precision_min: 0.80       # oracle_triage/heal: alert when precision < this
+    # Calibration: alert when ECE > this. NOTE this number has never been
+    # validated against outcomes — like every 0.7/0.15 threshold in the repo it
+    # traces to a sign-off, not a measurement. It is a starting point, not a fact.
     ece_max: 0.15             # calibration: alert when ECE > this
     false_heal_max: 0.20      # heal: alert when false-heal rate > this
     heal_success_min: 0.60    # heal: alert when heal success rate < this

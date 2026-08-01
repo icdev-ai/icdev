@@ -18,6 +18,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -37,6 +38,11 @@ from tools.knowledge_graph.text_network import (
     _ensure_tables,
     _extract_entities,
     _extract_relationships,
+)
+from tools.knowledge_graph.llm_relationship_extractor import (
+    extract_graph_llm as _llm_graph,
+    extract_relationships_llm as _llm_relationships,
+    is_valid_relationship as _valid_relationship,
 )
 
 # ---------------------------------------------------------------------------
@@ -245,8 +251,12 @@ def _fetch_page(conn, cursor, tier: Optional[str], page_size: int) -> list:
     PostgreSQL: cursor-by-offset (INT).
     """
     ph = sql_placeholder(conn)
+    # project_id + source_table are what group entities into a graph
+    # (_resolve_graph). Both were absent from this SELECT, so the bridge never saw
+    # which corpus a chunk belonged to and fell back to minting a graph per chunk.
     cols = (
         "id, content, metadata, tier, tenant_id, classification, "
+        "project_id, source_table, "
         "COALESCE(kg_node_ids, '[]') AS kg_node_ids"
     )
 
@@ -306,24 +316,84 @@ def _delete_stale_nodes(conn, node_ids: list[str]) -> None:
 # Graph creation
 # ---------------------------------------------------------------------------
 
-def _create_graph(conn, chunk_id: str, tenant_id: str, classification: str) -> str:
+_RAG_BRIDGE_PROJECT_FALLBACK = "rag-bridge"
+_RAG_BRIDGE_SOURCE_FALLBACK = "rag"
+
+
+def _graph_key(project_id: str, tenant_id: str, source_table: str) -> str:
+    """Deterministic graph id for a (project, tenant, source_table) triple.
+
+    Derived rather than random so the same corpus always resolves to the same
+    graph without a lookup, which is what makes the INSERT below an idempotent
+    get-or-create against the existing kg_graphs primary key — no new UNIQUE
+    constraint and no migration.
+    """
+    raw = (
+        f"{project_id or _RAG_BRIDGE_PROJECT_FALLBACK}|"
+        f"{tenant_id or ''}|"
+        f"{source_table or _RAG_BRIDGE_SOURCE_FALLBACK}"
+    )
+    return "kg-rag-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _resolve_graph(conn, project_id: str, tenant_id: str, source_table: str) -> str:
+    """Return the graph for this corpus, creating it if absent.
+
+    This previously minted a NEW graph on every call — `graph_id = _kg_id()` plus
+    an unconditional INSERT, named `rag-chunk-<chunk_id>`, with project_id set to
+    the TENANT rather than the project. One chunk, one graph, forever.
+
+    The cost was not cosmetic. Entities extracted from different chunks landed in
+    different graphs, so they could never meet: co-occurrence found nothing,
+    relationships could not span a document, and centrality was degenerate. On the
+    live corpus that was 58 nodes across 38 graphs, 31 holding exactly one node.
+
+    The key is (project_id, tenant_id, source_table):
+
+    * ``project_id`` — `chunk_content` is called with `project_id=collection_id`
+      (ingest_orchestrator), so for DIC this yields one graph per collection.
+      Entities from every document in a collection can finally relate.
+    * ``tenant_id`` — two tenants with a same-named collection must never share.
+    * ``source_table`` — DIC documents and, say, govcon opportunities are
+      different corpora that can legitimately share a generic project_id like
+      "default". Keying on it keeps each graph PURE BY PROVENANCE, which several
+      consumers depend on: analytics_engine._dic_graph_ids selects graph ids from
+      DIC-sourced nodes and then reads every node in those graphs. That is exact
+      only while a graph has a single provenance. Drop source_table from this key
+      and a stray non-DIC chunk sharing project_id="default" would be reported as
+      a document entity.
+
+    ON CONFLICT DO NOTHING rather than SELECT-then-INSERT: two chunks of the same
+    corpus ingesting concurrently would both see "missing" and race. Mirrors the
+    existing kg_graphs upserts in knowledge_graph/canvas_indexer.py and
+    strategos/dib_mapper.py.
+    """
     ph = sql_placeholder(conn)
-    graph_id = _kg_id()
+    graph_id = _graph_key(project_id, tenant_id, source_table)
+    project = project_id or _RAG_BRIDGE_PROJECT_FALLBACK
+    source = source_table or _RAG_BRIDGE_SOURCE_FALLBACK
     now = _now()
     conn.execute(
         f"INSERT INTO kg_graphs "  # nosec B608 — only ph placeholders; all values bound
         f"(id, project_id, name, description, metadata, created_at, updated_at) "
-        f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+        f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}) "
+        f"ON CONFLICT (id) DO NOTHING",
         (
             graph_id,
-            tenant_id or "rag-bridge",
-            f"rag-chunk-{chunk_id}",
-            f"Auto-extracted from RAG chunk {chunk_id}",
+            project,
+            f"rag-{source}-{project}",
+            f"Entities extracted from {source} RAG chunks in {project}",
+            # No classification here on purpose. A per-chunk graph could carry its
+            # chunk's marking honestly; a graph spanning a whole corpus cannot —
+            # stamping the first chunk's classification on the container would
+            # assert a marking for content not yet seen. Each node carries its own
+            # classification (kg_nodes.classification), which is what RLS filters
+            # on and what remains authoritative.
             json.dumps({
                 "source": "rag_kg_bridge",
-                "source_chunk_id": chunk_id,
+                "project_id": project,
                 "tenant_id": tenant_id,
-                "classification": classification,
+                "source_table": source,
             }),
             now,
             now,
@@ -368,10 +438,30 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
     if existing_ids:
         _delete_stale_nodes(conn, [str(nid) for nid in existing_ids])
 
-    # Entity extraction — passthrough: content always read from rag_chunks.content
+    # Entity + relationship extraction — passthrough: content from rag_chunks.content
+    rel_evidence: dict[tuple[str, str, str], str] = {}
     if use_llm:
         entities = _extract_entities(content)
-        relationships = _extract_relationships(content, entities)
+        if len(entities) >= 2:
+            # Regex found entities (compliance-flavoured chunks) — infer edges
+            # among them with the LLM, falling back to the verb-map heuristic.
+            llm_rels = _llm_relationships(content, entities)
+            if llm_rels:
+                relationships = [(s, t, r) for (s, t, r, _ev) in llm_rels]
+                rel_evidence = {(s, t, r): ev for (s, t, r, ev) in llm_rels}
+            else:
+                relationships = _extract_relationships(content, entities)
+        else:
+            # Regex found ~nothing — 87% of the live corpus. Extract the whole
+            # graph (entities + relationships) with the LLM so prose/transcript
+            # chunks contribute nodes at all, not just compliance IDs.
+            llm_entities, llm_rels = _llm_graph(content)
+            if llm_entities:
+                entities = llm_entities
+                relationships = [(s, t, r) for (s, t, r, _ev) in llm_rels]
+                rel_evidence = {(s, t, r): ev for (s, t, r, ev) in llm_rels}
+            else:
+                relationships = []
     else:
         entities = _extract_no_llm(content)
         relationships = []
@@ -386,7 +476,13 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
         )
         return {"nodes_written": 0, "edges_written": 0, "skipped": False}
 
-    graph_id = _create_graph(conn, chunk_id, tenant_id, classification)
+    # One graph per corpus, not per chunk — see _resolve_graph.
+    graph_id = _resolve_graph(
+        conn,
+        chunk.get("project_id") or "",
+        tenant_id,
+        chunk.get("source_table") or "",
+    )
 
     # Insert nodes
     node_ids: list[str] = []
@@ -415,20 +511,42 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
         tgt_id = label_to_id.get(tgt_label)
         if not src_id or not tgt_id:
             continue
+        # Guard: keep garbage out of kg_edges.relationship. Every polluted value
+        # seen live ("KG context", "batch 15min", "train/infer") contains a
+        # space/digit/slash and fails this; real types (co_occurs_with, IMPLEMENTS)
+        # pass. Applies to the heuristic path too, at the single write point.
+        if not _valid_relationship(rel_type):
+            continue
+        edge_props = "{}"
+        ev = rel_evidence.get((src_label, tgt_label, rel_type))
+        if ev:
+            edge_props = json.dumps({"evidence": ev, "source": "llm_kg_extractor"})
         edge_id = _kg_id()
         conn.execute(
             f"INSERT INTO kg_edges "  # nosec B608 — only ph placeholders; all values bound
             f"(id, graph_id, source_id, target_id, relationship, weight, properties, created_at) "
             f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-            (edge_id, graph_id, src_id, tgt_id, rel_type, 1.0, "{}", now),
+            (edge_id, graph_id, src_id, tgt_id, rel_type, 1.0, edge_props, now),
         )
         edges_written += 1
 
-    # Update graph entity/edge counts
+    # Recount the graph rather than assigning THIS chunk's totals.
+    #
+    # This used to be `SET entity_count = <this chunk's node count>`, which was
+    # correct only while a graph held exactly one chunk. Now that a graph spans a
+    # project, assigning would stomp every other chunk's contribution — and the
+    # dashboard reads SUM(entity_count)/SUM(edge_count) straight from these
+    # columns, so it would report near-zero totals. `+=` would be wrong too: it
+    # drifts on re-ingest, because _delete_stale_nodes has already removed this
+    # chunk's previous rows. Counting the rows that actually exist is the only
+    # form that holds for both first ingest and re-ingest.
     conn.execute(
-        f"UPDATE kg_graphs SET entity_count = {ph}, edge_count = {ph}, updated_at = {ph} "  # nosec B608 — only ph placeholders; all values bound
+        f"UPDATE kg_graphs SET "  # nosec B608 — only ph placeholders; all values bound
+        f"entity_count = (SELECT COUNT(*) FROM kg_nodes WHERE graph_id = {ph}), "
+        f"edge_count = (SELECT COUNT(*) FROM kg_edges WHERE graph_id = {ph}), "
+        f"updated_at = {ph} "
         f"WHERE id = {ph}",
-        (len(node_ids), edges_written, now, graph_id),
+        (graph_id, graph_id, now, graph_id),
     )
 
     # Write back kg_node_ids to rag_chunks
@@ -528,6 +646,7 @@ def ingest_chunk(conn, chunk_id: str) -> dict:
     ph = sql_placeholder(conn)
     row = conn.execute(
         f"SELECT id, content, metadata, tier, tenant_id, classification, "  # nosec B608 — ph only; chunk_id bound
+        f"project_id, source_table, "
         f"COALESCE(kg_node_ids, '[]') AS kg_node_ids "
         f"FROM rag_chunks WHERE id = {ph}",
         (chunk_id,),
@@ -551,7 +670,7 @@ def run_single(chunk_id: str, as_json: bool = False) -> dict:
 
         ph = sql_placeholder(conn)
         row = conn.execute(
-            f"SELECT id, content, metadata, tier, tenant_id, classification, "  # nosec B608 — ph only; chunk_id bound
+            f"SELECT id, content, metadata, tier, tenant_id, classification, project_id, "  # nosec B608 — ph only; chunk_id bound
             f"COALESCE(kg_node_ids, '[]') AS kg_node_ids "
             f"FROM rag_chunks WHERE id = {ph}",
             (chunk_id,),

@@ -3,12 +3,28 @@
 
 import { test, expect } from '@playwright/test';
 
+import { deleteKanbanTasks } from './fixtures/kanban_cleanup';
+
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 
 let createdTaskId: string | null = null;
 let childTaskId: string | null = null;
 
 test.describe('Kanban API', () => {
+  // Delete what this spec created — child first, since it carries
+  // depends_on_task_id to the parent. See fixtures/kanban_cleanup.ts for why
+  // this is not simply `request.delete(...)`.
+  test.afterAll(async ({ playwright }, testInfo) => {
+    await deleteKanbanTasks(
+      playwright,
+      testInfo,
+      [childTaskId, createdTaskId],
+      'kanban_api.spec',
+    );
+    createdTaskId = null;
+    childTaskId = null;
+  });
+
   test('POST /api/kanban/tasks creates a task and returns id', async ({ request }) => {
     const resp = await request.post('/api/kanban/tasks', {
       data: {

@@ -625,3 +625,65 @@ class TestSecurityContextWiredIntoAuthFlow:
             resp = client.get("/whoami")
             data = resp.get_json()
             assert data["security_context"]["clearance_level"] == 3  # SECRET
+
+
+# ===================================================================
+# 15. nav-sec-01: .env API key must be PRESENTED; no-credential
+#     auto-login is gated behind an explicit dev opt-in flag.
+# ===================================================================
+
+# A correctly-formatted (icdev_dash_ prefixed) env key so bootstrap_env_user's
+# terminal validate_api_key() accepts it.
+_ENV_KEY = "icdev_dash_" + "ab" * 32
+_WRONG_KEY = "icdev_dash_" + "cd" * 32
+
+
+class TestEnvKeyAutoLoginBypass:
+    """Regression tests for the nav-sec-01 P0 auth bypass: ICDEV_DASHBOARD_API_KEY
+    merely being SET in the environment used to bootstrap/log-in the admin env
+    user for ANY request that reached the auto-login block -- even one that
+    presented no credential at all. Combined with _auto_provision_env_key()
+    writing exactly such a key to .env on first install, the dashboard treated
+    all traffic as admin out of the box.
+    """
+
+    def test_env_key_set_but_anonymous_is_unauthenticated(self, auth, flask_app, monkeypatch):
+        """Env key configured, dev-autologin OFF, NO credential presented ->
+        the request must NOT be authenticated (this is the bypass itself)."""
+        monkeypatch.setenv("ICDEV_DASHBOARD_API_KEY", _ENV_KEY)
+        monkeypatch.delenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", raising=False)
+        with flask_app.test_client() as client:
+            # /api/ path -> hook aborts 401 rather than redirecting.
+            resp = client.get("/api/anything")
+            assert resp.status_code == 401
+
+    def test_env_key_presented_authenticates(self, auth, flask_app, monkeypatch):
+        """Presenting the correct env key (constant-time match) bootstraps the
+        DB entry and authenticates the request."""
+        monkeypatch.setenv("ICDEV_DASHBOARD_API_KEY", _ENV_KEY)
+        monkeypatch.delenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", raising=False)
+        with flask_app.test_client() as client:
+            resp = client.get("/", headers={"Authorization": f"Bearer {_ENV_KEY}"})
+            assert resp.status_code == 200
+            assert b"home" in resp.data
+
+    def test_wrong_key_presented_gets_401(self, auth, flask_app, monkeypatch):
+        """A presented key that does NOT equal the env key is rejected."""
+        monkeypatch.setenv("ICDEV_DASHBOARD_API_KEY", _ENV_KEY)
+        monkeypatch.delenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", raising=False)
+        with flask_app.test_client() as client:
+            resp = client.get(
+                "/api/anything",
+                headers={"Authorization": f"Bearer {_WRONG_KEY}"},
+            )
+            assert resp.status_code == 401
+
+    def test_dev_autologin_flag_restores_anonymous_login(self, auth, flask_app, monkeypatch):
+        """Legacy no-credential auto-login is preserved ONLY behind the explicit
+        ICDEV_DASHBOARD_DEV_AUTOLOGIN opt-in."""
+        monkeypatch.setenv("ICDEV_DASHBOARD_API_KEY", _ENV_KEY)
+        monkeypatch.setenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", "true")
+        with flask_app.test_client() as client:
+            resp = client.get("/")
+            assert resp.status_code == 200
+            assert b"home" in resp.data

@@ -5,8 +5,9 @@ Runs as a Genesis reflex every 1 hour. Checks all enabled freshness
 quality rules across all data designs, writes results to dd_freshness_alerts
 and dd_quality_runs, and logs breaches to genesis_audit.
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+
+IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 
 import json
@@ -263,6 +264,15 @@ def run(context: Dict[str, Any], db_conn=None) -> Dict[str, Any]:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import argparse
 
     parser = argparse.ArgumentParser(description="Freshness Guardian Genesis Reflex")

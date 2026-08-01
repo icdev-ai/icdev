@@ -2,12 +2,26 @@
 {% block title %}{{ app_name }} — Bayesian Autoresearch{% endblock %}
 {% block content %}
 
-<h1>Bayesian Autoresearch</h1>
+<h1>Bayesian Autoresearch
+    <span id="ar-placeholder-badge" class="ar-badge" title="Metrics are measured against an identity baseline — the engine does not apply real code modifications between pre/post measurement, so deltas are placeholder/heuristic, not real experiment evaluations.">Heuristic · placeholder metrics</span>
+</h1>
 
 <div class="intro-panel">
     <p>Autonomous experiment engine inspired by Karpathy's Autoresearch, guided by Bayesian Teaching Intelligence.
     The system picks the most informative experiment, executes it time-boxed, measures the metric delta, and keeps or discards via git.</p>
+    <p class="ar-placeholder-note" role="note">
+        <strong>Note:</strong> This engine does not yet apply real code modifications between the pre- and post-metric
+        measurements, so reported pre/post/delta values are computed against an <em>identity baseline</em> and are
+        <strong>placeholder/heuristic</strong>, not real experiment evaluations.
+    </p>
 </div>
+
+<style>
+.ar-badge{display:inline-block;vertical-align:middle;margin-left:.6rem;padding:.15rem .55rem;border-radius:999px;
+    font-size:.72rem;font-weight:600;background:#7c5b00;color:#ffdf8a;border:1px solid #b8860b;letter-spacing:.02em;}
+.ar-placeholder-note{margin-top:.6rem;padding:.5rem .75rem;border-left:3px solid #b8860b;background:rgba(184,134,11,.08);
+    font-size:.85rem;color:var(--text-muted,#8892a4);border-radius:0 4px 4px 0;}
+</style>
 
 <!-- Stat Grid -->
 <div class="stat-grid" id="ar-stats">
@@ -97,6 +111,12 @@
             .catch(() => {});
     }
 
+    function _esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+        });
+    }
+
     function loadExperiments() {
         fetch('/api/autoresearch/experiments')
             .then(r => r.json())
@@ -107,15 +127,16 @@
                 data.experiments.forEach(exp => {
                     const tr = document.createElement('tr');
                     const decision_class = exp.decision === 'keep' ? 'color:#28a745;font-weight:600' : 'color:#dc3545';
+                    const hyp = String(exp.hypothesis || '');
                     tr.innerHTML = `
-                        <td>${(exp.id || '').substring(0, 12)}</td>
-                        <td>${exp.domain || ''}</td>
-                        <td>${exp.category || '-'}</td>
-                        <td title="${exp.hypothesis || ''}">${(exp.hypothesis || '').substring(0, 60)}${(exp.hypothesis || '').length > 60 ? '...' : ''}</td>
+                        <td>${_esc((exp.id || '').substring(0, 12))}</td>
+                        <td>${_esc(exp.domain || '')}</td>
+                        <td>${_esc(exp.category || '-')}</td>
+                        <td title="${_esc(hyp)}">${_esc(hyp.substring(0, 60))}${hyp.length > 60 ? '...' : ''}</td>
                         <td>${exp.pre_metric != null ? exp.pre_metric.toFixed(4) : '-'}</td>
                         <td>${exp.post_metric != null ? exp.post_metric.toFixed(4) : '-'}</td>
                         <td>${exp.metric_delta != null ? (exp.metric_delta >= 0 ? '+' : '') + exp.metric_delta.toFixed(4) : '-'}</td>
-                        <td style="${decision_class}">${exp.decision || '-'}</td>
+                        <td style="${decision_class}">${_esc(exp.decision || '-')}</td>
                         <td>${exp.created_at ? new Date(exp.created_at).toLocaleDateString() : '-'}</td>
                     `;
                     tbody.appendChild(tr);

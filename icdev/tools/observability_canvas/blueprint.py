@@ -69,6 +69,11 @@ from tools.observability_canvas.observability_engine import (  # noqa: E402
 )
 from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
+# Tracks whether the startup init_db() failed so page routes can lazily retry once.
+# Default False; set True when create_observability_blueprint's init_db() raises so
+# the first subsequent request re-attempts init before querying.
+_init_failed = False
+
 
 def create_observability_blueprint():
     """Create and return the Observability Design Canvas Blueprint.
@@ -81,12 +86,18 @@ def create_observability_blueprint():
         return None
 
     # Initialize DB
+    global _init_failed
     try:
         from tools.observability_canvas.db.init_db import init_db
 
         init_db()
+        _init_failed = False
     except Exception as exc:
-        logger.warning("Observability Canvas DB init failed: %s", exc)
+        _init_failed = True
+        logger.warning(
+            "Observability Canvas DB init failed (will retry lazily on first request): %s",
+            exc,
+        )
 
     try:
         from tools.observability_canvas import bus_subscriber as _odc_bus
@@ -119,6 +130,25 @@ def create_observability_blueprint():
     # ── DB helpers ─────────────────────────────────────────────────────────
     from tools.observability_canvas.db.init_db import get_connection
 
+    def _ensure_init():
+        """Lazily retry DB init once if the startup init_db() failed.
+
+        Cheap guard invoked at the top of every page route: if the canvas was
+        mounted while the store was unreachable, the first request that lands
+        after the store recovers re-runs init_db() and clears the failure flag.
+        """
+        global _init_failed
+        if not _init_failed:
+            return
+        try:
+            from tools.observability_canvas.db.init_db import init_db as _retry_init
+
+            _retry_init()
+            _init_failed = False
+            logger.info("Observability Canvas DB init retry succeeded")
+        except Exception as exc:
+            logger.warning("Observability Canvas DB init retry failed: %s", exc)
+
     def _now():
         return datetime.now(timezone.utc).isoformat()
 
@@ -148,37 +178,45 @@ def create_observability_blueprint():
     @oc_login_required
     def oc_index():
         """Observability Design Canvas dashboard — list designs + recent assessments."""
-        with get_connection() as conn:
-            designs = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT id, name, description, classification, "
-                    "created_at, updated_at "
-                    "FROM observability_designs ORDER BY updated_at DESC"
-                ).fetchall()
-            ]
-            recent_assessments = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT a.id, a.design_id, a.assessment_type, a.score, "
-                    "a.grade, a.created_at, d.name AS design_name "
-                    "FROM od_assessments a "
-                    "JOIN observability_designs d ON a.design_id = d.id "
-                    "ORDER BY a.created_at DESC LIMIT 10"
-                ).fetchall()
-            ]
-            templates = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
-                ).fetchall()
-            ]
+        _ensure_init()
+        designs, recent_assessments, templates = [], [], []
+        store_unavailable = False
+        try:
+            with get_connection() as conn:
+                designs = [
+                    _row_to_dict(r)
+                    for r in conn.execute(
+                        "SELECT id, name, description, classification, "
+                        "created_at, updated_at "
+                        "FROM observability_designs ORDER BY updated_at DESC"
+                    ).fetchall()
+                ]
+                recent_assessments = [
+                    _row_to_dict(r)
+                    for r in conn.execute(
+                        "SELECT a.id, a.design_id, a.assessment_type, a.score, "
+                        "a.grade, a.created_at, d.name AS design_name "
+                        "FROM od_assessments a "
+                        "JOIN observability_designs d ON a.design_id = d.id "
+                        "ORDER BY a.created_at DESC LIMIT 10"
+                    ).fetchall()
+                ]
+                templates = [
+                    _row_to_dict(r)
+                    for r in conn.execute(
+                        "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
+                    ).fetchall()
+                ]
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC index page DB unavailable: %s", exc)
         return render_template(
             "observability_canvas/index.html",
             designs=designs,
             recent_assessments=recent_assessments,
             templates=templates,
             objects=OBSERVABILITY_OBJECTS,
+            store_unavailable=store_unavailable,
         )
 
     @bp.route("/canvas/new")
@@ -230,56 +268,118 @@ def create_observability_blueprint():
     @oc_login_required
     def oc_templates():
         """Template gallery page."""
-        with get_connection() as conn:
-            templates = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
-                ).fetchall()
-            ]
-        return render_template("observability_canvas/templates.html", templates=templates)
+        _ensure_init()
+        templates = []
+        store_unavailable = False
+        try:
+            with get_connection() as conn:
+                templates = [
+                    _row_to_dict(r)
+                    for r in conn.execute(
+                        "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
+                    ).fetchall()
+                ]
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC templates page DB unavailable: %s", exc)
+        return render_template(
+            "observability_canvas/templates.html",
+            templates=templates,
+            store_unavailable=store_unavailable,
+        )
 
     @bp.route("/assessments")
     @oc_login_required
     def oc_assessments():
         """Assessment history page."""
-        conn = get_connection()
+        _ensure_init()
+        assessments = []
+        store_unavailable = False
         try:
-            rows = conn.execute(
-                "SELECT a.id, a.design_id, a.assessment_type, a.score, "
-                "a.grade, a.created_at, d.name AS design_name "
-                "FROM od_assessments a "
-                "LEFT JOIN observability_designs d ON a.design_id = d.id "
-                "ORDER BY a.created_at DESC LIMIT 50"
-            ).fetchall()
-            assessments = [_row_to_dict(r) for r in rows]
-        finally:
-            conn.close()
-        return render_template("observability_canvas/assessments.html", assessments=assessments)
+            conn = get_connection()
+            try:
+                rows = conn.execute(
+                    "SELECT a.id, a.design_id, a.assessment_type, a.score, "
+                    "a.grade, a.created_at, d.name AS design_name "
+                    "FROM od_assessments a "
+                    "LEFT JOIN observability_designs d ON a.design_id = d.id "
+                    "ORDER BY a.created_at DESC LIMIT 50"
+                ).fetchall()
+                assessments = [_row_to_dict(r) for r in rows]
+            finally:
+                conn.close()
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC assessments page DB unavailable: %s", exc)
+        return render_template(
+            "observability_canvas/assessments.html",
+            assessments=assessments,
+            store_unavailable=store_unavailable,
+        )
 
     @bp.route("/coverage/<design_id>")
     @oc_login_required
     def oc_coverage_page(design_id):
         """Detection coverage page for a specific observability design."""
-        with get_connection() as conn:
-            design = _row_to_dict(
-                conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
-            )
-        if not design:
-            return redirect("/observability/")
-        return render_template("observability_canvas/coverage.html", design=design)
+        _ensure_init()
+        design = {}
+        gap_score = None
+        store_unavailable = False
+        try:
+            with get_connection() as conn:
+                design = _row_to_dict(
+                    conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
+                )
+                if not design:
+                    return redirect("/observability/")
+                # obx-cov-01: surface the latest persisted signal-source gap score
+                # (mitre_coverage_twin.compute_gap_score writer). This is a DISTINCT
+                # metric from the client-side "design baseline" MITRE coverage the
+                # page fetches via /assess — do not conflate the two.
+                try:
+                    gs = conn.execute(
+                        "SELECT total_techniques, covered_count, partial_count, "
+                        "gap_count, overall_gap_score, assessed_at "
+                        "FROM odc_gap_scores WHERE design_id=%s "
+                        "ORDER BY assessed_at DESC LIMIT 1",
+                        (design_id,),
+                    ).fetchone()
+                    if gs:
+                        gap_score = _row_to_dict(gs)
+                except Exception as exc:
+                    logger.debug("ODC coverage page gap-score read unavailable: %s", exc)
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC coverage page DB unavailable: %s", exc)
+        return render_template(
+            "observability_canvas/coverage.html",
+            design=design,
+            gap_score=gap_score,
+            store_unavailable=store_unavailable,
+        )
 
     @bp.route("/remediation/<design_id>")
     @oc_login_required
     def oc_remediation_page(design_id):
         """Remediation page — gap analysis with recommended fixes."""
-        with get_connection() as conn:
-            design = _row_to_dict(
-                conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
-            )
-        if not design:
-            return redirect("/observability/")
-        return render_template("observability_canvas/remediation.html", design=design)
+        _ensure_init()
+        design = {}
+        store_unavailable = False
+        try:
+            with get_connection() as conn:
+                design = _row_to_dict(
+                    conn.execute("SELECT id, name FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
+                )
+            if not design:
+                return redirect("/observability/")
+        except Exception as exc:
+            store_unavailable = True
+            logger.warning("ODC remediation page DB unavailable: %s", exc)
+        return render_template(
+            "observability_canvas/remediation.html",
+            design=design,
+            store_unavailable=store_unavailable,
+        )
 
     # ====================================================================
     # API — DESIGN CRUD
@@ -341,9 +441,14 @@ def create_observability_blueprint():
         finally:
             conn.close()
         _audit("CREATE", design_id, name)
-        # Hook: refresh ODC KG so /ask reflects the new design immediately
-        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
-        reindex_canvas_on_save("odc")
+        # Hook: refresh ODC KG so /ask reflects the new design immediately.
+        # Guarded — the design is already committed above, so a failure in the
+        # post-commit reindex hook must NOT turn a successful create into a 500.
+        try:
+            from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+            reindex_canvas_on_save("odc")
+        except Exception:
+            pass
         return jsonify({"id": design_id, "name": name}), 201
 
     @bp.route("/api/designs", methods=["GET"])
@@ -383,7 +488,7 @@ def create_observability_blueprint():
         logger.info("Updating observability design: %s", design_id)
         conn = get_connection()
         try:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE observability_designs SET name=%s, description=%s, "
                 "graph_json=%s, classification=%s, updated_at=%s WHERE id=%s",
                 (
@@ -395,9 +500,14 @@ def create_observability_blueprint():
                     design_id,
                 ),
             )
+            rowcount = cur.rowcount
             conn.commit()
         finally:
             conn.close()
+        # Unknown design id → 404 (correct contract). No post-commit hooks fire
+        # for a design that does not exist.
+        if rowcount == 0:
+            return jsonify({"error": "Not found"}), 404
         _audit("UPDATE", design_id, data.get("name", ""))
         try:
             from tools.canvas.event_bus import publish as _eb_publish
@@ -450,10 +560,15 @@ def create_observability_blueprint():
         try:
             conn.execute("DELETE FROM od_assessments WHERE design_id=%s", (design_id,))
             conn.execute("DELETE FROM od_versions WHERE design_id=%s", (design_id,))
-            conn.execute("DELETE FROM observability_designs WHERE id=%s", (design_id,))
+            cur = conn.execute("DELETE FROM observability_designs WHERE id=%s", (design_id,))
+            rowcount = cur.rowcount
             conn.commit()
         finally:
             conn.close()
+        # Unknown design id → 404 (correct contract). The child-table deletes
+        # above are idempotent no-ops when the design never existed.
+        if rowcount == 0:
+            return jsonify({"error": "Not found"}), 404
         _audit("DELETE", design_id, "")
         return jsonify({"deleted": True})
 
@@ -527,6 +642,18 @@ def create_observability_blueprint():
             conn.close()
 
         _audit("ASSESS", design_id, f"Score: {assessment['score']}, Grade: {assessment['grade']}")
+
+        # obx-cov-01: after a successful assessment, compute the signal-source
+        # coverage gap score so the ODC compliance card (get_odc_card reads
+        # odc_gap_scores) lights up in production. GUARDED — a coverage failure
+        # must NEVER fail the assessment; it is a best-effort side effect.
+        try:
+            from tools.observability_canvas.mitre_coverage_twin import compute_gap_score
+
+            compute_gap_score(design_id, graph_data)
+        except Exception as exc:
+            logger.warning("ODC coverage compute during assess failed (non-fatal): %s", exc)
+
         record_canvas_decision(
             canvas_type="odc",
             record_id=design_id,
@@ -557,6 +684,106 @@ def create_observability_blueprint():
                 "chain_mode": chain_mode,
             }
         )
+
+    @bp.route("/api/replay-verify/<design_id>", methods=["POST"])
+    @oc_login_required
+    def oc_api_replay_verify(design_id):
+        """Replay an SDC attack path and verify TTP detection coverage.
+
+        Wraps tools.observability_canvas.replay_verify.verify_path — the only
+        non-demo writer of od_ttp_coverage (the fallback source for the ODC
+        compliance card). Persists one od_ttp_coverage + od_audit row per TTP.
+
+        Body (JSON):
+          ttp_ids: list[str] — MITRE technique IDs (alias: "path")
+
+        Returns verify_path() result:
+          {path, results[{ttp_id, state, coverage_row_id}], summary{full,partial,none,total}}
+        """
+        from tools.observability_canvas.replay_verify import verify_path
+
+        data = request.get_json(force=True, silent=True) or {}
+        raw = data.get("ttp_ids", data.get("path", []))
+        if not isinstance(raw, list):
+            return jsonify({"error": "ttp_ids must be a list"}), 400
+        ttp_ids = [str(t).strip() for t in raw if str(t).strip()]
+
+        try:
+            result = verify_path(ttp_ids, design_id=design_id)
+        except Exception as exc:
+            logger.warning("replay verify failed for %s: %s", design_id, exc)
+            return jsonify({"error": str(exc)}), 500
+
+        _audit("replay_verify", design_id, f"ttps={len(ttp_ids)} summary={result.get('summary')}")
+        return jsonify(result)
+
+    # ====================================================================
+    # API — MITRE SIGNAL-SOURCE COVERAGE (mitre_coverage_twin)
+    # ====================================================================
+    #
+    # obx-cov-01: expose the previously-orphaned mitre_coverage_twin engine.
+    # These routes are the runtime writers of odc_gap_scores /
+    # odc_technique_coverage — the primary read of the ODC compliance card
+    # (tools/canvas_compliance/compliance.py::get_odc_card). NOTE: this is the
+    # signal-source gap metric (design signal sources vs required MITRE detection
+    # sources), NOT the design-baseline coverage from a cmp-baseline node that
+    # observability_engine.compute_mitre_detection_coverage computes.
+
+    def _odc_load_graph(design_id):
+        """Load and parse a design's graph_json; returns (graph_data, error_resp).
+
+        error_resp is None on success, else a (json, status) tuple to return.
+        """
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT graph_json FROM observability_designs WHERE id=%s",
+                (design_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None, (jsonify({"error": "Design not found"}), 404)
+        graph_raw = row["graph_json"]
+        try:
+            graph_data = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+        except (json.JSONDecodeError, TypeError):
+            return None, (jsonify({"error": "Invalid graph data"}), 400)
+        return graph_data, None
+
+    @bp.route("/api/coverage/<design_id>/compute", methods=["POST"])
+    @oc_login_required
+    def oc_api_coverage_compute(design_id):
+        """Compute signal-source coverage gap score and persist odc_gap_scores.
+
+        Runs mitre_coverage_twin.compute_gap_score, which persists both
+        odc_gap_scores and odc_technique_coverage as a side effect, and returns
+        the score JSON.
+        """
+        from tools.observability_canvas.mitre_coverage_twin import compute_gap_score
+
+        graph_data, err = _odc_load_graph(design_id)
+        if err is not None:
+            return err
+        result = compute_gap_score(design_id, graph_data)
+        _audit("coverage_compute", design_id, f"gap_score={result.get('gap_score')}")
+        return jsonify(result)
+
+    @bp.route("/api/coverage/<design_id>/report", methods=["GET"])
+    @oc_login_required
+    def oc_api_coverage_report(design_id):
+        """Return the full signal-source gap report (generate_gap_report output).
+
+        Includes prioritized remediation steps and quick wins. Recomputes and
+        persists the gap score as a side effect (shared compute_gap_score path).
+        """
+        from tools.observability_canvas.mitre_coverage_twin import generate_gap_report
+
+        graph_data, err = _odc_load_graph(design_id)
+        if err is not None:
+            return err
+        report = generate_gap_report(design_id, graph_data)
+        return jsonify(report)
 
     # ====================================================================
     # API — AUTO-FIX
@@ -1423,17 +1650,17 @@ def create_observability_blueprint():
         if not design:
             return render_template("404.html"), 404
         design = _row_to_dict(design)
+        # Read snapshots through the same code path take_snapshot writes to
+        # (twin.list_snapshots → canvas connection), so read DB == write DB.
         try:
-            snapshots = conn.execute(
-                "SELECT * FROM odc_twin_snapshots WHERE design_id=%s ORDER BY created_at DESC LIMIT 20",
-                (design_id,),
-            ).fetchall()
+            from tools.observability_canvas.twin import list_snapshots
+            snapshots = list_snapshots(design_id)
         except Exception:
             snapshots = []
         return render_template(
             "observability_canvas/twin.html",
             design=design,
-            snapshots=[_row_to_dict(s) for s in snapshots],
+            snapshots=snapshots,
         )
 
     @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
@@ -1441,7 +1668,14 @@ def create_observability_blueprint():
     def oc_api_twin_snapshot(design_id):
         from tools.observability_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
-        snap = take_snapshot(design_id, label=data.get("label"))
+        try:
+            snap = take_snapshot(design_id, label=data.get("label"))
+        except ValueError as exc:
+            # Unknown design — surface a 404 rather than a fake 201.
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            # Persist failure — surface a 500 rather than a fake 201.
+            return jsonify({"error": f"snapshot persist failed: {exc}"}), 500
         return jsonify(snap), 201
 
     @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])
@@ -1522,6 +1756,47 @@ def create_observability_blueprint():
         _audit("sigma_generate", details=tid)
         return jsonify({"technique_id": tid, "sigma_yaml": sigma_yaml})
 
+    @bp.route("/api/mitre/ingest", methods=["POST"])
+    @oc_login_required
+    def oc_api_mitre_ingest():
+        """Admin: ingest MITRE ATT&CK techniques into odc_mitre_techniques.
+
+        Wraps tools.observability.mitre_ingestor.ingest (previously CLI-only).
+
+        Body (JSON):
+          source: 'local' (default) — seed FROM the single-source-of-truth
+                  mitre_catalog.MITRE_CATALOG code constant (offline, drift-free);
+                  'stix' — external MITRE STIX bundle / enterprise.json mirror.
+          force_download: bool — fetch the external STIX bundle (source='stix').
+          catalog_path:   str  — optional STIX/enterprise.json file (source='stix').
+
+        Returns {ingested, skipped, errors, source}.
+        """
+        from tools.observability.mitre_ingestor import ingest as _mitre_ingest
+
+        data = request.get_json(force=True, silent=True) or {}
+        source = (data.get("source") or "local").strip().lower()
+        if source not in ("local", "stix"):
+            return jsonify({"error": "source must be 'local' or 'stix'"}), 400
+
+        try:
+            if source == "stix":
+                cat = data.get("catalog_path")
+                result = _mitre_ingest(
+                    catalog_path=Path(cat) if cat else None,
+                    force_download=bool(data.get("force_download", False)),
+                    source="stix",
+                )
+            else:
+                result = _mitre_ingest(source="local")
+        except Exception as exc:
+            logger.warning("MITRE ingest failed (source=%s): %s", source, exc)
+            return jsonify({"error": str(exc)}), 500
+
+        result["source"] = source
+        _audit("mitre_ingest", details=f"source={source} ingested={result.get('ingested')}")
+        return jsonify(result)
+
     # ====================================================================
     # Kill Chain — force-directed graph page + API
     # ====================================================================
@@ -1565,9 +1840,13 @@ def create_observability_blueprint():
             except Exception as exc:
                 logger.debug("actor alias lookup failed: %s", exc)
 
-        from tools.db.storage import get_connection as _sg_conn
+        # canvas_kg_nodes/canvas_kg_edges are canvas-namespaced tables with no
+        # tenant_id/classification columns, so the global RLS predicate would raise
+        # UndefinedColumn under any authenticated security context.  Use the
+        # RLS-bypassing canvas connection.
+        from tools.db.storage import get_canvas_connection
 
-        conn = _sg_conn()
+        conn = get_canvas_connection()
         try:
             # Ensure KG tables exist (created by stix_importer / temporal_correlator)
             conn.execute(
@@ -1730,8 +2009,12 @@ def create_observability_blueprint():
         limit = min(int(request.args.get("limit", 50)), 200)
         record_id = request.args.get("record_id")
         try:
-            from tools.db.storage import get_connection as _gc
-            with _gc() as _conn:
+            # canvas_ai_decisions is a canvas-namespaced table without
+            # tenant_id/classification columns; the global RLS predicate would raise
+            # UndefinedColumn under an authenticated security context.  Use the
+            # RLS-bypassing canvas connection.
+            from tools.db.storage import get_canvas_connection
+            with get_canvas_connection() as _conn:
                 if record_id:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='odc' AND record_id=%s "
@@ -1746,6 +2029,7 @@ def create_observability_blueprint():
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "odc", "decisions": [dict(r) for r in rows]})
         except Exception as exc:
+            logger.warning("ODC ai-trace query failed: %s", exc)
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     def _compute_odc_governance(graph_data: dict) -> dict:
@@ -1827,29 +2111,38 @@ def create_observability_blueprint():
         """Run observability governance framework check."""
         import uuid as _uuid_mod
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)).fetchone()
-        if not row:
-            conn.close()
-            return jsonify({"error": "Not found"}), 404
         try:
-            graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
-        except (json.JSONDecodeError, TypeError):
+            row = conn.execute(
+                "SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+            try:
+                graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+            except (json.JSONDecodeError, TypeError):
+                return jsonify({"error": "Invalid graph data"}), 400
+
+            result = _compute_odc_governance(graph_data)
+
+            assess_id = str(_uuid_mod.uuid4())
+            conn.execute(
+                "INSERT INTO od_assessments (id, design_id, assessment_type, findings_json, score, grade, created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (assess_id, design_id, "governance",
+                 json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                             for c in result["checks"]]),
+                 result["score"], result["grade"], _now()),
+            )
+            conn.commit()
+        except Exception:
+            # A raise in _compute_odc_governance or the INSERT must not leak the
+            # connection (finally below) and must return a clean JSON error
+            # rather than an unhandled 500 HTML page.
+            logger.exception("ODC governance computation failed for %s", design_id)
+            return jsonify({"error": "Governance computation failed"}), 500
+        finally:
+            # Always release the connection on every exit path.
             conn.close()
-            return jsonify({"error": "Invalid graph data"}), 400
-
-        result = _compute_odc_governance(graph_data)
-
-        assess_id = str(_uuid_mod.uuid4())
-        conn.execute(
-            "INSERT INTO od_assessments (id, design_id, assessment_type, findings_json, score, grade, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (assess_id, design_id, "governance",
-             json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
-                         for c in result["checks"]]),
-             result["score"], result["grade"], _now()),
-        )
-        conn.commit()
-        conn.close()
         return jsonify(result)
 
     return bp

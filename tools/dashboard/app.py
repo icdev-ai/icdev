@@ -7,7 +7,7 @@ Provides a web interface for monitoring projects, agents, compliance,
 and system health within the ICDEV™ framework.
 
 Usage:
-    python tools/dashboard/app.py [--port 5000] [--debug]
+    python tools/dashboard/app.py [--port 5050] [--debug]
 """
 
 import argparse
@@ -15,10 +15,10 @@ import importlib
 import json
 import os  # noqa: F811 — needed directly (not just as _os)
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from functools import wraps
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -29,7 +29,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
-from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder, table_exists  # noqa: E402
 
 from flask import (
     Flask,
@@ -58,6 +58,7 @@ from tools.dashboard.config import (  # noqa: E402
     DEBUG,
 )
 from tools.dashboard.brand import brand_context_processor  # noqa: E402
+from tools.dashboard.lazy_canvas import install_lazy_canvas_loader  # noqa: E402
 from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event, require_role  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
@@ -70,6 +71,84 @@ try:
     from tools.usage_analytics.event_collector import track_request as _track_request
 except ImportError:
     _track_request = None
+
+
+def _session_actor(default: str = "dashboard") -> str:
+    """Resolved actor identity for audit fields (nav-sec-06).
+
+    Always sourced from the authenticated session user (``g.current_user``),
+    never from a spoofable request-body ``actor`` field. Falls back to
+    ``default`` only when no user is on the request context (which the
+    ``@require_role`` gate on the calling route already prevents).
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        return str(user.get("id") or user.get("email") or default)
+    if user is not None:
+        try:
+            return str(user["id"])
+        except Exception:
+            return default
+    return default
+
+
+def _current_user_id() -> "str | None":
+    """Return the authenticated user's id, or None for anonymous requests.
+
+    nav-misc-01: used to persist per-user preferences (e.g. the last-seen
+    release version) instead of relying on a per-browser cookie.
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        uid = user.get("id")
+        return str(uid) if uid else None
+    return None
+
+
+# nav-sec-06: editorial (state-changing) Pulse blog actions — approve / reject /
+# publish / unpublish / delete — are restricted to an approver/editor-class role.
+# A lowest-privilege ``developer`` must not be able to approve or publish
+# externally visible content. Reads (GET) stay open to any authenticated user.
+# Every role here also appears in ``VALID_DASHBOARD_ROLES`` in
+# tools/dashboard/auth.py.
+
+# nav-intel-06: the Ask-ICDEV Q&A endpoints (/api/components-map/ask and
+# /api/ask-icdev/sessions/<id>/message) route every narrate=true request through
+# the LLMRouter — a real cost surface. Both endpoints are already
+# authenticated-only (the global before_request 401s anon), but any
+# authenticated user could otherwise trigger unbounded LLM calls. Role-gating
+# narration to admin/pm would break the chat UX for the developer/isso/co roles
+# that legitimately use it, so we rate-limit the narration per user instead
+# (defense-in-depth against authenticated abuse) and degrade to raw evidence
+# when the budget is exhausted — the non-narration retrieval branches stay live.
+_NARRATION_RATE_LOCK = threading.Lock()
+_NARRATION_CALLS: dict[str, list[float]] = {}
+
+
+def _narration_budget_ok(key: str, *, max_per_min: int | None = None) -> bool:
+    """Per-key sliding-window budget for the LLM narration cost surface.
+
+    Records a call and returns True while under the per-minute cap; returns
+    False (→ caller falls back to raw evidence) once the cap is exhausted.
+    Cap defaults to ICDEV_ASK_NARRATION_MAX_PER_MIN (20).
+    """
+    try:
+        cap = max_per_min if max_per_min is not None else int(
+            os.environ.get("ICDEV_ASK_NARRATION_MAX_PER_MIN", "20")
+        )
+    except (TypeError, ValueError):
+        cap = 20
+    now = time.monotonic()
+    with _NARRATION_RATE_LOCK:
+        recent = [t for t in _NARRATION_CALLS.get(key, ()) if now - t < 60.0]
+        if len(recent) >= cap:
+            _NARRATION_CALLS[key] = recent
+            return False
+        recent.append(now)
+        _NARRATION_CALLS[key] = recent
+        return True
+
+
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Demo mode: read-only enforcement (POST/PUT/DELETE to /api/* blocked except onboarding + IQE)
@@ -146,6 +225,23 @@ from tools.config.component_registry import get_registry  # noqa: E402
 
 _REGISTRY = get_registry()
 
+# cvx-nav-01: build the IQE canvas dispatch map and the client-side path→canvas
+# map ONCE at import (the registry is load-once — no hot-reload) instead of
+# rebuilding per request in iqe_dispatch(). Both are cached at module scope.
+_IQE_CANVAS_MAP: dict[str, tuple[str, list[str]]] = _REGISTRY.get_iqe_mapping()
+# Supplement with canvases registered in app.py (not in component_registry.yaml)
+# and the ai-brief-only alias cpmp_deliverables (served by the cpmp adapter,
+# whose collections include cpmp.deliverables).
+_IQE_CANVAS_MAP.setdefault("updates", ("tools.iqe.adapters.updates", ["updates.releases"]))
+_IQE_CANVAS_MAP.setdefault("logs", ("tools.iqe.adapters.logs", ["logs.entries", "logs.errors"]))
+if "cpmp" in _IQE_CANVAS_MAP:
+    _IQE_CANVAS_MAP.setdefault("cpmp_deliverables", _IQE_CANVAS_MAP["cpmp"])
+
+# Ordered [regex_source, canvas_key] list, JSON-serialized once for injection
+# into base.html as window.__ICDEV_PATH_CANVAS__ (consumed by the IQE mini-bar
+# and the AI-brief banner — single source of truth).
+_IQE_PATH_CANVAS_JSON: str = json.dumps(_REGISTRY.get_iqe_path_canvas())
+
 
 def _get_active_tier_safe() -> str:
     """Return the active license tier; falls back to 'community' if unavailable."""
@@ -164,10 +260,31 @@ _CANVAS_URL_PREFIXES = tuple(
 )
 
 # ── Design Canvases (conditional registration) ────────────────────────────
+# cvx-net-02: eager canvas blueprint import is the dominant one-time startup
+# cost (each factory imports its module and, for several canvases, seeds a DB).
+# When ICDEV_LAZY_CANVASES is set, the heavy module import is DEFERRED until the
+# first request to each canvas (see install_lazy_canvas_loader). Default OFF so
+# existing behavior — and url_map-at-import expectations in the test suite —
+# stay byte-for-byte unchanged unless an operator opts in.
+_LAZY_CANVASES_ENABLED = os.environ.get(
+    "ICDEV_LAZY_CANVASES", "false"
+).strip().strip('"').strip("'").lower() in ("true", "1", "yes", "on")
+
 _CANVAS_FLAGS: dict[str, bool] = {}
 _CANVAS_BLUEPRINTS: dict[str, object] = {}
 
+_CANVAS_URL_PREFIX_MAP = _REGISTRY.get_url_prefixes()
 for _comp in _REGISTRY.iter_enabled(kind="canvas"):
+    # Only canvases that declare a non-empty url_prefix can be matched by request
+    # path, so only those are deferred. Empty-prefix canvases self-prefix inside
+    # their blueprint (unknowable without importing) and are cheap — they stay
+    # eager. The heavy canvas (network / ndc, '/network') declares a prefix.
+    _canvas_pfx = (_CANVAS_URL_PREFIX_MAP.get(_comp.key) or "").strip()
+    if _LAZY_CANVASES_ENABLED and _canvas_pfx:
+        # Deferred: nav/context flag on, but do NOT import the module now.
+        # install_lazy_canvas_loader() registers a first-hit loader in create_app.
+        _CANVAS_FLAGS[_comp.key] = True
+        continue
     try:
         _bp = _comp.get_blueprint()
         if _bp:
@@ -1318,9 +1435,13 @@ def _register_govcon_pages(app: "Flask", _get_db):
             return render_template(
                 "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids,
                 pipeline_rollup=pipeline_rollup, active_proposals=active_proposals,
-                forecast_notices=forecast_notices,
+                forecast_notices=forecast_notices, degraded=False,
             )
-        except Exception:
+        except Exception as exc:
+            # nav-misc-02: a total pipeline failure previously rendered an all-zeros
+            # page indistinguishable from an empty-but-healthy pipeline. Log it and
+            # flag the page as degraded so operators know the numbers are stale.
+            get_logger("icdev.dashboard").warning("govcon_pipeline_page: pipeline load failed: %s", exc)
             stats = {
                 "total_opportunities": 0,
                 "total_requirements": 0,
@@ -1335,7 +1456,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             }
             return render_template(
                 "govcon/pipeline.html", stats=stats, opportunities=[], linked_opp_ids=set(),
-                forecast_notices={"notices": [], "count": 0},
+                forecast_notices={"notices": [], "count": 0}, degraded=True,
             )
         finally:
             conn.close()
@@ -1503,27 +1624,14 @@ def _register_govcon_pages(app: "Flask", _get_db):
 # ---------------------------------------------------------------------------
 
 
-def _module_not_installed(slug: str):
-    """Return a friendly error when a marketplace module is not installed."""
-    return jsonify({"error": f"Module '{slug}' is not installed. Install via marketplace."}), 501
+# require_installed / _module_not_installed moved to tools/dashboard/route_utils.py
+# (nav-misc-03). Re-imported here to preserve the public symbol.
+from tools.dashboard.route_utils import (  # noqa: F401
+    require_installed,
+    _module_not_installed,
+)
 
 
-def require_installed(slug):
-    """Route decorator — catches ImportError when module code is missing."""
-
-    def decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            try:
-                return f(*args, **kwargs)
-            except ImportError as exc:
-                if slug in str(exc) or f"tools.{slug}" in str(exc) or f"tools/{slug}" in str(exc):
-                    return _module_not_installed(slug)
-                raise
-
-        return wrapper
-
-    return decorator
 
 
 # App factory
@@ -1604,6 +1712,46 @@ def _enrich_chart_patterns(patterns: list[dict]) -> list[dict]:
     return enriched
 
 
+def _derive_chart_provenance(bars: list[dict]) -> dict:
+    """Derive top-level data-provenance flags for a chart response.
+
+    ``market_data.fetch_bars`` tags every bar with a per-bar ``source``
+    ("alpaca" / "alpaca_crypto" / "sample") plus ``as_of``. The chart frontend
+    ignores those per-bar markers, so synthetic ("sample") bars can render as
+    real market data in a financial UI. This helper collapses the per-bar
+    markers into top-level ``data_source`` / ``simulated`` / ``as_of`` fields
+    the UI can surface as a prominent "SIMULATED DATA" banner (nav-plat-01).
+
+    Args:
+        bars: OHLCV bar dicts, each optionally carrying ``source`` / ``as_of``.
+
+    Returns:
+        Dict with keys::
+
+            {
+              "data_source": str,   # "alpaca"|"sample"|...|"mixed"|"unknown"
+              "simulated": bool,    # True iff any bar is synthetic ("sample")
+              "as_of": str | None,  # most-recent per-bar as_of, if present
+            }
+    """
+    if not bars:
+        return {"data_source": "unknown", "simulated": False, "as_of": None}
+    sources = {str(b.get("source") or "unknown") for b in bars if isinstance(b, dict)}
+    simulated = "sample" in sources
+    if len(sources) == 1:
+        data_source = next(iter(sources))
+    elif sources:
+        data_source = "mixed"
+    else:
+        data_source = "unknown"
+    as_of = None
+    for b in reversed(bars):
+        if isinstance(b, dict) and b.get("as_of"):
+            as_of = b["as_of"]
+            break
+    return {"data_source": data_source, "simulated": simulated, "as_of": as_of}
+
+
 def _get_chat_models() -> tuple[list[dict], str]:
     """Read available chat models from args/llm_config.yaml.
 
@@ -1674,7 +1822,7 @@ def _get_chat_models() -> tuple[list[dict], str]:
 def _aggregate_chat_sources(conn, tenant_id: str, context_id: str) -> list[dict]:
     """Aggregate chat-upload RAG chunks by source_id.
 
-    Parses JSON metadata in Python so no SQLite-only json_extract() appears
+    Parses JSON metadata in Python so no SQLite-only JSON SQL function appears
     in the SQL — making the query run on PostgreSQL without modification.
     Mirrors the logic of the original GROUP-BY json_extract query.
     """
@@ -1739,6 +1887,18 @@ def create_app(testing: bool = False) -> Flask:
     app.jinja_env.auto_reload = True
     app.config["EXCALIDRAW_HOST"] = os.environ.get("EXCALIDRAW_HOST", "")
 
+    # cnr-plat-02: global upload size cap. Flask rejects any request body larger
+    # than MAX_CONTENT_LENGTH with 413 before it is buffered into memory. Tunable
+    # via ICDEV_MAX_UPLOAD_MB (default 50 MB). Tighter per-route caps (docgen,
+    # workflow_canvas) already validate content_length and stay authoritative for
+    # their routes; this is the platform-wide backstop.
+    try:
+        _max_upload_mb = float(os.environ.get("ICDEV_MAX_UPLOAD_MB", "50"))
+    except (TypeError, ValueError):
+        _max_upload_mb = 50.0
+    if _max_upload_mb > 0:
+        app.config["MAX_CONTENT_LENGTH"] = int(_max_upload_mb * 1024 * 1024)
+
     # Release cached canvas DB connections after each request (OPT-06).
     @app.teardown_appcontext
     def _teardown_canvas_connections(exc):  # noqa: ANN001
@@ -1756,6 +1916,16 @@ def create_app(testing: bool = False) -> Flask:
 
     # Register dashboard auth middleware (D169-D172)
     register_dashboard_auth(app)
+
+    # cnr-plat-01: CSRF protection for cookie-authenticated mutating JSON APIs.
+    # Registered right after auth so its before_request runs after the auth hook
+    # (g.current_user / cortex_binding are resolved first). Enforced by default
+    # (ICDEV_CSRF_ENFORCE); token-auth / API-key / ICDEV_AUTH_BYPASS paths exempt.
+    try:
+        from tools.security.csrf import register_csrf
+        register_csrf(app)
+    except Exception as _csrf_exc:
+        app.logger.warning("CSRF protection not registered: %s", _csrf_exc)
 
     # Register field-level security middleware (CUI enforcement on JSON responses)
     try:
@@ -1796,6 +1966,16 @@ def create_app(testing: bool = False) -> Flask:
         app.register_blueprint(_health_bp)
     except Exception as _exc:
         app.logger.warning("Health blueprint skipped: %s", _exc)
+
+    # Distributed tracing activation (obx-trc-01, D290). Gated by
+    # ICDEV_TRACING_ENABLED (default on) inside the helper. Wrapped so tracing
+    # never blocks app startup. Span store routes to the primary backend via
+    # tools.db.storage.
+    try:
+        from tools.observability import enable_tracing_if_enabled
+        enable_tracing_if_enabled()
+    except Exception as _exc:
+        app.logger.warning("Tracing activation skipped: %s", _exc)
 
     @app.route("/api/_introspect/routes", methods=["GET"])
     def _introspect_routes():
@@ -1905,21 +2085,23 @@ def create_app(testing: bool = False) -> Flask:
         return jsonify(_sched_status())
 
     @app.route("/api/kanban/scheduler/pause", methods=["POST"])
+    @require_role("admin", "pm")
     def kanban_scheduler_pause():
         """POST — manually pause the kanban scheduler cycle."""
         from tools.kanban.scheduler_control import pause as _sched_pause  # noqa: PLC0415
         body = flask_request.get_json(silent=True) or {}
-        return jsonify(_sched_pause(actor=body.get("actor", "dashboard"),
+        return jsonify(_sched_pause(actor=_session_actor(),
                                     reason=body.get("reason", "manual (dashboard)")))
 
     @app.route("/api/kanban/scheduler/resume", methods=["POST"])
+    @require_role("admin", "pm")
     def kanban_scheduler_resume():
         """POST — resume the kanban scheduler cycle."""
         from tools.kanban.scheduler_control import resume as _sched_resume  # noqa: PLC0415
-        body = flask_request.get_json(silent=True) or {}
-        return jsonify(_sched_resume(actor=body.get("actor", "dashboard")))
+        return jsonify(_sched_resume(actor=_session_actor()))
 
     @app.route("/api/kanban/build-mode", methods=["GET", "POST"])
+    @require_role("admin", "pm")
     def kanban_build_mode():
         """Manual Build: promote and track as normal, but do not auto-dispatch.
 
@@ -1938,11 +2120,12 @@ def create_app(testing: bool = False) -> Flask:
         manual = bool(body.get("manual"))
         return jsonify(set_manual(
             manual,
-            actor=body.get("actor", "dashboard"),
+            actor=_session_actor(),
             reason=body.get("reason", ""),
         ))
 
     @app.route("/api/kanban/build-model", methods=["GET", "POST"])
+    @require_role("admin", "pm")
     def kanban_build_model():
         """Which model the runner builds with. Live — no scheduler restart.
 
@@ -1963,7 +2146,7 @@ def create_app(testing: bool = False) -> Flask:
 
         body = flask_request.get_json(silent=True) or {}
         try:
-            return jsonify(_set_model(body.get("model"), actor=body.get("actor", "dashboard")))
+            return jsonify(_set_model(body.get("model"), actor=_session_actor()))
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -2146,13 +2329,22 @@ def create_app(testing: bool = False) -> Flask:
 
         theme_pref = flask_request.cookies.get("icdev_theme", "dark")
 
-        # ECR-CL-02: unseen-release badge — compare brand.version to cookie-stored last seen
+        # ECR-CL-02 / nav-misc-01: unseen-release badge. Logged-in users get a
+        # per-user last-seen version persisted in user_preferences (synced across
+        # devices, survives cookie clears); anonymous users fall back to the
+        # icdev_seen_version cookie.
         _unseen_release = False
         try:
             from tools.dashboard.brand import get_brand as _get_brand_ctx
             _bv = _get_brand_ctx().get("version", "")
-            _seen_ver = flask_request.cookies.get("icdev_seen_version", "")
-            _unseen_release = bool(_bv) and _seen_ver != _bv
+            if _bv:
+                _uid = _current_user_id()
+                if _uid:
+                    from tools.auth.onboarding import get_last_seen_version
+                    _seen_ver = get_last_seen_version(_uid) or ""
+                else:
+                    _seen_ver = flask_request.cookies.get("icdev_seen_version", "")
+                _unseen_release = _seen_ver != _bv
         except Exception:
             pass
 
@@ -2179,6 +2371,8 @@ def create_app(testing: bool = False) -> Flask:
             "observability_canvas_enabled": _HAS_OBSERVABILITY_CANVAS,
             "canvas_kg_enabled": _HAS_CANVAS_KG,
             "qdc_enabled": _CANVAS_FLAGS.get("qdc", False),
+            "integrity_enabled": _CANVAS_FLAGS.get("integrity", False),
+            "foundry_enabled": _CANVAS_FLAGS.get("foundry", False),
             "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
             "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
             "aimc_enabled": _CANVAS_FLAGS.get("aimc", False),
@@ -2191,7 +2385,6 @@ def create_app(testing: bool = False) -> Flask:
             "dic_enabled": _CANVAS_FLAGS.get("dic", False),
             "demo_runner_enabled": _CANVAS_FLAGS.get("demo_runner", False),
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
-            "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
             "mission_canvas_enabled": _CANVAS_FLAGS.get("mission_canvas", False),
             "canvas_flags": _CANVAS_FLAGS,
             "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
@@ -2201,6 +2394,9 @@ def create_app(testing: bool = False) -> Flask:
             "route_module_map": _route_map,
             "nav_tree": _REGISTRY.get_nav_context(),
             "component_registry": _REGISTRY,
+            # cvx-nav-01: single registry-derived path→canvas map (JSON) injected
+            # once into base.html as window.__ICDEV_PATH_CANVAS__.
+            "iqe_path_canvas_json": _IQE_PATH_CANVAS_JSON,
             "canvas_menu_active": any(
                 flask_request.path.startswith(prefix)
                 for prefix in _CANVAS_URL_PREFIXES
@@ -2314,12 +2510,36 @@ def create_app(testing: bool = False) -> Flask:
     # See tools/dashboard/api/__init__.py for the full registration sequence.
     register_api_blueprints(app)
 
+    # ---- Backend guard (e2p-back-04) ----
+    # Refuse to serve from the SQLite fallback when this install declares
+    # ICDEV_PG_NO_FALLBACK. Deliberately NOT wrapped in a broad try/except that
+    # swallows it: the whole point is to fail loudly at boot instead of serving
+    # 500s from a database nothing maintains. See tools/db/backend_guard.py.
+    from tools.db.backend_guard import assert_primary_backend
+    assert_primary_backend("ICDEV dashboard")
+
     # ---- Studio DB init (kanban/ci-fix-26594490171) ----
     try:
         from tools.studio.init_db import init_studio_tables
         init_studio_tables()
     except Exception as _exc:
         app.logger.warning("Studio DB init skipped: %s", _exc)
+
+    # ---- Studio run reconciliation (dwo-dur-02) ----
+    # Re-attach runs parked on an approval gate, expire the ones past their
+    # window, and fail steps whose subprocess died with the previous process.
+    # Called here rather than at import time so importing workflow_runner has
+    # no database side effects.
+    try:
+        from tools.studio.workflow_runner import reconcile_runs_on_boot
+        _rec = reconcile_runs_on_boot()
+        if _rec.get("resumed") or _rec.get("expired"):
+            app.logger.info(
+                "Studio runs reconciled: resumed=%d expired=%d",
+                len(_rec.get("resumed", [])), len(_rec.get("expired", [])),
+            )
+    except Exception as _exc:
+        app.logger.warning("Studio run reconciliation skipped: %s", _exc)
 
     # ---- Kanban DB init (ci-fix-26601155261) ----
     try:
@@ -2376,10 +2596,22 @@ def create_app(testing: bool = False) -> Flask:
         def canvas_kg_page():
             return render_template("canvas_kg.html")
 
-    # ---- Unified Canvas Compliance Dashboard ----
+    # ---- Unified Canvas Compliance Dashboard (Canvas Posture) ----
     @app.route("/canvas-compliance")
     def canvas_compliance_page():
-        """Unified compliance posture across all 7 design canvases."""
+        """Unified compliance posture across the design canvases (Canvas Posture).
+
+        Distinct from Canvas Health (/health/canvases), which reports
+        file-existence QA rather than runtime compliance posture.
+        """
+        # cnr-cc-01(b): explicit, lightweight login gate (defense-in-depth).
+        # This standalone @app.route is not a registry canvas blueprint, so it
+        # never picks up guard_component_access; assert an authenticated user
+        # rather than relying solely on the global before_request hook.
+        if not getattr(g, "current_user", None):
+            if flask_request.is_json or flask_request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required"}), 401
+            return redirect(url_for("login_page"))
         try:
             from tools.canvas_compliance.compliance import get_all_cards
             cards = get_all_cards()
@@ -2395,6 +2627,9 @@ def create_app(testing: bool = False) -> Flask:
         app.logger.warning("Canvas access guard unavailable: %s", _guard_exc)
         guard_component_access = None  # type: ignore[assignment]
 
+    # Eager registration for whatever is already imported in _CANVAS_BLUEPRINTS.
+    # In eager mode that is every enabled canvas; in lazy mode it is only the
+    # empty-prefix (self-prefixing) canvases that cannot be matched by path.
     _CANVAS_ROUTES = _REGISTRY.get_url_prefixes()
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
@@ -2402,25 +2637,48 @@ def create_app(testing: bool = False) -> Flask:
 
             # Attach RBAC + canvas-access guard (backward-compatible unless
             # ICDEV_ENFORCE_CANVAS_ACCESS is set) BEFORE registering the
-            # blueprint on the app — Flask forbids adding before_request
-            # hooks to a blueprint that has already been registered once,
-            # so doing this after register_blueprint() silently no-ops the
-            # guard for every canvas (it raises, caught below as a generic
-            # "registration failed" warning even though routes still work).
-            if guard_component_access:
+            # blueprint on the app. Flask forbids adding before_request hooks to a
+            # blueprint that has already been registered once (process-wide, not
+            # per-app), and the hook persists on the blueprint across app instances
+            # anyway — so attach it ONCE. Without this guard, a second import of
+            # this module / a second create_app() re-ran the attach and raised on
+            # every canvas, logged as a spurious "registration failed" warning even
+            # though routes still worked (the hook was already on the blueprint).
+            if guard_component_access and not getattr(_cbp, "_icdev_guard_attached", False):
                 _comp_meta = _REGISTRY.get(_ck)
                 if _comp_meta:
                     _cbp.before_request(
                         guard_component_access(_ck, _comp_meta.min_il)
                     )
+                    _cbp._icdev_guard_attached = True
 
-            if not _cbp.url_prefix:
-                app.register_blueprint(_cbp, url_prefix=prefix)
-            else:
-                app.register_blueprint(_cbp)
-            app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
+            # Register on THIS app only if not already present on it (idempotent
+            # across re-entrant setup); a blueprint may be registered on several apps.
+            if _cbp.name not in app.blueprints:
+                if not _cbp.url_prefix:
+                    app.register_blueprint(_cbp, url_prefix=prefix)
+                else:
+                    app.register_blueprint(_cbp)
+                app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
+
+    if _LAZY_CANVASES_ENABLED:
+        # cvx-net-02: defer heavy canvas blueprint module imports until the first
+        # request to each prefixed canvas. Nav/context flags were populated at
+        # module import; only the module import + route registration is deferred.
+        _lazy_comps = [
+            _c
+            for _c in _REGISTRY.iter_enabled(kind="canvas")
+            if (_CANVAS_ROUTES.get(_c.key) or "").strip()
+        ]
+        install_lazy_canvas_loader(
+            app, _lazy_comps, _CANVAS_ROUTES, guard_component_access
+        )
+        app.logger.info(
+            "Lazy canvas loading active — %d prefixed canvases deferred to first-hit import",
+            len(_lazy_comps),
+        )
 
     # ---- Simulation Chat Blueprint ----
     try:
@@ -2692,16 +2950,11 @@ def create_app(testing: bool = False) -> Flask:
         app.logger.warning("Stripe webhook blueprint failed to register: %s", _exc)
 
     # ---- Centralized Logs viewer ----
-    try:
-        from tools.logging.blueprint import create_logs_blueprint as _create_logs_bp
-        _logs_bp = _create_logs_bp()
-        if _logs_bp is not None:
-            app.register_blueprint(_logs_bp)
-            app.logger.info("Logs blueprint registered at /logs")
-        else:
-            app.logger.info("Logs blueprint disabled (ICDEV_LOGS_ENABLED=false)")
-    except Exception as _exc:
-        app.logger.warning("Logs blueprint failed to register: %s", _exc)
+    # Registered by the component-registry loop above, from the `logs` entry in
+    # args/component_registry.yaml. The hand-rolled registration that used to sit
+    # here always lost the race to it and logged "The name 'logs' is already
+    # registered for a different blueprint" on every boot — and, had it ever won,
+    # it would have bypassed the registry's enablement and IL gating.
 
     # ---- Platform Updates (CHANGELOG.md viewer) ----
     try:
@@ -2710,6 +2963,20 @@ def create_app(testing: bool = False) -> Flask:
 
         @app.route("/updates")
         def updates_page():
+            # nav-misc-01: record the current version as seen for logged-in users
+            # (server-side, so the badge clears in a fresh cookieless session and
+            # syncs across devices). Anonymous users rely on the cookie set by the
+            # PATCH endpoint fired from this page's JS.
+            try:
+                _uid = _current_user_id()
+                if _uid:
+                    from tools.dashboard.brand import get_brand as _gb_upd
+                    from tools.auth.onboarding import set_last_seen_version
+                    _uv = _gb_upd().get("version", "")
+                    if _uv:
+                        set_last_seen_version(_uid, _uv)
+            except Exception as _exc:
+                app.logger.warning("seen-version record on /updates failed: %s", _exc)
             _changelog_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "CHANGELOG.md")
             try:
                 releases = _parse_changelog(_changelog_path)
@@ -2732,6 +2999,15 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as _exc:
             app.logger.warning("seen-version PATCH failed: %s", _exc)
             return jsonify({"error": str(_exc)}), 500
+        # nav-misc-01: persist per-user when logged in; keep the cookie for
+        # anonymous visitors (and as a harmless redundant signal for users).
+        _uid = _current_user_id()
+        if _uid and _brand_ver:
+            try:
+                from tools.auth.onboarding import set_last_seen_version
+                set_last_seen_version(_uid, _brand_ver)
+            except Exception as _exc:
+                app.logger.warning("seen-version persist failed: %s", _exc)
         resp = jsonify({"ok": True, "seen_version": _brand_ver})
         resp.set_cookie("icdev_seen_version", _brand_ver, max_age=31536000, samesite="Lax")
         return resp
@@ -2862,295 +3138,11 @@ def create_app(testing: bool = False) -> Flask:
                 canvas_compliance = _cached_entry["canvas_compliance"]
                 overall_score = _cached_entry["overall_score"]
             else:
-                # Map dashboard-facing canvas names to the canvas init_db module
-                # that exports a backend-aware get_connection().  This respects each
-                # canvas's own STORAGE_BACKEND / PG_DATABASE env vars so the dashboard
-                # reads from PostgreSQL when the canvas is configured for PG instead
-                # of the stale per-canvas SQLite file.
-                _CANVAS_MODULES = {
-                    "Security": "tools.security_canvas.db.init_db",
-                    "Network": "tools.network.db.init_db",
-                    "Pipeline": "tools.pipeline.db.init_db",
-                    "Infra": "tools.infra_canvas.db.init_db",
-                    "Data": "tools.data_canvas.db.init_db",
-                    "Boundary": "tools.boundary_canvas.db.init_db",
-                    "Observability": "tools.observability_canvas.db.init_db",
-                    "Agentic AI": "tools.agentic_ai_canvas.db.init_db",
-                    "AI/ML": "tools.aiml_canvas.db.init_db",
-                    "QDC": "tools.qdc_canvas.db.init_db",
-                    "Migration": "tools.migration_canvas.db.init_db",
-                }
-
-                canvas_compliance = []
-                overall_scores = []
-
-                # OPT-47 — latest-per-design scoring. Pick the most recent assessment
-                # per design_id, then average across designs. Works on both SQLite
-                # and PostgreSQL (correlated subquery form).
-                def _latest_per_design_avg(cc, table: str, score_col: str = "score") -> float:
-                    q = (
-                        f"SELECT AVG({score_col}) FROM {table} a1 "  # nosec B608
-                        f"WHERE created_at = ("
-                        f"  SELECT MAX(created_at) FROM {table} a2 "  # nosec B608
-                        f"  WHERE a2.design_id = a1.design_id"
-                        f")"
-                    )
-                    try:
-                        r = cc.execute(q).fetchone()
-                        return float(r[0] or 0)
-                    except Exception:
-                        fallback = cc.execute(f"SELECT AVG({score_col}) FROM {table}").fetchone()  # nosec B608
-                        return float(fallback[0] or 0)
-
-                def _open_canvas_connection(canvas_name):
-                    """Open a backend-aware canvas connection with RLS disabled."""
-                    mod_name = _CANVAS_MODULES.get(canvas_name)
-                    if not mod_name:
-                        return None
-                    try:
-                        mod = importlib.import_module(mod_name)
-                        cconn = mod.get_connection()
-                        try:
-                            cconn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification; module-level canvas connection disables RLS
-                        except Exception:
-                            pass
-                        return cconn
-                    except Exception:
-                        return None
-
-                for canvas_name in _CANVAS_MODULES:
-                    cconn = _open_canvas_connection(canvas_name)
-                    if not cconn:
-                        continue
-                    try:
-                        if canvas_name == "Security":
-                            try:
-                                r = cconn.execute(
-                                    "SELECT AVG(risk_score) FROM sc_assessments a1 "
-                                    "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
-                                    "WHERE a2.design_id = a1.design_id)"
-                                ).fetchone()
-                                avg_risk = float(r[0] or 0)
-                            except Exception:
-                                avg_risk = float(cconn.execute(
-                                    "SELECT AVG(risk_score) FROM sc_assessments"
-                                ).fetchone()[0] or 0)
-                            total_threats = int(cconn.execute(
-                                "SELECT COUNT(*) FROM sc_assessments"
-                            ).fetchone()[0] or 0)
-                            score = round(max(0.0, 100.0 - avg_risk), 1)
-                            open_f = total_threats
-                            closed_f = 0
-                        elif canvas_name in ("Network", "Pipeline"):
-                            checks_tbl = "nc_compliance_checks" if canvas_name == "Network" else "pc_compliance_checks"
-                            findings_tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
-                            try:
-                                r = cconn.execute(
-                                    f"SELECT SUM(passed) as p, SUM(failed) as f FROM {checks_tbl}"  # nosec B608
-                                ).fetchone()
-                                passed_c = int(r["p"] or 0)
-                                failed_c = int(r["f"] or 0)
-                                total_c = passed_c + failed_c
-                                if total_c == 0:
-                                    raise ValueError("no checks")
-                                score = round(passed_c / total_c * 100, 1)
-                                open_f = failed_c
-                                closed_f = passed_c
-                            except Exception:
-                                open_f = cconn.execute(
-                                    f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status = 'open'"  # nosec B608
-                                ).fetchone()["cnt"]
-                                closed_f = cconn.execute(
-                                    f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status != 'open'"  # nosec B608
-                                ).fetchone()["cnt"]
-                                total_f = open_f + closed_f
-                                score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
-                        elif canvas_name in ("Infra", "Data"):
-                            tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
-                            score = round(_latest_per_design_avg(cconn, tbl), 1)
-                            open_f = 0
-                            closed_f = 0
-                        elif canvas_name == "Boundary":
-                            try:
-                                score = round(_latest_per_design_avg(cconn, "bd_assessments"), 1)
-                                cat_row = cconn.execute(
-                                    "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
-                                    "SUM(cat3_findings) as c3 FROM bd_assessments a1 "
-                                    "WHERE created_at = (SELECT MAX(created_at) FROM bd_assessments a2 "
-                                    "WHERE a2.design_id = a1.design_id)"
-                                ).fetchone()
-                                open_f = int((cat_row["c1"] or 0) + (cat_row["c2"] or 0) + (cat_row["c3"] or 0))
-                            except Exception:
-                                row = cconn.execute(
-                                    "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
-                                    "SUM(cat3_findings) as cat3, AVG(score) as avg_score FROM bd_assessments"
-                                ).fetchone()
-                                score = round(float(row["avg_score"] or 0), 1)
-                                open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
-                            closed_f = 0
-                        elif canvas_name == "Observability":
-                            score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
-                            open_f = 0
-                            closed_f = 0
-                        elif canvas_name == "Agentic AI":
-                            score = round(_latest_per_design_avg(cconn, "aadc_assessments"), 1)
-                            open_f = 0
-                            closed_f = 0
-                        elif canvas_name == "AI/ML":
-                            score = round(_latest_per_design_avg(cconn, "aiml_assessments"), 1)
-                            open_f = 0
-                            closed_f = 0
-                        elif canvas_name == "QDC":
-                            score = round(_latest_per_design_avg(cconn, "qdc_assessments"), 1)
-                            open_f = 0
-                            closed_f = 0
-                        elif canvas_name == "Migration":
-                            try:
-                                cat_row = cconn.execute(
-                                    "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
-                                    "SUM(cat3_findings) as c3 FROM mc_assessments a1 "
-                                    "WHERE assessment_type = 'validation' "
-                                    "AND created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
-                                    "WHERE a2.design_id = a1.design_id AND a2.assessment_type = 'validation')"
-                                ).fetchone()
-                                c1 = int(cat_row["c1"] or 0)
-                                c2 = int(cat_row["c2"] or 0)
-                                c3 = int(cat_row["c3"] or 0)
-                                score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
-                                open_f = c1 + c2 + c3
-                            except Exception:
-                                row = cconn.execute(
-                                    "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
-                                    "SUM(cat3_findings) as cat3 FROM mc_assessments"
-                                ).fetchone()
-                                c1 = int(row["cat1"] or 0)
-                                c2 = int(row["cat2"] or 0)
-                                c3 = int(row["cat3"] or 0)
-                                score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
-                                open_f = c1 + c2 + c3
-                            closed_f = 0
-                        else:
-                            continue
-
-                        canvas_compliance.append(
-                            {
-                                "name": canvas_name,
-                                "score": score,
-                                "open_findings": open_f,
-                                "closed_findings": closed_f,
-                            }
-                        )
-                        if score > 0:
-                            overall_scores.append(score)
-                    except Exception:
-                        pass  # Graceful if canvas has no data / table missing
-                    finally:
-                        try:
-                            cconn.close()
-                        except Exception:
-                            pass
-
-                # GovLift STIG checks (stored in main icdev.db, not a canvas DB)
-                try:
-                    stig_row = conn.execute(
-                        "SELECT "
-                        "SUM(CASE WHEN status IN ('not_a_finding','not_applicable') THEN 1 ELSE 0 END) as passed, "
-                        "SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_cnt, "
-                        "COUNT(*) as total FROM govlift_stig_checks"
-                    ).fetchone()
-                    stig_total = int(stig_row["total"] or 0)
-                    if stig_total > 0:
-                        stig_passed = int(stig_row["passed"] or 0)
-                        stig_open = int(stig_row["open_cnt"] or 0)
-                        stig_score = round(stig_passed / stig_total * 100, 1)
-                        canvas_compliance.append({
-                            "name": "GovLift",
-                            "score": stig_score,
-                            "open_findings": stig_open,
-                            "closed_findings": stig_passed,
-                        })
-                        if stig_score > 0:
-                            overall_scores.append(stig_score)
-                except Exception:
-                    pass  # GovLift tables may not be initialized yet
-
-                # ZIG Zero Trust maturity (security_canvas backend — zig_* tables)
-                try:
-                    zconn = _open_canvas_connection("Security")
-                    if zconn:
-                        try:
-                            r = zconn.execute(
-                                "SELECT AVG(score) FROM zig_maturity_scores m1 "
-                                "WHERE assessment_run_at = ("
-                                "  SELECT MAX(assessment_run_at) FROM zig_maturity_scores m2 "
-                                "  WHERE m2.pillar_slug = m1.pillar_slug)"
-                            ).fetchone()
-                            zig_raw = float(r[0] or 0)
-                            if zig_raw == 0:
-                                cap_r = zconn.execute(
-                                    "SELECT COUNT(*) as total, "
-                                    "SUM(CASE WHEN implementation_status='implemented' THEN 1.0 "
-                                    "    WHEN implementation_status='in_progress' THEN 0.5 ELSE 0.0 END) as impl "
-                                    "FROM zig_capabilities"
-                                ).fetchone()
-                                cap_total = float(cap_r["total"] or 0)
-                                cap_rate = (float(cap_r["impl"] or 0) / cap_total) if cap_total > 0 else 0.0
-                                act_r = zconn.execute(
-                                    "SELECT COUNT(za.id) as total, "
-                                    "SUM(CASE WHEN zac.status='complete' THEN 1.0 "
-                                    "    WHEN zac.status='in_progress' THEN 0.5 ELSE 0.0 END) as comp "
-                                    "FROM zig_activities za "
-                                    "LEFT JOIN zig_activity_completions zac ON zac.activity_id = za.id"
-                                ).fetchone()
-                                act_total = float(act_r["total"] or 0)
-                                act_rate = (float(act_r["comp"] or 0) / act_total) if act_total > 0 else 0.0
-                                zig_raw = 0.6 * act_rate + 0.4 * cap_rate
-                            zig_score = round(zig_raw * 100, 1)
-                            canvas_compliance.append({
-                                "name": "Zero Trust",
-                                "score": zig_score,
-                                "open_findings": 0,
-                                "closed_findings": 0,
-                            })
-                            if zig_score > 0:
-                                overall_scores.append(zig_score)
-                        finally:
-                            zconn.close()
-                except Exception:
-                    pass  # ZIG tables may not be initialized yet
-
-                # AI-ify compliance posture (deterministic AI-governance grade —
-                # the same score shown on /ai-ify/posture and the /compliance hub).
-                # Uses the backend-aware canvas connection (PG or SQLite), NOT the
-                # stale SQLite file, and the posture engine, NOT opportunity value.
-                try:
-                    from tools.aiify.posture import compute_posture as _aiify_cp
-                    from tools.aiify.db.init_db import get_connection as _aiify_cn
-                    _ac = _aiify_cn()
-                    try:
-                        _ac.set_security_context(None)  # rls-bypass: aiify canvas tables lack tenant_id/classification; use canvas connection with RLS disabled
-                    except Exception:
-                        pass
-                    try:
-                        _ap = _aiify_cp(_ac)
-                    finally:
-                        _ac.close()
-                    if _ap.get("counts", {}).get("total_scans", 0) > 0:
-                        aiify_score = _ap.get("overall_score", 0.0)
-                        _weak = [d for d in _ap.get("dimensions", [])
-                                 if d.get("score") is not None and d["score"] < 80]
-                        canvas_compliance.append({
-                            "name": "AI-ify",
-                            "score": aiify_score,
-                            "open_findings": len(_weak),
-                            "closed_findings": 0,
-                        })
-                        if aiify_score > 0:
-                            overall_scores.append(aiify_score)
-                except Exception:
-                    pass  # AI-ify tables may not be initialized yet
-
-                overall_score = round(sum(overall_scores) / len(overall_scores), 1) if overall_scores else 0.0
+                # cnr-cc-02: canvas posture aggregation lives in ONE module
+                # (tools/canvas_compliance/posture.py), consumed by this index
+                # route and by canvas_aggregator.get_canvas_compliance_summary().
+                from tools.canvas_compliance.posture import compute_canvas_posture
+                canvas_compliance, overall_score = compute_canvas_posture(conn)
                 _CANVAS_COMPLIANCE_CACHE["entry"] = {
                     "ts": _now,
                     "canvas_compliance": canvas_compliance,
@@ -3744,10 +3736,9 @@ def create_app(testing: bool = False) -> Flask:
         from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
         from tools.iqe.executor import execute_query
 
-        _CANVAS_MAP = _REGISTRY.get_iqe_mapping()
-        # Supplement with app.py-registered canvases not in component_registry.yaml
-        _CANVAS_MAP.setdefault("updates", ("tools.iqe.adapters.updates", ["updates.releases"]))
-        _CANVAS_MAP.setdefault("logs", ("tools.iqe.adapters.logs", ["logs.entries", "logs.errors"]))
+        # cvx-nav-01: use the module-level cache built once at import (registry
+        # is load-once) instead of rebuilding the map on every request.
+        _CANVAS_MAP = _IQE_CANVAS_MAP
 
         data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
@@ -3856,9 +3847,12 @@ def create_app(testing: bool = False) -> Flask:
             return render_template(
                 "events/timeline.html",
                 recent_events=[dict(r) for r in recent_events],
+                degraded=False,
             )
-        except Exception:
-            return render_template("events/timeline.html", recent_events=[])
+        except Exception as exc:
+            # nav-misc-02: an empty timeline on read failure looks like "no events".
+            get_logger("icdev.dashboard").warning("events_page: hook_events read failed: %s", exc)
+            return render_template("events/timeline.html", recent_events=[], degraded=True)
         finally:
             conn.close()
 
@@ -4124,7 +4118,6 @@ def create_app(testing: bool = False) -> Flask:
     @app.route("/intake/prd/<session_id>/view")
     def intake_prd_view(session_id):
         """Render PRD as a styled HTML page instead of downloading raw markdown."""
-        import json as _json_mod
         from datetime import datetime as _dt, timezone as _tz
         try:
             import markdown as _md_lib
@@ -4160,7 +4153,7 @@ def create_app(testing: bool = False) -> Flask:
                 session_customer=session_customer,
                 error=result.get("error", "PRD could not be generated."),
                 prd_html="",
-                prd_markdown_json="''",
+                prd_markdown_raw="",
                 classification_banner=cui_banner,
                 generated_at=generated_at,
             )
@@ -4172,6 +4165,15 @@ def create_app(testing: bool = False) -> Flask:
                 raw_md,
                 extensions=["tables", "fenced_code", "nl2br", "toc"],
             )
+            # nav-sec-07: python-markdown passes raw HTML through, and PRD content is
+            # LLM/user-derived → stored/reflected XSS. Sanitize the rendered HTML with
+            # the repo's canonical air-gap-safe sanitizer (no new dependency).
+            try:
+                from tools.docgen.workflow import _sanitize_html as _sanitize_prd_html
+                prd_html = _sanitize_prd_html(prd_html)
+            except Exception:
+                import html as _html_lib
+                prd_html = "<pre style='white-space:pre-wrap'>" + _html_lib.escape(raw_md) + "</pre>"
         else:
             import html as _html_lib
             prd_html = "<pre style='white-space:pre-wrap'>" + _html_lib.escape(raw_md) + "</pre>"
@@ -4182,7 +4184,9 @@ def create_app(testing: bool = False) -> Flask:
             session_customer=session_customer,
             error=None,
             prd_html=prd_html,
-            prd_markdown_json=_json_mod.dumps(raw_md),
+            # nav-sec-07: pass raw markdown; the template serializes it with Jinja
+            # |tojson so a </script> sequence in the PRD cannot break out of the block.
+            prd_markdown_raw=raw_md,
             classification_banner=cui_banner,
             generated_at=generated_at,
         )
@@ -4217,8 +4221,18 @@ def create_app(testing: bool = False) -> Flask:
             registered = list_registered()
             connectors = [{"name": k, "type": "registered", "status": "active"} for k in registered]
             return jsonify({"connectors": connectors, "total": len(connectors)})
-        except Exception:
-            return jsonify({"connectors": [], "total": 0})
+        except Exception as exc:
+            get_logger("icdev.dashboard").warning(
+                "api_connector_forge_list: failed to list connectors: %s", exc
+            )
+            return jsonify(
+                {
+                    "connectors": [],
+                    "total": 0,
+                    "error": True,
+                    "detail": "Connector registry is temporarily unavailable.",
+                }
+            ), 503
 
     @app.route("/diagrams")
     def diagrams_page():
@@ -4295,9 +4309,12 @@ def create_app(testing: bool = False) -> Flask:
             return render_template(
                 "query/nlq.html",
                 recent_queries=[dict(r) for r in recent_queries],
+                degraded=False,
             )
-        except Exception:
-            return render_template("query/nlq.html", recent_queries=[])
+        except Exception as exc:
+            # nav-misc-02: an empty query history on read failure looks like "no queries".
+            get_logger("icdev.dashboard").warning("query_page: nlq_queries read failed: %s", exc)
+            return render_template("query/nlq.html", recent_queries=[], degraded=True)
         finally:
             conn.close()
 
@@ -4582,13 +4599,18 @@ def create_app(testing: bool = False) -> Flask:
     def children_page():
         """Child application registry — health, genome, capabilities, heartbeats."""
         conn = _get_db()
+        degraded = False
         try:
             # Fetch all registered child applications
             try:
                 children_rows = conn.execute("SELECT * FROM child_app_registry ORDER BY created_at DESC").fetchall()
                 children_rows = [dict(r) for r in children_rows]
-            except Exception:
+            except Exception as exc:
+                # nav-misc-02: registry read failed — an empty roster here would
+                # falsely imply "no child apps registered".
                 children_rows = []
+                degraded = True
+                get_logger("icdev.dashboard").warning("children_page: child_app_registry read failed: %s", exc)
 
             # Fetch latest heartbeat per child from telemetry
             heartbeat_map = {}
@@ -4636,6 +4658,7 @@ def create_app(testing: bool = False) -> Flask:
                 healthy_count=healthy_count,
                 degraded_count=degraded_count,
                 unhealthy_count=unhealthy_count,
+                degraded=degraded,
             )
         finally:
             conn.close()
@@ -4672,6 +4695,8 @@ def create_app(testing: bool = False) -> Flask:
     def dev_profiles_api_templates():
         """List available starter templates (JSON)."""
         templates = []
+        _degraded = False
+        _detail = None
         templates_dir = Path(__file__).resolve().parent.parent.parent / "context" / "profiles"
         if templates_dir.exists():
             try:
@@ -4688,9 +4713,17 @@ def create_app(testing: bool = False) -> Flask:
                                 "impact_levels": data.get("impact_levels", []),
                             }
                         )
-            except Exception:
-                pass
-        return jsonify({"templates": templates})
+            except Exception as exc:
+                # nav-misc-02: a malformed template file must not silently hide the
+                # whole starter-template list.
+                _degraded = True
+                _detail = str(exc)
+                get_logger("icdev.dashboard").warning("dev_profiles_api_templates: template load failed: %s", exc)
+        _resp = {"templates": templates}
+        if _degraded:
+            _resp["error"] = True
+            _resp["detail"] = _detail
+        return jsonify(_resp)
 
     @app.route("/dev-profiles/api/create", methods=["POST"])
     def dev_profiles_api_create():
@@ -4795,6 +4828,13 @@ def create_app(testing: bool = False) -> Flask:
                     user = bootstrap_env_user(env_key)
             if user:
                 flask_session["user_id"] = user["id"]
+                # cnr-plat-01: issue a fresh CSRF token at login (rotate on each
+                # successful authentication to avoid token fixation).
+                try:
+                    from tools.security.csrf import issue_csrf_token
+                    issue_csrf_token()
+                except Exception:
+                    pass
                 log_auth_event(
                     user["id"],
                     "login_success",
@@ -4950,6 +4990,8 @@ def create_app(testing: bool = False) -> Flask:
     def api_charts_translations():
         """Chart data for translations page."""
         conn = _get_db()
+        degraded = False
+        detail = None
         try:
             # Status distribution
             status_dist = {}
@@ -4958,8 +5000,11 @@ def create_app(testing: bool = False) -> Flask:
                 for r in rows:
                     r_dict = dict(r)
                     status_dist[r_dict["status"]] = r_dict["cnt"]
-            except Exception:
-                pass
+            except Exception as exc:
+                # nav-misc-02: chart empties silently otherwise — flag the outage.
+                degraded = True
+                detail = str(exc)
+                get_logger("icdev.dashboard").warning("api_charts_translations: status query failed: %s", exc)
 
             # Language pair frequency
             lang_pairs = {}
@@ -4972,15 +5017,19 @@ def create_app(testing: bool = False) -> Flask:
                 for r in rows:
                     r_dict = dict(r)
                     lang_pairs[r_dict["pair"]] = r_dict["cnt"]
-            except Exception:
-                pass
+            except Exception as exc:
+                degraded = True
+                detail = str(exc)
+                get_logger("icdev.dashboard").warning("api_charts_translations: lang-pair query failed: %s", exc)
 
-            return jsonify(
-                {
-                    "status_distribution": status_dist,
-                    "language_pair_frequency": lang_pairs,
-                }
-            )
+            payload = {
+                "status_distribution": status_dist,
+                "language_pair_frequency": lang_pairs,
+            }
+            if degraded:
+                payload["error"] = True
+                payload["detail"] = detail
+            return jsonify(payload)
         finally:
             conn.close()
 
@@ -5037,9 +5086,10 @@ def create_app(testing: bool = False) -> Flask:
     @app.route("/evidence")
     def evidence_page():
         """Evidence Collection — universal evidence auto-collection across all frameworks (Phase 56, D347)."""
-        from tools.compliance.evidence_collector import FRAMEWORK_EVIDENCE_MAP, _get_connection, _table_exists
+        from tools.compliance.evidence_collector import FRAMEWORK_EVIDENCE_MAP, _get_connection, table_exists
 
         stats = {"total_frameworks": len(FRAMEWORK_EVIDENCE_MAP), "required_frameworks": 0, "frameworks": []}
+        degraded = False
         try:
             conn = _get_connection()
             for fw_id, fw_config in FRAMEWORK_EVIDENCE_MAP.items():
@@ -5047,7 +5097,7 @@ def create_app(testing: bool = False) -> Flask:
                     stats["required_frameworks"] += 1
                 total = 0
                 for table_name in fw_config["tables"]:
-                    if _table_exists(conn, table_name):
+                    if table_exists(conn, table_name):
                         row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                         total += row[0]
                 stats["frameworks"].append(
@@ -5059,9 +5109,11 @@ def create_app(testing: bool = False) -> Flask:
                     }
                 )
             conn.close()
-        except Exception:
-            pass
-        return render_template("evidence.html", stats=stats)
+        except Exception as exc:
+            # nav-misc-05: surface an evidence DB outage instead of a silent empty page.
+            degraded = True
+            get_logger("icdev.dashboard").warning("evidence_page: DB read failed: %s", exc)
+        return render_template("evidence.html", stats=stats, degraded=degraded)
 
     @app.route("/lineage")
     def lineage_page():
@@ -5110,6 +5162,7 @@ def create_app(testing: bool = False) -> Flask:
         """Digital Program Twin — 6-dimension what-if simulation, Monte Carlo, COA analysis."""
         stats = {"total_scenarios": 0, "running": 0, "completed": 0, "monte_carlo_runs": 0, "coas_generated": 0}
         scenarios = []
+        degraded = False
         try:
             conn = _get_db()
             stats["total_scenarios"] = conn.execute(
@@ -5131,9 +5184,11 @@ def create_app(testing: bool = False) -> Flask:
                 ).fetchall()
             ]
             conn.close()
-        except Exception:
-            pass
-        return render_template("simulation.html", stats=stats, scenarios=scenarios)
+        except Exception as exc:
+            # nav-misc-02: surface a simulation DB outage instead of an empty board.
+            degraded = True
+            get_logger("icdev.dashboard").warning("simulation_page: DB read failed: %s", exc)
+        return render_template("simulation.html", stats=stats, scenarios=scenarios, degraded=degraded)
 
     # ------------------------------------------------------------------
     # Phase 73: Cloud Migration Security Pages (5 new dashboard pages)
@@ -5473,10 +5528,7 @@ def create_app(testing: bool = False) -> Flask:
                         pass
                     # SSDF coverage — remediation rate of SSDF framework findings
                     try:
-                        tables_row = pc.execute(
-                            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='pc_compliance_findings'"
-                        ).fetchone()
-                        if tables_row and tables_row[0] > 0:
+                        if table_exists(pc, "pc_compliance_findings"):
                             ssdf_total = pc.execute(
                                 "SELECT COUNT(*) FROM pc_compliance_findings WHERE framework LIKE 'SSDF%'"
                             ).fetchone()[0]
@@ -5882,6 +5934,7 @@ def create_app(testing: bool = False) -> Flask:
         stats = {"total_sessions": 0, "active_sessions": 0, "verticals_loaded": 0, "dossiers_generated": 0}
         sessions = []
         verticals = []
+        degraded = False
         try:
             conn = _get_db()
             stats["total_sessions"] = conn.execute("SELECT COUNT(*) FROM research_sessions").fetchone()[0]
@@ -5899,153 +5952,25 @@ def create_app(testing: bool = False) -> Flask:
             ]
             verticals = [dict(r) for r in conn.execute("SELECT * FROM research_verticals ORDER BY name").fetchall()]
             conn.close()
-        except Exception:
-            pass
-        return render_template("research.html", stats=stats, sessions=sessions, verticals=verticals)
+        except Exception as exc:
+            # nav-misc-02: a research DB outage must not look like "no sessions yet".
+            degraded = True
+            get_logger("icdev.dashboard").warning("research_page: DB read failed: %s", exc)
+        return render_template(
+            "research.html", stats=stats, sessions=sessions, verticals=verticals, degraded=degraded
+        )
 
-    @app.route("/api/research/sessions", methods=["POST"])
-    def api_research_create_session():
-        """Create a new research session."""
-        data = flask_request.get_json(silent=True) or {}
-        try:
-            from tools.research.session_manager import create_session
 
-            result = create_session(
-                name=data.get("name", ""),
-                vertical_slug=data.get("vertical", ""),
-                focus_areas=data.get("focus_areas", []),
-            )
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
 
-    @app.route("/api/research/sessions")
-    def api_research_list_sessions():
-        """List research sessions."""
-        try:
-            from tools.research.session_manager import list_sessions
 
-            status = flask_request.args.get("status")
-            return jsonify(list_sessions(status=status))
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
 
-    @app.route("/api/research/sessions/<session_id>/run", methods=["POST"])
-    def api_research_run_pipeline(session_id):
-        """Run research pipeline for a session."""
-        try:
-            from tools.research.research_engine import run_pipeline
 
-            result = run_pipeline(session_id=session_id)
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
 
-    @app.route("/api/research/sessions/<session_id>/status")
-    def api_research_session_status(session_id):
-        """Get session status."""
-        try:
-            from tools.research.research_engine import get_status
 
-            return jsonify(get_status(session_id=session_id))
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
 
-    @app.route("/api/research/sessions/<session_id>/dossier")
-    def api_research_session_dossier(session_id):
-        """Get dossier by session ID."""
-        try:
-            from tools.research.dossier_generator import get_dossier
 
-            return jsonify(get_dossier(session_id=session_id))
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
 
-    @app.route("/api/research/sessions/<session_id>/run-stage", methods=["POST"])
-    def api_research_run_stage(session_id):
-        """Run a single pipeline stage for a session."""
-        data = flask_request.get_json(silent=True) or {}
-        stage = data.get("stage", "").upper()
-        if not stage:
-            return jsonify({"ok": False, "error": "Missing 'stage' parameter"}), 400
-        try:
-            from tools.research.research_engine import run_stage
 
-            result = run_stage(session_id=session_id, stage=stage)
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-
-    @app.route("/api/research/sessions/<session_id>/regulatory")
-    def api_research_regulatory_landscape(session_id):
-        """Get regulatory landscape for a session."""
-        try:
-            from tools.research.regulatory_mapper import get_regulatory_landscape
-
-            return jsonify(get_regulatory_landscape(session_id=session_id))
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-
-    @app.route("/api/research/sessions/<session_id>/retry", methods=["POST"])
-    def api_research_retry_session(session_id):
-        """Retry a failed research session pipeline."""
-        try:
-            import threading
-            from tools.research.research_engine import run_pipeline
-
-            t = threading.Thread(target=run_pipeline, kwargs={"session_id": session_id}, daemon=True)
-            t.start()
-            return jsonify({"ok": True, "message": "Pipeline retry started"})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-
-    @app.route("/api/research/dossiers/<dossier_id>")
-    def api_research_get_dossier(dossier_id):
-        """Get a dossier by dossier ID."""
-        try:
-            from tools.research.dossier_generator import get_dossier
-
-            return jsonify(get_dossier(dossier_id=dossier_id))
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-
-    @app.route("/api/research/dossiers/<dossier_id>/review", methods=["POST"])
-    def api_research_review_dossier(dossier_id):
-        """Review a dossier."""
-        data = flask_request.get_json(silent=True) or {}
-        try:
-            from tools.research.dossier_generator import review_dossier
-
-            result = review_dossier(
-                dossier_id=dossier_id,
-                reviewer=data.get("reviewer", "dashboard"),
-                status=data.get("decision", "approved"),
-                review_notes=data.get("notes", ""),
-            )
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-
-    @app.route("/api/research/verticals")
-    def api_research_list_verticals():
-        """List available verticals."""
-        try:
-            from tools.research.vertical_loader import list_verticals
-
-            return jsonify(list_verticals())
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
-
-    @app.route("/api/research/verticals/load", methods=["POST"])
-    def api_research_load_verticals():
-        """Load verticals from config files into DB."""
-        try:
-            from tools.research.vertical_loader import load_verticals_to_db
-
-            result = load_verticals_to_db()
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
 
     # ---- Phase 64: RAG Knowledge Search ----
 
@@ -6055,14 +5980,18 @@ def create_app(testing: bool = False) -> Flask:
         status = None
         recent_searches = []
         source_types = []
+        degraded = False
         try:
             from tools.rag.ingestion_manager import get_status as rag_get_status
             from tools.rag.source_registry import SOURCE_REGISTRY
 
             status = rag_get_status()
             source_types = sorted(SOURCE_REGISTRY.keys())
-        except Exception:
-            pass
+        except Exception as exc:
+            # nav-misc-02: RAG subsystem unavailable — flag it rather than showing
+            # an empty search page as if the index were simply empty.
+            degraded = True
+            get_logger("icdev.dashboard").warning("knowledge_search_page: RAG status unavailable: %s", exc)
         try:
             conn = _get_db()
             recent_searches = [
@@ -6070,13 +5999,15 @@ def create_app(testing: bool = False) -> Flask:
                 for r in conn.execute("SELECT * FROM rag_retrieval_log ORDER BY created_at DESC LIMIT 20").fetchall()
             ]
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            degraded = True
+            get_logger("icdev.dashboard").warning("knowledge_search_page: retrieval-log read failed: %s", exc)
         return render_template(
             "rag/knowledge_search.html",
             status=status,
             recent_searches=recent_searches,
             source_types=source_types,
+            degraded=degraded,
         )
 
     @app.route("/api/rag/search", methods=["POST"])
@@ -6132,6 +6063,7 @@ def create_app(testing: bool = False) -> Flask:
         stats = None
         graphs = []
         recent_queries = []
+        degraded = False
         try:
             conn = _get_db()
             # Stats
@@ -6166,13 +6098,17 @@ def create_app(testing: bool = False) -> Flask:
             except Exception:
                 pass
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            # nav-misc-02: a KG store outage must not render an empty graph page
+            # that looks like "no knowledge graphs built yet".
+            degraded = True
+            get_logger("icdev.dashboard").warning("knowledge_graph_page: kg_graphs read failed: %s", exc)
         return render_template(
             "knowledge_graph.html",
             stats=stats,
             graphs=graphs,
             recent_queries=recent_queries,
+            degraded=degraded,
         )
 
     @app.route("/api/knowledge-graph/search", methods=["POST"])
@@ -6298,8 +6234,8 @@ def create_app(testing: bool = False) -> Flask:
             else:
                 row = conn.execute(
                     "SELECT "
-                    "SUM(CASE WHEN json_extract(properties, '$.enabled') = 'false' THEN 1 ELSE 0 END) AS dis, "
-                    "SUM(CASE WHEN json_extract(properties, '$.enabled') != 'false' THEN 1 ELSE 0 END) AS en "
+                    "SUM(CASE WHEN json_extract(properties, '$.enabled') = 'false' THEN 1 ELSE 0 END) AS dis, "  # pg-ok: SQLite fallback; is_pg branch above uses (properties::jsonb)->>
+                    "SUM(CASE WHEN json_extract(properties, '$.enabled') != 'false' THEN 1 ELSE 0 END) AS en "  # pg-ok: SQLite fallback; is_pg branch above uses (properties::jsonb)->>
                     "FROM kg_nodes WHERE graph_id = %s",
                     (_COMPONENTS_MAP_GRAPH_ID,),
                 ).fetchone() or {}
@@ -6482,8 +6418,13 @@ def create_app(testing: bool = False) -> Flask:
         return jsonify({"cells": cells, "count": len(cells)})
 
     @app.route("/api/components-map/refresh", methods=["POST"])
+    @require_role("admin", "pm")
     def api_cmap_refresh():
-        """POST /api/components-map/refresh -- trigger component_indexer rescan."""
+        """POST /api/components-map/refresh -- trigger component_indexer rescan.
+
+        nav-intel-01: gated — previously any caller could spawn the
+        component_indexer subprocess (compute-triggering, unauthenticated).
+        """
         import subprocess  # noqa: S404 -- intentional controlled subprocess
         try:
             cmd = ["python", "tools/awareness/component_indexer.py", "--scan"]
@@ -6611,6 +6552,14 @@ def create_app(testing: bool = False) -> Flask:
         None if the router is unavailable or the call fails, so the
         caller can show raw evidence instead.
         """
+        # nav-intel-06: rate-limit the LLM cost surface per authenticated user.
+        # Both /ask endpoints funnel their narration through this one function,
+        # so the budget check here covers both. Over budget -> None, and the
+        # caller already renders the raw-evidence fallback.
+        _u = getattr(g, "current_user", None)
+        _key = _u.get("id", "anon") if isinstance(_u, dict) else "anon"
+        if not _narration_budget_ok(_key):
+            return None
         try:
             from tools.llm.router import LLMRouter
         except ImportError:
@@ -7020,6 +6969,7 @@ def create_app(testing: bool = False) -> Flask:
         recent_jobs = []
         active_overrides = []
         promotions = []
+        error = False
         try:
             conn = _get_db()
             stats["datasets"] = conn.execute("SELECT COUNT(*) FROM ft_datasets").fetchone()[0]
@@ -7050,14 +7000,18 @@ def create_app(testing: bool = False) -> Flask:
                 for r in conn.execute("SELECT * FROM ft_promotion_log ORDER BY created_at DESC LIMIT 10").fetchall()
             ]
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            error = True
+            get_logger("icdev.dashboard").warning(
+                "finetune_overview_page: DB error reading ft_* tables: %s", exc
+            )
         return render_template(
             "finetune/index.html",
             stats=stats,
             recent_jobs=recent_jobs,
             active_overrides=active_overrides,
             promotions=promotions,
+            error=error,
         )
 
     @app.route("/finetune/datasets")
@@ -7227,851 +7181,36 @@ def create_app(testing: bool = False) -> Flask:
 
     # ── ICDEV™ Pulse — Blog Engine ─────────────────────────────────────
 
-    @app.route("/pulse")
-    @require_installed("pulse")
-    def pulse():
-        """ICDEV™ Pulse — AI-powered blog engine dashboard."""
-        try:
-            from tools.pulse.db import init_db, query_rows
 
-            init_db()
-            posts = query_rows("posts", limit=500)
-            by_status = {}
-            for p in posts:
-                s = p.get("status", "unknown")
-                by_status[s] = by_status.get(s, 0) + 1
-            stats = {
-                "total_posts": len(posts),
-                "by_status": by_status,
-            }
-            # Get recent posts for the table (include quality stats)
-            with _get_db() as conn:
-                recent = conn.execute(
-                    "SELECT id, title, slug, status, word_count, readability_score, "
-                    "grammar_score, plagiarism_score, ai_detection_score, tone_score, "
-                    "writeguard_passed, capabilities_referenced, "
-                    "hero_image_path, generated_video_path, generated_video_method, "
-                    "judge_color, judge_composite, judge_combined, "
-                    "created_at, updated_at, published_at "
-                    "FROM pulse_posts ORDER BY updated_at DESC LIMIT 50"
-                ).fetchall()
-                recent_posts = [dict(r) for r in recent]
-                research_count = conn.execute("SELECT COUNT(*) FROM pulse_research_cache").fetchone()[0]
-                cluster_count = conn.execute("SELECT COUNT(*) FROM pulse_topic_clusters").fetchone()[0]
-                run_count = conn.execute("SELECT COUNT(*) FROM pulse_schedule_log").fetchone()[0]
-            stats["research_entries"] = research_count
-            stats["clusters"] = cluster_count
-            stats["pipeline_runs"] = run_count
-            # Capability catalog stats
-            try:
-                from tools.pulse.engine.capability_scanner import load_all_capabilities
-
-                stats["capabilities"] = len(load_all_capabilities())
-            except Exception:
-                stats["capabilities"] = 0
-        except Exception:
-            recent_posts = []
-            stats = {"total_posts": 0, "by_status": {}, "research_entries": 0, "clusters": 0, "pipeline_runs": 0}
-        return render_template("pulse.html", posts=recent_posts, stats=stats)
-
-    @app.route("/pulse/post/<post_id>")
-    @require_installed("pulse")
-    def pulse_post_detail(post_id):
-        """ICDEV™ Pulse — Single post detail view."""
-        try:
-            from tools.pulse.db import get_row
-
-            post = get_row("posts", post_id)
-        except Exception:
-            post = None
-        if not post:
-            return render_template("pulse.html", posts=[], stats={}, error=f"Post not found: {post_id}"), 404
-        # Render markdown to HTML if body_html is missing
-        if post.get("body_markdown") and not post.get("body_html"):
-            import re
-
-            md = post["body_markdown"]
-            # Convert markdown to basic HTML
-            lines = md.split("\n")
-            html_parts = []
-            in_list = False
-            in_code = False
-            for line in lines:
-                stripped = line.strip()
-                # Code blocks
-                if stripped.startswith("```"):
-                    if in_code:
-                        html_parts.append("</code></pre>")
-                        in_code = False
-                    else:
-                        lang = stripped[3:].strip()
-                        html_parts.append(f'<pre><code class="language-{lang}">' if lang else "<pre><code>")
-                        in_code = True
-                    continue
-                if in_code:
-                    html_parts.append(line.replace("<", "&lt;").replace(">", "&gt;") + "\n")
-                    continue
-                # Headers
-                if stripped.startswith("######"):
-                    html_parts.append(f"<h6>{stripped[6:].strip()}</h6>")
-                elif stripped.startswith("#####"):
-                    html_parts.append(f"<h5>{stripped[5:].strip()}</h5>")
-                elif stripped.startswith("####"):
-                    html_parts.append(f"<h4>{stripped[4:].strip()}</h4>")
-                elif stripped.startswith("###"):
-                    html_parts.append(f"<h3>{stripped[3:].strip()}</h3>")
-                elif stripped.startswith("##"):
-                    html_parts.append(f"<h2>{stripped[2:].strip()}</h2>")
-                elif stripped.startswith("# "):
-                    html_parts.append(f"<h1>{stripped[1:].strip()}</h1>")
-                # List items
-                elif stripped.startswith("- ") or stripped.startswith("* "):
-                    if not in_list:
-                        html_parts.append("<ul>")
-                        in_list = True
-                    content = stripped[2:]
-                    content = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", content)
-                    content = re.sub(r"\*(.+?)\*", r"<em>\1</em>", content)
-                    html_parts.append(f"<li>{content}</li>")
-                elif re.match(r"^\d+\.\s", stripped):
-                    if not in_list:
-                        html_parts.append("<ol>")
-                        in_list = True
-                    content = re.sub(r"^\d+\.\s", "", stripped)
-                    content = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", content)
-                    content = re.sub(r"\*(.+?)\*", r"<em>\1</em>", content)
-                    html_parts.append(f"<li>{content}</li>")
-                # Empty line
-                elif not stripped:
-                    if in_list:
-                        html_parts.append(
-                            "</ul>" if html_parts[-5:] and "<ul>" in "".join(html_parts[-5:]) else "</ol>"
-                        )
-                        in_list = False
-                    html_parts.append("")
-                # Paragraph
-                else:
-                    if in_list:
-                        html_parts.append("</ul>" if "<ul>" in "".join(html_parts[-10:]) else "</ol>")
-                        in_list = False
-                    content = stripped
-                    content = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", content)
-                    content = re.sub(r"\*(.+?)\*", r"<em>\1</em>", content)
-                    content = re.sub(r"`(.+?)`", r"<code>\1</code>", content)
-                    content = re.sub(
-                        r"\[(.+?)\]\((.+?)\)", r'<a href="\2" style="color:var(--primary);">\1</a>', content
-                    )
-                    html_parts.append(f"<p>{content}</p>")
-            if in_list:
-                html_parts.append("</ul>")
-            if in_code:
-                html_parts.append("</code></pre>")
-            post["body_html"] = "\n".join(html_parts)
-        return render_template("pulse_post.html", post=post)
 
     # ── Pulse API Endpoints ──────────────────────────────────────────
 
-    @app.route("/api/pulse/posts")
-    @require_installed("pulse")
-    def api_pulse_list_posts():
-        """List all Pulse posts."""
-        try:
-            from tools.pulse.db import init_db, query_rows
 
-            init_db()
-            status = flask_request.args.get("status")
-            if status:
-                rows = query_rows("posts", where="status = ?", params=(status,), limit=500)
-            else:
-                rows = query_rows("posts", limit=500)
-            return jsonify(rows)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/posts/<post_id>")
-    @require_installed("pulse")
-    def api_pulse_get_post(post_id):
-        """Get a single Pulse post."""
-        try:
-            from tools.pulse.db import get_row
 
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            return jsonify(post)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/posts/<post_id>", methods=["PUT"])
-    @require_installed("pulse")
-    def api_pulse_update_post(post_id):
-        """Update a Pulse post."""
-        try:
-            from tools.pulse.db import get_row, update_row
 
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            body = flask_request.get_json(silent=True) or {}
-            updates = {}
-            for field in ("title", "body_markdown", "tldr", "seo_title", "seo_description", "seo_keywords", "status"):
-                if field in body:
-                    updates[field] = body[field]
-            if "title" in updates:
-                from slugify import slugify as _slugify
 
-                updates["slug"] = _slugify(updates["title"], max_length=80)
-            if not updates:
-                return jsonify({"error": "No valid fields to update"}), 400
-            update_row("posts", post_id, updates)
-            return jsonify({"post_id": post_id, "updated": list(updates.keys())})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/posts/<post_id>/approve", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_approve(post_id):
-        """Approve a Pulse post."""
-        try:
-            from tools.pulse.db import get_row, update_row, insert_row
 
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            now = datetime.now(timezone.utc).isoformat()
-            update_row("posts", post_id, {"status": "approved"})
-            insert_row(
-                "post_reviews",
-                {
-                    "id": f"rev-{uuid.uuid4().hex[:12]}",
-                    "post_id": post_id,
-                    "action": "approved",
-                    "notes": "",
-                    "created_at": now,
-                },
-            )
-            return jsonify({"status": "approved", "post_id": post_id})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/posts/<post_id>/reject", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_reject(post_id):
-        """Reject a Pulse post."""
-        try:
-            from tools.pulse.db import get_row, update_row, insert_row
 
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            body = flask_request.get_json(silent=True) or {}
-            notes = body.get("notes", "")
-            now = datetime.now(timezone.utc).isoformat()
-            update_row("posts", post_id, {"status": "rejected", "review_notes": notes})
-            insert_row(
-                "post_reviews",
-                {
-                    "id": f"rev-{uuid.uuid4().hex[:12]}",
-                    "post_id": post_id,
-                    "action": "rejected",
-                    "notes": notes,
-                    "created_at": now,
-                },
-            )
-            return jsonify({"status": "rejected", "post_id": post_id})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/posts/<post_id>/judge", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_judge_post(post_id):
-        """Run LLM Judge (Prometheus-2) on a Pulse post."""
-        import threading
 
-        try:
-            conn = _get_db()
-            row = conn.execute(
-                "SELECT id, body_markdown, readability_score FROM pulse_posts WHERE id = %s",
-                (post_id,),
-            ).fetchone()
-            conn.close()
-            if not row:
-                return jsonify({"error": "Post not found"}), 404
 
-            def _judge(pid, body, wg_score):
-                try:
-                    from tools.writing.llm_judge import evaluate_and_store, init_judge_db
 
-                    init_judge_db()
-                    result = evaluate_and_store(
-                        text=body,
-                        content_type="blog",
-                        writeguard_score=wg_score or 0,
-                        post_id=pid,
-                    )
-                    if result.get("status") == "evaluated":
-                        conn2 = _get_db()
-                        conn2.execute(
-                            "UPDATE pulse_posts SET judge_color = %s, judge_composite = %s, "
-                            "judge_combined = %s WHERE id = %s",
-                            (
-                                result["color_rating"]["color"],
-                                result["composite_score"],
-                                result.get("combined_score", 0),
-                                pid,
-                            ),
-                        )
-                        conn2.commit()
-                        conn2.close()
-                except Exception:
-                    pass
 
-            threading.Thread(
-                target=_judge,
-                args=(post_id, row["body_markdown"], row["readability_score"]),
-                daemon=True,
-            ).start()
-            return jsonify({"status": "judging", "post_id": post_id})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/posts/<post_id>/undo-reject", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_undo_reject(post_id):
-        """Undo rejection — revert post to draft status."""
-        try:
-            from tools.pulse.db import get_row, update_row, insert_row
 
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            if post.get("status") != "rejected":
-                return jsonify({"error": f"Post is {post.get('status')}, not rejected"}), 400
-            now = datetime.now(timezone.utc).isoformat()
-            update_row("posts", post_id, {"status": "draft", "review_notes": ""})
-            insert_row(
-                "post_reviews",
-                {
-                    "id": f"rev-{uuid.uuid4().hex[:12]}",
-                    "post_id": post_id,
-                    "action": "undo_reject",
-                    "notes": "Reverted to draft",
-                    "created_at": now,
-                },
-            )
-            return jsonify({"status": "draft", "post_id": post_id})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/posts/<post_id>/publish", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_publish(post_id):
-        """Publish a Pulse post, export, and optionally push to Hostinger."""
-        try:
-            from tools.pulse.db import get_row, update_row
-            from tools.pulse.engine.exporter import export_both
 
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            now = datetime.now(timezone.utc).isoformat()
-            update_row("posts", post_id, {"status": "published", "published_at": now})
-            exports = export_both(post_id)
 
-            # Auto-push to WordPress (icdev.ai)
-            wp_result = None
-            auto_push = flask_request.json.get("auto_push", True) if flask_request.is_json else True
-            if auto_push:
-                try:
-                    from tools.pulse.engine.wordpress_publisher import publish_post as wp_publish
 
-                    wp_result = wp_publish(post_id)
-                except Exception as we:
-                    wp_result = {"status": "error", "message": str(we)}
 
-            return jsonify(
-                {
-                    "status": "published",
-                    "post_id": post_id,
-                    "exports": exports,
-                    "hostinger": wp_result,
-                }
-            )
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/posts/<post_id>/unpublish", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_unpublish(post_id):
-        """Unpublish a post: revert to draft locally and set WP post to draft."""
-        try:
-            from tools.pulse.db import get_row, update_row
 
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            update_row(
-                "posts",
-                post_id,
-                {
-                    "status": "draft",
-                    "published_at": None,
-                },
-            )
 
-            # Set WordPress post to draft if it was published there
-            wp_result = None
-            wp_post_id = post.get("wp_post_id")
-            if wp_post_id:
-                try:
-                    from tools.pulse.engine.wordpress_publisher import (
-                        _get_client,
-                        WP_BLOG_ID,
-                        WP_USERNAME,
-                        WP_PASSWORD,
-                    )
 
-                    if WP_PASSWORD:
-                        wp = _get_client()
-                        wp.wp.editPost(
-                            WP_BLOG_ID,
-                            WP_USERNAME,
-                            WP_PASSWORD,
-                            wp_post_id,
-                            {"post_status": "draft"},
-                        )
-                        wp_result = {"status": "ok", "wp_post_id": wp_post_id, "wp_status": "draft"}
-                except Exception as we:
-                    wp_result = {"status": "error", "message": str(we)}
-
-            return jsonify(
-                {
-                    "status": "unpublished",
-                    "post_id": post_id,
-                    "wordpress": wp_result,
-                }
-            )
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/posts/<post_id>/push-hostinger", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_push_hostinger(post_id):
-        """Push a published post to WordPress (icdev.ai)."""
-        try:
-            from tools.pulse.db import get_row
-            from tools.pulse.engine.wordpress_publisher import publish_post as wp_publish
-
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            if post.get("status") != "published":
-                return jsonify({"error": f"Post must be published first (current: {post.get('status')})"}), 400
-            result = wp_publish(post_id)
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/hostinger/session")
-    @require_installed("pulse")
-    def api_pulse_hostinger_session():
-        """Check WordPress connection status."""
-        try:
-            from tools.pulse.engine.wordpress_publisher import test_connection
-
-            result = test_connection()
-            return jsonify(
-                {
-                    "session": result,
-                    "key_rotation": {"status": "ok", "message": "N/A — WordPress uses password auth"},
-                }
-            )
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/posts/<post_id>/export", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_export(post_id):
-        """Export a Pulse post as MDX + HTML."""
-        try:
-            from tools.pulse.db import get_row
-            from tools.pulse.engine.exporter import export_both
-
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            exports = export_both(post_id)
-            return jsonify({"post_id": post_id, "exports": exports})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/posts/<post_id>", methods=["DELETE"])
-    @require_installed("pulse")
-    def api_pulse_archive(post_id):
-        """Archive or permanently delete a Pulse post."""
-        try:
-            from tools.pulse.db import get_row, update_row
-
-            post = get_row("posts", post_id)
-            if not post:
-                return jsonify({"error": "Post not found"}), 404
-            permanent = flask_request.args.get("permanent", "false").lower() == "true"
-            if permanent:
-                with _get_db() as conn:
-                    conn.execute("DELETE FROM pulse_posts WHERE id = %s", (post_id,))
-                    conn.commit()
-                return jsonify({"status": "deleted", "post_id": post_id, "permanent": True})
-            now = datetime.now(timezone.utc).isoformat()
-            update_row("posts", post_id, {"status": "archived", "archived_at": now})
-            return jsonify({"status": "archived", "post_id": post_id})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/research")
-    @require_installed("pulse")
-    def api_pulse_research():
-        """List Pulse research cache entries."""
-        try:
-            from tools.pulse.db import query_rows
-
-            limit = flask_request.args.get("limit", 50, type=int)
-            rows = query_rows("research_cache", limit=limit)
-            return jsonify(rows)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/clusters")
-    @require_installed("pulse")
-    def api_pulse_clusters():
-        """List Pulse topic clusters."""
-        try:
-            with _get_db() as conn:
-                rows = conn.execute(
-                    "SELECT * FROM pulse_topic_clusters ORDER BY priority_score DESC LIMIT 100"
-                ).fetchall()
-                return jsonify([dict(r) for r in rows])
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    _pulse_pipeline_runs: dict = {}
-
-    @app.route("/api/pulse/pipeline/run", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_pipeline_run():
-        """Trigger a Pulse content pipeline run.
-
-        Two modes:
-        - With body_markdown + topic: Process pre-written draft (Claude Code orchestrated)
-        - With topic only: Run research + cluster phase (returns context for Claude Code)
-        - No params: Run research + cluster for all configured topics
-        """
-        import threading
-
-        try:
-            from tools.pulse.db import init_db
-
-            init_db()
-            body = flask_request.get_json(silent=True) or {}
-            topic = body.get("topic")
-            body_markdown = body.get("body_markdown")
-            run_id = f"run-{uuid.uuid4().hex[:12]}"
-            _pulse_pipeline_runs[run_id] = {"run_id": run_id, "status": "running"}
-
-            def _run_bg(rid, t, bm):
-                try:
-                    if bm and t:
-                        # Claude Code wrote the article — run post-processing
-                        from tools.pulse.engine.scheduler import run_pipeline_from_draft
-
-                        result = run_pipeline_from_draft(t, bm, [])
-                    else:
-                        # Research + cluster only — returns context for Claude Code
-                        from tools.pulse.engine.scheduler import research_phase
-
-                        result = research_phase(topic_override=t)
-                    _pulse_pipeline_runs[rid] = result
-                except Exception as exc:
-                    _pulse_pipeline_runs[rid] = {"run_id": rid, "status": "failed", "error": str(exc)}
-
-            threading.Thread(target=_run_bg, args=(run_id, topic, body_markdown), daemon=True).start()
-            return jsonify({"run_id": run_id, "status": "started"})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/posts/<post_id>/rewrite", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_rewrite_post(post_id):
-        """Update a post with rewritten content from Claude Code."""
-        try:
-            from tools.pulse.engine.scheduler import update_post_content
-
-            body = flask_request.get_json(silent=True) or {}
-            body_markdown = body.get("body_markdown")
-            if not body_markdown:
-                return jsonify({"error": "body_markdown is required"}), 400
-            result = update_post_content(post_id, body_markdown)
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/posts/<post_id>/rewrite-llm", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_rewrite_llm(post_id):
-        """Trigger Claude Sonnet rewrite for a post via LLM router.
-
-        Reads the post, runs WriteGuard to get findings, then rewrites
-        via the LLM router (pulse_rewrite → Claude Sonnet planner tier).
-        """
-        try:
-            from tools.pulse.engine.scheduler import rewrite_post_via_llm
-
-            result = rewrite_post_via_llm(post_id)
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/posts/<post_id>/enrich-capabilities", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_enrich_capabilities(post_id):
-        """Rewrite a post with ICDEV™ capability context injected.
-
-        Matches capabilities based on title/topic, injects into rewrite prompt,
-        triggers Claude Sonnet rewrite with capability references.
-        """
-        try:
-            from tools.pulse.engine.scheduler import enrich_post_with_capabilities
-
-            result = enrich_post_with_capabilities(post_id)
-            return jsonify(result)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/posts/enrich-all", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_enrich_all():
-        """Enrich all published posts with ICDEV™ capabilities (batch)."""
-        import threading
-
-        try:
-            from tools.pulse.db import init_db
-
-            init_db()
-            with _get_db() as conn:
-                posts = conn.execute("SELECT id, title FROM pulse_posts WHERE status = 'published'").fetchall()
-
-            run_id = f"enrich-{__import__('uuid').uuid4().hex[:8]}"
-            post_ids = [p["id"] for p in posts]
-
-            def _run_batch():
-                from tools.pulse.engine.scheduler import enrich_post_with_capabilities
-
-                results = []
-                for pid in post_ids:
-                    try:
-                        r = enrich_post_with_capabilities(pid)
-                        results.append({"post_id": pid, "status": r.get("status", "unknown")})
-                    except Exception as e:
-                        results.append({"post_id": pid, "status": "error", "error": str(e)})
-                # Store results in pipeline runs table
-                try:
-                    from tools.pulse.db import insert_row
-
-                    insert_row(
-                        "pipeline_runs",
-                        {
-                            "id": run_id,
-                            "status": "completed",
-                            "stage": "enrich_capabilities",
-                            "config_json": __import__("json").dumps({"post_ids": post_ids}),
-                            "result_json": __import__("json").dumps(results),
-                        },
-                    )
-                except Exception:
-                    pass
-
-            t = threading.Thread(target=_run_batch, daemon=True)
-            t.start()
-            return jsonify(
-                {
-                    "status": "started",
-                    "run_id": run_id,
-                    "posts_queued": len(post_ids),
-                    "post_ids": post_ids,
-                }
-            )
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/pipeline/run-full", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_pipeline_run_full():
-        """Run the full automated pipeline: research → draft → quality → rewrite.
-
-        Uses LLM router: qwen3.5 for research/draft, Claude Sonnet for rewrite.
-
-        Body params:
-            topic (str, optional): Topic override.
-            template_type (str): 'challenge_solution' or 'feature_spotlight'.
-            auto_rewrite (bool): Whether to auto-rewrite via Sonnet (default true).
-        """
-        import threading
-
-        try:
-            from tools.pulse.db import init_db
-
-            init_db()
-            body = flask_request.get_json(silent=True) or {}
-            topic = body.get("topic")
-            template_type = body.get("template_type", "challenge_solution")
-            auto_rewrite = body.get("auto_rewrite", True)
-            run_id = f"run-{uuid.uuid4().hex[:12]}"
-            _pulse_pipeline_runs[run_id] = {"run_id": run_id, "status": "running", "stage": "research"}
-
-            _PULSE_STAGES = ["research", "quality_check", "rewrite", "publish"]
-
-            def _run_bg(rid, t, tmpl, ar):
-                def _on_stage(stage):
-                    _pulse_pipeline_runs[rid] = {
-                        "run_id": rid,
-                        "status": "running",
-                        "stage": stage,
-                    }
-                    # SSE progress broadcast
-                    try:
-                        from tools.dashboard.sse_manager import emit_progress
-
-                        idx = _PULSE_STAGES.index(stage) if stage in _PULSE_STAGES else 0
-                        emit_progress(
-                            rid,
-                            "pulse_pipeline",
-                            stage,
-                            idx + 1,
-                            len(_PULSE_STAGES),
-                            detail=f"Pulse pipeline: {stage}",
-                        )
-                    except Exception:
-                        pass
-
-                try:
-                    from tools.pulse.engine.scheduler import run_full_pipeline
-
-                    result = run_full_pipeline(
-                        topic_override=t,
-                        template_type=tmpl,
-                        auto_rewrite=ar,
-                        progress_callback=_on_stage,
-                    )
-                    _pulse_pipeline_runs[rid] = result
-                except Exception as exc:
-                    _pulse_pipeline_runs[rid] = {
-                        "run_id": rid,
-                        "status": "failed",
-                        "stage": "error",
-                        "error": str(exc),
-                    }
-
-            threading.Thread(
-                target=_run_bg,
-                args=(run_id, topic, template_type, auto_rewrite),
-                daemon=True,
-            ).start()
-            return jsonify({"run_id": run_id, "status": "started", "stage": "research"})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/pipeline/status/<run_id>")
-    @require_installed("pulse")
-    def api_pulse_pipeline_status(run_id):
-        """Get Pulse pipeline run status."""
-        if run_id in _pulse_pipeline_runs:
-            return jsonify(_pulse_pipeline_runs[run_id])
-        try:
-            from tools.pulse.db import get_row
-
-            entry = get_row("schedule_log", run_id)
-            if not entry:
-                return jsonify({"error": "Run not found"}), 404
-            return jsonify(entry)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/pipeline/history")
-    @require_installed("pulse")
-    def api_pulse_pipeline_history():
-        """Get Pulse pipeline run history."""
-        try:
-            with _get_db() as conn:
-                rows = conn.execute("SELECT * FROM pulse_schedule_log ORDER BY started_at DESC LIMIT 50").fetchall()
-                return jsonify([dict(r) for r in rows])
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/authors")
-    @require_installed("pulse")
-    def api_pulse_authors():
-        """List Pulse authors."""
-        try:
-            from tools.pulse.db import query_rows
-
-            rows = query_rows("authors", limit=100)
-            return jsonify(rows)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/authors", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_create_author():
-        """Create a Pulse author."""
-        try:
-            from tools.pulse.db import insert_row
-
-            body = flask_request.get_json(silent=True) or {}
-            name = body.get("name")
-            if not name:
-                return jsonify({"error": "name is required"}), 400
-            author_id = f"author-{uuid.uuid4().hex[:12]}"
-            now = datetime.now(timezone.utc).isoformat()
-            data = {
-                "id": author_id,
-                "name": name,
-                "email": body.get("email", ""),
-                "bio": body.get("bio", ""),
-                "role": body.get("role", "contributor"),
-                "created_at": now,
-            }
-            insert_row("authors", data)
-            return jsonify(data), 201
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/stats")
-    @require_installed("pulse")
-    def api_pulse_stats():
-        """Get Pulse pipeline statistics."""
-        try:
-            from tools.pulse.db import init_db
-
-            init_db()
-            with _get_db() as conn:
-                total = conn.execute("SELECT COUNT(*) FROM pulse_posts").fetchone()[0]
-                status_rows = conn.execute(
-                    "SELECT status, COUNT(*) as count FROM pulse_posts GROUP BY status"
-                ).fetchall()
-                by_status = {row["status"]: row["count"] for row in status_rows}
-                research_count = conn.execute("SELECT COUNT(*) FROM pulse_research_cache").fetchone()[0]
-                cluster_count = conn.execute("SELECT COUNT(*) FROM pulse_topic_clusters").fetchone()[0]
-                run_count = conn.execute("SELECT COUNT(*) FROM pulse_schedule_log").fetchone()[0]
-            return jsonify(
-                {
-                    "total_posts": total,
-                    "by_status": by_status,
-                    "research_entries": research_count,
-                    "clusters": cluster_count,
-                    "pipeline_runs": run_count,
-                }
-            )
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/llm/dual-model", methods=["GET"])
     def api_llm_dual_model_status():
@@ -8113,341 +7252,21 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/analytics/<post_id>")
-    @require_installed("pulse")
-    def api_pulse_analytics(post_id):
-        """Get analytics for a Pulse post."""
-        try:
-            from tools.pulse.db import query_rows
-
-            rows = query_rows("post_analytics", where="post_id = ?", params=(post_id,), limit=100)
-            return jsonify(rows)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
     # ── Pulse SAM Bridge ──────────────────────────────────────────────
 
-    _sam_bridge_runs: dict[str, dict] = {}
 
-    @app.route("/api/pulse/sam-bridge/run", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_sam_bridge_run():
-        """Run SAM-to-Pulse bridge (extracts pain points from SAM.gov, generates articles).
 
-        Body params:
-            dry_run (bool): If true, extract topics without generating articles.
-            max_articles (int): Max articles to generate (default 5).
-        """
-        import threading
 
-        try:
-            from tools.pulse.db import init_db
 
-            init_db()
-            body = flask_request.get_json(silent=True) or {}
-            dry_run = body.get("dry_run", False)
-            max_articles = body.get("max_articles", 5)
-            run_id = f"sam-{uuid.uuid4().hex[:12]}"
-            _sam_bridge_runs[run_id] = {
-                "run_id": run_id,
-                "status": "running",
-                "stage": "scanning",
-                "dry_run": dry_run,
-            }
 
-            def _run_bg(rid, dr, ma):
-                try:
-                    _sam_bridge_runs[rid]["stage"] = "extracting"
-                    from tools.pulse.engine.sam_bridge import run_sam_to_pulse
 
-                    result = run_sam_to_pulse(dry_run=dr, max_articles=ma)
-                    result["run_id"] = rid
-                    result["status"] = "completed"
-                    _sam_bridge_runs[rid] = result
-                except Exception as exc:
-                    _sam_bridge_runs[rid] = {
-                        "run_id": rid,
-                        "status": "failed",
-                        "stage": "error",
-                        "error": str(exc),
-                    }
 
-            threading.Thread(
-                target=_run_bg,
-                args=(run_id, dry_run, max_articles),
-                daemon=True,
-            ).start()
-            return jsonify({"run_id": run_id, "status": "started", "dry_run": dry_run})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/sam-bridge/status/<run_id>")
-    @require_installed("pulse")
-    def api_pulse_sam_bridge_status(run_id):
-        """Get SAM bridge run status."""
-        if run_id in _sam_bridge_runs:
-            return jsonify(_sam_bridge_runs[run_id])
-        return jsonify({"error": "Run not found"}), 404
 
-    @app.route("/api/pulse/sam-bridge/stats")
-    @require_installed("pulse")
-    def api_pulse_sam_bridge_stats():
-        """Get SAM bridge pipeline statistics."""
-        try:
-            from tools.pulse.db import init_db
 
-            init_db()
-            with _get_db() as conn:
-                total = conn.execute("SELECT COUNT(*) FROM pulse_sam_article_log").fetchone()[0]
-                by_status = {}
-                status_rows = conn.execute(
-                    "SELECT pipeline_status, COUNT(*) as count FROM pulse_sam_article_log GROUP BY pipeline_status"
-                ).fetchall()
-                for row in status_rows:
-                    by_status[row["pipeline_status"]] = row["count"]
-                by_domain = {}
-                domain_rows = conn.execute(
-                    "SELECT domain_category, COUNT(*) as count FROM pulse_sam_article_log GROUP BY domain_category"
-                ).fetchall()
-                for row in domain_rows:
-                    by_domain[row["domain_category"] or "unknown"] = row["count"]
-                recent = conn.execute(
-                    "SELECT id, opportunity_title, domain_category, article_topic, "
-                    "pipeline_status, created_at FROM pulse_sam_article_log "
-                    "ORDER BY created_at DESC LIMIT 10"
-                ).fetchall()
-            return jsonify(
-                {
-                    "total": total,
-                    "by_status": by_status,
-                    "by_domain": by_domain,
-                    "recent": [dict(r) for r in recent],
-                }
-            )
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/pulse/demand-signals")
-    @require_installed("pulse")
-    def api_pulse_demand_signals():
-        """List demand signals, optionally filtered to high-demand only."""
-        try:
-            from tools.pulse.db import init_db
 
-            init_db()
-            high_only = flask_request.args.get("high_demand", "0") == "1"
-            with _get_db() as conn:
-                if high_only:
-                    rows = conn.execute(
-                        "SELECT * FROM pulse_demand_signals WHERE is_high_demand = 1 ORDER BY frequency DESC"
-                    ).fetchall()
-                else:
-                    rows = conn.execute("SELECT * FROM pulse_demand_signals ORDER BY frequency DESC").fetchall()
-            return jsonify({"signals": [dict(r) for r in rows], "count": len(rows)})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/demand-signals/aggregate")
-    @require_installed("pulse")
-    def api_pulse_demand_signals_aggregate():
-        """Aggregate demand signal stats by domain."""
-        try:
-            from tools.pulse.db import init_db
-
-            init_db()
-            with _get_db() as conn:
-                rows = conn.execute(
-                    "SELECT domain_category, COUNT(*) as count, "
-                    "SUM(CASE WHEN is_high_demand = 1 THEN 1 ELSE 0 END) as high_demand_count, "
-                    "AVG(frequency) as avg_frequency "
-                    "FROM pulse_demand_signals GROUP BY domain_category "
-                    "ORDER BY count DESC"
-                ).fetchall()
-                total = conn.execute("SELECT COUNT(*) FROM pulse_demand_signals").fetchone()[0]
-                high_total = conn.execute(
-                    "SELECT COUNT(*) FROM pulse_demand_signals WHERE is_high_demand = 1"
-                ).fetchone()[0]
-            return jsonify(
-                {
-                    "by_domain": [dict(r) for r in rows],
-                    "total": total,
-                    "high_demand_total": high_total,
-                }
-            )
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/capability-graph")
-    @require_installed("pulse")
-    def api_pulse_capability_graph():
-        """Query capability graph edges, optionally filtered by capability slug."""
-        try:
-            from tools.pulse.db import init_db
-
-            init_db()
-            cap_slug = flask_request.args.get("capability")
-            with _get_db() as conn:
-                if cap_slug:
-                    rows = conn.execute(
-                        "SELECT * FROM pulse_capability_graph WHERE capability_slug = %s ORDER BY confidence DESC",
-                        (cap_slug,),
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        "SELECT * FROM pulse_capability_graph ORDER BY created_at DESC LIMIT 100"
-                    ).fetchall()
-            return jsonify({"edges": [dict(r) for r in rows], "count": len(rows)})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/capabilities")
-    @require_installed("pulse")
-    def api_pulse_capabilities():
-        """List all ICDEV™ capabilities from the capability catalog."""
-        try:
-            from tools.pulse.engine.capability_scanner import load_domains
-
-            domains = load_domains(include_capabilities=True)
-            total = sum(d["capability_count"] for d in domains)
-            return jsonify({"domains": domains, "total_capabilities": total, "total_domains": len(domains)})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/capabilities/match")
-    @require_installed("pulse")
-    def api_pulse_capabilities_match():
-        """Match capabilities by keywords."""
-        try:
-            from tools.pulse.engine.capability_scanner import match_capabilities
-
-            q = flask_request.args.get("q", "")
-            top_n = int(flask_request.args.get("top_n", "5"))
-            keywords = [kw for kw in q.split() if len(kw) > 2]
-            if not keywords:
-                return jsonify({"error": "Provide ?q= with keywords"}), 400
-            matched = match_capabilities(keywords, top_n=top_n)
-            return jsonify({"query": q, "matched": len(matched), "capabilities": matched})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/hero-image/<post_id>")
-    def api_pulse_hero_image(post_id):
-        """Serve a Pulse post hero image from disk."""
-        from flask import send_file
-
-        try:
-            conn = _get_db()
-            row = conn.execute("SELECT hero_image_path FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
-            conn.close()
-            if not row or not row["hero_image_path"]:
-                return "No image", 404
-            img_path = Path(row["hero_image_path"])
-            if not img_path.exists():
-                return "Image file not found", 404
-            mime = "image/png" if str(img_path).endswith(".png") else "image/svg+xml"
-            return send_file(str(img_path), mimetype=mime)
-        except Exception as e:
-            return str(e), 500
-
-    @app.route("/api/pulse/posts/<post_id>/generate-image", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_generate_image(post_id):
-        """Generate a hero image for a Pulse post using SDXL Turbo (local GPU)."""
-        import threading
-
-        try:
-            conn = _get_db()
-            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
-            conn.close()
-            if not row:
-                return jsonify({"error": "Post not found"}), 404
-            title = row["title"]
-            category = row["topic"] or ""
-
-            def _gen(pid, t, c):
-                try:
-                    from tools.pulse.engine.image_generator import generate_hero_image
-
-                    result = generate_hero_image(title=t, category=c)
-                    if result.get("success"):
-                        conn2 = _get_db()
-                        conn2.execute(
-                            "UPDATE pulse_posts SET hero_image_path = %s, hero_image_method = %s, hero_image_prompt = %s WHERE id = %s",
-                            (result["path"], result["method"], result.get("prompt", ""), pid),
-                        )
-                        conn2.commit()
-                        conn2.close()
-                except Exception:
-                    pass
-
-            threading.Thread(target=_gen, args=(post_id, title, category), daemon=True).start()
-            return jsonify({"success": True, "status": "generating", "method": "sdxl_turbo", "post_id": post_id})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/pulse/generated-video/<post_id>")
-    @require_installed("pulse")
-    def api_pulse_generated_video(post_id):
-        """Serve a Pulse post generated video from disk."""
-        from flask import send_file
-
-        try:
-            conn = _get_db()
-            row = conn.execute(
-                "SELECT generated_video_path, generated_video_method FROM pulse_posts WHERE id = %s",
-                (post_id,),
-            ).fetchone()
-            conn.close()
-            if not row or not row["generated_video_path"]:
-                return "No video", 404
-            vid_path = Path(row["generated_video_path"])
-            if not vid_path.exists():
-                return "Video file not found", 404
-            method = row["generated_video_method"] or ""
-            if method == "animated_svg" or str(vid_path).endswith(".svg"):
-                mime = "image/svg+xml"
-            else:
-                mime = "video/mp4"
-            return send_file(str(vid_path), mimetype=mime)
-        except Exception as e:
-            return str(e), 500
-
-    @app.route("/api/pulse/posts/<post_id>/generate-video", methods=["POST"])
-    @require_installed("pulse")
-    def api_pulse_generate_video(post_id):
-        """Generate a hero video for a Pulse post using LTX-Video 2B (local GPU)."""
-        import threading
-
-        try:
-            conn = _get_db()
-            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
-            conn.close()
-            if not row:
-                return jsonify({"error": "Post not found"}), 404
-            title = row["title"]
-            category = row["topic"] or ""
-
-            def _gen(pid, t, c):
-                try:
-                    from tools.pulse.engine.video_generator import generate_post_video
-
-                    result = generate_post_video(title=t, category=c)
-                    if result.get("success"):
-                        conn2 = _get_db()
-                        conn2.execute(
-                            "UPDATE pulse_posts SET generated_video_path = %s, "
-                            "generated_video_method = %s, generated_video_duration = %s WHERE id = %s",
-                            (result["path"], result["method"], result.get("duration_sec", 0), pid),
-                        )
-                        conn2.commit()
-                        conn2.close()
-                except Exception:
-                    pass
-
-            threading.Thread(target=_gen, args=(post_id, title, category), daemon=True).start()
-            return jsonify({"success": True, "status": "generating", "method": "ltx_video_2b", "post_id": post_id})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
 
     # ---- File Sync (D-SYNC-1 through D-SYNC-12) ----
 
@@ -8572,19 +7391,28 @@ def create_app(testing: bool = False) -> Flask:
         _active = _gat()
         _available: list[str] = []
         _locked: list[str] = []
+        _degraded = False
+        _detail = None
         try:
             for _comp in _REGISTRY.iter_canvases():
                 if _ts(_active, _comp.min_tier):
                     _available.append(_comp.key)
                 else:
                     _locked.append(_comp.key)
-        except Exception:
-            pass
-        return jsonify({
+        except Exception as exc:
+            # nav-misc-02: an empty feature list must not read as "nothing licensed".
+            _degraded = True
+            _detail = str(exc)
+            get_logger("icdev.dashboard").warning("api_license_tier: registry enumeration failed: %s", exc)
+        _resp = {
             "active_tier": _active,
             "available_features": sorted(_available),
             "locked_features": sorted(_locked),
-        })
+        }
+        if _degraded:
+            _resp["error"] = True
+            _resp["detail"] = _detail
+        return jsonify(_resp)
 
     @app.errorhandler(401)
     def unauthorized(e):
@@ -8601,6 +7429,30 @@ def create_app(testing: bool = False) -> Flask:
     @app.errorhandler(404)
     def not_found(e):
         return render_template("404.html", message="Page not found"), 404
+
+    @app.errorhandler(413)
+    def payload_too_large(e):
+        # cnr-plat-02: graceful JSON 413 when a request body exceeds
+        # MAX_CONTENT_LENGTH (or a per-route cap that aborts 413).
+        _limit = app.config.get("MAX_CONTENT_LENGTH")
+        _limit_mb = round(_limit / (1024 * 1024), 1) if _limit else None
+        if flask_request.is_json or flask_request.path.startswith("/api/"):
+            return jsonify({
+                "error": "Payload too large",
+                "code": "PAYLOAD_TOO_LARGE",
+                "max_upload_mb": _limit_mb,
+                "message": (
+                    f"Upload exceeds the maximum allowed size ({_limit_mb} MB)."
+                    if _limit_mb else "Upload exceeds the maximum allowed size."
+                ),
+            }), 413
+        return render_template(
+            "404.html",
+            message=(
+                f"Upload exceeds the maximum allowed size ({_limit_mb} MB)."
+                if _limit_mb else "Upload exceeds the maximum allowed size."
+            ),
+        ), 413
 
     @app.errorhandler(500)
     def internal_error(e):
@@ -8950,6 +7802,7 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as exc:
             status = {"error": str(exc)}
         # Summary stats
+        degraded = False
         try:
             conn = _get_db()
             try:
@@ -8984,9 +7837,12 @@ def create_app(testing: bool = False) -> Flask:
             except Exception:
                 summary["pulse_links"] = 0
             conn.close()
-        except Exception:
-            pass
-        return render_template("proposal_genesis.html", status=status, summary=summary)
+        except Exception as exc:
+            # nav-misc-02: a DB-connection failure here dropped the whole summary
+            # to zeros silently. Log + flag so the empty pipeline reads as an outage.
+            degraded = True
+            get_logger("icdev.dashboard").warning("proposal_genesis: summary DB read failed: %s", exc)
+        return render_template("proposal_genesis.html", status=status, summary=summary, degraded=degraded)
 
     # ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
 
@@ -9199,13 +8055,17 @@ def create_app(testing: bool = False) -> Flask:
             health = {"enabled": False, "adapters": {}, "error": "Gateway unavailable"}
         # Recent delivery log
         history = []
+        degraded = not health.get("enabled", True) and bool(health.get("error"))
         try:
             conn = _get_db()
             history = conn.execute("SELECT * FROM notification_log ORDER BY created_at DESC LIMIT 50").fetchall()
             conn.close()
-        except Exception:
-            pass
-        return render_template("notifications.html", health=health, history=history)
+        except Exception as exc:
+            # nav-misc-02: a delivery-log read failure must not render an empty
+            # history that implies "no notifications ever sent".
+            degraded = True
+            get_logger("icdev.dashboard").warning("notifications_page: delivery-log read failed: %s", exc)
+        return render_template("notifications.html", health=health, history=history, degraded=degraded)
 
     @app.route("/genesis")
     def genesis():
@@ -9422,10 +8282,36 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    def _audit_gkp_mutation(event_type, action, gkp_id, app_key, extra=None):
+        """Append a GKP promote/reject decision to the append-only audit_trail.
+
+        Best-effort (mirrors api_genesis_run_reflex): a missing/locked audit
+        table must never break the mutation itself. The acting user is the
+        resolved session user (g.current_user), never a request-body field.
+        """
+        try:
+            user = getattr(g, "current_user", None)
+            actor = (user.get("id") if isinstance(user, dict) else None) or "unknown"
+            details = {"app": app_key, "gkp_id": gkp_id, "actor": actor}
+            if extra:
+                details.update(extra)
+            conn = _get_db()
+            conn.execute(
+                "INSERT INTO audit_trail (event_type, action, details, created_at) "
+                "VALUES (%s, %s, %s, datetime('now'))",
+                (event_type, action, json.dumps(details)),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
     @app.route("/api/genesis/gkps/<gkp_id>/promote", methods=["POST"])
+    @require_role("admin", "pm")
     def api_genesis_promote_gkp(gkp_id):
-        """Promote a GKP to v1.x."""
+        """Promote a GKP to v1.x. State-changing — admin/pm only (nav-plat-05)."""
         app_key = flask_request.args.get("app", "icdev")
+        _audit_gkp_mutation("approval_granted", f"genesis_gkp_promote:{gkp_id}", gkp_id, app_key)
         cfg = _genesis_app(app_key)
         if not cfg.get("promoter"):
             # Manual DB update for apps without a promoter
@@ -9463,12 +8349,16 @@ def create_app(testing: bool = False) -> Flask:
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/genesis/gkps/<gkp_id>/reject", methods=["POST"])
+    @require_role("admin", "pm")
     def api_genesis_reject_gkp(gkp_id):
-        """Reject a GKP."""
+        """Reject a GKP. State-changing — admin/pm only (nav-plat-05)."""
         app_key = flask_request.args.get("app", "icdev")
         cfg = _genesis_app(app_key)
         data = flask_request.get_json(silent=True) or {}
         reason = data.get("reason", "Rejected via dashboard")
+        _audit_gkp_mutation(
+            "approval_denied", f"genesis_gkp_reject:{gkp_id}", gkp_id, app_key, {"reason": reason}
+        )
         if not cfg.get("promoter"):
             try:
                 conn = _genesis_db(app_key)
@@ -9501,9 +8391,11 @@ def create_app(testing: bool = False) -> Flask:
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/genesis/gkps/auto-promote", methods=["POST"])
+    @require_role("admin", "pm")
     def api_genesis_auto_promote():
-        """Auto-promote all eligible GKPs."""
+        """Auto-promote all eligible GKPs. State-changing — admin/pm only (nav-plat-05)."""
         app_key = flask_request.args.get("app", "icdev")
+        _audit_gkp_mutation("approval_granted", "genesis_gkp_auto_promote", "*", app_key)
         cfg = _genesis_app(app_key)
         if not cfg.get("promoter"):
             # DB fallback: check for pending GKPs directly
@@ -9765,6 +8657,12 @@ def create_app(testing: bool = False) -> Flask:
 
     # ── Bayesian Autoresearch Dashboard (Phase 67) ────────────────────────────
 
+    _AUTORESEARCH_PLACEHOLDER_NOTE = (
+        "Experiment metrics are measured against an identity baseline — the engine "
+        "does not apply real code modifications between pre/post measurement, so "
+        "deltas are placeholder/heuristic, not real experiment evaluations."
+    )
+
     @app.route("/autoresearch")
     def autoresearch_page():
         """Bayesian Autoresearch — autonomous experiment dashboard."""
@@ -9791,6 +8689,9 @@ def create_app(testing: bool = False) -> Flask:
                     "acceptance_rate": round(kept_count / max(total_count, 1) * 100, 1),
                     "active_domains": len(domains) if domains else 0,
                     "best_improvement": round(best["best"] or 0, 2) if best else 0,
+                    "placeholder_metrics": True,
+                    "heuristic": True,
+                    "placeholder_note": _AUTORESEARCH_PLACEHOLDER_NOTE,
                 }
             )
         except Exception:
@@ -9800,6 +8701,9 @@ def create_app(testing: bool = False) -> Flask:
                     "acceptance_rate": 0,
                     "active_domains": 0,
                     "best_improvement": 0,
+                    "placeholder_metrics": True,
+                    "heuristic": True,
+                    "placeholder_note": _AUTORESEARCH_PLACEHOLDER_NOTE,
                 }
             )
 
@@ -9810,9 +8714,19 @@ def create_app(testing: bool = False) -> Flask:
             conn = get_connection(db_path=str(DB_PATH))
             rows = conn.execute("SELECT * FROM experiment_results ORDER BY created_at DESC LIMIT 100").fetchall()
             conn.close()
-            return jsonify({"experiments": [dict(r) for r in rows]})
+            return jsonify({
+                "experiments": [dict(r) for r in rows],
+                "placeholder_metrics": True,
+                "heuristic": True,
+                "placeholder_note": _AUTORESEARCH_PLACEHOLDER_NOTE,
+            })
         except Exception:
-            return jsonify({"experiments": []})
+            return jsonify({
+                "experiments": [],
+                "placeholder_metrics": True,
+                "heuristic": True,
+                "placeholder_note": _AUTORESEARCH_PLACEHOLDER_NOTE,
+            })
 
     # ================================================================
     # Chat: /analyze command — URL fetch + LLM analysis
@@ -10302,356 +9216,17 @@ def create_app(testing: bool = False) -> Flask:
             imports = []
         return render_template("clawhub.html", imports=imports, enabled=enabled)
 
-    @app.route("/api/clawhub/search")
-    def api_clawhub_search():
-        """Search ClawHub for skills."""
-        query = flask_request.args.get("q", "")
-        limit = int(flask_request.args.get("limit", "10"))
-        if not query:
-            return jsonify({"error": "Missing 'q' parameter"})
-        try:
-            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
 
-            conn = ClawHubConnector()
-            conn.connect({})
-            results = conn.search_skills(query, limit=limit)
-            conn.disconnect()
-            return jsonify({"success": True, "results": results or []})
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/skill/<slug>")
-    def api_clawhub_detail(slug):
-        """Get skill detail from ClawHub."""
-        try:
-            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
 
-            conn = ClawHubConnector()
-            conn.connect({})
-            detail = conn.get_skill(slug)
-            conn.disconnect()
-            return jsonify(detail or {"error": "Not found"})
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/import", methods=["POST"])
-    def api_clawhub_import():
-        """Fetch + import a skill from ClawHub."""
-        data = flask_request.get_json(silent=True) or {}
-        slug = data.get("slug", "")
-        tenant_id = data.get("tenant_id", "default")
-        imported_by = data.get("imported_by", "dashboard-user")
-        if not slug:
-            return jsonify({"error": "Missing 'slug'"})
-        try:
-            from tools.marketplace.openclaw_bridge import fetch_and_import
 
-            result = fetch_and_import(slug, tenant_id, imported_by)
-            return jsonify(result)
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/promote", methods=["POST"])
-    def api_clawhub_promote():
-        """Promote a quarantined import (auto-approves review if needed)."""
-        data = flask_request.get_json(silent=True) or {}
-        import_id = data.get("import_id", "")
-        promoted_by = data.get("promoted_by", "dashboard-isso")
-        if not import_id:
-            return jsonify({"error": "Missing 'import_id'"})
-        try:
-            from tools.marketplace.openclaw_bridge import promote_import, _get_db
 
-            # Auto-approve review if not yet done (dashboard user = ISSO)
-            conn = _get_db()
-            try:
-                cur = conn.cursor()
-                cur.execute(
-                    "UPDATE openclaw_imports SET review_id = %s WHERE id = %s AND review_id IS NULL",
-                    (f"rev-dash-{import_id[:8]}", import_id),
-                )
-                conn.commit()
-            except Exception:
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
-            finally:
-                conn.close()
-            result = promote_import(import_id, promoted_by)
-            # Trigger companion sync so skill distributes to all 9 LLM platforms
-            if result.get("success"):
-                try:
-                    import subprocess as _sp
 
-                    _sp.Popen(
-                        [sys.executable, "tools/dx/companion.py", "--sync", "--write", "--json"],
-                        cwd=str(BASE_DIR),
-                        stdout=_sp.DEVNULL,
-                        stderr=_sp.DEVNULL,
-                    )
-                except Exception:
-                    pass  # Non-blocking — sync failure doesn't fail promotion
-            return jsonify(result)
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/reject", methods=["POST"])
-    def api_clawhub_reject():
-        """Reject a quarantined import."""
-        data = flask_request.get_json(silent=True) or {}
-        import_id = data.get("import_id", "")
-        rejected_by = data.get("rejected_by", "dashboard-user")
-        reason = data.get("reason", "Rejected via dashboard")
-        if not import_id:
-            return jsonify({"error": "Missing 'import_id'"})
-        try:
-            from tools.marketplace.openclaw_bridge import reject_import
 
-            return jsonify(reject_import(import_id, rejected_by, reason))
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/install-to-project", methods=["POST"])
-    def api_clawhub_install():
-        """Copy a promoted skill to .claude/skills/ for local use."""
-        data = flask_request.get_json(silent=True) or {}
-        import_id = data.get("import_id", "")
-        if not import_id:
-            return jsonify({"error": "Missing 'import_id'"})
-        try:
-            from tools.marketplace.openclaw_bridge import _get_db
-            import re as _re
-            import shutil as _shutil
-
-            conn = _get_db()
-            cur = conn.cursor()
-            cur.execute("SELECT skill_name, quarantine_path, status FROM openclaw_imports WHERE id = %s", (import_id,))
-            row = cur.fetchone()
-            conn.close()
-            if not row:
-                return jsonify({"error": "Import not found"})
-            skill_name = row[0] if not hasattr(row, "keys") else row["skill_name"]
-            qpath = row[1] if not hasattr(row, "keys") else row["quarantine_path"]
-            status = row[2] if not hasattr(row, "keys") else row["status"]
-            if status != "promoted":
-                return jsonify({"error": f"Must be promoted first (current: {status})"})
-            src = Path(qpath)
-            if not src.is_dir():
-                return jsonify({"error": "Quarantine path not found"})
-            slug = _re.sub(r"[^a-z0-9-]", "-", skill_name.lower()).strip("-")[:63] or "imported-skill"
-            dest = Path(BASE_DIR) / ".claude" / "skills" / slug
-            dest.mkdir(parents=True, exist_ok=True)
-            for fname in ("SKILL.md", "skill.md"):
-                f = src / fname
-                if f.exists():
-                    _shutil.copy2(f, dest / "SKILL.md")
-                    break
-            for subdir in ("scripts", "context"):
-                sd = src / subdir
-                dd = dest / subdir
-                if sd.is_dir():
-                    if dd.exists():
-                        _shutil.rmtree(dd)
-                    _shutil.copytree(sd, dd)
-            files = [str(f.relative_to(dest)) for f in dest.rglob("*") if f.is_file()]
-            return jsonify(
-                {"success": True, "installed_to": str(dest), "slug": slug, "files": files, "file_count": len(files)}
-            )
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
-
-    @app.route("/api/clawhub/check-update")
-    def api_clawhub_check_update():
-        """Check if a ClawHub skill has a newer version."""
-        import_id = flask_request.args.get("import_id", "")
-        if not import_id:
-            return jsonify({"error": "Missing 'import_id'"})
-        try:
-            from tools.marketplace.openclaw_bridge import _get_db
-
-            conn = _get_db()
-            cur = conn.cursor()
-            cur.execute("SELECT openclaw_slug, skill_version FROM openclaw_imports WHERE id = %s", (import_id,))
-            row = cur.fetchone()
-            conn.close()
-            if not row:
-                return jsonify({"error": "Import not found"})
-            slug = row[0] if not hasattr(row, "keys") else row["openclaw_slug"]
-            current_ver = str(row[1] if not hasattr(row, "keys") else row["skill_version"])
-            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
-
-            c = ClawHubConnector()
-            c.connect({})
-            detail = c.get_skill(slug)
-            c.disconnect()
-            if not detail or not detail.get("latestVersion"):
-                return jsonify({"success": True, "update_available": False})
-            latest_ver = detail["latestVersion"].get("version", "")
-            return jsonify(
-                {
-                    "success": True,
-                    "current_version": current_ver,
-                    "latest_version": latest_ver,
-                    "update_available": str(latest_ver) != str(current_ver),
-                    "changelog": (detail["latestVersion"].get("changelog", "") or "")[:300],
-                }
-            )
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
-
-    @app.route("/api/clawhub/bulk-import", methods=["POST"])
-    def api_clawhub_bulk_import():
-        """Import multiple skills from ClawHub."""
-        data = flask_request.get_json(silent=True) or {}
-        slugs = data.get("slugs", [])
-        tenant_id = data.get("tenant_id", "default")
-        imported_by = data.get("imported_by", "dashboard-user")
-        if not slugs:
-            return jsonify({"error": "Missing 'slugs' list"})
-        results = []
-        for slug in slugs[:10]:  # Cap at 10
-            try:
-                from tools.marketplace.openclaw_bridge import fetch_and_import
-
-                r = fetch_and_import(slug, tenant_id, imported_by)
-                results.append(
-                    {
-                        "slug": slug,
-                        "success": r.get("success", False),
-                        "error": r.get("error"),
-                        "import_id": r.get("import_id"),
-                    }
-                )
-            except Exception as exc:
-                results.append({"slug": slug, "success": False, "error": str(exc)})
-        succeeded = sum(1 for r in results if r["success"])
-        return jsonify(
-            {
-                "success": True,
-                "total": len(results),
-                "succeeded": succeeded,
-                "failed": len(results) - succeeded,
-                "results": results,
-            }
-        )
-
-    @app.route("/api/clawhub/rate", methods=["POST"])
-    def api_clawhub_rate():
-        """Rate an imported skill (1-5 stars, adjusts trust score)."""
-        data = flask_request.get_json(silent=True) or {}
-        import_id = data.get("import_id", "")
-        rating = data.get("rating", 0)
-        if not import_id or not rating:
-            return jsonify({"error": "Missing 'import_id' or 'rating'"})
-        try:
-            rating = int(rating)
-            if rating < 1 or rating > 5:
-                return jsonify({"error": "Rating must be 1-5"})
-            bump = {1: -0.05, 2: -0.02, 3: 0.0, 4: 0.03, 5: 0.05}[rating]
-            from tools.marketplace.openclaw_bridge import _get_db
-
-            conn = _get_db()
-            conn.cursor().execute(
-                "UPDATE openclaw_imports SET trust_score = MIN(1.0, MAX(0.0, trust_score + %s)), updated_at = datetime('now') WHERE id = %s",
-                (bump, import_id),
-            )
-            conn.commit()
-            conn.close()
-            return jsonify({"success": True, "rating": rating, "trust_adjustment": bump})
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
-
-    @app.route("/api/clawhub/view-skill")
-    def api_clawhub_view_skill():
-        """Return the enhanced SKILL.md content for an imported skill."""
-        import_id = flask_request.args.get("import_id", "")
-        if not import_id:
-            return jsonify({"error": "Missing 'import_id'"})
-        try:
-            from tools.marketplace.openclaw_bridge import _get_db
-
-            conn = _get_db()
-            cur = conn.cursor()
-            cur.execute("SELECT skill_name, quarantine_path FROM openclaw_imports WHERE id = %s", (import_id,))
-            row = cur.fetchone()
-            conn.close()
-            if not row:
-                return jsonify({"error": f"Import not found: {import_id}"})
-
-            skill_name = row[0] if not hasattr(row, "keys") else row["skill_name"]
-            qpath = row[1] if not hasattr(row, "keys") else row["quarantine_path"]
-
-            skill_md = Path(qpath) / "SKILL.md"
-            if not skill_md.exists():
-                skill_md = Path(qpath) / "skill.md"
-            if not skill_md.exists():
-                return jsonify({"error": "SKILL.md not found in quarantine"})
-
-            content = skill_md.read_text(encoding="utf-8")
-
-            # List context files
-            context_dir = Path(qpath) / "context"
-            context_files = []
-            if context_dir.is_dir():
-                context_files = [f.name for f in sorted(context_dir.iterdir()) if f.is_file()]
-
-            return jsonify(
-                {
-                    "success": True,
-                    "skill_name": skill_name,
-                    "import_id": import_id,
-                    "content": content,
-                    "content_length": len(content),
-                    "pre_enrichment": (Path(qpath) / "_pre_enrichment.md").read_text(encoding="utf-8")
-                    if (Path(qpath) / "_pre_enrichment.md").exists()
-                    else None,
-                    "context_files": context_files,
-                }
-            )
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
-
-    @app.route("/api/clawhub/trust", methods=["POST"])
-    def api_clawhub_trust():
-        """Update trust score for an imported skill."""
-        data = flask_request.get_json(silent=True) or {}
-        import_id = data.get("import_id", "")
-        trust_score = data.get("trust_score")
-        if not import_id or trust_score is None:
-            return jsonify({"error": "Missing 'import_id' or 'trust_score'"})
-        try:
-            trust_score = float(trust_score)
-            if trust_score < 0 or trust_score > 1.0:
-                return jsonify({"error": "Trust score must be between 0.0 and 1.0"})
-            from tools.marketplace.openclaw_bridge import _get_db
-
-            conn = _get_db()
-            conn.cursor().execute(
-                "UPDATE openclaw_imports SET trust_score = %s, updated_at = datetime('now') WHERE id = %s",
-                (trust_score, import_id),
-            )
-            conn.commit()
-            conn.close()
-            return jsonify({"success": True, "import_id": import_id, "trust_score": trust_score})
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
-
-    @app.route("/api/clawhub/revoke", methods=["POST"])
-    def api_clawhub_revoke():
-        """Revoke (unpromote) a promoted import."""
-        data = flask_request.get_json(silent=True) or {}
-        import_id = data.get("import_id", "")
-        revoked_by = data.get("revoked_by", "dashboard-isso")
-        reason = data.get("reason", "Revoked via dashboard")
-        if not import_id:
-            return jsonify({"error": "Missing 'import_id'"})
-        try:
-            from tools.marketplace.openclaw_bridge import revoke_import
-
-            return jsonify(revoke_import(import_id, revoked_by, reason))
-        except Exception as exc:
-            return jsonify({"error": str(exc)})
 
     # ── ICDEV™ Studio (Phase 72) ─────────────────────────────────────
 
@@ -10795,10 +9370,27 @@ def create_app(testing: bool = False) -> Flask:
 
     def _validate_projects(raw: list) -> list:
         """Validate + normalize project entries. Drops invalid ones with a
-        logged warning so the page keeps rendering the rest."""
+        logged warning so the page keeps rendering the rest.
+
+        Nested prefixes (`aadc-` alongside `aadc-enh-`) are a legitimate
+        parent/child namespace, not an error: the parent keeps rendering and
+        gets an `exclude_prefixes` list so its queries subtract every
+        registered child. Only an EXACT duplicate prefix is unresolvable and
+        skipped. Previously the later entry was dropped outright, which
+        silently hid whichever card happened to appear last in the YAML.
+        """
+        from tools.project.prefix_scope import child_prefixes
+
         out: list = []
         seen_prefixes: list = []
         seen_keys: set = set()
+        # Every valid prefix in the file, needed up-front so a parent entry can
+        # claim its children's exclusions regardless of YAML ordering.
+        all_prefixes = {
+            (p.get("task_prefix") or "").strip()
+            for p in raw
+            if isinstance(p, dict) and (p.get("task_prefix") or "").strip()
+        }
         for i, p in enumerate(raw):
             if not isinstance(p, dict):
                 _proj_log.warning("projects.yaml entry #%d is not a dict — skipping", i)
@@ -10814,18 +9406,16 @@ def create_app(testing: bool = False) -> Flask:
             if key in seen_keys:
                 _proj_log.warning("projects.yaml duplicate key '%s' — skipping", key)
                 continue
-            # Cross-project prefix-of collision
-            for seen in seen_prefixes:
-                if prefix.startswith(seen) or seen.startswith(prefix):
-                    _proj_log.warning(
-                        "projects.yaml '%s' prefix %r collides with earlier "
-                        "prefix %r — tasks would double-count. Skipping.",
-                        key, prefix, seen,
-                    )
-                    prefix = ""  # mark collision
-                    break
-            if not prefix:
+            # Exact duplicate prefix — genuinely ambiguous, no way to split rows.
+            if prefix in seen_prefixes:
+                _proj_log.warning(
+                    "projects.yaml '%s' prefix %r duplicates an earlier entry "
+                    "— tasks would double-count. Skipping.",
+                    key, prefix,
+                )
                 continue
+            # Nested child prefixes: this entry is their parent, so subtract them.
+            exclude_prefixes = child_prefixes(prefix, all_prefixes)
             # Within-project epic key prefix-of collision
             raw_epics = p.get("epics", []) or []
             clean_epics: list = []
@@ -10860,6 +9450,7 @@ def create_app(testing: bool = False) -> Flask:
                 clean_epics.append(ep)
             p2 = dict(p)
             p2["task_prefix"] = prefix
+            p2["exclude_prefixes"] = exclude_prefixes
             p2["epics"] = clean_epics
             out.append(p2)
             seen_keys.add(key)
@@ -10889,9 +9480,17 @@ def create_app(testing: bool = False) -> Flask:
         All LIKE patterns derived from YAML are escaped with `ESCAPE '\\'`
         so a malformed prefix or epic key can't leak across projects or
         match wildcards unintentionally.
+
+        `exclude_prefixes` (set by _validate_projects) subtracts every nested
+        child project, so a parent prefix like `aadc-` does not absorb
+        `aadc-enh-` / `aadc-sp-` rows.
         """
         prefix = project.get("task_prefix", "")
         prefix_esc = _escape_like(prefix)
+        excludes = project.get("exclude_prefixes") or []
+        # One `AND id NOT LIKE ... ESCAPE` clause per nested child prefix.
+        excl_sql = "".join(" AND id NOT LIKE %s ESCAPE '\\'" for _ in excludes)
+        excl_params = tuple(f"{_escape_like(x)}%" for x in excludes)
         epics_out: list = []
         total_all = 0
         done_all = 0
@@ -10900,8 +9499,8 @@ def create_app(testing: bool = False) -> Flask:
             pattern = f"{prefix_esc}{ek_esc}-%"
             rows = conn.execute(
                 "SELECT status, COUNT(*) AS n FROM kanban_tasks "
-                "WHERE id LIKE %s ESCAPE '\\' GROUP BY status",
-                (pattern,),
+                "WHERE id LIKE %s ESCAPE '\\'" + excl_sql + " GROUP BY status",
+                (pattern,) + excl_params,
             ).fetchall()
             counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
             total = sum(counts.values())
@@ -10924,18 +9523,18 @@ def create_app(testing: bool = False) -> Flask:
             })
         in_flight_rows = conn.execute(
             "SELECT id, title, status, priority, updated_at "
-            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' "
+            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' " + excl_sql +
             "  AND status IN ('in_progress','scheduled') "
             "ORDER BY updated_at DESC LIMIT 15",
-            (f"{prefix_esc}%",),
+            (f"{prefix_esc}%",) + excl_params,
         ).fetchall()
         fail_rows = conn.execute(
             "SELECT id, title, status, failure_count, "
             "       last_failure_reason, updated_at "
-            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' "
+            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' " + excl_sql +
             "  AND last_failure_reason IS NOT NULL "
             "ORDER BY updated_at DESC LIMIT 10",
-            (f"{prefix_esc}%",),
+            (f"{prefix_esc}%",) + excl_params,
         ).fetchall()
         return {
             "key": project.get("key"),
@@ -11182,15 +9781,21 @@ def create_app(testing: bool = False) -> Flask:
                 "fetched_at": ctx.get("fetched_at"),
             })
         except Exception as exc:
+            # nav-plat-04: a data outage must NOT masquerade as a benign NEUTRAL
+            # regime. Log it and return an explicit error state (HTTP 503) with
+            # null badges so no consumer renders NEUTRAL for missing data.
+            app.logger.exception("macro/intelligence fetch failed: %s", exc)
             return jsonify({
-                "qeqt_phase": "NEUTRAL",
-                "credit_stress": "NEUTRAL",
-                "rotation_signal": "UNKNOWN",
+                "status": "error",
+                "detail": str(exc),
+                "qeqt_phase": None,
+                "credit_stress": None,
+                "rotation_signal": None,
                 "macro_score": None,
                 "summary": "",
                 "fetched_at": None,
                 "error": str(exc),
-            }), 200
+            }), 503
 
     @app.route("/api/trading/market")
     def api_trading_market():
@@ -11227,6 +9832,7 @@ def create_app(testing: bool = False) -> Flask:
             from tools.trading.ta.support_resistance import compute_sr
 
             bars = fetch_bars(ticker, timeframe, limit)
+            provenance = _derive_chart_provenance(bars)
             vp = compute_vp(bars, bucket_count=40)
             swings = find_swings(bars)
             raw_patterns = detect_patterns(bars)
@@ -11238,6 +9844,11 @@ def create_app(testing: bool = False) -> Flask:
                 "volume_profile": vp,
                 "patterns": patterns,
                 "sr_levels": sr_levels,
+                # Top-level data provenance so the UI can flag synthetic bars
+                # (nav-plat-01) — never render simulated data as real market data.
+                "data_source": provenance["data_source"],
+                "simulated": provenance["simulated"],
+                "as_of": provenance["as_of"],
             })
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -11342,8 +9953,6 @@ def create_app(testing: bool = False) -> Flask:
                                 status=503, mimetype="text/plain")
             data = _gen_latest(_prom_registry)
             return Response(data, status=200, mimetype=_PROM_CT)
-
-        _wire_metrics(app)
     except Exception as _prom_exc:
         app.logger.debug("Prometheus metrics init skipped: %s", _prom_exc)
 
@@ -11354,7 +9963,7 @@ app = create_app()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ICDEV™ Dashboard")
-    parser.add_argument("--port", type=int, default=PORT, help="Port to run on (default: 5000)")
+    parser.add_argument("--port", type=int, default=PORT, help="Port to run on (default: 5050)")
     parser.add_argument("--debug", action="store_true", default=DEBUG, help="Enable debug mode")
     args = parser.parse_args()
 

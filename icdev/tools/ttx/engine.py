@@ -207,15 +207,23 @@ class TTXEngine:
         endpoint: str,
         call_id: str,
         result_hash: str,
+        token_count: int = 0,
+        cost_usd: float = 0.0,
     ) -> None:
+        """Append an AI-call receipt for a team. ``token_count``/``cost_usd`` are
+        the per-team spend attribution (lpx-teams-03) — recorded here at the
+        existing insert hook so the facilitator report is a single-store query.
+        Both default to 0 so callers that only log the call keep working."""
         conn = get_connection()
         conn.execute(
             """INSERT INTO ttx_api_log
-               (session_id, team_id, tool_slug, endpoint, call_id, result_hash, called_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+               (session_id, team_id, tool_slug, endpoint, call_id, result_hash,
+                token_count, cost_usd, called_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 session_id, team_id, tool_slug, endpoint,
                 call_id, result_hash,
+                max(0, int(token_count)), max(0.0, float(cost_usd)),
                 datetime.now(timezone.utc).isoformat(),
             ),
         )

@@ -123,11 +123,21 @@ def acoic_db(tmp_path_factory):
 
 
 def _mock_get_connection(db_path):
-    """Return a factory that yields a sqlite3 connection to the temp DB."""
+    """Return a factory yielding a StorageConnection to the temp DB.
+
+    This MUST go through tools.db.storage.get_connection, not raw sqlite3.
+    Runtime code (acoic, drift_detector) authors PostgreSQL SQL with %s
+    placeholders; StorageConnection translates those to ? for SQLite. Handing
+    back a bare sqlite3 connection made every write raise
+    "near %: syntax error", which the callers swallow and log — so these tests
+    asserted against an empty DB instead of exercising the pipeline.
+    conftest forces ICDEV_STORAGE_BACKEND=sqlite, so this stays file-backed and
+    offline.
+    """
+    from tools.db.storage import get_connection as _storage_get_connection
+
     def _factory(*args, **kwargs):
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+        return _storage_get_connection(db_path=str(db_path))
     return _factory
 
 
@@ -496,19 +506,33 @@ class TestNewAceRolesLoad:
             role = loader.get_role(role_id)
             assert role.tool_permissions, f"{role_id} has no tool_permissions"
 
-    def test_network_doc_auditor_canvas_is_network(self):
+    # ACE roles identify their canvas by its short registry key ('dic', 'ndc',
+    # 'sdc', ...) — the convention every role in args/ace/roles/ follows. These
+    # two roles originally shipped as 'network'/'document_intelligence' and were
+    # normalized to 'ndc'/'dic' in 36d611a31, which did not update these tests;
+    # they have asserted the pre-normalization names ever since.
+    def test_network_doc_auditor_canvas_is_ndc(self):
         from tools.ace.role_loader import RoleLoader
         loader = RoleLoader()
         role = loader.get_role("network_doc_auditor")
-        assert role.canvas == "network"
+        assert role.canvas == "ndc", \
+            f"network_doc_auditor.canvas should be the 'ndc' registry key, got '{role.canvas}'"
 
     def test_document_roles_canvas_is_dic(self):
         from tools.ace.role_loader import RoleLoader
         loader = RoleLoader()
         for role_id in ["document_contributor", "document_reviewer", "document_editor"]:
             role = loader.get_role(role_id)
-            assert role.canvas == "document_intelligence", \
-                f"{role_id}.canvas should be 'document_intelligence', got '{role.canvas}'"
+            assert role.canvas == "dic", \
+                f"{role_id}.canvas should be the 'dic' registry key, got '{role.canvas}'"
+
+    def test_all_new_roles_use_short_canvas_keys(self):
+        """Guard the convention itself, so a future rename can't silently drift."""
+        from tools.ace.role_loader import RoleLoader
+        loader = RoleLoader()
+        for role_id in self.NEW_ROLES:
+            canvas = loader.get_role(role_id).canvas
+            assert canvas in {"ndc", "dic"}, f"{role_id} has unexpected canvas {canvas!r}"
 
 
 # ── Phase 6: DriftReport serialisation ────────────────────────────────────────

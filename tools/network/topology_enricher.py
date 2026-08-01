@@ -58,15 +58,22 @@ def enrich_topology(
     Returns:
         Dict with enrichment stats.
     """
+    from tools.network.blueprint_helpers import get_parsed_graph, invalidate_parsed_graph
+
     conn = get_connection(db_path=str(BASE_DIR / "data" / "network_canvas.db"))
 
-    row = conn.execute("SELECT graph_json, name FROM topologies WHERE id = %s", (topology_id,)).fetchone()
-    if not row:
+    name_row = conn.execute("SELECT name FROM topologies WHERE id = %s", (topology_id,)).fetchone()
+    if not name_row:
         conn.close()
         return {"error": f"Topology {topology_id} not found"}
+    topo_name = name_row["name"] if hasattr(name_row, "keys") else name_row[0]
 
-    graph = json.loads(row["graph_json"])
-    topo_name = row["name"]
+    # This function MUTATES the graph (adds nodes, rewrites device config), so it
+    # must own a private copy — never the shared read-only cache entry (ndc-perf-02).
+    graph = get_parsed_graph(conn, topology_id, copy=True)
+    if graph is None:
+        conn.close()
+        return {"error": f"Topology {topology_id} not found"}
 
     # Separate devices from existing groups
     devices = [n for n in graph["nodes"] if n.get("type") != "group-site"]
@@ -287,6 +294,7 @@ def enrich_topology(
     if save:
         conn.execute("UPDATE topologies SET graph_json = %s WHERE id = %s", (json.dumps(graph), topology_id))
         conn.commit()
+        invalidate_parsed_graph(topology_id)  # ndc-perf-02
 
     conn.close()
 

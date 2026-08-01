@@ -34,19 +34,72 @@ from datetime import datetime, timezone
 # Markdown → safe HTML helper (used by Jinja2 `markdown` filter)
 # ---------------------------------------------------------------------------
 
-def _md_to_html(text: str | None) -> str:
-    """Convert markdown text to safe HTML.
+def _sanitize_rendered_html(rendered: str) -> str:
+    """Strip stored-XSS vectors from rendered-markdown HTML (nav-sec-08).
 
-    Falls back to an escaped <pre> block if the ``markdown`` package is
-    unavailable or parsing fails, so the page never breaks on bad input.
+    The ``markdown`` package passes raw HTML through unchanged, so any embedded
+    ``<script>``/``onerror=``/``javascript:`` in the source (e.g. an uploaded
+    document section, DIC content) would otherwise execute when the result is
+    emitted via ``| markdown | safe``. Runs the repo's canonical air-gap-safe
+    sanitizer on the RENDERED output; fails closed (never returns raw markup on
+    error).
+    """
+    if not rendered:
+        return ""
+    try:
+        from tools.docgen.workflow import _sanitize_html
+        return _sanitize_html(rendered)
+    except Exception:
+        # Fail closed: if the canonical sanitizer is unavailable, escape rather
+        # than emit potentially-active markup.
+        return html.escape(rendered)
+
+
+def json_script_safe(json_text):
+    """Escape a pre-serialized JSON string for safe embedding in a <script> block.
+
+    nav-sec-08: several canvas pages emit an already-serialized JSON string
+    directly into an inline ``<script>`` via ``{{ x | safe }}``. ``json.dumps``
+    does NOT escape ``<``/``>``/``&``, so a payload containing ``</script>`` in
+    any string value would break out of the script element (stored XSS). This
+    filter escapes exactly those characters (plus the JS line separators U+2028/
+    U+2029) using ``\\uXXXX`` sequences. Those characters only ever appear inside
+    JSON string values, where ``\\u003c`` is an equivalent, valid escape — so the
+    transform is semantics-preserving: ``JSON.parse`` / the JS engine decode it
+    back to the original text. Returns ``Markup`` so the template needs no
+    ``| safe`` and the result is not re-escaped.
+    """
+    from markupsafe import Markup
+
+    if json_text is None:
+        return Markup("null")
+    s = str(json_text)
+    s = (
+        s.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
+    return Markup(s)
+
+
+def _md_to_html(text: str | None) -> str:
+    """Convert markdown text to sanitized HTML.
+
+    The rendered HTML is passed through :func:`_sanitize_rendered_html` so raw
+    HTML embedded in the markdown source cannot inject XSS. Falls back to an
+    escaped <pre> block if the ``markdown`` package is unavailable or parsing
+    fails, so the page never breaks on bad input.
     """
     if not text:
         return ""
     try:
         import markdown as md_lib
-        return md_lib.markdown(text, extensions=["fenced_code", "tables", "nl2br"])
+        rendered = md_lib.markdown(text, extensions=["fenced_code", "tables", "nl2br"])
     except Exception:
         return f"<pre>{html.escape(text)}</pre>"
+    return _sanitize_rendered_html(rendered)
 
 
 def _md_inline_to_html(text: str | None) -> str:
@@ -63,7 +116,7 @@ def _md_inline_to_html(text: str | None) -> str:
         out = md_lib.markdown(text).strip()
         if out.startswith("<p>") and out.endswith("</p>"):
             out = out[len("<p>"):-len("</p>")]
-        return out
+        return _sanitize_rendered_html(out)
     except Exception:
         return html.escape(text)
 
@@ -981,6 +1034,10 @@ def register_ux_filters(app):
     app.jinja_env.filters["markdown"] = _md_to_html
     # Inline markdown (bold/code/links only, no <p> wrapper) — used by /updates changelog items
     app.jinja_env.filters["markdown_inline"] = _md_inline_to_html
+    # nav-sec-08: safe embedding of pre-serialized JSON strings into inline <script>
+    # blocks (escapes </script> breakout without double-encoding). Replaces the
+    # unsafe `{{ x | safe }}` pattern used on several canvas pages.
+    app.jinja_env.filters["json_script_safe"] = json_script_safe
 
     # Template globals (callable directly in templates)
     app.jinja_env.globals["score_display"] = score_display

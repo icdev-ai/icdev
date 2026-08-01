@@ -11,9 +11,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# SbD assessment mutation is restricted to security/compliance roles,
+# mirroring GOVCON_WRITE_ROLES in api/govcon.py.
+COMPLIANCE_WRITE_ROLES = ("admin", "isso", "ciso")
 
 sbd_api = Blueprint("sbd_api", __name__, url_prefix="/api/sbd")
 
@@ -50,20 +55,7 @@ def _get_db():
 
 def _table_exists(conn, name):
     """Check if a table exists (works for both SQLite and PostgreSQL)."""
-    try:
-        if getattr(conn, "_backend", "sqlite") == "postgresql":
-            row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
-                (name,),
-            ).fetchone()
-            return row is not None
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-            (name,),
-        ).fetchone()
-        return row is not None
-    except Exception:
-        return False
+    return table_exists(conn, name)
 
 
 @sbd_api.route("/stats", methods=["GET"])
@@ -254,6 +246,7 @@ def sbd_domains():
 
 
 @sbd_api.route("/assess", methods=["POST"])
+@require_role(*COMPLIANCE_WRITE_ROLES)
 def sbd_assess():
     """POST /api/sbd/assess — Trigger SbD assessment for a project."""
     data = request.get_json(force=True, silent=True) or {}

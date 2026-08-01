@@ -7,15 +7,17 @@ down or idle, and clears alarms for sessions that have recovered.
 
 Air-gap safe: no LLM calls — pure heuristics + NMS API queries.
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import json
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from urllib.request import Request, urlopen
+
+from tools.logging.icdev_logger import get_logger
+
+IMPLEMENTATION_STATUS = "full"
 
 logger = get_logger(__name__)
 
@@ -239,5 +241,14 @@ def _publish_event(result: Dict[str, Any], event: str, payload: Dict[str, Any]) 
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import json as _json
     print(_json.dumps(run({"dry_run": True}), indent=2))

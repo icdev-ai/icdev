@@ -1,0 +1,15 @@
+# CUI // SP-CTI
+label: Knowledge Engineer
+description: Owns the DIC corpus, ingestion pipeline, and source provenance.
+attributes:
+- organization
+- data-engineering background
+- provenance/lineage tooling experience
+- corpus scale managed
+- clearance level
+prompt_hint: Generate a knowledge engineer who owns ingestion provenance and knows that an unattended
+  re-ingest that changes a source hash is a classic poisoning vector. They can quarantine a source and
+  scope which deliverables must be re-grounded. Mention the Academy provenance bonus.
+academy_relevant_missions:
+- knowledge-graph
+- data-provenance

@@ -315,7 +315,7 @@ class DDCOpenMetadataImporter:
         conn = self._get_conn()
         try:
             row = conn.execute(
-                "SELECT id, name, graph_json, classification FROM data_designs WHERE id = %s",
+                "SELECT id, name, graph_json, classification FROM data_designs WHERE id = ?",
                 (design_id,),
             ).fetchone()
             return dict(row) if row else None
@@ -327,7 +327,7 @@ class DDCOpenMetadataImporter:
         conn = self._get_conn()
         try:
             conn.execute(
-                "INSERT INTO data_designs (id, name, description, classification) VALUES (%s, %s, %s, %s)",
+                "INSERT INTO data_designs (id, name, description, classification) VALUES (?, ?, ?, ?)",
                 (design_id, name, "Lineage imported from OpenMetadata", classification),
             )
             conn.commit()
@@ -348,7 +348,7 @@ class DDCOpenMetadataImporter:
         conn = self._get_conn()
         try:
             row = conn.execute(
-                "SELECT graph_json FROM data_designs WHERE id = %s", (design_id,)
+                "SELECT graph_json FROM data_designs WHERE id = ?", (design_id,)
             ).fetchone()
             if not row:
                 return
@@ -368,7 +368,7 @@ class DDCOpenMetadataImporter:
             })
             graph["nodes"] = nodes
             conn.execute(
-                "UPDATE data_designs SET graph_json = %s, updated_at = %s WHERE id = %s",
+                "UPDATE data_designs SET graph_json = ?, updated_at = ? WHERE id = ?",
                 (json.dumps(graph), datetime.now(timezone.utc).isoformat(), design_id),
             )
             conn.commit()
@@ -409,8 +409,8 @@ class DDCOpenMetadataImporter:
         conn = self._get_conn()
         try:
             existing = conn.execute(
-                "SELECT id FROM dd_lineage WHERE design_id=%s AND source_node_id=%s "
-                "AND target_node_id=%s AND column_name=%s",
+                "SELECT id FROM dd_lineage WHERE design_id=? AND source_node_id=? "
+                "AND target_node_id=? AND column_name=?",
                 (design_id, source_node_id, target_node_id, column_name),
             ).fetchone()
             if existing:
@@ -420,7 +420,7 @@ class DDCOpenMetadataImporter:
                 "INSERT INTO dd_lineage "
                 "(id, design_id, source_node_id, target_node_id, lineage_type, "
                 "column_name, transform_desc, classification) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(uuid.uuid4()),
                     design_id,
@@ -443,11 +443,11 @@ class DDCOpenMetadataImporter:
         conn = self._get_conn()
         try:
             rows = conn.execute(
-                "SELECT * FROM dd_lineage WHERE design_id = %s", (design_id,)
+                "SELECT * FROM dd_lineage WHERE design_id = ?", (design_id,)
             ).fetchall()
             lineage_records = [dict(r) for r in rows]
             row = conn.execute(
-                "SELECT graph_json FROM data_designs WHERE id = %s", (design_id,)
+                "SELECT graph_json FROM data_designs WHERE id = ?", (design_id,)
             ).fetchone()
             graph = json.loads(
                 (row["graph_json"] if row else None)

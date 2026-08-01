@@ -14,8 +14,8 @@ is also set. All edits are confined to a fresh ``.tmp/autofix/<task>__
 
 Returns: ``{"scanned": N, "applied": N, "suggested": N, "skipped": N}``
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 
 import sys

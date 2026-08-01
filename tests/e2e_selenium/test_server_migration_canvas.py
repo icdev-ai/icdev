@@ -5,7 +5,7 @@ Covers all 8 wizard steps, the instance catalog API, compat check engine,
 readiness scoring, cutover planner, and ERB export for smig-vv-01..05.
 
 Prerequisites:
-  - Flask dashboard running (ICDEV_DASHBOARD_URL or http://localhost:5000)
+  - Flask dashboard running (ICDEV_DASHBOARD_URL or http://localhost:5050)
   - DB initialised with seed cloud instances (131 rows expected)
 
 Test groups:
@@ -37,7 +37,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000").rstrip("/")
+BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050").rstrip("/")
 
 # ── HTTP helpers ────────────────────────────────────────────────────
 

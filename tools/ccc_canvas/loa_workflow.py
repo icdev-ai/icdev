@@ -41,12 +41,11 @@ def create_loa_request(conn, data: dict) -> dict:
         "notes":            data.get("notes", ""),
     }
     cols = ", ".join(fields.keys())
-    try:
-        placeholders = ", ".join("?" * len(fields))
-        conn.execute(f"INSERT INTO ccc_loa_requests ({cols}) VALUES ({placeholders})", tuple(fields.values()))
-    except Exception:
-        placeholders = ", ".join("%s" * len(fields))
-        conn.execute(f"INSERT INTO ccc_loa_requests ({cols}) VALUES ({placeholders})", tuple(fields.values()))
+    # NB: the list form is required. ", ".join("%s" * n) builds the STRING
+    # "%s%s%s..." and join() then iterates its characters, yielding
+    # "%, s, %, s, ..." — which is what the old except-branch here did.
+    placeholders = ", ".join(["%s"] * len(fields))
+    conn.execute(f"INSERT INTO ccc_loa_requests ({cols}) VALUES ({placeholders})", tuple(fields.values()))
     conn.commit()
     return {"status": "created", "loa_number": loa_number}
 

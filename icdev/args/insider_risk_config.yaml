@@ -1,0 +1,48 @@
+# Insider-Risk UBA (lite) — configuration
+# Card crx-sec-01. Deterministic user-behavior anomaly detection over telemetry
+# ICDEV already collects (audit_trail + hook_events activity feed, usage_events).
+#
+# PRIVACY: this feature monitors PLATFORM USERS. It is DEFAULT OFF and must be
+# turned on deliberately. See docs/security/insider-risk-uba.md. Enabling it
+# where users have not been notified may be unlawful in some jurisdictions.
+#
+# Read-only over audit/usage telemetry (NIST AU-6 / SI-4). No ML in phase 1.
+
+enabled: false            # DEFAULT OFF — do not enable without a privacy review
+lookback_days: 30         # window of telemetry to baseline / score over
+
+# RLS attributes stamped on derived baseline/score rows.
+tenant_id: platform
+classification: CUI
+
+# Off-hours window (24h clock, platform/UTC). Wraps past midnight when start > end.
+off_hours:
+  start_hour: 22          # inclusive
+  end_hour: 6             # exclusive
+
+# Deterministic rules. Each fired rule adds its weight to the 0..1 risk score.
+rules:
+  off_hours_bulk_export:
+    enabled: true
+    weight: 0.40
+    export_threshold: 5   # >= N export/download actions during off-hours
+  privilege_change_burst:
+    enabled: true
+    weight: 0.35
+    burst_threshold: 4    # >= N privilege/config-change events ...
+    window_hours: 1       # ... within this sliding window
+  dormant_account_activity:
+    enabled: true
+    weight: 0.25
+    dormant_days: 30      # gap of >= N days then reactivation
+
+# Score -> band thresholds.
+bands:
+  high: 0.6
+  elevated: 0.3
+
+# Optional alerting — soft-coupled to the notification service (crx-not-01).
+# No-op until that surface exists; never a hard dependency.
+alert:
+  enabled: false
+  min_score: 0.6

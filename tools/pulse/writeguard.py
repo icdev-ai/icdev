@@ -767,10 +767,23 @@ def run_full_quality_check(text: str) -> dict:
     # Calculate overall score.
     # Portion marking is only included when marks are present — a plain article
     # with no portion marks should not be penalized for missing them.
+    # Fail-closed guard (nav-intel-01): a checker that raised at runtime on THIS
+    # content must never be allowed to *inflate* the composite toward "passed".
+    # ``status == "error"`` means the checker crashed on this specific text (a
+    # real moderation failure); ``status == "unavailable"`` means the checker
+    # module could not be imported (a deployment condition) and is skipped
+    # without forcing a fail. Excluding the errored checker's default 70/100
+    # score prevents the fail-open, and ``checker_errored`` forces a fail so a
+    # broken moderation path can never approve content.
+    checker_errored = any(
+        isinstance(r, dict) and r.get("status") == "error"
+        for r in results.values()
+    )
+
     scores = []
     for key, result in results.items():
-        if result.get("status") == "unavailable":
-            logger.warning("WriteGuard %s unavailable, skipping", key)
+        if result.get("status") in ("unavailable", "error"):
+            logger.warning("WriteGuard %s %s, skipping score", key, result.get("status"))
             continue
         if key == "portion_marking" and not result.get("has_marks", False):
             continue  # Skip score contribution when document has no marks
@@ -783,7 +796,11 @@ def run_full_quality_check(text: str) -> dict:
     # Pass threshold: overall >= 60 and no critical failures
     # plagiarism score is now inverted (100=clean, 0=full copy), so check > 15 (=clean)
     plagiarism_quality = results["plagiarism"].get("score", 100)
-    passed = overall_score >= 60 and (plagiarism_quality > 15 if isinstance(plagiarism_quality, (int, float)) else True)
+    passed = (
+        overall_score >= 60
+        and (plagiarism_quality > 15 if isinstance(plagiarism_quality, (int, float)) else True)
+        and not checker_errored
+    )
 
     composites = compute_composites(text, results)
     section_data = score_sections(text)
@@ -791,6 +808,7 @@ def run_full_quality_check(text: str) -> dict:
     return {
         "passed": passed,
         "overall_score": round(overall_score, 1),
+        "checker_errored": checker_errored,
         "details": results,
         "recommendations": _generate_recommendations(results),
         # v6b: named composites + section-level breakdown

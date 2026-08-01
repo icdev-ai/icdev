@@ -1,0 +1,18 @@
+# CUI // SP-CTI
+id: inject-02-drift-diagnosis
+title: 'Signal vs Noise: Infra Fault or Model Drift?'
+body_md: "## ROOT CAUSE: INFRA OR MODEL?\n\n**Classification:** CUI // SP-CTI\n\nLatency is breaching,\
+  \ and 3 model-quality-warn alerts fired. Drift monitoring reports:\n\n| Signal | Baseline | Current\
+  \ | Note |\n|--------|----------|---------|------|\n| input feature PSI | < 0.10 | **0.27** | drift\
+  \ on 2 of 12 features |\n| prediction entropy | 0.42 | **0.61** | model less confident |\n| p99 latency\
+  \ | 250 ms | 512 ms | correlated with a canary deploy 40 min ago |\n| GC pause (infra) | 20 ms | 22\
+  \ ms | nominal |\n\nA model canary (`v2026.05.02`) rolled to 20% of traffic 40 minutes ago.\n\n### Your\
+  \ Task\n1. **Diagnosis** — Is the primary cause infrastructure or model drift? Justify with the PSI,\n\
+  \   entropy, latency-vs-canary timing, and the nominal GC/infra signals.\n2. **Blast radius** — What\
+  \ share of traffic is affected and why.\n3. **Confidence** — High/Medium/Low with justification.\n\n\
+  Use the Drift Monitor + SLO Dashboard to ground the call. Verified receipts earn bonus points."
+context_note: 'Primary cause is the model canary: PSI and entropy drift plus latency onset that lines
+  up with
+
+  the 40-minute-old canary, while infra (GC) is nominal. Full credit ties the latency to the canary timing
+  and confines blast radius to the ~20% canary traffic rather than blaming the whole fleet or the nodes.'

@@ -91,7 +91,25 @@ def ai_decisions_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
         return []
 
 
+def twin_snapshots_adapter(conn: Any) -> list[dict]:
+    """Return QDC twin snapshots (qdc_twin_snapshots) — the digital-twin surface."""
+    c, owned = _qdc_conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT id, design_id, label, node_count, edge_count, created_by, created_at "
+            "FROM qdc_twin_snapshots ORDER BY created_at DESC"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        if owned:
+            c.close()
+
+
 register_collection("qdc.designs", designs_adapter)
 register_collection("qdc.assessments", assessments_adapter)
 register_collection("qdc.gate_results", gate_results_adapter)
 register_collection("qdc.ai_decisions", ai_decisions_adapter)
+register_collection("qdc.twin_snapshots", twin_snapshots_adapter)

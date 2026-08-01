@@ -1064,6 +1064,21 @@ ai_workflow_automation:
     - reusable AI skills
 
 # =========================================================================
+# Divergence branch (dvg-wire-01) -- OPT-IN generative ideation
+# =========================================================================
+# When enabled, stage_generate fans out over the generative frame set for the
+# top-ranked pain point (isolated invoke_divergence), runs the separate critic
+# pass, and carries the surviving candidate-direction clusters into the spec.
+# OFF BY DEFAULT: the deterministic template path stays the default generation
+# path and is untouched when this is false. This is a SECOND gate on top of the
+# chain-level chain_orchestration.divergence.enabled toggle in llm_config --
+# BOTH must be on for the branch to fan out, and the branch degrades cleanly
+# (falls back to the template spec) if the chain is disabled or the LLM is down.
+divergence:
+  enabled: false            # opt-in only; never a default generation path
+  function: creative_ideation   # routing function the branch invokes divergence under
+
+# =========================================================================
 # Audit & Governance
 # =========================================================================
 audit:

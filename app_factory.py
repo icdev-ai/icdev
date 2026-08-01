@@ -18,9 +18,16 @@ def create_app() -> dict:
     global _budget_monitor, _throttle_controller
 
     _throttle_controller = start_budget_services()
-    _budget_monitor = _throttle_controller._monitor
+    # start_budget_services() returns None when background services are disabled
+    # for this process (under pytest, or ICDEV_BACKGROUND_SERVICES=0). Both
+    # globals are already annotated Optional; dereferencing here would make the
+    # documented opt-out crash app startup instead of skipping the services.
+    _budget_monitor = _throttle_controller._monitor if _throttle_controller else None
 
-    logger.info("App factory: budget monitor and throttle controller started")
+    if _throttle_controller is None:
+        logger.info("App factory: background services disabled, nothing started")
+    else:
+        logger.info("App factory: budget monitor and throttle controller started")
     return {
         "budget_monitor": _budget_monitor,
         "throttle_controller": _throttle_controller,

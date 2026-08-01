@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """Cortex intent router — map a chat message to the right Cortex facade.
 
-The /cortex chat surface is a single front door over the seven Cortex facades.
+The /cortex chat surface is a single front door over the eight Cortex facades.
 Free-form chat only needs four of them; this module classifies a user message
 into one of those four *intents* and returns which ``cortex.*`` call should
 serve it:

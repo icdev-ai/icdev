@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+name: Rollback Decision Rubric
+inject_type: rollback_decision
+description: Evaluates a rollback/mitigate decision proportionate to the evidence.
+max_score: 100
+dimensions:
+- id: decision_quality
+  weight: 0.4
+  prompt: Is the decision proportionate to an exhausted latency budget and a confined canary blast radius
+    (rollback default; mitigate acceptable if justified; ride-it-out weak)? 10 = well-justified; 5 = plausible,
+    thin justification; 0 = unjustified or reckless.
+- id: rollback_safety
+  weight: 0.3
+  prompt: If rolling back, are prior-model health-verification steps specified? 10 = concrete verification;
+    5 = mentioned; 0 = none (or blind rollback).
+- id: communications
+  weight: 0.2
+  prompt: Is the customer status line crisp, accurate, and non-alarming? 10 = yes; 5 = vague; 0 = missing
+    or misleading.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were SLO/Drift receipts used to justify? 10 = yes; 5 = present, unused; 0 = none.

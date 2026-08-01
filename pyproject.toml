@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "icdev"
-version = "1.2.36"
+version = "1.2.42"
 description = "ICDEV™ — Intelligent Certified Development Platform. AI-powered SDLC with NIST 800-53 RMF compliance, multi-agent orchestration, FORGE framework, and ANVIL build workflow."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -107,6 +107,13 @@ testing = [
     "behave>=1.2",
     "ruff>=0.12",
     "pydantic>=2.0",
+]
+# Browser automation — the agent browser (tools/browser/) and tests/e2e_selenium/.
+# Air-gap safe: the selenium PYTHON package is pure Python and installable offline;
+# only the driver BINARY is the air-gap concern (see tools/browser/driver_manager.py
+# + tools/airgap/driver_vendor.py). cdp-00 defect D3.
+browser = [
+    "selenium>=4.15.0",
 ]
 # SaaS multi-tenancy (PostgreSQL, Redis, production WSGI — NOT needed for air-gap)
 saas = [
@@ -237,6 +244,13 @@ exclude = [
     "args/**/*.yaml", "args/**/*.yml", "args/**/*.json",
     "context/**/*.json", "context/**/*.yaml", "context/**/*.md",
     "context/**/*.j2", "context/**/*.txt",
+    # IQE seed queries. 295 .iqe files existed in the repo and NONE shipped, so
+    # an installed ICDEV had the IQE engine and no queries to seed any canvas
+    # with — `tools/api/v1/blueprint.py` serves this directory at runtime, and
+    # CLAUDE.md's canvas completeness gate requires >=3 seed queries per canvas.
+    "context/**/*.iqe", "context/**/*.jsonl", "context/**/*.conf",
+    # RDF ontologies backing ontology_query / ontology_build.
+    "args/**/*.ttl",
     "goals/**/*.md",
     "hardprompts/**/*.md",
     "features/**/*.feature", "features/**/*.py",
@@ -267,6 +281,8 @@ timeout = 30
 markers = [
     "selenium: marks tests that require a running Selenium/ChromeDriver (skip if unavailable)",
     "integration: marks tests that exercise live backends/corpora (opt-in; skipped by default)",
+    "allow_open_transaction: test intentionally leaves a SQLite write transaction open (tsh-leak-01 guard opt-out)",
+    "live: test performs a REAL LLM call (opt-out of the no-live-LLM guard; un-mocked calls otherwise hang the suite)",
 ]
 
 

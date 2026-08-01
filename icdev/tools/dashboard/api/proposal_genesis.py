@@ -152,6 +152,7 @@ _ALLOWED_REFLEXES = [
 
 
 @proposal_genesis_api.route("/reflex/<name>", methods=["POST"])
+@require_role("admin", "pm")
 def api_pg_run_reflex(name):
     """POST /api/proposal-genesis/reflex/<name> — Run a single reflex."""
     if name not in _ALLOWED_REFLEXES:
@@ -163,6 +164,7 @@ def api_pg_run_reflex(name):
 
 
 @proposal_genesis_api.route("/run-reflex", methods=["POST"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_run_reflex_by_body():
     """POST /api/proposal-genesis/run-reflex — Run a reflex via JSON body {"reflex": "name"}."""
     body = request.get_json(force=True, silent=True) or {}
@@ -178,6 +180,7 @@ def api_pg_run_reflex_by_body():
 
 
 @proposal_genesis_api.route("/pipeline", methods=["POST"])
+@require_role("admin", "pm")
 def api_pg_run_pipeline():
     """POST /api/proposal-genesis/pipeline — Run discover->extract->map->draft->polish."""
     data, err = _run_daemon_cmd(["--pipeline", "--json"], timeout=600)
@@ -704,6 +707,7 @@ def api_pg_engagement_scores():
 
 
 @proposal_genesis_api.route("/crm-accounts", methods=["POST"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_create_account():
     """POST /api/proposal-genesis/crm-accounts — Create a CRM account."""
     from tools.proposal_genesis.reflexes.engage import create_account
@@ -727,6 +731,7 @@ def api_pg_create_account():
 
 
 @proposal_genesis_api.route("/crm-accounts/<account_id>", methods=["PUT"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_update_account(account_id):
     """PUT /api/proposal-genesis/crm-accounts/<id> — Update a CRM account."""
     from tools.proposal_genesis.reflexes.engage import update_account
@@ -762,6 +767,7 @@ def api_pg_get_contact(contact_id):
 
 
 @proposal_genesis_api.route("/crm-contacts", methods=["POST"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_create_contact():
     """POST /api/proposal-genesis/crm-contacts — Create a CRM contact."""
     from tools.proposal_genesis.reflexes.engage import create_contact
@@ -787,6 +793,7 @@ def api_pg_create_contact():
 
 
 @proposal_genesis_api.route("/crm-contacts/<contact_id>", methods=["PUT"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_update_contact(contact_id):
     """PUT /api/proposal-genesis/crm-contacts/<id> — Update a CRM contact."""
     from tools.proposal_genesis.reflexes.engage import update_contact
@@ -797,6 +804,7 @@ def api_pg_update_contact(contact_id):
 
 
 @proposal_genesis_api.route("/crm-contacts/<contact_id>", methods=["DELETE"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_delete_contact(contact_id):
     """DELETE /api/proposal-genesis/crm-contacts/<id> — Delete a CRM contact."""
     from tools.proposal_genesis.reflexes.engage import delete_contact
@@ -809,6 +817,7 @@ def api_pg_delete_contact(contact_id):
 
 
 @proposal_genesis_api.route("/crm-interactions", methods=["POST"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_log_interaction():
     """POST /api/proposal-genesis/crm-interactions — Log a manual interaction."""
     from tools.proposal_genesis.reflexes.engage import log_manual_interaction

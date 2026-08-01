@@ -1,0 +1,25 @@
+# CUI // SP-CTI
+# Scope-lock for the app red team (oss-redteam-02).
+#
+# This file is the boundary between a security self-test and an attack tool.
+# With it absent or empty the red team can reach LOOPBACK ONLY, which is the
+# safe default. Broadening allowed_hosts is a deliberate act, and for any
+# non-loopback host it must be paired with a written authorization record
+# (tools/security/redteam_scope.py::record_authorization) — the allowlist alone
+# does not grant permission.
+
+redteam_scope:
+  # Hosts the red team may target. Exact host or parent-domain suffix.
+  # A non-listed host is refused OUTRIGHT — there is no warn-and-continue path.
+  allowed_hosts:
+    - localhost
+    - 127.0.0.1
+    - "::1"
+
+  # A non-loopback target additionally needs a persisted authorization record
+  # checked before the run. Turning this off is a downgrade that should be
+  # justified in the change that does it.
+  require_authorization: true
+
+  # Hard ceiling on requests in one run — a self-test, not a stress test.
+  max_requests_per_run: 500

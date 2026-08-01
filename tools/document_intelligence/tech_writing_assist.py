@@ -36,6 +36,15 @@ try:
 except Exception:
     fetch_content = None  # type: ignore[assignment]
 
+# Shared TRUST citation machinery. CLAUDE.md: "Build on the shared
+# tools/quality/citation_grounding.py — do not re-implement citation
+# parsing/validation." Imported like the other optional deps so a stripped
+# install degrades instead of failing the whole drafting surface.
+try:
+    from tools.quality.citation_grounding import validate_citations
+except Exception:
+    validate_citations = None  # type: ignore[assignment]
+
 try:
     from tools.llm.router import LLMRouter
     from tools.llm.provider import LLMRequest
@@ -105,6 +114,12 @@ class ResearchResult:
     is_airgap: bool = False
     warnings: list[str] = field(default_factory=list)
     error: str = ""
+    # The numbered register the draft cites against: [{id, kind, ref, label}].
+    # `id` is "1".."N" — the RAG injected-source convention that
+    # citation_grounding.validate_citations understands natively.
+    sources: list[dict] = field(default_factory=list)
+    # validate_citations() report over draft_content. Empty when no draft.
+    citation_report: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -113,6 +128,73 @@ class DiagramResult:
     syntax: str = ""
     description: str = ""
     error: str = ""
+
+
+# ── Citation grounding (TRUST) ───────────────────────────────────────────────
+#
+# CLAUDE.md names this surface explicitly: "Every LLM-generated artifact
+# (proposals, RFI, DIC, Tech Writer, and any new drafting surface) MUST carry
+# inline [source: …] citations validated against its evidence."
+#
+# The system prompt has always said "Cite your sources." — an instruction the
+# model could not follow, because the context blocks were unnumbered ("[RAG] …",
+# "[KG:type] …", "[WEB] url: …"). There was nothing to cite BY, no format asked
+# for, and nothing checked the output. The intent was there; the mechanism was
+# not. Numbering the register is what makes the existing instruction actionable
+# and the result verifiable.
+#
+# Ids are "1".."N" — the RAG injected-source convention that
+# citation_grounding.validate_citations() accepts as a bare int count.
+
+def _register_source(result: "ResearchResult", kind: str, ref: str, label: str) -> str:
+    """Add a retrieved item to the citable register and return its id."""
+    sid = str(len(result.sources) + 1)
+    result.sources.append({"id": sid, "kind": kind, "ref": ref or "", "label": label or ""})
+    return sid
+
+
+def _citation_instruction(source_count: int) -> str:
+    """Tell the model how to cite, and to cite only what it was given."""
+    if source_count <= 0:
+        return ""
+    return (
+        f"\nThe Context above is numbered [source: 1] .. [source: {source_count}]. "
+        "Cite every factual claim inline with the matching [source: N] tag. "
+        "Use ONLY those numbers — never invent a source. "
+        "If the Context does not support a claim, omit the claim rather than "
+        "citing something that does not say it.\n"
+    )
+
+
+def _apply_citation_report(result: "ResearchResult") -> None:
+    """Validate the draft's citations against the register; record defects.
+
+    Reports rather than raises: this module's contract is that it never raises
+    and surfaces problems on the result. A hallucinated citation is the serious
+    case — it names evidence that was never retrieved — so it is a warning the
+    caller can gate on, not a silent field.
+    """
+    if validate_citations is None or not result.draft_content:
+        return
+    try:
+        report = validate_citations(result.draft_content, [s["id"] for s in result.sources])
+    except Exception as exc:  # never raise out of the drafting path
+        result.warnings.append(f"Citation validation unavailable: {exc}")
+        logger.debug("citation validation failed: %s", exc)
+        return
+
+    result.citation_report = report
+    if report.get("hallucinated_citations"):
+        result.warnings.append(
+            "Draft cites sources that were never retrieved: "
+            + ", ".join(report["hallucinated_citations"])
+        )
+    elif result.sources and not report.get("cited_count"):
+        # Uncited prose from a surface that had evidence to cite is the exact
+        # thing the TRUST invariant exists to catch.
+        result.warnings.append(
+            f"Draft cites none of the {len(result.sources)} retrieved sources."
+        )
 
 
 # ── Standards-reference validation (ground-tw-04) ────────────────────────────
@@ -283,7 +365,12 @@ def research_and_draft(
                 }
                 result.rag_chunks.append(chunk)
                 if chunk["text"]:
-                    context_parts.append(f"[RAG] {chunk['text'][:800]}")
+                    sid = _register_source(
+                        result, "rag",
+                        ref=chunk["chunk_id"] or chunk["doc_id"],
+                        label=chunk["doc_id"] or "document",
+                    )
+                    context_parts.append(f"[source: {sid}] {chunk['text'][:800]}")
         except Exception as exc:
             result.warnings.append(f"RAG unavailable: {exc}")
             logger.debug("RAG retrieval failed: %s", exc)
@@ -303,7 +390,14 @@ def research_and_draft(
                     }
                     result.kg_entities.append(entity)
                     if entity["summary"]:
-                        context_parts.append(f"[KG:{entity['type']}] {entity['label']}: {entity['summary'][:400]}")
+                        sid = _register_source(
+                            result, "kg",
+                            ref=entity["entity_id"],
+                            label=f"{entity['type']}:{entity['label']}".strip(":"),
+                        )
+                        context_parts.append(
+                            f"[source: {sid}] {entity['label']}: {entity['summary'][:400]}"
+                        )
         except Exception as exc:
             result.warnings.append(f"KG unavailable: {exc}")
             logger.debug("KG retrieval failed: %s", exc)
@@ -317,7 +411,8 @@ def research_and_draft(
                 if content:
                     snippet = str(content)[:1000]
                     result.web_sources.append({"url": url, "snippet": snippet})
-                    context_parts.append(f"[WEB] {url}: {snippet}")
+                    sid = _register_source(result, "web", ref=url, label=url)
+                    context_parts.append(f"[source: {sid}] {url}: {snippet}")
             except Exception as exc:
                 result.warnings.append(f"Web fetch failed for {url}: {exc}")
                 logger.debug("Web fetch failed: %s", exc)
@@ -334,6 +429,7 @@ def research_and_draft(
         f"Section: {section_heading}\n\n"
         f"Research query: {query}\n\n"
         + (f"Context:\n{context_block}\n\n" if context_block else "")
+        + _citation_instruction(len(result.sources))
         + f"Write the content for the '{section_heading}' section. "
         f"Be specific, accurate, and well-structured. "
         f"Classification: {classification}."
@@ -401,6 +497,10 @@ def research_and_draft(
         except Exception as exc:
             logger.debug("placeholder check failed: %s", exc)
         result.warnings.extend(validate_standards_references(result.draft_content))
+        # Citations last: it belongs with the other deterministic post-draft
+        # checks, and sitting here covers every drafting path (CoD, single-shot,
+        # Cortex) rather than one branch.
+        _apply_citation_report(result)
 
     return result
 

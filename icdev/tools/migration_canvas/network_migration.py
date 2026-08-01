@@ -3583,7 +3583,17 @@ def ai_assist(session_id: str, engineer_prompt: str) -> dict:
     except Exception:
         pass
 
-    return {"response": response_text, "model": model_used}
+    # Grounding assessment (TRUST invariant): this is free-form LLM guidance
+    # with no retrieval context, so it carries a grounding-warning flag unless
+    # the model emitted validated [source: …] citations.
+    grounding: dict = {}
+    try:
+        from tools.migration_canvas.grounding import assess_response
+        grounding = assess_response(response_text, model=model_used, method="net_ai_assist")
+    except Exception:  # pragma: no cover - grounding is best-effort
+        pass
+
+    return {"response": response_text, "model": model_used, "grounding": grounding}
 
 
 # ── Protocol-specific step generators ───────────────────────────────────────

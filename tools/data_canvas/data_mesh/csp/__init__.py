@@ -67,7 +67,7 @@ def _log_sync(result: dict, domain_ids: list[str]) -> None:
                 """INSERT INTO dm_csp_sync_log
                    (id, provider, domain_id, product_id, operation, status,
                     synced_count, error_detail, created_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
                 (
                     str(uuid.uuid4()),
                     result.get("provider", "unknown"),

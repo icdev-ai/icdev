@@ -55,9 +55,9 @@ def _now():
 def _audit(conn, action, details="", actor="response_drafter"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.response_draft", actor, action, details, "govcon"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.response_draft", actor, action, details, "govcon"),
         )
     except Exception:
         pass

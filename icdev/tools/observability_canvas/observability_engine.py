@@ -8,6 +8,7 @@ No Flask dependency — takes graph data and returns results.
 No LLM dependency — all checks are deterministic.
 """
 
+import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,9 @@ from tools.observability_canvas.constants import (
     SIEM_PLATFORM_TYPES,
     SEVERITY_WEIGHTS,
 )
+
+from tools.logging.icdev_logger import get_logger
+_LOGGER = get_logger("icdev.observability_canvas.observability_engine")
 
 try:
     import yaml as _yaml
@@ -43,22 +47,79 @@ _ODC_CONFIG = _load_config()
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
+def _coerce_graph_data(graph_data):
+    """Normalize graph input into (graph_dict, nodes, edges).
+
+    Robustness (obx-fix-04): accepts a dict OR a JSON string. An invalid JSON
+    string (or any non-dict) degrades to an empty design with a logged warning
+    rather than raising ``AttributeError``. Malformed nodes (missing ``id``) and
+    edges (missing ``source``/``target``) are dropped so downstream pure
+    functions never ``KeyError``.
+
+    Behavior for a valid dict input is byte-for-byte identical: every node and
+    edge is well-formed, so the returned lists preserve original order/content.
+    """
+    if isinstance(graph_data, str):
+        try:
+            graph_data = json.loads(graph_data)
+        except (ValueError, TypeError):
+            _LOGGER.warning(
+                "graph_data is not valid JSON; treating as empty design"
+            )
+            graph_data = {}
+    if not isinstance(graph_data, dict):
+        graph_data = {}
+    raw_nodes = graph_data.get("nodes", []) or []
+    raw_edges = graph_data.get("edges", []) or []
+    nodes = [n for n in raw_nodes if isinstance(n, dict) and n.get("id") is not None]
+    edges = [
+        e
+        for e in raw_edges
+        if isinstance(e, dict) and e.get("source") is not None and e.get("target") is not None
+    ]
+    return graph_data, nodes, edges
+
+
 def _node_types(nodes):
-    """Return {node_id: node_type} dict."""
-    return {n["id"]: n.get("type", "") for n in nodes}
+    """Return {node_id: node_type} dict.
+
+    Nodes without an ``id`` are skipped rather than raising ``KeyError``.
+    """
+    result = {}
+    for n in nodes:
+        nid = n.get("id") if isinstance(n, dict) else None
+        if nid is None:
+            continue
+        result[nid] = n.get("type", "")
+    return result
 
 
 def _label_map(nodes):
-    """Return {node_id: label} dict."""
-    return {n["id"]: n.get("label", n["id"]) for n in nodes}
+    """Return {node_id: label} dict. Nodes without an ``id`` are skipped."""
+    result = {}
+    for n in nodes:
+        nid = n.get("id") if isinstance(n, dict) else None
+        if nid is None:
+            continue
+        result[nid] = n.get("label", nid)
+    return result
 
 
 def _build_adjacency(edges):
-    """Build undirected adjacency: {node_id: {neighbor_id, ...}}."""
+    """Build undirected adjacency: {node_id: {neighbor_id, ...}}.
+
+    Edges missing ``source`` or ``target`` are skipped rather than raising.
+    """
     adj = {}
     for e in edges:
-        adj.setdefault(e["source"], set()).add(e["target"])
-        adj.setdefault(e["target"], set()).add(e["source"])
+        if not isinstance(e, dict):
+            continue
+        src = e.get("source")
+        tgt = e.get("target")
+        if src is None or tgt is None:
+            continue
+        adj.setdefault(src, set()).add(tgt)
+        adj.setdefault(tgt, set()).add(src)
     return adj
 
 
@@ -374,55 +435,116 @@ _RULE_CHECKS = {
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
-def assess_observability_design(graph_data: dict, rules: list = None) -> dict:
+def assess_observability_design(
+    graph_data,
+    rules: list = None,
+    canvas_project_id: str = None,
+    odc_design_id: str = None,
+) -> dict:
     """Run all observability compliance rules against a design graph.
 
     Args:
-        graph_data: Dict with "nodes" and "edges" lists.
+        graph_data: Dict (or JSON string) with "nodes" and "edges" lists.
         rules: Optional list of rules (defaults to OBSERVABILITY_COMPLIANCE_RULES).
+        canvas_project_id: Optional canvas-project id, threaded to cross-canvas
+            ``check_function`` rules (e.g. ODC-NDC-001) that need it.
+        odc_design_id: Optional ODC design id, threaded to cross-canvas checks.
 
     Returns:
-        Dict with findings, score, grade, and per-category breakdown.
+        Dict with findings, score, grade, and per-category breakdown. Rules that
+        declare a ``check_function`` (rather than a node-presence check) are
+        dispatched generically and reported under ``cross_canvas_checks``.
+
+    Scoring decision (obx-fix-04):
+        The node-presence scoring path is unchanged. ``max_penalty`` is still the
+        sum over *all* rules (a ``check_function`` rule already contributed a
+        fixed weight to this denominator before this change, so scores for
+        node-presence rules are byte-for-byte preserved). A ``check_function``
+        result affects the score only when it returns status ``"fail"`` — its
+        violations are added as findings and deducted like any other finding. A
+        ``"pass"`` adds nothing; an ``"unknown"`` result (data unavailable) is
+        surfaced under ``cross_canvas_checks`` but adds NO finding and NO penalty
+        — so an unknown counts as neither pass nor fail in the score, and is
+        never silently treated as a fabricated pass.
     """
     if rules is None:
         rules = OBSERVABILITY_COMPLIANCE_RULES
 
-    nodes = graph_data.get("nodes", [])
-    edges = graph_data.get("edges", [])
+    graph_data, nodes, edges = _coerce_graph_data(graph_data)
     ntypes = _node_types(nodes)
     adj = _build_adjacency(edges)
 
+    check_context = {
+        "nodes": nodes,
+        "edges": edges,
+        "ntypes": ntypes,
+        "adj": adj,
+        "graph_data": graph_data,
+        "canvas_project_id": canvas_project_id,
+        "odc_design_id": odc_design_id,
+    }
+
     findings = []
     by_category = {}
+    cross_canvas_checks = []
+
+    def _record_finding(rule, affected_entity, affected_type, detail):
+        findings.append(
+            {
+                "id": str(uuid.uuid4())[:8],
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "description": rule["description"],
+                "affected_entity": affected_entity,
+                "affected_type": affected_type,
+                "detail": detail,
+            }
+        )
+        cat = rule["category"]
+        by_category.setdefault(cat, {"total": 0, "cat1": 0, "cat2": 0})
+        by_category[cat]["total"] += 1
+        if rule["severity"] == "CAT1":
+            by_category[cat]["cat1"] += 1
+        else:
+            by_category[cat]["cat2"] += 1
 
     for rule in rules:
         rule_id = rule["id"]
         check_fn = _RULE_CHECKS.get(rule_id)
-        if not check_fn:
-            continue
-
-        rule_findings = check_fn(nodes, edges, ntypes, adj)
-        for rf in rule_findings:
-            findings.append(
+        if check_fn:
+            # Node-presence path — unchanged (byte-for-byte identical behavior).
+            rule_findings = check_fn(nodes, edges, ntypes, adj)
+            for rf in rule_findings:
+                _record_finding(
+                    rule,
+                    rf.get("affected_entity", ""),
+                    rf.get("affected_type", "design"),
+                    rf.get("detail", ""),
+                )
+        elif rule.get("check_function"):
+            # Generic cross-canvas / check_function dispatch.
+            disp = _dispatch_check_function(rule, check_context)
+            cross_canvas_checks.append(
                 {
-                    "id": str(uuid.uuid4())[:8],
                     "rule_id": rule_id,
-                    "title": rule["title"],
-                    "severity": rule["severity"],
-                    "category": rule["category"],
-                    "description": rule["description"],
-                    "affected_entity": rf.get("affected_entity", ""),
-                    "affected_type": rf.get("affected_type", "design"),
-                    "detail": rf.get("detail", ""),
+                    "title": rule.get("title", rule_id),
+                    "status": disp["status"],
+                    "reason": disp.get("reason", ""),
+                    "violation_count": len(disp.get("violations", [])),
+                    "score": disp.get("score"),
                 }
             )
-            cat = rule["category"]
-            by_category.setdefault(cat, {"total": 0, "cat1": 0, "cat2": 0})
-            by_category[cat]["total"] += 1
-            if rule["severity"] == "CAT1":
-                by_category[cat]["cat1"] += 1
-            else:
-                by_category[cat]["cat2"] += 1
+            if disp["status"] == "fail":
+                for v in disp.get("violations", []):
+                    _record_finding(
+                        rule,
+                        v.get("topology_name") or v.get("topology_id") or "topology",
+                        "topology",
+                        v.get("reason", ""),
+                    )
+        # else: rule has neither a node check nor a check_function — skip.
 
     # Compute score: 100 minus weighted deductions
     max_penalty = sum(SEVERITY_WEIGHTS.get(r["severity"], 2) for r in rules) * 2
@@ -454,11 +576,74 @@ def assess_observability_design(graph_data: dict, rules: list = None) -> dict:
         "score": score,
         "grade": grade,
         "by_category": by_category,
+        "cross_canvas_checks": cross_canvas_checks,
         "assessed_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
-def compute_coverage_score(graph_data: dict) -> dict:
+def _dispatch_check_function(rule: dict, context: dict) -> dict:
+    """Resolve and invoke a rule's named ``check_function`` generically.
+
+    The rule's ``check_function`` string is resolved via ``getattr`` on THIS
+    engine module. Missing/uncallable function or any raised exception ->
+    ``status="unknown"`` (logged), never a fabricated pass. The resolved
+    function is called with the subset of ``context`` matching its parameter
+    names, so both node-graph checks and cross-canvas (project/design id)
+    checks are supported.
+
+    Returns a normalized dict: ``{rule_id, status, violations, reason, score}``
+    where ``status`` is one of ``"pass" | "fail" | "unknown"``.
+    """
+    import inspect
+    import sys
+
+    fn_name = rule.get("check_function")
+    fn = getattr(sys.modules[__name__], fn_name, None) if fn_name else None
+    if fn is None or not callable(fn):
+        _LOGGER.warning(
+            "ODC assess: check_function '%s' for rule %s not resolvable — status=unknown",
+            fn_name,
+            rule.get("id"),
+        )
+        return {
+            "rule_id": rule.get("id"),
+            "status": "unknown",
+            "violations": [],
+            "reason": f"check_function '{fn_name}' not resolvable",
+        }
+    try:
+        sig = inspect.signature(fn)
+        kwargs = {p: context.get(p) for p in sig.parameters if p in context}
+        result = fn(**kwargs)
+    except Exception as exc:  # noqa: BLE001 — any check failure degrades to unknown
+        _LOGGER.warning(
+            "ODC assess: check_function '%s' raised %s — status=unknown",
+            fn_name,
+            exc,
+        )
+        return {
+            "rule_id": rule.get("id"),
+            "status": "unknown",
+            "violations": [],
+            "reason": f"error: {exc}",
+        }
+    if not isinstance(result, dict):
+        return {
+            "rule_id": rule.get("id"),
+            "status": "unknown",
+            "violations": [],
+            "reason": "check_function returned a non-dict result",
+        }
+    return {
+        "rule_id": rule.get("id"),
+        "status": result.get("status", "unknown"),
+        "violations": result.get("violations", []),
+        "reason": result.get("reason", ""),
+        "score": result.get("score"),
+    }
+
+
+def compute_coverage_score(graph_data) -> dict:
     """Compute percentage of recommended source types present vs. recommended.
 
     Args:
@@ -467,7 +652,7 @@ def compute_coverage_score(graph_data: dict) -> dict:
     Returns:
         Dict with coverage_pct, present, missing, total_recommended.
     """
-    nodes = graph_data.get("nodes", [])
+    _, nodes, _ = _coerce_graph_data(graph_data)
     ntypes = _node_types(nodes)
     present_types = set(ntypes.values())
 
@@ -485,7 +670,7 @@ def compute_coverage_score(graph_data: dict) -> dict:
     }
 
 
-def compute_mitre_detection_coverage(graph_data: dict) -> dict:
+def compute_mitre_detection_coverage(graph_data) -> dict:
     """Score MITRE ATT&CK detection coverage from baseline node metadata.
 
     If a detection baseline node (cmp-baseline) exists and has a 'techniques'
@@ -497,7 +682,7 @@ def compute_mitre_detection_coverage(graph_data: dict) -> dict:
     Returns:
         Dict with coverage info: total_techniques, covered, pct, gaps.
     """
-    nodes = graph_data.get("nodes", [])
+    _, nodes, _ = _coerce_graph_data(graph_data)
     ntypes = _node_types(nodes)
     baseline_nodes = _nodes_of_type(nodes, ntypes, "cmp-baseline")
 
@@ -686,78 +871,179 @@ def detect_observability_gaps(assessment_result: dict) -> dict:
 # ── Cross-Canvas Checks (ODC ↔ NDC) ─────────────────────────────────────────
 
 
-def check_nc_audit_to_siem_forwarder(canvas_project_id: str, odc_design_id: str) -> dict:
-    """Check ODC-NDC-001: every NDC topology has nc_audit -> SIEM forwarder.
+# SIEM / audit-forwarder node types and label keywords used to detect whether a
+# topology already forwards its audit events to a SIEM within its own graph.
+_SIEM_NODE_TYPES = {
+    "siem",
+    "siem_forwarder",
+    "nc_audit",
+    "log_forwarder",
+    "splunk",
+    "elastic",
+    "sentinel",
+    "plt-splunk",
+    "plt-elastic",
+    "plt-sentinel",
+}
+_SIEM_KEYWORDS = ("siem", "splunk", "forwarder", "elastic", "sentinel", "audit")
 
-    Query NDC topologies in the project, check each has a matching audit
-    forwarder node in this ODC design reaching a SIEM destination.
 
-    Returns: {rule_id: 'ODC-NDC-001', status: 'pass'|'fail', violations: [...], score: 0-100}
+def _rget(row, key, idx):
+    """Backend-agnostic row accessor.
+
+    Works for sqlite3.Row (int + str indexing), psycopg2 RealDictRow (str only),
+    and plain tuples (int only). Returns None if neither access path resolves.
     """
-    violations: list = []
     try:
-        import sqlite3 as _sq
-        import pathlib as _pl
-        import json as _js
-        _data = _pl.Path(__file__).resolve().parents[2] / "data"
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        try:
+            return row[idx]
+        except (KeyError, IndexError, TypeError):
+            return None
 
-        # 1. Load NDC topologies for canvas_project_id
-        ndc_db = _data / "network_canvas.db"
-        ndc_topos: list = []
-        if ndc_db.exists():
-            _nc = _sq.connect(ndc_db)
-            try:
-                rows = _nc.execute(
-                    "SELECT id, name, graph_json FROM topologies "
-                    "WHERE template_id = %s OR id = %s OR description LIKE %s",
-                    (canvas_project_id, canvas_project_id, f"%{canvas_project_id}%"),
-                ).fetchall()
-                ndc_topos = [{"id": r[0], "name": r[1], "graph": _js.loads(r[2] or "{}")} for r in rows]
-            except Exception:
-                ndc_topos = []
-            finally:
-                _nc.close()
 
-        # 2. Load ODC design's SDC verifications (proxy for audit forwarder coverage)
-        odc_db = _data / "observability_canvas.db"
-        covered_topo_ids: set = set()
-        if odc_db.exists():
-            _oc = _sq.connect(odc_db)
-            try:
-                cov = _oc.execute(
-                    "SELECT source_id FROM odc_sdc_verifications "
-                    "WHERE design_id = %s AND status IN ('pass', 'verified')",
-                    (odc_design_id,),
-                ).fetchall()
-                covered_topo_ids = {r[0] for r in cov}
-            except Exception:
-                covered_topo_ids = set()
-            finally:
-                _oc.close()
+def _unknown_ndc_result(reason: str) -> dict:
+    """Fail-closed ODC-NDC-001 result: 'unknown' with NO score (never fabricates a pass)."""
+    _LOGGER.warning("ODC-NDC-001: unable to assess — %s (status=unknown)", reason)
+    return {
+        "rule_id": "ODC-NDC-001",
+        "status": "unknown",
+        "violations": [],
+        "reason": reason,
+    }
 
-        # 3. For each NDC topology, check it has an audit/SIEM forwarder node
-        #    OR is covered by an ODC SDC verification.
-        SIEM_TYPES = {"siem", "siem_forwarder", "nc_audit", "log_forwarder", "splunk", "elastic", "sentinel"}
-        for topo in ndc_topos:
-            topo_id = topo["id"]
-            if topo_id in covered_topo_ids:
-                continue
-            # Check graph_json for SIEM-type nodes
-            nodes = topo["graph"].get("nodes", [])
-            has_siem = any(
-                str(n.get("type", "")).lower() in SIEM_TYPES
-                or any(kw in str(n.get("label", "")).lower() for kw in ("siem", "splunk", "forwarder", "elastic", "sentinel", "audit"))
-                for n in nodes
-            )
-            if not has_siem:
-                violations.append({
-                    "topology_id": topo_id,
-                    "topology_name": topo["name"],
-                    "reason": "No SIEM/audit forwarder node found in topology graph and no ODC SDC verification coverage",
-                })
-    except Exception:
-        # DB layer unavailable — return pass with note rather than fail hard.
-        pass
+
+def _load_ndc_topologies(canvas_project_id: str):
+    """Load NDC topologies linked to a canvas project.
+
+    Returns a list of ``{"id", "name", "graph"}`` dicts. Raises on store
+    unavailability (missing table / connection error) so the caller degrades to
+    an ``unknown`` result rather than a fabricated pass. Patchable in tests.
+    """
+    from tools.db.storage import get_canvas_connection
+
+    conn = get_canvas_connection()
+    # ndc_topologies (migration 125) has no classification/tenant_id columns, so
+    # the canvas connection (RLS disabled) is required. '?' placeholders are
+    # translated per-backend by StorageConnection.
+    rows = conn.execute(
+        "SELECT id, name, design_json FROM ndc_topologies WHERE project_id = %s",
+        (canvas_project_id,),
+    ).fetchall()
+    topologies = []
+    for r in rows:
+        raw = _rget(r, "design_json", 2) or "{}"
+        try:
+            graph = json.loads(raw)
+        except (ValueError, TypeError):
+            graph = {}
+        topologies.append(
+            {"id": _rget(r, "id", 0), "name": _rget(r, "name", 1), "graph": graph}
+        )
+    return topologies
+
+
+def _load_forwarded_topology_ids(odc_design_id: str):
+    """Return the set of topology ids marked audit-forwarded for an ODC design.
+
+    Reads the additive ``topology_id``/``forward_status`` columns on
+    ``odc_sdc_verifications`` (see db/init_db.py). Returns ``None`` on store
+    unavailability (missing table/column, connection error) so the caller
+    degrades to ``unknown``; a successful query with zero matching rows returns
+    an empty set (a valid "nothing forwarded yet" state).
+    """
+    from tools.observability_canvas.db.init_db import get_connection
+
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT topology_id, forward_status FROM odc_sdc_verifications "
+        "WHERE design_id = %s AND forward_status IN ('forwarded', 'verified')",
+        (odc_design_id,),
+    ).fetchall()
+    covered = set()
+    for r in rows:
+        tid = _rget(r, "topology_id", 0)
+        if tid:
+            covered.add(tid)
+    return covered
+
+
+def _topology_has_siem_forwarder(graph) -> bool:
+    """True if the topology graph itself contains a SIEM/audit-forwarder node."""
+    nodes = graph.get("nodes", []) if isinstance(graph, dict) else []
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        ntype = str(n.get("type", "")).lower()
+        label = str(n.get("label", "")).lower()
+        if (
+            ntype in _SIEM_NODE_TYPES
+            or any(kw in ntype for kw in _SIEM_KEYWORDS)
+            or any(kw in label for kw in _SIEM_KEYWORDS)
+        ):
+            return True
+    return False
+
+
+def check_nc_audit_to_siem_forwarder(canvas_project_id: str, odc_design_id: str) -> dict:
+    """Check ODC-NDC-001: every NDC topology has an nc_audit -> SIEM forwarder path.
+
+    For each NDC topology in the canvas project, verify it either (a) has a
+    matching audit-forwarding record in this ODC design's ``odc_sdc_verifications``
+    (``forward_status`` forwarded/verified), or (b) already carries a
+    SIEM/audit-forwarder node in its own topology graph. Uncovered topologies are
+    violations.
+
+    Fail-closed contract (obx-fix-04): when the underlying data cannot be read
+    (missing identifiers, NDC/ODC store unavailable, missing table/column, no
+    topologies to evaluate), this returns ``{"status": "unknown"}`` WITHOUT a
+    score and logs the reason — it NEVER returns a fabricated pass.
+
+    Returns:
+        On assessable data: ``{rule_id, status: 'pass'|'fail', violations, score}``.
+        Otherwise: ``{rule_id, status: 'unknown', violations: [], reason}`` (no score).
+    """
+    if not canvas_project_id or not odc_design_id:
+        return _unknown_ndc_result("missing canvas_project_id or odc_design_id")
+
+    # 1. Load the set of NDC topologies to evaluate.
+    try:
+        topologies = _load_ndc_topologies(canvas_project_id)
+    except Exception as exc:  # noqa: BLE001 — store unavailable -> unknown
+        return _unknown_ndc_result(f"NDC topology store unavailable: {exc}")
+    if topologies is None:
+        return _unknown_ndc_result("NDC topology store returned no result")
+    if not topologies:
+        return _unknown_ndc_result("no NDC topologies found for canvas project")
+
+    # 2. Load audit-forwarding coverage recorded on the ODC design.
+    try:
+        covered_topo_ids = _load_forwarded_topology_ids(odc_design_id)
+    except Exception as exc:  # noqa: BLE001 — store unavailable -> unknown
+        return _unknown_ndc_result(f"ODC verification store unavailable: {exc}")
+    if covered_topo_ids is None:
+        return _unknown_ndc_result("ODC verification store returned no result")
+
+    # 3. A topology is compliant if covered by an ODC verification OR it already
+    #    forwards audit to a SIEM within its own graph.
+    violations = []
+    for topo in topologies:
+        topo_id = topo.get("id")
+        if topo_id in covered_topo_ids:
+            continue
+        if _topology_has_siem_forwarder(topo.get("graph", {})):
+            continue
+        violations.append(
+            {
+                "topology_id": topo_id,
+                "topology_name": topo.get("name") or topo_id,
+                "reason": (
+                    "No audit->SIEM forwarder path: topology has no SIEM/audit "
+                    "forwarder node and no ODC audit-forwarding verification."
+                ),
+            }
+        )
 
     status = "pass" if not violations else "fail"
     score = 100 if not violations else max(0, 100 - (len(violations) * 20))
@@ -766,4 +1052,6 @@ def check_nc_audit_to_siem_forwarder(canvas_project_id: str, odc_design_id: str)
         "status": status,
         "violations": violations,
         "score": score,
+        "topologies_checked": len(topologies),
+        "covered_count": len(topologies) - len(violations),
     }

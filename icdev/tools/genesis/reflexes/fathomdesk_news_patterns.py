@@ -7,9 +7,9 @@ to GKP artifacts for kanban suggestion.
 
 GREEN tier (read+write patterns, no LLM).  Air-gap safe.
 """
+from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
-from __future__ import annotations
 
 import sys
 from datetime import datetime, timezone

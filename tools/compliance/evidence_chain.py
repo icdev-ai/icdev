@@ -148,8 +148,9 @@ def _open_sqlite(path: Path) -> Optional[sqlite3.Connection]:
     """Open SQLite connection if file exists, else return None.
 
     NOTE: Uses direct sqlite3 because canvas DBs (PDC/NDC/SDC) are isolated
-    SQLite files and _table_exists() below relies on sqlite_master (SQLite-only).
-    Migrating to get_connection() is deferred pending canvas PG migration.
+    SQLite files. _table_exists() below is backend-aware (shared helper), so it
+    speaks sqlite_master with ``?`` against these raw connections; the icdev
+    audit DB goes through get_connection() and can be PostgreSQL.
     """
     if not path.exists():
         return None
@@ -159,8 +160,21 @@ def _open_sqlite(path: Path) -> Optional[sqlite3.Connection]:
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s", (name,)).fetchone()
-    return row[0] > 0
+    """Backend-aware table existence probe.
+
+    Delegates to the shared ``tools.db.storage.table_exists`` helper, which
+    speaks the right dialect for the connection: ``sqlite_master`` with a ``?``
+    placeholder for the raw canvas SQLite files opened by ``_open_sqlite`` and
+    ``information_schema`` for the PostgreSQL-backed icdev audit connection.
+
+    The previous inline probe used a ``%s`` placeholder, which raises
+    ``sqlite3.ProgrammingError`` on a raw sqlite3 connection (qmark paramstyle)
+    — so every ``_open_sqlite`` caller (PDC/NDC/SDC canvas evidence) silently
+    dropped its events, and on PostgreSQL the bare ``sqlite_master`` reference
+    raised as well.
+    """
+    from tools.db.storage import table_exists
+    return table_exists(conn, name)
 
 
 def _parse_ts(ts_str: Optional[str]) -> Optional[datetime]:

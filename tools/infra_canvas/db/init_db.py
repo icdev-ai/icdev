@@ -18,14 +18,30 @@ _IDC_BACKEND = os.environ.get("IDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVA
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL."""
+    """Get a canvas database connection — SQLite or PostgreSQL.
+
+    cvx-sql-03: infra canvas tables (infra_designs, idc_templates, ...) have no
+    tenant_id column, so the storage-global RLS predicate would raise
+    UndefinedColumn. Disable RLS on the returned connection, mirroring
+    get_canvas_connection(). This wrapper keeps the dedicated IDC_PG_DATABASE
+    contract (get_canvas_connection() cannot target a per-canvas PG database).
+    """
     from tools.db.storage import get_connection as _storage_conn
+    conn = None
     if _IDC_BACKEND == "postgresql":
         try:
-            return _storage_conn(db_path=os.environ.get("IDC_PG_DATABASE", "infra_canvas"))
+            conn = _storage_conn(db_path=os.environ.get("IDC_PG_DATABASE", "infra_canvas"))
         except Exception:
-            pass
-    return _storage_conn(db_path=str(DB_PATH))
+            conn = None
+    if conn is None:
+        conn = _storage_conn(db_path=str(DB_PATH))
+    # Canvas tables lack tenant_id/classification cols — disable the global RLS
+    # predicate so it does not raise UndefinedColumn on every query.
+    try:
+        conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification cols
+    except AttributeError:
+        pass
+    return conn
 
 
 SCHEMA = """
@@ -1432,7 +1448,7 @@ def init_db():
                 conn.execute(
                     "INSERT INTO idc_templates "
                     "(id, name, category, description, graph_json, tags) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (
                         tpl["id"],
                         tpl["name"],
@@ -1448,10 +1464,10 @@ def init_db():
         # Seed snippets (upsert)
         added = 0
         for snp in _build_snippets():
-            existing_snp = conn.execute("SELECT 1 FROM idc_snippets WHERE id=?", (snp["id"],)).fetchone()
+            existing_snp = conn.execute("SELECT 1 FROM idc_snippets WHERE id=%s", (snp["id"],)).fetchone()
             if not existing_snp:
                 conn.execute(
-                    "INSERT INTO idc_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO idc_snippets (id, name, category, description, graph_json, tags) VALUES (%s,%s,%s,%s,%s,%s)",
                     (snp["id"], snp["name"], snp["category"], snp["description"], snp["graph_json"], snp["tags"]),
                 )
                 added += 1

@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+# Crypto & protocol currency pack — pure rulebook, air-gap safe.
+
+
+pack_id: crypto_protocols
+label: Crypto & Protocols
+enabled: true
+evaluator: tools.doc_modernization.packs.crypto_protocols.CryptoProtocolsPack
+entity_types: [protocol, crypto_algorithm]
+extraction:
+  patterns:
+    - '(?i)\bTLS[ ]?v?1\.[0-3]\b'
+    - '(?i)\bSSLv?[23]\b'
+    - '(?i)\bSSH[ ]?v?[12]\b'
+    - '(?i)\bSNMP[ ]?v?[123]c?\b'
+    - '(?i)\b(?:MD5|SHA-?1|3?DES|RC4|arcfour)\b'
+    - '(?i)\btelnet\b'
+evidence_sources: [rulebook_crypto]
+verdict_rules: {}
+replacement:
+  strategy: rulebook

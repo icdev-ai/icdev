@@ -100,6 +100,27 @@ def on_ndc_topology_saved(topology_id: str) -> dict:
         )
         findings = assessment.get("findings", [])
         cat1_count = sum(1 for f in findings if f.get("severity") == "CAT1")
+
+        # Close the NDC->SDC loop: notify the Network Design Canvas that this
+        # topology has been assessed so it can record the posture on its side.
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+
+            _eb_publish(
+                "sdc",
+                "sdc.assessment.completed",
+                {
+                    "topology_id": topology_id,
+                    "design_id": design_id,
+                    "assessment_id": assess_id,
+                    "risk_score": assessment.get("risk_score"),
+                    "posture_grade": assessment.get("posture_grade"),
+                    "cat1_count": cat1_count,
+                },
+            )
+        except Exception as _emit_exc:  # noqa: BLE001 — bus failure must not break assessment
+            logger.debug("Security agent: assessment.completed emit skipped: %s", _emit_exc)
+
         return {
             "status": "assessed",
             "design_id": design_id,
@@ -1176,12 +1197,13 @@ def scan_iac_directory(directory_path: str) -> dict:
 
 
 def llm_identify_threats(graph_data: dict) -> dict:
-    """Identify security threats using Ollama LLM with STRIDE framework.
+    """Identify security threats using the governed LLM with STRIDE framework.
 
     Builds a text description of the design from *graph_data*, sends it
-    to the local Ollama instance (qwen3:1.7b) for STRIDE analysis, and
-    returns structured threat results.  Falls back to deterministic
-    :func:`run_stride_analysis` if Ollama is unavailable.
+    through the Security Canvas LLM adapter (``tools.security_canvas.llm_adapter``,
+    which routes via ``LLMRouter`` under the ``security_canvas`` function) for
+    STRIDE analysis, and returns structured threat results.  Falls back to
+    deterministic :func:`run_stride_analysis` if the LLM is unavailable.
 
     Args:
         graph_data: Design graph dict with nodes, edges, boundaries.
@@ -1191,7 +1213,8 @@ def llm_identify_threats(graph_data: dict) -> dict:
         and optional error message.
     """
     import re
-    import urllib.request
+
+    from tools.security_canvas import llm_adapter
 
     # ── Build text description of the design ──────────────────────────────
     nodes = graph_data.get("nodes", [])
@@ -1224,8 +1247,11 @@ def llm_identify_threats(graph_data: dict) -> dict:
 
     description = "\n".join(lines) if lines else "Empty design with no components."
 
-    # ── Try Ollama LLM ────────────────────────────────────────────────────
-    model = "qwen3:1.7b"
+    # ── Try governed LLM via the Security Canvas adapter ──────────────────
+    # Routing, provider selection, model IDs, governance, and budget caps are
+    # resolved from args/llm_config.yaml under the ``security_canvas`` function
+    # (see tools/security_canvas/llm_adapter.py). The adapter returns None on
+    # ANY failure, which drops us into the deterministic STRIDE fallback below.
     try:
         prompt = (
             "You are a security architect. Analyze this system design and "
@@ -1241,36 +1267,28 @@ def llm_identify_threats(graph_data: dict) -> dict:
             '"description": "...", "affected": "...", "nist_control": "..."}]}'
         )
 
-        payload = json.dumps(
-            {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": {"num_predict": 1024, "temperature": 0.3},
-            }
-        ).encode("utf-8")
-        req = urllib.request.Request(
-            "http://localhost:11434/api/chat",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        content = llm_adapter.generate(
+            prompt,
+            purpose="security_canvas",
+            max_tokens=1024,
+            temperature=0.3,
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 — localhost-only Ollama
-            result = json.loads(resp.read().decode("utf-8"))
-            content = result.get("message", {}).get("content", "")
-            # Strip thinking tags if present (qwen3 thinking mode)
-            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-            # Try to extract JSON from the response (may be wrapped in markdown)
-            json_match = re.search(r"\{[\s\S]*\}", content)
-            if json_match:
-                threats = json.loads(json_match.group()).get("threats", [])
-            else:
-                threats = json.loads(content).get("threats", [])
+        if not content:
+            raise RuntimeError("LLM adapter returned no text")
+
+        # Strip thinking tags if present (e.g. qwen thinking mode)
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+        # Try to extract JSON from the response (may be wrapped in markdown)
+        json_match = re.search(r"\{[\s\S]*\}", content)
+        if json_match:
+            threats = json.loads(json_match.group()).get("threats", [])
+        else:
+            threats = json.loads(content).get("threats", [])
 
         return {
             "threats": threats,
-            "source": "ollama",
-            "model": model,
+            "source": "llm",
+            "model": "security_canvas",
             "total_threats": len(threats),
             "error": None,
         }

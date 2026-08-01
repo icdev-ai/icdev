@@ -15,9 +15,15 @@ import json
 
 from flask import Blueprint, jsonify, render_template, request
 
+from tools.dashboard.auth import require_role
 from tools.ontology.constants import CANVAS_KEY, DOMAIN_LABELS
 
 bp = Blueprint("ontology", __name__)
+
+# Roles allowed to mutate the ontology (rebuild wipes and regenerates all
+# ontology_* tables via build_federation()). nav-intel-01: previously
+# unauthenticated — any caller could destroy/rebuild the federated ontology.
+_ONTOLOGY_MUTATION_ROLES = ("admin", "pm")
 
 
 def _get_conn():
@@ -160,6 +166,7 @@ def api_ontology_closure():
 
 
 @bp.route("/api/ontology/rebuild", methods=["POST"])
+@require_role(*_ONTOLOGY_MUTATION_ROLES)
 def api_ontology_rebuild():
     try:
         from tools.ontology.federation import build_federation

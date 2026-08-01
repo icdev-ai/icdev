@@ -236,6 +236,10 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script>
+// nav-sec-07: escape feed-derived strings before innerHTML interpolation.
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 // ── Color palette ──────────────────────────────────────────────────────────
 const DOMAIN_COLORS = {
   aircraft:       '#3b82f6',
@@ -447,11 +451,11 @@ function appendEntityItem(list, cfg) {
   const div = document.createElement('div');
   div.className = 'mdo-entity-item';
   div.innerHTML = `
-    <div class="mdo-entity-name">${cfg.name}</div>
-    <div class="mdo-entity-meta">${cfg.meta}</div>
+    <div class="mdo-entity-name">${esc(cfg.name)}</div>
+    <div class="mdo-entity-meta">${esc(cfg.meta)}</div>
     <span class="mdo-entity-badge"
           style="background:${cfg.badgeColor}22;color:${cfg.badgeColor};border:1px solid ${cfg.badgeColor}44">
-      ${cfg.badge}
+      ${esc(cfg.badge)}
     </span>
     ${cfg.posId ? `<div class="mdo-entity-pos" id="${cfg.posId}">—</div>` : ''}`;
   div.onclick = cfg.onClick;

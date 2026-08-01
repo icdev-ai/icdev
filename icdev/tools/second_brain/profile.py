@@ -28,14 +28,6 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _ensure_tables(conn) -> None:
-    try:
-        from icdev.tools.db.migrations import apply_migration
-        apply_migration(conn, "223_user_identity")
-    except Exception:
-        pass  # tables may already exist
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Profile (user_identity_profiles)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -314,6 +306,8 @@ Be specific, warm, and professional. Do not use bullet points."""
 
     summary = ""
     try:
+        from tools.second_brain.redaction_util import redact_for_llm
+        prompt = redact_for_llm(prompt)  # cnr-me-02: mask PII before egress
         from tools.llm.router import LLMRouter
         router = LLMRouter()
         result = router.invoke("summarization", {"prompt": prompt, "max_tokens": 300})

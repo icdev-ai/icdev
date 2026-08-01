@@ -103,19 +103,12 @@ def _project_mentions_ai(project_id: str, conn) -> bool:
 
 def _table_exists(conn, table_name: str) -> bool:
     """Check if a table exists in the database (SQLite or PostgreSQL)."""
-    import os
-    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "").lower()
-    if backend == "postgresql":
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_name = %s",
-            (table_name,),
-        ).fetchone()
-    else:
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-    return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
+    # Backend-aware, translation-independent existence probe (pgrt-sweep-06).
+    # Replaces an env-var-guarded branch that could misfire if the connection's
+    # actual backend diverged from ICDEV_STORAGE_BACKEND; the helper reads the
+    # connection itself.
+    from tools.db.storage import table_exists
+    return table_exists(conn, table_name)
 
 
 def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = None, db_path=None) -> dict:

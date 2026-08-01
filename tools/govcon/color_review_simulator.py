@@ -54,7 +54,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 from tools.daemon.base import generate_id, utcnow_iso  # noqa: E402
 
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -117,8 +117,8 @@ def _audit(conn, action: str, details: str = "", actor: str = "color_review_simu
     """Append-only audit trail entry (NIST AU, D6)."""
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (generate_id("aud"), _now(), "govcon.color_review", actor, action, details, "govcon"),
         )
     except Exception:
@@ -126,12 +126,8 @@ def _audit(conn, action: str, details: str = "", actor: str = "color_review_simu
 
 
 def _table_exists(conn, table_name: str) -> bool:
-    """Check if a table exists in the database."""
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
-        (table_name,),
-    ).fetchone()
-    return row is not None
+    """Check if a table exists in the database (backend-aware, translation-independent)."""
+    return table_exists(conn, table_name)
 
 
 def _count_syllables(word: str) -> int:

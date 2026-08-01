@@ -41,6 +41,10 @@
     <button class="studio-tab" data-tab="runs" onclick="StudioWF.switchTab(this)">
       <span>&#9654;</span> Run History
     </button>
+    <button class="studio-tab" data-tab="triggers" onclick="StudioWF.switchTab(this)">
+      <span>&#9889;</span> Triggers
+      <span class="studio-tab__count" id="wf-triggers-count">0</span>
+    </button>
   </div>
 
   <!-- Tab: Editor -->
@@ -293,6 +297,108 @@
           </tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- Tab: Triggers (dwo-evt-04-d5) -->
+  <div class="studio-tab-panel" id="panel-triggers" style="display:none;">
+    <div id="wf-triggers-unsaved" class="studio-text-muted"
+         style="padding:32px; text-align:center;">
+      Save this workflow before binding a trigger — a trigger points at a stored
+      workflow id.
+    </div>
+
+    <div id="wf-triggers-main" style="display:none;">
+      <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+
+        <!-- Bind a source -->
+        <div style="flex:1 1 320px; min-width:300px; background:var(--studio-bg,#161829);
+                    border-radius:6px; padding:14px;">
+          <div style="font-weight:600; margin-bottom:10px;">Bind an event source</div>
+
+          <label class="studio-label" for="wf-trigger-source">Event source</label>
+          <select class="studio-input" id="wf-trigger-source" style="width:100%; margin-bottom:8px;">
+            <option value="">Select a source…</option>
+          </select>
+
+          <label class="studio-label" for="wf-trigger-event-type">Event type <span
+            class="studio-text-muted">(optional — blank matches any)</span></label>
+          <input type="text" class="studio-input" id="wf-trigger-event-type"
+                 placeholder="e.g. issues.opened" style="width:100%; margin-bottom:8px;">
+
+          <label class="studio-label" for="wf-trigger-filter">Event filter <span
+            class="studio-text-muted">JSON list, blank for none</span></label>
+          <textarea class="studio-input" id="wf-trigger-filter" rows="3"
+                    style="width:100%; margin-bottom:8px; font-family:var(--studio-font-mono); font-size:11px;"
+                    placeholder='[{"field": "action", "op": "eq", "value": "opened"}]'></textarea>
+
+          <label class="studio-label" for="wf-trigger-mapping">Input mapping <span
+            class="studio-text-muted">JSON object, run input &rarr; event field</span></label>
+          <textarea class="studio-input" id="wf-trigger-mapping" rows="3"
+                    style="width:100%; margin-bottom:10px; font-family:var(--studio-font-mono); font-size:11px;"
+                    placeholder='{"issue_title": "event.issue.title"}'></textarea>
+
+          <button class="studio-btn studio-btn--sm" id="wf-trigger-create-btn"
+                  onclick="StudioWF.createTrigger()">&#43; Create trigger</button>
+        </div>
+
+        <!-- Simulate -->
+        <div style="flex:1 1 320px; min-width:300px; background:var(--studio-bg,#161829);
+                    border-radius:6px; padding:14px;">
+          <div style="font-weight:600; margin-bottom:4px;">Simulate an event</div>
+          <div class="studio-text-muted" style="font-size:0.75rem; margin-bottom:10px;">
+            Runs the real dispatch path — the same matching, mapping and audit
+            trail a live webhook takes.
+          </div>
+
+          <label class="studio-label" for="wf-sim-source">Event source</label>
+          <select class="studio-input" id="wf-sim-source" style="width:100%; margin-bottom:8px;">
+            <option value="">Select a source…</option>
+          </select>
+
+          <label class="studio-label" for="wf-sim-event-type">Event type</label>
+          <input type="text" class="studio-input" id="wf-sim-event-type"
+                 placeholder="e.g. issues.opened" style="width:100%; margin-bottom:8px;">
+
+          <label class="studio-label" for="wf-sim-payload">Payload <span
+            class="studio-text-muted">JSON object</span></label>
+          <textarea class="studio-input" id="wf-sim-payload" rows="5"
+                    style="width:100%; margin-bottom:10px; font-family:var(--studio-font-mono); font-size:11px;"
+                    placeholder='{"action": "opened", "issue": {"title": "Example"}}'>{}</textarea>
+
+          <button class="studio-btn studio-btn--sm" id="wf-trigger-simulate-btn"
+                  onclick="StudioWF.simulateTrigger()">&#9889; Simulate</button>
+
+          <div id="wf-sim-result" style="margin-top:10px; font-size:0.78rem;"></div>
+        </div>
+      </div>
+
+      <!-- Bound triggers -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin:18px 0 8px;">
+        <span style="font-weight:600;">Triggers on this workflow</span>
+        <button class="studio-btn studio-btn--secondary studio-btn--sm"
+                onclick="StudioWF.loadTriggers()">&#8635; Refresh</button>
+      </div>
+      <div class="studio-table-wrap">
+        <table class="studio-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Event type</th>
+              <th>Filter</th>
+              <th>Input mapping</th>
+              <th>Enabled</th>
+            </tr>
+          </thead>
+          <tbody id="wf-triggers-body">
+            <tr>
+              <td colspan="5" class="studio-text-muted" style="text-align:center; padding:32px;">
+                No triggers bound to this workflow
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 

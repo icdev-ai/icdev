@@ -11,6 +11,32 @@
   <p>Continuous Authority to Operate digital twin. Snapshot compliance state, simulate policy deltas, and export OSCAL artifacts.</p>
 </div>
 
+<!-- cATO readiness score tile (bdr-feat-2) -->
+<div class="twin-panel" id="readinessTile"
+     style="display:flex;align-items:center;gap:18px;margin-bottom:16px;padding:14px 18px;">
+  <div style="display:flex;align-items:center;gap:12px;min-width:210px;">
+    <span id="readinessBandDot"
+          style="width:14px;height:14px;border-radius:50%;background:#5a6e8c;flex:0 0 auto;"
+          title="cATO readiness band"></span>
+    <div>
+      <div style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">cATO Readiness</div>
+      <div>
+        <span id="readinessScoreVal" style="font-size:28px;font-weight:700;color:#eaeaea;">—</span>
+        <span style="font-size:14px;color:#5a6e8c;">/ 100</span>
+        <span id="readinessBandLabel"
+              style="margin-left:8px;font-size:11px;font-weight:600;text-transform:uppercase;
+                     letter-spacing:.5px;padding:2px 8px;border-radius:10px;
+                     background:#1e3a6e;color:#7a8cb0;">unknown</span>
+      </div>
+    </div>
+  </div>
+  <div id="readinessComponents"
+       style="flex:1;display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:#7a8cb0;"
+       title="Weighted component breakdown">
+    <span style="color:#5a6e8c;">Loading component breakdown…</span>
+  </div>
+</div>
+
 <div class="twin-layout">
 
   <!-- LEFT: snapshot + delta input -->
@@ -54,20 +80,10 @@
       <textarea id="deltaInput" class="twin-textarea" rows="10"
         placeholder='[{"control_id":"AC-2","implementation_status":"satisfied","evidence_ref":"evidence/ac-2-proc.pdf"},{"control_id":"AU-6","implementation_status":"not_satisfied"}]'></textarea>
 
-      <div style="margin-top:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
-        <strong style="font-size:12px;color:#7a8cb0;">DESCRIBE YOUR CHANGE</strong>
-        <p class="hint" style="margin:4px 0 6px;">Describe the compliance change in plain English — AI maps it to NIST controls and generates the JSON.</p>
-        <div style="display:flex;gap:8px;align-items:flex-start;">
-          <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
-            placeholder="e.g. Mark account management as satisfied with the new HR onboarding procedure, mark audit review as not satisfied..."></textarea>
-          <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
-        </div>
-        <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
-        <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
-          <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
-        </div>
-        <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
-      </div>
+      {% with chat_hint="Describe the compliance change in plain English — AI maps it to NIST controls and generates the JSON.",
+              chat_placeholder="e.g. Mark account management as satisfied with the new HR onboarding procedure, mark audit review as not satisfied..." %}
+        {% include "includes/_twin_chat_panel.html" %}
+      {% endwith %}
 
       <div style="margin-top:8px;">
         <label style="font-size:12px;color:#7a8cb0;margin-right:8px;">Framework:</label>
@@ -133,12 +149,14 @@
       <!-- OSCAL export button -->
       <div style="border-top:1px solid #1e3a6e;padding-top:12px;margin-top:4px;">
         <strong style="font-size:12px;color:#7a8cb0;">OSCAL EXPORT</strong>
-        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
           <button class="btn btn-primary btn-sm" onclick="exportOscal('ssp')">SSP</button>
           <button class="btn btn-primary btn-sm" onclick="exportOscal('poam')">POA&amp;M</button>
           <button class="btn btn-primary btn-sm" onclick="exportOscal('ar')">Assessment Results</button>
           <button class="btn btn-primary btn-sm" onclick="exportOscal('cd')">Component Def.</button>
+          <span id="oscalSpinner" class="spinner" style="display:none;"></span>
         </div>
+        <div id="oscalResult" style="display:none;margin-top:8px;padding:8px;border-radius:4px;font-size:12px;"></div>
       </div>
 
       <p class="hint" style="margin-top:12px;" id="simId"></p>
@@ -179,6 +197,53 @@
 const PROJECT_ID = "{{ project.id }}";
 let selectedSnapId = {% if snapshots %}"{{ snapshots[0].snapshot_id }}"{% else %}null{% endif %};
 
+const READINESS_BAND_COLORS = { green: '#2ecc71', amber: '#f39c12', red: '#e74c3c', unknown: '#5a6e8c' };
+const READINESS_COMPONENT_LABELS = {
+  control_coverage: 'Controls', poam: 'POA&M', isa_expiry: 'ISA Expiry', freshness: 'Freshness'
+};
+
+async function loadReadiness() {
+  const dot = document.getElementById('readinessBandDot');
+  const scoreVal = document.getElementById('readinessScoreVal');
+  const bandLabel = document.getElementById('readinessBandLabel');
+  const compEl = document.getElementById('readinessComponents');
+  try {
+    const r = await fetch(`/boundary/api/cato/readiness/${PROJECT_ID}`);
+    const data = await r.json();
+    const band = data.band || 'unknown';
+    const color = READINESS_BAND_COLORS[band] || READINESS_BAND_COLORS.unknown;
+    dot.style.background = color;
+    scoreVal.textContent = (data.score === null || data.score === undefined) ? '—' : data.score;
+    scoreVal.style.color = (data.score === null || data.score === undefined) ? '#5a6e8c' : color;
+    bandLabel.textContent = band;
+    bandLabel.style.background = (band === 'unknown') ? '#1e3a6e' : color;
+    bandLabel.style.color = (band === 'unknown') ? '#7a8cb0' : '#0a1628';
+
+    const comps = data.components || {};
+    const chips = Object.keys(READINESS_COMPONENT_LABELS).map(k => {
+      const detail = comps[k] || {};
+      const s = detail.score;
+      const shown = (s === null || s === undefined) ? 'n/a' : s;
+      const chipColor = (s === null || s === undefined) ? '#5a6e8c'
+        : (s >= 80 ? '#2ecc71' : (s >= 50 ? '#f39c12' : '#e74c3c'));
+      const bits = [];
+      if (detail.satisfied_controls !== undefined) bits.push(`${detail.satisfied_controls}/${detail.total_controls} satisfied`);
+      if (detail.open_poam_count !== undefined) bits.push(`${detail.open_poam_count} open`);
+      if (detail.total_isas !== undefined) bits.push(`${detail.expired} expired, ${detail.expiring_soon} soon`);
+      if (detail.age_days !== undefined) bits.push(`${detail.age_days}d old`);
+      if (detail.reason && (s === null || s === undefined)) bits.push(detail.reason);
+      const tip = bits.join(' · ');
+      return `<span title="${tip}" style="padding:3px 9px;border:1px solid #1e3a6e;border-radius:10px;`
+        + `background:#0a1628;"><strong style="color:${chipColor};">${shown}</strong> `
+        + `<span style="color:#7a8cb0;">${READINESS_COMPONENT_LABELS[k]}</span></span>`;
+    });
+    compEl.innerHTML = chips.join('');
+  } catch (e) {
+    compEl.innerHTML = '<span style="color:#e74c3c;">Readiness unavailable</span>';
+  }
+}
+document.addEventListener('DOMContentLoaded', loadReadiness);
+
 function selectSnap(el, snapId) {
   document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
   el.classList.add('active');
@@ -195,7 +260,7 @@ async function takeSnapshot() {
       body: JSON.stringify({project_id: PROJECT_ID, framework_id: fw})
     });
     const data = await r.json();
-    if (!r.ok) { alert('Snapshot failed: ' + (data.error || r.status)); return; }
+    if (!r.ok || data.status === 'error') { alert('Snapshot failed: ' + (data.error || r.status)); return; }
     const ul = document.getElementById('snapList') || (() => {
       const newUl = document.createElement('ul');
       newUl.id = 'snapList'; newUl.className = 'snap-list';
@@ -206,7 +271,9 @@ async function takeSnapshot() {
     li.className = 'snap-item active';
     li.dataset.id = data.snapshot_id;
     li.onclick = () => selectSnap(li, data.snapshot_id);
-    li.innerHTML = `<span>${fw} · ${new Date().toISOString().slice(0,10)}</span><span class="snap-meta">${data.control_count} controls · ${data.evidence_count} evidence</span>`;
+    const cc = (data.control_count === null || data.control_count === undefined) ? '—' : data.control_count;
+    const ec = (data.evidence_count === null || data.evidence_count === undefined) ? '—' : data.evidence_count;
+    li.innerHTML = `<span>${fw} · ${new Date().toISOString().slice(0,10)}</span><span class="snap-meta">${cc} controls · ${ec} evidence</span>`;
     ul.prepend(li);
     document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
     li.classList.add('active');
@@ -245,10 +312,13 @@ function renderResults(d) {
 
   renderVerdict(document.getElementById('verdictBanner'), d.rating || d.verdict);
 
-  const score = d.score ?? 0;
-  document.getElementById('readinessScore').textContent = Math.round(score * 100) + '%';
-  document.getElementById('ctrlScore').textContent = Math.round((d.control_score ?? 0) * 100) + '%';
-  document.getElementById('evScore').textContent = Math.round((d.evidence_score ?? 0) * 100) + '%';
+  // A null score means "nothing to score" (empty delta) — render honestly as
+  // "Not scored" / "—" rather than a fabricated 0%.
+  const notScored = (v) => (v === null || v === undefined);
+  const score = notScored(d.score) ? 0 : d.score;
+  document.getElementById('readinessScore').textContent = notScored(d.score) ? 'Not scored' : Math.round(d.score * 100) + '%';
+  document.getElementById('ctrlScore').textContent = notScored(d.control_score) ? '—' : Math.round(d.control_score * 100) + '%';
+  document.getElementById('evScore').textContent = notScored(d.evidence_score) ? '—' : Math.round(d.evidence_score * 100) + '%';
   document.getElementById('critGaps').textContent = d.critical_gaps ?? 0;
 
   const delta = d.compliance_delta || {};
@@ -263,7 +333,7 @@ function renderResults(d) {
   if (window.ICDEV) {
     ICDEV.gaugeChart('readinessGauge', {
       value: score,
-      label: Math.round(score * 100) + '% Ready',
+      label: notScored(d.score) ? 'Not scored' : Math.round(score * 100) + '% Ready',
       thresholds: { good: 0.7, warning: 0.4 },
       size: 155
     });
@@ -287,9 +357,46 @@ function renderResults(d) {
   document.getElementById('simId').textContent = d.simulation_id ? 'Simulation ID: ' + d.simulation_id : '';
 }
 
+const OSCAL_LABELS = { ssp: 'SSP', poam: 'POA&M', ar: 'Assessment Results', cd: 'Component Definition' };
+
 async function exportOscal(artifactType) {
-  if (!selectedSnapId) { alert('Take or select a snapshot first.'); return; }
-  window.open(`/boundary/api/twin/${PROJECT_ID}/oscal-export?snapshot_id=${selectedSnapId}&artifact_type=${artifactType}&format=json`, '_blank');
+  const spinner = document.getElementById('oscalSpinner');
+  const out = document.getElementById('oscalResult');
+  const label = OSCAL_LABELS[artifactType] || artifactType;
+  spinner.style.display = 'inline-block';
+  out.style.display = 'none';
+  try {
+    const url = `/boundary/api/twin/${PROJECT_ID}/oscal-export?`
+      + (selectedSnapId ? `snapshot_id=${encodeURIComponent(selectedSnapId)}&` : '')
+      + `artifact_type=${encodeURIComponent(artifactType)}&format=json`;
+    const r = await fetch(url);
+    const data = await r.json();
+    out.style.display = 'block';
+    if (!r.ok || data.status === 'error') {
+      // Explicit error state — do NOT pretend an artifact was produced.
+      out.style.background = '#2a1414';
+      out.style.borderLeft = '3px solid #e74c3c';
+      out.style.color = '#e74c3c';
+      out.textContent = `${label} export failed: ` + (data.error || ('HTTP ' + r.status));
+      return;
+    }
+    const validBadge = data.valid
+      ? '<span style="color:#2ecc71;font-weight:600;">✓ schema-valid</span>'
+      : '<span style="color:#f39c12;font-weight:600;">⚠ generated, schema warnings</span>';
+    out.style.background = '#0a1628';
+    out.style.borderLeft = '3px solid #2ecc71';
+    out.style.color = '#7a8cb0';
+    out.innerHTML = `<strong style="color:#eaeaea;">${label}</strong> ${validBadge}`
+      + `<div style="margin-top:4px;"><code style="color:#7a8cb0;word-break:break-all;">${data.path || ''}</code></div>`;
+  } catch (e) {
+    out.style.display = 'block';
+    out.style.background = '#2a1414';
+    out.style.borderLeft = '3px solid #e74c3c';
+    out.style.color = '#e74c3c';
+    out.textContent = `${label} export failed: ` + e.message;
+  } finally {
+    spinner.style.display = 'none';
+  }
 }
 
 let _loadedGraphJson = null;
@@ -307,29 +414,12 @@ async function loadCurrentTopology() {
   } catch(e) { alert('Error: ' + e.message); }
 }
 
-async function sendChatDelta() {
-  const msg = document.getElementById('chatInput').value.trim();
-  if (!msg) return;
-  const spinner = document.getElementById('chatSpinner');
-  const errEl  = document.getElementById('chatError');
-  errEl.style.display = 'none';
-  spinner.style.display = 'inline-block';
-  try {
-    const body = { message: msg };
-    if (_loadedGraphJson) body.graph_json = _loadedGraphJson;
-    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/chat-delta`, {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const data = await r.json();
-    if (data.error) { errEl.textContent = data.error; errEl.style.display='block'; return; }
-    document.getElementById('deltaInput').value = JSON.stringify(data.delta, null, 2);
-    if (data.explanation) {
-      document.getElementById('chatExplanationText').textContent = data.explanation;
-      document.getElementById('chatExplanation').style.display = 'block';
-    }
-  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
-  finally { spinner.style.display = 'none'; }
-}
+</script>
+{% with chat_api_prefix="boundary",
+        chat_id_var="PROJECT_ID" %}
+  {% include "includes/_twin_chat_script.html" %}
+{% endwith %}
+<script>
 
 async function runDrift() {
   const spinner = document.getElementById('driftSpinner');
@@ -339,8 +429,25 @@ async function runDrift() {
   try {
     const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/crosswalk-drift?fw_src=${encodeURIComponent(src)}&fw_tgt=${encodeURIComponent(tgt)}`);
     const data = await r.json();
-    if (!r.ok) { alert(data.error || 'Drift detection failed'); return; }
-    document.getElementById('driftResults').style.display = 'block';
+    const driftResults = document.getElementById('driftResults');
+    driftResults.style.display = 'block';
+    if (!r.ok || data.status === 'error') {
+      // Visible failure state — do NOT silently render an empty (zero-drift) list.
+      document.getElementById('driftList').innerHTML = '';
+      document.getElementById('noDrift').style.display = 'none';
+      let errEl = document.getElementById('driftError');
+      if (!errEl) {
+        errEl = document.createElement('p');
+        errEl.id = 'driftError';
+        errEl.style.cssText = 'color:#e74c3c;font-size:12px;margin-top:8px;';
+        driftResults.appendChild(errEl);
+      }
+      errEl.style.display = 'block';
+      errEl.textContent = 'Crosswalk drift detection failed: ' + (data.error || ('HTTP ' + r.status));
+      return;
+    }
+    const okErrEl = document.getElementById('driftError');
+    if (okErrEl) okErrEl.style.display = 'none';
     renderFindingList(
       document.getElementById('driftList'),
       (data.drifts || []).map(d => ({

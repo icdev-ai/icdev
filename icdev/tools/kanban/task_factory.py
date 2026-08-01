@@ -77,8 +77,9 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
                     source_doc_id, source_collection_id,
                     dispatch_source, idempotency_key, max_retries,
                     max_runtime_seconds, loop_type, adversarial_enabled,
+                    acceptance_criteria,
                     created_at, updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     task_id,
                     str(t.get("title", "Untitled task"))[:255],
@@ -96,6 +97,12 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
                     max_runtime_seconds,
                     t.get("loop_type", "deterministic"),
                     1 if t.get("adversarial_enabled") else 0,
+                    # Persisted so the dispatcher can put it in the prompt.
+                    # Without this the column stayed empty on every seeded task
+                    # (0 of 2427 populated), which left review_conformance
+                    # unable to judge and the agent with no machine-checkable
+                    # definition of done.
+                    t.get("acceptance_criteria"),
                     now,
                     now,
                 ),

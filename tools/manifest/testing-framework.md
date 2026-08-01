@@ -9,7 +9,8 @@
 | Test Utilities | tools/testing/utils.py | JSON parsing, dual logging, safe subprocess env, run ID gen | — | — |
 | Health Check | tools/testing/health_check.py | System validation (env, DB, deps, tools, MCP, git, Claude, Playwright) | --json, --project-id | Health report |
 | Test Orchestrator [DEPRECATED] | tools/testing/test_orchestrator.py | Full test pipeline: unit + BDD + E2E + gates with retry | --project-dir, --skip-e2e | Summary + state |
-| E2E Runner | tools/testing/e2e_runner.py | E2E tests via native Playwright CLI or MCP fallback | --test-file, --discover, --run-all, --mode, --validate-screenshots | E2E results |
+| E2E Runner | tools/testing/e2e_runner.py | E2E tests via native Playwright CLI or MCP fallback; `--driver selenium --run-all --include-scripts` also runs allowlisted standalone `tests/e2e_*.py` scripts (opt-in; default unchanged) | --test-file, --discover, --run-all, --mode, --validate-screenshots, --include-scripts | E2E results |
+| E2E Script Allowlist | args/e2e_script_allowlist.yaml | Allowlist (importable) + excluded (broken-import, with reasons) of standalone `tests/e2e_*.py` selenium scripts; read by `e2e_runner --include-scripts`. Inventory + remediation feed: docs/testing/e2e-script-inventory.md | — | — |
 | Full Dashboard E2E | tools/testing/e2e_full_dashboard.py | Selenium headless Chrome lifecycle test: every dashboard page, all canvases, nav links, API endpoints, chart rendering, kanban board, CUI banners, and JS error detection — sign-off gate after merges | python tools/testing/e2e_full_dashboard.py | Pass/fail counts + screenshots to playwright/screenshots/e2e-full/ |
 | Screenshot Validator | tools/testing/screenshot_validator.py | Vision-based screenshot validation using LLM (Ollama LLaVA / Claude / GPT-4o) | --image, --assert, --batch-dir, --check | Pass/fail + explanation |
 | Integration Smoke Test | tools/testing/smoke_test.py | Verify all CLI tools are importable and --help works after refactors | --json, --quick, --verbose | N tools tested, N passed |
@@ -27,4 +28,5 @@
 | E2E Test: Dashboard | tests/e2e/dashboard_health.spec.ts | Native Playwright test: dashboard CUI banners + navigation | npx playwright test | Pass/fail + screenshots |
 | E2E Test: Compliance | tests/e2e/compliance_artifacts.spec.ts | Native Playwright test: compliance artifact display | npx playwright test | Pass/fail + screenshots |
 | E2E Test: Security | tests/e2e/security_scan_results.spec.ts | Native Playwright test: security scan + audit trail display | npx playwright test | Pass/fail + screenshots |
+| E2E Runner | tools/testing/e2e_runner.py | E2E tests via native Playwright CLI or MCP fallback | --test-file, --discover, --run-all, --mode, --validate-screenshots | E2E results |
 

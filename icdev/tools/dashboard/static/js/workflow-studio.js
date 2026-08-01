@@ -184,6 +184,8 @@ const StudioWF = (() => {
       human_required: toolData.human_required || false,
       approval_policy: toolData.approval_policy || null,
       doc_template: toolData.doc_template || null,
+      mcp_tool: toolData.mcp_tool || null,
+      mcp_params: toolData.mcp_params || {},
       sub_steps: toolData.sub_steps || [],
     };
     nodes.push(node);
@@ -211,6 +213,8 @@ const StudioWF = (() => {
       badgeHtml = `<div class="wf-node__badge">Human | ${node.role}</div>`;
     } else if (node.node_type === 'approval' && node.approval_policy) {
       badgeHtml = `<div class="wf-node__badge">Approval | ${node.approval_policy}</div>`;
+    } else if (node.node_type === 'mcp' && node.mcp_tool) {
+      badgeHtml = `<div class="wf-node__badge">MCP | ${node.mcp_tool}</div>`;
     }
 
     el.innerHTML = `
@@ -310,6 +314,8 @@ const StudioWF = (() => {
           human_required: sub.human_required || false,
           approval_policy: sub.approval_policy || null,
           doc_template: sub.doc_template || null,
+          mcp_tool: sub.mcp_tool || null,
+          mcp_params: sub.mcp_params || {},
           sub_steps: sub.sub_steps || [],
         }, pos.x, pos.y);
         idMap[sub.id] = n.id;
@@ -356,6 +362,8 @@ const StudioWF = (() => {
           human_required: n.human_required,
           approval_policy: n.approval_policy,
           doc_template: n.doc_template,
+          mcp_tool: n.mcp_tool,
+          mcp_params: n.mcp_params,
           args: n.args,
           timeout: n.timeout,
           required: n.required,
@@ -611,10 +619,12 @@ const StudioWF = (() => {
     const toolSec = $('cfg-tool-section');
     const humanSec = $('cfg-human-section');
     const approvalSec = $('cfg-approval-section');
-    if (!toolSec || !humanSec || !approvalSec) return;
+    const mcpSec = $('cfg-mcp-section');
+    if (!toolSec || !humanSec || !approvalSec || !mcpSec) return;
     toolSec.style.display     = value === 'tool'     ? '' : 'none';
     humanSec.style.display    = value === 'human'    ? '' : 'none';
     approvalSec.style.display = value === 'approval' ? '' : 'none';
+    mcpSec.style.display      = value === 'mcp'      ? '' : 'none';
   }
 
   // ── Node Config Modal ──
@@ -640,6 +650,7 @@ const StudioWF = (() => {
           <option value="tool"${nodeType === 'tool' ? ' selected' : ''}>Tool</option>
           <option value="human"${nodeType === 'human' ? ' selected' : ''}>Human Gate</option>
           <option value="approval"${nodeType === 'approval' ? ' selected' : ''}>Approval Gate</option>
+          <option value="mcp"${nodeType === 'mcp' ? ' selected' : ''}>MCP Tool</option>
         </select>
       </div>
       <div class="studio-form-group">
@@ -715,6 +726,20 @@ const StudioWF = (() => {
           </select>
         </div>
       </div>
+      <div id="cfg-mcp-section">
+        <div class="studio-form-group">
+          <label class="studio-label">MCP Tool Name</label>
+          <input type="text" class="studio-input" id="cfg-mcp-tool"
+                 value="${esc(node.mcp_tool || '')}"
+                 placeholder="scan_dependencies">
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label">MCP Parameters (JSON)</label>
+          <textarea class="studio-input studio-textarea" id="cfg-mcp-params" rows="4"
+                    style="font-family:var(--studio-font-mono);font-size:0.8rem;"
+                    placeholder='{"path": "tools/"}'>${esc(JSON.stringify(node.mcp_params || {}, null, 2))}</textarea>
+        </div>
+      </div>
       <div style="margin-top:12px;">
         <button class="studio-btn studio-btn--danger studio-btn--sm"
                 onclick="StudioWF.deleteNode('${nodeId}')">
@@ -754,16 +779,39 @@ const StudioWF = (() => {
       node.human_required  = false;
       node.doc_template    = null;
       node.approval_policy = null;
+      node.mcp_tool        = null;
+      node.mcp_params      = {};
     } else if (nodeType === 'human') {
       node.role            = $('cfg-role').value || null;
       node.human_required  = $('cfg-human-required').checked;
       node.doc_template    = $('cfg-doc-template').value || null;
       node.approval_policy = null;
+      node.mcp_tool        = null;
+      node.mcp_params      = {};
     } else if (nodeType === 'approval') {
       node.approval_policy = $('cfg-approval-policy').value || null;
       node.role            = $('cfg-approver-role').value || null;
       node.human_required  = false;
       node.doc_template    = null;
+      node.mcp_tool        = null;
+      node.mcp_params      = {};
+    } else if (nodeType === 'mcp') {
+      const mcpTool = $('cfg-mcp-tool').value.trim();
+      if (!mcpTool) {
+        toast('MCP nodes require a tool name', 'error');
+        return;
+      }
+      try {
+        node.mcp_params = JSON.parse($('cfg-mcp-params').value || '{}');
+      } catch (e) {
+        toast('Invalid JSON in MCP parameters', 'error');
+        return;
+      }
+      node.mcp_tool        = mcpTool;
+      node.role            = null;
+      node.human_required  = false;
+      node.doc_template    = null;
+      node.approval_policy = null;
     }
 
     const el = $(nodeId);
@@ -778,6 +826,8 @@ const StudioWF = (() => {
         badge = `<div class="wf-node__badge">Human | ${esc(node.role)}</div>`;
       } else if (nodeType === 'approval' && node.approval_policy) {
         badge = `<div class="wf-node__badge">Approval | ${esc(node.approval_policy)}</div>`;
+      } else if (nodeType === 'mcp' && node.mcp_tool) {
+        badge = `<div class="wf-node__badge">MCP | ${esc(node.mcp_tool)}</div>`;
       }
       if (badge) {
         const statusEl = el.querySelector('.wf-node__status');
@@ -894,6 +944,10 @@ const StudioWF = (() => {
     if (s.human_required) out += `${pp}human_required: true\n`;
     if (s.approval_policy) out += `${pp}approval_policy: "${s.approval_policy}"\n`;
     if (s.doc_template) out += `${pp}doc_template: "${s.doc_template}"\n`;
+    if (s.mcp_tool) out += `${pp}mcp_tool: "${s.mcp_tool}"\n`;
+    if (s.mcp_params && Object.keys(s.mcp_params).length) {
+      out += `${pp}mcp_params: ${JSON.stringify(s.mcp_params)}\n`;
+    }
     if (s.sub_steps && s.sub_steps.length) {
       out += `${pp}sub_steps:\n`;
       for (const sub of s.sub_steps) out += serializeStepYAML(sub, stepIndent + 4);
@@ -919,6 +973,8 @@ const StudioWF = (() => {
       if (n.human_required) step.human_required = n.human_required;
       if (n.approval_policy) step.approval_policy = n.approval_policy;
       if (n.doc_template) step.doc_template = n.doc_template;
+      if (n.mcp_tool) step.mcp_tool = n.mcp_tool;
+      if (n.mcp_params && Object.keys(n.mcp_params).length) step.mcp_params = n.mcp_params;
       if (n.sub_steps && n.sub_steps.length) step.sub_steps = n.sub_steps;
       return step;
     });
@@ -1038,6 +1094,8 @@ const StudioWF = (() => {
           human_required: s.human_required === 'true' || s.human_required === true,
           approval_policy: s.approval_policy || null,
           doc_template: s.doc_template || null,
+          mcp_tool: s.mcp_tool || null,
+          mcp_params: s.mcp_params || {},
           sub_steps: s.sub_steps || [],
         }, 120, y);
         y += 100;
@@ -1491,6 +1549,8 @@ const StudioWF = (() => {
           human_required: s.human_required || false,
           approval_policy: s.approval_policy || null,
           doc_template: s.doc_template || null,
+          mcp_tool: s.mcp_tool || null,
+          mcp_params: s.mcp_params || {},
           sub_steps: s.sub_steps || [],
         }, pos.x, pos.y);
         idMap[s.id] = node.id;
@@ -1557,6 +1617,8 @@ const StudioWF = (() => {
           human_required: s.human_required || false,
           approval_policy: s.approval_policy || null,
           doc_template: s.doc_template || null,
+          mcp_tool: s.mcp_tool || null,
+          mcp_params: s.mcp_params || {},
           sub_steps: s.sub_steps || [],
         }, pos.x, pos.y);
         idMap[s.id] = node.id;

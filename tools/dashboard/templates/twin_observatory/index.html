@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Twin Observatory - ICDEV Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+  <!-- CUI Banner -->
+  <div style="background:#1a1a2e;border:1px solid #1e3a6e;border-radius:4px;padding:6px 12px;margin-bottom:1rem;color:#7a8cb0;font-size:0.8rem;text-align:center;">
+    CUI // SP-CTI &mdash; Twin Observatory
+  </div>
+
+  <h1 style="color:#eaeaea;">Twin Observatory</h1>
+  <p style="color:#7a8cb0;">
+    Cross-canvas digital-twin health across all registered twins, plus the live
+    twin drift/lifecycle event stream. Read-only aggregate over the twin_core observer.
+    {% if generated_at %}<span style="font-size:0.8rem;">Generated {{ generated_at }}.</span>{% endif %}
+  </p>
+
+  {% set summary = report.summary or {} %}
+  {% set vd = summary.verdict_distribution or {} %}
+  <!-- Summary tiles -->
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin:1rem 0;">
+    <div style="flex:1;min-width:140px;background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7a8cb0;font-size:0.75rem;">REGISTERED TWINS</div>
+      <div style="color:#eaeaea;font-size:1.6rem;">{{ report.twin_count or 0 }}</div>
+    </div>
+    <div style="flex:1;min-width:140px;background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7a8cb0;font-size:0.75rem;">STALE</div>
+      <div style="color:#e0a030;font-size:1.6rem;">{{ (summary.stale_twins or [])|length }}</div>
+    </div>
+    <div style="flex:1;min-width:140px;background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7a8cb0;font-size:0.75rem;">OVERDUE REFLEXES</div>
+      <div style="color:#e0a030;font-size:1.6rem;">{{ (summary.overdue_reflexes or [])|length }}</div>
+    </div>
+    <div style="flex:1;min-width:140px;background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7a8cb0;font-size:0.75rem;">VERDICTS (24h)</div>
+      <div style="color:#eaeaea;font-size:0.9rem;">
+        <span style="color:#2e7d32;">{{ vd.get('pass', 0) }} pass</span> /
+        <span style="color:#b26a00;">{{ vd.get('warn', 0) }} warn</span> /
+        <span style="color:#c62828;">{{ vd.get('fail', 0) }} fail</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Twin health grid -->
+  <h2 style="color:#eaeaea;font-size:1.1rem;">Twin Health Grid</h2>
+  <div style="overflow-x:auto;">
+  <table id="twin-grid" style="width:100%;border-collapse:collapse;color:#c9d4e6;font-size:0.85rem;">
+    <thead>
+      <tr style="text-align:left;border-bottom:1px solid #1e3a6e;color:#7a8cb0;">
+        <th style="padding:6px;">Canvas</th>
+        <th style="padding:6px;">Latest verdict</th>
+        <th style="padding:6px;">Snapshots</th>
+        <th style="padding:6px;">Last snapshot</th>
+        <th style="padding:6px;">Violations</th>
+        <th style="padding:6px;">Refresh</th>
+        <th style="padding:6px;">Method</th>
+        <th style="padding:6px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in report.twins %}
+      <tr data-canvas="{{ t.canvas }}" style="border-bottom:1px solid #16203a;">
+        <td style="padding:6px;color:#eaeaea;">{{ t.display_name or t.canvas }}</td>
+        <td style="padding:6px;">
+          <span style="background:{{ t.verdict_color }};color:#fff;padding:2px 8px;border-radius:10px;font-size:0.75rem;">{{ t.latest_verdict }}</span>
+        </td>
+        <td style="padding:6px;">{{ t.snapshot_count if t.snapshot_count is not none else '—' }}</td>
+        <td style="padding:6px;">
+          {{ t.age_human }}
+          {% if t.stale %}<span style="color:#e0a030;">(stale)</span>{% endif %}
+        </td>
+        <td style="padding:6px;">{{ t.violation_total or 0 }}</td>
+        <td style="padding:6px;">
+          {% if t.reflex_overdue %}<span style="color:#c62828;">overdue</span>
+          {% elif t.reflex %}<span style="color:#2e7d32;">ok</span>
+          {% else %}<span style="color:#5a6b8c;">—</span>{% endif %}
+        </td>
+        <td style="padding:6px;color:#7a8cb0;">{{ t.method }}</td>
+        <td style="padding:6px;">
+          {% if t.canvas_route and t.canvas_route != '#' %}
+          <a href="{{ t.canvas_route }}" style="color:#5aa0ff;">open &rarr;</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="padding:12px;color:#7a8cb0;">No registered twins.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <!-- Cross-canvas twin event stream -->
+  <h2 style="color:#eaeaea;font-size:1.1rem;margin-top:1.5rem;">Cross-Canvas Twin Event Stream</h2>
+  <div style="overflow-x:auto;">
+  <table id="twin-events" style="width:100%;border-collapse:collapse;color:#c9d4e6;font-size:0.85rem;">
+    <thead>
+      <tr style="text-align:left;border-bottom:1px solid #1e3a6e;color:#7a8cb0;">
+        <th style="padding:6px;">Time</th>
+        <th style="padding:6px;">Source</th>
+        <th style="padding:6px;">Event</th>
+        <th style="padding:6px;">Target</th>
+        <th style="padding:6px;">Verdict</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr style="border-bottom:1px solid #16203a;">
+        <td style="padding:6px;color:#7a8cb0;">{{ e.created_at }}</td>
+        <td style="padding:6px;color:#eaeaea;">{{ e.source_canvas }}</td>
+        <td style="padding:6px;">{{ e.event_type }}</td>
+        <td style="padding:6px;">{{ e.target_canvas or '—' }}</td>
+        <td style="padding:6px;">{{ e.verdict or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="padding:12px;color:#7a8cb0;">No twin events yet. Events appear as twins take snapshots / run simulations.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <!-- IQE natural-language query widget -->
+  <div style="margin-top:1.5rem;">
+    {% set iqe_canvas = "twin_observatory" %}
+    {% set iqe_api_route = "/twin-observatory/api/iqe-query" %}
+    {% set iqe_title = "Ask Twin Observatory" %}
+    {% set iqe_examples = [
+      {"label": "All twins", "query": "foreach t in twin_observatory.twins select t.canvas, t.latest_verdict, t.stale"},
+      {"label": "Stale twins", "query": "foreach t in twin_observatory.twins where t.stale == true select t.canvas, t.age_human"},
+      {"label": "Recent events", "query": "foreach e in twin_observatory.events select e.source_canvas, e.event_type, e.created_at"}
+    ] %}
+    {% include "includes/iqe_query_widget.html" ignore missing %}
+  </div>
+</div>
+{% endblock %}

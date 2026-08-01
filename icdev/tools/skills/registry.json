@@ -14,7 +14,7 @@
       ],
       "commands": [],
       "mcp_references": [],
-      "body_line_count": 16
+      "body_line_count": 17
     },
     "icdev-build": {
       "name": "icdev-build",
@@ -38,7 +38,7 @@
         "MCP tool `lint` MCP tool from icdev-builder:",
         "MCP tool `control_map` MCP tool from icdev-compliance:"
       ],
-      "body_line_count": 53
+      "body_line_count": 61
     },
     "icdev-comply": {
       "name": "icdev-comply",
@@ -77,6 +77,27 @@
         "MCP tool `control_map` MCP tool from icdev-compliance:"
       ],
       "body_line_count": 60
+    },
+    "icdev-divergence": {
+      "name": "icdev-divergence",
+      "path": ".agents\\skills\\icdev-divergence\\SKILL.md",
+      "description": "Run Divergent Ideation \u2014 a single isolated generative fan-out that produces many candidate ideas, then a separate critic scores them on novelty/viability/fit and flags seductive-but-broken traps. Use at a consequential decision point when a single-shot answer risks tunnel vision. OPT-IN and higher-cost than a direct answer.",
+      "allowed_tools": [
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep"
+      ],
+      "commands": [
+        "python tools/llm/chain_orchestrator.py --divergence --function capability_deliberation --prompt \"How should we reduce cold-start latency in the enclave?\" --json",
+        "python tools/quality/divergence_critic.py --function capability_deliberation --pool-file .tmp/idea_pool.md --json"
+      ],
+      "mcp_references": [
+        "MCP tool runs both halves in one call (`score: true`)"
+      ],
+      "body_line_count": 39
     },
     "icdev-init": {
       "name": "icdev-init",
@@ -133,7 +154,7 @@
       ],
       "commands": [],
       "mcp_references": [],
-      "body_line_count": 17
+      "body_line_count": 18
     },
     "icdev-integrate": {
       "name": "icdev-integrate",
@@ -218,7 +239,7 @@
       ],
       "commands": [],
       "mcp_references": [],
-      "body_line_count": 16
+      "body_line_count": 17
     },
     "icdev-modernize": {
       "name": "icdev-modernize",
@@ -252,6 +273,20 @@
         "MCP tool `self_heal` MCP tool from icdev-knowledge:"
       ],
       "body_line_count": 79
+    },
+    "icdev-noc": {
+      "name": "icdev-noc",
+      "path": ".agents\\skills\\icdev-noc\\SKILL.md",
+      "description": "Display NOC Operations Canvas status: active alarms, open incidents, SLA health, upcoming maintenance windows, and peering health summary. Use when checking carrier-grade NOC posture or preparing an operations brief.",
+      "allowed_tools": [
+        "Bash",
+        "Read",
+        "Glob",
+        "Grep"
+      ],
+      "commands": [],
+      "mcp_references": [],
+      "body_line_count": 16
     },
     "icdev-query": {
       "name": "icdev-query",
@@ -340,7 +375,7 @@
         "MCP tool `get_recommendations` MCP tool from icdev-knowledge (if available):",
         "MCP tool `agent_status` MCP tool from icdev-core:"
       ],
-      "body_line_count": 98
+      "body_line_count": 93
     },
     "icdev-test": {
       "name": "icdev-test",
@@ -371,6 +406,6 @@
       "body_line_count": 1
     }
   },
-  "count": 21,
+  "count": 23,
   "generated_from": ".agents\\skills"
 }

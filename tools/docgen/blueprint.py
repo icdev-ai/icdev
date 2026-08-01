@@ -26,6 +26,7 @@ Routes:
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import uuid
 
@@ -43,27 +44,75 @@ docgen_bp = Blueprint(
 )
 
 
+# ─── Tenant scoping (cnr-doc-03: cross-tenant IDOR guard) ────────────────────
+
+def _request_tenant_id():
+    """Current request's tenant id from the security context, or None (system/CLI)."""
+    try:
+        from flask import g
+        ctx = getattr(g, "security_context", None)
+        return getattr(ctx, "tenant_id", None) if ctx else None
+    except Exception:
+        return None
+
+
+def _tenant_visible(row) -> bool:
+    """False when *row* belongs to a DIFFERENT tenant than the request's.
+
+    Rows with no tenant (shared/default) and requests with no tenant context
+    (system/CLI/single-tenant) are always visible — this blocks cross-tenant IDOR
+    without breaking the default single-tenant deployment.
+    """
+    req_tenant = _request_tenant_id()
+    if not req_tenant:
+        return True
+    if isinstance(row, dict):
+        row_tenant = row.get("tenant_id")
+    else:
+        row_tenant = getattr(row, "tenant_id", None)
+    return row_tenant is None or row_tenant == req_tenant
+
+
 # ─── Page routes ─────────────────────────────────────────────────────────────
+
+def _sessions_with_freshness(limit: int = 20) -> list:
+    """List sessions annotated with freshness_stale for the UI badge.
+
+    Shared by ``/`` and ``/new`` so both render the same session list.
+    Only checks published sessions with a stored source hash (avoids DB churn
+    for drafts).
+    """
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import check_freshness
+
+    # cnr-doc-04(b): the /docgen landing must not 500 when the idr_* tables are
+    # absent (e.g. a squash-bootstrapped PG DB where migration 211 was marked
+    # applied but never ran). Degrade to an empty board instead.
+    try:
+        sessions = sm.list_sessions(limit=limit)
+    except Exception as exc:
+        logger.warning("docgen: session list unavailable (tables not initialized?): %s", exc)
+        return []
+    for s in sessions:
+        if s.get("last_source_hash") and s.get("status") in ("published", "reviewing"):
+            try:
+                uploads = sm.list_uploads(s["id"])
+                paths = [u["file_path"] for u in uploads if u.get("file_path")]
+                fresh = check_freshness(s["id"], paths, stored_hash=s.get("last_source_hash"))
+                s["freshness_stale"] = fresh["stale"]
+            except Exception:
+                s["freshness_stale"] = False
+        else:
+            s["freshness_stale"] = False
+    return sessions
+
 
 @docgen_bp.route("/")
 def index():
-    from tools.docgen import session_manager as sm
     from tools.docgen.domain_profiles import list_profiles
-    from tools.docgen.workflow import check_freshness
 
-    sessions = sm.list_sessions(limit=20)
+    sessions = _sessions_with_freshness()
     profiles = list_profiles()
-
-    # Annotate sessions with freshness_stale for UI badge.
-    # Only checks published sessions with a stored source hash (avoids DB churn for drafts).
-    for s in sessions:
-        if s.get("last_source_hash") and s.get("status") in ("published", "reviewing"):
-            uploads = sm.list_uploads(s["id"])
-            paths = [u["file_path"] for u in uploads if u.get("file_path")]
-            fresh = check_freshness(s["id"], paths)
-            s["freshness_stale"] = fresh["stale"]
-        else:
-            s["freshness_stale"] = False
 
     return render_template(
         "docgen/index.html",
@@ -118,11 +167,18 @@ def new_session_page():
     return render_template(
         "docgen/index.html",
         session=None,
-        sessions=[],
+        # Show the real session list — /new is the same page with the wizard
+        # open, not an empty board. Previously hardcoded [], which made the
+        # page claim "No regeneration sessions yet" even when sessions existed.
+        sessions=_sessions_with_freshness(),
         profiles=profiles,
         preselect_domain=domain,
         from_topo=from_topo,
         source_doc=source_doc,
+        # Auto-open the wizard: /new is advertised as the "DocGen Wizard"
+        # entry point, so arriving here must show the form, not hide it
+        # behind a button.
+        open_wizard=True,
         page_title="New Doc Regeneration",
     )
 
@@ -133,7 +189,7 @@ def session_detail(session_id: str):
     from tools.docgen.domain_profiles import get_profile
 
     session = sm.get_session(session_id)
-    if not session:
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
         return render_template("errors/404.html"), 404
     uploads = sm.list_uploads(session_id)
     analyses = sm.list_analyses(session_id)
@@ -334,7 +390,7 @@ def api_get_session(session_id: str):
     from tools.docgen import session_manager as sm
 
     session = sm.get_session(session_id)
-    if not session:
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
         return jsonify({"error": "not found"}), 404
     return jsonify(session)
 
@@ -393,9 +449,36 @@ def api_add_upload(session_id: str):
 
     # Handle multipart file upload or JSON metadata
     if request.files:
+        from tools.docgen.constants import ALLOWED_UPLOAD_EXTENSIONS, max_upload_bytes
+
         file = next(iter(request.files.values()))
         upload_type = (request.form.get("upload_type") or "doc").strip()
-        safe_name = pathlib.Path(file.filename or "upload").name
+        safe_name = pathlib.Path(file.filename or "upload").name  # traversal-safe
+
+        # cnr-doc-03: extension allowlist — reject executables/scripts and anything
+        # outside the documented analyzer input set.
+        ext = pathlib.Path(safe_name).suffix.lower()
+        if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+            return jsonify({
+                "error": f"File type '{ext or '(none)'}' is not permitted.",
+                "allowed_extensions": sorted(ALLOWED_UPLOAD_EXTENSIONS),
+            }), 400
+
+        # cnr-doc-03: per-file size cap (coordinates with cnr-plat-02 global cap via env).
+        cap = max_upload_bytes()
+        try:
+            file.stream.seek(0, os.SEEK_END)
+            size = file.stream.tell()
+            file.stream.seek(0)
+        except (OSError, ValueError):
+            size = request.content_length or 0
+        if size > cap:
+            return jsonify({
+                "error": f"File exceeds the {cap // (1024 * 1024)} MiB upload limit.",
+                "max_bytes": cap,
+                "size": size,
+            }), 400
+
         save_dir = pathlib.Path("data") / "docgen" / "uploads" / session_id
         save_dir.mkdir(parents=True, exist_ok=True)
         file_path = str(save_dir / safe_name)
@@ -429,6 +512,9 @@ def api_add_upload(session_id: str):
 def api_list_uploads(session_id: str):
     from tools.docgen import session_manager as sm
 
+    session = sm.get_session(session_id)
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
+        return jsonify({"error": "not found"}), 404
     uploads = sm.list_uploads(session_id)
     return jsonify(uploads)
 
@@ -949,6 +1035,10 @@ def api_writeguard(session_id: str):
             "blocked": False,
             "ace_regen_triggered": False,
             "wg_result_id": wg_result_id,
+            # TRUST (cnr-doc-01): surface citation/placeholder defects so reviewers
+            # resolve them before the publish gate blocks export.
+            "citation_findings": gate.get("citation_findings", []),
+            "placeholder_findings": gate.get("placeholder_findings", []),
         })
 
     # Gate failed after all auto-fix attempts.
@@ -968,10 +1058,14 @@ def api_writeguard(session_id: str):
         "blocked": gate.get("blocked", False),
         "ace_regen_triggered": ace_regen_triggered,
         "message": (
+            "WriteGuard engine unavailable — quality gate failed closed (cnr-doc-02). "
+            "Publishing is blocked until the engine is restored."
+            if gate.get("writeguard_unavailable") else
             "WriteGuard blocked after maximum auto-fix attempts — ACE regeneration triggered."
             if ace_regen_triggered else
             f"Quality gate failed (score {gate['score']:.1f} < 70)."
         ),
+        "writeguard_unavailable": bool(gate.get("writeguard_unavailable")),
     }), 409
 
 
@@ -988,7 +1082,7 @@ def api_publish(session_id: str):
     Returns list of idr_artifacts rows.
     """
     from tools.docgen import session_manager as sm
-    from tools.docgen.workflow import stage8_publish, stage6_check_gate
+    from tools.docgen.workflow import stage8_publish, stage6_check_gate, citation_publish_gate
 
     session = sm.get_session(session_id)
     if not session:
@@ -1005,13 +1099,53 @@ def api_publish(session_id: str):
         }), 409
 
     data = request.get_json(force=True, silent=True) or {}
-    doc_text = (
-        data.get("doc_text")
-        or session.get("final_doc_text")
-        or session.get("title", "Document")
-    )
+    # cnr-doc-02: publish ONLY the server-side validated document. A client-supplied
+    # doc_text is IGNORED — otherwise a caller could pass clean text through the
+    # WriteGuard gate, then publish arbitrary unvalidated bytes (publish-gate bypass).
+    doc_text = session.get("final_doc_text") or session.get("title", "Document")
+    if data.get("doc_text") and data.get("doc_text") != doc_text:
+        logger.warning(
+            "IDR publish: ignoring client-supplied doc_text (session=%s) — publishing "
+            "server-side validated final_doc_text only", session_id,
+        )
     title = data.get("title") or session.get("title", "Document")
     classification = data.get("classification") or session.get("classification", "CUI")
+
+    # ── TRUST publish gate (cnr-doc-01) ──────────────────────────────────────
+    # Block export on citation / placeholder defects. A HITL force_* override
+    # publishes past the defect but writes an append-only audit row.
+    force_citations = bool(data.get("force_citations", False))
+    force_placeholders = bool(data.get("force_placeholders", False))
+    trust = citation_publish_gate(
+        doc_text,
+        force_citations=force_citations,
+        force_placeholders=force_placeholders,
+    )
+    if trust["blocked"]:
+        return jsonify({
+            "error": (
+                "Cannot publish: document has "
+                + ("unresolved [PLACEHOLDER] tokens"
+                   if trust["gate"] == "placeholder_guard"
+                   else "citation defects (missing/hallucinated [source: …] tags)")
+                + f" — resolve them or pass force_{trust['gate'].split('_')[0]}s=True after review."
+            ),
+            "gate": trust["gate"],
+            "citation_findings": trust["citation_findings"],
+            "placeholder_findings": trust["placeholder_findings"],
+        }), 409
+    reviewer = data.get("reviewer") or session.get("created_by") or "dashboard"
+    for gate_name, key in (("placeholder_guard", "placeholder_guard_override"),
+                           ("citation_guard", "citation_guard_override")):
+        if trust["overrides"].get(key):
+            sm.record_publish_audit(
+                session_id, gate_name, reviewer,
+                trust["overrides"][key], tenant_id=session.get("tenant_id"),
+            )
+            logger.warning(
+                "IDR publish %s OVERRIDE: session=%s reviewer=%s defects=%d",
+                gate_name, session_id, reviewer, len(trust["overrides"][key]),
+            )
 
     try:
         artifacts = stage8_publish(
@@ -1036,6 +1170,9 @@ def api_publish(session_id: str):
 def api_list_artifacts(session_id: str):
     from tools.docgen import session_manager as sm
 
+    session = sm.get_session(session_id)
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
+        return jsonify({"error": "not found"}), 404
     artifacts = sm.list_artifacts(session_id)
     return jsonify(artifacts)
 
@@ -1048,7 +1185,8 @@ def api_download_artifact(session_id: str, artifact_id: str):
     from tools.docgen import session_manager as sm
 
     artifact = sm.get_artifact(artifact_id)
-    if not artifact or artifact.get("session_id") != session_id:
+    if (not artifact or artifact.get("session_id") != session_id
+            or not _tenant_visible(artifact)):  # cnr-doc-03: cross-tenant IDOR guard
         abort(404)
 
     file_path = artifact.get("file_path")

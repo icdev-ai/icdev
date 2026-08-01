@@ -111,20 +111,55 @@ class ClaimVerdict:
 
 @dataclass
 class VerifyResult:
+    """Outcome of verifying a draft against its cited evidence.
+
+    ``verify()`` returns this object, not a plain dict. It also supports
+    read-only mapping access (``vr["abstained"]``, ``vr.get("claims")``) so that
+    callers written against the previous dict-returning contract keep working
+    unchanged. Both spellings are covered by ``tests/test_verifier_contract.py``.
+    """
+
     verified_text: str
     claims: list[ClaimVerdict] = field(default_factory=list)
     abstained: bool = False
     reason: str = ""
     citation_report: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def verified(self) -> bool:
+        """True when the draft was not abstained and every cited claim held.
+
+        Uncited sentences carry no attributed assertion, so they neither
+        support nor undermine verification; only cited claims are counted.
+        """
+        if self.abstained:
+            return False
+        cited = [c for c in self.claims if c.method != "uncited"]
+        return all(c.supported for c in cited)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "verified_text": self.verified_text,
             "claims": [c.to_dict() for c in self.claims],
             "abstained": self.abstained,
+            "verified": self.verified,
             "reason": self.reason,
             "citation_report": self.citation_report,
         }
+
+    # -- read-only mapping compatibility (pre-existing dict-style callers) --
+
+    def keys(self):
+        return self.to_dict().keys()
+
+    def __getitem__(self, key: str) -> Any:
+        return self.to_dict()[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.to_dict()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.to_dict().get(key, default)
 
 
 # --------------------------------------------------------------------------- #
@@ -268,7 +303,7 @@ def verify(
     evidence_chunks: list[Any],
     *,
     mode: str | None = None,
-) -> dict[str, Any]:
+) -> VerifyResult:
     """Verify a generated draft against its cited evidence.
 
     Args:
@@ -280,7 +315,10 @@ def verify(
             whole draft when any claim is unsupported.
 
     Returns:
-        ``{"verified_text", "claims", "abstained", "reason", "citation_report"}``
+        A :class:`VerifyResult`. It exposes ``verified_text``, ``claims``,
+        ``abstained``, ``verified``, ``reason`` and ``citation_report`` as
+        attributes, and supports read-only mapping access for callers written
+        against the older dict-returning contract.
     """
     mode = (mode or _DEFAULT_MODE).lower()
     draft_text = draft_text or ""
@@ -295,7 +333,7 @@ def verify(
             claims=[],
             abstained=True,
             reason="no_evidence",
-        ).to_dict()
+        )
 
     # Stage 1: structural citation validation (reuses retriever.validate_citations).
     citation_report = validate_citations(draft_text, injected_count)
@@ -309,7 +347,7 @@ def verify(
             abstained=True,
             reason="no_claims",
             citation_report=citation_report,
-        ).to_dict()
+        )
 
     verdicts: list[ClaimVerdict] = []
     kept_sentences: list[str] = []
@@ -396,7 +434,7 @@ def verify(
             abstained=True,
             reason=f"insufficient_support:{supported_ratio:.2f}<{_MIN_SUPPORTED_RATIO:.2f}",
             citation_report=citation_report,
-        ).to_dict()
+        )
 
     if mode == "reject" and cited_supported < cited_total:
         return VerifyResult(
@@ -405,7 +443,7 @@ def verify(
             abstained=True,
             reason="rejected_unsupported_claims",
             citation_report=citation_report,
-        ).to_dict()
+        )
 
     verified_text = " ".join(kept_sentences).strip()
     if not verified_text:
@@ -415,7 +453,7 @@ def verify(
             abstained=True,
             reason="all_claims_stripped",
             citation_report=citation_report,
-        ).to_dict()
+        )
 
     return VerifyResult(
         verified_text=verified_text,
@@ -423,7 +461,7 @@ def verify(
         abstained=False,
         reason="ok",
         citation_report=citation_report,
-    ).to_dict()
+    )
 
 
 # --------------------------------------------------------------------------- #

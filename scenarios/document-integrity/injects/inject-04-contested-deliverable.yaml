@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+id: inject-04-contested-deliverable
+title: 'Promote or Block: The TRUST Citation Gate Decision'
+body_md: "## PROMOTE / BLOCK DECISION — TRUST CITATION GATE\n\n**Classification:** CUI // SP-CTI\n\nThe\
+  \ customer program office is pressing to promote `del-2291` on schedule. Your audit found\n1 fabricated\
+  \ and 1 weak citation, both now corrected — but the corrections are 20 minutes old\nand one reviewer\
+  \ wants to `force_promote` to hit the deadline.\n\n### Your Task\n1. **Decision** — Promote, block,\
+  \ or promote-with-HITL-override. Justify against the TRUST\n   citation-guard policy (ungrounded claims\
+  \ block promote unless a HITL force override with\n   audit is recorded).\n2. **Audit evidence** — Specify\
+  \ exactly what provenance + citation records must be attached\n   so the decision is defensible after\
+  \ the fact.\n3. **Residual risk** — State the residual risk and the follow-up owner.\n\nUse Cortex Govern\
+  \ to gate the decision. The judge rewards a policy-grounded, auditable call."
+context_note: 'There is no single ''right'' verdict, but full credit requires the decision to be consistent
+  with
+
+  the TRUST policy: if any ungrounded claim remains, promote is only allowed via an audited HITL
+
+  force override. Reward teams that attach concrete provenance evidence and name residual risk
+
+  over teams that simply pick promote or block.'

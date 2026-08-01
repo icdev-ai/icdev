@@ -1,0 +1,15 @@
+# CUI // SP-CTI
+label: Green — Provenance Auditor
+description: Adjudicates contested exports and owns the audit record.
+attributes:
+- organization
+- audit/records rigor
+- compliance framework familiarity
+- authority to rule on release
+- clearance level
+prompt_hint: Generate a provenance auditor who rules on releasability strictly by policy, checks the audit
+  record for completeness rather than rubber-stamping a verdict, and carries forward concrete controls.
+  Mention the Academy compliance/provenance bonus.
+academy_relevant_missions:
+- compliance-fundamentals
+- data-provenance

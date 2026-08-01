@@ -263,6 +263,8 @@
 
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/pdc-escape.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pdc-http.js') }}"></script>
 <script>
 const BASE = '/devops';
 let _rejectSopId = null;
@@ -289,12 +291,26 @@ function addStep(desc='', party='') {
   const idx = list.children.length + 1;
   const row = document.createElement('div');
   row.className = 'step-row';
-  row.innerHTML = `
-    <span class="step-num">${idx}</span>
-    <textarea placeholder="Step description…" rows="2">${desc}</textarea>
-    <input class="step-party" type="text" placeholder="Responsible party" value="${party}"/>
-    <button type="button" class="btn-remove-step" onclick="removeStep(this)">&#x2715;</button>
-  `;
+  // Build with DOM APIs so desc/party (persisted, editable-by-others SOP data)
+  // are set as text/value and can never break out of the textarea/attribute.
+  const num = document.createElement('span');
+  num.className = 'step-num';
+  num.textContent = idx;
+  const ta = document.createElement('textarea');
+  ta.placeholder = 'Step description…';
+  ta.rows = 2;
+  ta.value = desc;
+  const partyInput = document.createElement('input');
+  partyInput.className = 'step-party';
+  partyInput.type = 'text';
+  partyInput.placeholder = 'Responsible party';
+  partyInput.value = party;
+  const rm = document.createElement('button');
+  rm.type = 'button';
+  rm.className = 'btn-remove-step';
+  rm.innerHTML = '&#x2715;';
+  rm.addEventListener('click', () => removeStep(rm));
+  row.append(num, ta, partyInput, rm);
   list.appendChild(row);
   renumberSteps();
 }
@@ -328,8 +344,7 @@ function openCreateModal() {
 }
 
 function editSop(id) {
-  fetch(`${BASE}/api/sops/${id}`)
-    .then(r => r.json())
+  fetchJson(`${BASE}/api/sops/${id}`)
     .then(sop => {
       document.getElementById('formModalTitle').textContent = 'Edit SOP';
       document.getElementById('sopId').value = sop.id;
@@ -347,7 +362,8 @@ function editSop(id) {
       document.getElementById('stepsList').innerHTML = '';
       (sop.steps || []).forEach(s => addStep(s.description, s.responsible_party));
       document.getElementById('sopFormModal').classList.add('active');
-    });
+    })
+    .catch(err => pdcToast('Failed to load SOP for editing: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function saveSop(e) {
@@ -379,42 +395,44 @@ function saveSop(e) {
 
 /* ── View ─────────────────────────────────────────────────────────── */
 function viewSop(id) {
-  fetch(`${BASE}/api/sops/${id}`)
-    .then(r => r.json())
+  fetchJson(`${BASE}/api/sops/${id}`)
     .then(sop => {
       document.getElementById('viewTitle').textContent = sop.title;
       const statusColors = {draft:'#7f8c8d',pending_review:'#f39c12',approved:'#27ae60',rejected:'#e74c3c'};
+      // Every SOP field below is escaped: this modal renders in the APPROVER's
+      // session, so a stored payload in any field is a privilege-boundary XSS.
       const stepsHtml = (sop.steps || []).map(s => `
         <li>
-          <div class="step-badge">${s.order}</div>
+          <div class="step-badge">${escapeHtml(s.order)}</div>
           <div class="step-body">
-            <div>${s.description}</div>
-            ${s.responsible_party ? `<div class="step-party-tag">&#x1f464; ${s.responsible_party}</div>` : ''}
+            <div>${escapeHtml(s.description)}</div>
+            ${s.responsible_party ? `<div class="step-party-tag">&#x1f464; ${escapeHtml(s.responsible_party)}</div>` : ''}
           </div>
         </li>`).join('');
       document.getElementById('viewContent').innerHTML = `
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
-          <span class="badge-type">${(sop.sop_type||'').replace(/_/g,' ')}</span>
-          <span style="background:${statusColors[sop.approval_status]||'#7f8c8d'};color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;">${(sop.approval_status||'').replace(/_/g,' ')}</span>
-          <span style="background:var(--bg3);border:1px solid var(--border);padding:2px 7px;border-radius:4px;font-size:10px;color:var(--text-dim);">v${sop.version||'1.0'}</span>
-          <span style="background:var(--bg3);border:1px solid var(--border);padding:2px 7px;border-radius:4px;font-size:10px;color:var(--text-dim);">${sop.classification||'CUI // SP-CTI'}</span>
+          <span class="badge-type">${escapeHtml((sop.sop_type||'').replace(/_/g,' '))}</span>
+          <span style="background:${statusColors[sop.approval_status]||'#7f8c8d'};color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;">${escapeHtml((sop.approval_status||'').replace(/_/g,' '))}</span>
+          <span style="background:var(--bg3);border:1px solid var(--border);padding:2px 7px;border-radius:4px;font-size:10px;color:var(--text-dim);">v${escapeHtml(sop.version||'1.0')}</span>
+          <span style="background:var(--bg3);border:1px solid var(--border);padding:2px 7px;border-radius:4px;font-size:10px;color:var(--text-dim);">${escapeHtml(sop.classification||'CUI // SP-CTI')}</span>
         </div>
-        ${sop.description?`<div class="detail-section"><div class="detail-label">Description</div><div class="detail-value">${sop.description}</div></div>`:''}
-        ${sop.purpose?`<div class="detail-section"><div class="detail-label">Purpose</div><div class="detail-value">${sop.purpose}</div></div>`:''}
-        ${sop.scope?`<div class="detail-section"><div class="detail-label">Scope</div><div class="detail-value">${sop.scope}</div></div>`:''}
-        ${(sop.nist_controls||[]).length?`<div class="detail-section"><div class="detail-label">NIST Controls</div><div class="sop-nist" style="font-size:13px;">${sop.nist_controls.join(' &bull; ')}</div></div>`:''}
+        ${sop.description?`<div class="detail-section"><div class="detail-label">Description</div><div class="detail-value">${escapeHtml(sop.description)}</div></div>`:''}
+        ${sop.purpose?`<div class="detail-section"><div class="detail-label">Purpose</div><div class="detail-value">${escapeHtml(sop.purpose)}</div></div>`:''}
+        ${sop.scope?`<div class="detail-section"><div class="detail-label">Scope</div><div class="detail-value">${escapeHtml(sop.scope)}</div></div>`:''}
+        ${(sop.nist_controls||[]).length?`<div class="detail-section"><div class="detail-label">NIST Controls</div><div class="sop-nist" style="font-size:13px;">${sop.nist_controls.map(escapeHtml).join(' &bull; ')}</div></div>`:''}
         <div class="detail-section" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-          ${sop.owner?`<div><div class="detail-label">Owner</div><div class="detail-value">${sop.owner}</div></div>`:''}
-          ${sop.reviewer?`<div><div class="detail-label">Reviewer</div><div class="detail-value">${sop.reviewer}</div></div>`:''}
-          ${sop.approved_by?`<div><div class="detail-label">Approved By</div><div class="detail-value">${sop.approved_by}</div></div>`:''}
-          ${sop.approved_at?`<div><div class="detail-label">Approved At</div><div class="detail-value">${sop.approved_at.split('T')[0]}</div></div>`:''}
-          ${sop.next_review_date?`<div><div class="detail-label">Next Review</div><div class="detail-value">${sop.next_review_date}</div></div>`:''}
+          ${sop.owner?`<div><div class="detail-label">Owner</div><div class="detail-value">${escapeHtml(sop.owner)}</div></div>`:''}
+          ${sop.reviewer?`<div><div class="detail-label">Reviewer</div><div class="detail-value">${escapeHtml(sop.reviewer)}</div></div>`:''}
+          ${sop.approved_by?`<div><div class="detail-label">Approved By</div><div class="detail-value">${escapeHtml(sop.approved_by)}</div></div>`:''}
+          ${sop.approved_at?`<div><div class="detail-label">Approved At</div><div class="detail-value">${escapeHtml(String(sop.approved_at).split('T')[0])}</div></div>`:''}
+          ${sop.next_review_date?`<div><div class="detail-label">Next Review</div><div class="detail-value">${escapeHtml(sop.next_review_date)}</div></div>`:''}
         </div>
-        ${sop.rejected_reason?`<div class="detail-section" style="background:#2c0a0a;border:1px solid #c0392b;border-radius:6px;padding:10px;"><div class="detail-label" style="color:#e74c3c;">Rejection Reason</div><div class="detail-value">${sop.rejected_reason}</div></div>`:''}
+        ${sop.rejected_reason?`<div class="detail-section" style="background:#2c0a0a;border:1px solid #c0392b;border-radius:6px;padding:10px;"><div class="detail-label" style="color:#e74c3c;">Rejection Reason</div><div class="detail-value">${escapeHtml(sop.rejected_reason)}</div></div>`:''}
         ${stepsHtml?`<div class="detail-section"><div class="detail-label">Procedure Steps (${(sop.steps||[]).length})</div><ul class="steps-detail">${stepsHtml}</ul></div>`:''}
       `;
       document.getElementById('sopViewModal').classList.add('active');
-    });
+    })
+    .catch(err => pdcToast('Failed to load SOP: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 /* ── Workflow actions ─────────────────────────────────────────────── */

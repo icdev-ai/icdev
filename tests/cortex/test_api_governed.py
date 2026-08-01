@@ -383,6 +383,48 @@ def test_agent_single_agent_loop(gates, monkeypatch):
     assert captured["ctx"].tenant_id == "t9"
 
 
+def test_agent_single_agent_rubric_wraps_rubric_loop(gates, monkeypatch):
+    """rubric=True routes the single-agent loop through the delivery-pipeline
+    rubric grader (run_conformance off) instead of the plain loop."""
+    captured = {"grader_kwargs": {}, "rubric": 0}
+
+    import icdev.tools.llm.agent_loop as _al
+
+    def _fake_make_grader(**kwargs):
+        captured["grader_kwargs"].update(kwargs)
+        return lambda result=None: None
+
+    for _modname in ("tools.workflow.pipeline_grader",
+                     "icdev.tools.workflow.pipeline_grader"):
+        _m = importlib.import_module(_modname)
+        monkeypatch.setattr(_m, "make_pipeline_grader", _fake_make_grader)
+
+    def _fake_rubric(router, *, grader, **kwargs):
+        captured["rubric"] += 1
+        return SimpleNamespace(result=SimpleNamespace(
+            final_content="rubric-built", provider="ollama", model_id="m",
+            total_cost_usd=0.0, result_subtype="success", turns=2, done=True,
+            truncated=False, session_id="s", tool_call_log=[],
+        ))
+
+    def _fake_plain(*_a, **_k):
+        raise AssertionError("plain loop must not run when rubric=True")
+
+    monkeypatch.setattr(_al, "run_agent_loop_with_rubric", _fake_rubric)
+    monkeypatch.setattr(_al, "run_agent_loop", _fake_plain)
+    monkeypatch.setattr(api, "_get_router", lambda: object())
+
+    result = api.agent("fix the bug", ctx=CortexContext(session_id="sess-9"), rubric=True)
+
+    assert captured["rubric"] == 1
+    assert captured["grader_kwargs"].get("run_conformance") is False
+    assert captured["grader_kwargs"].get("task_id") == "sess-9"
+    assert result.text == "rubric-built"
+    assert result.data["mode"] == "single"
+    # Governed end-to-end like the plain single-agent path.
+    assert result.governance.outcomes[GATE_OPERATION] == OUTCOME_PASS
+
+
 def test_agent_output_passes_output_redaction(gates, monkeypatch):
     monkeypatch.setattr(
         governance,

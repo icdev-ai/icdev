@@ -6,7 +6,7 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -35,14 +35,31 @@ def mem_conn():
 
 @pytest.fixture(autouse=True)
 def patch_get_connection(mem_conn):
-    mock = MagicMock()
-    mock.__enter__ = lambda s: mem_conn
-    mock.__exit__ = MagicMock(return_value=False)
-    mock.execute = mem_conn.execute
-    mock.commit = mem_conn.commit
+    # attack_graph_db uses `%s` placeholders (PG style); route the factory
+    # through a real StorageConnection wrapper so `%s` is translated to `?` for
+    # the in-memory sqlite3 connection — exactly as the canvas factory does at
+    # runtime.  Binding `mem_conn.execute` directly (raw sqlite3) would raise
+    # `near "%": syntax error` and never exercise the translator.
+    #
+    # get_canvas_connection() returns a FRESH connection per call and each
+    # `with` block closes it on __exit__.  Here every call must reuse the single
+    # in-memory DB (a fresh `:memory:` connection would be an empty database),
+    # so return a fresh wrapper per call but suppress close() to keep the shared
+    # connection alive across the module's per-operation `with` blocks.
+    from tools.db.storage import StorageConnection
 
-    with patch("tools.security_canvas.attack_graph_db.get_connection", return_value=mock):
-        yield mock
+    class _NonClosing(StorageConnection):
+        def close(self):  # noqa: D401 - keep shared in-memory conn open
+            pass
+
+    def _factory(*args, **kwargs):
+        return _NonClosing(mem_conn, "sqlite")
+
+    with patch(
+        "tools.security_canvas.attack_graph_db.get_canvas_connection",
+        side_effect=_factory,
+    ) as m:
+        yield m
 
 
 from tools.security_canvas.attack_graph_db import (  # noqa: E402
@@ -177,3 +194,33 @@ def test_list_edges_filter_ttp():
     add_edge(n1, n2, "T1190")
     edges = list_edges(ttp_id="T1078")
     assert all(e["ttp_id"] == "T1078" for e in edges)
+
+
+# ── connection factory (shx-db-05) ────────────────────────────────────────────
+
+
+def test_uses_canvas_connection_factory():
+    """attack_graph_db must use the RLS-bypassing canvas factory, NOT the
+    RLS-aware get_connection.  attack_graph_nodes/edges have a `classification`
+    column but no `tenant_id`, so the global RLS predicate would raise
+    UndefinedColumn (tenant_id) or silently filter rows on PostgreSQL.
+    """
+    import inspect
+
+    import tools.security_canvas.attack_graph_db as agdb
+
+    # Import the canvas factory (patch-immune: read from the source file, not
+    # the live — possibly patched — module attribute).
+    src = inspect.getsource(agdb)
+    assert "from tools.db.storage import get_canvas_connection" in src
+    # The RLS-aware get_connection must NOT be imported.
+    assert "import get_connection" not in src
+
+
+def test_canvas_connection_is_actually_called(patch_get_connection):
+    """Every CRUD call routes through get_canvas_connection (the patched factory)."""
+    node_id = add_node("asset-routed")
+    assert get_node(node_id) is not None
+    # The autouse fixture patches get_canvas_connection; if any call site used a
+    # different factory the patched mock would not have been invoked.
+    assert patch_get_connection.call_count >= 2  # add_node + get_node

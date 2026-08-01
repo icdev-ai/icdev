@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any
@@ -11,6 +12,7 @@ from tools.db.storage import get_canvas_connection, sql_placeholder
 from tools.logging.icdev_logger import get_logger
 from tools.second_brain.constants import BRIEFING_ENV_FLAG
 from tools.second_brain.profile import build_world_model_context, get_challenges, get_objectives
+from tools.second_brain.redaction_util import redact_for_llm
 
 logger = get_logger(__name__)
 _ENV_FLAG = BRIEFING_ENV_FLAG
@@ -18,6 +20,33 @@ _ENV_FLAG = BRIEFING_ENV_FLAG
 
 def _conn():
     return get_canvas_connection(_ENV_FLAG)
+
+
+def _base_url() -> str:
+    """Configured public base URL for links in delivered briefings (cnr-me-04)."""
+    return os.environ.get("ICDEV_BASE_URL", "http://localhost:5050").rstrip("/")
+
+
+def _parse_json_object(text: str) -> dict:
+    """Best-effort extraction of a JSON object from an LLM response.
+
+    Tolerates ```json code fences and surrounding prose. Returns {} on failure.
+    """
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            parsed = json.loads(text[start : end + 1])
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -123,46 +152,61 @@ def _build_content(
     top_objs = [o["title"] for o in objectives[:3]]
     top_chals = [c.get("challenge_key") or c.get("custom_description", "") for c in challenges[:3]]
 
-    # LLM greeting + focus paragraph
+    # Defaults (template fallback if the LLM is unavailable).
     greeting = f"Good morning, {name}. Here's what matters on {briefing_date}."
     focus = f"Your top priorities: {'; '.join(top_objs) or 'check your task list'}."
 
+    # cnr-me-04(c): a SINGLE batched LLM call produces the greeting, focus, and
+    # every per-meeting prep note (previously 1 greeting + up to 8 sequential
+    # calls). This is invoked only on generation (never on read — reads return the
+    # persisted briefing).
+    cal = calendar_items[:8]
+    prep_by_index: list[str] = []
     try:
-        prompt = (
-            f"Write a 1-sentence morning greeting and a 1-sentence focus statement for {name}, "
-            f"a {ctx.get('title')} at {ctx.get('org_name')}. "
-            f"Their top goals: {'; '.join(top_objs) or 'not yet defined'}. "
-            f"Key challenges: {'; '.join(top_chals) or 'not yet defined'}. "
-            f"Date: {briefing_date}. Be warm, professional, specific."
+        meeting_lines = "\n".join(
+            f"{i + 1}. '{ev.get('title')}' with "
+            f"{', '.join(ev.get('attendees', [])[:4]) or 'no external attendees'}"
+            for i, ev in enumerate(cal)
         )
+        prompt = (
+            f"You are writing a concise morning briefing for {name}, a "
+            f"{ctx.get('title')} at {ctx.get('org_name')} on {briefing_date}.\n"
+            f"Top goals: {'; '.join(top_objs) or 'not yet defined'}.\n"
+            f"Key challenges: {'; '.join(top_chals) or 'not yet defined'}.\n"
+            f"Meetings today:\n{meeting_lines or '(none)'}\n\n"
+            "Return ONLY a JSON object with keys: "
+            '"greeting" (one warm sentence), "focus" (one sentence), and '
+            '"meetings" (an array with one object {"prep": "<one-sentence prep note>"} '
+            "per meeting listed above, in the same order). Be specific and professional."
+        )
+        prompt = redact_for_llm(prompt)  # cnr-me-02: mask PII before egress
+        from tools.llm.provider import LLMRequest
         from tools.llm.router import LLMRouter
-        result = LLMRouter().invoke("summarization", {"prompt": prompt, "max_tokens": 120})
-        llm_text = (result or {}).get("content") or (result or {}).get("text") or ""
-        if llm_text:
-            lines = [l.strip() for l in llm_text.strip().splitlines() if l.strip()]
-            if lines:
-                greeting = lines[0]
-            if len(lines) > 1:
-                focus = " ".join(lines[1:])
+        resp = LLMRouter().invoke(
+            "summarization",
+            LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=400),
+        )
+        if isinstance(resp, dict):
+            llm_text = resp.get("content") or resp.get("text") or ""
+        else:
+            llm_text = getattr(resp, "content", "") or ""
+        data = _parse_json_object(llm_text)
+        if data.get("greeting"):
+            greeting = str(data["greeting"]).strip()
+        if data.get("focus"):
+            focus = str(data["focus"]).strip()
+        for item in data.get("meetings") or []:
+            if isinstance(item, dict):
+                prep_by_index.append(str(item.get("prep", "")).strip())
+            else:
+                prep_by_index.append(str(item).strip())
     except Exception:
         pass
 
-    # Meeting prep notes (lightweight LLM per meeting with fallback)
     meetings = []
-    for ev in calendar_items[:8]:
-        attendee_names = ", ".join(ev.get("attendees", [])[:4])
-        prep = ""
-        try:
-            prep_prompt = (
-                f"Write a 1-sentence prep note for {name} attending '{ev.get('title')}' "
-                f"with {attendee_names or 'no external attendees'}. Be concise."
-            )
-            from tools.llm.router import LLMRouter
-            r = LLMRouter().invoke("summarization", {"prompt": prep_prompt, "max_tokens": 60})
-            prep = (r or {}).get("content") or (r or {}).get("text") or ""
-        except Exception:
-            pass
-        meetings.append({**ev, "prep_notes": prep.strip()})
+    for i, ev in enumerate(cal):
+        prep = prep_by_index[i] if i < len(prep_by_index) else ""
+        meetings.append({**ev, "prep_notes": prep})
 
     # Relationship nudges — scored by days-since-last-interaction
     relationships = []
@@ -400,23 +444,21 @@ def _deliver_calendar(user_id: str, briefing_date: str, ctx: dict, tenant_id: st
 
 
 def _get_m365_token(user_id: str, tenant_id: str) -> str:
-    """Load and auto-refresh the msgraph access token. Returns empty string if not configured."""
+    """Load and auto-refresh the msgraph access token. Returns empty string if not configured.
+
+    Reads via the canvas connection (integrations.get_integration_tokens) so it
+    hits the SAME DB the connect flow wrote to — the msgraph split-brain fix
+    (cnr-me-03). Tokens are stored encrypted and returned decrypted.
+    """
     try:
-        from tools.db.storage import get_connection, sql_placeholder
         from datetime import datetime, timezone
-        with get_connection() as conn:
-            ph = sql_placeholder(conn)
-            row = conn.execute(
-                f"SELECT access_token_enc, refresh_token_enc, token_expiry FROM user_integrations "
-                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph' AND status='active'",
-                (user_id, tenant_id),
-            ).fetchone()
-        if not row:
+        from tools.second_brain.integrations import get_integration_tokens
+        toks = get_integration_tokens(user_id, "msgraph", tenant_id)
+        if not toks:
             return ""
-        if isinstance(row, dict):
-            access_tok, refresh_tok, expiry = row.get("access_token_enc", ""), row.get("refresh_token_enc", ""), row.get("token_expiry", "")
-        else:
-            access_tok, refresh_tok, expiry = row[0], row[1], row[2]
+        access_tok = toks.get("access_token", "")
+        refresh_tok = toks.get("refresh_token", "")
+        expiry = toks.get("token_expiry", "")
         if expiry:
             try:
                 exp_dt = datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
@@ -435,15 +477,13 @@ def _get_m365_token(user_id: str, tenant_id: str) -> str:
 
 def _update_m365_token(user_id: str, tenant_id: str, tokens: dict) -> None:
     try:
-        from tools.db.storage import get_connection, sql_placeholder
-        with get_connection() as conn:
-            ph = sql_placeholder(conn)
-            conn.execute(
-                f"UPDATE user_integrations SET access_token_enc={ph}, token_expiry={ph} "
-                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph'",
-                (tokens.get("access_token", ""), tokens.get("expires_in", ""), user_id, tenant_id),
-            )
-            conn.commit()
+        from tools.second_brain.integrations import update_integration_tokens
+        update_integration_tokens(
+            user_id, "msgraph",
+            tokens.get("access_token", ""),
+            str(tokens.get("expires_in", "")),
+            tenant_id,
+        )
     except Exception:
         pass
 
@@ -473,17 +513,11 @@ def _deliver_teams(user_id: str, briefing_date: str, ctx: dict, tenant_id: str) 
     if not token:
         return "skipped_no_m365_token"
     try:
-        from tools.db.storage import get_connection, sql_placeholder
-        with get_connection() as conn:
-            ph = sql_placeholder(conn)
-            row = conn.execute(
-                f"SELECT metadata_json FROM user_integrations "
-                f"WHERE user_id={ph} AND tenant_id={ph} AND service='msgraph' AND status='active'",
-                (user_id, tenant_id),
-            ).fetchone()
-        if not row:
+        from tools.second_brain.integrations import get_integration_tokens
+        toks = get_integration_tokens(user_id, "msgraph", tenant_id)
+        if not toks:
             return "skipped_no_integration"
-        meta = json.loads((row[0] if not isinstance(row, dict) else row.get("metadata_json", "")) or "{}")
+        meta = toks.get("metadata", {}) or {}
         chat_id = meta.get("teams_chat_id", "")
         if not chat_id:
             return "skipped_no_teams_chat_id"
@@ -495,7 +529,7 @@ def _deliver_teams(user_id: str, briefing_date: str, ctx: dict, tenant_id: str) 
             briefing.get("focus", ""),
             "",
             f"📅 {len(briefing.get('meetings', []))} meetings  ✅ {len(briefing.get('tasks', []))} tasks",
-            "View full briefing: http://localhost:5050/me/briefing/today",
+            f"View full briefing: {_base_url()}/me/briefing/today",
         ]
         from tools.second_brain.connectors.microsoft import send_teams_message
         ok = send_teams_message(token, chat_id, "\n".join(lines))
@@ -555,8 +589,6 @@ def get_users_due_for_briefing(current_hour_utc: int) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI entry point
 # ─────────────────────────────────────────────────────────────────────────────
-
-import os
 
 if __name__ == "__main__":
     import argparse

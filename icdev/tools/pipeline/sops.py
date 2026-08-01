@@ -8,6 +8,7 @@ deployment, pipeline credential rotation, artifact promotion.
 
 import json
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 
 
@@ -45,25 +46,25 @@ def _sop_to_dict(row):
 def get_all_sops(sop_type=None, approval_status=None):
     """Return all SOPs, optionally filtered by type and/or approval_status."""
     if sop_type and approval_status:
-        sql = "SELECT * FROM pdc_sops WHERE sop_type = ? AND approval_status = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM pdc_sops WHERE sop_type = %s AND approval_status = %s ORDER BY updated_at DESC"
         params = [sop_type, approval_status]
     elif sop_type:
-        sql = "SELECT * FROM pdc_sops WHERE sop_type = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM pdc_sops WHERE sop_type = %s ORDER BY updated_at DESC"
         params = [sop_type]
     elif approval_status:
-        sql = "SELECT * FROM pdc_sops WHERE approval_status = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM pdc_sops WHERE approval_status = %s ORDER BY updated_at DESC"
         params = [approval_status]
     else:
         sql = "SELECT * FROM pdc_sops ORDER BY updated_at DESC"
         params = []
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         rows = conn.execute(sql, params).fetchall()
     return [_sop_to_dict(r) for r in rows]
 
 
 def get_sop_by_id(sop_id):
     """Return a single SOP dict or None."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         row = conn.execute("SELECT * FROM pdc_sops WHERE id=%s", (sop_id,)).fetchone()
     return _sop_to_dict(row)
 
@@ -76,7 +77,7 @@ def create_sop(data):
     now = _now()
     steps = json.dumps(data.get("steps", []))
     nist_controls = json.dumps(data.get("nist_controls", []))
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
             """INSERT INTO pdc_sops
                (id, title, sop_type, description, purpose, scope,
@@ -115,7 +116,7 @@ def update_sop(sop_id, data):
     now = _now()
     steps = json.dumps(data.get("steps", existing["steps"]))
     nist_controls = json.dumps(data.get("nist_controls", existing["nist_controls"]))
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
             """UPDATE pdc_sops SET
                title=%s, sop_type=%s, description=%s, purpose=%s, scope=%s,
@@ -145,7 +146,7 @@ def update_sop(sop_id, data):
 
 def delete_sop(sop_id):
     """Delete a SOP. Returns True if deleted."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         cur = conn.execute("DELETE FROM pdc_sops WHERE id=%s", (sop_id,))
         conn.commit()
     return cur.rowcount > 0
@@ -161,7 +162,7 @@ def submit_for_review(sop_id):
     if existing["approval_status"] not in ("draft", "rejected"):
         return None, f"Cannot submit from status '{existing['approval_status']}'"
     now = _now()
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
             "UPDATE pdc_sops SET approval_status='pending_review', updated_at=%s WHERE id=%s",
             (now, sop_id),
@@ -178,7 +179,7 @@ def approve_sop(sop_id, approved_by=""):
     if existing["approval_status"] != "pending_review":
         return None, f"Cannot approve from status '{existing['approval_status']}'"
     now = _now()
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
             """UPDATE pdc_sops SET
                approval_status='approved', approved_by=%s, approved_at=%s,
@@ -198,7 +199,7 @@ def reject_sop(sop_id, reason="", rejected_by=""):
     if existing["approval_status"] != "pending_review":
         return None, f"Cannot reject from status '{existing['approval_status']}'"
     now = _now()
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         conn.execute(
             """UPDATE pdc_sops SET
                approval_status='rejected', rejected_reason=%s,
@@ -300,7 +301,7 @@ SEED_SOPS = [
 
 def seed_sops():
     """Seed example SOPs if the table is empty."""
-    with _get_conn() as conn:
+    with closing(_get_conn()) as conn:
         count = conn.execute("SELECT COUNT(*) FROM pdc_sops").fetchone()[0]
     if count > 0:
         return

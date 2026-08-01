@@ -51,20 +51,10 @@
       <textarea id="deltaInput" class="twin-textarea" rows="10"
         placeholder='{"add_receivers":["prometheus/new-service"],"remove_exporters":["jaeger/legacy"],"services":{"new-payment-service":{"traces":true,"metrics":true,"logs":false}}}'></textarea>
 
-      <div style="margin-top:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
-        <strong style="font-size:12px;color:#7a8cb0;">DESCRIBE YOUR CHANGE</strong>
-        <p class="hint" style="margin:4px 0 6px;">Describe the instrumentation change in plain English — AI generates the OTel delta JSON.</p>
-        <div style="display:flex;gap:8px;align-items:flex-start;">
-          <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
-            placeholder="e.g. Add Prometheus receiver for the new payment service, remove the legacy Jaeger exporter..."></textarea>
-          <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
-        </div>
-        <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
-        <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
-          <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
-        </div>
-        <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
-      </div>
+      {% with chat_hint="Describe the instrumentation change in plain English — AI generates the OTel delta JSON.",
+              chat_placeholder="e.g. Add Prometheus receiver for the new payment service, remove the legacy Jaeger exporter..." %}
+        {% include "includes/_twin_chat_panel.html" %}
+      {% endwith %}
 
       <div style="margin:8px 0;">
         <label style="font-size:12px;color:#7a8cb0;margin-right:8px;">Signal type:</label>
@@ -86,7 +76,10 @@
   <!-- RIGHT: results -->
   <div>
     <div id="simResults" class="twin-panel" style="display:none;">
-      <h2>3. Coverage Analysis</h2>
+      <h2>3. Coverage Analysis
+        <span style="font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:#f39c12;border:1px solid #f39c12;border-radius:3px;padding:1px 6px;margin-left:8px;vertical-align:middle;">Estimated</span>
+      </h2>
+      <p id="simBasis" class="hint" style="margin:-4px 0 10px;font-style:italic;"></p>
 
       <div id="verdictBanner" class="verdict-banner"></div>
 
@@ -147,16 +140,19 @@
 <!-- SLO impact panel -->
 <div style="padding:0 30px 30px;">
   <div class="twin-panel">
-    <h2>SLO Impact Projection</h2>
-    <p class="hint" style="margin-bottom:10px;">Projects how the collector change affects error budget burn rate based on historical incident data and coverage delta.</p>
+    <h2>SLO Impact Projection
+      <span style="font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:#f39c12;border:1px solid #f39c12;border-radius:3px;padding:1px 6px;margin-left:8px;vertical-align:middle;">Estimated</span>
+    </h2>
+    <p class="hint" style="margin-bottom:10px;">Estimates how the collector change affects error budget burn rate, derived from the design's coverage baseline and the modeled coverage delta (heuristic — not measured SLO telemetry).</p>
     <button class="btn btn-primary btn-sm" onclick="runSloProjection()">Project SLO Impact</button>
     <span id="sloSpinner" class="spinner" style="vertical-align:middle;margin-left:8px;"></span>
     <div id="sloResults" style="margin-top:12px;display:none;">
       <div class="metric-row">
-        <div class="metric-stat"><div class="val val-info" id="sloCurrentBurn">—</div><div class="lbl">Current Burn %</div></div>
-        <div class="metric-stat"><div class="val" id="sloProjectedBurn">—</div><div class="lbl">Projected Burn %</div></div>
-        <div class="metric-stat"><div class="val val-warn" id="sloMttrDelta">—</div><div class="lbl">MTTR Delta (min)</div></div>
+        <div class="metric-stat"><div class="val val-info" id="sloCurrentBurn">—</div><div class="lbl">Current Burn % (est.)</div></div>
+        <div class="metric-stat"><div class="val" id="sloProjectedBurn">—</div><div class="lbl">Projected Burn % (est.)</div></div>
+        <div class="metric-stat"><div class="val val-warn" id="sloMttrDelta">—</div><div class="lbl">MTTR Delta (min, est.)</div></div>
       </div>
+      <p id="sloBasis" class="hint" style="margin-top:8px;font-style:italic;"></p>
     </div>
   </div>
 </div>
@@ -196,7 +192,7 @@ async function takeSnapshot() {
     li.className = 'snap-item active';
     li.dataset.id = data.id;
     li.onclick = () => selectSnap(li, data.id);
-    li.innerHTML = `<span>${data.label}</span><span class="snap-meta">${data.service_count} services · ${Math.round((data.coverage_score||0)*100)}% coverage · ${new Date().toISOString().slice(0,10)}</span>`;
+    li.innerHTML = `<span>${data.label}</span><span class="snap-meta">${data.service_count} services · ${Math.round(data.coverage_score||0)}% coverage · ${new Date().toISOString().slice(0,10)}</span>`;
     ul.prepend(li);
     document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
     li.classList.add('active');
@@ -232,6 +228,8 @@ async function runSimulation() {
 function renderResults(d) {
   document.getElementById('simResults').style.display = 'block';
   document.getElementById('noResultsHint').style.display = 'none';
+  const simBasis = document.getElementById('simBasis');
+  if (simBasis) simBasis.textContent = d.basis ? ('Estimate basis: ' + d.basis) : '';
   renderVerdict(document.getElementById('verdictBanner'), d.verdict);
 
   // ── Signal coverage grid ──────────────────────────────────────────────────
@@ -311,6 +309,8 @@ async function runSloProjection() {
     pb.textContent = (data.projected_burn_pct ?? 0) + '%';
     pb.style.color = (data.projected_burn_pct??0) > (data.current_burn_pct??0) ? '#e74c3c' : '#2ecc71';
     document.getElementById('sloMttrDelta').textContent = (data.mttr_delta_min >= 0 ? '+' : '') + (data.mttr_delta_min ?? 0);
+    const sloBasis = document.getElementById('sloBasis');
+    if (sloBasis) sloBasis.textContent = data.basis ? ('Estimate basis: ' + data.basis) : '';
   } catch(e) { alert('Error: ' + e.message); }
   finally { spinner.style.display = 'none'; }
 }
@@ -330,28 +330,10 @@ async function loadCurrentTopology() {
   } catch(e) { alert('Error: ' + e.message); }
 }
 
-async function sendChatDelta() {
-  const msg = document.getElementById('chatInput').value.trim();
-  if (!msg) return;
-  const spinner = document.getElementById('chatSpinner');
-  const errEl  = document.getElementById('chatError');
-  errEl.style.display = 'none';
-  spinner.style.display = 'inline-block';
-  try {
-    const body = { message: msg };
-    if (_loadedGraphJson) body.graph_json = _loadedGraphJson;
-    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/chat-delta`, {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const data = await r.json();
-    if (data.error) { errEl.textContent = data.error; errEl.style.display='block'; return; }
-    document.getElementById('deltaInput').value = JSON.stringify(data.delta, null, 2);
-    if (data.explanation) {
-      document.getElementById('chatExplanationText').textContent = data.explanation;
-      document.getElementById('chatExplanation').style.display = 'block';
-    }
-  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
-  finally { spinner.style.display = 'none'; }
-}
+</script>
+{% with chat_api_prefix="observability" %}
+  {% include "includes/_twin_chat_script.html" %}
+{% endwith %}
+<script>
 </script>
 {% endblock %}

@@ -32,10 +32,23 @@ protected_organizations:
 # ---------------------------------------------------------------------------
 # Maps real agency names to codenames for surrogate generation.
 # If an agency is detected but not in this map, it gets a generic surrogate.
+# Applied only on cloud-bound prompts; the real name is restored in the
+# response via de-anonymization, so proposals still read normally.
+# trust-mask-04: seeded with common DoD/federal agencies so the deny-list is
+# active out of the box. Extend/override per engagement.
 agency_surrogates:
-  # "Missile Defense Agency": "Agency ALPHA"
-  # "Defense Health Agency": "Agency BRAVO"
-  # "Defense Information Systems Agency": "Agency CHARLIE"
+  "Missile Defense Agency": "Agency ALPHA"
+  "Defense Health Agency": "Agency BRAVO"
+  "Defense Information Systems Agency": "Agency CHARLIE"
+  "Defense Logistics Agency": "Agency DELTA"
+  "Defense Threat Reduction Agency": "Agency ECHO"
+  "Defense Advanced Research Projects Agency": "Agency FOXTROT"
+  "National Geospatial-Intelligence Agency": "Agency GOLF"
+  "National Security Agency": "Agency HOTEL"
+  "Defense Counterintelligence and Security Agency": "Agency INDIA"
+  "Defense Intelligence Agency": "Agency JULIET"
+  "Cybersecurity and Infrastructure Security Agency": "Agency KILO"
+  "Defense Contract Management Agency": "Agency LIMA"
 
 # ---------------------------------------------------------------------------
 # Custom Sensitive Terms (user-defined words and phrases)
@@ -64,8 +77,11 @@ custom_terms:
 # These are auto-detected — no deny-list needed.
 contract_patterns:
   - name: DoD_contract
-    # W91CRB-20-D-0001, FA8750-21-C-0502, N00024-18-C-5100
-    pattern: "\\b[A-Z]{1,6}\\d{2,3}[A-Z]?-?\\d{2}-[A-Z]-\\d{4,5}\\b"
+    # W91CRB-20-D-0001, FA8750-21-C-0502, N00024-18-C-5100 — the prefix is a
+    # 6-character alphanumeric contracting office/activity code (letters and
+    # digits in any arrangement), not "letters then digits" (the previous
+    # pattern didn't actually match any of its own documented examples).
+    pattern: "\\b[A-Z0-9]{6}-\\d{2}-[A-Z]-\\d{4,5}\\b"
     treatment: redact
     confidence: 0.95
 
@@ -78,8 +94,9 @@ contract_patterns:
     context_words: ["task order", "delivery order", "CLIN", "contract"]
 
   - name: solicitation_number
-    # W91CRB-24-R-0001, FA8750-24-Q-0001
-    pattern: "\\b[A-Z]{1,6}\\d{2,3}-\\d{2}-[RQBI]-\\d{4,5}\\b"
+    # W91CRB-24-R-0001, FA8750-24-Q-0001 — same 6-char alphanumeric prefix fix
+    # as DoD_contract above.
+    pattern: "\\b[A-Z0-9]{6}-\\d{2}-[RQBI]-\\d{4,5}\\b"
     treatment: redact
     confidence: 0.95
 

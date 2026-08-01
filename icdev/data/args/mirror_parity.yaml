@@ -1,0 +1,16 @@
+# CUI // SP-CTI
+# icdev/ mirror-parity roots (kph-D) — consumed by
+# tools/workflow/coherence_checker.py::check_icdev_mirror_parity.
+#
+# Every tools/<root>/*.py under a listed root MUST have an icdev/tools/<...> twin
+# so generated child apps inherit these modules and the canonical (tools.*) /
+# legacy (icdev.tools.*) namespaces stay in sync. A CHANGED module missing its
+# twin FAILs the coherence gate on changed-file scope; full-repo drift is WARN.
+#
+# Add a root here (no code change needed) whenever a new subsystem must be
+# mirrored. Roots may be a directory (recursed) or a single .py file.
+mirrored_roots:
+  - tools/cortex
+  - tools/quality
+  - tools/iqe/adapters
+  - tools/mcp/cortex_server.py

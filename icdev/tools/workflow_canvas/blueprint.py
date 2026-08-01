@@ -49,7 +49,7 @@ from __future__ import annotations
 import json
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template, request, send_file
@@ -58,13 +58,15 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection, get_canvas_connection, sql_placeholder
+from tools.db.storage import get_connection, get_canvas_connection, sql_placeholder, is_pg
 from tools.logging.icdev_logger import get_logger
 from tools.workflow_canvas.constants import (
     EXPORT_FORMATS,
     INDUSTRY_CATEGORIES,
     DEFAULT_PRIMARY_COLOR,
     DEFAULT_SECONDARY_COLOR,
+    MAX_UPLOAD_BYTES,
+    MAX_EXTRACT_CHARS,
 )
 from tools.studio.form_builder import (
     FIELD_TYPES,
@@ -89,6 +91,22 @@ def _now_iso() -> str:
 
 def _new_id(prefix: str = "wfc") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+def _stream_size(file_storage) -> int:
+    """Return the byte size of an uploaded Werkzeug FileStorage without reading
+    it into memory. Seeks to end, records position, then rewinds so the stream
+    is still fully readable by downstream extractors."""
+    try:
+        stream = file_storage.stream
+        pos = stream.tell()
+        stream.seek(0, 2)  # SEEK_END
+        size = stream.tell()
+        stream.seek(pos)
+        return int(size)
+    except Exception:
+        # If the stream is not seekable, fall back to content_length (may be 0).
+        return int(getattr(file_storage, "content_length", 0) or 0)
 
 
 def _cancel_prior_processify_tasks(workflow_name: str) -> int:
@@ -162,17 +180,7 @@ CREATE TABLE IF NOT EXISTS wfc_branding (
     updated_at       TEXT DEFAULT to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
     UNIQUE(entity_type, entity_id)
 );
-CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
-    id                   TEXT PRIMARY KEY,
-    workflow_id          TEXT NOT NULL,
-    node_key             TEXT NOT NULL,
-    form_id              TEXT NOT NULL,
-    node_label           TEXT,
-    required_before_next INTEGER DEFAULT 1,
-    created_at           TEXT DEFAULT to_char(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')
-);
 CREATE INDEX IF NOT EXISTS idx_wfc_branding_entity ON wfc_branding(entity_type, entity_id);
-CREATE INDEX IF NOT EXISTS idx_wfc_form_nodes_workflow ON wfc_workflow_form_nodes(workflow_id);
 """
 
 _WFC_MIGRATION_SQLITE = """
@@ -219,17 +227,7 @@ CREATE TABLE IF NOT EXISTS wfc_branding (
     updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE(entity_type, entity_id)
 );
-CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
-    id TEXT PRIMARY KEY,
-    workflow_id TEXT NOT NULL,
-    node_key TEXT NOT NULL,
-    form_id TEXT NOT NULL,
-    node_label TEXT,
-    required_before_next INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now'))
-);
 CREATE INDEX IF NOT EXISTS idx_wfc_branding_entity ON wfc_branding(entity_type, entity_id);
-CREATE INDEX IF NOT EXISTS idx_wfc_form_nodes_workflow ON wfc_workflow_form_nodes(workflow_id);
 """
 
 
@@ -244,8 +242,7 @@ def _ensure_init() -> None:
         logger.warning("wfc: studio DB init error: %s", exc)
     try:
         conn = get_canvas_connection("ICDEV_WFC_ENABLED")
-        is_pg = hasattr(conn, 'server_version') or 'psycopg2' in type(conn).__module__
-        migration_sql = _WFC_MIGRATION_PG if is_pg else _WFC_MIGRATION_SQLITE
+        migration_sql = _WFC_MIGRATION_PG if is_pg(conn) else _WFC_MIGRATION_SQLITE
         # Execute each statement separately (executescript is SQLite-only)
         for stmt in migration_sql.strip().split(';'):
             stmt = stmt.strip()
@@ -381,11 +378,17 @@ def create_wfc_blueprint() -> Blueprint:
     def _count_submissions_today() -> int:
         conn = get_connection()
         try:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # Half-open range on the ISO-8601 submitted_at so an index on
+            # submitted_at can be used (a leading-wildcard-free LIKE would work
+            # too, but a range is unambiguously sargable). (cnr-wfc-04)
+            now = datetime.now(timezone.utc)
+            start = now.strftime("%Y-%m-%dT00:00:00")
+            end = (now + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
             ph = _ph(conn)
             row = conn.execute(
-                f"SELECT COUNT(*) FROM studio_form_submissions WHERE submitted_at LIKE {ph}",
-                (f"{today}%",),
+                f"SELECT COUNT(*) FROM studio_form_submissions "
+                f"WHERE submitted_at >= {ph} AND submitted_at < {ph}",
+                (start, end),
             ).fetchone()
             return row[0] if row else 0
         except Exception:
@@ -762,6 +765,12 @@ Form description: {text}"""
             ext = pathlib.Path(file.filename).suffix.lower()
             if ext not in {".pdf", ".docx", ".png", ".jpg", ".jpeg", ".txt"}:
                 return jsonify({"error": f"Unsupported format '{ext}'. Use: PDF, DOCX, PNG, JPG, or TXT."}), 400
+            # Reject oversize uploads before reading into memory (cnr-wfc-02).
+            upload_size = _stream_size(file)
+            if upload_size > MAX_UPLOAD_BYTES:
+                return jsonify({
+                    "error": f"File too large ({upload_size} bytes). Limit is {MAX_UPLOAD_BYTES} bytes."
+                }), 413
             source_name = pathlib.Path(file.filename).stem
             tmp_path = None
             try:
@@ -792,6 +801,11 @@ Form description: {text}"""
 
         if not text:
             return jsonify({"error": "Could not extract text. Try a clearer document or paste text directly."}), 422
+
+        # Cap extracted text kept in memory / passed downstream (cnr-wfc-02).
+        if len(text) > MAX_EXTRACT_CHARS:
+            logger.info("digitize: truncating extracted text %d -> %d chars", len(text), MAX_EXTRACT_CHARS)
+            text = text[:MAX_EXTRACT_CHARS]
 
         prompt = f"""You are a business process analyst. Analyze the following process document and convert it into a structured digital workflow.
 
@@ -839,21 +853,22 @@ Process Document:
 {text[:8000]}"""
 
         try:
-            from tools.llm.router import LLMRouter
-            from tools.llm.provider import LLMRequest
-            router = LLMRouter()
-            req = LLMRequest(
-                messages=[{"role": "user", "content": prompt}],
+            # Route through the governed Cortex facade (input injection screen,
+            # output redaction, provenance, budget). The uploaded document text
+            # is UNTRUSTED, so trusted_content stays False (the default) — the
+            # injection screen runs. This mirrors docgen's cortex_api.complete
+            # usage but without the trusted_content=True flag. (cnr-wfc-02)
+            from tools.cortex import api as cortex_api
+            from tools.cortex.schemas import CortexContext
+            cx = cortex_api.complete(
+                prompt,
+                function="process_digitization",
+                ctx=CortexContext(domain="workflow", agent_id="wfc-processify",
+                                  trusted_content=False),
                 max_tokens=4096,
                 temperature=0.2,
             )
-            result = router.invoke("process_digitization", req)
-            if hasattr(result, "content"):
-                raw = result.content or ""
-            elif isinstance(result, dict):
-                raw = result.get("content") or result.get("text") or result.get("response") or str(result)
-            else:
-                raw = str(result or "")
+            raw = (cx.text or "") if cx is not None else ""
 
             match = re.search(r'\{[\s\S]*\}', raw)
             if not match:
@@ -969,24 +984,11 @@ Process Document:
         finally:
             conn.close()
 
-        # Link forms to workflow nodes
-        if step_form_ids:
-            wfc_conn = get_canvas_connection("ICDEV_WFC_ENABLED")
-            try:
-                wfc_ph = _ph(wfc_conn)
-                for step in steps:
-                    form_id = step_form_ids.get(step["id"])
-                    if form_id:
-                        wfc_conn.execute(
-                            f"""INSERT INTO wfc_workflow_form_nodes
-                                (id, workflow_id, node_key, form_id, node_label, required_before_next, created_at)
-                                VALUES ({wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph})""",
-                            (_new_id("wfn"), workflow_id, step["id"],
-                             form_id, step.get("title", ""), 1, _now_iso()),
-                        )
-                wfc_conn.commit()
-            finally:
-                wfc_conn.close()
+        # NOTE (cnr-wfc-03): the per-step form_id linkage is persisted in the
+        # workflow's template_yaml above (yaml_steps[].form_id). The former
+        # wfc_workflow_form_nodes write was dead — nothing ever read those rows
+        # and no executor enforced the advertised form-intake HITL gate — so it
+        # was removed along with the form_node.py module.
 
         # Optionally seed kanban tasks
         kanban_ids: list = []
@@ -1203,6 +1205,10 @@ Process Document:
     def api_submit_form(form_id: str):
         data = request.get_json(force=True) or {}
         result = submit_form(form_id, data.get("data", {}), submitted_by=data.get("submitted_by", "user"))
+        if result.get("status") == "error":
+            # Missing form -> 404; schema validation failure -> 400.
+            code = 404 if result.get("error") == "Form not found" else 400
+            return jsonify(result), code
         return jsonify(result)
 
     @bp.route("/api/forms/<form_id>/export/<fmt>", methods=["POST"])
@@ -1309,18 +1315,31 @@ Process Document:
 
     @bp.route("/api/regen-jobs/<job_id>/download/<filename>")
     def api_regen_download(job_id: str, filename: str):
-        """Download a regenerated artifact file."""
-        import os
+        """Download a regenerated artifact file.
+
+        Path-traversal hardened: the requested filename is resolved under the
+        job's artifact_dir and the resolved path is asserted to stay within it.
+        Flask's <filename> converter permits backslashes and absolute paths, so
+        without this check a request like '..%5C..%5C<secret>' (Windows) or an
+        absolute path would escape artifact_dir. Any violation → 404.
+        """
         from flask import send_file
         from tools.workflow_canvas.doc_regenerator import get_job_status
         job = get_job_status(job_id)
         if not job or job.get("status") != "done":
             return jsonify({"error": "job not ready"}), 404
         artifact_dir = job.get("artifact_dir", "")
-        file_path = os.path.join(artifact_dir, filename)
-        if not os.path.isfile(file_path):
+        if not artifact_dir:
             return jsonify({"error": "file not found"}), 404
-        return send_file(file_path, as_attachment=True, download_name=filename)
+        base = Path(artifact_dir).resolve()
+        candidate = (base / filename).resolve()
+        # Containment check: candidate must be base itself or live under base.
+        if candidate != base and base not in candidate.parents:
+            logger.warning("wfc: rejected traversal download filename=%r job=%s", filename, job_id)
+            return jsonify({"error": "file not found"}), 404
+        if not candidate.is_file():
+            return jsonify({"error": "file not found"}), 404
+        return send_file(str(candidate), as_attachment=True, download_name=candidate.name)
 
     # ── Process Chain CRUD ────────────────────────────────────────────────────
 

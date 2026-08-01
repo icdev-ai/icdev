@@ -41,9 +41,19 @@ CREATE TABLE IF NOT EXISTS agent_token_usage (
     duration_ms INTEGER NOT NULL DEFAULT 0,
     task_id TEXT,
     cost_estimate_usd REAL NOT NULL DEFAULT 0.0,
+    user_id TEXT DEFAULT NULL,
+    api_key_source TEXT DEFAULT 'config',
     created_at TEXT NOT NULL
 );
 """
+
+# nav-sec-09: attribution columns added to older tables by DASHBOARD_AUTH_ALTER_SQL
+# (init_icdev_db.py). Kept here so a table bootstrapped by _ensure_table alone —
+# without ever running init/migrations — still carries them.
+_ATTRIBUTION_COLUMNS = (
+    ("user_id", "TEXT DEFAULT NULL"),
+    ("api_key_source", "TEXT DEFAULT 'config'"),
+)
 
 CREATE_BUDGETS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS agent_token_budgets (
@@ -65,7 +75,45 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
     """Create agent_token_usage and agent_token_budgets tables if they do not exist."""
     conn.execute(CREATE_TABLE_SQL)
     conn.execute(CREATE_BUDGETS_TABLE_SQL)
+    # nav-sec-09: backfill attribution columns on a pre-existing table that was
+    # created before these columns were introduced and never migrated. Guarded by
+    # column_exists so we never issue a duplicate-column ALTER (which would abort a
+    # PostgreSQL transaction). Best-effort — the read side tolerates their absence.
+    try:
+        from tools.db.storage import column_exists
+
+        for col, ddl in _ATTRIBUTION_COLUMNS:
+            if not column_exists(conn, "agent_token_usage", col):
+                conn.execute(f"ALTER TABLE agent_token_usage ADD COLUMN {col} {ddl}")  # nosec B608 — fixed literals
+    except Exception:
+        pass
     conn.commit()
+
+
+def _resolve_request_user_id():
+    """Resolve the current dashboard user id from Flask's request context.
+
+    Returns the authenticated user's id when ``log_usage`` runs while serving an
+    HTTP request (i.e. a dashboard-originated LLM call), otherwise ``None``.
+    Userless contexts — daemons, reflexes, cron, CLI — legitimately return
+    ``None`` so those rows stay unattributed rather than fabricating a user.
+    """
+    try:
+        from flask import g, has_request_context
+
+        if not has_request_context():
+            return None
+        user = getattr(g, "current_user", None)
+        if not user:
+            return None
+        if isinstance(user, dict):
+            return user.get("id")
+        try:
+            return user["id"]
+        except (KeyError, IndexError, TypeError):
+            return getattr(user, "id", None)
+    except Exception:
+        return None
 
 
 def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -129,17 +177,34 @@ def log_usage(
     duration_ms: int = 0,
     task_id: str = None,
     cost_estimate_usd: float = 0.0,
+    user_id: str = None,
+    api_key_source: str = None,
     db_path: Path = None,
 ) -> int:
-    """Insert token usage record into agent_token_usage. Returns row ID."""
+    """Insert token usage record into agent_token_usage. Returns row ID.
+
+    ``user_id`` attributes the row to a dashboard user so the per-user usage API
+    (tools/dashboard/api/usage.py) can scope it. When the caller does not pass one
+    explicitly (the common case — bedrock_client / router track transparently), it
+    is resolved from Flask's ``g.current_user`` while a request context is active.
+    Userless contexts (daemons, reflexes, cron) resolve to ``None`` and stay
+    legitimately unattributed — attribution is never fabricated (nav-sec-09).
+    """
+    # Only auto-resolve when the caller did not supply an explicit user.
+    if user_id is None:
+        user_id = _resolve_request_user_id()
+    # Match the schema default ('config') rather than writing NULL when unknown.
+    if api_key_source is None:
+        api_key_source = "config"
     conn = _connect(db_path)
     try:
         cursor = conn.execute(
             """
             INSERT INTO agent_token_usage
                 (agent_id, project_id, model_id, input_tokens, output_tokens,
-                 thinking_tokens, duration_ms, task_id, cost_estimate_usd, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 thinking_tokens, duration_ms, task_id, cost_estimate_usd,
+                 user_id, api_key_source, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 agent_id,
@@ -151,6 +216,8 @@ def log_usage(
                 duration_ms,
                 task_id,
                 cost_estimate_usd,
+                user_id,
+                api_key_source,
                 datetime.now(timezone.utc).isoformat(),
             ),
         )

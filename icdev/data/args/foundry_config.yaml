@@ -36,6 +36,9 @@ sources:
   genesis:
     enabled: true
     max_signals: 50        # cap from genesis predictions / oracle_predictions
+  rfi:
+    enabled: true
+    max_signals: 50        # cap from rfi_capability_gaps (RFI demand signals)
   telemetry:
     enabled: true
     max_signals: 50        # cap from introspective awareness / gap_detector output

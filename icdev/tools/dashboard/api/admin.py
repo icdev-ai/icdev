@@ -7,7 +7,7 @@ All endpoints require 'admin' role.
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from tools.db.storage import get_connection, sql_placeholder
 
 from flask import Blueprint, jsonify, render_template, request
@@ -23,6 +23,9 @@ from tools.dashboard.auth import (
     suspend_user,
 )
 from tools.dashboard.config import DB_PATH
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.admin")
 
 admin_api = Blueprint("admin_api", __name__, url_prefix="/admin")
 
@@ -91,15 +94,22 @@ def _detect_admin_creation_anomaly(
             if admin_count >= _ADMIN_MAX_TOTAL:
                 return "admin_count_high"
 
-            # 2. Burst: recent admin creations in look-back window
-            now_ts = datetime.now(timezone.utc).isoformat()
+            # 2. Burst: recent admin creations in look-back window.
+            # Compute the cutoff in Python for cross-backend compat: the
+            # SQLite-only datetime(ts, modifier) form raises on PostgreSQL
+            # (the primary backend), which previously disabled this control
+            # silently. Pass an ISO cutoff as a bound parameter instead.
+            cutoff = (
+                datetime.now(timezone.utc)
+                - timedelta(seconds=_ADMIN_BURST_WINDOW_SECONDS)
+            ).isoformat()
             burst_rows = conn.execute(
                 """
                 SELECT COUNT(*) FROM dashboard_users
                 WHERE role = 'admin'
-                  AND created_at >= datetime(%s, %s)
+                  AND created_at >= %s
                 """,
-                (now_ts, f"-{_ADMIN_BURST_WINDOW_SECONDS} seconds"),
+                (cutoff,),
             ).fetchone()
             recent_admins = burst_rows[0] if burst_rows else 0
             if recent_admins >= _ADMIN_BURST_MAX:
@@ -113,7 +123,14 @@ def _detect_admin_creation_anomaly(
         finally:
             conn.close()
     except Exception:
-        # Never let anomaly detection crash the creation path.
+        # Advisory control: never let anomaly detection crash the creation
+        # path, but log VISIBLY so a query failure (e.g. a backend dialect
+        # mismatch) does not silently disable burst/anomaly detection in
+        # production.
+        logger.exception(
+            "Admin creation anomaly detection failed; degrading to no signal "
+            "(advisory control, creation not blocked)"
+        )
         return None
 
     # 4. Self-promotion: requester granting admin to themselves

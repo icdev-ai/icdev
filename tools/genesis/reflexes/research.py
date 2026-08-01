@@ -19,8 +19,6 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.error import URLError
-from urllib.request import Request, urlopen
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -109,19 +107,28 @@ def _load_feeds() -> List[Dict[str, Any]]:
     return []
 
 
-def _fetch_url(url: str, timeout: int = 30) -> Optional[str]:
-    """Fetch URL content.  Returns None on failure."""
-    try:
-        headers = {
+def _fetch_url(url: str, timeout: Optional[int] = None) -> Optional[str]:
+    """Fetch URL content via the central HTTP client.  Returns None on failure.
+
+    Routed through ``tools/http/fetch_extract.py`` so mTLS, the egress proxy and
+    the retry/backoff policy in ``args/http_client.yaml`` apply to feed scraping
+    the same as everywhere else.  Returns the raw body: callers parse RSS/Atom
+    XML or scrape hrefs, neither of which survives markdown extraction.
+    """
+    from tools.http.fetch_extract import fetch_raw
+
+    page = fetch_raw(
+        url,
+        headers={
             "User-Agent": "ICDEV-Genesis/2.0 (Research Reflex)",
             "Accept": "application/xml, application/rss+xml, application/json, text/xml, */*",
-        }
-        req = Request(url, headers=headers)
-        with urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
-            return resp.read().decode("utf-8", errors="replace")
-    except (URLError, OSError, Exception) as e:
-        print(f"  WARN: Failed to fetch {url}: {e}")
+        },
+        timeout=timeout,
+    )
+    if not page.ok:
+        print(f"  WARN: Failed to fetch {url}: {page.error}")
         return None
+    return page.raw_text
 
 
 def _parse_rss(xml_text: str) -> List[Dict[str, str]]:
@@ -235,6 +242,11 @@ def _extract_links_nlp(html_content: str, feed_config: Dict[str, Any]) -> Option
 
     Returns a list of href strings, or None if NLP is disabled/unavailable.
     Falls back to None so the caller can apply the regex path.
+
+    The snippet handed to the model is scraped third-party HTML, so the router's
+    injection scan stays ON here.  It previously ran with
+    ``skip_injection_scan=True`` — the flag is for trusted internal pipeline
+    content, and this is the opposite of that.
     """
     if not _RESEARCH_NLP_ENABLED:
         return None
@@ -263,7 +275,6 @@ def _extract_links_nlp(html_content: str, feed_config: Dict[str, Any]) -> Option
             model=_RESEARCH_NLP_MODEL,
             max_tokens=_RESEARCH_NLP_MAX_TOKENS,
             temperature=0.0,
-            skip_injection_scan=True,
         )
         response = router.invoke("research_nlp_scraper", request)
         if not (response and response.content):
@@ -330,6 +341,27 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             content = _fetch_url(url)
             if not content:
                 feed_results.append({"feed": feed_name, "status": "fetch_failed"})
+                continue
+
+            # Injection scan — the rss/json branch below already blocks on
+            # critical findings; this branch used to skip the gate entirely and
+            # then hand the raw HTML to a model.
+            scrape_findings = scan_text(content, source=url)
+            scrape_critical = [f for f in scrape_findings if f["severity"] == "critical"]
+            if scrape_critical:
+                logger.warning(
+                    "Injection attempt blocked from %s: %s",
+                    url,
+                    [f["category"] for f in scrape_critical],
+                )
+                feed_results.append(
+                    {
+                        "feed": feed_name,
+                        "status": "blocked",
+                        "reason": "injection_detected",
+                        "categories": [f["category"] for f in scrape_critical],
+                    }
+                )
                 continue
 
             # NLP extractor (preferred): topic-aware link extraction via LLM.

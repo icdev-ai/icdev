@@ -3,21 +3,19 @@
 </aside>
 <script>
 (function () {
-  var PATH_CANVAS = {
-    '/proposals':         'proposals',
-    '/govcon':            'govcon',
-    '/cpmp/deliverables': 'cpmp_deliverables',
-    '/cpmp':              'cpmp',
-  };
-  var path = window.location.pathname.replace(/\/$/, '');
+  // cvx-nav-01: consume the same registry-derived map injected by base.html
+  // (window.__ICDEV_PATH_CANVAS__ = [[regex_source, canvas_key], ...]) instead
+  // of a second divergent hardcoded copy. First match wins, order-authoritative.
+  var PATH_CANVAS = window.__ICDEV_PATH_CANVAS__ || [];
+  var path = window.location.pathname;
   var canvas = null;
-  // Longest-match first (cpmp/deliverables before cpmp)
-  var keys = Object.keys(PATH_CANVAS).sort(function(a,b){ return b.length - a.length; });
-  for (var i = 0; i < keys.length; i++) {
-    if (path === keys[i] || path.startsWith(keys[i] + '/')) {
-      canvas = PATH_CANVAS[keys[i]];
-      break;
-    }
+  for (var i = 0; i < PATH_CANVAS.length; i++) {
+    try {
+      if (new RegExp(PATH_CANVAS[i][0]).test(path)) {
+        canvas = PATH_CANVAS[i][1];
+        break;
+      }
+    } catch (e) { /* skip malformed pattern */ }
   }
   if (!canvas) return;
   fetch('/api/ai-brief/' + canvas)

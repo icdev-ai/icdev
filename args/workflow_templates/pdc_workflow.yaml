@@ -10,33 +10,48 @@ steps:
   # ── Canvas-specific steps (PDC only) ─────────────────────────────────────
   - id: step_1
     name: Pipeline Scan
-    tool: tools/pdc/pipeline_scanner.py
+    tool: tools/pipeline/studio_steps.py
     node_type: tool
     required: true
     timeout: 300
     depends_on: []
-    description: Discover CI/CD pipelines, stages, dependencies, and integration points.
+    args:
+      step: scan
+    description: >
+      Load the real design from the live pipelines table (pipelines.graph_json)
+      and inventory node types + anti-patterns via the live analysis engine
+      (tools/pipeline/antipattern_detector). Fails loudly if the pipeline id
+      does not exist — never grades demo data.
 
   - id: step_2
     name: Anti-pattern Check
-    tool: tools/pdc/antipattern_checker.py
+    tool: tools/pipeline/studio_steps.py
     node_type: tool
     required: true
     timeout: 300
     depends_on: [step_1]
-    description: Identify CI/CD anti-patterns — long build times, missing gates, secret sprawl.
+    args:
+      step: antipattern
+    description: >
+      Run the live pre-merge gate (antipattern_detector + SLSA assessment) on
+      the real design. Exits non-zero on any CRITICAL anti-pattern so the
+      workflow actually blocks. Fails loudly on a missing pipeline id.
 
   - id: step_3
     name: Generate IaC
-    tool: tools/pdc/iac_generator.py
+    tool: tools/pipeline/studio_steps.py
     node_type: tool
     required: true
     timeout: 600
     depends_on: [step_2]
+    args:
+      step: iac
     description: >
-      Generate Terraform (.tf), Ansible playbook (.yml), inventory (.ini),
-      validation script (.py), and checklist (.md) for pipeline infrastructure.
-      Output: data/studio_artifacts/pdc/ — consumed by all downstream steps.
+      Generate a real IaC deployment bundle from the design via
+      tools/pipeline/deploy_generator, then validate it with
+      tools/pipeline/iac_validator (layers 1-3). Emits real .tf/.yml artifacts
+      to data/studio_artifacts/pdc/ for downstream steps. Gate = validation
+      result (PASS only when validation passes); fails loudly on missing design.
 
   - id: step_4
     name: DevOps Approval

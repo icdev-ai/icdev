@@ -27,7 +27,7 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 | MITRE Coverage Gap Engine | tools/observability_canvas/mitre_coverage_twin.py | Per-technique coverage scoring (covered/partial/gap), gap score, remediation steps | design_id, graph_data | {gap_score, coverage_by_technique, by_tactic, quick_wins} |
 | OTel Event Ingest | tools/observability_canvas/mitre_coverage_twin.py:ingest_otel_batch | OTLP-over-HTTP JSON event ingest mapped to MITRE techniques | design_id, events[] | {ingested, technique_counts} |
 | SDC Closed-Loop Verify | tools/observability_canvas/mitre_coverage_twin.py:verify_sdc_attack_path | Verify ODC detection coverage for SDC attack path TTP list | design_id, ttp_list | {per_ttp_result, covered_ttps, gap_ttps, coverage_pct} |
-| MITRE Coverage DB | tools/observability_canvas/mitre_coverage_db.py | Append-only CRUD for ODC MITRE ATT&CK coverage state — `record_coverage(technique_id, signal_source, project_id, coverage_state, …)`; current state = latest row per (technique_id, signal_source, project_id) | Function calls (library) | Rows in observability_canvas.db |
+| MITRE Coverage DB | tools/observability_canvas/mitre_coverage_db.py | Append-only CRUD for ODC MITRE ATT&CK coverage state — `record_coverage(technique_id, signal_source, state, last_observed_at, project_id)`; current state = latest row per (technique_id, signal_source, project_id) | Function calls (library) | Rows in observability_canvas.db |
 
 ### API Routes (blueprint: /observability)
 | Route | Method | Description |
@@ -36,6 +36,8 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 | /api/designs/\<id\>/gap-report | POST | Full gap analysis + remediation steps |
 | /api/designs/\<id\>/otel-ingest | POST | Ingest OTel detection events |
 | /api/designs/\<id\>/sdc-verify | POST | Closed-loop SDC attack path verification |
+| /api/replay-verify/\<design_id\> | POST | Replay SDC attack path → verify_path; persists od_ttp_coverage + od_audit. Body: {ttp_ids:[...]} |
+| /api/mitre/ingest | POST | Ingest MITRE techniques into odc_mitre_techniques. Body: {source:'local'\|'stix'}; local seeds from mitre_catalog |
 | /api/export/\<id\>/sigma | POST | Export Sigma YAML/SPL/KQL rules |
 | /api/designs/\<id\>/volume-estimate | GET | Log volume + SIEM cost estimate |
 

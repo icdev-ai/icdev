@@ -119,6 +119,21 @@ channels:
     env_vars: []
     description: "Internal /chat bridge — always available, all IL levels"
 
+  email:
+    enabled: false                 # default off — enable after configuring IMAP/SMTP
+    requires_internet: false       # works against a self-hosted mail server in an enclave
+    min_il: IL2
+    max_il: IL6
+    webhook_path: ""               # POLLED over IMAP (no inbound webhook / no HMAC)
+    signature_header: ""
+    env_vars:
+      - IMAP_HOST
+      - IMAP_USER
+      - IMAP_PASSWORD
+      - SMTP_HOST
+      - SMTP_FROM
+    description: "Email adapter (sag-gw-02) — stdlib imaplib poll + smtplib send, no new dep; on-prem/air-gap safe. Sender identity enforced by the identity-binding gate; full security chain applies."
+
 # ─── Security ────────────────────────────────────────────────────────
 security:
   # Binding ceremony
@@ -140,6 +155,22 @@ security:
 
   # HMAC secret env var (override in production via AWS Secrets Manager)
   hmac_secret_env: ICDEV_GATEWAY_HMAC_SECRET
+
+# ─── Agent Mode (sag-gw-01) ──────────────────────────────────────────
+# When enabled, a *bound* user's free-text message (i.e. NOT a structured
+# allowlisted command) routes to the ICDEV standalone agent runtime (SAG) as a
+# conversational assistant, with a per-chat resumable session. Agent-mode NEVER
+# bypasses the 8-gate security chain or the IL response filter: a free-text turn
+# is validated as a synthetic 'agent' command using the category / max_il below.
+# Default OFF; enable deliberately and scope tightly (least-privilege channels
+# and, optionally, a restricted toolset).
+agent_mode:
+  enabled: false                 # master switch (default off)
+  channels: "internal_chat"      # comma-list of channels agent-mode is allowed on ("*" = all)
+  category: execute              # RBAC category for the synthetic 'agent' command (read|write|execute)
+  max_il: IL5                    # max IL the agent's replies may carry (gate 5 vs channel max_il)
+  requires_confirmation: false
+  toolsets: []                   # optional sag-reg-02 bundle names restricting agent tools (empty = read-only starter set)
 
 # ─── Command Allowlist ───────────────────────────────────────────────
 # Each entry declares which commands are available on which channels.

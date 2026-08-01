@@ -15,7 +15,7 @@ import os
 import sqlite3
 import sys
 import time
-from tools.db.storage import get_connection, sql_placeholder
+from tools.db.storage import get_connection, table_exists, sql_placeholder
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,21 +42,8 @@ def _is_pg(conn):
 
 
 def _table_exists(conn, table_name):
-    """Check if a table exists in the database (SQLite or PostgreSQL)."""
-    try:
-        if _is_pg(conn):
-            row = conn.execute(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name=%s",
-                (table_name,),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
-                (table_name,),
-            ).fetchone()
-        return row[0] > 0
-    except Exception:
-        return False
+    """Check if a table exists (works for both SQLite and PostgreSQL)."""
+    return table_exists(conn, table_name)
 
 
 def _safe_count(conn, sql, params=()):

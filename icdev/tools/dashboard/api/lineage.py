@@ -7,7 +7,7 @@ for the lineage visualization dashboard.
 """
 
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -27,26 +27,8 @@ def _get_db():
 
 
 def _table_exists(conn, table_name):
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-        return row[0] > 0
-    except Exception:
-        # PostgreSQL: fall back to information_schema
-        try:
-            conn.execute("ROLLBACK")
-        except Exception:
-            pass
-        try:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name=%s",
-                (table_name,),
-            ).fetchone()
-            return row[0] > 0
-        except Exception:
-            return False
+    """Check if a table exists (works for both SQLite and PostgreSQL)."""
+    return table_exists(conn, table_name)
 
 
 @lineage_api.route("/graph", methods=["GET"])

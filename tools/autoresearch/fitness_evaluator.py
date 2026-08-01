@@ -224,7 +224,11 @@ def evaluate_skill(skill_name: str = None, assertions: list = None, **kwargs) ->
             "metric_name": "assertion_pass_rate",
             "metric_value": 0.5,
             "success": True,
-            "details": {"note": "No assertions provided, returning baseline 0.5"},
+            "placeholder_metrics": True,
+            "heuristic": True,
+            "details": {
+                "note": "No assertions provided — returning constant 0.5 placeholder, not a measured pass rate.",
+            },
             "timestamp": now_iso(),
         }
     passed = 0

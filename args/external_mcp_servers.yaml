@@ -1,0 +1,78 @@
+# CUI // SP-CTI
+# External MCP servers ICDEV may connect OUT to.
+#
+# Consumed by tools/mcp_client/registry.py.
+#
+# ---------------------------------------------------------------------------
+# DIRECTION. Everything else under tools/mcp/ makes ICDEV an MCP *server* —
+# something else connects in and calls our tools. This file is the opposite:
+# third-party MCP servers whose tools ICDEV agents may call. Nothing here
+# exposes ICDEV to anyone.
+#
+# ---------------------------------------------------------------------------
+# THREAT MODEL — read before adding a server.
+#
+# A remote MCP server supplies its own tool NAMES and DESCRIPTIONS, and those
+# descriptions are injected into an agent's prompt so it knows what the tool
+# does. That makes them attacker-controlled text entering the reasoning loop of
+# an agent that holds real credentials. A hostile or compromised server can
+# attempt prompt injection through a tool description alone, without ever being
+# called.
+#
+# Three structural defences, none of which depend on trusting the server:
+#
+#   1. NAMESPACING. Every remote tool is surfaced as `ext__<server>__<tool>`.
+#      A remote server cannot name a tool `sandbox_execute` or `kanban_delete_task`
+#      and have an agent reach ICDEV's real one by mistake.
+#   2. ALLOWLIST. Only tools named in `tools:` are exposed at all. A server that
+#      advertises a hundred tools contributes exactly the ones listed here.
+#      An empty list means the server is registered but contributes nothing.
+#   3. SANITISATION. Descriptions are stripped of instruction-shaped content
+#      before they reach a prompt (tools/mcp_client/sanitize.py).
+#
+# `classification_ceiling` bounds what may be SENT to the server. A server at
+# UNCLASSIFIED must never receive CUI, regardless of which agent calls it.
+#
+# Air-gap mode disables every entry here unconditionally, whatever `enabled`
+# says — an external MCP server is by definition off-box.
+
+version: external-mcp-servers-1.0
+
+# Master switch. Off by default: connecting out is opt-in, per deployment.
+enabled: false
+
+defaults:
+  # A remote call is one round trip to somebody else's process. Keep it short:
+  # an agent waiting on a hung server is an agent holding a worker slot.
+  timeout_seconds: 30.0
+  # Remote servers get no retries by default. A retry against a tool with side
+  # effects is a duplicate action, and we cannot know which remote tools are
+  # idempotent.
+  max_retries: 0
+  classification_ceiling: UNCLASSIFIED
+
+servers: []
+
+# ---------------------------------------------------------------------------
+# Example entries. Left commented rather than shipped enabled — a registry file
+# that arrives with live third-party endpoints in it is a supply-chain problem.
+#
+# servers:
+#   - name: ticketing
+#     transport: stdio            # stdio | http
+#     command: ["npx", "-y", "@example/mcp-ticketing"]
+#     env:
+#       EXAMPLE_API_KEY: "env:TICKETING_API_KEY"   # resolved, never inlined
+#     tools: [search_tickets, get_ticket]           # allowlist, not a hint
+#     classification_ceiling: UNCLASSIFIED
+#     enabled: true
+#
+#   - name: knowledge
+#     transport: http
+#     url: https://mcp.example.com/v1
+#     auth:
+#       type: bearer
+#       token: "env:KNOWLEDGE_MCP_TOKEN"
+#     tools: [search]
+#     classification_ceiling: CUI
+#     enabled: false

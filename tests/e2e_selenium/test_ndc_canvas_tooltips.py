@@ -8,7 +8,7 @@ Regression for two bugs triaged 2026-04-18:
      referred to missing nodes → JointJS rendered invisible links.
 
 Prerequisites:
-  - Flask dashboard running on http://localhost:5000
+  - Flask dashboard running on http://localhost:5050
   - A new (empty) topology can be created via /network/canvas
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from tools.browser.driver_manager import get_driver  # noqa: E402
 
-BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000")
+BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050")
 
 
 @pytest.fixture(scope="module")

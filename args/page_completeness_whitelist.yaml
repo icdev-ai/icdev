@@ -13,18 +13,33 @@
 #   - Only add entries for pre-existing incomplete canvases, not new work
 #   - Include a comment: canvas name — what is missing (task-id)
 #   - Remove the entry once all 8 components are complete
+#
+# ---------------------------------------------------------------------------
+# STATUS: FULLY RETIRED (cvx-tch-01/02/03, 2026-07).
+#
+# The legacy grandfather list is now EMPTY. The final 10 canvases were resolved:
+#
+#   FIXED (brought to full 8-component compliance):
+#     ai_observatory  — registry nav.section added; the real /ai-observatory link
+#                       (base.html) is now recognized by the registry-aware gate.
+#     cache_savings   — registry nav.section added + 3 .iqe seed queries authored.
+#     aisg            — 3 .iqe seed queries authored (prior seeds were .md, which
+#                       the gate's .yaml/.yml/.iqe glob does not count).
+#     strategos       — iqe_query_widget include wired into page.html (+ mirror),
+#                       posting to the existing /api/strategos/iqe-query route.
+#
+#   ALREADY PASSING (removed; no work needed — resolved by earlier merged work):
+#     demo_runner     — passes all 8 (blueprint/nav/seeds already present).
+#     ontology        — passes; .iqe seeds now counted by the glob fix.
+#
+#   RECLASSIFIED (removed here; still correctly excused as utility pages via
+#   args/completion_exemptions.yaml :: iqe_exempt — no query-worthy data model):
+#     forge_academy   — static curriculum content, no data model.
+#     il5             — IL5 enclave posture page, no query-worthy records.
+#     safety_monitor  — runtime guardrail state, not stored records.
+#     system_graph    — derived topology view, not a stored record set.
+#
+# The nav-02 removals (aiify, workflow_canvas, canvas_health) were already gone.
+# ---------------------------------------------------------------------------
 
-whitelisted_canvases:
-  - aiify    # template dir 'aiify' vs URL slug '/ai-ify/' mismatch; nav link + IQE + mirror all present and verified (HTTP 200)
-  - ai_observatory     # missing nav link, IQE seed queries (pre-existing debt)
-  - aisg               # missing nav link, IQE adapter, seed queries, IQE widget (pre-existing debt)
-  - cache_savings      # missing nav link, IQE seed queries (pre-existing debt)
-  - demo_runner        # missing blueprint, directory, nav link, seed queries (pre-existing debt)
-  - forge_academy      # missing blueprint, directory, nav link, IQE adapter, seed queries, widget (pre-existing debt)
-  - il5                # missing icdev mirror, blueprint, IQE adapter, seed queries, widget (pre-existing debt)
-  - canvas_health      # route is /health/canvases not /canvas_health; nav link check is a false positive
-  - ontology           # IQE seed queries missing (.iqe files present — need .yaml or .iqe glob fix) (pre-existing debt)
-  - safety_monitor     # missing blueprint, directory, nav link, IQE adapter, seed queries, widget (pre-existing debt)
-  - strategos          # missing IQE seed queries, IQE widget (pre-existing debt)
-  - system_graph       # missing nav link, IQE adapter, seed queries, IQE widget (pre-existing debt)
-  - workflow_canvas    # dir name 'workflow_canvas' vs URL slug '/workflow-canvas' (hyphen); nav is registry-driven (not hardcoded in base.html)
+whitelisted_canvases: []

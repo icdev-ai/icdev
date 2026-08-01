@@ -1,0 +1,17 @@
+# CUI // SP-CTI
+id: inject-04-aar
+title: 'After-Action Review: What Broke and What Changes'
+body_md: "## AFTER-ACTION REVIEW\n\n**Classification:** CUI // SP-CTI\n\nThe incident is mitigated. Produce\
+  \ a concise AAR the Incident Commander can file.\n\n### Your Task\n1. **Timeline** — Storm -> breach\
+  \ isolation -> drift diagnosis -> decision, with the key\n   evidence at each step.\n2. **Root cause**\
+  \ — One-paragraph statement grounded in the PSI/entropy/latency-timing evidence.\n3. **Corrective actions**\
+  \ — 3 changes: at least one detection improvement (e.g. tie a drift SLO\n   to canary gating) and one\
+  \ process fix. Each with an owner.\n\nThe judge rewards a factual timeline, an evidence-grounded root\
+  \ cause, and actionable, owned fixes."
+context_note: 'A strong AAR reconstructs the decision path from evidence (not memory), states the canary
+  drift
+
+  as root cause, and proposes at least one corrective action that would have caught it earlier —
+
+  for example gating canary promotion on a drift/PSI SLO. Reward owned, specific actions over generic
+  ''improve monitoring''.'

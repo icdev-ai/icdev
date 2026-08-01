@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-header">
     <h1>AI Pattern Library</h1>
-    <p class="page-subtitle">Reusable AI workflow blueprints — deploy in minutes, no coding required.</p>
+    <p class="page-subtitle">Reusable AI workflow blueprints — preview a pattern and track which ones your team adopts.</p>
 </div>
 
 <!-- Filter Bar -->
@@ -62,10 +62,10 @@
             </div>
             {% endif %}
             <div class="pattern-footer">
-                <span class="deploy-count" title="Times deployed">🚀 {{ p.deploy_count }} deployed</span>
+                <span class="deploy-count" title="Times this pattern was used as a starting point">📊 {{ p.usage_count }} uses</span>
                 <div class="pattern-actions">
                     <button class="btn btn-sm" onclick="previewPattern('{{ p.id }}')">Preview</button>
-                    <button class="btn btn-sm btn-primary" onclick="deployPattern('{{ p.id }}', '{{ p.name|replace("'", "\\'") }}')">Deploy</button>
+                    <button class="btn btn-sm btn-primary" onclick="recordUsage('{{ p.id }}', '{{ p.name|replace("'", "\\'") }}')">Track Usage</button>
                 </div>
             </div>
         </div>
@@ -92,14 +92,14 @@
         </div>
         <div class="modal-footer">
             <button class="btn" onclick="closePatternModal()">Close</button>
-            <button class="btn btn-primary" id="modal-deploy-btn">Deploy This Pattern</button>
+            <button class="btn btn-primary" id="modal-deploy-btn">Track Usage</button>
         </div>
     </div>
 </div>
 
-<!-- Deploy Confirmation Toast -->
+<!-- Usage Confirmation Toast -->
 <div id="deploy-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:var(--bg-card);border:1px solid var(--accent);border-radius:10px;padding:16px 20px;box-shadow:0 4px 20px rgba(0,0,0,0.4);z-index:3000;max-width:360px;">
-    <div style="font-weight:600;margin-bottom:4px;">✅ Pattern Deployed</div>
+    <div style="font-weight:600;margin-bottom:4px;">📊 Usage Recorded</div>
     <div id="deploy-toast-msg" style="font-size:0.88rem;color:var(--text-dim);"></div>
 </div>
 {% endblock %}
@@ -218,12 +218,12 @@ function previewPattern(patternId) {
     var deployBtn = document.getElementById('modal-deploy-btn');
     body.innerHTML = '<div class="loading-spinner" style="padding:40px;text-align:center;">Loading&hellip;</div>';
     modal.style.display = 'flex';
-    deployBtn.onclick = function() { closePatternModal(); deployPattern(patternId, ''); };
+    deployBtn.onclick = function() { closePatternModal(); recordUsage(patternId, ''); };
     fetch('/api/aisg/patterns/' + encodeURIComponent(patternId))
         .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
         .then(function(d) {
             if (d.name) document.getElementById('modal-pattern-name').textContent = d.name;
-            deployBtn.onclick = function() { closePatternModal(); deployPattern(patternId, d.name || ''); };
+            deployBtn.onclick = function() { closePatternModal(); recordUsage(patternId, d.name || ''); };
             var tags = Array.isArray(d.use_case_tags) ? d.use_case_tags.map(function(t) { return '<span class="tag">' + t + '</span>'; }).join('') : '';
             body.innerHTML =
                 '<p style="color:var(--text-dim);line-height:1.6;">' + (d.description || '') + '</p>' +
@@ -231,7 +231,7 @@ function previewPattern(patternId) {
                   '<div><strong>Canvas</strong><br><span class="badge">' + (d.canvas_type || '—') + '</span></div>' +
                   '<div><strong>Complexity</strong><br><span class="badge">' + (d.complexity || '—') + '</span></div>' +
                   '<div><strong>Category</strong><br>' + (d.category || '—') + '</div>' +
-                  '<div><strong>Deployed</strong><br>' + (d.deploy_count || 0) + ' time(s)</div>' +
+                  '<div><strong>Used</strong><br>' + (d.usage_count || 0) + ' time(s)</div>' +
                 '</div>' +
                 (tags ? '<div style="margin-top:16px;"><strong>Use Cases</strong><br><div class="pattern-tags" style="margin-top:8px;">' + tags + '</div></div>' : '') +
                 '<div style="margin-top:16px;padding:12px 16px;background:var(--bg-elevated,rgba(255,255,255,0.04));border-radius:8px;font-size:0.82rem;color:var(--text-dim);">' +
@@ -248,20 +248,21 @@ function closePatternModal(e) {
     document.getElementById('pattern-modal').style.display = 'none';
 }
 
-function deployPattern(patternId, patternName) {
+function recordUsage(patternId, patternName) {
     fetch('/api/aisg/patterns/' + encodeURIComponent(patternId) + '/deploy', { method: 'POST' })
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            if (d.error) { alert('Deploy error: ' + d.error); return; }
+            if (d.error) { alert('Error: ' + d.error); return; }
             var toast = document.getElementById('deploy-toast');
             var msg = document.getElementById('deploy-toast-msg');
-            msg.textContent = (patternName || d.name || patternId) + ' is ready. Check the Kanban board for the generated tasks.';
+            msg.textContent = 'Usage of ' + (patternName || d.name || patternId) +
+                ' recorded. Open Preview for the goal template to build from.';
             toast.style.display = 'block';
             setTimeout(function() { toast.style.display = 'none'; }, 5000);
             var countEl = document.querySelector('[data-pattern-id="' + patternId + '"] .deploy-count');
-            if (countEl) countEl.textContent = '🚀 ' + (d.deploy_count || '?') + ' deployed';
+            if (countEl) countEl.textContent = '📊 ' + (d.usage_count || '?') + ' uses';
         })
-        .catch(function() { alert('Failed to deploy pattern. Check console.'); });
+        .catch(function() { alert('Failed to record usage. Check console.'); });
 }
 
 function seedPatterns() {

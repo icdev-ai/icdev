@@ -174,3 +174,74 @@ class TestResultStructure:
             )
         assert result["success"] is False
         assert result["returncode"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Working directory — the DEFAULT one
+# ---------------------------------------------------------------------------
+# Every test above passes repo_root=tmp_path AND mocks subprocess.run, so none
+# of them touch the default root or actually execute anything. That pairing is
+# why `Path(__file__).parents[4]` — two levels above the repository in both the
+# tools/ and icdev/tools/ layouts — shipped: the subprocess ran somewhere with
+# no tools/ and no icdev/, and every path-form command failed with "can't open
+# file", while the suite stayed green.
+
+
+class TestDefaultRepoRoot:
+    def test_default_root_can_resolve_allowlisted_paths(self):
+        """The default cwd must contain the trees the prefixes name."""
+        from icdev.tools.ace.tool_runner import _REPO_ROOT
+
+        assert (_REPO_ROOT / "tools").is_dir() or (_REPO_ROOT / "icdev").is_dir(), (
+            f"default root {_REPO_ROOT} holds neither tools/ nor icdev/, so every "
+            "'python tools/…' and 'python icdev/…' command resolves to nothing"
+        )
+
+    def test_runner_without_repo_root_uses_the_resolved_default(self):
+        """Both production call sites omit repo_root; this is what they get."""
+        from icdev.tools.ace.tool_runner import _REPO_ROOT
+
+        assert ToolRunner(icdev_tools=[])._root == _REPO_ROOT
+
+    def test_path_form_command_actually_executes(self):
+        """End-to-end, unmocked, on the default root.
+
+        The one assertion the mocked tests structurally cannot make: that an
+        allowlisted path-form command resolves and runs. Fails with returncode
+        2 ("can't open file") against the old root.
+
+        subprocess_utils.py is chosen because it is import-only — no CLI, no
+        side effects, no database — so this measures path resolution and
+        nothing else.
+        """
+        cmd = "python tools/compat/subprocess_utils.py"
+        result = ToolRunner(icdev_tools=[cmd]).run(
+            cmd, coworker_id="cw-1", instance_id="i-1", trust_tier="green",
+        )
+        assert result["returncode"] == 0, (
+            f"allowlisted command did not resolve: {result.get('stderr', '')[:300]}"
+        )
+
+
+class TestPackagedNamespaceIsAllowed:
+    """`python -m icdev.tools.…` is the form that works in an installed wheel.
+
+    It needs no allowlist entry of its own — `python -m icdev.` already covers
+    it. Pinned so a future tightening of the prefix tuple cannot silently make
+    every installed ACE co-worker unable to run a tool.
+    """
+
+    def test_packaged_module_form_passes_the_prefix_gate(self):
+        cmd = "python -m icdev.tools.compat.subprocess_utils"
+        result = ToolRunner(icdev_tools=[cmd]).run(
+            cmd, coworker_id="cw-1", instance_id="i-1", trust_tier="green",
+        )
+        assert result["returncode"] == 0, result.get("stderr", "")[:300]
+
+    def test_unpackaged_namespace_still_refused(self):
+        """Widening for the wheel must not have opened anything else."""
+        cmd = "python -m os"
+        with pytest.raises(InvalidPrefixError):
+            ToolRunner(icdev_tools=[cmd]).run(
+                cmd, coworker_id="cw-1", instance_id="i-1", trust_tier="green",
+            )

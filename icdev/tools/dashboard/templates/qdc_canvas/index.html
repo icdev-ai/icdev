@@ -136,7 +136,18 @@
     {% endfor %}
   </div>
 </div>
-{% include "includes/iqe_query_widget.html" %}
+
+{# IQE widget context (cnr-qdc-03) — without these the widget renders
+   "IQE endpoint not configured". #}
+{% set iqe_canvas = "qdc" %}
+{% set iqe_api_route = "/quality/api/iqe-query" %}
+{% set iqe_title = "Ask Quality Canvas" %}
+{% set iqe_examples = [
+  {"label": "All designs", "query": "foreach d in qdc.designs select *"},
+  {"label": "Low-UQS assessments", "query": "foreach a in qdc.assessments where a.uqs_score < 0.6 select *"},
+  {"label": "Gate results", "query": "foreach g in qdc.gate_results select *"},
+] %}
+{% include "includes/iqe_query_widget.html" ignore missing %}
 
 <script>
 function deleteDesign(designId) {
