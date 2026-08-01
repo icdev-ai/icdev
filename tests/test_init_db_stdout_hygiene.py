@@ -27,30 +27,36 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Modules whose banners run at import time and previously polluted stdout.
-BANNER_MODULES = [
-    "a2a/agent_registry.py",
-    "aiify/db/init_db.py",
-    "aisg/db/init_db.py",
-    "boundary_canvas/db/init_db.py",
-    "ccc_canvas/db/init_db.py",
-    "cortex/db/init_db.py",
-    "data_canvas/db/init_db.py",
-    "dsoc_canvas/db/init_db.py",
-    "govlift/db/init_db.py",
-    "integrity/db/init_db.py",
-    "migration_intelligence/db/init_db.py",
-    "mission_canvas/db/init_db.py",
-    "network/db/init_db.py",
-    "ops_hub/db/init_db.py",
-    "security_canvas/db/init_db.py",
-]
-
 # Both the canonical package and the backward-compat shim tree are enforced;
 # check_icdev_mirror_parity requires the twins to stay identical.
 TREES = ["tools", "icdev/tools"]
 
-CASES = [(tree, rel) for tree in TREES for rel in BANNER_MODULES]
+# Extra non-canvas modules that emit banners at import time.
+EXTRA_MODULES = ["a2a/agent_registry.py"]
+
+
+def _banner_modules(tree: str) -> list[str]:
+    """Every ``<canvas>/db/init_db.py`` in *tree*, discovered not hardcoded.
+
+    A hardcoded list rots: gpx-hyg-01 originally fixed 15 modules by name, and
+    four later canvases (aiml, infra, noc, pmc) reintroduced the exact same
+    stdout banners without tripping this guard. Globbing means a new canvas is
+    covered the moment it lands.
+
+    Each tree is globbed separately on purpose. Whether a module is *present*
+    in both trees is ``check_icdev_mirror_parity``'s job; duplicating it here
+    would make this guard fail for unrelated mirror gaps instead of for the one
+    rule it owns.
+    """
+    root = REPO_ROOT / tree
+    found = sorted(
+        p.relative_to(root).as_posix() for p in root.glob("*/db/init_db.py")
+    )
+    assert found, f"no {tree}/*/db/init_db.py found — REPO_ROOT is wrong"
+    return found + [m for m in EXTRA_MODULES if (root / m).exists()]
+
+
+CASES = [(tree, rel) for tree in TREES for rel in _banner_modules(tree)]
 
 CLI_FUNCS = {"main", "cli"}
 

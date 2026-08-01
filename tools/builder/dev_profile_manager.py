@@ -35,6 +35,9 @@ import json
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.builder.dev_profile_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -198,8 +201,9 @@ def _log_event(conn, event_type, details, actor="system"):
                 details.get("scope_id", "") if isinstance(details, dict) else "",
             ),
         )
-    except Exception:
-        pass  # Audit trail is best-effort
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Audit trail is best-effort
+        logger.warning("_log_event: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ── CRUD Operations ──────────────────────────────────────────────────

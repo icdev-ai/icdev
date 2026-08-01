@@ -35,6 +35,9 @@ PROJECTS_DIR = BASE_DIR / "projects"
 # Ensure we can import the base server from the same package
 sys.path.insert(0, str(BASE_DIR))
 from tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.mcp.core_server")
 
 # Try to import the audit logger; fall back to direct DB writes if unavailable.
 try:
@@ -81,8 +84,9 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Audit failures must not crash the server
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Audit failures must not crash the server
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

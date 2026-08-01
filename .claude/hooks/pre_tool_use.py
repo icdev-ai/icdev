@@ -114,6 +114,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Revoking a certificate means recording a revocation, not deleting
         # the evidence that it was once issued.
         "fa_certificate_evidence",
+        # Who assigned what, and who overrode which grade (aca-trn-04,
+        # migration 323). An override that can be edited afterwards is not an
+        # audit trail — correcting one means recording the correction.
+        "fa_instructor_audit",
         # FathomDesk auto-trading (append-only NIST AU)
         "ad_trade_audit",
         "ad_kill_switch",

@@ -22,6 +22,9 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.migration_intelligence.migration_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -244,8 +247,8 @@ def _promote_to_kanban(opp: dict) -> None:
             conn.commit()
         finally:
             conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_promote_to_kanban: best-effort INSERT into tasks failed (non-blocking): %s", exc)
 
 
 # =========================================================================

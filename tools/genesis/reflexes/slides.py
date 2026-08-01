@@ -91,5 +91,6 @@ def _emit_output_event(deck_id, pptx_path: str, title: str) -> None:
             conn.commit()
         finally:
             conn.close()
-    except Exception:
-        pass  # non-fatal if table not yet migrated on this installation
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # non-fatal if table not yet migrated on this installation
+        logger.warning("_emit_output_event: best-effort INSERT into genesis_outputs failed (non-blocking): %s", exc)

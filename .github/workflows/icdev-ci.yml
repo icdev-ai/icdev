@@ -124,6 +124,7 @@ jobs:
             tests/browser/cdp/test_ws_client.py \
             tests/test_context_budget.py \
             tests/test_init_goals_and_selective.py \
+            tests/test_coherence_swallowed_persistence.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries

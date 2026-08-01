@@ -166,8 +166,8 @@ def _sync_cisco(db) -> int:
                         (str(uuid.uuid4()), "cisco", pid_name, eos or None, eol or None, "cisco_api", _now()),
                     )
                     count += 1
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning("_sync_cisco: best-effort INSERT into mc_net_eol_data failed (non-blocking): %s", _exc)
     except Exception as exc:
         logger.debug("Cisco EOL sync skipped: %s", exc)
     return count

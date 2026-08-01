@@ -553,8 +553,8 @@ class RAGRetriever:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_log_retrieval: best-effort INSERT into rag_retrieval_log failed (non-blocking): %s", exc)
 
     def _record_provenance(self, query: str, results: List[SearchResult], project_id: str):
         """Record PROV-AGENT provenance for this retrieval (D-RAG-8)."""

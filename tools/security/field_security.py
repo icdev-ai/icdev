@@ -53,8 +53,8 @@ def _write_field_audit(schema: str, role: str, filtered_fields: list) -> None:
         )
         _ac.commit()
         _ac.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_write_field_audit: best-effort INSERT into field_filter_audit failed (non-blocking): %s", exc)
 
 # ---------------------------------------------------------------------------
 # Config loader

@@ -55,6 +55,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.program_bridge")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -115,8 +118,8 @@ def _audit(conn, action: str, details: str = "", opportunity_id: str = "") -> No
                 "proposal_genesis",
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _ensure_tables(conn) -> None:

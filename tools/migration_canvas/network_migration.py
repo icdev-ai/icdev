@@ -3282,8 +3282,11 @@ def propose_config_mapping(
                      model, _now()),
                 )
                 mc.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "propose_config_mapping: best-effort INSERT into mc_net_ai_sessions failed (non-blocking): %s",
+                exc,
+            )
 
     questions = _load_config_map_questions(session_id)
     return {"proposals": proposals, "questions": questions, "model": model, "count": len(proposals)}
@@ -3458,8 +3461,11 @@ def recommend_hardware(
                      f"[Hardware recommendation] {resp_text[:1000]}", model_used, _now()),
                 )
                 mc.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "recommend_hardware: best-effort INSERT into mc_net_ai_sessions failed (non-blocking): %s",
+                exc,
+            )
 
     result.setdefault("recommendations", [])
     result["model"] = model_used
@@ -3580,8 +3586,8 @@ def ai_assist(session_id: str, engineer_prompt: str) -> dict:
                 (str(uuid.uuid4()), session_id, "assistant", response_text, model_used, _now()),
             )
             mc.commit()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("ai_assist: best-effort INSERT into mc_net_ai_sessions failed (non-blocking): %s", _exc)
 
     # Grounding assessment (TRUST invariant): this is free-form LLM guidance
     # with no retrieval context, so it carries a grounding-warning flag unless

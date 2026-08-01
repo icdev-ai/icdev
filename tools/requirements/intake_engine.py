@@ -44,6 +44,9 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # In-memory LRU cache for conversation history per session (TTL 30s)
 import time as _time
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.requirements.intake_engine")
 _CONVERSATION_CACHE: dict = {}
 _CONVERSATION_CACHE_TTL = 30
 
@@ -547,8 +550,11 @@ def _seed_template_requirements(session_id: str, template_reqs: list, classifica
                 (req_id, session_id, raw_text, req_type, priority, criteria,
                  classification or "CUI"),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "_seed_template_requirements: best-effort INSERT into intake_requirements failed (non-blocking): %s",
+                exc,
+            )
 
 
 def _create_session_impl(params: "_NewSessionParams") -> dict:

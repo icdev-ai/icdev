@@ -100,6 +100,9 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.intelligence.war_readiness.information_scorer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -676,8 +679,8 @@ def _persist_score(result: dict) -> None:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_persist_score: best-effort INSERT into sg_information_scores failed (non-blocking): %s", exc)
 
 
 def _load_signals_from_db(scenario_id: str) -> dict:

@@ -9,6 +9,9 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.agentic_ai_canvas.mcp_sync")
 
 
 # Node types that represent tools/agents the MCP gateway should know about
@@ -108,8 +111,11 @@ def sync_design_to_mcp(design_id: str) -> Dict[str, Any]:
                         (label, source, caps, now),
                     )
                     synced_labels.append(label)
-                except Exception:
-                    pass
+                except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                    logger.warning(
+                        "sync_design_to_mcp: best-effort INSERT into mcp_tool_registry failed (non-blocking): %s",
+                        _exc,
+                    )
 
         mconn.commit()
     except Exception as exc:

@@ -12,6 +12,9 @@ import uuid
 from datetime import datetime, timezone
 
 from tools.data_canvas.db.init_db import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.data_canvas.data_mesh.csp")
 
 
 def _now() -> str:
@@ -81,5 +84,5 @@ def _log_sync(result: dict, domain_ids: list[str]) -> None:
                 ),
             )
             conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_log_sync: best-effort INSERT into dm_csp_sync_log failed (non-blocking): %s", exc)

@@ -273,8 +273,8 @@ def detect_patterns(conn, theater_id: str | None = None, limit: int = 500) -> li
                 (pat["id"], pat["pattern_type"], pat["keywords"],
                  pat["event_count"], pat["confidence"], pat["detected_at"]),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("detect_patterns: best-effort INSERT into sg_mesh_patterns failed (non-blocking): %s", exc)
         patterns.append(pat)
 
     conn.commit()

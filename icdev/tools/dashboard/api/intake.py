@@ -109,6 +109,9 @@ except Exception:
         return "Acceptance criteria shall validate that: " + text
 
 import importlib.util
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.intake")
 
 _HAS_DECOMP = importlib.util.find_spec("tools.requirements.decomposition_engine") is not None
 
@@ -164,8 +167,11 @@ def _seed_ai_governance_baseline(conn, project_id: str, session_id: str) -> None
                VALUES (%s, %s, %s, %s, %s)""",
             (project_id, "Primary AI Capability", "Auto-detected from requirements intake", "minimal_risk", now),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_seed_ai_governance_baseline: best-effort INSERT into ai_use_case_inventory failed (non-blocking): %s",
+            exc,
+        )
     # Seed framework applicability (NIST AI RMF)
     try:
         conn.execute(
@@ -174,8 +180,11 @@ def _seed_ai_governance_baseline(conn, project_id: str, session_id: str) -> None
                VALUES (%s, %s, 'auto_detected', 'ai_keyword_intake', %s)""",
             (project_id, "nist_ai_rmf", now),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_seed_ai_governance_baseline: best-effort INSERT into framework_applicability failed (non-blocking): %s",
+            exc,
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -54,6 +54,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.reflex_sandbox")
 
 # ---------------------------------------------------------------------------
 # Graceful NemoClaw imports
@@ -207,8 +210,8 @@ def _audit(conn, action: str, details: str = "", reflex: str = "") -> None:
                 f"proposal_genesis.{reflex}" if reflex else "proposal_genesis",
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _normalize_reflex(reflex_name: str) -> str:

@@ -24,6 +24,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.compliance.poam_auto_generator")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -190,8 +193,9 @@ def _write_audit_event(conn: Any, item: dict[str, Any]) -> None:
                 }),
             ),
         )
-    except Exception:  # noqa: BLE001
-        pass  # audit_trail may not exist in test DBs without full schema
+    except Exception as exc:  # noqa: BLE001
+        # audit_trail may not exist in test DBs without full schema
+        logger.warning("_write_audit_event: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def run_auto_generator(conn: Any) -> dict[str, Any]:

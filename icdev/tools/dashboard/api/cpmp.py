@@ -28,6 +28,9 @@ from flask import Blueprint, g, jsonify, make_response, request
 
 from tools.dashboard.auth import require_role
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.cpmp")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -68,8 +71,8 @@ def _audit(conn, action, details="", actor="cpmp_api"):
             "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _classification():
@@ -82,8 +85,8 @@ def _cor_access_log(conn, user_id, contract_id, action):
             "INSERT INTO cpmp_cor_access_log (user_id, contract_id, action) VALUES (%s, %s, %s)",
             (user_id, contract_id, action),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_cor_access_log: best-effort INSERT into cpmp_cor_access_log failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

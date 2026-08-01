@@ -22,6 +22,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.sdc.demo_runner")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -516,8 +519,9 @@ def _persist_run(run_id: str, audience: str, scenarios: List[str], status: str, 
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Persistence failure must not abort the demo run
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Persistence failure must not abort the demo run
+        logger.warning("_persist_run: best-effort INSERT into sdc_demo_runs failed (non-blocking): %s", exc)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

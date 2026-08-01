@@ -28,6 +28,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ace.file_access_broker")
 
 def _find_repo_root() -> Path:
     """Resolve the ICDEV repo root by walking up from this file to the nearest
@@ -220,5 +223,6 @@ class FileAccessBroker:
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass  # audit must never crash the caller
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # audit must never crash the caller
+            logger.warning("_audit: best-effort INSERT into ace_audit_log failed (non-blocking): %s", exc)

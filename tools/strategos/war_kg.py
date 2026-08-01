@@ -20,6 +20,9 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.strategos.war_kg")
 
 # ── Node types ────────────────────────────────────────────────────────────────
 
@@ -194,8 +197,8 @@ def ensure_war_graph(conn=None) -> str:
                 ),
             )
             conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("ensure_war_graph: best-effort INSERT into kg_graphs failed (non-blocking): %s", exc)
     finally:
         if close_after:
             conn.close()

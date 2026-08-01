@@ -60,6 +60,8 @@ from typing import Any, Optional
 
 from tools.config.core_profile import profile_default
 
+logger = get_logger("icdev.db.storage")
+
 # Regex for table name extraction used by column-level masking.
 _RE_FROM_TABLE = re.compile(r"\bFROM\b\s+([\w\"\.]+)", re.IGNORECASE)
 _RE_UPDATE_TABLE = re.compile(r"\bUPDATE\b\s+([\w\"\.]+)", re.IGNORECASE)
@@ -814,8 +816,8 @@ def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
         )
         _ac.commit()
         _ac.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_write_rls_audit: best-effort INSERT into rls_audit failed (non-blocking): %s", exc)
 
 
 def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
@@ -836,8 +838,8 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         )
         _ac.commit()
         _ac.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_write_column_audit: best-effort INSERT into column_mask_audit failed (non-blocking): %s", exc)
 
 
 def _pg_exec_statements(cursor, sql: str, backend: str) -> None:

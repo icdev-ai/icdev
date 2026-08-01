@@ -15,6 +15,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.migration_intelligence.goal_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = BASE_DIR / "data" / "migration_intel.db"
@@ -237,8 +240,8 @@ def _log_chat(log_id, user_input, parsed_goals, goal_ids, model, confidence, db_
              model, confidence, _now()),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_log_chat: best-effort INSERT into mi_goal_chat_log failed (non-blocking): %s", exc)
     finally:
         conn.close()
 
