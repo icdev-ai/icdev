@@ -36,6 +36,44 @@ from tools.workflow.impact_analyzer import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _repo_must_stay_clean():
+    """No test in this module may modify the repository it is testing.
+
+    The coherence auto-fixers are not read-only: the manifest fixer appends
+    rows to ``tools/manifest.md`` and ``_autofix_imports`` shells out to
+    ``ruff --fix --select F401,F811,F841 tools/``. ``test_autofix_mode`` used
+    to invoke them against the LIVE checkout, and on 2026-08-01 a single run
+    added 14 unrelated auto-registration rows to ``tools/manifest.md`` that
+    then had to be reverted out of an unrelated PR before it could be
+    committed.
+
+    Enforced at runtime for every test rather than by grepping the source for
+    ``autofix=True``: a text check counts prose in docstrings and cannot see a
+    fixer reached indirectly. This catches any route to a write, including one
+    a future test adds without knowing the history.
+    """
+    import subprocess
+
+    from tools.workflow import coherence_checker as _cc
+
+    repo = Path(_cc.__file__).resolve().parents[2]
+
+    def _tracked_edits():
+        out = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, cwd=str(repo), timeout=60,
+        )
+        # Only tracked modifications matter; untracked scratch is not this
+        # suite's business and would make the guard flaky.
+        return {ln[3:] for ln in out.stdout.splitlines() if ln[:2].strip() == "M"}
+
+    before = _tracked_edits()
+    yield
+    new = _tracked_edits() - before
+    assert not new, f"test modified tracked file(s) in the repo under test: {sorted(new)}"
+
+
 # ---------------------------------------------------------------------------
 # Unit tests for parsing helpers
 # ---------------------------------------------------------------------------
@@ -528,13 +566,81 @@ class TestCoherenceReport:
 
     @pytest.mark.timeout(300)
     def test_autofix_mode(self):
-        """Test that --fix mode runs without error and includes total_fixes."""
-        report = run_checks(autofix=True)
+        """--fix wiring runs and reports total_fixes — without touching the tree.
+
+        This used to call ``run_checks(autofix=True)`` against the LIVE
+        checkout. The fixers are not read-only: the manifest fixer appends rows
+        to ``tools/manifest.md`` and ``_autofix_imports`` shells out to
+        ``ruff --fix --select F401,F811,F841 tools/``. Observed 2026-08-01, a
+        single run of this test added 14 unrelated auto-registration rows to
+        ``tools/manifest.md``, which then had to be reverted out of an
+        unrelated PR before it could be committed. A test must not modify the
+        repository it is testing.
+
+        The contract under test is the autofix *wiring* — that the path runs,
+        counts fixes, and surfaces total_fixes — so the fixers themselves are
+        stubbed. ``_apply_fixes`` is patched by name on the module so the
+        lookup inside ``run_checks`` resolves to the stub.
+        """
+        import unittest.mock as _mock
+
+        from tools.workflow import coherence_checker as _cc
+
+        applied = []
+
+        def _spy(check):
+            applied.append(check.check_id)
+            check.fixes_applied = ["stubbed fix"]
+            return check
+
+        with _mock.patch.object(_cc, "_apply_fixes", _spy):
+            report = _cc.run_checks(selected=["manifest", "append_only"], autofix=True)
+
         assert isinstance(report, CoherenceReport)
         assert hasattr(report, "total_fixes")
         assert report.total_fixes >= 0
-        d = report.to_dict()
-        assert "total_fixes" in d
+        assert "total_fixes" in report.to_dict()
+        # The spy only fires for checks that actually failed or warned, so the
+        # count must equal one stubbed fix per invocation rather than a fixed
+        # number — the point is that total_fixes tracks _apply_fixes.
+        assert report.total_fixes == len(applied)
+
+    def test_autofix_test_path_does_not_modify_the_working_tree(self):
+        """The autofix TEST path must leave the repository untouched.
+
+        Deliberately exercises the same stubbed route as test_autofix_mode
+        rather than the real fixers. Calling the real ones here would dirty the
+        tree by design — that is what they are for — so a guard that invoked
+        them could only ever fail. What is worth pinning is that *this suite*
+        never writes to the repo it is testing.
+
+        Verified while writing it: with the real fixers in play this assertion
+        fires with ``['tools/manifest.md']``, which is exactly the 2026-08-01
+        incident.
+        """
+        import subprocess
+        import unittest.mock as _mock
+
+        from tools.workflow import coherence_checker as _cc
+
+        repo = Path(_cc.__file__).resolve().parents[2]
+
+        def _dirty():
+            out = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True, text=True, cwd=str(repo), timeout=60,
+            )
+            return {ln[3:] for ln in out.stdout.splitlines() if ln.strip()}
+
+        before = _dirty()
+        with _mock.patch.object(_cc, "_apply_fixes", lambda check: check):
+            _cc.run_checks(selected=["manifest", "append_only"], autofix=True)
+        after = _dirty()
+        assert after == before, (
+            "the autofix test path modified tracked files: "
+            f"{sorted(after - before)}"
+        )
+
 
     def test_fixes_applied_field(self):
         """Test that checks include fixes_applied list."""
