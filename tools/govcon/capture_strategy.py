@@ -211,7 +211,7 @@ def save_company_strategy(strategy: dict, actor: str = "dashboard") -> dict:
 def _audit(conn, action: str, details: str = "", actor: str = "capture_strategy") -> None:
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (str(uuid.uuid4()), _now(), "govcon.capture_strategy", actor, action, details, "capture_strategy"),
         )
