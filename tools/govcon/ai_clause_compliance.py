@@ -174,8 +174,8 @@ def _audit(conn, action, details="", actor="ai_clause_compliance"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), now_isoformat(), "govcon.ai_clause", actor, action, details, "proposal_genesis"),
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (now_isoformat(), "govcon.ai_clause", actor, action, details, "proposal_genesis"),
         )
     except Exception:
         pass

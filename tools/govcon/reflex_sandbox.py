@@ -198,7 +198,6 @@ def _audit(conn, action: str, details: str = "", reflex: str = "") -> None:
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, project_id, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                str(uuid.uuid4()),
                 _now(),
                 "govcon.reflex_sandbox",
                 "reflex_sandbox",

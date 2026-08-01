@@ -205,7 +205,7 @@ def _audit(conn, action, details="", actor="compliance_matrix_builder"):
         conn.execute(
             "INSERT INTO audit_trail "
             "(created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )
     except Exception:

@@ -117,90 +117,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT REFERENCES projects(id),
     event_type TEXT NOT NULL CHECK(event_type IN (
-        'project_created', 'project_updated',
-        'code_generated', 'code_reviewed', 'code_approved', 'code_rejected',
-        'test_written', 'test_executed', 'test_passed', 'test_failed',
-        'security_scan', 'vulnerability_found', 'vulnerability_resolved',
-        'compliance_check', 'ssp_generated', 'poam_generated', 'stig_checked', 'sbom_generated',
-        'deployment_initiated', 'deployment_succeeded', 'deployment_failed', 'rollback_executed',
-        'decision_made', 'approval_granted', 'approval_denied',
-        'agent_task_submitted', 'agent_task_completed', 'agent_task_failed',
-        'self_heal_triggered', 'pattern_detected', 'knowledge_recorded',
-        'config_changed', 'secret_rotated',
-        'cssp_assessed', 'cssp_report_generated', 'cssp_evidence_collected',
-        'ir_plan_generated', 'siem_config_generated',
-        'xacta_sync', 'xacta_sync_completed', 'xacta_export',
-        'maintenance_audit', 'dependency_scanned', 'vulnerability_checked',
-        'remediation_applied', 'sla_violation',
-        'fedramp_assessed', 'cmmc_assessed', 'oscal_generated',
-        'emass_sync', 'emass_push', 'emass_pull',
-        'cato_evidence_collected', 'classification_changed',
-        'crosswalk_mapped', 'pi_compliance_updated',
-        'model_imported', 'model_synced', 'model_snapshot',
-        'digital_thread_linked', 'des_assessed',
-        'reqif_imported', 'xmi_imported',
-        'code_from_model', 'model_from_code',
-        'legacy_analyzed', 'migration_assessed', 'migration_planned',
-        'migration_task_completed', 'migration_code_generated',
-        'schema_migrated', 'service_extracted', 'strangler_fig_cutover',
-        'intake_session_created', 'intake_session_resumed', 'intake_session_completed',
-        'requirement_captured', 'requirement_refined', 'requirement_approved',
-        'gap_detected', 'ambiguity_detected',
-        'readiness_scored', 'decomposition_generated',
-        'document_uploaded', 'document_extracted',
-        'bdd_criteria_generated',
-        'boundary_assessed', 'boundary_impact_red', 'boundary_alternative_generated',
-        'ato_system_registered', 'isa_created', 'isa_expired', 'isa_renewed',
-        'scrm_assessed', 'cve_triaged', 'cve_impact_propagated',
-        'supply_chain_risk_escalated',
-        'simulation_created', 'simulation_completed', 'monte_carlo_completed',
-        'coa_generated', 'coa_alternative_generated', 'coa_compared',
-        'coa_selected', 'coa_rejected', 'coa_presented',
-        'integration_configured', 'integration_sync_push', 'integration_sync_pull',
-        'integration_sync_error', 'reqif_exported',
-        'approval_submitted', 'approval_reviewed', 'approval_approved',
-        'approval_rejected', 'approval_escalated',
-        'rtm_generated', 'rtm_gap_detected',
-        'hook_event_logged', 'agent_execution_started', 'agent_execution_completed',
-        'agent_execution_failed', 'agent_execution_retried',
-        'nlq_query_executed', 'nlq_query_blocked',
-        'worktree_created', 'worktree_cleaned',
-        'gitlab_task_claimed', 'gitlab_task_completed', 'gitlab_task_failed',
-        'agentic_fitness_assessed', 'child_app_generated',
-        'agentic_scaffolded', 'agentic_code_generated',
-        'governance_validated', 'agentic_test_generated',
-        'fips199_categorized', 'fips200_assessed',
-        'security_categorization_completed', 'baseline_selected',
-        'marketplace_asset_published', 'marketplace_asset_installed',
-        'marketplace_asset_uninstalled', 'marketplace_asset_updated',
-        'marketplace_asset_deprecated', 'marketplace_asset_revoked',
-        'marketplace_review_submitted', 'marketplace_review_completed',
-        'marketplace_scan_completed', 'marketplace_federation_sync',
-        'marketplace_rating_submitted',
-        'openclaw_skill_imported', 'openclaw_skill_promoted',
-        'openclaw_skill_rejected', 'openclaw_skill_exported',
-        'openclaw_export_approved', 'openclaw_export_rejected',
-        'openclaw_quarantine_expired',
-        'compliance_detected', 'compliance_confirmed',
-        'multi_regime_assessed', 'multi_regime_gate_evaluated',
-        'data_category_assigned', 'data_category_detected',
-        'framework_applicability_set', 'iso_bridge_mapped',
-        'cjis_assessed', 'hipaa_assessed', 'hitrust_assessed',
-        'soc2_assessed', 'pci_dss_assessed', 'iso27001_assessed',
-        'remote_binding_created', 'remote_binding_provisioned', 'remote_binding_revoked',
-        'remote_command_received', 'remote_command_rejected', 'remote_command_completed',
-        'remote_response_filtered',
-        'spec_quality_check', 'spec_consistency_check',
-        'constitution_added', 'constitution_removed', 'constitution_defaults_loaded',
-        'clarification_analyzed',
-        'spec.init', 'spec.register',
-        'heartbeat_check_warning', 'heartbeat_check_critical',
-        'auto_resolution_started', 'auto_resolution_completed',
-        'auto_resolution_failed', 'auto_resolution_escalated',
-        'critique_session_created', 'critique_completed',
-        'critique_revision_requested',
-        'pir_alert_generated',
-        'integrity_promoted', 'integrity_rejected'
+@@AUDIT_EVENT_TYPES@@
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -11194,6 +11111,26 @@ CREATE INDEX IF NOT EXISTS idx_cag_tenant_canvas ON canvas_access_grants (tenant
 CREATE INDEX IF NOT EXISTS idx_cag_principal ON canvas_access_grants (principal_type, principal_id);
 
 """
+
+# ---------------------------------------------------------------------------
+# audit_trail.event_type CHECK — generated, never hand-maintained
+# ---------------------------------------------------------------------------
+#
+# This list used to be duplicated here as a literal. It drifted: the constant
+# held 221 event types while this copy admitted 189, and neither included the
+# 25 govcon.* types that tools/govcon writes — so every govcon audit INSERT was
+# rejected by the constraint and silently swallowed.
+#
+# CLAUDE.md requires CHECK constraints be derived from Python constants rather
+# than hardcoded. Deriving it here means the two cannot drift again: adding an
+# event type to VALID_EVENT_TYPES is now sufficient for a fresh database, and
+# tests/test_audit_event_type_parity.py fails if an existing one falls behind.
+from tools.audit.audit_logger import VALID_EVENT_TYPES as _VALID_EVENT_TYPES  # noqa: E402
+
+_AUDIT_EVENT_TYPES_SQL = ",\n".join(
+    f"        '{_t}'" for _t in _VALID_EVENT_TYPES
+)
+SCHEMA_SQL = SCHEMA_SQL.replace("@@AUDIT_EVENT_TYPES@@", _AUDIT_EVENT_TYPES_SQL)
 
 
 # Phase 64: RAG columns on projects table

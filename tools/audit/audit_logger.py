@@ -269,6 +269,37 @@ VALID_EVENT_TYPES = (
     # SIPA — software integrity HITL promote/reject events
     "integrity_promoted",
     "integrity_rejected",
+
+    # GovCon subsystem (tools/govcon/*). These are written by 31 modules
+    # whose _audit() had never succeeded: the CHECK constraint admitted none
+    # of them, and every call site swallows the failure. Adding them here is
+    # what makes the constraint accept them — init_icdev_db.py now generates
+    # the CHECK from this tuple rather than keeping its own copy.
+    "govcon.ai_clause",
+    "govcon.amendment",
+    "govcon.award_tracking",
+    "govcon.capability_map",
+    "govcon.capture_strategy",
+    "govcon.clause_risk",
+    "govcon.cluster",
+    "govcon.cmmc_supply_chain",
+    "govcon.color_review",
+    "govcon.compliance_matrix",
+    "govcon.extract",
+    "govcon.far_dfars_verification",
+    "govcon.gap_analysis",
+    "govcon.key_personnel",
+    "govcon.knowledge_base",
+    "govcon.lifecycle",
+    "govcon.pipeline",
+    "govcon.program_bridge",
+    "govcon.question_export",
+    "govcon.question_generator",
+    "govcon.reflex_sandbox",
+    "govcon.response_draft",
+    "govcon.scan",
+    "govcon.telco_rfp",
+    "govcon.win_theme",
 )
 
 

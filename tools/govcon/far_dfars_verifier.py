@@ -789,7 +789,7 @@ def _audit(conn, action: str, details: str = "", actor: str = "far_dfars_verifie
         conn.execute(
             "INSERT INTO audit_trail "
             "(created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.far_dfars_verification", actor, action, details, "govcon"),
         )
     except Exception:

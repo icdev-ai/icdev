@@ -212,8 +212,8 @@ def _audit(conn, action: str, details: str = "", actor: str = "capture_strategy"
     try:
         conn.execute(
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (str(uuid.uuid4()), _now(), "govcon.capture_strategy", actor, action, details, "capture_strategy"),
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.capture_strategy", actor, action, details, "capture_strategy"),
         )
     except Exception as exc:  # audit must never break the action
         logger.warning("capture_strategy audit write failed: %s", exc)
