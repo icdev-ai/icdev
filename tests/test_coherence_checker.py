@@ -36,6 +36,44 @@ from tools.workflow.impact_analyzer import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _repo_must_stay_clean():
+    """No test in this module may modify the repository it is testing.
+
+    The coherence auto-fixers are not read-only: the manifest fixer appends
+    rows to ``tools/manifest.md`` and ``_autofix_imports`` shells out to
+    ``ruff --fix --select F401,F811,F841 tools/``. ``test_autofix_mode`` used
+    to invoke them against the LIVE checkout, and on 2026-08-01 a single run
+    added 14 unrelated auto-registration rows to ``tools/manifest.md`` that
+    then had to be reverted out of an unrelated PR before it could be
+    committed.
+
+    Enforced at runtime for every test rather than by grepping the source for
+    ``autofix=True``: a text check counts prose in docstrings and cannot see a
+    fixer reached indirectly. This catches any route to a write, including one
+    a future test adds without knowing the history.
+    """
+    import subprocess
+
+    from tools.workflow import coherence_checker as _cc
+
+    repo = Path(_cc.__file__).resolve().parents[2]
+
+    def _tracked_edits():
+        out = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, cwd=str(repo), timeout=60,
+        )
+        # Only tracked modifications matter; untracked scratch is not this
+        # suite's business and would make the guard flaky.
+        return {ln[3:] for ln in out.stdout.splitlines() if ln[:2].strip() == "M"}
+
+    before = _tracked_edits()
+    yield
+    new = _tracked_edits() - before
+    assert not new, f"test modified tracked file(s) in the repo under test: {sorted(new)}"
+
+
 # ---------------------------------------------------------------------------
 # Unit tests for parsing helpers
 # ---------------------------------------------------------------------------
