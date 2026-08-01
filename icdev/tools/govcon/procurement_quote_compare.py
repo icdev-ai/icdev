@@ -123,6 +123,14 @@ def _get_db():
     return get_connection()
 
 
+def _rollback_quietly(conn) -> None:
+    """End an open transaction. Never raises — callers are on a failure path."""
+    try:
+        conn.rollback()
+    except Exception:  # noqa: BLE001 - the connection may already be dead
+        pass
+
+
 def _audit(
     conn,
     event_type: str,
@@ -587,6 +595,12 @@ def add_quote(
              status, notes, now, now),
         )
     except Exception as exc:
+        # The failed INSERT aborts the statement but not the transaction: SQLite
+        # opened an implicit BEGIN on the first DML and PostgreSQL leaves the
+        # transaction in a failed state. Returning without a rollback abandons a
+        # write lock on the shared DB that every later writer blocks on, and the
+        # caller sees only a tidy error dict (tsh-leak-01).
+        _rollback_quietly(conn)
         # Unique constraint = duplicate quote
         if "UNIQUE" in str(exc) or "unique" in str(exc).lower():
             return {
