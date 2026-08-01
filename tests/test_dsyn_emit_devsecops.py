@@ -2,7 +2,6 @@
 """Tests for dsyn-emit-06: DevSecOps canvas_events emission."""
 from __future__ import annotations
 import json
-import sqlite3
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,32 +10,31 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Translating wrapper — event_emitter authors %s for PostgreSQL.
+from _sql_compat import connect as _tconnect
+
 _SCHEMA = """CREATE TABLE IF NOT EXISTS canvas_events (
     id TEXT PRIMARY KEY, source_canvas TEXT, target_canvas TEXT,
     event_type TEXT, payload_json TEXT, created_at TEXT,
     tenant_id TEXT DEFAULT '', classification TEXT DEFAULT 'CUI', consumed_at TEXT
 );"""
 
-class _ShimConn:
-    def __init__(self):
-        self._db = sqlite3.connect(":memory:")
-        self._db.row_factory = sqlite3.Row
-        self._db.execute(_SCHEMA); self._db.commit()
-    def execute(self, sql, params=()):
-        return self._db.execute(sql.replace("%s", "?"), params)
-    def commit(self): self._db.commit()
-    def close(self): self._db.close()
-    def __enter__(self): return self
-    def __exit__(self, *_): self.commit()
+def _new_conn():
+    conn = _tconnect(":memory:")
+    conn.execute(_SCHEMA)
+    conn.commit()
+    return conn
 
 @pytest.fixture
-def shim(): return _ShimConn()
+def shim(): return _new_conn()
 
 @contextmanager
 def _patch(shim):
     @contextmanager
     def _gc(): yield shim
-    with patch("tools.devsecops.event_emitter.get_connection", _gc): yield shim
+    # The emitter opens the RLS-disabled canvas connection (PR #720), not
+    # get_connection() — patching the latter raises AttributeError.
+    with patch("tools.devsecops.event_emitter.get_canvas_connection", _gc): yield shim
 
 def test_emit_pipeline_stage_failed(shim):
     from tools.devsecops import event_emitter
@@ -64,10 +62,10 @@ def test_emit_failure_returns_false():
     from tools.devsecops import event_emitter
     @contextmanager
     def _boom():
-        c = _ShimConn()
+        c = _new_conn()
         c.execute = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("fail"))
         yield c
-    with patch("tools.devsecops.event_emitter.get_connection", _boom):
+    with patch("tools.devsecops.event_emitter.get_canvas_connection", _boom):
         assert event_emitter.emit_pipeline_stage_failed("p", "s") is False
 
 def test_record_pipeline_stage_failure_integration(monkeypatch):
