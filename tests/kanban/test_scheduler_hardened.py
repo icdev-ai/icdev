@@ -280,10 +280,20 @@ def test_guard5_table_has_validation_columns(db_conn):
 # ---------------------------------------------------------------------------
 
 
-def test_guard6_timeout_lowered_to_15min():
-    """MAX_EXECUTION_SECONDS lowered from 1800 (30 min) to 900 (15 min)."""
-    assert MAX_EXECUTION_SECONDS == 900, (
-        f"Expected 900s (15 min), got {MAX_EXECUTION_SECONDS}s"
+def test_guard6_timeout_clears_the_observed_overruns():
+    """MAX_EXECUTION_SECONDS must exceed the runtimes tasks actually need.
+
+    This used to pin 900s. Measured on the live board, that cap was killing
+    tasks 2-11 seconds past it — "TIMEOUT after 902s (max 900s)", "911s (max
+    900s)" — i.e. truncating the distribution through its body, not its tail.
+    Each of those kills then counted as a failure, and at the old
+    MAX_FAILURES_BEFORE_DECOMPOSITION=1 immediately triggered decomposition
+    into children that fail ~3x more often. The assertion is now a floor
+    rather than an exact value so tuning the budget doesn't require editing a
+    test that was only ever asserting a constant back to itself.
+    """
+    assert MAX_EXECUTION_SECONDS > 911, (
+        f"budget must clear the observed 911s overrun, got {MAX_EXECUTION_SECONDS}s"
     )
 
 
