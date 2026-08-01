@@ -16,6 +16,9 @@ from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.monitor.auto_resolver")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -849,8 +852,8 @@ def _do_hitl_escalation(
             conn.commit()
         finally:
             conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_do_hitl_escalation: best-effort INSERT into kanban_tasks failed (non-blocking): %s", exc)
 
     return {"action": "hitl_escalation", "card_id": card_id, "component_id": component_id, "trust_tier": trust_tier}
 

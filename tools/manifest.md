@@ -176,6 +176,8 @@
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 - [AI Augmentation Canvas (AAC)](manifest/ai-augmentation-canvas.md)
 - [Document Modernization Engine (docmod)](manifest/doc-modernization.md)
+- [FORGE Academy](manifest/forge-academy.md) — learner platform: server-authoritative grading, XP provenance ledger, tier gating (`apps/forge_academy/`)
+- [GeoSIGINT Indo-Pacific Analyzer](manifest/geosigint.md) — 6 OSINT analyzers, 7 pages, 23 APIs (`apps/geosigint/`)
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1236,3 +1238,17 @@
 | Odc Coverage Refresh | tools\genesis\reflexes\odc_coverage_refresh.py | Auto-registered: reflexes/odc_coverage_refresh.py | --json | JSON |
 | Change Control | tools\doc_modernization\packs\change_control.py | Auto-registered: packs/change_control.py | --json | JSON |
 | Evidence Currency | tools\doc_modernization\packs\evidence_currency.py | Auto-registered: packs/evidence_currency.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Credibility | tools\bom\credibility.py | Auto-registered: bom/credibility.py | --json | JSON |
+| Derivative | tools\bom\derivative.py | Auto-registered: bom/derivative.py | --json | JSON |
+| Export Categorized | tools\bom\export_categorized.py | Auto-registered: bom/export_categorized.py | --json | JSON |
+| Export Xlsx | tools\bom\export_xlsx.py | Auto-registered: bom/export_xlsx.py | --json | JSON |
+| Extract Grid | tools\bom\extract_grid.py | Auto-registered: bom/extract_grid.py | --json | JSON |
+| Forensics | tools\bom\forensics.py | Auto-registered: bom/forensics.py | --json | JSON |
+| Formula Graph | tools\bom\formula_graph.py | Auto-registered: bom/formula_graph.py | --json | JSON |
+| Seed Bom Concord | tools\kanban\seed_bom_concord.py | Auto-registered: kanban/seed_bom_concord.py | --json | JSON |
+| Brand Deck | tools\slides\brand_deck.py | Auto-registered: slides/brand_deck.py | --json | JSON |

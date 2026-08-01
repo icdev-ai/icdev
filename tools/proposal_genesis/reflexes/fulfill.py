@@ -28,6 +28,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.proposal_genesis.reflexes.fulfill")
 
 # ---------------------------------------------------------------------------
 # Module-level constants — Fulfill Reflex (R11) thresholds & limits.
@@ -459,8 +462,11 @@ def _record_compliance_refresh(deliverable_id: str, contract_id: str, cdrl_type:
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_record_compliance_refresh: best-effort INSERT into pg_proposal_genesis_audit failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 
@@ -486,8 +492,11 @@ def _audit_fulfill(event_type: str, contract_id: Optional[str], details: Dict, s
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_audit_fulfill: best-effort INSERT into pg_proposal_genesis_audit failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

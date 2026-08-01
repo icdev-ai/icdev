@@ -25,6 +25,9 @@ from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.finetune.doc_extractor")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -274,8 +277,9 @@ def extract_document(
                 (f"ft_document:{dataset_id}", doc_id, len(chunks), _now(), _now()),
             )
             conn.commit()
-        except Exception:
-            pass  # Ingestion log is optional
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # Ingestion log is optional
+            logger.warning("extract_document: best-effort INSERT into rag_ingestion_log failed (non-blocking): %s", exc)
         finally:
             conn.close()
 

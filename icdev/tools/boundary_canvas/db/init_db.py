@@ -17,6 +17,7 @@ SQLite ``?`` — a RAW ``sqlite3.connect`` would raise ProgrammingError on ``%s`
 import json
 import os
 import sqlite3
+import sys
 from pathlib import Path
 
 # When integrated into ICDEV, DB lives in data/ directory
@@ -1660,7 +1661,7 @@ def init_db():
                 conn.commit()
             except Exception:
                 pass
-            print("[init_db] BDC schema created (PostgreSQL)")
+            print("[init_db] BDC schema created (PostgreSQL)", file=sys.stderr)
         else:
             # SQLite: executescript for all-at-once
             conn.executescript(SCHEMA)
@@ -1681,7 +1682,7 @@ def init_db():
             except Exception:
                 pass
             conn.commit()
-            print(f"[init_db] BDC schema created at {DB_PATH}")
+            print(f"[init_db] BDC schema created at {DB_PATH}", file=sys.stderr)
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()
@@ -1698,9 +1699,9 @@ def init_db():
                 added += 1
         if added:
             conn.commit()
-            print(f"[init_db] BDC seeded {added} new templates (total: {count + added}).")
+            print(f"[init_db] BDC seeded {added} new templates (total: {count + added}).", file=sys.stderr)
         else:
-            print(f"[init_db] BDC all {count} templates up to date.")
+            print(f"[init_db] BDC all {count} templates up to date.", file=sys.stderr)
 
         # Seed snippets (upsert)
         cur.execute("SELECT COUNT(*) FROM bd_snippets")
@@ -1716,9 +1717,9 @@ def init_db():
                 snp_added += 1
         if snp_added:
             conn.commit()
-            print(f"[init_db] BDC seeded {snp_added} new snippets (total: {snp_count + snp_added}).")
+            print(f"[init_db] BDC seeded {snp_added} new snippets (total: {snp_count + snp_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] BDC all {snp_count} snippets up to date.")
+            print(f"[init_db] BDC all {snp_count} snippets up to date.", file=sys.stderr)
 
         # ── Seed runbooks ──────────────────────────────────────────────────
         cur.execute("SELECT COUNT(*) FROM bdc_runbooks")
@@ -1745,17 +1746,17 @@ def init_db():
                 rb_added += 1
         if rb_added:
             conn.commit()
-            print(f"[init_db] BDC seeded {rb_added} new runbooks (total: {rb_count + rb_added}).")
+            print(f"[init_db] BDC seeded {rb_added} new runbooks (total: {rb_count + rb_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] BDC all {rb_count} runbooks up to date.")
+            print(f"[init_db] BDC all {rb_count} runbooks up to date.", file=sys.stderr)
 
         # ── Seed SOPs ──────────────────────────────────────────────────────
         try:
             from tools.boundary_canvas.sops import seed_sops
             seed_sops()
-            print("[init_db] BDC SOPs seeded.")
+            print("[init_db] BDC SOPs seeded.", file=sys.stderr)
         except Exception as _e:
-            print(f"[init_db] BDC SOP seed skipped: {_e}")
+            print(f"[init_db] BDC SOP seed skipped: {_e}", file=sys.stderr)
 
     finally:
         conn.close()

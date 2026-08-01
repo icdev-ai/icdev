@@ -33,6 +33,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.evm_engine")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -88,8 +91,8 @@ def _audit(conn, action, details="", actor="evm_engine"):
             "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _pert_sample(optimistic, most_likely, pessimistic, lambd=4):

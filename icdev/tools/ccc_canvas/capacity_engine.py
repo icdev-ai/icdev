@@ -6,6 +6,9 @@ Wraps isp_capacity_planner and adds DB persistence of plans.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ccc_canvas.capacity_engine")
 
 
 def _months_to_saturation(current_pct: float, growth_rate_pct: float) -> int:
@@ -107,8 +110,8 @@ def analyze_circuit(conn, circuit_id_int: int) -> dict:
                 tuple(plan.values()),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("analyze_circuit: best-effort INSERT into ccc_capacity_plans failed (non-blocking): %s", exc)
 
     plan["circuit_id_str"] = row.get("circuit_id", "")
     plan["carrier"]        = row.get("carrier", "")

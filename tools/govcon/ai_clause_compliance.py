@@ -45,6 +45,9 @@ if str(_ROOT) not in sys.path:
 
 from tools.common.helpers import now_isoformat  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.ai_clause_compliance")
 
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
@@ -177,8 +180,8 @@ def _audit(conn, action, details="", actor="ai_clause_compliance"):
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (now_isoformat(), "govcon.ai_clause", actor, action, details, "proposal_genesis"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _get_rfp_text(conn, opportunity_id):
@@ -591,8 +594,11 @@ def generate_compliance_bundle(opportunity_id, clause_type="gsar_552_239_7001"):
                     now,
                 ),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "generate_compliance_bundle: best-effort INSERT into pg_ai_clause_compliance failed (non-blocking): %s",
+                exc,
+            )
 
         artifacts.append(
             {

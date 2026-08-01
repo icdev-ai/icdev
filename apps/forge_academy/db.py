@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS fa_guilds (
     description TEXT,
     invite_code TEXT NOT NULL UNIQUE,
     created_by INTEGER REFERENCES fa_users(id),
+    tenant_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -252,6 +253,57 @@ CREATE TABLE IF NOT EXISTS fa_certificate_evidence (
     classification TEXT DEFAULT 'CUI',
     tenant_id TEXT,
     created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- aca-trn-04: the instructor workflow. Declared here as well as in migration 323
+-- for the same reason as fa_xp_ledger above — a query against a missing table
+-- inside a caller's open transaction ABORTS that transaction on PostgreSQL.
+CREATE TABLE IF NOT EXISTS fa_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_type TEXT NOT NULL DEFAULT 'mission',
+    mission_id INTEGER REFERENCES fa_missions(id),
+    track_key TEXT,
+    target_type TEXT NOT NULL DEFAULT 'learner',
+    target_user_id INTEGER REFERENCES fa_users(id),
+    target_role TEXT,
+    due_at TEXT,
+    note TEXT,
+    assigned_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS fa_instructor_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES fa_users(id),
+    mission_id INTEGER REFERENCES fa_missions(id),
+    step_id INTEGER REFERENCES fa_mission_steps(id),
+    assignment_id INTEGER REFERENCES fa_assignments(id),
+    verdict TEXT NOT NULL,
+    override_score INTEGER,
+    prior_score INTEGER,
+    comment TEXT,
+    reviewer TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). A grade override that cannot
+-- be attributed to a person is indistinguishable from a bug in the grader.
+CREATE TABLE IF NOT EXISTS fa_instructor_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    actor_role TEXT,
+    subject_type TEXT,
+    subject_id TEXT,
+    detail_json TEXT DEFAULT '{}',
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- aca-trn-01: the assessment model. Declared here as well as in migration 324 for
@@ -467,6 +519,9 @@ def migrate():
             "ALTER TABLE fa_missions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
             "ALTER TABLE fa_missions ADD COLUMN updated_at TEXT",
             "ALTER TABLE fa_leaderboard_cache ADD COLUMN tenant_id TEXT",
+            # aca-trn-04: guilds were the one cross-learner object with no tenant
+            # column, so an invite code from one tenant was joinable from another.
+            "ALTER TABLE fa_guilds ADD COLUMN tenant_id TEXT",
         ]:
             try:
                 conn.execute(col_ddl)
@@ -1420,7 +1475,8 @@ def grant_achievement(user_id: int, slug: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def create_guild(
-    name: str, description: str, created_by: int, invite_code: str | None = None
+    name: str, description: str, created_by: int, invite_code: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict:
     """Create a guild and make ``created_by`` its leader.
 
@@ -1432,12 +1488,19 @@ def create_guild(
 
     Codes are stored uppercased because ``join_guild`` uppercases before
     lookup; a lowercase code would be unjoinable.
+
+    aca-trn-04: ``tenant_id`` is stamped on the guild so ``join_guild`` can
+    refuse a cross-tenant join. Before this the invite code was the only key,
+    and it is global — a code leaked out of one tenant admitted a learner from
+    another straight into ``get_guild_stats``, which returns every member's name
+    and XP.
     """
     conn = get_connection()
     code = (invite_code or secrets.token_urlsafe(6)).upper()
     conn.execute(
-        "INSERT INTO fa_guilds (name,description,invite_code,created_by) VALUES (%s,%s,%s,%s)",
-        (name, description, code, created_by),
+        "INSERT INTO fa_guilds (name,description,invite_code,created_by,tenant_id) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        (name, description, code, created_by, tenant_id),
     )
     conn.commit()
     row = conn.execute(
@@ -1455,12 +1518,33 @@ def create_guild(
     return guild
 
 
-def join_guild(invite_code: str, user_id: int) -> dict | None:
+def _same_tenant(left, right) -> bool:
+    """Whether two tenant values name the same population.
+
+    NULL and '' are both written for "no tenant" (the SaaS middleware returns
+    None, refresh_leaderboard_cache stores ''), so comparing them raw would split
+    one real tenant in two.
+    """
+    return (left or "") == (right or "")
+
+
+def join_guild(invite_code: str, user_id: int, tenant_id: str | None = None) -> dict | None:
+    """Join a guild by invite code, or None when the code does not resolve.
+
+    aca-trn-04: returns None for a guild in a DIFFERENT tenant as well as for a
+    missing code — deliberately the same answer, so a probe cannot use the
+    response to confirm that someone else's invite code exists.
+    """
     conn = get_connection()
     guild = conn.execute(
         "SELECT * FROM fa_guilds WHERE invite_code=%s", (invite_code.upper(),)
     ).fetchone()
     if not guild:
+        return None
+    guild_tenant = dict(guild).get("tenant_id")
+    if not _same_tenant(guild_tenant, tenant_id):
+        _log.warning("cross-tenant guild join refused: guild %s, user %s",
+                     dict(guild).get("id"), user_id)
         return None
     try:
         conn.execute(
@@ -1476,27 +1560,48 @@ def join_guild(invite_code: str, user_id: int) -> dict | None:
     return dict(guild)
 
 
-def get_guild_stats(guild_id: int) -> dict | None:
+def get_guild_stats(guild_id: int, tenant_id: str | None = None) -> dict | None:
     """Members and total XP for a guild, or None when the guild does not exist.
 
     aca-hyg-03: this returned {"members": [], "total_xp": 0} either way, so a caller
     could not tell an empty guild from a missing one and the route 200'd on a bad id.
     An empty-but-real guild still returns a dict with an empty member list.
+
+    aca-trn-04: a guild belonging to another tenant reads as missing — the check is
+    unconditional, not opt-in, because ``tenant_id=None`` is itself a real tenant
+    (the default one) and an opt-in check would leave the caller who most needs it
+    unprotected. ``/api/academy/guild/<id>`` takes the id straight from the URL and
+    had no authorisation of any kind, so with more than one tenant enrolled it was an
+    id-enumeration read of every learner's display name and XP. Members are filtered
+    by tenant too: guild rows predating this column carry NULL and would otherwise
+    still list the cross-tenant members joined before the fix.
     """
     conn = get_connection()
-    exists = conn.execute(
-        "SELECT 1 FROM fa_guilds WHERE id=%s", (guild_id,)
+    row = conn.execute(
+        "SELECT tenant_id FROM fa_guilds WHERE id=%s", (guild_id,)
     ).fetchone()
-    if not exists:
+    if not row:
         return None
-    members = conn.execute(
-        """SELECT u.display_name, u.xp, u.level, gm.role
-           FROM fa_guild_members gm
-           JOIN fa_users u ON u.id=gm.user_id
-           WHERE gm.guild_id=%s
-           ORDER BY u.xp DESC""",
-        (guild_id,),
-    ).fetchall()
+    if not _same_tenant(dict(row).get("tenant_id"), tenant_id):
+        return None
+    if tenant_id:
+        members = conn.execute(
+            """SELECT u.display_name, u.xp, u.level, gm.role
+               FROM fa_guild_members gm
+               JOIN fa_users u ON u.id=gm.user_id
+               WHERE gm.guild_id=%s AND u.tenant_id=%s
+               ORDER BY u.xp DESC""",
+            (guild_id, tenant_id),
+        ).fetchall()
+    else:
+        members = conn.execute(
+            """SELECT u.display_name, u.xp, u.level, gm.role
+               FROM fa_guild_members gm
+               JOIN fa_users u ON u.id=gm.user_id
+               WHERE gm.guild_id=%s AND (u.tenant_id IS NULL OR u.tenant_id='')
+               ORDER BY u.xp DESC""",
+            (guild_id,),
+        ).fetchall()
     total_xp = sum(m["xp"] for m in members)
     return {"members": [dict(m) for m in members], "total_xp": total_xp}
 
@@ -1508,11 +1613,25 @@ def get_guild_stats(guild_id: int) -> dict | None:
 _LEADERBOARD_CACHE_TTL = 300  # seconds
 
 
-def _leaderboard_cache_fresh(conn, period: str) -> bool:
+def _leaderboard_cache_fresh(conn, period: str, tenant_id: str | None = None) -> bool:
+    """Whether THIS TENANT's cache for ``period`` is inside the TTL.
+
+    aca-trn-04: the freshness probe ignored tenant_id while every read and write
+    around it was tenant-scoped. So the first tenant to refresh made the cache
+    look fresh for all of them, and every other tenant's ``refresh_leaderboard_cache``
+    was skipped forever — their rows were never written, the cache query returned
+    nothing, and they silently fell through to the uncached fallback (which has no
+    ``rank_pos``). Invisible with one learner in one tenant; permanent with two.
+    """
     try:
-        row = conn.execute(
-            "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=%s", (period,)
-        ).fetchone()
+        params: list = [period]
+        q = "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=%s"
+        if tenant_id:
+            q += " AND tenant_id=%s"
+            params.append(tenant_id)
+        else:
+            q += " AND (tenant_id IS NULL OR tenant_id='')"
+        row = conn.execute(q, params).fetchone()
         if not row or not row[0]:
             return False
         cached_at = datetime.fromisoformat(row[0].replace("Z", "+00:00"))
@@ -1556,7 +1675,7 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
 
 def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, tenant_id: str | None = None) -> list[dict]:
     conn = get_connection()
-    if not _leaderboard_cache_fresh(conn, period):
+    if not _leaderboard_cache_fresh(conn, period, tenant_id):
         try:
             refresh_leaderboard_cache(period=period, tenant_id=tenant_id)
         except Exception:

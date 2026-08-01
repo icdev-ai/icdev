@@ -16,6 +16,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import column_exists, get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.proposal_genesis.reflexes.discover")
 
 # ---------------------------------------------------------------------------
 # Module-level constants — Discover Reflex (R1) thresholds & limits.
@@ -102,8 +105,11 @@ def _store_amendment_diff(opp_id: str, diff_type: str, section: str, old_text: s
             (f"pgad-{uuid.uuid4().hex[:10]}", opp_id, diff_type, section, old_text, new_text, _utcnow_iso()),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_store_amendment_diff: best-effort INSERT into pg_amendment_diffs failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

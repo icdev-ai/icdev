@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import json
 from tools.ops_hub.adapter_base import OpsAdapter, AdapterHealth, AdapterResource, AdapterMetrics
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ops_hub.adapters.evidently_adapter")
 
 
 class EvidentlyAdapter(OpsAdapter):
@@ -150,8 +153,11 @@ class EvidentlyAdapter(OpsAdapter):
             ))
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "_persist_drift_event: best-effort INSERT into ohc_data_drift_events failed (non-blocking): %s",
+                exc,
+            )
 
     def push_event(self, event_type: str, payload: dict) -> dict:
         return {"status": "not_applicable", "note": "Evidently is a reporting tool only"}

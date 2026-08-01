@@ -37,6 +37,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.scout.daemon")
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -114,8 +117,8 @@ def _audit(event_type: str, details: str = "", pillar: str = "", success: bool =
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into scout_audit failed (non-blocking): %s", exc)
 
 
 def _load_config() -> dict:
@@ -158,12 +161,19 @@ def _feed_innovation_signals(findings: List[dict], config: dict) -> int:
                     ),
                 )
                 count += 1
-            except Exception:
-                pass  # Duplicate or schema mismatch — skip
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # Duplicate or schema mismatch — skip
+                logger.warning(
+                    "_feed_innovation_signals: best-effort INSERT into innovation_signals failed (non-blocking): %s",
+                    exc,
+                )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_feed_innovation_signals: best-effort INSERT into innovation_signals failed (non-blocking): %s",
+            exc,
+        )
     return count
 
 
@@ -188,8 +198,9 @@ def _update_heartbeat(config: dict, findings_count: int, duration_ms: int) -> No
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Heartbeat table may not exist
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Heartbeat table may not exist
+        logger.warning("_update_heartbeat: best-effort INSERT into heartbeat_checks failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -374,8 +385,8 @@ def run_scout(config: dict = None) -> dict:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("run_scout: best-effort INSERT into scout_scans failed (non-blocking): %s", _exc)
 
     # Step 10: Update heartbeat
     _update_heartbeat(config, len(all_findings), duration_ms)

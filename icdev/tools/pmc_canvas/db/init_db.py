@@ -10,6 +10,7 @@ Default backend: PostgreSQL. Set PMC_STORAGE_BACKEND=sqlite to override.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -32,7 +33,10 @@ def get_connection():
             from tools.db.storage import get_canvas_connection
             return get_canvas_connection("PMC_PG_DATABASE")
         except Exception as exc:
-            print(f"[pmc-db] PostgreSQL unavailable ({exc}), falling back to SQLite")
+            print(
+                f"[pmc-db] PostgreSQL unavailable ({exc}), falling back to SQLite",
+                file=sys.stderr,
+            )
     import sqlite3 as _sqlite3
     conn = _sqlite3.connect(str(_SQLITE_PATH))
     conn.row_factory = _sqlite3.Row
@@ -318,9 +322,9 @@ def init_db(conn=None) -> None:
             for stmt in [s.strip() for s in schema.split(";") if s.strip()]:
                 cur.execute(stmt)
             _conn.commit()
-        print("[pmc-db] Schema initialized OK")
+        print("[pmc-db] Schema initialized OK", file=sys.stderr)
     except Exception as exc:
-        print(f"[pmc-db] Schema init error: {exc}")
+        print(f"[pmc-db] Schema init error: {exc}", file=sys.stderr)
         raise
     finally:
         if owned:

@@ -43,6 +43,9 @@ from tools.testing.production_audit import (  # noqa: E402
     _run_subprocess,
     _get_db,
 )
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.testing.production_remediate")
 
 
 # ---------------------------------------------------------------------------
@@ -515,8 +518,12 @@ def _store_remediation(
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Don't fail remediation because DB write failed
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Don't fail remediation because DB write failed
+        logger.warning(
+            "_store_remediation: best-effort INSERT into remediation_audit_log failed (non-blocking): %s",
+            exc,
+        )
 
 
 # ---------------------------------------------------------------------------

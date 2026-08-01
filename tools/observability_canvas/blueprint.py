@@ -164,8 +164,8 @@ def create_observability_blueprint():
                     "INSERT INTO od_audit (design_id, actor, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
                     (design_id, user_id, action, details, _now()),
                 )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into od_audit failed (non-blocking): %s", exc)
 
     def _row_to_dict(row):
         return dict(row) if row else {}

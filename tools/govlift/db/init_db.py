@@ -341,7 +341,7 @@ def init_govlift_db() -> None:
                 else:
                     raise
         conn.commit()
-        print("GovLift DB: schema initialized OK")
+        print("GovLift DB: schema initialized OK", file=sys.stderr)
     except Exception as exc:
         print(f"GovLift DB init error: {exc}", file=sys.stderr)
         raise
