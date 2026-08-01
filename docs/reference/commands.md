@@ -326,6 +326,33 @@ python tools/security/aggregation_guard.py --health --json
 
 ---
 
+## Reproduce-or-Drop for Dynamic Findings (oss-poc-01)
+```bash
+# Is this reproduction replayable at all? (predicate hygiene + step/kind checks)
+python tools/security/reproduction_validator.py --validate repro.json --json
+
+# Replay one reproduction; exits 2 when the replay was not decisive
+python tools/security/reproduction_validator.py --replay repro.json --json
+
+# Replay against a different build (proves a fix landed)
+python tools/security/reproduction_validator.py --replay repro.json --target http://127.0.0.1:5051 --json
+
+# Apply the rule to a batch — unconfirmed findings are reported but never block
+python tools/security/reproduction_validator.py --enforce findings.json --json
+
+# Gate mode — exits non-zero only for CONFIRMED findings at a blocking severity
+python tools/security/reproduction_validator.py --enforce findings.json --gate
+
+# Classify without writing to dynamic_findings / finding_replay_attempts
+python tools/security/reproduction_validator.py --enforce findings.json --no-persist --json
+```
+
+Replay targets are default-deny allowlisted in `args/reproduction_policy.yaml`
+(loopback only out of the box); widen with `ICDEV_REPRO_TARGET_ALLOWLIST` for a
+self-hosted staging box — own targets only.
+
+---
+
 ## Requirements Intake (RICOAS) Commands
 ```bash
 python tools/requirements/intake_engine.py --project-id "sparkpilot" --customer-name "Name" --customer-org "Org" --impact-level IL4 --json

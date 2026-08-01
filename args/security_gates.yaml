@@ -152,6 +152,26 @@ aggregation_guard:
     SCG rules live in args/classification_aggregation.yaml.  Events are written to
     the append-only aggregation_events table (NIST AU-9/AU-10); never UPDATE/DELETE.
 
+dynamic_finding_reproduction:
+  blocking:
+    - confirmed_dynamic_finding_at_blocking_severity   # replay fired; severity in gate.blocking_severities
+  warning:
+    - dynamic_finding_without_reproduction             # no PoC stored — reported as a lead, never blocks
+    - dynamic_finding_replay_indecisive                # unavailable / error / refused — nothing was learned
+    - dynamic_finding_reproduction_not_discriminating  # fires against the fixed build too; it is a tautology
+  note: >
+    Enforced by tools/security/reproduction_validator.py (enforce / --gate).
+    Reproduce-or-drop (oss-poc-01, adapted from STRIX): a DYNAMIC finding blocks
+    only when a stored reproduction replays and its vulnerability predicate
+    fires. Unreproducible findings are 'unconfirmed' and are structurally
+    incapable of blocking — the only way to change that is
+    gate.block_on_unconfirmed in args/reproduction_policy.yaml, which exists so
+    that re-admitting them is a visible configuration act. STATIC findings
+    (bandit/CVSS/STIG) are out of scope and keep their existing thresholds
+    below. Replay targets are default-deny allowlisted (own targets only);
+    evidence lands in dynamic_findings + the append-only
+    finding_replay_attempts (migration 295, NIST AU).
+
 thresholds:
   sast:
     max_critical: 0

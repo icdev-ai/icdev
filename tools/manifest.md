@@ -1218,3 +1218,21 @@
 | Topology Ops | tools\network\routes\topology_ops.py | Auto-registered: routes/topology_ops.py | --json | JSON |
 | Twin Migration | tools\network\routes\twin_migration.py | Auto-registered: routes/twin_migration.py | --json | JSON |
 | Bgp Hijack Monitor | tools\genesis\reflexes\bgp_hijack_monitor.py | Auto-registered: reflexes/bgp_hijack_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Sme Gap Detector | tools\ace\sme_gap_detector.py | Auto-registered: ace/sme_gap_detector.py | --json | JSON |
+| Seed Cdp Kanban | tools\kanban\seed_cdp_kanban.py | Auto-registered: kanban/seed_cdp_kanban.py | --json | JSON |
+| Seed Dwo Kanban | tools\kanban\seed_dwo_kanban.py | Auto-registered: kanban/seed_dwo_kanban.py | --json | JSON |
+| Seed Fga Kanban | tools\kanban\seed_fga_kanban.py | Auto-registered: kanban/seed_fga_kanban.py | --json | JSON |
+| Seed Oss02 Kanban | tools\kanban\seed_oss02_kanban.py | Auto-registered: kanban/seed_oss02_kanban.py | --json | JSON |
+| App Red Team | tools\security\app_red_team.py | Auto-registered: security/app_red_team.py | --json | JSON |
+| Redteam Scope | tools\security\redteam_scope.py | Auto-registered: security/redteam_scope.py | --json | JSON |
+| Dic Inbox Sweep | tools\genesis\reflexes\dic_inbox_sweep.py | Auto-registered: reflexes/dic_inbox_sweep.py | --json | JSON |
+| Memory Maintenance Reflex | tools\genesis\reflexes\memory_maintenance_reflex.py | Auto-registered: reflexes/memory_maintenance_reflex.py | --json | JSON |
+| Observability Retention | tools\genesis\reflexes\observability_retention.py | Auto-registered: reflexes/observability_retention.py | --json | JSON |
+| Odc Coverage Refresh | tools\genesis\reflexes\odc_coverage_refresh.py | Auto-registered: reflexes/odc_coverage_refresh.py | --json | JSON |
+| Change Control | tools\doc_modernization\packs\change_control.py | Auto-registered: packs/change_control.py | --json | JSON |
+| Evidence Currency | tools\doc_modernization\packs\evidence_currency.py | Auto-registered: packs/evidence_currency.py | --json | JSON |
