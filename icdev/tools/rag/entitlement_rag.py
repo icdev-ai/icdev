@@ -56,13 +56,17 @@ def translate_intent(
         return _llm_fn(prompt, user_context)
     try:
         from icdev.tools.llm.router import LLMRouter
+        from icdev.tools.llm.provider import LLMRequest
 
         router = LLMRouter()
-        return router.complete(
-            system="Translate the analyst question to a SQL query. Return only the SQL.",
-            user=f"Question: {prompt}\nContext: {user_context}",
-            function_hint="code_generation",
-        ).strip()
+        resp = router.invoke(
+            "code_generation",
+            LLMRequest(
+                system_prompt="Translate the analyst question to a SQL query. Return only the SQL.",
+                messages=[{"role": "user", "content": f"Question: {prompt}\nContext: {user_context}"}],
+            ),
+        )
+        return (resp.content or "").strip()
     except Exception:
         return f"SELECT * FROM entitlements -- {prompt}"
 
@@ -125,13 +129,17 @@ def synthesize_with_grounding(
         return _llm_fn(tagged_data, prompt)
     try:
         from icdev.tools.llm.router import LLMRouter
+        from icdev.tools.llm.provider import LLMRequest
 
         router = LLMRouter()
-        return router.complete(
-            system=GROUNDING_SYSTEM_PROMPT,
-            user=f"Data: {tagged_data}\nQuestion: {prompt}",
-            function_hint="synthesis",
-        ).strip()
+        resp = router.invoke(
+            "synthesis",
+            LLMRequest(
+                system_prompt=GROUNDING_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": f"Data: {tagged_data}\nQuestion: {prompt}"}],
+            ),
+        )
+        return (resp.content or "").strip()
     except Exception:
         return ""
 

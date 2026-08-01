@@ -30,6 +30,9 @@ import types as _types
 import pytest
 
 
+
+from tools.db.storage import get_connection as _real_get_connection
+
 _SCHEMA = """
 CREATE TABLE kanban_tasks (
     id                    TEXT PRIMARY KEY,
@@ -50,6 +53,14 @@ CREATE TABLE kanban_tasks (
     failure_count         INTEGER DEFAULT 0,
     last_failure_reason   TEXT,
     last_failure_at       TEXT,
+    -- _record_failure_and_maybe_flag() writes the narrative half of the
+    -- failure story here in the SAME UPDATE that bumps failure_count, and
+    -- wraps the whole block in `except Exception`. Without this column the
+    -- UPDATE raised `no such column: last_run_summary`, was swallowed, and
+    -- failure_count silently stayed 0 — while the explicit reason-only write
+    -- further down the stale-cleanup path still succeeded, so only the
+    -- failure_count assertion failed and it read as an unimplemented bump.
+    last_run_summary      TEXT,
     dispatch_source       TEXT,
     dispatch_attempt_id   TEXT
 );
@@ -111,9 +122,12 @@ def kanban_ctx(tmp_path, monkeypatch):
     c.close()
 
     def _fake_conn(*_a, **_kw):
-        con = sqlite3.connect(str(db_path))
-        con.row_factory = sqlite3.Row
-        return con
+        # Go through tools.db.storage, NOT raw sqlite3. Runtime SQL is authored for
+        # PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper translates
+        # them to SQLite's ?. A raw sqlite3 connection makes every %s a syntax error.
+        # _real_get_connection is bound at import time, so patching storage's attribute
+        # below cannot recurse back into this.
+        return _real_get_connection(db_path=str(db_path))
 
     import importlib
     _storage = importlib.import_module("tools.db.storage")

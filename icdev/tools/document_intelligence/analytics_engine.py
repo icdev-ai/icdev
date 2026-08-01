@@ -21,20 +21,47 @@ def _conn():
     return get_connection()
 
 
-def _dic_graph_ids(conn) -> list[str]:
-    """Return kg_graph ids that belong to DIC-ingested documents only.
+# Resolve DIC graphs through the columns that actually exist.
+#
+# This previously joined kg_graphs.source_doc_id — a column kg_graphs does not
+# have. The query raised on every call, a bare `except: return []` swallowed it,
+# and the caller reported the empty list to the user as "No DIC documents
+# ingested yet. Upload documents to see analytics." So a schema error was
+# rendered as "you have no data" on a corpus of 53 documents.
+#
+# The real chain is already populated on every ingested chunk:
+#   kg_nodes.source_chunk_id -> rag_chunks.id
+#   rag_chunks.source_id     -> dic_documents.doc_id   (ingest_orchestrator sets
+#                                                       source_id = doc_id)
+# Joining dic_documents still excludes ICDEV's own system graphs (self-awareness,
+# canvas designs), which was the point of the original filter.
+_DIC_GRAPH_IDS_SQL = """
+    SELECT DISTINCT n.graph_id
+    FROM kg_nodes n
+    JOIN rag_chunks c    ON c.id = n.source_chunk_id
+    JOIN dic_documents d ON d.doc_id = c.source_id
+    WHERE n.source_chunk_id IS NOT NULL
+"""
 
-    Filters by source_doc_id IN dic_documents so ICDEV system KG graphs
-    (compliance, canvas topology, etc.) are excluded.
+
+def _dic_graph_ids(conn) -> list[str]:
+    """Return kg_graph ids holding entities extracted from DIC documents.
+
+    Excludes ICDEV's own system graphs (self-awareness, canvas designs).
+
+    A failure here is logged, never silently converted into "no documents":
+    callers treat an empty list as an empty corpus, so swallowing an error makes
+    a broken query indistinguishable from a genuinely empty one — which is
+    exactly how this went unnoticed.
     """
     try:
-        cur = conn.execute(
-            "SELECT g.id FROM kg_graphs g "
-            "INNER JOIN dic_documents d ON d.doc_id = g.source_doc_id "
-            "WHERE g.source_doc_id IS NOT NULL"
-        )
+        cur = conn.execute(_DIC_GRAPH_IDS_SQL)
         return [row[0] for row in cur.fetchall()]
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "dic.analytics: cannot resolve DIC graph ids (%s) — analytics will "
+            "report an empty corpus, which may be wrong", exc
+        )
         return []
 
 
@@ -67,11 +94,11 @@ def entity_frequency(collection_id: str | None = None, limit: int = 50) -> dict:
         if not gids:
             return {"by_type": {}, "top_entities": [], "type_counts": {}, "total": 0, "empty": True,
                     "message": "No DIC documents ingested yet. Upload documents to see analytics."}
-        ph = ",".join(["?" for _ in gids])
+        ph = ",".join(["%s" for _ in gids])
         rows = _safe(
             conn,
             f"SELECT n.label, n.entity_type, COUNT(*) as freq, AVG(n.centrality) as avg_centrality "
-            f"FROM kg_nodes n WHERE n.graph_id IN ({ph}) GROUP BY n.label, n.entity_type ORDER BY freq DESC LIMIT ?",
+            f"FROM kg_nodes n WHERE n.graph_id IN ({ph}) GROUP BY n.label, n.entity_type ORDER BY freq DESC LIMIT %s",
             tuple(gids) + (limit * 4,),
         )
     finally:
@@ -118,7 +145,7 @@ def co_occurrence(min_weight: float = 0.0, limit: int = 60) -> dict:
         gids = _dic_graph_ids(conn)
         if not gids:
             return {"pairs": [], "hot_pairs": [], "total": 0, "empty": True}
-        ph = ",".join(["?" for _ in gids])
+        ph = ",".join(["%s" for _ in gids])
         rows = _safe(
             conn,
             f"SELECT src.label AS source, tgt.label AS target, e.relationship, e.weight "
@@ -126,8 +153,8 @@ def co_occurrence(min_weight: float = 0.0, limit: int = 60) -> dict:
             f"JOIN kg_nodes src ON src.id = e.source_id "
             f"JOIN kg_nodes tgt ON tgt.id = e.target_id "
             f"WHERE src.graph_id IN ({ph}) "
-            f"AND (e.weight IS NULL OR e.weight >= ?) "
-            f"ORDER BY e.weight DESC LIMIT ?",
+            f"AND (e.weight IS NULL OR e.weight >= %s) "
+            f"ORDER BY e.weight DESC LIMIT %s",
             tuple(gids) + (min_weight, limit),
         )
     finally:
@@ -461,7 +488,7 @@ def detect_anomalies() -> dict:
                 "summary": {"orphan_count": 0, "single_source_count": 0, "hub_count": 0,
                             "contradiction_count": 0, "stale_doc_count": 0},
             }
-        ph = ",".join(["?" for _ in gids])
+        ph = ",".join(["%s" for _ in gids])
         gids_t = tuple(gids)
 
         # Orphaned nodes (scoped to DIC graphs)
@@ -624,7 +651,7 @@ def detect_patterns() -> dict:
             return {"patterns": [], "dominant": "UNKNOWN", "flags": {}, "empty": True,
                     "stats": {"node_count": 0, "edge_count": 0, "orphan_count": 0, "hub_count": 0,
                               "edge_density": 0.0, "orphan_ratio": 0.0}}
-        ph = ",".join(["?" for _ in gids])
+        ph = ",".join(["%s" for _ in gids])
         gids_t = tuple(gids)
         node_count = (conn.execute(f"SELECT COUNT(*) FROM kg_nodes WHERE graph_id IN ({ph})", gids_t).fetchone() or [0])[0]
         edge_count = (conn.execute(
@@ -735,17 +762,17 @@ def run_scenario(scenario_type: str, entity_label: str | None = None,
 
 
 def _scenario_remove_entity(conn, label: str, label_override: str | None = None) -> dict:
-    node = _safe(conn, "SELECT id, label, entity_type, centrality FROM kg_nodes WHERE LOWER(label) LIKE LOWER(?) LIMIT 1", (f"%{label}%",))
+    node = _safe(conn, "SELECT id, label, entity_type, centrality FROM kg_nodes WHERE LOWER(label) LIKE LOWER(%s) LIMIT 1", (f"%{label}%",))
     if not node:
         return {"error": f"Entity '{label}' not found in KG"}
     n = node[0]
-    edges_out = _safe(conn, "SELECT COUNT(*) as c FROM kg_edges WHERE source_id = ?", (n["id"],))
-    edges_in = _safe(conn, "SELECT COUNT(*) as c FROM kg_edges WHERE target_id = ?", (n["id"],))
+    edges_out = _safe(conn, "SELECT COUNT(*) as c FROM kg_edges WHERE source_id = %s", (n["id"],))
+    edges_in = _safe(conn, "SELECT COUNT(*) as c FROM kg_edges WHERE target_id = %s", (n["id"],))
     affected_nodes = _safe(
         conn,
         "SELECT DISTINCT n.label, n.entity_type FROM kg_nodes n "
         "JOIN kg_edges e ON (e.source_id = n.id OR e.target_id = n.id) "
-        "WHERE (e.source_id = ? OR e.target_id = ?) AND n.id != ? LIMIT 30",
+        "WHERE (e.source_id = %s OR e.target_id = %s) AND n.id != %s LIMIT 30",
         (n["id"], n["id"], n["id"]),
     )
     out_count = (edges_out[0]["c"] if edges_out else 0)
@@ -774,7 +801,7 @@ def _scenario_cross_doc(conn, doc_a: str, doc_b: str) -> dict:
             conn,
             "SELECT DISTINCT n.label FROM kg_nodes n "
             "JOIN kg_graphs g ON g.id = n.graph_id "
-            "WHERE g.source_doc_id = ?",
+            "WHERE g.source_doc_id = %s",
             (doc_id,),
         )
         return {r["label"] for r in rows}
@@ -801,7 +828,7 @@ def _scenario_cross_doc(conn, doc_a: str, doc_b: str) -> dict:
 
 
 def _scenario_change_concept(conn, old_label: str, new_label: str) -> dict:
-    node = _safe(conn, "SELECT id, label, entity_type FROM kg_nodes WHERE LOWER(label) LIKE LOWER(?) LIMIT 1", (f"%{old_label}%",))
+    node = _safe(conn, "SELECT id, label, entity_type FROM kg_nodes WHERE LOWER(label) LIKE LOWER(%s) LIMIT 1", (f"%{old_label}%",))
     if not node:
         return {"error": f"Entity '{old_label}' not found"}
     n = node[0]
@@ -811,7 +838,7 @@ def _scenario_change_concept(conn, old_label: str, new_label: str) -> dict:
         "FROM kg_edges e "
         "JOIN kg_nodes src ON src.id = e.source_id "
         "JOIN kg_nodes tgt ON tgt.id = e.target_id "
-        "WHERE e.source_id = ? OR e.target_id = ? LIMIT 30",
+        "WHERE e.source_id = %s OR e.target_id = %s LIMIT 30",
         (n["id"], n["id"]),
     )
     return {
@@ -874,7 +901,7 @@ def detect_ingest_anomalies(collection_id: str | None = None) -> dict:
     conn = _conn()
     try:
         params: tuple = (collection_id,) if collection_id else ()
-        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_filter = "WHERE collection_id = %s" if collection_id else ""
         rows = _safe(
             conn,
             f"SELECT doc_id, title, filename, byte_size, page_count, collection_id "
@@ -898,7 +925,7 @@ def detect_ingest_anomalies(collection_id: str | None = None) -> dict:
 
         # Chunk counts per document.
         doc_ids = [r["doc_id"] for r in rows]
-        ph = ",".join(["?" for _ in doc_ids])
+        ph = ",".join(["%s" for _ in doc_ids])
         chunk_rows = _safe(
             conn,
             f"SELECT d.doc_id, COUNT(cl.id) AS chunk_count "
@@ -1058,7 +1085,7 @@ def detect_view_anomalies(collection_id: str | None = None,
     conn = _conn()
     try:
         # All docs in scope
-        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_filter = "WHERE collection_id = %s" if collection_id else ""
         params: tuple = (collection_id,) if collection_id else ()
         doc_rows = _safe(
             conn,
@@ -1081,12 +1108,12 @@ def detect_view_anomalies(collection_id: str | None = None,
         # the ISO string comparison works identically on SQLite and PostgreSQL.
         from datetime import timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
-        cid_view_filter = "AND collection_id = ?" if collection_id else ""
+        cid_view_filter = "AND collection_id = %s" if collection_id else ""
         view_params: tuple = (cutoff, collection_id) if collection_id else (cutoff,)
         view_rows = _safe(
             conn,
             f"SELECT doc_id, COUNT(*) AS view_count FROM dic_doc_views "
-            f"WHERE viewed_at >= ? {cid_view_filter} GROUP BY doc_id",
+            f"WHERE viewed_at >= %s {cid_view_filter} GROUP BY doc_id",
             view_params,
         )
         view_counts = {r["doc_id"]: r["view_count"] for r in view_rows}
@@ -1243,7 +1270,7 @@ def detect_ingest_job_anomalies(collection_id: str | None = None,
 
     conn = _conn()
     try:
-        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_filter = "WHERE collection_id = %s" if collection_id else ""
         params: tuple = (collection_id,) if collection_id else ()
         rows = _safe(
             conn,
@@ -1520,7 +1547,7 @@ def detect_field_validation_anomalies(collection_id: str | None = None) -> dict:
     conn = _conn()
     try:
         params: tuple = (collection_id,) if collection_id else ()
-        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_filter = "WHERE collection_id = %s" if collection_id else ""
         rows = _safe(
             conn,
             f"SELECT doc_id, title, filename, content_type, collection_id "
@@ -1757,7 +1784,7 @@ def detect_output_export_anomalies(
 
     conn = _conn()
     try:
-        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_filter = "WHERE collection_id = %s" if collection_id else ""
         params: tuple = (collection_id,) if collection_id else ()
         rows = _safe(
             conn,
@@ -2020,8 +2047,8 @@ def detect_document_model_anomalies(collection_id: str | None = None) -> dict:
     """
     conn = _conn()
     try:
-        doc_cid_filter = "WHERE collection_id = ?" if collection_id else ""
-        job_cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        doc_cid_filter = "WHERE collection_id = %s" if collection_id else ""
+        job_cid_filter = "WHERE collection_id = %s" if collection_id else ""
         cid_params: tuple = (collection_id,) if collection_id else ()
 
         doc_rows = _safe(
@@ -2282,7 +2309,7 @@ def detect_document_routing_anomalies(collection_id: str | None = None) -> dict:
     """
     conn = _conn()
     try:
-        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_filter = "WHERE collection_id = %s" if collection_id else ""
         cid_params: tuple = (collection_id,) if collection_id else ()
         doc_rows = _safe(
             conn,
@@ -2543,7 +2570,7 @@ def detect_bulk_edit_anomalies(
     conn = _conn()
     try:
         params: tuple = (collection_id,) if collection_id else ()
-        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_filter = "WHERE collection_id = %s" if collection_id else ""
         rows = _safe(
             conn,
             f"SELECT job_id, filename, collection_id, status, "
@@ -2796,13 +2823,13 @@ def detect_ingest_throughput_anomaly(
     conn = _conn()
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
-        cid_clause = "AND collection_id = ?" if collection_id else ""
+        cid_clause = "AND collection_id = %s" if collection_id else ""
         params: tuple = (cutoff.isoformat(), collection_id) if collection_id else (cutoff.isoformat(),)
         rows = _safe(
             conn,
             f"SELECT job_id, collection_id, created_at, updated_at, status "
             f"FROM dic_ingest_jobs "
-            f"WHERE status = 'done' AND updated_at >= ? {cid_clause} "
+            f"WHERE status = 'done' AND updated_at >= %s {cid_clause} "
             f"ORDER BY updated_at",
             params,
         )

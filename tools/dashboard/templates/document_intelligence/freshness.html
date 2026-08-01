@@ -1,30 +1,74 @@
 {% extends "base.html" %}
-{% block title %}Freshness — Document Intelligence — ICDEV™{% endblock %}
+{% block title %}Freshness & Modernization — Document Intelligence — ICDEV™{% endblock %}
 {% block content %}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
   <div>
-    <h2 style="margin:0;color:#eaeaea;font-size:20px;">🌡️ Freshness Heatmap</h2>
-    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Corpus staleness at a glance — stale docs float to the top for remediation.</p>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">🌡️ Freshness &amp; Modernization</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Corpus staleness + modernization findings — stale docs float to the top for remediation.</p>
   </div>
-  <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button onclick="scanNow()" id="scan-now-btn" style="background:#16213e;color:#94a3b8;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">🔍 Scan now</button>
+    <a href="/standards-catalog" style="background:#16213e;color:#94a3b8;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;text-decoration:none;font-size:13px;">Standards Catalog →</a>
+    <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+  </div>
 </div>
 
 <!-- Summary cards -->
-<div style="display:flex;gap:12px;margin-bottom:20px;">
-  <div style="flex:1;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+  <div style="flex:1;min-width:110px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
     <div style="font-size:24px;font-weight:700;color:#4ade80;">{{ heatmap | selectattr('state', 'equalto', 'fresh') | list | length }}</div>
     <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🟢 Fresh</div>
   </div>
-  <div style="flex:1;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+  <div style="flex:1;min-width:110px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
     <div style="font-size:24px;font-weight:700;color:#fbbf24;">{{ heatmap | selectattr('state', 'equalto', 'aging') | list | length }}</div>
     <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🟡 Aging</div>
   </div>
-  <div style="flex:1;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+  <div style="flex:1;min-width:110px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
     <div style="font-size:24px;font-weight:700;color:#f87171;">{{ heatmap | selectattr('state', 'equalto', 'stale') | list | length }}</div>
     <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🔴 Stale</div>
   </div>
+  <!-- Modernization finding tiles (filled by JS from /api/modernization/summary) -->
+  <div onclick="toggleFindingsPanel()" title="Click to show the findings"
+    style="flex:1;min-width:110px;background:#16213e;border:1px solid #4a2a6e;border-radius:8px;padding:14px;text-align:center;cursor:pointer;">
+    <div id="mod-total" style="font-size:24px;font-weight:700;color:#a78bfa;">—</div>
+    <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🧭 Open findings <span id="mod-total-caret">▼</span></div>
+  </div>
+  <div style="flex:2;min-width:220px;background:#16213e;border:1px solid #4a2a6e;border-radius:8px;padding:14px;">
+    <div id="mod-by-type" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;color:#7a8cb0;font-size:11px;">Modernization engine not scanned yet.</div>
+  </div>
+</div>
+
+<!-- Open findings list (click the 🧭 tile) — the findings themselves, not just counts -->
+<div id="findings-panel" style="display:none;background:#140a24;border:1px solid #4a2a6e;border-radius:8px;padding:14px;margin-bottom:18px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <h3 style="margin:0;color:#a78bfa;font-size:13px;">🧭 Open Modernization Findings</h3>
+    <span style="color:#5a7aa0;font-size:10px;">Deterministic evidence · click a row to open the document at that finding</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="color:#7a8cb0;text-align:left;border-bottom:1px solid #241640;">
+          <th style="padding:6px;">Type</th><th style="padding:6px;">Severity</th>
+          <th style="padding:6px;">Found</th><th style="padding:6px;">Document / Section</th>
+          <th style="padding:6px;">Why</th><th style="padding:6px;">Recommended</th>
+        </tr>
+      </thead>
+      <tbody id="findings-panel-body">
+        <tr><td colspan="6" style="padding:14px;color:#5a7aa0;">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Bulk action bar (docmod-hitl-04) -->
+<div id="bulk-bar" style="display:none;background:#1a1030;border:1px solid #4a2a6e;border-radius:8px;padding:10px 14px;margin-bottom:12px;align-items:center;gap:10px;">
+  <span id="bulk-count" style="color:#a78bfa;font-size:12px;"></span>
+  <button onclick="bulkAction('queue_redlines')" style="background:#2a1a3a;color:#a78bfa;padding:5px 12px;border:1px solid #4a2a6e;border-radius:4px;cursor:pointer;font-size:11px;">✏️ Generate redlines</button>
+  <button onclick="bulkAction('queue_regen')" style="background:#2a1a3a;color:#a78bfa;padding:5px 12px;border:1px solid #4a2a6e;border-radius:4px;cursor:pointer;font-size:11px;">🔄 Regenerate</button>
+  <button onclick="bulkAction('rescan')" style="background:#16213e;color:#94a3b8;padding:5px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">🔍 Re-scan</button>
+  <span id="bulk-status" style="color:#7a8cb0;font-size:11px;"></span>
 </div>
 
 <!-- Collection selector -->
@@ -37,22 +81,25 @@
   </div>
 </div>
 
-<!-- Heatmap table -->
-<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;">
+<!-- Triage table -->
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;overflow-x:auto;">
   <table style="width:100%;border-collapse:collapse;font-size:12px;">
     <thead>
       <tr style="color:#9bb8d8;border-bottom:1px solid #1a3560;">
+        <th style="padding:8px;"><input type="checkbox" onchange="toggleAll(this.checked)"></th>
         <th style="text-align:left;padding:8px;">State</th>
         <th style="text-align:left;padding:8px;">Document</th>
         <th style="text-align:left;padding:8px;">Collection</th>
         <th style="text-align:left;padding:8px;">Score</th>
+        <th style="text-align:left;padding:8px;">Findings</th>
         <th style="text-align:left;padding:8px;">Reason</th>
-        <th style="text-align:right;padding:8px;">Action</th>
+        <th style="text-align:right;padding:8px;">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for row in heatmap %}
-      <tr class="heatmap-row" data-collection="{{ row.collection_id or 'default' }}" style="border-bottom:1px solid #0d1b30;">
+      <tr class="heatmap-row" data-collection="{{ row.collection_id or 'default' }}" data-doc="{{ row.doc_id }}" style="border-bottom:1px solid #0d1b30;">
+        <td style="padding:8px;"><input type="checkbox" class="doc-check" value="{{ row.doc_id }}" onchange="updateBulkBar()"></td>
         <td style="padding:8px;">
           {% if row.state == 'fresh' %}
           <span style="background:#052e16;color:#4ade80;padding:2px 8px;border-radius:3px;font-size:10px;">🟢 Fresh</span>
@@ -66,15 +113,23 @@
         </td>
         <td style="padding:8px;color:#eaeaea;">{{ row.title or row.doc_id }}</td>
         <td style="padding:8px;color:#94a3b8;">{{ row.collection_id or 'default' }}</td>
-        <td style="padding:8px;color:#7a8cb0;">{{ '%.0f'|format((row.score or 0)*100) }}%</td>
+        <td style="padding:8px;color:#7a8cb0;">{{ ((row.score or 0) * 100) | round(0) | int }}%</td>
+        <td style="padding:8px;" class="mod-chips" data-doc="{{ row.doc_id }}"><span style="color:#3a6080;font-size:10px;">—</span></td>
         <td style="padding:8px;color:#7a8cb0;font-size:11px;">{{ row.reason or '—' }}</td>
-        <td style="padding:8px;text-align:right;">
+        <td style="padding:8px;text-align:right;white-space:nowrap;">
+          <a href="/docgen/new?source_doc_id={{ row.doc_id }}" title="Rebuild from current evidence as a new pending-review version" style="color:#a78bfa;font-size:11px;text-decoration:none;margin-right:8px;">🔄 Regenerate</a>
           <a href="/document-intelligence/doc/{{ row.doc_id }}" style="color:#7ab3f0;font-size:11px;text-decoration:none;">Open →</a>
         </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="6" style="padding:24px;text-align:center;color:#3a6080;">No freshness data yet. Run a scan from a collection page.</td>
+        <td colspan="8" style="padding:24px;text-align:center;color:#3a6080;">
+          No freshness data yet.<br><br>
+          <strong style="color:#7a8cb0;">Getting started with legacy documents:</strong><br>
+          1️⃣ Bulk-upload your documents on a <a href="/document-intelligence/collections" style="color:#7ab3f0;">collection page</a> ·
+          2️⃣ Run a staleness scan (Scan now above) ·
+          3️⃣ Review modernization findings here
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -83,16 +138,159 @@
 
 <script>
 function filterCollection(cid) {
-  var rows = document.querySelectorAll('.heatmap-row');
-  rows.forEach(function(r) {
+  document.querySelectorAll('.heatmap-row').forEach(function(r) {
     r.style.display = (cid === 'all' || r.getAttribute('data-collection') === cid) ? '' : 'none';
   });
+}
+
+// ── Modernization overlay (docmod-hitl-04) ───────────────────────────────────
+var TYPE_LABELS = {eol_hardware:'EOL HW', eol_software:'EOL SW', deprecated_tech:'Deprecated',
+                   stale_reference:'Stale ref', superseded_standard:'Superseded',
+                   defacto_divergence:'Divergence', catalog_gap:'Catalog gap'};
+
+fetch('/document-intelligence/api/modernization/summary')
+  .then(function(r){return r.json();})
+  .then(function(d) {
+    document.getElementById('mod-total').textContent = d.total_open;
+    var bt = document.getElementById('mod-by-type');
+    var keys = Object.keys(d.by_type || {});
+    bt.innerHTML = keys.length
+      ? keys.map(function(k) {
+          return '<span style="background:#2a1a3a;color:#a78bfa;padding:2px 8px;border-radius:3px;">'
+            + (TYPE_LABELS[k] || k) + ': ' + d.by_type[k] + '</span>';
+        }).join('')
+      : '<span>No open findings 🎉</span>';
+    // per-doc chips, worst-first sort
+    var counts = {};
+    (d.documents || []).forEach(function(doc) { counts[doc.doc_id] = doc; });
+    var shown = {};
+    document.querySelectorAll('.mod-chips').forEach(function(cell) {
+      var doc = counts[cell.dataset.doc];
+      if (!doc) return;
+      shown[doc.doc_id] = true;
+      cell.innerHTML = Object.keys(doc.types).map(function(k) {
+        return '<span style="background:#2a1a3a;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:3px;">'
+          + (TYPE_LABELS[k] || k) + ' ' + doc.types[k] + '</span>';
+      }).join('');
+    });
+    // Docs with open findings but no freshness score yet must still be
+    // visible, clickable rows — never hide findings behind a missing scan.
+    var tbody = document.querySelector('table tbody');
+    (d.documents || []).forEach(function(doc) {
+      if (shown[doc.doc_id]) return;
+      var empty = tbody.querySelector('td[colspan]');
+      if (empty) empty.closest('tr').remove();
+      var chips = Object.keys(doc.types).map(function(k) {
+        return '<span style="background:#2a1a3a;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:3px;">'
+          + (TYPE_LABELS[k] || k) + ' ' + doc.types[k] + '</span>';
+      }).join('');
+      var tr = document.createElement('tr');
+      tr.className = 'heatmap-row';
+      tr.style.borderBottom = '1px solid #0d1b30';
+      tr.innerHTML =
+        '<td style="padding:8px;"><input type="checkbox" class="doc-check" value="' + doc.doc_id + '" onchange="updateBulkBar()"></td>' +
+        '<td style="padding:8px;"><span style="background:#1e293b;color:#94a3b8;padding:2px 8px;border-radius:3px;font-size:10px;">not scored</span></td>' +
+        '<td style="padding:8px;color:#eaeaea;">' + (doc.title || doc.doc_id) + '</td>' +
+        '<td style="padding:8px;color:#94a3b8;">—</td>' +
+        '<td style="padding:8px;color:#7a8cb0;">—</td>' +
+        '<td style="padding:8px;">' + chips + '</td>' +
+        '<td style="padding:8px;color:#7a8cb0;font-size:11px;">' + doc.open_findings + ' open modernization finding(s)</td>' +
+        '<td style="padding:8px;text-align:right;white-space:nowrap;">' +
+        '<a href="/docgen/new?source_doc_id=' + doc.doc_id + '" style="color:#a78bfa;font-size:11px;text-decoration:none;margin-right:8px;">🔄 Regenerate</a>' +
+        '<a href="/document-intelligence/doc/' + doc.doc_id + '" style="color:#7ab3f0;font-size:11px;text-decoration:none;">Open →</a></td>';
+      tbody.appendChild(tr);
+    });
+  })
+  .catch(function(){ /* engine not installed — freshness view stands alone */ });
+
+// ── Open-findings panel (click the 🧭 tile) ──────────────────────────────────
+var SEV_COLORS = {critical:'#f87171', high:'#fb923c', medium:'#fbbf24', low:'#94a3b8', info:'#7a8cb0'};
+var _findingsLoaded = false;
+
+function toggleFindingsPanel() {
+  var panel = document.getElementById('findings-panel');
+  var open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  document.getElementById('mod-total-caret').textContent = open ? '▼' : '▲';
+  if (open || _findingsLoaded) return;
+  fetch('/document-intelligence/api/modernization/findings?state=open')
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      _findingsLoaded = true;
+      var body = document.getElementById('findings-panel-body');
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="6" style="padding:14px;color:#5a7aa0;">No open findings 🎉</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(function(f) {
+        var docLink = '/document-intelligence/doc/' + f.doc_id;
+        var rec = f.recommended_replacement
+          ? '<span style="color:#7fd8a0;">' + f.recommended_replacement + '</span>'
+          : '<span style="color:#5a7aa0;">flag only — review &amp; remove</span>';
+        if (f.redline_suggestion_id) {
+          rec = '<span style="background:#1a2e08;color:#7fd8a0;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:4px;">✏️ redline ready</span>' + rec;
+        }
+        return '<tr style="border-bottom:1px solid #241640;cursor:pointer;" onclick="window.location=\'' + docLink + '\'">'
+          + '<td style="padding:6px;"><span style="background:#2a1a3a;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;">' + (TYPE_LABELS[f.finding_type] || f.finding_type) + '</span></td>'
+          + '<td style="padding:6px;color:' + (SEV_COLORS[f.severity] || '#94a3b8') + ';">' + f.severity + '</td>'
+          + '<td style="padding:6px;color:#eaeaea;font-weight:600;">' + f.entity_label + '</td>'
+          + '<td style="padding:6px;color:#94a3b8;">' + (f.doc_title || f.doc_id) + (f.section_heading ? ' · ' + f.section_heading : '') + '</td>'
+          + '<td style="padding:6px;color:#7a8cb0;font-size:11px;max-width:320px;">' + (f.rationale || '') + '</td>'
+          + '<td style="padding:6px;font-size:11px;">' + rec + '</td></tr>';
+      }).join('');
+    })
+    .catch(function(e) {
+      document.getElementById('findings-panel-body').innerHTML =
+        '<tr><td colspan="6" style="padding:14px;color:#f87171;">Failed to load findings: ' + e.message + '</td></tr>';
+    });
+}
+
+// ── Bulk actions ─────────────────────────────────────────────────────────────
+function selectedDocs() {
+  return Array.from(document.querySelectorAll('.doc-check:checked')).map(function(c){return c.value;});
+}
+function toggleAll(on) {
+  document.querySelectorAll('.doc-check').forEach(function(c) {
+    if (c.closest('tr').style.display !== 'none') c.checked = on;
+  });
+  updateBulkBar();
+}
+function updateBulkBar() {
+  var n = selectedDocs().length;
+  var bar = document.getElementById('bulk-bar');
+  bar.style.display = n ? 'flex' : 'none';
+  document.getElementById('bulk-count').textContent = n + ' document' + (n === 1 ? '' : 's') + ' selected';
+}
+function bulkAction(action) {
+  var docs = selectedDocs();
+  if (!docs.length) return;
+  var st = document.getElementById('bulk-status');
+  st.textContent = 'Running ' + action + '…';
+  fetch('/document-intelligence/api/modernization/bulk', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action, doc_ids: docs})
+  }).then(function(r){return r.json();}).then(function(d) {
+    st.textContent = d.error ? ('Failed: ' + d.error) : (action + ' done (' + (d.results || []).length + ' docs) — refresh to see results');
+  }).catch(function(e){ st.textContent = 'Failed: ' + e.message; });
+}
+
+function scanNow() {
+  var btn = document.getElementById('scan-now-btn');
+  btn.disabled = true; btn.textContent = 'Scanning…';
+  // Run BOTH scans: freshness (time/drift score) + modernization (content findings)
+  Promise.allSettled([
+    fetch('/document-intelligence/api/freshness/scan', {method: 'POST'}),
+    fetch('/document-intelligence/api/modernization/scan', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    })
+  ]).then(function(){ location.reload(); })
+    .catch(function(){ btn.disabled = false; btn.textContent = '🔍 Scan now'; });
 }
 </script>
 
 {% set iqe_canvas = "dic" %}
 {% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
-{% set iqe_title = "IQE Query — Freshness" %}
+{% set iqe_title = "IQE Query — Freshness & Modernization" %}
 {% set iqe_examples = [
   {"label": "Stale docs", "query": "foreach d in dic.doc_freshness where d.state == 'stale' select d.doc_id, d.reason"}
 ] %}

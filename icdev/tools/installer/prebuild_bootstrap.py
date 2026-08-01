@@ -48,7 +48,40 @@ SOURCES: list[tuple[str, str, str]] = [
     (".claude/hooks", "claude/hooks", "dir"),
     (".claude/settings.json", "claude/settings.json.template", "file"),
     (".agents/skills", "claude/skills", "dir"),
+    (".claude/agents", "claude/agents", "dir"),
 ]
+
+# ICDEV is LLM-agnostic: the same guardrails ship for every major AI coding
+# tool, not just Claude Code. All ten of these were tracked in git and NONE of
+# them reached the wheel, so `pip install icdev && icdev init` produced a
+# Claude-only project. Sourced from tools/dx/ai_platforms.py so the generator,
+# the wheel and `icdev init` cannot drift apart.
+# REPO_ROOT must be on sys.path FIRST. Run as a script, `sys.path[0]` is
+# `tools/installer/`, not the repo root, so a bare `from tools.dx...` import
+# fails — and an earlier version swallowed that failure, silently dropping all
+# ten platform files from the wheel while reporting a successful build. The
+# import is load-bearing for packaging correctness, so it raises now.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tools.dx.ai_platforms import (  # noqa: E402
+    AI_PLATFORM_FILES,
+    bootstrap_name,
+)
+
+SOURCES.extend(
+    (rel, bootstrap_name(rel), "file") for _platform, rel in AI_PLATFORM_FILES
+)
+
+# Sources that may legitimately not exist yet. A missing OPTIONAL source is
+# recorded under `skipped_optional` and does NOT go to `errors`, so the
+# prebuild step (and the build that runs it) never fails just because an
+# as-yet-unpopulated directory — e.g. `.claude/agents` — is absent. Keep this
+# in sync with OPTIONAL_SOURCES in tools/cli/init.py so a map entry added here
+# is collected when populated and silently skipped when empty.
+OPTIONAL_SOURCES: set[str] = {
+    ".claude/agents",
+}
 
 # Files to exclude from directory copies (test artifacts, user-specific state)
 EXCLUDE_NAMES = {
@@ -102,12 +135,16 @@ def run(clean: bool = False) -> dict:
 
     results: list = []
     errors: list = []
+    skipped_optional: list = []
 
     for rel_src, rel_dst, kind in SOURCES:
         src = REPO_ROOT / rel_src
         dst = BOOTSTRAP_DIR / rel_dst
         if not src.exists():
-            errors.append(f"missing: {rel_src}")
+            if rel_src in OPTIONAL_SOURCES:
+                skipped_optional.append(rel_src)
+            else:
+                errors.append(f"missing: {rel_src}")
             continue
         try:
             if kind == "file":
@@ -145,6 +182,7 @@ def run(clean: bool = False) -> dict:
         "bootstrap_dir": str(BOOTSTRAP_DIR.relative_to(REPO_ROOT)),
         "sources_copied": results,
         "errors": errors,
+        "skipped_optional": skipped_optional,
         "total_files": sum(
             r.get("files_copied", 1) for r in results
         ),
@@ -170,6 +208,8 @@ def main() -> int:
                       f"{r['files_copied']} files (skipped {r['files_skipped']})")
             else:
                 print(f"  + {r['src']} -> {r['dst']}: {r['size']} bytes")
+        for rel_src in result.get("skipped_optional", []):
+            print(f"  ~ {rel_src}: absent (optional) — skipped, not an error")
         if result["errors"]:
             print("\nErrors:")
             for e in result["errors"]:

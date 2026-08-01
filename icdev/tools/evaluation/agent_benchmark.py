@@ -35,6 +35,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.common.helpers import now_isoformat  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.evaluation.agent_benchmark")
 
 
 # ── Dataclasses ───────────────────────────────────────────────────────────
@@ -508,8 +511,9 @@ def _store_result(result: BenchmarkResult, scan_id: str, project_id: Optional[st
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Table may not exist yet
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Table may not exist yet
+        logger.warning("_store_result: best-effort INSERT into agent_benchmark_results failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

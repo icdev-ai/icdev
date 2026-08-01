@@ -28,6 +28,9 @@ from flask import Blueprint, g, jsonify, make_response, request
 
 from tools.dashboard.auth import require_role
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.cpmp")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -40,9 +43,18 @@ cpmp_api = Blueprint("cpmp_api", __name__, url_prefix="/api/cpmp")
 
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
-    # Clear RLS context — cpmp tables use classification=CUI universally;
-    # complex JOIN queries break when RLS injects c.classification into subqueries.
-    conn.set_security_context(None)  # rls-bypass: cpmp tables use CUI universally; RLS JOIN injection breaks subqueries
+    # RLS-aware (prop-fix-12): in a request context _attach_flask_security_context()
+    # already wired g.security_context into the connection, so tenant_id +
+    # classification predicates inject automatically (migrations 245/246/247 added
+    # the columns to every cpmp_* table). The historical set_security_context(None)
+    # bypass here cited subquery/JOIN injection bugs that _find_outer_where /
+    # _depth0_skeleton have since fixed.
+    try:
+        from flask import has_request_context
+        if not has_request_context():
+            conn.set_security_context(None)  # rls-bypass: CLI / background tasks run without a user session; no tenant context available.
+    except Exception:
+        pass
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -59,8 +71,8 @@ def _audit(conn, action, details="", actor="cpmp_api"):
             "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _classification():
@@ -73,8 +85,8 @@ def _cor_access_log(conn, user_id, contract_id, action):
             "INSERT INTO cpmp_cor_access_log (user_id, contract_id, action) VALUES (%s, %s, %s)",
             (user_id, contract_id, action),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_cor_access_log: best-effort INSERT into cpmp_cor_access_log failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +204,7 @@ def list_contracts():
 
 
 @cpmp_api.route("/contracts", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def create_contract():
     """POST /api/cpmp/contracts — Create a new contract."""
     try:
@@ -227,6 +240,7 @@ def get_contract(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def update_contract(contract_id):
     """PUT /api/cpmp/contracts/<id> — Update contract fields."""
     try:
@@ -253,6 +267,7 @@ def update_contract(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/status", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def transition_contract(contract_id):
     """PUT /api/cpmp/contracts/<id>/status — Transition contract status."""
     try:
@@ -298,6 +313,7 @@ def list_clins(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/clins", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def create_clin(contract_id):
     """POST /api/cpmp/contracts/<id>/clins — Create a CLIN."""
     try:
@@ -311,6 +327,7 @@ def create_clin(contract_id):
 
 
 @cpmp_api.route("/clins/<clin_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def update_clin(clin_id):
     """PUT /api/cpmp/clins/<id> — Update a CLIN."""
     try:
@@ -356,6 +373,7 @@ def list_wbs(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/wbs", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def create_wbs(contract_id):
     """POST /api/cpmp/contracts/<id>/wbs — Create a WBS element."""
     try:
@@ -369,6 +387,7 @@ def create_wbs(contract_id):
 
 
 @cpmp_api.route("/wbs/<wbs_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def update_wbs(wbs_id):
     """PUT /api/cpmp/wbs/<id> — Update a WBS element."""
     try:
@@ -402,6 +421,7 @@ def list_deliverables(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/deliverables", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def create_deliverable(contract_id):
     """POST /api/cpmp/contracts/<id>/deliverables — Create a deliverable."""
     try:
@@ -429,6 +449,7 @@ def get_deliverable(deliverable_id):
 
 
 @cpmp_api.route("/deliverables/<deliverable_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def update_deliverable(deliverable_id):
     """PUT /api/cpmp/deliverables/<id> — Update deliverable fields."""
     try:
@@ -444,6 +465,7 @@ def update_deliverable(deliverable_id):
 
 
 @cpmp_api.route("/deliverables/<deliverable_id>/status", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def transition_deliverable(deliverable_id):
     """PUT /api/cpmp/deliverables/<id>/status — Transition deliverable status."""
     try:
@@ -489,6 +511,7 @@ def ai_award_fee(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/ai-advisor/auto-detect", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def ai_auto_detect(contract_id):
     """POST /api/cpmp/contracts/<id>/ai-advisor/auto-detect"""
     try:
@@ -515,7 +538,52 @@ def get_portfolio():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@cpmp_api.route("/portfolio/<contract_id>", methods=["GET"])
+def get_portfolio_contract_detail(contract_id):
+    """GET /api/cpmp/portfolio/<id> — Portfolio detail view for a single contract.
+
+    Nests obligation_summary (obligated_value, funded_value, burn_rate_pct) and the
+    base/option period breakdown alongside the base contract fields.
+    """
+    try:
+        from tools.govcon.contract_manager import get_contract as _get_contract
+        from tools.govcon.contract_periods_manager import get_obligation_summary
+
+        result = _get_contract(contract_id)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        # Bell-LaPadula: no-read-up check on the contract
+        denied = _mac_deny_read(result)
+        if denied:
+            return denied
+
+        contract = result.get("contract", {})
+        obligation = get_obligation_summary(contract_id)
+        if obligation.get("status") == "ok":
+            result["obligation_summary"] = {
+                "obligated_value": obligation.get("total_obligated"),
+                "funded_value": contract.get("funded_value", 0),
+                "billed_value": obligation.get("total_billed"),
+                "remaining_obligation": obligation.get("remaining_obligation"),
+                "burn_rate_pct": obligation.get("burn_rate_pct"),
+                "periods": obligation.get("by_period", []),
+            }
+        else:
+            result["obligation_summary"] = {
+                "obligated_value": contract.get("obligated_value", 0),
+                "funded_value": contract.get("funded_value", 0),
+                "billed_value": 0,
+                "remaining_obligation": 0,
+                "burn_rate_pct": 0,
+                "periods": [],
+            }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @cpmp_api.route("/from-opportunity/<opp_id>", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def transition_from_opportunity(opp_id):
     """POST /api/cpmp/from-opportunity/<opp_id> — Create contract from won proposal."""
     try:
@@ -548,6 +616,7 @@ def get_evm(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/evm", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def record_evm_period(contract_id):
     """POST /api/cpmp/contracts/<id>/evm — Record an EVM period snapshot."""
     try:
@@ -584,6 +653,7 @@ def evm_forecast(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/monte-carlo", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def evm_monte_carlo(contract_id):
     """POST /api/cpmp/contracts/<id>/monte-carlo — Monte Carlo EAC forecast (UI endpoint)."""
     try:
@@ -664,6 +734,7 @@ def list_subcontractors(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/subcontractors", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def create_subcontractor(contract_id):
     """POST /api/cpmp/contracts/<id>/subcontractors — Add a subcontractor."""
     try:
@@ -677,6 +748,7 @@ def create_subcontractor(contract_id):
 
 
 @cpmp_api.route("/subcontractors/<sub_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def update_subcontractor(sub_id):
     """PUT /api/cpmp/subcontractors/<id> — Update subcontractor."""
     try:
@@ -733,6 +805,7 @@ def list_sb_reports(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/small-business", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def create_sb_report(contract_id):
     """POST /api/cpmp/contracts/<id>/small-business — Create ISR/SSR report."""
     try:
@@ -767,6 +840,7 @@ def list_cpars(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/cpars", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def create_cpars(contract_id):
     """POST /api/cpmp/contracts/<id>/cpars — Create CPARS assessment."""
     try:
@@ -784,6 +858,7 @@ def create_cpars(contract_id):
 
 
 @cpmp_api.route("/cpars/<assessment_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def update_cpars(assessment_id):
     """PUT /api/cpmp/cpars/<id> — Update CPARS assessment."""
     try:
@@ -842,6 +917,7 @@ def list_negative_events(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/negative-events", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def record_negative_event(contract_id):
     """POST /api/cpmp/contracts/<id>/negative-events — Record a negative event."""
     try:
@@ -870,6 +946,7 @@ def record_negative_event(contract_id):
 
 
 @cpmp_api.route("/negative-events/<event_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def update_negative_event(event_id):
     """PUT /api/cpmp/negative-events/<id> — Update corrective action status."""
     try:
@@ -888,6 +965,7 @@ def update_negative_event(event_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/negative-events/auto-detect", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def auto_detect_events(contract_id):
     """POST /api/cpmp/contracts/<id>/negative-events/auto-detect — Run auto-detection."""
     try:
@@ -938,6 +1016,7 @@ def contract_health(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/generate-cdrl/<deliverable_id>", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def generate_cdrl(contract_id, deliverable_id):
     """POST /api/cpmp/contracts/<id>/generate-cdrl/<did> — Generate CDRL."""
     try:
@@ -952,6 +1031,7 @@ def generate_cdrl(contract_id, deliverable_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/generate-due", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def generate_due_cdrls(contract_id):
     """POST /api/cpmp/contracts/<id>/generate-due — Generate all due CDRLs."""
     try:
@@ -986,6 +1066,7 @@ def list_cdrl_generations():
 
 
 @cpmp_api.route("/sam/sync-awards", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def sync_sam_awards():
     """POST /api/cpmp/sam/sync-awards — Sync awards from SAM.gov."""
     try:
@@ -1029,6 +1110,7 @@ def search_sam_awards():
 
 
 @cpmp_api.route("/sam/link/<sam_award_id>", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def link_sam_award(sam_award_id):
     """POST /api/cpmp/sam/link/<sam_award_id> — Link SAM award to contract."""
     try:
@@ -1096,6 +1178,80 @@ def _sanitize_for_cor(data):
     if isinstance(data, list):
         return [_sanitize_for_cor(item) for item in data]
     return data
+
+
+# =====================================================================
+# Phase D — Contract Periods + Obligation Tracking (D-CPMP-10)
+# =====================================================================
+
+
+@cpmp_api.route("/contracts/<contract_id>/periods", methods=["GET"])
+def list_contract_periods(contract_id):
+    """GET /api/cpmp/contracts/<id>/periods — List base+option periods."""
+    try:
+        from tools.govcon.contract_periods_manager import list_periods
+
+        result = list_periods(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/periods", methods=["POST"])
+@require_role("admin", "co", "contract_mgr")
+def create_contract_period(contract_id):
+    """POST /api/cpmp/contracts/<id>/periods — Create a period of performance."""
+    try:
+        from tools.govcon.contract_periods_manager import create_period
+
+        data = request.get_json(silent=True) or {}
+        period_type = data.get("period_type")
+        if not period_type:
+            return jsonify({"status": "error", "message": "period_type required"}), 400
+        result = create_period(
+            contract_id,
+            period_type,
+            pop_start=data.get("pop_start"),
+            pop_end=data.get("pop_end"),
+            obligated_value=float(data.get("obligated_value", 0)),
+            funded_value=float(data.get("funded_value", 0)),
+            ceiling_value=float(data.get("ceiling_value", 0)),
+            notes=data.get("notes"),
+            created_by=getattr(g, "current_user", {}).get("username") if hasattr(g, "current_user") else None,
+        )
+        return jsonify(result), 201 if result.get("status") == "ok" else 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/periods/<period_id>/exercise", methods=["PUT"])
+@require_role("admin", "co", "contract_mgr")
+def exercise_period_option(period_id):
+    """PUT /api/cpmp/periods/<id>/exercise — Exercise an option period."""
+    try:
+        from tools.govcon.contract_periods_manager import exercise_option
+
+        data = request.get_json(silent=True) or {}
+        obligated_value = float(data.get("obligated_value", 0))
+        exercised_by = getattr(g, "current_user", {}).get("username") if hasattr(g, "current_user") else None
+        result = exercise_option(period_id, obligated_value, exercised_by)
+        if result.get("status") == "error":
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/obligation-summary", methods=["GET"])
+def contract_obligation_summary(contract_id):
+    """GET /api/cpmp/contracts/<id>/obligation-summary — Burn-rate vs obligation."""
+    try:
+        from tools.govcon.contract_periods_manager import get_obligation_summary
+
+        result = get_obligation_summary(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @cpmp_api.route("/cor/contracts", methods=["GET"])
@@ -1710,6 +1866,7 @@ def portfolio_deliverables():
 
 
 @cpmp_api.route("/deliverables/auto-generate-portfolio", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def auto_generate_portfolio_deliverables():
     """POST /api/cpmp/deliverables/auto-generate-portfolio — Auto-generate CDRLs due within N days.
 
@@ -1802,6 +1959,7 @@ def cpmp_pmo_report_content(filename):
 
 
 @cpmp_api.route("/iqe-query", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def cpmp_iqe_query():
     """IQE NL-to-SQL for CPMP (Contract Portfolio Management) canvas."""
     from tools.iqe.nl_to_iqe import nl_to_iqe
@@ -1859,6 +2017,7 @@ def list_budget_allocations():
 
 
 @cpmp_api.route("/budget-allocations", methods=["POST"])
+@require_role("admin", "pm")
 def create_budget_allocation():
     """Create a new budget allocation for an initiative."""
     from tools.budget.initiative_allocator import create_allocation, AllocationTier
@@ -1892,6 +2051,7 @@ def get_budget_allocation(allocation_id):
 
 
 @cpmp_api.route("/budget-allocations/<allocation_id>", methods=["PUT"])
+@require_role("admin", "pm")
 def update_budget_allocation(allocation_id):
     """Update mutable metadata (title, owner, allocated_usd, contract_id, etc)."""
     from tools.budget.initiative_allocator import update_allocation
@@ -1912,6 +2072,7 @@ def update_budget_allocation(allocation_id):
 
 
 @cpmp_api.route("/budget-allocations/<allocation_id>", methods=["DELETE"])
+@require_role("admin", "pm")
 def cancel_budget_allocation(allocation_id):
     """Soft-cancel an allocation (sets status=cancelled)."""
     from tools.budget.initiative_allocator import delete_allocation
@@ -1922,6 +2083,7 @@ def cancel_budget_allocation(allocation_id):
 
 
 @cpmp_api.route("/budget-allocations/<allocation_id>/obligations", methods=["POST"])
+@require_role("admin", "pm")
 def record_budget_obligation(allocation_id):
     """Record an obligation against an allocation. Blocks over-allocation."""
     from tools.budget.initiative_allocator import record_obligation
@@ -1948,6 +2110,7 @@ def list_budget_obligations(allocation_id):
 
 
 @cpmp_api.route("/budget-allocations/<allocation_id>/transition-tier", methods=["POST"])
+@require_role("admin", "pm")
 def transition_budget_tier(allocation_id):
     """Move an initiative between Tier 1 and Tier 2 with audit trail."""
     from tools.budget.initiative_allocator import transition_tier, AllocationTier
@@ -2001,6 +2164,7 @@ def get_budget_portfolio_status():
 
 
 @cpmp_api.route("/contracts/<contract_id>/personnel", methods=["POST"])
+@require_role("admin", "pm", "isso")
 def upsert_personnel(contract_id):
     """POST /api/cpmp/contracts/<id>/personnel — Create or update a personnel record."""
     try:
@@ -2030,6 +2194,7 @@ def list_personnel(contract_id):
 
 
 @cpmp_api.route("/personnel/<person_id>", methods=["PUT"])
+@require_role("admin", "pm", "isso")
 def update_personnel(person_id):
     """PUT /api/cpmp/personnel/<pid> — Update personnel status or backup assignment."""
     try:
@@ -2082,6 +2247,7 @@ def list_personnel_alerts(contract_id):
 
 
 @cpmp_api.route("/personnel/alerts/<alert_id>", methods=["PUT"])
+@require_role("admin", "pm", "isso")
 def update_personnel_alert(alert_id):
     """PUT /api/cpmp/personnel/alerts/<aid> — Acknowledge or resolve a credential alert."""
     try:
@@ -2128,6 +2294,7 @@ def _row_to_dict(row):
 
 
 @cpmp_api.route("/contracts/<contract_id>/coverage", methods=["POST"])
+@require_role("admin", "pm", "isso")
 def upsert_int_coverage(contract_id):
     """POST /api/cpmp/contracts/<id>/coverage — Upsert INT coverage record."""
     try:
@@ -2239,6 +2406,7 @@ def list_persistent_gaps(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/coverage/<coverage_id>/generate-reqs", methods=["POST"])
+@require_role("admin", "pm", "isso")
 def generate_collection_requirements(contract_id, coverage_id):
     """POST /api/cpmp/contracts/<id>/coverage/<cid>/generate-reqs — AI-generate collection requirements."""
     try:
@@ -2312,6 +2480,7 @@ def list_coverage_requirements(coverage_id):
 
 
 @cpmp_api.route("/requirements/<requirement_id>", methods=["PUT"])
+@require_role("admin", "pm", "isso")
 def update_collection_requirement(requirement_id):
     """PUT /api/cpmp/requirements/<rid> — Update status: open→tasked→satisfied."""
     try:
@@ -2398,6 +2567,7 @@ def list_contract_requirements(contract_id):
 
 
 @cpmp_api.route("/contracts/<contract_id>/meetings", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def create_meeting(contract_id):
     """POST /api/cpmp/contracts/<id>/meetings — Create a meeting log."""
     try:
@@ -2422,6 +2592,7 @@ def list_meetings(contract_id):
 
 
 @cpmp_api.route("/meetings/<meeting_id>/extract-actions", methods=["POST"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def extract_meeting_actions(meeting_id):
     """POST /api/cpmp/meetings/<id>/extract-actions — AI-extract action items from notes."""
     try:
@@ -2459,6 +2630,7 @@ def list_meeting_action_items(meeting_id):
 
 
 @cpmp_api.route("/action-items/<item_id>", methods=["PUT"])
+@require_role("admin", "pm", "co", "contract_mgr")
 def update_action_item(item_id):
     """PUT /api/cpmp/action-items/<id> — HITL approval gate + status update."""
     try:

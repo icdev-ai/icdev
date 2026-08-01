@@ -34,6 +34,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.reflexes.academy_reflex")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -287,8 +290,8 @@ def _promote_to_kanban(
                 ),
             )
             count += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_promote_to_kanban: best-effort INSERT into kanban_tasks failed (non-blocking): %s", exc)
     if not dry_run:
         try:
             conn.commit()
@@ -356,6 +359,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import argparse
 
     p = argparse.ArgumentParser(description="FORGE Academy auto-currency reflex")

@@ -7,6 +7,7 @@ DB file: data/dsoc_canvas.db  |  env: DSOC_STORAGE_BACKEND, DSOC_DB_PATH
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[4]
@@ -19,18 +20,28 @@ _DSOC_BACKEND = os.environ.get(
 
 
 def get_connection():
+    """Return a translating StorageConnection for DSOC canvas tables.
+
+    PG-primary. When PostgreSQL is unreachable the SQLite fallback is routed
+    through the *translating* StorageConnection (not raw sqlite3) so that
+    PG-native ``%s`` runtime SQL keeps working and there is no split-brain raw
+    ``data/dsoc_canvas.db``. RLS is disabled (canvas tables have no
+    classification/tenant_id columns).
+    """
+    from tools.db.storage import (
+        StorageConnection,
+        _get_sqlite_connection,
+        get_canvas_connection,
+    )
     if _DSOC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_canvas_connection
             return get_canvas_connection("DSOC_PG_DATABASE")
         except Exception:
             pass
-    import sqlite3
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    raw = _get_sqlite_connection(str(DB_PATH))
+    conn = StorageConnection(raw, "sqlite")
+    conn.set_security_context(None)  # rls-bypass: canvas tables have no tenant_id/classification columns, so RLS injection would raise UndefinedColumn on every query
     return conn
 
 
@@ -171,15 +182,17 @@ SCHEMA_SQLITE = (
 
 
 def init_db() -> None:
+    from tools.db.storage import is_pg
     conn = get_connection()
-    schema = SCHEMA_PG if _DSOC_BACKEND == "postgresql" else SCHEMA_SQLITE
+    pg = is_pg(conn)
+    schema = SCHEMA_PG if pg else SCHEMA_SQLITE
     try:
         for stmt in schema.split(";"):
             stmt = stmt.strip()
             if stmt:
                 conn.execute(stmt)
         conn.commit()
-        print(f"[init_db] DSOC schema ready ({_DSOC_BACKEND})")
+        print(f"[init_db] DSOC schema ready ({'postgresql' if pg else 'sqlite'})", file=sys.stderr)
     finally:
         conn.close()
 

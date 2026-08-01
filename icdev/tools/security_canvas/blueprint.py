@@ -14,6 +14,7 @@ Usage in ICDEV dashboard app.py:
         app.register_blueprint(bp, url_prefix="/security")
 """
 
+import hmac
 import json
 import os
 import uuid as _uuid
@@ -32,6 +33,16 @@ from flask import (
 )
 
 logger = get_logger("icdev.security_canvas")
+
+# nav-sec-05: ZIG mutating endpoints (capability-status PATCH, global assess
+# POST) must be restricted to security-officer roles, not merely any
+# authenticated session. require_role reads g.current_user (set by the
+# dashboard before_request hook) and 401s anonymous / 403s an unauthorized
+# role. Every role here also appears in VALID_DASHBOARD_ROLES
+# (tools/dashboard/auth.py).
+from tools.dashboard.auth import require_role  # noqa: E402
+
+_ZIG_MUTATION_ROLES = ("admin", "isso", "ciso")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _SC_DIR = Path(__file__).resolve().parent
@@ -93,6 +104,7 @@ from tools.security_canvas.sops import (  # noqa: E402
     seed_sops,
 )
 from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
+from tools.security_canvas.posture import compute_posture_summary  # noqa: E402
 
 
 def create_security_blueprint():
@@ -121,6 +133,16 @@ def create_security_blueprint():
     except Exception as exc:
         logger.warning("Security Canvas bus subscriber registration failed: %s", exc)
 
+    # Register twin_core cross-canvas twin subscriptions (twx-bus-01). SDC is the
+    # hub for both wired subs (PDC pipeline_deployed -> SDC refresh; SDC
+    # threat-model-changed -> BDC crosswalk drift), so register them here.
+    try:
+        from tools.twin_core.event_bridge import register_subscriptions as _register_twin_bus
+
+        _register_twin_bus()
+    except Exception as exc:
+        logger.warning("twin_core bus subscription registration failed: %s", exc)
+
     # Seed SOPs
     try:
         seed_sops()
@@ -138,10 +160,25 @@ def create_security_blueprint():
         @wraps(f)
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
-                # Allow bypass for E2E tests and CI environments
-                if os.environ.get("ICDEV_AUTH_BYPASS") or os.environ.get("ICDEV_DASHBOARD_API_KEY"):
+                # ICDEV_AUTH_BYPASS: explicit test-only opt-in — bypass unchanged.
+                if os.environ.get("ICDEV_AUTH_BYPASS"):
                     session["user_id"] = "e2e-bypass"
                     return f(*args, **kwargs)
+                # ICDEV_DASHBOARD_API_KEY: presented-key semantics. Authenticate
+                # ONLY if the request actually presents the key (header
+                # X-ICDEV-API-Key or Authorization: Bearer), compared with a
+                # constant-time hmac.compare_digest. Merely having the var set in
+                # the environment does NOT auto-authenticate.
+                api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+                if api_key:
+                    presented = request.headers.get("X-ICDEV-API-Key", "")
+                    if not presented:
+                        auth_header = request.headers.get("Authorization", "")
+                        if auth_header.startswith("Bearer "):
+                            presented = auth_header[len("Bearer "):].strip()
+                    if presented and hmac.compare_digest(presented, api_key):
+                        session["user_id"] = "api-key"
+                        return f(*args, **kwargs)
                 # All API calls and DELETE/POST/PUT return JSON 401 (never redirect)
                 if (
                     request.is_json
@@ -152,6 +189,7 @@ def create_security_blueprint():
                 return redirect("/login")
             return f(*args, **kwargs)
 
+        decorated._sc_auth_wrapped = True
         return decorated
 
     # ── DB helpers ─────────────────────────────────────────────────────────
@@ -173,10 +211,35 @@ def create_security_blueprint():
                     (action, entity_type, entity_id, details, user_id, _now()),
                 )
         except Exception:
-            pass
+            # Non-repudiation: an audit-write failure must be surfaced (logged),
+            # not silently swallowed — but it must NOT break the request, so we
+            # log a warning and continue rather than re-raising.
+            logger.warning(
+                "sc_audit write failed: action=%s entity=%s/%s",
+                action,
+                entity_type,
+                entity_id,
+            )
 
     def _row_to_dict(row):
         return dict(row) if row else {}
+
+    def _require_json():
+        """Parse a required JSON body for a mutating route.
+
+        Returns ``(data, error)``. If the request carries a non-empty body that
+        fails to parse as a JSON object, ``error`` is a ready-to-return
+        ``(response, 400)`` tuple and ``data`` is ``None``. An empty body yields
+        ``({}, None)`` so handlers keep their own required-field validation and
+        GET/optional-body semantics are unaffected.
+        """
+        raw = request.get_data(cache=True)
+        if raw and raw.strip():
+            data = request.get_json(force=True, silent=True)
+            if not isinstance(data, dict):
+                return None, (jsonify({"error": "invalid JSON body"}), 400)
+            return data, None
+        return {}, None
 
     # ====================================================================
     # PAGE ROUTES
@@ -287,6 +350,48 @@ def create_security_blueprint():
         )
 
     # ====================================================================
+    # API ROUTES — Insider-Risk UBA (lite) — card crx-sec-01
+    # ====================================================================
+
+    @bp.route("/api/insider-risk", methods=["GET"])
+    @sc_login_required
+    def sc_api_insider_risk():
+        """Latest insider-risk (UBA) findings for the dashboard panel."""
+        try:
+            from tools.security import insider_risk
+
+            cfg = insider_risk.load_config()
+            summary = insider_risk.get_summary()
+            summary["enabled"] = bool(cfg.get("enabled"))
+            return jsonify(summary)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("insider-risk summary failed: %s", exc)
+            return jsonify({"enabled": False, "findings": [], "bands": {}, "count": 0})
+
+    @bp.route("/api/insider-risk/scan", methods=["POST"])
+    @sc_login_required
+    def sc_api_insider_risk_scan():
+        """Run a deterministic insider-risk scan over recent telemetry."""
+        try:
+            from tools.security import insider_risk
+
+            cfg = insider_risk.load_config()
+            if not cfg.get("enabled"):
+                return jsonify({
+                    "enabled": False,
+                    "skipped": "Insider-risk UBA is disabled. Enable it in "
+                               "args/insider_risk_config.yaml after a privacy review.",
+                }), 200
+            result = insider_risk.run_scan(cfg)
+            _audit("insider_risk_scan", "security", "uba",
+                   f"{result.get('finding_count', 0)} findings over "
+                   f"{result.get('actors_evaluated', 0)} accounts")
+            return jsonify(result)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("insider-risk scan failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    # ====================================================================
     # API ROUTES — Designs CRUD
     # ====================================================================
 
@@ -374,13 +479,13 @@ def create_security_blueprint():
             params = []
             for key in ("name", "description", "classification"):
                 if key in data:
-                    updates.append(f"{key}=?")
+                    updates.append(f"{key}=%s")
                     params.append(data[key])
             if "graph_json" in data:
-                updates.append("graph_json=?")
+                updates.append("graph_json=%s")
                 val = data["graph_json"]
                 params.append(json.dumps(val) if isinstance(val, dict) else val)
-            updates.append("updated_at=?")
+            updates.append("updated_at=%s")
             params.append(now)
             params.append(design_id)
             conn.execute(
@@ -1292,157 +1397,13 @@ def create_security_blueprint():
     @bp.route("/api/posture-summary", methods=["GET"])
     @sc_login_required
     def sc_api_posture_summary():
-        """Aggregate security posture across all designs."""
+        """Aggregate security posture across all designs.
+
+        Thin wrapper — all aggregation lives in
+        ``tools/security_canvas/posture.py::compute_posture_summary`` (shx-hyg-02).
+        """
         with get_connection() as conn:
-            designs = [
-                _row_to_dict(r) for r in conn.execute("SELECT id, name FROM security_designs ORDER BY name").fetchall()
-            ]
-
-        design_list = []
-        total_score = 0.0
-        assessed_count = 0
-        grade_dist = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
-
-        for d in designs:
-            with get_connection() as conn:
-                latest = conn.execute(
-                    "SELECT risk_score, posture_grade, ran_at "
-                    "FROM sc_assessments WHERE design_id=%s "
-                    "ORDER BY ran_at DESC LIMIT 1",
-                    (d["id"],),
-                ).fetchone()
-
-            entry = {
-                "id": d["id"],
-                "name": d["name"] or d["id"],
-                "risk_score": None,
-                "grade": None,
-                "last_assessed": None,
-                "cat1_count": 0,
-            }
-
-            if latest:
-                entry["risk_score"] = latest["risk_score"]
-                entry["grade"] = latest["posture_grade"]
-                entry["last_assessed"] = latest["ran_at"]
-                total_score += latest["risk_score"] or 0.0
-                assessed_count += 1
-                g = latest["posture_grade"] or "F"
-                if g in grade_dist:
-                    grade_dist[g] += 1
-                # Count CAT1 findings from the latest assessment
-                try:
-                    findings = json.loads(latest["findings_json"] or "[]")
-                    entry["cat1_count"] = sum(1 for f in findings if f.get("severity") == "CAT1")
-                except Exception:
-                    pass
-
-            design_list.append(entry)
-
-        total_designs = len(designs)
-        unassessed = total_designs - assessed_count
-        avg_score = round(total_score / assessed_count, 1) if assessed_count else 0.0
-
-        # Determine average grade from avg_score
-        if avg_score >= 90:
-            avg_grade = "A"
-        elif avg_score >= 80:
-            avg_grade = "B"
-        elif avg_score >= 70:
-            avg_grade = "C"
-        elif avg_score >= 60:
-            avg_grade = "D"
-        else:
-            avg_grade = "F"
-
-        # Overall posture
-        if avg_score >= 80:
-            overall_posture = "strong"
-        elif avg_score >= 60:
-            overall_posture = "moderate"
-        elif avg_score >= 40:
-            overall_posture = "weak"
-        else:
-            overall_posture = "critical"
-
-        # Aggregate CAT1 counts from pipeline-level assessments (design_id IS NULL, PDC-triggered)
-        with get_connection() as conn:
-            pipeline_rows = conn.execute(
-                "SELECT source_entity_id, findings_json, ran_at "
-                "FROM sc_assessments WHERE design_id IS NULL "
-                "AND trigger_source='pdc_save' "
-                "ORDER BY ran_at DESC"
-            ).fetchall()
-
-        seen_pipelines: set = set()
-        pipeline_assessments = []
-        total_cat1 = sum(e["cat1_count"] for e in design_list)
-        for pr in pipeline_rows:
-            pid = pr["source_entity_id"] or pr[0]
-            if pid in seen_pipelines:
-                continue
-            seen_pipelines.add(pid)
-            try:
-                findings = json.loads(pr["findings_json"] or "[]")
-                cat1 = sum(1 for f in findings if f.get("severity") == "CAT1")
-            except Exception:
-                cat1 = 0
-            total_cat1 += cat1
-            pipeline_assessments.append(
-                {
-                    "pipeline_id": pid,
-                    "cat1_count": cat1,
-                    "last_assessed": pr["ran_at"],
-                }
-            )
-
-        # Aggregate NDC-triggered design assessments (design_id IS NOT NULL, ndc_save)
-        with get_connection() as conn:
-            ndc_rows = conn.execute(
-                "SELECT design_id, source_entity_id, risk_score, posture_grade, "
-                "findings_json, ran_at "
-                "FROM sc_assessments WHERE trigger_source='ndc_save' "
-                "ORDER BY ran_at DESC"
-            ).fetchall()
-
-        seen_ndc: set = set()
-        ndc_assessments = []
-        for nr in ndc_rows:
-            did = nr["design_id"] or nr[0]
-            if did in seen_ndc:
-                continue
-            seen_ndc.add(did)
-            try:
-                findings = json.loads(nr["findings_json"] or "[]")
-                cat1 = sum(1 for f in findings if f.get("severity") == "CAT1")
-            except Exception:
-                cat1 = 0
-            ndc_assessments.append(
-                {
-                    "topology_id": nr["source_entity_id"],
-                    "design_id": did,
-                    "risk_score": nr["risk_score"],
-                    "posture_grade": nr["posture_grade"],
-                    "cat1_count": cat1,
-                    "last_assessed": nr["ran_at"],
-                }
-            )
-
-        return jsonify(
-            {
-                "total_designs": total_designs,
-                "assessed_designs": assessed_count,
-                "unassessed_designs": unassessed,
-                "average_risk_score": avg_score,
-                "average_grade": avg_grade,
-                "grade_distribution": grade_dist,
-                "designs": design_list,
-                "overall_posture": overall_posture,
-                "total_cat1_findings": total_cat1,
-                "pipeline_assessments": pipeline_assessments,
-                "ndc_assessments": ndc_assessments,
-            }
-        )
+            return jsonify(compute_posture_summary(conn))
 
     # ====================================================================
     # API ROUTES — IaC Scanning
@@ -1452,7 +1413,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_iac_scan_text():
         """Scan inline IaC content for security misconfigurations."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         content = data.get("content", "")
         iac_type = data.get("iac_type", "terraform")
         topology_id = data.get("topology_id", "")
@@ -1465,7 +1428,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_iac_scan_file():
         """Scan a single IaC file on disk for security misconfigurations."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         file_path = data.get("file_path", "")
         if not file_path:
             return jsonify({"error": "file_path is required"}), 400
@@ -1476,7 +1441,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_iac_scan_directory():
         """Scan all IaC files in a directory for security misconfigurations."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         directory_path = data.get("directory_path", "")
         if not directory_path:
             return jsonify({"error": "directory_path is required"}), 400
@@ -1515,7 +1482,9 @@ def create_security_blueprint():
         """Import a threat model from Threat Dragon or TMT format."""
         from tools.security_canvas.importers import import_threat_model
 
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         content = data.get("content", "")
         fmt = data.get("format", "auto")
         if not content:
@@ -1790,7 +1759,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_create_sop():
         """Create a new SOP."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         sop = create_sop(data)
         _audit("CREATE", "sop", sop["id"], sop["title"])
         return jsonify(sop), 201
@@ -1808,7 +1779,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_update_sop(sop_id):
         """Update an existing SOP."""
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         sop = update_sop(sop_id, data)
         if not sop:
             return jsonify({"error": "Not found"}), 404
@@ -2063,7 +2036,9 @@ def create_security_blueprint():
     @sc_login_required
     def sc_api_twin_chat_delta(design_id):
         from tools.twin_chat import security_chat_to_delta
-        data = request.get_json(silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         message = (data.get("message") or "").strip()
         if not message:
             return jsonify({"error": "message is required"}), 400
@@ -2079,12 +2054,18 @@ def create_security_blueprint():
         from tools.iqe.executor import execute_query
         import tools.iqe.adapters.security  # noqa: F401 — registers attack.* collections
 
-        data = request.get_json(silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         question = (data.get("question") or "").strip()
         if not question:
             return jsonify({"error": "question is required"}), 400
 
-        collections = ["attack.nodes", "attack.edges", "attack.paths"]
+        # Must match `iqe.collections` for key `sdc` in component_registry.yaml —
+        # security.ai_decisions was declared there but never offered here, so the
+        # adapter registered a collection no question could reach.
+        collections = ["attack.nodes", "attack.edges", "attack.paths",
+                       "security.ai_decisions"]
         translation = nl_to_iqe(question, collections)
         iqe_str = translation.get("iqe", "")
         explanation = translation.get("explanation", "")
@@ -2247,6 +2228,7 @@ def create_security_blueprint():
 
     @bp.route("/zig/")
     @bp.route("/zig")
+    @sc_login_required
     def zig_index():
         """ZIG home — 7-pillar radar, phase progress, FY2027 status."""
         from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
@@ -2266,6 +2248,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/zig/pillar/<pillar_slug>")
+    @sc_login_required
     def zig_pillar_detail(pillar_slug):
         """Per-pillar ZIG detail — capabilities checklist + activities."""
         from tools.security_canvas.zig_phase_tracker import get_capability_status_by_pillar
@@ -2305,6 +2288,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/zig/phase")
+    @sc_login_required
     def zig_phase_tracker():
         """Phase tracker — Discovery / Phase 1 / Phase 2 activity grids."""
         from tools.security_canvas.zig_phase_tracker import get_all_phases_status
@@ -2336,6 +2320,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/zig/assessment")
+    @sc_login_required
     def zig_assessment_page():
         """ZIG assessment page — run gap assessment, view results."""
         from tools.security_canvas.zig_assessor import get_latest_zig_maturity
@@ -2343,6 +2328,7 @@ def create_security_blueprint():
         return render_template("security_canvas/zig/assessment.html", latest=latest)
 
     @bp.route("/zig/roadmap")
+    @sc_login_required
     def zig_roadmap_page():
         """ZIG roadmap — FY2027/FY2032 milestone timeline."""
         from tools.security_canvas.zig_roadmap_generator import generate_roadmap
@@ -2352,6 +2338,7 @@ def create_security_blueprint():
     # ── ZIG API Endpoints ────────────────────────────────────────────────────
 
     @bp.route("/api/zig/pillars")
+    @sc_login_required
     def zig_api_pillars():
         """GET /security/api/zig/pillars — all pillars with current maturity scores."""
         from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
@@ -2360,6 +2347,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "pillars": pillar_scores, "aggregate": aggregate})
 
     @bp.route("/api/zig/pillars/<pillar_slug>")
+    @sc_login_required
     def zig_api_pillar_detail(pillar_slug):
         """GET /security/api/zig/pillars/<slug> — pillar + capabilities + maturity."""
         from tools.security_canvas.zig_pillar_scorer import score_pillar
@@ -2373,6 +2361,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "pillar": meta, "score": score, "capabilities": capabilities})
 
     @bp.route("/api/zig/capabilities")
+    @sc_login_required
     def zig_api_capabilities():
         """GET /security/api/zig/capabilities?pillar=&phase=&status= — filterable list."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2383,11 +2372,11 @@ def create_security_blueprint():
         sql = "SELECT * FROM zig_capabilities WHERE 1=1"
         params = []
         if pillar:
-            sql += " AND pillar_slug=?"; params.append(pillar)
+            sql += " AND pillar_slug=%s"; params.append(pillar)
         if phase:
-            sql += " AND phase=?"; params.append(phase)
+            sql += " AND phase=%s"; params.append(phase)
         if status:
-            sql += " AND implementation_status=?"; params.append(status)
+            sql += " AND implementation_status=%s"; params.append(status)
         sql += " ORDER BY pillar_slug, phase"
 
         conn = get_connection()
@@ -2398,6 +2387,8 @@ def create_security_blueprint():
         return jsonify({"ok": True, "capabilities": caps, "count": len(caps)})
 
     @bp.route("/api/zig/capabilities/<cap_id>", methods=["PATCH"])
+    @require_role(*_ZIG_MUTATION_ROLES)
+    @sc_login_required
     def zig_api_cap_status(cap_id):
         """PATCH /security/api/zig/capabilities/<id> — update implementation_status."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2409,16 +2400,24 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": f"status must be one of {valid}"}), 400
         conn = get_connection()
         try:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE zig_capabilities SET implementation_status=%s, evidence_note=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
                 (new_status, evidence_note, cap_id),
             )
+            if cur.rowcount == 0:
+                return jsonify({"ok": False, "error": "unknown capability id"}), 404
             conn.commit()
         finally:
             conn.close()
+        # Non-repudiation: capability status + evidence writes are audited.
+        _audit(
+            "zig_capability_status_change", "zig_capability", cap_id,
+            details=f"status={new_status}; evidence={'yes' if evidence_note else 'no'}",
+        )
         return jsonify({"ok": True, "id": cap_id, "implementation_status": new_status})
 
     @bp.route("/api/zig/activities")
+    @sc_login_required
     def zig_api_activities():
         """GET /security/api/zig/activities?capability=&phase= — filterable list."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2433,9 +2432,9 @@ def create_security_blueprint():
                "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id WHERE 1=1")
         params = []
         if capability:
-            sql += " AND a.capability_id=?"; params.append(capability)
+            sql += " AND a.capability_id=%s"; params.append(capability)
         if phase:
-            sql += " AND a.phase=?"; params.append(phase)
+            sql += " AND a.phase=%s"; params.append(phase)
         sql += " ORDER BY a.phase, c.pillar_slug"
 
         conn = get_connection()
@@ -2446,6 +2445,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "activities": acts, "count": len(acts)})
 
     @bp.route("/api/zig/activities/<activity_id>/complete", methods=["PATCH"])
+    @sc_login_required
     def zig_api_activity_complete(activity_id):
         """PATCH /security/api/zig/activities/<id>/complete — set completion status."""
         from tools.security_canvas.zig_activity_tracker import set_activity_status
@@ -2455,11 +2455,18 @@ def create_security_blueprint():
         completed_by = data.get("completed_by")
         try:
             result = set_activity_status(activity_id, status, evidence_note, completed_by)
+            # Non-repudiation: activity completion + evidence writes are audited.
+            _audit(
+                "zig_activity_completion", "zig_activity", activity_id,
+                details=(f"target=icdev-self; status={status}; "
+                         f"evidence={'yes' if evidence_note else 'no'}"),
+            )
             return jsonify({"ok": True, **result})
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
     @bp.route("/api/zig/maturity")
+    @sc_login_required
     def zig_api_maturity():
         """GET /security/api/zig/maturity — aggregate scores + FY2027 readiness."""
         from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
@@ -2475,21 +2482,37 @@ def create_security_blueprint():
         })
 
     @bp.route("/api/zig/assess", methods=["POST"])
+    @require_role(*_ZIG_MUTATION_ROLES)
+    @sc_login_required
     def zig_api_assess():
-        """POST /security/api/zig/assess — run full ZIG assessment.
+        """POST /security/api/zig/assess — run the GLOBAL ZIG assessment.
 
-        Optional JSON body: {"target_id": "my-app"} (default: "icdev-self")
+        Scores all 7 pillars org-wide and persists the run to
+        zig_maturity_scores. This endpoint is not target-scoped; to assess a
+        specific target use POST /api/zig/targets/<target_id>/assess.
         """
         from tools.security_canvas.zig_assessor import run_zig_assessment
         data = request.get_json(force=True, silent=True) or {}
-        target_id = (data.get("target_id") or "icdev-self").strip() or "icdev-self"
+        if (data.get("target_id") or "").strip():
+            return jsonify({
+                "ok": False,
+                "error": "target_id is not supported on /api/zig/assess; use "
+                         "POST /api/zig/targets/<target_id>/assess for a "
+                         "target-scoped assessment",
+            }), 400
         try:
-            result = run_zig_assessment(target_id=target_id)
+            result = run_zig_assessment()
+            # Non-repudiation: assessment runs are audited.
+            _audit(
+                "zig_assessment_run", "zig_target", "icdev-self",
+                details=f"scope=global; aggregate={result.get('aggregate', {}).get('score')}",
+            )
             return jsonify({"ok": True, **result})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/phases")
+    @sc_login_required
     def zig_api_phases():
         """GET /security/api/zig/phases — Discovery/Ph1/Ph2 completion metrics."""
         from tools.security_canvas.zig_phase_tracker import get_all_phases_status, compute_fy2027_readiness
@@ -2498,6 +2521,7 @@ def create_security_blueprint():
         return jsonify({"ok": True, "phases": phases, "fy2027": fy2027})
 
     @bp.route("/api/zig/roadmap")
+    @sc_login_required
     def zig_api_roadmap():
         """GET /security/api/zig/roadmap — milestone timeline JSON."""
         from tools.security_canvas.zig_roadmap_generator import generate_roadmap
@@ -2508,6 +2532,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/artifact")
+    @sc_login_required
     def zig_api_artifact():
         """GET /security/api/zig/artifact — download ZIG gap assessment report."""
         from tools.security_canvas.zig_artifact_generator import generate_zig_artifact
@@ -2525,6 +2550,7 @@ def create_security_blueprint():
     # ── ZIG External Targets ──────────────────────────────────────────────────
 
     @bp.route("/api/zig/targets", methods=["GET"])
+    @sc_login_required
     def zig_api_targets_list():
         """GET /security/api/zig/targets — list all active ZIG targets."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2540,11 +2566,14 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets", methods=["POST"])
+    @sc_login_required
     def zig_api_targets_create():
         """POST /security/api/zig/targets — create a new ZIG target."""
         from tools.security_canvas.db.init_db import get_connection
         from datetime import datetime, timezone
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         target_id = data.get("id", "").strip()
         name = data.get("name", "").strip()
         if not target_id or not name:
@@ -2569,6 +2598,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets/<target_id>", methods=["GET"])
+    @sc_login_required
     def zig_api_target_get(target_id):
         """GET /security/api/zig/targets/<id> — get single ZIG target."""
         from tools.security_canvas.db.init_db import get_connection
@@ -2585,27 +2615,43 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets/<target_id>/assess", methods=["POST"])
+    @sc_login_required
     def zig_api_target_assess(target_id):
         """POST /security/api/zig/targets/<id>/assess — run ZIG assessment for a target."""
         from tools.security_canvas.zig_portfolio import get_target_assessment
         try:
             result = get_target_assessment(target_id)
+            # Non-repudiation: target-scoped assessment runs are audited.
+            _audit(
+                "zig_assessment_run", "zig_target", target_id,
+                details=f"scope=target; aggregate={result.get('aggregate', {}).get('score')}",
+            )
             return jsonify({"ok": True, **result})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets/<target_id>/activities/<activity_id>", methods=["PATCH"])
+    @sc_login_required
     def zig_api_target_activity_update(target_id, activity_id):
         """PATCH /security/api/zig/targets/<id>/activities/<act_id> — update activity status."""
         from tools.security_canvas.zig_activity_tracker import set_activity_status
         data = request.get_json(force=True, silent=True) or {}
         status = data.get("status", "in_progress")
         try:
+            evidence_note = data.get("evidence_note")
             result = set_activity_status(
                 activity_id, status,
                 target_id=target_id,
-                evidence_note=data.get("evidence_note"),
+                evidence_note=evidence_note,
                 completed_by=data.get("completed_by", "api"),
+            )
+            # Non-repudiation: per-target activity completion + evidence writes
+            # are audited (entity_id is the target-scoped completion key).
+            _audit(
+                "zig_activity_completion", "zig_activity",
+                f"{target_id}:{activity_id}",
+                details=(f"target={target_id}; status={status}; "
+                         f"evidence={'yes' if evidence_note else 'no'}"),
             )
             return jsonify({"ok": True, **result})
         except ValueError as exc:
@@ -2614,15 +2660,21 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/targets/<target_id>/ingest", methods=["POST"])
+    @sc_login_required
     def zig_api_target_ingest(target_id):
         """POST /security/api/zig/targets/<id>/ingest — ingest scan results for a target.
 
         Body: {"source_type": "sbom|sast|survey|nmap|openapi", "payload": <string or object>}
         """
+        import json
+
+        from tools.security_canvas.constants import ZIG_INGEST_MAX_BYTES
         from tools.security_canvas.zig_external_adapter import (
             ingest_sbom, ingest_sast, ingest_survey, ingest_nmap, ingest_openapi,
         )
-        data = request.get_json(force=True, silent=True) or {}
+        data, _err = _require_json()
+        if _err:
+            return _err
         source_type = data.get("source_type", "").lower()
         payload = data.get("payload")
         if not source_type or payload is None:
@@ -2639,11 +2691,20 @@ def create_security_blueprint():
             return jsonify({"ok": False,
                             "error": f"unknown source_type; valid: {list(dispatch)}"}), 400
 
+        # Normalize payload to a string, then reject oversized payloads with
+        # HTTP 413 BEFORE any parsing (bounds memory/CPU; DoS defense).
+        if not isinstance(payload, str):
+            payload = json.dumps(payload)
+        payload_bytes = len(payload.encode("utf-8"))
+        if payload_bytes > ZIG_INGEST_MAX_BYTES:
+            return jsonify({
+                "ok": False,
+                "error": (f"payload too large: {payload_bytes} bytes exceeds "
+                          f"limit of {ZIG_INGEST_MAX_BYTES} bytes"),
+                "max_bytes": ZIG_INGEST_MAX_BYTES,
+            }), 413
+
         try:
-            # Accept payload as string or already-parsed dict/list
-            if not isinstance(payload, str):
-                import json
-                payload = json.dumps(payload)
             result = dispatch[source_type](target_id, payload)
             return jsonify({"ok": True, **result})
         except Exception as exc:
@@ -2652,6 +2713,7 @@ def create_security_blueprint():
     # ── ZIG Portfolio ─────────────────────────────────────────────────────────
 
     @bp.route("/zig/portfolio")
+    @sc_login_required
     def zig_portfolio_page():
         """GET /security/zig/portfolio — multi-target portfolio dashboard."""
         from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
@@ -2723,6 +2785,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/api/zig/portfolio/health")
+    @sc_login_required
     def zig_api_portfolio_health():
         """GET /security/api/zig/portfolio/health — portfolio health JSON."""
         from tools.security_canvas.zig_portfolio import get_portfolio_health
@@ -2732,6 +2795,7 @@ def create_security_blueprint():
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @bp.route("/api/zig/portfolio/compare")
+    @sc_login_required
     def zig_api_portfolio_compare():
         """GET /security/api/zig/portfolio/compare?targets=id1,id2 — radar comparison."""
         from tools.security_canvas.zig_portfolio import compare_targets

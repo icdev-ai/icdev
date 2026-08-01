@@ -55,6 +55,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.program_bridge")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -103,10 +106,9 @@ def _get_db():
 def _audit(conn, action: str, details: str = "", opportunity_id: str = "") -> None:
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, project_id, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                str(uuid.uuid4()),
                 _now(),
                 "govcon.program_bridge",
                 "program_bridge",
@@ -116,8 +118,8 @@ def _audit(conn, action: str, details: str = "", opportunity_id: str = "") -> No
                 "proposal_genesis",
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _ensure_tables(conn) -> None:
@@ -164,7 +166,49 @@ def _gather_win_themes(conn, opp_id: str) -> Dict[str, Any]:
 
 
 def _gather_key_personnel(conn, opp_id: str) -> Dict[str, Any]:
-    """Extract key personnel names from proposal section drafts."""
+    """Key personnel for the bid — from the REGISTRY, falling back to the old scrape.
+
+    prem-pstaff-01/02. This used to be nothing but a regex over proposal prose:
+    ``_NAME_PATTERN`` matches a capitalised bigram, so "Program Manager", "Technical
+    Approach" and "Agile Delivery" all came back as people. The result was a bare list
+    of strings — no LCAT, no qualification verdict, no evidence — and it fed the "Key
+    Personnel & Staffing Plan" section of a real proposal.
+
+    ``proposal_key_personnel`` is now the source of truth: a named person, a proposed
+    labour category, a qualification verdict, and the resume evidence behind it. Every
+    row in it is evidenced, because the intake refuses unevidenced mappings and a CHECK
+    constraint backs that up.
+
+    The regex is kept ONLY as a fallback for opportunities that pre-date the registry,
+    and it now says so: those entries are marked ``source: "scraped"`` and carry
+    ``evidence: []``, so a reader can see at a glance which names are defensible and
+    which were guessed at by a pattern match. Silently mixing the two would be worse
+    than either.
+    """
+    try:
+        from tools.govcon.key_personnel import list_key_personnel
+
+        people = list_key_personnel(opp_id, conn=conn)
+        if people:
+            return {
+                "data": [
+                    {
+                        "name": p["name"],
+                        "proposed_lcat": p["proposed_lcat"],
+                        "qualification_verdict": p["qualification_verdict"],
+                        "evidence": p.get("evidence") or [],
+                        "source": p.get("source") or "compass",
+                    }
+                    for p in people
+                ],
+                "record_count": len(people),
+                "source": "proposal_key_personnel",
+            }
+    except Exception:
+        # Registry unavailable (table not migrated yet) — fall through to the scrape
+        # rather than losing the section entirely.
+        pass
+
     try:
         rows = conn.execute(
             "SELECT draft_content FROM proposal_section_drafts WHERE opportunity_id = %s",
@@ -181,9 +225,22 @@ def _gather_key_personnel(conn, opp_id: str) -> Dict[str, Any]:
                 if name_clean not in seen and len(name_clean) > 4:
                     seen.add(name_clean)
                     names.append(name_clean)
-        return {"data": names, "record_count": len(names)}
+        return {
+            "data": [
+                {
+                    "name": n,
+                    "proposed_lcat": "",
+                    "qualification_verdict": "",
+                    "evidence": [],
+                    "source": "scraped",
+                }
+                for n in names
+            ],
+            "record_count": len(names),
+            "source": "regex_scrape_legacy",
+        }
     except Exception:
-        return {"data": [], "record_count": 0}
+        return {"data": [], "record_count": 0, "source": "unavailable"}
 
 
 def _gather_teaming(conn, opp_id: str) -> Dict[str, Any]:
@@ -375,7 +432,7 @@ def _render_win_strategy(themes: List[Dict]) -> str:
         return "\n".join(lines)
     wt = [t for t in themes if t.get("theme_type") == "win_theme"]
     disc = [t for t in themes if t.get("theme_type") == "discriminator"]
-    ghosts = [t for t in themes if t.get("theme_type") == "ghost"]
+    ghosts = [t for t in themes if t.get("theme_type") == "ghost_strategy"]
     if wt:
         lines.append("### Win Themes\n")
         for i, t in enumerate(wt, 1):

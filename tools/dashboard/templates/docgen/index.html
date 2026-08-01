@@ -8,10 +8,14 @@
     <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🔄 Intelligent Doc Regeneration</h2>
     <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Upload multi-team diagrams &amp; configs → AI reconciles → WriteGuard-gated document · HITL-approved · full audit trail</p>
   </div>
-  <button onclick="openTemplateGallery()"
-    style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">
-    + New Regeneration
-  </button>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <a href="/document-intelligence/techwriter" style="background:#16213e;color:#94a3b8;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;text-decoration:none;font-size:13px;">Tech Writer →</a>
+    <a href="/document-intelligence/" style="background:#16213e;color:#94a3b8;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;text-decoration:none;font-size:13px;">Document Canvas →</a>
+    <button onclick="openTemplateGallery()"
+      style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">
+      + New Regeneration
+    </button>
+  </div>
 </div>
 
 <!-- Template gallery modal (Step 1) -->
@@ -109,22 +113,34 @@
           <span id="session-status-badge" style="font-size:11px;padding:3px 9px;border-radius:4px;background:#1a2a3a;color:#7ab3f0;">
             Stage {{ session.stage }}: {{ session.status }}
           </span>
-          {% if session.doc_type in ('runbook','design_doc','standard_guide') %}
-          <button onclick="openInTechWriter('{{ session.id }}', '{{ session.title | replace("'","") }}', '{{ session.doc_type }}', '{{ session.classification or 'CUI' }}')"
+          <button onclick="openInTechWriter('{{ session.id }}', '{{ session.title | replace("'","") }}', '{{ session.classification or 'CUI' }}')"
             style="background:#1a1a3a;color:#a78bfa;padding:4px 10px;border:1px solid #3a2a6e;border-radius:4px;cursor:pointer;font-size:11px;">
             ✍️ Open in Tech Writer
           </button>
-          {% endif %}
         </div>
       </div>
     </div>
 
-    <!-- Stage progress bar -->
+    <!-- Stage stepper (docmod-ux-03): named stages, checkmarked when complete;
+         blocked gates render amber via JS from api_session_progress -->
     <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;margin-bottom:16px;">
-      <div style="height:8px;background:#0a1525;border-radius:4px;overflow:hidden;margin-bottom:6px;">
+      <div style="height:8px;background:#0a1525;border-radius:4px;overflow:hidden;margin-bottom:8px;">
         <div style="height:100%;background:#4f8ef7;width:{{ (session.stage / 8 * 100)|round(0)|int }}%;transition:width .5s;"></div>
       </div>
-      <div style="color:#7a8cb0;font-size:11px;text-align:center;">Stage {{ session.stage }} / 8 — {{ session.status }}</div>
+      {% set stage_labels = ['Setup', 'Ingest', 'Analyze', 'Resolve Conflicts', 'Synthesize', 'Generate', 'Quality Gate', 'Review & Publish'] %}
+      <div id="idr-stepper" style="display:flex;gap:2px;overflow-x:auto;">
+        {% for label in stage_labels %}
+        {% set n = loop.index %}
+        <div class="idr-step" data-step="{{ n }}" style="flex:1;min-width:74px;text-align:center;padding:4px 2px;border-radius:4px;font-size:10px;
+          {% if session.stage >= n %}background:#12233e;color:#7ab3f0;{% else %}background:#0a1525;color:#43597a;{% endif %}
+          {% if session.stage + 1 == n %}outline:1px solid #4f8ef7;{% endif %}">
+          {% if session.stage >= n %}✓ {% endif %}{{ label }}
+        </div>
+        {% endfor %}
+      </div>
+      <div id="idr-stage-status" style="color:#7a8cb0;font-size:11px;text-align:center;margin-top:6px;">
+        Stage {{ session.stage }} / 8 — {{ session.status }}
+      </div>
     </div>
 
     <!-- Upload zone (visible during stages 0-1) -->
@@ -281,7 +297,13 @@
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div style="color:#5a6e8c;font-size:10px;">Stage {{ s.stage }}/8 · {{ (s.created_at | string)[:10] if s.created_at else '' }}</div>
         {% if s.get('freshness_stale') %}
-        <span title="Source files have changed since last generation" style="background:#5a1a00;color:#ffd666;font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid #a05010;">STALE</span>
+        <span style="display:flex;gap:4px;align-items:center;">
+          <span title="Source files have changed since last generation" style="background:#5a1a00;color:#ffd666;font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid #a05010;">STALE</span>
+          <button onclick="refreshSession(event, '{{ s.id }}')" title="Clone this session with re-hashed sources and start a fresh generation run"
+            style="background:#3a2a00;color:#ffd666;font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid #a05010;cursor:pointer;">
+            ↻ Re-run with updated sources
+          </button>
+        </span>
         {% endif %}
       </div>
     </div>
@@ -370,7 +392,32 @@ function clearTemplate() {
   document.getElementById('ns-tpl-badge').style.display = 'none';
 }
 
+// docmod-regen-01: prefill + auto-open the modal for regenerate-in-docgen.
+// Also auto-opens on a plain /new visit (open_wizard), which is the advertised
+// "DocGen Wizard" entry point.
+(function() {
+  var sd = {{ (source_doc | tojson) if source_doc is defined and source_doc else 'null' }};
+  var openWizard = {{ 'true' if open_wizard is defined and open_wizard else 'false' }};
+  if (!sd || !sd.doc_id) {
+    if (openWizard) document.getElementById('new-session-modal').style.display = 'flex';
+    return;
+  }
+  var titleEl = document.getElementById('ns-title');
+  if (titleEl && !titleEl.value) titleEl.value = sd.title || '';
+  var dtEl = document.getElementById('ns-doctype');
+  if (dtEl && sd.doc_type) {
+    for (var i = 0; i < dtEl.options.length; i++) {
+      if (dtEl.options[i].value === sd.doc_type) { dtEl.selectedIndex = i; break; }
+    }
+  }
+  document.getElementById('new-session-modal').style.display = 'flex';
+})();
+
 // ── Session creation ────────────────────────────────────────────────────────
+// docmod-regen-01: when arriving via 'Regenerate in DocGen', SOURCE_DOC links
+// the session to the DIC document so generation appends a new version on it.
+var SOURCE_DOC = {{ (source_doc | tojson) if source_doc is defined and source_doc else 'null' }};
+
 function createSession() {
   var title = document.getElementById('ns-title').value.trim();
   var domain = document.getElementById('ns-domain').value;
@@ -379,10 +426,15 @@ function createSession() {
   errEl.style.display = 'none';
   if (!title) { errEl.textContent = 'Title is required.'; errEl.style.display = 'block'; return; }
   document.getElementById('ns-create-btn').disabled = true;
+  var payload = {title: title, domain: domain, doc_type: docType};
+  if (SOURCE_DOC && SOURCE_DOC.doc_id) {
+    payload.source_dic_doc_id = SOURCE_DOC.doc_id;
+    payload.classification = SOURCE_DOC.classification || 'CUI';
+  }
   fetch('/docgen/api/sessions', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({title: title, domain: domain, doc_type: docType})
+    body: JSON.stringify(payload)
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (!d.id) { errEl.textContent = d.error || 'Failed.'; errEl.style.display = 'block'; document.getElementById('ns-create-btn').disabled = false; return; }
     // apply template if one was selected
@@ -473,22 +525,28 @@ if (fileInput) {
   });
 }
 
-// ── Docgen → Tech Writer ──────────────────────────────────────────────────────
-var _DOCTYPE_TO_TEMPLATE = {
-  'runbook': 'RUNBOOK',
-  'design_doc': 'ARCH_SYSTEM',
-  'standard_guide': 'STANDARD_GUIDE'
-};
+// ── Stale-session refresh (docmod-ux-03) ─────────────────────────────────────
+function refreshSession(ev, sessionId) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  fetch('/docgen/api/sessions/' + sessionId + '/refresh', {method: 'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d) {
+      if (d.session_id) window.location.href = '/docgen/' + d.session_id;
+      else alert('Refresh failed: ' + (d.error || JSON.stringify(d)));
+    });
+}
 
-function openInTechWriter(sessionId, title, docType, classification) {
-  var templateType = _DOCTYPE_TO_TEMPLATE[docType] || 'ARCH_SYSTEM';
+// ── Docgen → Tech Writer ──────────────────────────────────────────────────────
+// Template resolution moved server-side (DOCGEN_DOCTYPE_TO_TEMPLATE in
+// tools/document_intelligence/constants.py) — the server maps every doc_type.
+function openInTechWriter(sessionId, title, classification) {
   fetch('/document-intelligence/api/import-from-docgen', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
       session_id: sessionId,
       title: title,
-      template_type: templateType,
       classification: classification || 'CUI'
     })
   })

@@ -147,10 +147,12 @@ def test_check_coworker_trigger_stores_instance_id(tmp_path, monkeypatch):
     conn.close()
 
     import tools.dashboard.chat_manager as _cm
+    # DB_PATH only. get_connection stays real so its StorageConnection rewrites
+    # the %s placeholders this repo authors for PostgreSQL into ? for SQLite;
+    # a raw sqlite3.connect skips that, and _check_coworker_trigger's
+    # best-effort `except Exception` then swallows the syntax error, so the
+    # test measured a no-op it had caused itself.
     monkeypatch.setattr(_cm, "DB_PATH", db_path)
-    # Patch get_connection to return our test DB
-    monkeypatch.setattr(_cm, "get_connection",
-                        lambda **kw: sqlite3.connect(str(db_path)))
 
     _cm._check_coworker_trigger(
         "ctx-ace-001",

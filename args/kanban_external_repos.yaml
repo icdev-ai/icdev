@@ -1,0 +1,70 @@
+# CUI // SP-CTI
+# Repo-aware kanban dispatch registry (tools/kanban/repo_registry.py).
+#
+# Maps kanban task-id PREFIXES to the external git repo they build in. A task
+# whose id matches no prefix here — or if this file is absent — builds in ICDev
+# (the default), so an empty registry is a complete no-op.
+#
+# The repo's on-disk root is read from an env var (root_env) so this committed
+# file stays environment-agnostic. If the env var is unset, matching tasks are
+# treated as external-but-unconfigured and are SKIPPED by the dispatcher (never
+# built inside ICDev). Set the env var wherever the scheduler runs, e.g.:
+#   $env:ICDEV_KANBAN_REPO_COMPASS  = "C:/tmp/compass-premium-ricoas-continue"
+#   $env:ICDEV_KANBAN_REPO_IDEA_LAB = "C:/ai/idea_lab"
+
+repos:
+  compass:
+    base_branch: main
+    root_env: ICDEV_KANBAN_REPO_COMPASS
+  idea_lab:
+    base_branch: main
+    root_env: ICDEV_KANBAN_REPO_IDEA_LAB
+  # CONCORD — the Evidence-to-Investment Studio. The repo does not exist yet, so
+  # ICDEV_KANBAN_REPO_CONCORD is deliberately UNSET: unconfigured external tasks
+  # are skipped by the dispatcher rather than built inside the ICDev checkout,
+  # where they would fail ICDev's tree-scoped gates and churn. Held additionally
+  # behind cncd-gate-00 until the repo is scaffolded.
+  #   $env:ICDEV_KANBAN_REPO_CONCORD = "C:/AI/standalone/concord"
+  concord:
+    base_branch: main
+    root_env: ICDEV_KANBAN_REPO_CONCORD
+
+# Longest matching prefix wins. These are the premium/external product streams
+# that must NOT run through ICDev's build+validate+merge pipeline.
+prefixes:
+  prem-cpmp: compass
+  prem-msr: compass
+  prem-lcatq: compass
+  prem-recomp: compass
+  prem-ricoas: compass
+  prem-ideal: idea_lab
+  # ked-reg-01: these five streams were LIVE on the board and missing from this
+  # file, so they resolved to the ICDev default — meaning the dispatcher would
+  # have built compass/idea_lab work inside the ICDev checkout, where it fails
+  # ICDev's tree-scoped gates and churns. test_kanban_external_repos.py now
+  # asserts every distinct prem-* stream on the board resolves to a registered
+  # repo, so the next one cannot be added without landing here too.
+  prem-bid: compass
+  prem-rpt: compass
+  prem-people: compass
+  prem-pstaff: compass
+  # prem-p0 (policy-routed LLM) shipped in BOTH ICDev and idea_lab. Its ICDev half
+  # is already merged; the stream is registered to idea_lab because that is where
+  # any remaining work in it lands.
+  prem-p0: idea_lab
+  # ked-vfy-01: dispatch-proof stream. Carries the deliberately trivial compass
+  # task defined in args/kanban_seed_compass_dispatch.yaml, used to exercise
+  # dispatch end to end against a real external repo. Registered separately from
+  # the product prefixes so a probe run can never be mistaken for cpmp/msr/ricoas
+  # product work — and so the seed task cannot fall through to the ICDev default.
+  prem-vfy: compass
+  # CONCORD's standalone half. Registered BEFORE the repo exists on purpose: an
+  # unregistered cncd- task would resolve to the ICDev default and the dispatcher
+  # would try to build a FastAPI/React app inside the ICDev tree. Because
+  # ICDEV_KANBAN_REPO_CONCORD is unset, these are skipped instead — external and
+  # unconfigured, which is the correct and safe reading.
+  #
+  # NOTE the ICDEV-side engine uses the separate `bom-` prefix and is absent from
+  # this file by design: tools/bom/ genuinely builds in ICDev and must go through
+  # ICDev's gates.
+  cncd: concord

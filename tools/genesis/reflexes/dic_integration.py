@@ -309,12 +309,18 @@ def _process_event(event: dict, conn, dry_run: bool) -> dict:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def run(ctx: dict[str, Any], conn=None) -> dict[str, Any]:
+def run(ctx: dict[str, Any], trust: Any = None, *, conn=None) -> dict[str, Any]:
     """Poll canvas_events and create DIC suggestions for HITL review.
 
     Args:
         ctx: reflex context dict; supports 'dry_run' (bool).
-        conn: optional injected DB connection (used in tests).
+        trust: TrustKernel supplied by the daemon. The daemon dispatches every
+            reflex as ``fn(config, trust)`` (see daemon.py ``_observe``), so this
+            MUST be the second positional parameter. It previously was ``conn``,
+            which meant the TrustKernel was used as a DB handle: every query
+            raised, the error was swallowed below, and the reflex reported
+            ``events_found: 0`` on every cycle — silently dead, not idle.
+        conn: optional injected DB connection (keyword-only, used in tests).
 
     Returns structured result dict with events_processed, suggestions_created,
     errors list, and status.
@@ -366,5 +372,14 @@ def run(ctx: dict[str, Any], conn=None) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import json as _json
     print(_json.dumps(run({}), indent=2))

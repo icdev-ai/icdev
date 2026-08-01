@@ -19,6 +19,8 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from tools.db.storage import translate_sql  # noqa: E402
+
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -140,7 +142,20 @@ def pg_db(tmp_path):
             win_strategy TEXT, discriminators TEXT,
             teaming_strategy TEXT, price_strategy TEXT,
             gate_reviews TEXT,
+            current_phase TEXT DEFAULT 'qualify',
             created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
+            id TEXT PRIMARY KEY,
+            capture_plan_id TEXT NOT NULL,
+            opportunity_id TEXT,
+            from_phase TEXT NOT NULL,
+            to_phase TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            rationale TEXT,
+            decided_by TEXT,
+            gate_criteria_met TEXT,
+            created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS pg_capture_activities (
             id TEXT PRIMARY KEY,
@@ -205,7 +220,11 @@ def pg_db(tmp_path):
         );
     """)
     conn.commit()
-    yield conn, db_path
+    # Wrapped, not bare: tests patch get_connection with this object, and the
+    # reflexes it stands in for author %s for PostgreSQL. Translation is a
+    # no-op for the ? SQL this fixture's own setup uses, so wrapping is safe
+    # for every existing consumer.
+    yield _TranslatingConn(conn), db_path
     conn.close()
 
 
@@ -283,14 +302,19 @@ class TestDaemonModule:
         allowed, reason = tk.can_execute("yellow")
         assert allowed is True
 
+    # PGReflexState.load() and BaseDaemon.get_status() resolve get_connection from
+    # tools.daemon.base, not from the subclass module — patch both or the state load
+    # escapes the mock and hits the real DB.
+    @patch("tools.daemon.base.get_connection")
     @patch("tools.proposal_genesis.daemon.get_connection")
-    def test_daemon_get_status(self, mock_conn, pg_config):
+    def test_daemon_get_status(self, mock_conn, mock_base_conn, pg_config):
         from tools.proposal_genesis.daemon import ProposalGenesisDaemon
 
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_db.execute.return_value.fetchone.return_value = {"cnt": 0}
         mock_conn.return_value = mock_db
+        mock_base_conn.return_value = mock_db
         daemon = ProposalGenesisDaemon(pg_config)
         status = daemon.get_status()
         assert "daemon" in status
@@ -525,13 +549,23 @@ class TestProposalGenesisAPI:
         conn, db_path = pg_db
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_0():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
@@ -694,6 +728,264 @@ class TestProposalGenesisAPI:
             assert data["teaming_assessments"] >= 1
 
 
+# ── Capture Phase-Gate Tests (prop-cap-11) ───────────────────────────────────
+
+
+class _TranslatingConn:
+    """Wraps a raw sqlite3 connection, translating %s -> ? (via
+    tools.db.storage.translate_sql) before executing.
+
+    tools/dashboard/api/proposal_genesis.py's capture-plan queries are
+    written in Postgres-style %s syntax (the project's real backend); the
+    production _get_db() -> get_connection() path handles this
+    transparently, but this test file's other fixtures mock _get_db with a
+    bare sqlite3.connect(), which doesn't understand %s at all and either
+    500s or (for endpoints with a bare except-and-degrade) silently returns
+    an empty result. Confirmed live while writing this test class -- same
+    root cause as the pre-existing failures documented in prop-fix-10/11's
+    PR, not something new. Fixed here (scoped to this class only) rather
+    than touching the ~34 other already-broken fixtures, which is a
+    separate, wider cleanup out of this task's scope.
+    """
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        return self._conn.execute(translate_sql(sql, backend="sqlite"), params)
+
+    def executemany(self, sql, seq):
+        return self._conn.executemany(translate_sql(sql, backend="sqlite"), seq)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+class TestCapturePhaseGates:
+    """Tests for the Shipley phase-gate lifecycle on pg_capture_plans:
+    GET .../gates, POST .../advance, GET .../pipeline-summary."""
+
+    @pytest.fixture
+    def app(self, pg_db):
+        """Minimal Flask app with a fake-authenticated admin user so
+        @require_role("capture_mgr", "admin") on /advance and
+        /pipeline-summary doesn't unconditionally 401 under test (see
+        prop-fix-10/11 for the same pattern applied fleet-wide)."""
+        from flask import Flask, g
+        from tools.dashboard.api.proposal_genesis import proposal_genesis_api
+
+        conn, db_path = pg_db
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+
+        @app.before_request
+        def _inject_fake_auth():
+            g.current_user = {"username": "test_capture_mgr", "role": "capture_mgr", "email": "cm@test.mil"}
+
+        app.register_blueprint(proposal_genesis_api)
+
+        def _mock_get_db():
+            c = sqlite3.connect(str(db_path))
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            return _TranslatingConn(c)
+
+        with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
+            yield app
+
+    @pytest.fixture
+    def capture_plan(self, pg_db):
+        """Seed one opportunity + one capture plan at the default 'qualify' phase."""
+        conn, db_path = pg_db
+        conn.execute(
+            "INSERT INTO proposal_opportunities (id, title, status, created_at) VALUES (?, ?, ?, ?)",
+            ("opp-cap-1", "Capture Test Opp", "tracking", "2026-03-14T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO pg_capture_plans "
+            "(id, opportunity_id, status, current_phase, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("cap-1", "opp-cap-1", "draft", "qualify", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+        )
+        conn.commit()
+        return "cap-1", "opp-cap-1"
+
+    def test_list_capture_plans_includes_current_phase(self, app, capture_plan):
+        plan_id, _ = capture_plan
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/capture-plans")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] >= 1
+            plan = next(p for p in data["plans"] if p["id"] == plan_id)
+            assert plan["current_phase"] == "qualify"
+
+    def test_gates_endpoint_starts_empty_at_qualify(self, app, capture_plan):
+        plan_id, _ = capture_plan
+        with app.test_client() as client:
+            resp = client.get(f"/api/proposal-genesis/capture-plans/{plan_id}/gates")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["current_phase"] == "qualify"
+            assert data["phase_label"] == "Qualify"
+            assert data["phases"] == ["qualify", "pursue", "capture", "bid", "proposal"]
+            assert data["gates"] == []
+
+    def test_gates_endpoint_unknown_plan_404s(self, app):
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/capture-plans/no-such-plan/gates")
+            assert resp.status_code == 404
+
+    def test_advance_moves_to_next_phase_and_records_gate_decision(self, app, capture_plan, pg_db):
+        plan_id, opp_id = capture_plan
+        conn, _ = pg_db
+        with app.test_client() as client:
+            resp = client.post(
+                f"/api/proposal-genesis/capture-plans/{plan_id}/advance",
+                json={"decision": "advance", "rationale": "Strong incumbent relationship", "decided_by": "cm1"},
+            )
+            assert resp.status_code == 201
+            data = resp.get_json()
+            assert data["from_phase"] == "qualify"
+            assert data["to_phase"] == "pursue"
+            assert data["new_phase"] == "pursue"
+
+        row = conn.execute("SELECT current_phase FROM pg_capture_plans WHERE id = ?", (plan_id,)).fetchone()
+        assert row["current_phase"] == "pursue"
+
+        gates = conn.execute(
+            "SELECT * FROM pg_capture_gate_decisions WHERE capture_plan_id = ?", (plan_id,)
+        ).fetchall()
+        assert len(gates) == 1
+        assert gates[0]["decision"] == "advance"
+        assert gates[0]["opportunity_id"] == opp_id
+
+    def test_advance_through_full_lifecycle(self, app, capture_plan):
+        plan_id, _ = capture_plan
+        expected = ["pursue", "capture", "bid", "proposal"]
+        with app.test_client() as client:
+            for expected_phase in expected:
+                resp = client.post(
+                    f"/api/proposal-genesis/capture-plans/{plan_id}/advance",
+                    json={"decision": "advance", "decided_by": "cm1"},
+                )
+                assert resp.status_code == 201
+                assert resp.get_json()["to_phase"] == expected_phase
+
+            # Already at final phase -- next advance must be rejected, not silently no-op.
+            resp = client.post(
+                f"/api/proposal-genesis/capture-plans/{plan_id}/advance",
+                json={"decision": "advance", "decided_by": "cm1"},
+            )
+            assert resp.status_code == 400
+            assert resp.get_json()["error"] == "already_at_final_phase"
+
+    def test_advance_hold_decision_does_not_change_phase(self, app, capture_plan, pg_db):
+        plan_id, _ = capture_plan
+        conn, _ = pg_db
+        with app.test_client() as client:
+            resp = client.post(
+                f"/api/proposal-genesis/capture-plans/{plan_id}/advance",
+                json={"decision": "hold", "rationale": "Awaiting funding confirmation", "decided_by": "cm1"},
+            )
+            assert resp.status_code == 201
+            data = resp.get_json()
+            assert data["to_phase"] == "qualify"
+            assert data["new_phase"] == "qualify"
+
+        row = conn.execute("SELECT current_phase FROM pg_capture_plans WHERE id = ?", (plan_id,)).fetchone()
+        assert row["current_phase"] == "qualify"
+
+    def test_advance_no_bid_decision_records_gate_without_advancing(self, app, capture_plan, pg_db):
+        plan_id, _ = capture_plan
+        conn, _ = pg_db
+        with app.test_client() as client:
+            resp = client.post(
+                f"/api/proposal-genesis/capture-plans/{plan_id}/advance",
+                json={"decision": "no_bid", "rationale": "Insufficient past performance", "decided_by": "cm1"},
+            )
+            assert resp.status_code == 201
+            data = resp.get_json()
+            assert data["to_phase"] == "no_bid"
+
+        row = conn.execute("SELECT current_phase FROM pg_capture_plans WHERE id = ?", (plan_id,)).fetchone()
+        assert row["current_phase"] == "qualify"  # unchanged -- no_bid halts, doesn't advance
+
+    def test_advance_rejects_invalid_decision(self, app, capture_plan):
+        plan_id, _ = capture_plan
+        with app.test_client() as client:
+            resp = client.post(
+                f"/api/proposal-genesis/capture-plans/{plan_id}/advance",
+                json={"decision": "skip_ahead"},
+            )
+            assert resp.status_code == 400
+            assert "invalid decision" in resp.get_json()["error"]
+
+    def test_advance_unknown_plan_404s(self, app):
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/proposal-genesis/capture-plans/no-such-plan/advance",
+                json={"decision": "advance"},
+            )
+            assert resp.status_code == 404
+
+    def test_pipeline_summary_aggregates_by_phase(self, app, pg_db):
+        conn, _ = pg_db
+        conn.execute(
+            "INSERT INTO proposal_opportunities (id, title, status, created_at) VALUES (?, ?, ?, ?)",
+            ("opp-cap-2", "Second Opp", "tracking", "2026-03-14T00:00:00Z"),
+        )
+        conn.executemany(
+            "INSERT INTO pg_capture_plans "
+            "(id, opportunity_id, status, current_phase, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                ("cap-a", "opp-cap-2", "draft", "qualify", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+                ("cap-b", "opp-cap-2", "draft", "qualify", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+                ("cap-c", "opp-cap-2", "draft", "pursue", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            ],
+        )
+        conn.commit()
+
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/capture-plans/pipeline-summary")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["summary"]["qualify"] == 2
+            assert data["summary"]["pursue"] == 1
+            assert data["phases"] == ["qualify", "pursue", "capture", "bid", "proposal"]
+
+    def test_advance_requires_capture_mgr_or_admin_role(self, pg_db, capture_plan):
+        """Same app as the class fixture, but with a role NOT in
+        ("capture_mgr", "admin") -- confirms @require_role is actually
+        enforcing, not just decoratively present."""
+        from flask import Flask, g
+        from tools.dashboard.api.proposal_genesis import proposal_genesis_api
+
+        conn, db_path = pg_db
+        plan_id, _ = capture_plan
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+
+        @app.before_request
+        def _inject_wrong_role():
+            g.current_user = {"username": "test_bd", "role": "bd", "email": "bd@test.mil"}
+
+        app.register_blueprint(proposal_genesis_api)
+
+        def _mock_get_db():
+            c = sqlite3.connect(str(db_path))
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            return _TranslatingConn(c)
+
+        with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
+            with app.test_client() as client:
+                resp = client.post(
+                    f"/api/proposal-genesis/capture-plans/{plan_id}/advance",
+                    json={"decision": "advance"},
+                )
+                assert resp.status_code == 403
+
+
 # ── Scout Reflex Tests (Phase B) ────────────────────────────────────────────
 
 
@@ -765,13 +1057,15 @@ class TestScoutReflex:
     @patch("tools.proposal_genesis.reflexes.scout._find_competitor_overlaps")
     @patch("tools.proposal_genesis.reflexes.scout._get_top_competitors")
     @patch("tools.proposal_genesis.reflexes.scout._scan_awards")
-    def test_run_air_gapped(self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store):
+    def test_run_air_gapped(
+        self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store, tmp_path
+    ):
         from tools.proposal_genesis.reflexes.scout import run
 
         mock_leaders.return_value = []
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 0, "win_loss_created": 0}
-        mock_store.return_value = "/tmp/brief.md"
+        mock_store.return_value = str(tmp_path / "brief.md")
 
         with patch.dict(os.environ, {"ICDEV_AIR_GAPPED": "true"}):
             result = run({}, None)
@@ -785,14 +1079,16 @@ class TestScoutReflex:
     @patch("tools.proposal_genesis.reflexes.scout._find_competitor_overlaps")
     @patch("tools.proposal_genesis.reflexes.scout._get_top_competitors")
     @patch("tools.proposal_genesis.reflexes.scout._scan_awards")
-    def test_run_connected(self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store):
+    def test_run_connected(
+        self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store, tmp_path
+    ):
         from tools.proposal_genesis.reflexes.scout import run
 
         mock_scan.return_value = {"status": "ok", "new_awards": 3}
         mock_leaders.return_value = [{"rank": 1, "vendor": "X", "awards": 5}]
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 2, "win_loss_created": 2}
-        mock_store.return_value = "/tmp/brief.md"
+        mock_store.return_value = str(tmp_path / "brief.md")
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ICDEV_AIR_GAPPED", None)
@@ -1303,13 +1599,23 @@ class TestProposalGenesisPhaseCAPI:
         conn, db_path = pg_db
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_1():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
@@ -1589,7 +1895,10 @@ class TestPublishReflex:
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
-            return c
+            # publish.py authors %s for PostgreSQL; without translation its
+            # INSERTs raise and the reflex's own except returns None, which
+            # reads here as "staging produced no post".
+            return _TranslatingConn(c)
 
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _stage_article
@@ -1616,7 +1925,10 @@ class TestPublishReflex:
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
-            return c
+            # publish.py authors %s for PostgreSQL; without translation its
+            # INSERTs raise and the reflex's own except returns None, which
+            # reads here as "staging produced no post".
+            return _TranslatingConn(c)
 
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _create_pulse_link
@@ -1639,7 +1951,10 @@ class TestPublishReflex:
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
-            return c
+            # publish.py authors %s for PostgreSQL; without translation its
+            # INSERTs raise and the reflex's own except returns None, which
+            # reads here as "staging produced no post".
+            return _TranslatingConn(c)
 
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _audit_publish
@@ -1689,13 +2004,23 @@ class TestProposalGenesisPhaseD:
         conn, db_path = pg_db
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_2():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
@@ -2162,13 +2487,23 @@ class TestProposalGenesisPhaseEAPI:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_3():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
@@ -2726,14 +3061,16 @@ class TestProposalGenesisPhaseF_API:
                 outcome TEXT, competitor_name TEXT,
                 competitor_strengths TEXT, our_strengths TEXT,
                 our_weaknesses TEXT, lessons_learned TEXT,
-                created_at TEXT
+                created_at TEXT,
+                classification TEXT DEFAULT 'CUI'
             );
             CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
                 id TEXT PRIMARY KEY, win_loss_id TEXT,
                 category TEXT, lesson TEXT,
                 actionable INTEGER DEFAULT 0,
                 applied INTEGER DEFAULT 0,
-                created_at TEXT
+                created_at TEXT,
+                classification TEXT DEFAULT 'CUI'
             );
             CREATE TABLE IF NOT EXISTS pg_training_pair_sources (
                 id TEXT PRIMARY KEY, source_type TEXT NOT NULL,
@@ -2747,13 +3084,23 @@ class TestProposalGenesisPhaseF_API:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
+        @app.before_request
+        def _inject_fake_auth_4():
+            from flask import g
+            g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
         app.register_blueprint(proposal_genesis_api)
 
         def _mock_get_db():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA journal_mode=WAL")
-            return c
+            # _TranslatingConn, not the bare connection: the API authors %s for
+            # PostgreSQL and the production _get_db path translates it. See that
+            # class's docstring — it called this out as "~34 other already-broken
+            # fixtures … a separate, wider cleanup out of this task's scope".
+            # This is that cleanup.
+            return _TranslatingConn(c)
 
         with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app

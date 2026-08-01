@@ -257,7 +257,11 @@ class TestRLSNoOp:
     def test_pragma_unmodified(self, db):
         """PRAGMA must not receive RLS injection."""
         from tools.security.row_security import inject_row_predicate
-        sql, params = inject_row_predicate("PRAGMA table_info(projects)", "tenant_a")
+        # 3-tuple: (sql, extra_params, n_params_before). The third element was
+        # added so callers can splice extra params at the right index when a
+        # subquery precedes the outer WHERE; this test still unpacked two.
+        sql, params, _n_before = inject_row_predicate(
+            "PRAGMA table_info(projects)", "tenant_a")
         assert sql == "PRAGMA table_info(projects)"
         assert params == ()
 

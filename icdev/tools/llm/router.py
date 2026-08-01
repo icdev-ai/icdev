@@ -37,7 +37,25 @@ except ImportError:
 logger = get_logger("icdev.llm.router")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
+
+# Resolved centrally rather than as BASE_DIR/"args"/... — this module exists twice
+# (tools/llm and icdev/tools/llm) and the naive expression made each copy read a
+# different config file. See tools/llm/config_path.py.
+try:
+    from tools.llm.config_path import resolve_llm_config_path
+except ImportError:  # packaged-only install
+    from icdev.tools.llm.config_path import resolve_llm_config_path
+
+# Constrained-network mode: single-flight + inter-call pause, and a rotating
+# egress proxy. Both are OFF/no-op unless configured. See the modules' docs.
+try:
+    from tools.llm.rate_gate import rate_gate, resolve_lease_config, resolve_rate_limit
+    from tools.llm.proxy_resolver import apply_llm_proxy, resolve_llm_proxy
+except ImportError:  # packaged-only install
+    from icdev.tools.llm.rate_gate import rate_gate, resolve_lease_config, resolve_rate_limit
+    from icdev.tools.llm.proxy_resolver import apply_llm_proxy, resolve_llm_proxy
+
+DEFAULT_CONFIG_PATH = resolve_llm_config_path()
 
 
 class CrossGraderViolation(RuntimeError):
@@ -72,6 +90,113 @@ class LLMUnavailableError(RuntimeError):
         self.function = function
         self.chain = list(chain or [])
         self.no_llm_mode = no_llm_mode
+
+
+def _resolve_redaction_fail_closed(llm_redaction_cfg: dict) -> bool:
+    """Resolve ``redaction.fail_closed`` from the file that actually documents it.
+
+    THE BUG THIS FIXES (prem-p0-03): the router read this flag from
+    ``self._config`` — i.e. ``args/llm_config.yaml`` — whose ``redaction:`` block
+    has no ``fail_closed`` key at all. The flag is documented, commented, and set
+    in ``args/redaction_config.yaml``, right next to ``mask_at_ingestion``, which
+    IS read from there (by the RAG ingestion manager).
+
+    So ``fail_closed`` resolved to False unconditionally, ``RedactionUnavailableError``
+    could never fire, and an operator who set ``fail_closed: true`` in the file that
+    documents it got NO protection and no warning. A security control that silently
+    does nothing is worse than one that is absent: it is believed in.
+
+    Precedence: an explicit key in llm_config.yaml wins (so a deployment can pin it
+    next to the routing it belongs to), otherwise the canonical redaction_config.yaml.
+    """
+    if "fail_closed" in (llm_redaction_cfg or {}):
+        return bool(llm_redaction_cfg["fail_closed"])
+    try:
+        import yaml  # noqa: PLC0415
+
+        path = Path(__file__).resolve().parents[2] / "args" / "redaction_config.yaml"
+        with open(path, encoding="utf-8") as fh:
+            return bool((yaml.safe_load(fh) or {}).get("fail_closed", False))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("could not read redaction_config.yaml fail_closed: %s", exc)
+        return False
+
+
+def _chain_is_local_only(chain, models: dict, providers: dict) -> bool:
+    """Fail-closed wrapper around the ONE locality definition.
+
+    If the locality check cannot even be imported we cannot PROVE the chain stays
+    on this machine, so we answer False (not local). Answering True would skip
+    redaction on a guarantee we never verified.
+
+    Takes config model NAMES (``qwen3-local``), not provider-side model ids
+    (``qwen3:latest``) — see _provider_is_local_only for the reason that matters.
+    """
+    try:
+        from tools.llm.cli_bridge.activate import is_local_only_chain
+    except Exception:  # pragma: no cover - defensive
+        return False
+    return is_local_only_chain(chain, models or {}, providers or {})
+
+
+def _provider_is_local_only(provider_name: str, providers: dict) -> bool:
+    """Fail-closed: does *provider_name* never leave the machine?
+
+    Used at the provider call, where we hold a ``model_cfg`` (which names its
+    provider) but only the provider-side ``model_id``. Deciding locality from the
+    id would silently always be False — the models map is keyed by config name.
+    """
+    try:
+        from tools.llm.cli_bridge.activate import _is_local_only_provider
+    except Exception:  # pragma: no cover - defensive
+        return False
+    return _is_local_only_provider(provider_name or "", providers or {})
+
+
+class ForceLocalViolation(RuntimeError):
+    """Raised when CUI would egress to a non-local provider.
+
+    The fail-closed rung of the CUI egress guarantee. Raised when the routing
+    policy resolved to LOCAL — because the install is air-gapped, because the
+    content is classified (declared or derived), or because the function is
+    declared ``force_local`` — and the model about to be invoked does not run on
+    a local-only provider.
+
+    Refusing is the correct behavior. Falling through to cloud is the bug this
+    exception exists to prevent.
+
+    Attributes:
+        function: ICDEV™ function whose egress was blocked (may be "" for
+            content-only paths such as ChainOrchestrator's ``_invoke_model_direct``).
+        chain: the chain under consideration, when known.
+        model: the specific model that would have egressed.
+        rule: which policy rung fired (see tools/llm/routing_policy.py).
+    """
+
+    def __init__(self, message: str, *, function: str = "", chain=None, model: str = "", rule: str = ""):
+        super().__init__(message)
+        self.function = function
+        self.chain = list(chain or [])
+        self.model = model
+        self.rule = rule
+
+
+class RedactionUnavailableError(RuntimeError):
+    """Raised (only when ``redaction.fail_closed`` is enabled) when the PII/CUI
+    sanitizer that MUST run before an LLM call is missing or errors — so raw
+    sensitive text is never sent unredacted (trust-mask-01).
+
+    Fail-open (the default) logs and proceeds; fail-closed raises this to abort
+    the LLM call. Legitimate skips (redaction disabled, excluded function,
+    local-only routing) never raise — they are not failures.
+
+    Attributes:
+        function: ICDEV™ function whose egress was blocked.
+    """
+
+    def __init__(self, message: str, *, function: str = ""):
+        super().__init__(message)
+        self.function = function
 
 
 def _expand_env(value):
@@ -135,6 +260,20 @@ class LLMRouter:
     _degraded_tier2_probed_at: Dict[str, float] = {}
     _DEGRADATION_PROBE_INTERVAL_SECONDS: float = 300.0  # 5 minutes
 
+    # Embedding providers that failed their availability probe — the same
+    # circuit-breaker idea applied to `embeddings.default_chain`.
+    #
+    # Without this, a chain like [openai-embed, gemini-embed, nomic-embed-local]
+    # re-probes BOTH cloud providers on every cold process before reaching the
+    # local one. Measured on this machine with an invalid OpenAI key: ~12s of
+    # failing round-trips ahead of a 0.06s local embed, paid again by every
+    # dashboard restart, CLI invocation and worker process.
+    #
+    # Persisted like _degraded_tier2_* so the knowledge survives process exit;
+    # a short TTL means a repaired credential recovers on its own.
+    _embedding_unavailable_at: Dict[str, float] = {}
+    _EMBEDDING_UNAVAILABLE_TTL_SECONDS: float = 900.0  # 15 minutes
+
     def __init__(self, config_path=None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config: Dict = {}
@@ -147,6 +286,7 @@ class LLMRouter:
         self._load_config()
         self._maybe_activate_cli_bridge()
         self._load_degraded_tier2_state()
+        self._load_embedding_unavailable()
 
     # -------------------------------------------------------------------
     # Dual-model mode (RTX 4060 Ti 8GB VRAM — 2 models resident)
@@ -321,7 +461,8 @@ class LLMRouter:
         model_id = model_cfg.get("model_id", "")
         try:
             # Minimal request — hard 8-second timeout
-            resp = provider.invoke(
+            resp = self._provider_invoke(
+                provider,
                 LLMRequest(messages=[{"role": "user", "content": "ping"}]),
                 model_id,
                 model_cfg,
@@ -342,6 +483,71 @@ class LLMRouter:
                 json.dump(state, f, indent=2)
         except Exception:
             pass  # Best-effort persistence
+
+    # -------------------------------------------------------------------
+    # Embedding availability circuit-breaker
+    # -------------------------------------------------------------------
+    _EMBEDDING_STATE_FILENAME = "llm_embedding_unavailable.json"
+
+    @classmethod
+    def _embedding_state_path(cls):
+        return BASE_DIR / "data" / cls._EMBEDDING_STATE_FILENAME
+
+    @classmethod
+    def _load_embedding_unavailable(cls) -> None:
+        """Load the persisted set of embedding providers that failed probing."""
+        try:
+            path = cls._embedding_state_path()
+            if path.exists():
+                with open(path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                loaded = state.get("unavailable_at", {})
+                if isinstance(loaded, dict):
+                    cls._embedding_unavailable_at = {
+                        str(k): float(v) for k, v in loaded.items()
+                    }
+        except Exception:  # noqa: BLE001 - state is an optimisation, never a gate
+            pass
+
+    @classmethod
+    def _save_embedding_unavailable(cls) -> None:
+        try:
+            path = cls._embedding_state_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"unavailable_at": cls._embedding_unavailable_at}, f, indent=2)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @classmethod
+    def _embedding_recently_failed(cls, model_name: str) -> bool:
+        """True when ``model_name`` failed a probe inside the TTL.
+
+        Time-boxed rather than permanent: a provider marked dead forever would
+        make a fixed API key look like it changed nothing.
+        """
+        ts = cls._embedding_unavailable_at.get(model_name)
+        if ts is None:
+            return False
+        if (time.time() - ts) >= cls._EMBEDDING_UNAVAILABLE_TTL_SECONDS:
+            cls._embedding_unavailable_at.pop(model_name, None)
+            return False
+        return True
+
+    @classmethod
+    def _mark_embedding_unavailable(cls, model_name: str) -> None:
+        cls._embedding_unavailable_at[model_name] = time.time()
+        cls._save_embedding_unavailable()
+
+    @classmethod
+    def reset_embedding_availability(cls) -> None:
+        """Forget every recorded embedding failure and re-probe on next use.
+
+        For callers that have just fixed a credential and do not want to wait
+        out the TTL (e.g. a settings page that saved a new API key).
+        """
+        cls._embedding_unavailable_at = {}
+        cls._save_embedding_unavailable()
 
     def _load_degraded_tier2_state(self) -> None:
         """Load degraded tier2 state from persistent JSON file."""
@@ -469,6 +675,27 @@ class LLMRouter:
         if not provider_cfg:
             logger.warning("Provider '%s' not found in config", provider_name)
             return None
+
+        # LPX (lpx-proxy-03): when the opt-in LLM proxy gateway is enabled,
+        # redirect cloud providers' base_url to the proxy and swap in a virtual
+        # key. No-op (default) when ICDEV_LLM_PROXY_ENABLED is unset, and never
+        # touches ollama/bedrock. Distinct from proxy_resolver's HTTPS_PROXY.
+        try:
+            from tools.llm.proxy_gateway import apply_gateway_to_provider_cfg
+
+            provider_cfg = apply_gateway_to_provider_cfg(provider_name, provider_cfg)
+        except Exception as exc:  # pragma: no cover - defensive import guard
+            logger.debug("LLM proxy gateway resolution skipped: %s", exc)
+
+        # LPX (lpx-keys-04): a per-person LOCAL CANVAS COPY must fail CLOSED with a
+        # clear message when it has no virtual key — never silently fall back to a
+        # real provider key. This runs OUTSIDE the try/except above on purpose so
+        # LocalCopyEgressError is NOT swallowed. apply_gateway_to_provider_cfg has
+        # already forced api_key_env to the virtual key, so even a swallowed raise
+        # cannot leak a real key. No-op unless ICDEV_LLM_LOCAL_COPY is truthy.
+        from tools.llm.proxy_gateway import enforce_local_copy_egress
+
+        enforce_local_copy_egress(provider_cfg)
 
         ptype = provider_cfg.get("type", "")
         instance = None
@@ -701,6 +928,15 @@ class LLMRouter:
         route = routing.get(function, routing.get("default", {}))
         return route.get("effort", "medium")
 
+    def is_force_local(self, function: str) -> bool:
+        """True if *function* is declared ``force_local`` in args/llm_config.yaml.
+
+        Public so callers can honour the declaration without re-parsing the config.
+        """
+        from tools.llm.routing_policy import is_force_local as _ifl
+
+        return _ifl(function, self._config)
+
     def _get_chain_for_function(self, function: str) -> list:
         """Get the model chain for a function.
 
@@ -708,6 +944,18 @@ class LLMRouter:
         toggle takes effect at invoke time even though the base config was
         rewritten once at construction. A ``False`` override strips the
         ``claude-cli`` model from the chain so invocation bypasses the bridge.
+
+        Then filters to local models for a ``force_local`` function. This runs
+        AFTER the bridge override deliberately: a ``True`` override PREPENDS
+        ``claude-cli`` — a cloud egress path — to whatever chain it is handed, so a
+        chain that is local-only in YAML can still be fronted by the bridge at
+        invoke time. The old per-function pins never closed that.
+
+        This filtering is DEFENCE IN DEPTH, not the guarantee. The guarantee is
+        _enforce_routing_policy at the provider call, which also covers the paths
+        that never consult a chain at all (two_tier) or rewrite it afterwards (RL
+        re-ranking). Filtering here means a force_local call PREFERS its local
+        model rather than refusing each cloud model in turn.
         """
         routing = self._config.get("routing", {})
         route = routing.get(function, routing.get("default", {}))
@@ -715,10 +963,48 @@ class LLMRouter:
         try:
             from tools.llm.cli_bridge.activate import apply_cli_bridge_override
 
-            return apply_cli_bridge_override(chain)
+            chain = apply_cli_bridge_override(chain)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("CLI bridge override skipped: %s", exc)
-            return list(chain)
+            chain = list(chain)
+
+        if not (route or {}).get("force_local", False):
+            return chain
+
+        try:
+            from tools.llm.cli_bridge.activate import is_local_only_model
+        except ImportError as exc:  # pragma: no cover - defensive
+            # Cannot prove locality => cannot permit the call. Refuse, don't guess.
+            raise ForceLocalViolation(
+                f"Function '{function}' is force_local but the locality check is "
+                f"unavailable ({exc}); refusing to route CUI without proof it stays local.",
+                function=function,
+                chain=chain,
+                rule="force_local",
+            ) from exc
+
+        models = self._config.get("models", {})
+        providers = self._config.get("providers", {})
+        local_chain = [m for m in chain if is_local_only_model(m, models, providers)]
+
+        dropped = [m for m in chain if m not in local_chain]
+        if dropped:
+            # Not debug: a cloud model reaching a CUI function is a security event.
+            logger.warning(
+                "force_local[%s]: dropped non-local model(s) %s — CUI must not egress",
+                function, dropped,
+            )
+
+        if not local_chain:
+            raise ForceLocalViolation(
+                f"Function '{function}' is force_local (handles raw CUI) but no local "
+                f"provider remains in its chain {list(chain)!r}. Refusing to route to "
+                f"cloud. Start Ollama, or fix the chain in args/llm_config.yaml.",
+                function=function,
+                chain=chain,
+                rule="force_local",
+            )
+        return local_chain
 
     def _log_telemetry(
         self,
@@ -854,9 +1140,15 @@ class LLMRouter:
         scope and whether routing is local-only (skips if configured).
 
         Returns session_id for de-anonymization, or None if skipped.
+
+        trust-mask-01: when ``redaction.fail_closed`` is enabled, a sanitizer
+        that MUST run but is missing/errors raises RedactionUnavailableError
+        (aborting the LLM call) instead of proceeding unredacted. Default is
+        fail-open (log + proceed). Legitimate skips below never raise.
         """
         # D-RDT-4: Config toggle — skip redaction if explicitly disabled
         rdcfg = self._config.get("redaction", {})
+        fail_closed = _resolve_redaction_fail_closed(rdcfg)
         if not rdcfg.get("enabled", True):
             return None
 
@@ -869,13 +1161,32 @@ class LLMRouter:
 
         sanitizer = self._get_sanitizer()
         if sanitizer is None:
+            # Sanitizer module unavailable. Fail-open: skip (legacy). Fail-closed:
+            # block egress — raw PII/CUI must never leave unredacted.
+            if fail_closed:
+                raise RedactionUnavailableError(
+                    f"Redaction sanitizer unavailable for '{function}' and "
+                    f"redaction.fail_closed is enabled — LLM call blocked.",
+                    function=function,
+                )
             return None
 
         try:
-            # Check if routing is local-only for this function
+            # Check if routing is local-only for this function.
+            #
+            # This used to be an inline `provider == "ollama"` check with an
+            # `if self._get_model_config(m)` filter — a SECOND definition of
+            # "local", and a fail-OPEN one: a model with no config was silently
+            # dropped from the generator rather than counted as non-local, so a
+            # chain of only-unresolvable models produced an EMPTY generator,
+            # `all([])` returned True, and the sanitizer skipped redaction
+            # entirely — sending raw CUI to a model we cannot even resolve.
+            #
+            # Use the one definition (cli_bridge.activate), which fails closed on
+            # an unknown model and on an empty chain.
             chain = self._get_chain_for_function(function)
-            is_local = all(
-                self._get_model_config(m).get("provider") == "ollama" for m in chain if self._get_model_config(m)
+            is_local = _chain_is_local_only(
+                chain, self._config.get("models", {}), self._config.get("providers", {})
             )
 
             # Extract text from messages
@@ -905,7 +1216,17 @@ class LLMRouter:
 
             return sanitizer.session_id
 
+        except RedactionUnavailableError:
+            raise
         except Exception as exc:
+            # Sanitization errored mid-flight. Fail-closed blocks egress;
+            # fail-open logs and proceeds (legacy default).
+            if fail_closed:
+                raise RedactionUnavailableError(
+                    f"Redaction failed for '{function}' ({exc}) and "
+                    f"redaction.fail_closed is enabled — LLM call blocked.",
+                    function=function,
+                ) from exc
             logger.debug("Pre-invoke redaction failed (non-blocking): %s", exc)
             return None
 
@@ -982,10 +1303,18 @@ class LLMRouter:
     # Two-tier routing helpers (D-TT1: qwen3 worker → Claude planner)
     # -------------------------------------------------------------------
 
-    def _invoke_model_direct(self, model_name: str, request: LLMRequest) -> Optional[LLMResponse]:
+    def _invoke_model_direct(
+        self, model_name: str, request: LLMRequest, function: str = ""
+    ) -> Optional[LLMResponse]:
         """Invoke a specific named model without chain fallback.
 
         Returns None on any error so callers can fall through to chain.
+
+        ``function`` is threaded through so the routing policy can apply the
+        ``force_local`` rung here too. This is the two-tier AND ChainOrchestrator
+        (CoT/CoD) path: it carries real content, and before this it carried no
+        function name at all, so a force_local function's content could arrive
+        here anonymous.
         """
         model_cfg = self._get_model_config(model_name)
         if not model_cfg:
@@ -998,7 +1327,13 @@ class LLMRouter:
             return None
         model_id = model_cfg.get("model_id", "")
         try:
-            return provider.invoke(request, model_id, model_cfg)
+            return self._provider_invoke(provider, request, model_id, model_cfg, function=function)
+        except (ForceLocalViolation, RedactionUnavailableError):
+            # NEVER swallow an egress refusal into a None. The `return None` below
+            # means "this model failed, try the next one" — turning a policy
+            # refusal into a fallback would walk the chain looking for a model
+            # that IS allowed to leak, which is the exact opposite of the intent.
+            raise
         except Exception as exc:
             logger.warning("Two-tier: direct invoke failed for %s/%s: %s", model_name, model_id, exc)
             return None
@@ -1263,7 +1598,7 @@ class LLMRouter:
         try:
             # Use the fine-tuned model name directly as model_id
             model_cfg = {"model_id": ollama_model_name, "provider": "ollama"}
-            return provider.invoke(request, ollama_model_name, model_cfg)
+            return self._provider_invoke(provider, request, ollama_model_name, model_cfg)
         except Exception as exc:
             logger.warning(
                 "Fine-tuned invoke failed for %s: %s",
@@ -1647,6 +1982,10 @@ class LLMRouter:
         # Cross-grader: track how many entries are excluded so we can raise correctly.
         _excluded_count = 0
         _chain_total = len(chain)
+        # First routing-policy refusal seen while walking the chain. Kept so an
+        # exhausted chain reports "content cannot egress" rather than a bogus
+        # "all providers failed".
+        _policy_refusal = None
 
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
@@ -1687,7 +2026,7 @@ class LLMRouter:
                 # Stamp route-level config onto request so providers can read flags like disable_thinking
                 route_cfg = self._config.get("routing", {}).get(function, {})
                 request._route_config = route_cfg
-                response = provider.invoke(request, model_id, model_cfg)
+                response = self._provider_invoke(provider, request, model_id, model_cfg, function=function)
                 _latency = int((time.time() - _start) * 1000)
 
                 if span:
@@ -1744,8 +2083,13 @@ class LLMRouter:
                             project_id=getattr(request, "project_id", None),
                             model_id=getattr(response, "model_id", model_id),
                         )
-                except Exception:
-                    pass  # Best-effort — never block on budget recording
+                except Exception as exc:
+                    # Best-effort — never block a completed LLM call on budget
+                    # bookkeeping. But log it: a bare `pass` here hid a schema
+                    # mismatch that made every insert fail, so
+                    # module_budget_usage stayed empty and budget enforcement
+                    # silently read a table that could never fill.
+                    logger.warning("Module budget recording failed: %s", exc)
 
                 # D-CACHE-5: Store successful response in cache
                 self._cache_store(function, request, response, model_id)
@@ -1757,6 +2101,21 @@ class LLMRouter:
                 self._get_rl_router().record_outcome(function, model_name, success=True, latency_ms=_latency)
 
                 return response
+            except ForceLocalViolation as exc:
+                # A policy refusal is NOT a provider failure. Keep walking the chain
+                # so a LOCAL model further down can serve the call — that is the
+                # graceful path, and it is why chain filtering alone is not the
+                # guarantee. But remember the refusal: if the chain runs out, the
+                # operator must be told "content cannot egress", not the misleading
+                # "all providers failed".
+                logger.warning(
+                    "routing_policy: skipping %s (%s) for %s — %s",
+                    provider_name, model_id, function, exc,
+                )
+                _policy_refusal = _policy_refusal or exc
+                # Deliberately NOT marked unavailable and NOT penalised in RL: the
+                # model is fine, it is simply not allowed to see THIS content.
+                continue
             except Exception as exc:
                 logger.warning(
                     "Provider %s (%s) failed for %s: %s — trying next in chain",
@@ -1783,6 +2142,13 @@ class LLMRouter:
                 self._get_rl_router().record_outcome(function, model_name, success=False)
                 continue
 
+        # The chain is exhausted. If ANY entry was refused by the routing policy,
+        # that is the real story — the content was not allowed to leave and no local
+        # model was available to serve it. Report THAT, not "all providers failed",
+        # which would send an operator hunting for a network fault that isn't there.
+        if _policy_refusal is not None:
+            raise _policy_refusal
+
         # If every chain entry was excluded, raise CrossGraderViolation instead of
         # LLMUnavailableError so callers can distinguish the two failure modes.
         if exclude_model_ids and _excluded_count > 0 and last_error is None:
@@ -1799,6 +2165,145 @@ class LLMRouter:
             chain=chain,
             no_llm_mode=False,
         )
+
+    def _apply_network_guard(self, provider) -> None:
+        """Apply the current egress proxy before a provider call.
+
+        Resolves the (possibly rotating) proxy fresh each call. When it changed,
+        invalidate the provider's cached SDK client so it rebuilds against the
+        new proxy (``requests``-based providers pick up env per request). No-op
+        and zero-overhead unless a proxy source is configured.
+        """
+        try:
+            proxy = resolve_llm_proxy(self._config)
+            if apply_llm_proxy(proxy) and hasattr(provider, "reset_client"):
+                provider.reset_client()
+        except Exception as exc:  # never let proxy plumbing crash an LLM call
+            logger.debug("network guard (proxy) skipped: %s", exc)
+
+    def _enforce_routing_policy(self, function, request, model_id, model_cfg=None) -> None:
+        """Refuse the call if policy says LOCAL and this model is not local.
+
+        THE egress guarantee (prem-p0-01). It lives here, at the provider call,
+        rather than in chain selection, because chain selection is not the last
+        word: ``two_tier`` routing is applied BEFORE the chain is resolved, RL
+        re-ranking rewrites the chain afterwards, and the CLI-bridge invoke-time
+        override PREPENDS a cloud model to it. Every one of those paths still
+        funnels through here.
+
+        Filtering the chain (``_get_chain_for_function``) is defence in depth — it
+        makes us *prefer* a local model. This is what makes cloud egress
+        impossible.
+
+        Locality is decided from ``model_cfg``'s PROVIDER, not from ``model_id``.
+        They are different namespaces and conflating them is a live bug: ``model_id``
+        is the provider-side id (``qwen3:latest``) while the models map is keyed by
+        the config NAME (``qwen3-local``). Looking up the id finds nothing, and
+        "unknown model" fails closed — so a perfectly good LOCAL model gets refused
+        and the call dies. Fails safe, but still broken.
+        """
+        # CUI egress gate (lpx-egress-02): the shared LLM proxy is a NEW cloud
+        # egress path. Independently of the general routing-policy threshold,
+        # classified/controlled content must never SILENTLY traverse the proxy to
+        # a cloud provider. This check is invoke-time (it reads the live request's
+        # classification, unavailable at cached-provider construction) and only
+        # fires when the proxy WOULD carry this provider — otherwise a no-op. A
+        # refusal is raised as ForceLocalViolation so the chain falls back to a
+        # local model exactly like any other egress refusal.
+        # proxy_gateway is stdlib-only and already imported at provider
+        # construction; calling it here cannot introduce a new failure mode. It is
+        # deliberately NOT wrapped in a swallow-all except — a gate that fails open
+        # is not a gate. Any error propagates as a call failure (fail closed).
+        from tools.llm.proxy_gateway import proxy_egress_classification_block
+
+        providers = self._config.get("providers", {})
+        provider_name = (model_cfg or {}).get("provider", "")
+        provider_cfg = providers.get(provider_name, {}) if provider_name else {}
+        _proxy_block = proxy_egress_classification_block(
+            provider_cfg, getattr(request, "classification", None)
+        )
+        if _proxy_block:
+            logger.warning(
+                "proxy_egress[%s]: REFUSED model '%s' — %s",
+                function or "<no function>", model_id, _proxy_block,
+            )
+            raise ForceLocalViolation(
+                f"Refusing to send content to '{model_id}' via the LLM proxy: {_proxy_block}",
+                function=function or "",
+                model=model_id,
+                rule="proxy_cui_egress",
+            )
+
+        from tools.llm.routing_policy import resolve as _resolve_policy
+
+        decision = _resolve_policy(function, request, self._config)
+        if not decision.local_only:
+            return
+
+        if _provider_is_local_only(provider_name, self._config.get("providers", {})):
+            return
+
+        # Not debug. A cloud model reaching classified content is a security event.
+        logger.warning(
+            "routing_policy[%s]: REFUSED model '%s' — %s",
+            function or "<no function>", model_id, decision.reason,
+        )
+        raise ForceLocalViolation(
+            f"Refusing to send content to non-local model '{model_id}': {decision.reason} "
+            f"(rule: {decision.rule}). Start a local provider (Ollama), or correct the "
+            f"chain in args/llm_config.yaml.",
+            function=function or "",
+            model=model_id,
+            rule=decision.rule,
+        )
+
+    def _provider_invoke(self, provider, request, model_id, model_cfg, function: str = ""):
+        """Single choke point for every non-streaming provider call.
+
+        ALL text and vision generation funnels through here (vision requests
+        carry image content in the same ``request``). Honors constrained-network
+        mode: rotating-proxy application + the rate-limit gate (serialize to
+        ``max_parallel`` + randomized inter-call pause). Both are no-ops unless
+        configured, so default behavior is unchanged.
+
+        Enforces the routing policy before anything leaves the process.
+        """
+        self._enforce_routing_policy(function, request, model_id, model_cfg)
+        self._apply_network_guard(provider)
+        mp, pmin, pmax = resolve_rate_limit(self._config)
+        lease_backend, lease_name, lease_timeout = resolve_lease_config(self._config)
+        with rate_gate(
+            mp, pmin, pmax,
+            lease_backend=lease_backend, lease_name=lease_name, lease_timeout=lease_timeout,
+        ):
+            return provider.invoke(request, model_id, model_cfg)
+
+    def _provider_invoke_streaming(self, provider, request, model_id, model_cfg, function: str = ""):
+        """Streaming counterpart of :meth:`_provider_invoke`.
+
+        Holds the rate-limit slot across the whole stream (releasing, with the
+        inter-call pause, once the generator is exhausted) so a streamed call
+        still counts as one in-flight LLM call.
+
+        Enforces the routing policy too. Streaming is a SEPARATE chokepoint from
+        _provider_invoke — guarding only the non-streaming one would leave a
+        fully-open cloud egress path for exactly the same content.
+        """
+        self._enforce_routing_policy(function, request, model_id, model_cfg)
+        self._apply_network_guard(provider)
+        mp, pmin, pmax = resolve_rate_limit(self._config)
+        if mp <= 0:
+            return provider.invoke_streaming(request, model_id, model_cfg)
+        lease_backend, lease_name, lease_timeout = resolve_lease_config(self._config)
+
+        def _gated_stream():
+            with rate_gate(
+                mp, pmin, pmax,
+                lease_backend=lease_backend, lease_name=lease_name, lease_timeout=lease_timeout,
+            ):
+                yield from provider.invoke_streaming(request, model_id, model_cfg)
+
+        return _gated_stream()
 
     def invoke(
         self,
@@ -2085,6 +2590,58 @@ class LLMRouter:
 
         return response
 
+    def invoke_council(self, function: str, request: LLMRequest) -> LLMResponse:
+        """Invoke an LLM Council via ChainOrchestrator.
+
+        Fixed-perspective advisors (Contrarian, First Principles Thinker,
+        Expansionist, Outsider, Executor) each respond independently, peer-
+        review each other anonymously, and a chairman synthesizes a
+        structured verdict (agreement / clashes / blind spots / recommendation
+        / next step) as `response.content`. See
+        `tools.llm.chain_orchestrator.ChainOrchestrator.invoke_council` for
+        the full mechanism. Reads `chain_orchestration.council` config.
+        """
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+        except ImportError as exc:
+            raise LLMUnavailableError(
+                f"ChainOrchestrator not available: {exc}",
+                function=function,
+                no_llm_mode=False,
+            ) from exc
+
+        orchestrator = ChainOrchestrator(router=self)
+        result = orchestrator.invoke_council(function, request)
+
+        response = LLMResponse(
+            content=result.content,
+            model_id=",".join(result.models_used),
+            provider="chain_orchestrator",
+            input_tokens=result.total_input_tokens,
+            output_tokens=result.total_output_tokens,
+            duration_ms=result.total_duration_ms,
+            stop_reason=result.stop_reason,
+            classification=request.classification,
+        )
+        response.chain_trace_id = result.trace_id  # type: ignore[attr-defined]
+        response.chain_mode = result.chain_mode  # type: ignore[attr-defined]
+        response.chain_rounds = result.rounds  # type: ignore[attr-defined]
+        response.chain_confidence = result.confidence  # type: ignore[attr-defined]
+
+        try:
+            self._log_telemetry(
+                function=function,
+                request=request,
+                response=response,
+                model_id=",".join(result.models_used),
+                provider_name="chain_orchestrator",
+                latency_ms=result.total_duration_ms,
+            )
+        except Exception:
+            pass
+
+        return response
+
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""
         # Explicit no-LLM mode: short-circuit so streaming UIs can render
@@ -2106,6 +2663,10 @@ class LLMRouter:
 
         chain = self._get_chain_for_function(function)
         last_error = None
+        # See the non-streaming chain walk: a routing-policy refusal is remembered
+        # so an exhausted chain reports "content cannot egress" rather than a
+        # misleading "all streaming providers failed".
+        _policy_refusal = None
 
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
@@ -2117,7 +2678,18 @@ class LLMRouter:
                 continue
             model_id = model_cfg.get("model_id", "")
             try:
-                return provider.invoke_streaming(request, model_id, model_cfg)
+                return self._provider_invoke_streaming(provider, request, model_id, model_cfg, function=function)
+            except ForceLocalViolation as exc:
+                # Same contract as the non-streaming chain walk: a policy refusal is
+                # not a provider failure. Skip this model so a LOCAL one further down
+                # can serve the stream, but remember it — an exhausted chain must
+                # report "content cannot egress", not "all streaming providers failed".
+                logger.warning(
+                    "routing_policy: skipping streaming %s (%s) for %s — %s",
+                    provider_name, model_id, function, exc,
+                )
+                _policy_refusal = _policy_refusal or exc
+                continue
             except Exception as exc:
                 logger.warning(
                     "Streaming provider %s (%s) failed for %s: %s — trying next",
@@ -2129,6 +2701,11 @@ class LLMRouter:
                 last_error = exc
                 self._availability_cache[model_name] = False
                 continue
+
+        # A policy refusal is the real story — report it, not "all providers failed",
+        # which would send an operator hunting for a network fault that isn't there.
+        if _policy_refusal is not None:
+            raise _policy_refusal
 
         raise LLMUnavailableError(
             "All streaming providers in chain {} failed for function '{}'. Last error: {}".format(
@@ -2171,6 +2748,17 @@ class LLMRouter:
             if model_name in self._embedding_providers:
                 return self._embedding_providers[model_name]
 
+            # Skip providers that failed a probe recently. This is what makes
+            # the local fallback FAST rather than merely correct: without it,
+            # every cold process re-pays the full cost of failing past each
+            # cloud provider before reaching the local one.
+            if self._embedding_recently_failed(model_name):
+                logger.debug(
+                    "embeddings: skipping %s (probe failed within the last %ds)",
+                    model_name, int(self._EMBEDDING_UNAVAILABLE_TTL_SECONDS),
+                )
+                continue
+
             mcfg = models.get(model_name, {})
             if not mcfg:
                 continue
@@ -2178,12 +2766,32 @@ class LLMRouter:
             provider_name = mcfg.get("provider", "")
             ptype = self._config.get("providers", {}).get(provider_name, {}).get("type", "")
 
+            # LPX (lpx-proxy-03) applies to EMBEDDINGS too.
+            #
+            # `_get_provider` routes chat traffic through the proxy and swaps in a
+            # virtual key, but the embedding chain built its providers straight
+            # from raw config — so with ICDEV_LLM_PROXY_ENABLED=true, chat went
+            # through the proxy while embeddings still called the real endpoint
+            # with the REAL provider key. That defeats the whole point of the
+            # gateway ("the real provider key never leaves the proxy") on a path
+            # that sends document text off the machine.
+            #
+            # No-op by default, and `apply_gateway_to_provider_cfg` never touches
+            # ollama/bedrock, so the local and CUI paths are unaffected.
+            provider_cfg = self._config.get("providers", {}).get(provider_name, {})
+            try:
+                from tools.llm.proxy_gateway import apply_gateway_to_provider_cfg
+
+                provider_cfg = apply_gateway_to_provider_cfg(provider_name, provider_cfg)
+            except Exception as exc:  # pragma: no cover - defensive import guard
+                logger.debug("LLM proxy gateway skipped for embeddings: %s", exc)
+
             try:
                 emb = None
                 if ptype in ("openai", "openai_compatible"):
                     from tools.llm.embedding_provider import OpenAIEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     api_key = pcfg.get("api_key", "")
                     if not api_key:
                         api_key_env = pcfg.get("api_key_env", "")
@@ -2199,7 +2807,7 @@ class LLMRouter:
                 elif ptype == "bedrock":
                     from tools.llm.embedding_provider import BedrockEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     region = _expand_env(pcfg.get("region", "us-gov-west-1"))
                     emb = BedrockEmbeddingProvider(
                         region=region,
@@ -2209,7 +2817,7 @@ class LLMRouter:
                 elif ptype == "gemini":
                     from tools.llm.embedding_provider import GeminiEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     api_key = pcfg.get("api_key", "")
                     if not api_key:
                         api_key_env = pcfg.get("api_key_env", "GOOGLE_API_KEY")
@@ -2223,7 +2831,7 @@ class LLMRouter:
                 elif ptype == "azure_openai":
                     from tools.llm.embedding_provider import AzureEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     api_key = _expand_env(pcfg.get("api_key", ""))
                     if not api_key:
                         api_key_env = pcfg.get("api_key_env", "AZURE_OPENAI_API_KEY")
@@ -2242,7 +2850,7 @@ class LLMRouter:
                 elif ptype == "oci_genai":
                     from tools.llm.embedding_provider import OCIEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     compartment_id = _expand_env(pcfg.get("compartment_id", ""))
                     if not compartment_id:
                         compartment_id = os.environ.get("OCI_COMPARTMENT_OCID", "")
@@ -2261,7 +2869,7 @@ class LLMRouter:
                 elif ptype == "ibm_watsonx":
                     from tools.llm.embedding_provider import IBMWatsonxEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     api_key = _expand_env(pcfg.get("api_key", ""))
                     if not api_key:
                         api_key = os.environ.get(pcfg.get("api_key_env", "IBM_CLOUD_API_KEY"), "")
@@ -2280,7 +2888,7 @@ class LLMRouter:
                 elif ptype == "ollama":
                     from tools.llm.embedding_provider import OllamaEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     base_url = _expand_env(pcfg.get("base_url", "http://localhost:11434"))
                     emb = OllamaEmbeddingProvider(
                         base_url=base_url,
@@ -2292,9 +2900,18 @@ class LLMRouter:
                     self._embedding_providers[model_name] = emb
                     logger.info("Embedding provider ready: %s", model_name)
                     return emb
+                # Probed and did not answer — remember it, so the next process
+                # falls straight through to the local provider.
+                self._mark_embedding_unavailable(model_name)
+                logger.info(
+                    "Embedding provider %s unavailable — falling through to the "
+                    "next entry in embeddings.default_chain", model_name,
+                )
             except ImportError as exc:
+                self._mark_embedding_unavailable(model_name)
                 logger.debug("Embedding provider '%s' not importable: %s", model_name, exc)
             except Exception as exc:
+                self._mark_embedding_unavailable(model_name)
                 logger.debug("Embedding provider '%s' failed: %s", model_name, exc)
 
         raise LLMUnavailableError(
@@ -2409,7 +3026,7 @@ class LLMRouter:
             model_id = model_cfg.get("model_id", "")
             try:
                 _start = time.time()
-                response = provider.invoke(request, model_id, model_cfg)
+                response = self._provider_invoke(provider, request, model_id, model_cfg, function=function)
                 _latency = int((time.time() - _start) * 1000)
                 try:
                     self._get_rl_router().record_outcome(role_key, model_name, success=True, latency_ms=_latency)

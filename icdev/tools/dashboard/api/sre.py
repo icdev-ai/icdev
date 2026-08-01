@@ -11,13 +11,70 @@ Registers at /api/sre/* in the ICDEV dashboard.
 
 import json
 from datetime import datetime, timezone, timedelta
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 from tools.common.helpers import now_isoformat
 from tools.db.storage import get_connection
+
+# nav-comp-05: state-changing SRE endpoints (incident create/triage/escalate/
+# resolve/postmortem/close, runbook create/execute/match, SLO create/measure,
+# and the alert/SLO-breach chain processors) must be restricted to operations
+# roles, not merely any authenticated session. Before this fix every POST here
+# relied on global auth only, so the lowest-privilege ``developer`` could create
+# incidents, execute runbooks (which run shell steps), and drive the full
+# self-heal chain. ``require_role`` reads ``g.current_user`` (set by the
+# dashboard before_request hook), 401s an anonymous caller and 403s an
+# unauthorized role. ``component_admin`` is the platform/infrastructure
+# administrator persona (GovLift, migration 139) — the natural SRE operator in
+# this RBAC vocabulary; ``admin``/``isso`` retain full access. Every role here
+# also appears in ``VALID_DASHBOARD_ROLES`` (tools/dashboard/auth.py).
+from tools.dashboard.auth import require_role
 
 logger = get_logger("icdev.sre.api")
 
 sre_api = Blueprint("sre_api", __name__, url_prefix="/api/sre")
+
+# Roles permitted to drive SRE state changes / operational actions.
+_SRE_MUTATION_ROLES = ("admin", "isso", "component_admin")
+
+
+def _actor() -> str:
+    """Resolve the acting user for attribution/audit from the session identity.
+
+    Never trust a request-body actor field — attribution comes from
+    ``g.current_user`` (set by the dashboard auth middleware).
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        return user.get("username") or user.get("email") or user.get("id") or "system"
+    return "system"
+
+
+def _parse_ts(value):
+    """Parse a stored timestamp (ISO8601 or ``YYYY-MM-DD HH:MM:SS``) into an
+    aware :class:`datetime`. Returns ``None`` when the value can't be parsed.
+
+    PG returns ``datetime`` objects; SQLite returns strings — handle both so
+    date math is done in Python (PG-primary pattern) rather than in dialect
+    SQL that only runs on one backend.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    text = str(value).strip().replace("Z", "+00:00")
+    dt = None
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                dt = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                dt = None
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -37,6 +94,7 @@ def api_sre_slos():
 
 
 @sre_api.route("/slos", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_create_slo():
     """Create a new SLO."""
     data = request.get_json(force=True, silent=True) or {}
@@ -56,6 +114,7 @@ def api_sre_create_slo():
 
 
 @sre_api.route("/slos/<slo_id>/measure", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_record_measurement(slo_id):
     """Record an SLO measurement."""
     data = request.get_json(force=True, silent=True) or {}
@@ -114,6 +173,7 @@ def api_sre_incidents():
 
 
 @sre_api.route("/incidents", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_create_incident():
     """Create a new incident."""
     data = request.get_json(force=True, silent=True) or {}
@@ -146,6 +206,7 @@ def api_sre_get_incident(incident_id):
 
 
 @sre_api.route("/incidents/<incident_id>/triage", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_triage(incident_id):
     """Triage an incident."""
     data = request.get_json(force=True, silent=True) or {}
@@ -158,6 +219,7 @@ def api_sre_triage(incident_id):
 
 
 @sre_api.route("/incidents/<incident_id>/escalate", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_escalate(incident_id):
     """Escalate an incident."""
     data = request.get_json(force=True, silent=True) or {}
@@ -170,6 +232,7 @@ def api_sre_escalate(incident_id):
 
 
 @sre_api.route("/incidents/<incident_id>/resolve", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_resolve(incident_id):
     """Resolve an incident."""
     data = request.get_json(force=True, silent=True) or {}
@@ -182,6 +245,7 @@ def api_sre_resolve(incident_id):
 
 
 @sre_api.route("/incidents/<incident_id>/postmortem", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_postmortem(incident_id):
     """Add postmortem to an incident."""
     data = request.get_json(force=True, silent=True) or {}
@@ -194,6 +258,7 @@ def api_sre_postmortem(incident_id):
 
 
 @sre_api.route("/incidents/<incident_id>/close", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_close(incident_id):
     """Close an incident."""
     try:
@@ -243,6 +308,7 @@ def api_sre_runbooks():
 
 
 @sre_api.route("/runbooks", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_create_runbook():
     """Create a new runbook."""
     data = request.get_json(force=True, silent=True) or {}
@@ -262,6 +328,7 @@ def api_sre_create_runbook():
 
 
 @sre_api.route("/runbooks/<runbook_id>/execute", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_execute_runbook(runbook_id):
     """Execute a runbook manually."""
     data = request.get_json(force=True, silent=True) or {}
@@ -280,6 +347,7 @@ def api_sre_execute_runbook(runbook_id):
 
 
 @sre_api.route("/runbooks/match", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_match_runbook():
     """Match an alert text to a runbook."""
     data = request.get_json(force=True, silent=True) or {}
@@ -320,6 +388,7 @@ def api_sre_runbook_health():
 
 
 @sre_api.route("/chain/process-alert", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_process_alert():
     """Process an alert through the full SRE chain:
     Alert → Correlate → Create Incident → Match Runbook → Execute.
@@ -385,13 +454,20 @@ def api_sre_process_alert():
                 (
                     "self_heal_triggered",
                     "sre_chain_processed",
-                    json.dumps({"severity": severity, "service": service, "chain_status": result["chain_status"]}),
+                    json.dumps(
+                        {
+                            "severity": severity,
+                            "service": service,
+                            "chain_status": result["chain_status"],
+                            "actor": _actor(),
+                        }
+                    ),
                     now_isoformat(),
                 ),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("api_sre_process_alert: best-effort INSERT into audit_trail failed (non-blocking): %s", _exc)
         finally:
             conn.close()
 
@@ -403,6 +479,7 @@ def api_sre_process_alert():
 
 
 @sre_api.route("/chain/slo-breach", methods=["POST"])
+@require_role(*_SRE_MUTATION_ROLES)
 def api_sre_slo_breach():
     """Process an SLO breach — creates incident and triggers runbook.
 
@@ -462,60 +539,7 @@ def api_sre_dora():
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
-        # Deploy Frequency
-        deploy_count = 0
-        try:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM audit_trail WHERE event_type IN ('deployment_initiated', 'deploy', 'ci_deploy') "
-                "AND created_at >= %s",
-                (cutoff,),
-            ).fetchone()
-            deploy_count = row[0] if row else 0
-        except Exception:
-            pass
-        deploy_freq = deploy_count / max(days, 1)
-
-        # Change Failure Rate
-        failed_deploys = 0
-        try:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM audit_trail WHERE event_type IN ('deploy_failed', 'deploy_rollback', 'rollback') "
-                "AND created_at >= %s",
-                (cutoff,),
-            ).fetchone()
-            failed_deploys = row[0] if row else 0
-        except Exception:
-            pass
-        cfr = (failed_deploys / max(deploy_count, 1)) * 100
-
-        # MTTR (from incidents)
-        mttr_seconds = 0
-        incident_count = 0
-        try:
-            rows = conn.execute(
-                "SELECT mttr_seconds FROM sre_incidents WHERE status IN ('resolved', 'postmortem', 'closed') "
-                "AND resolved_at >= %s AND mttr_seconds IS NOT NULL",
-                (cutoff,),
-            ).fetchall()
-            if rows:
-                incident_count = len(rows)
-                mttr_seconds = sum(r[0] for r in rows) / len(rows)
-        except Exception:
-            pass
-
-        # Lead Time (commit to deploy — approximated from audit trail)
-        lead_time_hours = 0
-        try:
-            row = conn.execute(
-                "SELECT AVG(CAST((julianday(created_at) - julianday(datetime(created_at, '-1 hour'))) * 24 AS REAL)) "
-                "FROM audit_trail WHERE event_type IN ('deployment_initiated', 'deploy') AND created_at >= %s",
-                (cutoff,),
-            ).fetchone()
-            lead_time_hours = round(row[0], 1) if row and row[0] else 1.0
-        except Exception:
-            lead_time_hours = 1.0
-
-        # DORA ratings
+        # DORA ratings — only applied when a metric is actually assessed.
         def _rate_freq(f):
             if f >= 1:
                 return "Elite"
@@ -552,46 +576,166 @@ def api_sre_dora():
                 return "Medium"
             return "Low"
 
+        # A DB error, or the honest absence of data, must NEVER be laundered into
+        # a favorable ("Elite") rating. When a metric can't be assessed we emit
+        # NOT_ASSESSED and (for DB errors) an ``error`` flag — a fail-loud
+        # degraded state, not a fabricated score.
+        NOT_ASSESSED = "Not Assessed"
+
+        # ── Deploy Frequency ────────────────────────────────────────────────
+        deploy_count = None  # None ⇒ query failed (distinct from a real 0)
+        deploy_metric = {"unit": "deploys/day"}
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM audit_trail "
+                "WHERE event_type IN ('deployment_initiated', 'deploy', 'ci_deploy') "
+                "AND created_at >= %s",
+                (cutoff,),
+            ).fetchone()
+            deploy_count = int(row[0]) if row and row[0] is not None else 0
+            deploy_freq = deploy_count / max(days, 1)
+            deploy_metric.update(
+                {
+                    "value": round(deploy_freq, 2),
+                    "total_deploys": deploy_count,
+                    "rating": _rate_freq(deploy_freq),
+                }
+            )
+        except Exception as exc:
+            deploy_metric.update({"value": None, "error": True, "detail": str(exc), "rating": NOT_ASSESSED})
+
+        # ── Change Failure Rate ─────────────────────────────────────────────
+        cfr_metric = {"unit": "%"}
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM audit_trail "
+                "WHERE event_type IN ('deployment_failed', 'deploy_failed', 'rollback_executed', 'deploy_rollback', 'rollback') "
+                "AND created_at >= %s",
+                (cutoff,),
+            ).fetchone()
+            failed_deploys = int(row[0]) if row and row[0] is not None else 0
+            if deploy_count is None:
+                # Denominator query failed — CFR is not computable, don't fake it.
+                raise RuntimeError("deploy count unavailable")
+            if deploy_count == 0:
+                cfr_metric.update(
+                    {
+                        "value": None,
+                        "failed_deploys": failed_deploys,
+                        "total_deploys": 0,
+                        "rating": NOT_ASSESSED,
+                        "note": "no deploys in window",
+                    }
+                )
+            else:
+                cfr = (failed_deploys / deploy_count) * 100
+                cfr_metric.update(
+                    {
+                        "value": round(cfr, 1),
+                        "failed_deploys": failed_deploys,
+                        "total_deploys": deploy_count,
+                        "rating": _rate_cfr(cfr),
+                    }
+                )
+        except Exception as exc:
+            cfr_metric.update({"value": None, "error": True, "detail": str(exc), "rating": NOT_ASSESSED})
+
+        # ── MTTR (from resolved incidents) ──────────────────────────────────
+        mttr_metric = {"unit": "seconds"}
+        try:
+            rows = conn.execute(
+                "SELECT mttr_seconds FROM sre_incidents "
+                "WHERE status IN ('resolved', 'postmortem', 'closed') "
+                "AND resolved_at >= %s AND mttr_seconds IS NOT NULL",
+                (cutoff,),
+            ).fetchall()
+            if rows:
+                incident_count = len(rows)
+                mttr_seconds = sum(r[0] for r in rows) / incident_count
+                mttr_metric.update(
+                    {
+                        "value": round(mttr_seconds),
+                        "incidents_resolved": incident_count,
+                        "rating": _rate_mttr(mttr_seconds),
+                    }
+                )
+            else:
+                mttr_metric.update(
+                    {
+                        "value": None,
+                        "incidents_resolved": 0,
+                        "rating": NOT_ASSESSED,
+                        "note": "no resolved incidents in window",
+                    }
+                )
+        except Exception as exc:
+            mttr_metric.update({"value": None, "error": True, "detail": str(exc), "rating": NOT_ASSESSED})
+
+        # ── Lead Time for Changes ───────────────────────────────────────────
+        # Real Python-side date math: fetch pipeline start/complete timestamps
+        # and average the deltas. The prior implementation used SQLite-only
+        # ``julianday``/``datetime(created_at, '-1 hour')`` that (a) always
+        # raised on PostgreSQL and was swallowed to a constant 1.0h, and
+        # (b) was tautological even on SQLite (created_at minus created_at-1h
+        # is 1h by construction). Now derived from ci_pipeline_runs durations.
+        lead_time_metric = {"unit": "hours"}
+        try:
+            rows = conn.execute(
+                "SELECT created_at, completed_at FROM ci_pipeline_runs "
+                "WHERE status = 'completed' AND completed_at IS NOT NULL AND created_at >= %s",
+                (cutoff,),
+            ).fetchall()
+            deltas = []
+            for started, completed in rows:
+                s = _parse_ts(started)
+                c = _parse_ts(completed)
+                if s and c and c >= s:
+                    deltas.append((c - s).total_seconds() / 3600.0)
+            if deltas:
+                avg_hours = sum(deltas) / len(deltas)
+                lead_time_metric.update(
+                    {
+                        "value": round(avg_hours, 2),
+                        "samples": len(deltas),
+                        "rating": _rate_lt(avg_hours),
+                    }
+                )
+            else:
+                lead_time_metric.update(
+                    {
+                        "value": None,
+                        "samples": 0,
+                        "rating": NOT_ASSESSED,
+                        "note": "no completed pipeline runs in window",
+                    }
+                )
+        except Exception as exc:
+            lead_time_metric.update({"value": None, "error": True, "detail": str(exc), "rating": NOT_ASSESSED})
+
         dora = {
             "window_days": days,
-            "deploy_frequency": {
-                "value": round(deploy_freq, 2),
-                "unit": "deploys/day",
-                "total_deploys": deploy_count,
-                "rating": _rate_freq(deploy_freq),
-            },
-            "lead_time": {
-                "value": lead_time_hours,
-                "unit": "hours",
-                "rating": _rate_lt(lead_time_hours),
-            },
-            "change_failure_rate": {
-                "value": round(cfr, 1),
-                "unit": "%",
-                "failed_deploys": failed_deploys,
-                "total_deploys": deploy_count,
-                "rating": _rate_cfr(cfr),
-            },
-            "mttr": {
-                "value": round(mttr_seconds),
-                "unit": "seconds",
-                "incidents_resolved": incident_count,
-                "rating": _rate_mttr(mttr_seconds),
-            },
+            "deploy_frequency": deploy_metric,
+            "lead_time": lead_time_metric,
+            "change_failure_rate": cfr_metric,
+            "mttr": mttr_metric,
         }
 
-        # Overall DORA score
-        ratings = [
-            dora["deploy_frequency"]["rating"],
-            dora["lead_time"]["rating"],
-            dora["change_failure_rate"]["rating"],
-            dora["mttr"]["rating"],
-        ]
+        # Overall DORA score — averaged over ASSESSED metrics only. If nothing
+        # could be assessed, the overall is Not Assessed (never a default rank).
         rank_map = {"Elite": 4, "High": 3, "Medium": 2, "Low": 1}
-        avg_rank = sum(rank_map.get(r, 1) for r in ratings) / 4
-        dora["overall_rating"] = (
-            "Elite" if avg_rank >= 3.5 else "High" if avg_rank >= 2.5 else "Medium" if avg_rank >= 1.5 else "Low"
-        )
+        assessed_ranks = [
+            rank_map[m["rating"]]
+            for m in (deploy_metric, lead_time_metric, cfr_metric, mttr_metric)
+            if m.get("rating") in rank_map
+        ]
+        if assessed_ranks:
+            avg_rank = sum(assessed_ranks) / len(assessed_ranks)
+            dora["overall_rating"] = (
+                "Elite" if avg_rank >= 3.5 else "High" if avg_rank >= 2.5 else "Medium" if avg_rank >= 1.5 else "Low"
+            )
+        else:
+            dora["overall_rating"] = NOT_ASSESSED
+        dora["metrics_assessed"] = len(assessed_ranks)
 
         return jsonify(dora)
     except Exception as exc:

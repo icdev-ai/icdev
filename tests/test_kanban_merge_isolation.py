@@ -91,20 +91,25 @@ def _git(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
     )
 
 
-def _push_main_local(cwd: str) -> None:
+def _push_main_local(cwd: str) -> bool:
     """Test-only push helper: pushes HEAD:main to the local repo itself.
 
     The production _push_main pushes to 'origin', but test repos have no
     remote.  This helper lets the test verify that the merge actually
     advances the main branch.
+
+    Must return a bool: _merge_worktree_to_main ends with
+    `return _push_main(...)`, so a double that returns None makes the whole
+    merge report None instead of True.
     """
-    subprocess.run(
+    proc = subprocess.run(
         ["git", "push", ".", "HEAD:main"],
         cwd=cwd,
         capture_output=True,
         text=True,
         timeout=30,
     )
+    return proc.returncode == 0
 
 
 @pytest.fixture

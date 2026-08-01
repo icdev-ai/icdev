@@ -115,7 +115,7 @@ Report findings by severity (critical/high/medium/low). List any critical or hig
 
 **Prerequisite**: Dashboard must be running on port DASHBOARD_PORT. Check first:
 ```bash
-python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
+python -c "import urllib.request; urllib.request.urlopen('http://localhost:5050/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
 ```
 
 If NOT_RUNNING, start it:
@@ -130,7 +130,7 @@ PYTHONPATH=. PYTHONIOENCODING=utf-8 python tools/testing/e2e_runner.py --discove
 ```
 
 If E2E specs are found, use Playwright MCP to verify:
-- Dashboard loads at http://localhost:5000
+- Dashboard loads at http://localhost:5050
 - CUI banner is visible
 - Navigation works (click through 5+ pages)
 - No 500 errors or tracebacks visible

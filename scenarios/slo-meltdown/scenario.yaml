@@ -1,0 +1,124 @@
+# CUI // SP-CTI
+name: Operation FAULT LINE — SLO Meltdown & Model Drift
+slug: slo-meltdown
+version: '1.0'
+session_mode: live
+duration_minutes: 120
+max_teams: 8
+classification: CUI // SP-CTI
+description: 'An observability GameDay. A production inference service behind the Observability Canvas
+  is
+
+  melting down: an alert storm, a breached latency SLO, and a model quietly drifting out of
+
+  spec — all at once. Your on-call team has 120 minutes to separate signal from noise, decide
+
+  whether the root cause is infrastructure or model drift, make a rollback-or-mitigate call,
+
+  and produce an after-action review. SLO measurements and drift diagnostics are scored evidence.'
+roles:
+- id: sre
+  label: Site Reliability Engineer
+  icon: 📟
+  color: '#00D4FF'
+  description: Owns SLOs, alerting, error budgets, and the rollback lever.
+  academy_missions:
+  - observability
+  - incident-response
+  persona_template: personas/sre.yaml
+- id: ml_ops
+  label: MLOps Engineer
+  icon: 📉
+  color: '#4a90d9'
+  description: Owns model health, drift detection, and model rollback/retrain.
+  academy_missions:
+  - model-monitoring
+  - model-deployment
+  persona_template: personas/ml_ops.yaml
+- id: incident_commander
+  label: Incident Commander
+  icon: 🎧
+  color: '#FF6B35'
+  description: Owns the incident record, decision log, and after-action review.
+  academy_missions:
+  - incident-response
+  - communications
+  persona_template: personas/incident_commander.yaml
+injects:
+- id: inject-01-alert-storm
+  title: 'ALERT STORM: 40 Alerts in 90 Seconds — Find the Real Breach'
+  at_minute: 15
+  sequence: 1
+  body_path: injects/inject-01-alert-storm.yaml
+  ai_tools_allowed:
+  - obs.slo
+  - knowledge.search
+  scoring:
+    base_pts: 100
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/alert_triage.yaml
+- id: inject-02-drift-diagnosis
+  title: 'Signal vs Noise: Infra Fault or Model Drift?'
+  at_minute: 40
+  sequence: 2
+  body_path: injects/inject-02-drift-diagnosis.yaml
+  ai_tools_allowed:
+  - obs.drift
+  - obs.slo
+  - knowledge.search
+  scoring:
+    base_pts: 175
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/drift_diagnosis.yaml
+  depends_on: inject-01-alert-storm
+- id: inject-03-rollback-decision
+  title: 'The Lever: Rollback, Mitigate, or Ride It Out'
+  at_minute: 70
+  sequence: 3
+  body_path: injects/inject-03-rollback-decision.yaml
+  ai_tools_allowed:
+  - obs.drift
+  - obs.slo
+  scoring:
+    base_pts: 200
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/rollback_decision.yaml
+  depends_on: inject-02-drift-diagnosis
+- id: inject-04-aar
+  title: 'After-Action Review: What Broke and What Changes'
+  at_minute: 95
+  sequence: 4
+  body_path: injects/inject-04-aar.yaml
+  ai_tools_allowed:
+  - knowledge.search
+  scoring:
+    base_pts: 150
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/aar_quality.yaml
+  depends_on: inject-03-rollback-decision
+ribbons:
+- id: noise_cutter
+  label: ✂️ Signal Cutter
+  description: Isolated the real SLO breach from the alert storm fastest
+- id: drift_hunter
+  label: 🎯 Drift Hunter
+  description: Correctly separated model drift from infrastructure fault
+- id: cool_head
+  label: 🧊 Cool Head
+  description: Made the most defensible rollback decision under pressure

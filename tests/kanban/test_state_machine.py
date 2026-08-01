@@ -18,12 +18,21 @@ from tools.kanban.state_machine import KanbanState  # noqa: E402
 
 
 def test_enum_values_match_schema_allowed_statuses():
-    # The existing CHECK constraint allows these 6 coarse statuses.
-    # db_status_for must only ever return one of them.
-    allowed = {
-        "backlog", "scheduled", "in_progress", "done",
-        "token_exhausted", "suggested", "decomposed", "needs_decomposition",
-    }
+    """db_status_for() must only ever return a status the CHECK constraint allows.
+
+    The allowed set is IMPORTED from migration 260, which is the source of truth
+    for the kanban_tasks.status CHECK -- per CLAUDE.md, CHECK constraints are
+    derived from Python constants, never hardcoded. This test previously carried
+    its own stale copy of the pre-260 list and so failed once the lifecycle
+    statuses (pr_opened/ci_failed/...) stopped collapsing to in_progress.
+    """
+    import importlib
+
+    mig = importlib.import_module(
+        "tools.db.migrations.260_kanban_status_lifecycle.up"
+    )
+    allowed = set(mig.STATUS_VALUES)
+
     for state in KanbanState:
         assert sm.db_status_for(state) in allowed
 
@@ -75,12 +84,15 @@ def test_transition_happy_writes_audit_and_db():
     )
     assert r.applied is True
     assert r.label == "pr_opened"
-    assert r.db_status == "in_progress"  # mapped down
+    # Migration 260 widened the CHECK: pr_opened persists as itself rather than
+    # collapsing to in_progress, so "PR open, awaiting merge" is visible on the
+    # board and is not counted as active work by the dispatcher.
+    assert r.db_status == "pr_opened"
     assert r.audit_written is True
 
     assert len(db_calls) == 1
     assert "UPDATE kanban_tasks" in db_calls[0][0]
-    assert db_calls[0][1][0] == "in_progress"
+    assert db_calls[0][1][0] == "pr_opened"
 
     assert len(audit_calls) == 1
     details = json.loads(audit_calls[0][1][4])
@@ -134,9 +146,14 @@ def test_parse_state_handles_unknown_and_none():
     assert sm.parse_state("mystery") is None
 
 
-def test_failed_state_maps_to_token_exhausted_db_status():
-    # failed doesn't exist in the CHECK constraint; it must map down
-    assert sm.db_status_for(KanbanState.FAILED) == "token_exhausted"
+def test_failed_state_persists_as_failed_not_token_exhausted():
+    """FAILED must persist as 'failed', not masquerade as a resumable pause.
+
+    Before migration 260 it collapsed to token_exhausted, which meant a genuine
+    failure looked like an out-of-tokens pause and got auto-resumed.
+    """
+    assert sm.db_status_for(KanbanState.FAILED) == "failed"
+    assert sm.db_status_for(KanbanState.TOKEN_EXHAUSTED) == "token_exhausted"
 
 
 def test_transition_without_db_exec_still_validates():

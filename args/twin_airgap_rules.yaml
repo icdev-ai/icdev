@@ -1,0 +1,91 @@
+# CUI // SP-CTI — Air-gap validation rules for twin simulations (twx-fed-01)
+# Sequoia/SHIFT Pattern 2: a twin simulation targeting a classified / air-gapped
+# environment must confirm the design has NO public-internet dependencies.
+# Violations are emitted with severity `deployment_blocker` (normalizes to the
+# canonical `blocker` severity) in the twx-core-01 canonical schema.
+#
+# Config-driven: add/adjust denied hosts here without touching code. Matching is
+# host-suffix based (case-insensitive). Anything on the internal allowlist is
+# always permitted even if it also matches a denied pattern.
+
+enabled: true
+# Severity string emitted on every air-gap violation (normalized to `blocker`).
+severity: deployment_blocker
+
+# Internal sources that are ALWAYS allowed (checked before denials).
+allowlist:
+  internal_host_suffixes:
+    - ".internal"
+    - ".local"
+    - ".mil"
+    - ".ic.gov"
+    - ".intelink.gov"
+    - "registry.internal"
+    - "mirror.internal"
+    - "nexus.internal"
+    - "artifactory.internal"
+
+rules:
+  - id: airgap-internal-registry
+    category: security
+    description: "Container images must come from an internal registry, not a public one"
+    # Public container registries denied in an air-gapped environment.
+    denied_host_suffixes:
+      - "docker.io"
+      - "index.docker.io"
+      - "registry-1.docker.io"
+      - "quay.io"
+      - "gcr.io"
+      - "ghcr.io"
+      - "registry.k8s.io"
+      - "k8s.gcr.io"
+      - "public.ecr.aws"
+      - "mcr.microsoft.com"
+    applies_to: ["image", "container", "registry"]
+    recommendation: "Mirror the image into the internal registry and reference it there (e.g. registry.internal/...)."
+
+  - id: airgap-internal-package-mirror
+    category: security
+    description: "Packages must resolve from an internal mirror, not a public index"
+    denied_host_suffixes:
+      - "pypi.org"
+      - "files.pythonhosted.org"
+      - "registry.npmjs.org"
+      - "npmjs.com"
+      - "rubygems.org"
+      - "crates.io"
+      - "proxy.golang.org"
+      - "repo.maven.apache.org"
+      - "packages.microsoft.com"
+    applies_to: ["package", "index", "repo", "dependency"]
+    recommendation: "Point the package manager at the internal mirror (e.g. nexus.internal / artifactory.internal)."
+
+  - id: airgap-no-external-api
+    category: security
+    description: "No external / cloud API dependencies reachable from an air-gapped environment"
+    denied_host_suffixes:
+      - "api.openai.com"
+      - "api.anthropic.com"
+      - "googleapis.com"
+      - "amazonaws.com"
+      - "azure.com"
+      - "azurewebsites.net"
+      - "github.com"
+      - "githubusercontent.com"
+      - "slack.com"
+    applies_to: ["endpoint", "api", "url", "webhook"]
+    recommendation: "Remove the external API dependency or route it through an approved internal proxy on the high side."
+
+  - id: airgap-no-public-egress
+    category: network
+    description: "No design node may declare a direct public-internet egress path"
+    # Literal egress markers found in node/edge properties.
+    denied_markers:
+      - "0.0.0.0/0"
+      - "::/0"
+      - "internet"
+      - "public-internet"
+      - "igw"          # AWS internet gateway
+      - "nat-public"
+    applies_to: ["egress", "route", "gateway", "destination", "cidr"]
+    recommendation: "Replace public egress with an internal-only path; classified enclaves have no default route to the internet."

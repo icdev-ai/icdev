@@ -378,6 +378,22 @@ solution_generation:
       - arg
 
 # =========================================================================
+# Divergence step (dvg-wire-02) -- OPT-IN alternatives-before-blueprint
+# =========================================================================
+# When enabled, generate_solution_spec runs an isolated divergent fan-out for
+# the signal BEFORE _build_implementation_blueprint, scores the candidate
+# approaches with the separate critic pass, and either picks the highest-scoring
+# non-trap approach or surfaces the top clusters for a human. Chosen + REJECTED
+# approaches are recorded in the audit trail (rejected are the review value).
+# OFF BY DEFAULT: when disabled, generate_solution_spec behaves exactly as
+# before. This is a SECOND gate on top of chain_orchestration.divergence.enabled
+# in llm_config; both must be on for the step to fan out, and it degrades to the
+# single-blueprint path if the chain is disabled or the LLM is unavailable.
+divergence:
+  enabled: false            # opt-in only; never a default path
+  function: innovation_ideation   # routing function the step invokes divergence under
+
+# =========================================================================
 # Introspective Analysis (Internal Telemetry)
 # =========================================================================
 introspection:

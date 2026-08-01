@@ -20,6 +20,7 @@ Exit codes:
 import json
 import os
 import re
+import subprocess
 import sys
 from fnmatch import fnmatch
 from pathlib import Path
@@ -95,6 +96,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_news_scenario_links",
         "ad_news_clusters",
         "ad_news_patterns",
+        # FathomDesk macro regime classification store (migration 021, NIST AU — append-only signal log)
+        "ad_macro_regimes",
         # FathomDesk Trading Oracle (append-only predictions + convergence)
         "ad_trading_predictions",
         "ad_trading_convergence_events",
@@ -127,6 +130,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_options_coach_events",
         # FathomDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
+        # Document Modernization Engine (docmod, migration 258) — findings state
+        # transitions are superseding rows; scan runs and catalog curation are audit
+        "docmod_findings",
+        "docmod_scan_runs",
+        "docmod_catalog_audit",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
@@ -153,6 +161,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 35 — Innovation Engine (D206)
         "innovation_signals",
         "innovation_triage_log",
+        # ACF normalized innovation engine outputs (append-only)
         "innovation_signal",
         # Phase 39 — Observability
         "agent_executions",
@@ -166,6 +175,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "tool_chain_events",
         "agent_trust_scores",
         "agent_output_violations",
+        # Agentic AI safety_layer SIEM event sink (append-only, best-effort forwarder)
+        "siem_events",
         # Phase 46 — Observability, Traceability & XAI (D280-D290)
         "otel_spans",
         "prov_entities",
@@ -200,6 +211,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 64 — RAG Subsystem (D-RAG-8, D-RAG-11)
         "rag_ingestion_log",
         "rag_retrieval_log",
+        # RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
+        "rag_provenance_ledger",
         # Phase 69 — Codebase Assistant (D-CA-6)
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)
@@ -230,6 +243,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "creative_feature_gaps",
         "creative_specs",
         "creative_trends",
+        # ACF normalized creative engine inputs (append-only)
         "creative_gap",
         # GovCon Intelligence (Phase 59, D361-D373)
         "sam_gov_quota_events",
@@ -248,6 +262,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cpmp_evm_periods",
         "cpmp_cdrl_generations",
         "cpmp_cor_access_log",
+        # RFI Workbench (migration 236) — export log is append-only
+        "rfi_workbench_exports",
+        # RFI Capability-Gap Demand Loop (migration 251) — provenance links are
+        # immutable (gap -> emitted kanban task). rfi_capability_gaps itself is NOT
+        # append-only (frequency/priority update in place).
+        "rfi_gap_task_links",
         # Phase 61 — ANVIL Critique (Feature 3)
         "anvil_critique_sessions",
         "anvil_critique_findings",
@@ -278,7 +298,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "pg_crm_interactions",
         "pg_crm_engagement_scores",
         "pg_capture_activities",
+        "pg_capture_gate_decisions",
         "pg_teaming_assessments",
+        "pg_pwin_assessments",
         # Proposal Genesis Enhancement (append-only review/theme/experiment tracking)
         "pg_review_findings",
         "pg_theme_tracking",
@@ -325,8 +347,6 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # CloudForge (D-CF-10, D-CF-15, D-CF-20, D-CF-21 — all append-only)
         "cf_provision_log",
         "cf_siem_events",
-        # Agentic AI safety_layer SIEM forwarder sink (append-only security events)
-        "siem_events",
         "cf_runbook_executions",
         "cf_runbook_task_log",
         # Phase 67 — Engineering Review Board (D-RB-2, D-RB-10 — audit + findings + remediation append-only)
@@ -410,6 +430,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)
         "ad_fear_greed_snapshots",
         "ad_buffett_snapshots",
+        # Strategos interdiction analysis results (migration 058, NIST AU — append-only ranked outputs)
+        "sg_interdiction_results",
         # Strategos Analyst Annotation Layer (migration 060, NIST AU — append-only annotation store)
         "sg_analyst_annotations",
         # DES execution audit log (NIST AU — append-only)
@@ -426,6 +448,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wf_citations",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
+        # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)
+        "genesis_outputs",
+        # Genesis design phase-transition log (migration 189, NIST AU — append-only phase audit)
+        "genesis_phase_log",
         # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
         "genesis_reflex_log",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
@@ -434,6 +460,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "sg_war_readiness_events",
         # STRATEGOS — adversarial data validation audit (NIST AU-9 — append-only)
         "sg_adversarial_validation_audit",
+        # STRATEGOS — INTSUM grounding force-override audit (migration 279, nav-strat-01, NIST AU — append-only HITL override log)
+        "sg_intsum_grounding_audit",
         # NDC↔Migration — topology snapshots (NIST AU; phase-completion history must be immutable)
         "nc_topology_snapshots",
         # Phase 71 — OHC Ops Hub Canvas (migration 120, NIST AU — adapter health log + drift events append-only)
@@ -466,6 +494,79 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_agreement_amendments",
         # ISP/Telco — Cross-Connect Order Workflow (NIST AU, append-only order state log)
         "ccc_xc_order_events",
+        # DoD/IC Access Control Audit (Phase 163 — G-02/G-05, NIST AU-2/AU-12)
+        "canvas_access_grants",
+        "user_mfa",
+        "mfa_attempts",
+        "gateway_rate_limits",
+        # DoD/IC PKI + Continuous Auth (G-05/G-11/G-14, NIST AU-2/AU-12/IA-11)
+        "abac_audit",
+        "session_risk_log",
+        # AI Data Mapping — transformation artifact audit (NIST AU-9, append-only)
+        "dd_mapping_transforms",
+        # Slide Deck Generator — generation audit trail (NIST AU, append-only)
+        "slides_audit",
+        # ACE (Autonomous Collaborative Engine) — step execution audit trail + skill candidates (NIST AU, append-only)
+        "ace_audit_log",
+        "ace_skill_candidates",
+        # SIPA Software Integrity & Provenance Assessor (sipa-, NIST AU — assessment evidence is immutable)
+        "integrity_capabilities",
+        "integrity_findings",
+        "integrity_verdicts",
+        "integrity_authorizations",
+        # ACF Autonomous Capability Foundry (acf-, append-only signal/concept/spec/ledger)
+        "foundry_runs",
+        "foundry_signals",
+        "foundry_specs",
+        "foundry_tasks_emitted",
+        "foundry_outcomes",
+        # Co-Workers canvas — session links are immutable evidence (NIST AU)
+        "cwk_sessions",
+        # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
+        "centralized_logs",
+        # Enterprise-configurable platform (Phase 5) — component enable/profile/override audit
+        "component_audit_log",
+        # MCIP DAT — DTI snapshots are append-only audit trail (NIST AU-9, issue-18)
+        "mcip_dti_scores",
+        # ECR SSO — session records are append-only NIST AU (sso_providers is mutable)
+        "sso_sessions",
+        # ECR SOC 2 — evidence records are immutable compliance evidence (NIST AU-9, migration 211)
+        "evidence_items",
+        # ECR DRES — zone assignments are append-only audit trail (NIST AU-9, migration 212)
+        "tenant_zone_assignments",
+        # ECR DRES-03 — GDPR erasure audit log (append-only NIST AU, immutable evidence of erasure)
+        "erasure_audit",
+        # ECR Billing (migration 213) — usage events are immutable billing audit records (NIST AU-9)
+        "usage_events",
+        # ECR API Keys (migration 215) — keys are append-only; revocation sets revoked_at, never deletes (NIST AU-9)
+        "api_keys",
+        # IDR — conflict resolution trail is append-only (resolution recorded in-place, rows never deleted — NIST AU)
+        "idr_conflicts",
+        # NQE / Forward Networks Integration (migration 220, 222 — NIST AU)
+        "nc_advisory_assessments",   # impact assessment results — proof chain for ATO
+        "nc_nqe_audit_log",          # every translate/run/approve action traced
+        "nc_remediation_status_log", # every status transition for remediation actions
+        "nc_poam_items",             # formal POAM entries (FedRAMP/DoD format)
+        "nc_poam_status_log",        # POAM milestone/status change log
+        "nc_exceptions",             # filed exceptions for unmitigated vulnerabilities
+        "nc_exception_approvals",    # AO/ISSO/ISSM approval chain for exceptions
+        # PVM — Predictive Vulnerability Management (migration 221)
+        "nc_vuln_predictions",       # time-series risk scores per CVE (NIST AU)
+        "nc_patch_plans",            # AI-generated patch schedules (immutable once created)
+        # PNA — Predictive Network Analytics (migration 222)
+        "nc_eol_predictions",        # device end-of-life/support risk scores
+        "nc_bgp_predictions",        # BGP session instability forecasts
+        "nc_compliance_drift",       # STIG/compliance baseline drift predictions
+        "nc_capacity_predictions",   # bandwidth saturation forecasts
+        "nc_change_risk",            # pre-change failure probability scores
+        "nc_supply_chain_risk",      # vendor supply-chain risk aggregation
+        # TimesFM Forecasting microservice (migration 219) — forecast audit log append-only NIST AU
+        "forecast_audit",
+        # ACE QA Agent (NIST AU — test evidence is immutable)
+        "ace_qa_runs",
+        "ace_qa_failures",
+        # BI Dashboard Canvas — AI chart-generation audit trail (NIST AU)
+        "bi_generation_log",
         # prop-sec-05 — Aggregation Guard / mosaic-effect rule evaluation log (NIST AU)
         "aggregation_events",
     ]
@@ -648,6 +749,61 @@ def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
+def run_review_loop_precommit(tool_name: str, tool_input: dict) -> None:
+    """Self-green staged changes with review_loop before a `git commit`.
+
+    Fires only on Bash `git commit` calls. Runs the fast, staged, ruff-only
+    review loop (coherence/SIPA are too slow for a commit gate — they run in the
+    pre-PR preflight + CI), applies deterministic ruff autofixes to the staged
+    `.py` files, and re-stages them so the commit lands lint-clean.
+
+    Warn-only by default (the commit proceeds). Set ICDEV_REVIEW_LOOP_BLOCK=1 to
+    hard-block a non-green commit, or ICDEV_REVIEW_LOOP_PRECOMMIT=0 to disable.
+    Best-effort: any error is swallowed so it can never break a commit.
+    """
+    if tool_name != "Bash":
+        return
+    command = tool_input.get("command", "")
+    if "git commit" not in command:
+        return
+    if os.environ.get("ICDEV_REVIEW_LOOP_PRECOMMIT", "1").strip().lower() in ("0", "false", "no", "off"):
+        return
+
+    try:
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from tools.quality.review_loop import preflight
+
+        report = preflight(
+            base=None, autofix=True, staged=True,
+            only_gates=["ruff"], coherence_scope="changed",
+            audit=False, max_iterations=1, repo_root=repo_root,
+        )
+        # Re-stage whatever ruff --fix rewrote so the fixes are committed.
+        if report.changed_files:
+            subprocess.run(
+                ["git", "add", *report.changed_files],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
+            )
+        if not report.green:
+            n = len(report.fix_brief)
+            msg = (
+                f"review_loop (pre-commit): {n} unfixable lint finding(s) remain "
+                f"in staged files — {report.reason}"
+            )
+            if os.environ.get("ICDEV_REVIEW_LOOP_BLOCK", "").strip().lower() in ("1", "true", "yes", "on"):
+                print(f"BLOCKED: {msg}", file=sys.stderr)
+                sys.exit(2)
+            print(f"WARNING: {msg} (commit proceeding; set ICDEV_REVIEW_LOOP_BLOCK=1 to block)", file=sys.stderr)
+        elif report.changed_files:
+            print("review_loop (pre-commit): applied ruff autofixes to staged files", file=sys.stderr)
+    except SystemExit:
+        raise
+    except Exception:
+        return  # never break a commit
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
@@ -686,6 +842,9 @@ def main():
         if tier_error:
             print(tier_error, file=sys.stderr)
             sys.exit(2)
+
+        # Self-green staged changes before a git commit (warn-only by default)
+        run_review_loop_precommit(tool_name, tool_input)
 
         sys.exit(0)
 

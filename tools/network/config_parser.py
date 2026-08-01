@@ -25,13 +25,32 @@ from tools.logging.icdev_logger import get_logger
 import hashlib
 import re
 import uuid
-from tools.db.storage import get_connection
+from tools.network.db.init_db import get_connection
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = get_logger("icdev.network.config_parser")
 
-_ICDEV_ROOT = Path(__file__).resolve().parents[2]
+
+def _sqlite_connection(db_path: str):
+    """Open a StorageConnection-wrapped SQLite DB at an explicit path.
+
+    Used only when a caller (e.g. a test) passes an explicit ``db_path``
+    override; the default path routes through the canvas ``get_connection()``
+    which honours NC_STORAGE_BACKEND (PostgreSQL by default).
+    """
+    import sqlite3 as _sqlite3
+
+    path = Path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = _sqlite3.connect(str(path))
+    conn.row_factory = _sqlite3.Row
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except ImportError:
+        return conn
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +219,85 @@ _RE_JUNIPER_HIER_IFACE = re.compile(
     re.DOTALL,
 )
 
+# ── Firewall filters (Junos' ACL equivalent) ────────────────────────────────
+# Junos expresses packet filtering as `firewall { family inet { filter NAME {
+# term T { from {...} then ...; } } } }`, or flattened as
+# `set firewall family inet filter NAME term T ...`. Neither resembles an IOS
+# `ip access-list` block, which is why acls was previously always empty here.
+# Both forms normalise to the IOS acls shape — {"name", "entries": [str]} —
+# with one entry per *term*, a term being Junos' unit of match+action (the
+# closest analogue to an IOS ACE).
+_RE_JUNIPER_SET_FILTER_TERM = re.compile(
+    r"^set firewall\s+(?:family\s+\S+\s+)?filter\s+(\S+)\s+term\s+(\S+)\s+(.+?)\s*$",
+    re.MULTILINE,
+)
+_RE_JUNIPER_HIER_FIREWALL = re.compile(r"^[ \t]*firewall\s*\{", re.MULTILINE)
+_RE_JUNIPER_HIER_FILTER = re.compile(r"\bfilter\s+(\S+)\s*\{")
+_RE_JUNIPER_HIER_TERM = re.compile(r"\bterm\s+(\S+)\s*\{")
+
+
+def _brace_block(text: str, open_idx: int) -> str:
+    """Return the inner text of the {...} block whose opening brace is at open_idx.
+
+    Junos hierarchy nests arbitrarily (filter > term > from), which a regex
+    cannot match. Counts depth instead. Unbalanced input returns the remainder
+    rather than raising — a truncated config should degrade, not crash a scan.
+    """
+    depth = 0
+    for i in range(open_idx, len(text)):
+        c = text[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_idx + 1:i]
+    return text[open_idx + 1:]
+
+
+def _juniper_set_filters(raw_text: str) -> List[Dict[str, Any]]:
+    """Firewall filters from `set`-style config, grouped one entry per term."""
+    fragments: Dict[tuple, List[str]] = {}
+    term_order: List[tuple] = []
+    for m in _RE_JUNIPER_SET_FILTER_TERM.finditer(raw_text):
+        key = (m.group(1), m.group(2))
+        if key not in fragments:
+            fragments[key] = []
+            term_order.append(key)
+        fragments[key].append(m.group(3).strip())
+
+    acls: Dict[str, List[str]] = {}
+    acl_order: List[str] = []
+    for filter_name, term_name in term_order:
+        if filter_name not in acls:
+            acls[filter_name] = []
+            acl_order.append(filter_name)
+        acls[filter_name].append(
+            "term %s %s" % (term_name, "; ".join(fragments[(filter_name, term_name)]))
+        )
+    return [{"name": name, "entries": acls[name]} for name in acl_order]
+
+
+def _juniper_hier_filters(raw_text: str) -> List[Dict[str, Any]]:
+    """Firewall filters from hierarchy-style config.
+
+    Scoped to inside the `firewall { ... }` block so an interface's
+    `family inet { filter { input X; } }` (a filter *application*, not a
+    definition) is never mistaken for a filter definition.
+    """
+    acls: List[Dict[str, Any]] = []
+    for fw in _RE_JUNIPER_HIER_FIREWALL.finditer(raw_text):
+        fw_block = _brace_block(raw_text, fw.end() - 1)
+        for fm in _RE_JUNIPER_HIER_FILTER.finditer(fw_block):
+            filter_block = _brace_block(fw_block, fm.end() - 1)
+            entries = [
+                "term %s %s" % (tm.group(1), " ".join(_brace_block(filter_block, tm.end() - 1).split()))
+                for tm in _RE_JUNIPER_HIER_TERM.finditer(filter_block)
+            ]
+            if entries:
+                acls.append({"name": fm.group(1), "entries": entries})
+    return acls
+
 
 def parse_juniper(raw_text: str) -> Dict[str, Any]:
     """Parse Juniper JunOS config (set-style or hierarchy)."""
@@ -243,11 +341,18 @@ def parse_juniper(raw_text: str) -> Dict[str, Any]:
     for m in _RE_JUNIPER_SET_BGP.finditer(raw_text):
         bgp_neighbors.append({"ip": m.group(1), "asn": int(m.group(2))})
 
+    # Firewall filters — Junos' ACL equivalent. Hierarchy wins on name collision
+    # (a config carrying both forms for one filter is expressing the same intent
+    # twice; the hierarchy form is the fuller rendering).
+    acls = _juniper_hier_filters(raw_text)
+    seen = {a["name"] for a in acls}
+    acls.extend(a for a in _juniper_set_filters(raw_text) if a["name"] not in seen)
+
     return {
         "hostname": hostname,
         "vendor": "juniper",
         "interfaces": interfaces,
-        "acls": [],
+        "acls": acls,
         "policies": policies,
         "routes": routes,
         "bgp_neighbors": bgp_neighbors,
@@ -355,12 +460,11 @@ def ingest_config(
     config_id = str(uuid.uuid4())[:12]
     config_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
 
-    # Persist to ni_device_configs
-    if db_path is None:
-        db_path = str(_ICDEV_ROOT / "data" / "network_canvas.db")
-
+    # Persist to ni_device_configs. Default path routes through the canvas
+    # get_connection() (honours NC_STORAGE_BACKEND — PostgreSQL by default);
+    # an explicit db_path override routes to the SQLite branch for tests.
     try:
-        conn = get_connection(str(db_path))
+        conn = _sqlite_connection(db_path) if db_path else get_connection()
         conn.execute(
             "INSERT INTO ni_device_configs (id, device_id, config_type, "
             "config_text, config_hash, source, version) "

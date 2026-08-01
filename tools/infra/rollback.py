@@ -11,6 +11,9 @@ import sys
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.infra.rollback")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -246,8 +249,9 @@ def _record_rollback(
                 now if status in ("succeeded", "failed") else None,
             ),
         )
-    except Exception:
-        pass  # Table may not have all columns; non-critical
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Table may not have all columns; non-critical
+        logger.warning("_record_rollback: best-effort INSERT into deployments failed (non-blocking): %s", exc)
 
     # Insert audit trail entry
     try:
@@ -272,8 +276,9 @@ def _record_rollback(
                 "CUI",
             ),
         )
-    except Exception:
-        pass  # audit_trail may not exist; non-critical
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # audit_trail may not exist; non-critical
+        logger.warning("_record_rollback: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
     conn.commit()
 

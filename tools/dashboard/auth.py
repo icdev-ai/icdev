@@ -14,10 +14,13 @@ Provides:
 
 import functools
 import hashlib
+import hmac
+import json
 import os
 import secrets
 import uuid
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
 from datetime import datetime, timezone
 
 from flask import (
@@ -62,11 +65,33 @@ def key_prefix(raw_key: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+logger = get_logger("icdev.dashboard.auth")
+
+
 def _get_db():
     """Get a connection to the ICDEV™ database."""
     conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+def _dashboard_users_table_exists(conn) -> bool:
+    """Portable existence probe.
+
+    A `sqlite_master` lookup would be wrong on PostgreSQL, which is the primary
+    backend. Probing the table itself is true on both. PostgreSQL aborts the
+    transaction on a failed statement, so roll back before the caller reuses
+    the connection.
+    """
+    try:
+        conn.execute("SELECT 1 FROM dashboard_users LIMIT 1").fetchone()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
 
 
 def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, details=None):
@@ -81,8 +106,9 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Auth logging should never break the request
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Auth logging should never break the request
+        logger.warning("log_auth_event: best-effort INSERT into dashboard_auth_log failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -90,15 +116,29 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
 # ---------------------------------------------------------------------------
 
 
-def create_user(email, display_name, role="developer", created_by=None, tenant_id=None):
-    """Create a new dashboard user. Returns user dict."""
+def create_user(
+    email, display_name, role="developer", created_by=None, tenant_id=None,
+    clearance_level="CUI", compartments=None,
+):
+    """Create a new dashboard user. Returns user dict.
+
+    clearance_level / compartments are the Bell-LaPadula MAC subject
+    attributes (prop-sec-02) — dashboard_users.clearance_level (TEXT,
+    e.g. 'CUI'/'SECRET'/'TOP SECRET') and .compartments (JSON array of
+    COI_*/LAC_*/SCI strings). Both default to the least-privileged value
+    so existing callers are unaffected.
+    """
     user_id = str(uuid.uuid4())
+    compartments_json = json.dumps(list(compartments) if compartments else [])
     conn = _get_db()
     try:
         conn.execute(
-            """INSERT INTO dashboard_users (id, email, display_name, role, created_by, tenant_id)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (user_id, email, display_name, role, created_by, tenant_id),
+            """INSERT INTO dashboard_users
+               (id, email, display_name, role, created_by, tenant_id,
+                clearance_level, compartments)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (user_id, email, display_name, role, created_by, tenant_id,
+             clearance_level, compartments_json),
         )
         conn.commit()
     finally:
@@ -112,6 +152,8 @@ def create_user(email, display_name, role="developer", created_by=None, tenant_i
         "role": role,
         "status": "active",
         "tenant_id": tenant_id,
+        "clearance_level": clearance_level,
+        "compartments": compartments_json,
     }
 
 
@@ -152,6 +194,7 @@ def validate_api_key(raw_key):
     try:
         row = conn.execute(
             """SELECT u.id, u.email, u.display_name, u.role, u.status,
+                      u.clearance_level, u.compartments,
                       k.id as key_id, k.expires_at
                FROM dashboard_api_keys k
                JOIN dashboard_users u ON k.user_id = u.id
@@ -302,6 +345,23 @@ def reactivate_user(user_id, reactivated_by=None):
 # RBAC — role-based access control (D172)
 # ---------------------------------------------------------------------------
 
+# Single source of truth for dashboard_users.role. Keep in sync with the
+# CHECK constraint in tools/db/init_icdev_db.py's dashboard_users CREATE
+# TABLE (SQL CHECK constraints can't reference a Python constant directly,
+# so this list and that constraint must be updated together). Every role
+# referenced anywhere in RBAC_MATRIX below, or in any @require_role(...)
+# call, must appear here -- otherwise create_user() can never actually
+# persist a user with that role (dashboard-users-role-check-constraint;
+# bd/capture_mgr/contract_mgr/reviewer were added to RBAC_MATRIX by
+# prop-fix-08 but never reached the CHECK constraint until this fix).
+VALID_DASHBOARD_ROLES = frozenset({
+    "admin", "pm", "developer", "isso", "co", "cor",
+    # GovLift (migration 139) — see tools/govlift/rbac.py::GOVLIFT_ROLES
+    "migration_engineer", "component_admin", "auditor", "ciso",
+    # GovCon / Proposals / CPMP (prop-fix-08) — see RBAC_MATRIX below
+    "bd", "capture_mgr", "contract_mgr", "reviewer",
+})
+
 # Maps page/action to allowed roles
 RBAC_MATRIX = {
     # Pages accessible to all authenticated users
@@ -342,6 +402,16 @@ RBAC_MATRIX = {
     "cpmp_deliverable_detail": {"admin", "pm", "contract_mgr", "co", "cor", "isso"},
     # Proposal Genesis (prop-fix-08)
     "proposal_genesis": {"admin", "pm", "bd", "capture_mgr"},
+    # Strategos — approval / resolution / workflow-advance / authoritative-deletion
+    # class of state-changing routes (nav-sec-05). Enforcement is via the
+    # @require_role(*_STRATEGOS_APPROVAL_ROLES) decorators in
+    # apps/strategos/blueprint.py; this entry is the documentary role map (the
+    # matrix itself is not consumed programmatically for enforcement).
+    "strategos_approval": {"admin", "pm", "isso", "co", "cor", "reviewer"},
+    # ZIG mutating endpoints — capability-status PATCH + global assess POST
+    # (nav-sec-05). Enforced via @require_role(*_ZIG_MUTATION_ROLES) in
+    # tools/security_canvas/blueprint.py.
+    "zig_mutation": {"admin", "isso", "ciso"},
 }
 
 
@@ -384,8 +454,15 @@ PUBLIC_ENDPOINTS = frozenset(
         "api_events.ingest_event",
         "api_events.healthcheck",
         "api_contact_submit",
+        # Cortex service liveness probe (ctx-expose-02) — status only, no data.
+        "cortex.api_v1_health",
     }
 )
+
+# Cortex service keys (external server-to-server callers) are honored only on
+# these prefixes — see the icdev_ctx_ branch in _auth_before_request.
+_CORTEX_SERVICE_KEY_PREFIX = "icdev_ctx_"
+_CORTEX_SERVICE_PATHS = ("/cortex/api/v1/", "/api/databridge/v1/")
 
 
 def _extract_api_key_from_request():
@@ -398,6 +475,25 @@ def _extract_api_key_from_request():
     return request.args.get("api_key", "")
 
 
+def _attach_security_context():
+    """Derive g.security_context from g.current_user (prop-sec-02).
+
+    Must be called after g.current_user is set to an authenticated user
+    dict. Without this, tools.security.classification_enforcer's
+    @require_clearance/@require_compartment decorators and the Bell-LaPadula
+    MAC helpers used across tools/dashboard/api/proposals.py and cpmp.py
+    (_mac_ctx() et al.) always see g.security_context as unset and silently
+    no-op (their "ctx is None -> allow" compatibility fallback), regardless
+    of the authenticated user's actual clearance_level/compartments.
+    """
+    try:
+        from tools.security.security_context import _extract_from_flask_g
+        _extract_from_flask_g()
+    except Exception:
+        # Never let MAC-context derivation break the primary auth flow.
+        pass
+
+
 def _auth_before_request():
     """Flask before_request hook for authentication."""
     g.current_user = None
@@ -406,6 +502,47 @@ def _auth_before_request():
     # Phase C / P1.3). This hook stays authoritative for legacy /api/* and
     # Jinja page routes; it only steps aside for the versioned surface.
     if request.path.startswith("/api/v1/"):
+        return None
+
+    # Cortex service keys (icdev_ctx_ — tools/cortex/service_keys.py): scoped,
+    # tenant-bound credentials for external server-to-server consumers
+    # (compass, idea_lab) of the Cortex REST surface and DataBridge feeds
+    # (ctx-expose-02/05). Resolved here so rest_v1's _server_context() reads
+    # the same g.security_context seam it reads for session users; the key
+    # row — never the request — supplies tenant/classification. Keys are only
+    # honored on the two service prefixes: they are not dashboard users.
+    service_key = _extract_api_key_from_request()
+    if service_key.startswith(_CORTEX_SERVICE_KEY_PREFIX):
+        if not request.path.startswith(_CORTEX_SERVICE_PATHS):
+            abort(401)
+        try:
+            from tools.cortex.service_keys import resolve_context
+            binding = resolve_context(service_key, None)
+        except Exception:
+            binding = None
+        if binding is None:
+            log_auth_event(
+                None,
+                "login_failed",
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:256],
+                details="invalid_cortex_service_key",
+            )
+            abort(401)
+        ctx = binding["ctx"]
+        g.cortex_binding = binding
+        g.current_user = {
+            "id": f"cortex-svc:{binding['label']}",
+            "display_name": f"Cortex service ({binding['label']})",
+            "role": "service",
+            "tenant_id": ctx.tenant_id,
+            "clearance_level": ctx.classification,
+        }
+        g.security_context = {
+            "tenant_id": ctx.tenant_id,
+            "user_id": ctx.user_id or f"cortex-svc:{binding['label']}",
+            "classification": ctx.classification,
+        }
         return None
 
     # Skip auth for public endpoints
@@ -422,6 +559,7 @@ def _auth_before_request():
         user = get_user_by_id(user_id)
         if user and user["status"] == "active":
             g.current_user = dict(user)
+            _attach_security_context()
             return None
         else:
             # Session invalid — clear it
@@ -434,6 +572,7 @@ def _auth_before_request():
         user = validate_api_key(raw_key)
         if user:
             g.current_user = dict(user)
+            _attach_security_context()
             # Set session so subsequent requests use cookie
             session["user_id"] = user["id"]
             log_auth_event(
@@ -445,6 +584,29 @@ def _auth_before_request():
             )
             return None
         else:
+            # nav-sec-01: The .env bootstrap key (ICDEV_DASHBOARD_API_KEY,
+            # written by _auto_provision_env_key on first install) may not yet
+            # have a DB row, so validate_api_key() above returns None the first
+            # time it is presented. Honor it here ONLY when the request actually
+            # PRESENTS a key equal to it, compared in constant time, then
+            # bootstrap its DB entry. Merely having the key set in the
+            # environment must never authenticate a request on its own.
+            env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+            if env_key and hmac.compare_digest(raw_key, env_key):
+                user = bootstrap_env_user(env_key)
+                if user:
+                    g.current_user = dict(user)
+                    _attach_security_context()
+                    session["user_id"] = user["id"]
+                    log_auth_event(
+                        user["id"],
+                        "login_success",
+                        ip_address=request.remote_addr,
+                        user_agent=request.headers.get("User-Agent", "")[:256],
+                        details="via_env_key",
+                    )
+                    return None
+
             # API requests get 401, browser requests redirect
             log_auth_event(
                 None,
@@ -456,14 +618,31 @@ def _auth_before_request():
             if request.is_json or request.path.startswith("/api/"):
                 abort(401)
 
-    # Auto-login via .env API key if configured
-    env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
-    if env_key:
-        user = bootstrap_env_user(env_key)
-        if user:
-            g.current_user = dict(user)
-            session["user_id"] = user["id"]
-            return None
+    # nav-sec-01: Developer convenience ONLY — auto-login the admin env user
+    # for requests that present NO credential. Off by default; must be
+    # explicitly opted into via ICDEV_DASHBOARD_DEV_AUTOLOGIN. This restores the
+    # legacy "env key set => everyone is admin" behavior, so it MUST NEVER be
+    # enabled in a deployed or network-exposed environment — it is a full auth
+    # bypass by design, intended for local single-user development only.
+    dev_autologin = os.environ.get(
+        "ICDEV_DASHBOARD_DEV_AUTOLOGIN", ""
+    ).lower() in ("true", "1", "yes")
+    if dev_autologin:
+        env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+        if env_key:
+            user = bootstrap_env_user(env_key)
+            if user:
+                g.current_user = dict(user)
+                _attach_security_context()
+                session["user_id"] = user["id"]
+                log_auth_event(
+                    user["id"],
+                    "login_success",
+                    ip_address=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:256],
+                    details="via_dev_autologin",
+                )
+                return None
 
     # Not authenticated — redirect to login for browser requests
     if request.is_json or request.path.startswith("/api/"):
@@ -485,13 +664,37 @@ def _auto_provision_env_key():
 
     On first install: creates admin user, generates key, appends to .env,
     and sets the env var for the current process. Prints key to console.
+
+    Provisioning is a convenience, not an enforcement step, and it runs from
+    register_dashboard_auth() -> create_app() -> module scope. So a database
+    without the auth schema (a fresh checkout, or any test that merely imports
+    tools.dashboard.app) made `import tools.dashboard.app` raise
+    OperationalError: no such table: dashboard_users, taking whole test modules
+    down at collection time.
+
+    Degrading here is fail-closed: with no ICDEV_DASHBOARD_API_KEY the
+    before_request hook treats the caller as unauthenticated and redirects or
+    401s. Never swallow the registration of the auth middleware itself.
     """
     if os.environ.get("ICDEV_DASHBOARD_API_KEY"):
         return  # Already configured
 
     # Generate key and provision admin user
     email = "admin@icdev.local"
-    conn = _get_db()
+    try:
+        conn = _get_db()
+    except Exception as exc:  # DB unreachable — cannot provision, stay fail-closed
+        logger.warning("Dashboard API key auto-provision skipped (no database): %s", exc)
+        return
+
+    if not _dashboard_users_table_exists(conn):
+        conn.close()
+        logger.warning(
+            "Dashboard API key auto-provision skipped: dashboard_users table not found. "
+            "Run the auth migrations, then restart to receive a generated key."
+        )
+        return
+
     try:
         row = conn.execute("SELECT id FROM dashboard_users WHERE email = %s", (email,)).fetchone()
         if row:

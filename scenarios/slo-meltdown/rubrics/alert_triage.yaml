@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+name: Alert Triage Rubric
+inject_type: alert_triage
+description: Evaluates isolation of the true SLO breach from a correlated alert storm.
+max_score: 100
+dimensions:
+- id: breach_isolation
+  weight: 0.4
+  prompt: Did the team correctly name p99 latency as the only breached SLO and classify the memory/CPU
+    alerts as noise? 10 = correct breach + noise separation with evidence; 6 = correct breach only; 3
+    = names a breach without evidence; 0 = chases the storm.
+- id: evidence_grounding
+  weight: 0.3
+  prompt: Did the team use the SLO Dashboard to justify which burn is customer-impacting? 10 = dashboard
+    evidence drives the call; 5 = tool present, unused; 0 = none.
+- id: immediate_action
+  weight: 0.2
+  prompt: Is the single next step high-value and proportionate? 10 = targets the latency breach / model
+    warn thread; 5 = generic; 0 = addresses noise.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were receipts present and used? 10 = yes; 5 = present, unused; 0 = none.

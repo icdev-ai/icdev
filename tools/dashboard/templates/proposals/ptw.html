@@ -286,6 +286,7 @@
 
 <!-- IQE Query Widget -->
 {% set iqe_canvas = "govcon" %}
+{% set iqe_api_route = "/api/govcon/iqe-query" %}
 {% set iqe_examples = [
     {"label": "Top competitors by NAICS", "query": "show top competitors for NAICS " ~ (opp.naics_code or "541512")},
     {"label": "PTW range summary", "query": "what is the price-to-win range for opportunity " ~ opp.id},

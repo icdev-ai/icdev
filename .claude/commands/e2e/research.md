@@ -3,7 +3,7 @@
 Verify the Research Engine dashboard page loads correctly, displays stat grid, vertical dropdown, session creation form, and sessions table.
 
 ## Prerequisites
-- Flask dashboard running on http://localhost:5000
+- Flask dashboard running on http://localhost:5050
 - Database initialized with research tables (`research_sessions`, `research_verticals`, etc.)
 - Verticals loaded via `python tools/research/vertical_loader.py --load`
 - Dashboard API key available for login
@@ -11,7 +11,7 @@ Verify the Research Engine dashboard page loads correctly, displays stat grid, v
 ## Steps
 
 ### 1. Login and Navigate
-1. Navigate to http://localhost:5000/login
+1. Navigate to http://localhost:5050/login
 2. Enter API key and submit
 3. Verify redirect to dashboard home
 4. Click "Research" link in the navigation bar

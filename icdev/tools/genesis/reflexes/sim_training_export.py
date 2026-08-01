@@ -14,13 +14,16 @@ Return value:
 Risk tier: GREEN (DB writes to ft_datasets / ft_dataset_examples only; no code mutation).
 Cadence: every 6h (configurable via genesis_config.yaml).
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.reflexes.sim_training_export")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -79,13 +82,22 @@ def _log_audit(reflex: str, status: str, payload: dict) -> None:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_log_audit: best-effort INSERT into genesis_audit_log failed (non-blocking): %s", exc)
 
 
 # ── Standalone CLI ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import argparse
 
     parser = argparse.ArgumentParser(description="Genesis Sim Training Export Reflex")

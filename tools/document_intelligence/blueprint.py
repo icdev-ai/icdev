@@ -7,9 +7,7 @@ Routes:
   GET  /document-intelligence/search        grounded search + document chat
   GET  /document-intelligence/review        HITL review queue (fragments + versions)
   GET  /document-intelligence/generate      AI-assisted document generation
-  GET  /document-intelligence/acoic         ACOIC drift→regen→NIST page
-  GET  /document-intelligence/finetune      air-gap fine-tuning page
-  GET  /document-intelligence/snippets      reusable snippets page
+  GET  /document-intelligence/docdrift      DocDrift drift→regen→NIST page (was /acoic)
   GET  /document-intelligence/templates     use-case templates page
 
   POST /document-intelligence/api/ingest                         multi-modal upload
@@ -50,8 +48,18 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
+from flask import (
+    Blueprint,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    stream_with_context,
+    url_for,
+)
 
+from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -59,9 +67,13 @@ logger = get_logger(__name__)
 # ── In-memory SSE job queues ──────────────────────────────────────────────────
 # Maps job_id → queue.Queue[dict | None]  (None = sentinel / stream closed)
 _JOB_QUEUES: dict[str, _queue.Queue] = {}
-# Maps job_id → {status, doc_id, chunks, errors} — in-memory result cache so the
-# result endpoint works even when the dic_ingest_jobs DB INSERT fails (e.g. wrong
-# SQL parameter style on PostgreSQL).
+# Maps job_id → {status, doc_id, chunks, errors} — in-memory result cache backing
+# the SSE result endpoint.
+#
+# This used to say the cache existed "even when the dic_ingest_jobs DB INSERT
+# fails (e.g. wrong SQL parameter style on PostgreSQL)". That INSERT uses %s now;
+# the bug was fixed and the comment outlived it, advertising a workaround for a
+# failure that can no longer happen.
 _JOB_RESULTS: dict[str, dict] = {}
 _JOB_LOCK = threading.Lock()
 
@@ -78,7 +90,10 @@ dic_bp = Blueprint(
 # ── Static seed data ──────────────────────────────────────────────────────────
 
 _TEMPLATES = [
-    {"id": "acoic", "name": "ACOIC", "description": "Infra-drift → impacted-doc regeneration → RICOAS NIST bridge.", "flagship": True, "category": "compliance", "kind": "automation"},
+    # id stays "acoic": it is a data key behind /api/templates/<id>/instantiate,
+    # exercised by features/dic_document_intelligence.feature and e2e_full.py.
+    # Renaming it would break those contracts for a string nobody sees.
+    {"id": "acoic", "name": "DocDrift", "description": "Drift → impacted-doc regeneration → RICOAS NIST bridge.", "flagship": True, "category": "compliance", "kind": "automation"},
     {"id": "freshness-audit", "name": "Document Freshness Audit", "description": "Scan a collection for stale documents and generate a remediation report.", "flagship": False, "category": "quality", "kind": "audit"},
     {"id": "airgap-ingest", "name": "Air-Gap Ingest Pipeline", "description": "Ingest documents from a local directory with zero cloud calls.", "flagship": False, "category": "ingest", "kind": "pipeline"},
     {"id": "hitl-review", "name": "HITL Review Queue", "description": "Surface AI-generated drafts for human review before publishing.", "flagship": False, "category": "governance", "kind": "workflow"},
@@ -93,24 +108,14 @@ _TEMPLATES = [
     {"id": "ARCH_SYSTEM", "name": "System Architecture", "description": "End-to-end system boundary, stakeholders, interfaces, and quality attributes.", "flagship": False, "category": "techwriter", "kind": "architecture"},
 ]
 
-_SNIPPETS = [
-    {"id": "dic-citation-badge", "name": "Citation Badge", "description": "Inline citation chip linking a claim to its source document, chunk ID, and page.", "category": "search", "tags": ["citation", "grounded", "no-llm"]},
-    {"id": "dic-freshness-indicator", "name": "Freshness Indicator", "description": "Color-coded badge (fresh / aging / stale) derived from document TTL.", "category": "quality", "tags": ["freshness", "ttl", "badge"]},
-    {"id": "dic-ai-label", "name": "AI-Label Chip", "description": "Displays the HITL/AI classification label and confidence score on a document card.", "category": "governance", "tags": ["hitl", "label", "confidence"]},
-    {"id": "dic-drift-trigger", "name": "Drift Trigger Button", "description": "Manual button to fire a drift event on a document or collection for ACOIC pipeline testing.", "category": "acoic", "tags": ["drift", "acoic", "debug"]},
-    {"id": "dic-rag-search-bar", "name": "Grounded Search Bar", "description": "No-LLM keyword+vector search input that returns cited chunks.", "category": "search", "tags": ["rag", "no-llm", "citations"]},
-]
-
 _PAGES = [
     {"name": "Collections", "icon": "🗂️", "href": "/document-intelligence/collections", "desc": "Organize documents into collections and manage team access.", "ready": True, "task": "dic-collab-01"},
     {"name": "Search & Chat", "icon": "🔍", "href": "/document-intelligence/search", "desc": "Grounded no-LLM search with mandatory citations · Conversational AI.", "ready": True, "task": "dic-search-01"},
     {"name": "Analytics", "icon": "📊", "href": "/document-intelligence/analytics", "desc": "Entity frequency, co-occurrence, pattern detection, anomaly detection, and scenario runner.", "ready": True, "task": "dic-analytics-01"},
     {"name": "HITL Review", "icon": "👁️", "href": "/document-intelligence/review", "desc": "Human-in-the-loop oversight for AI-generated drafts and SSP fragments.", "ready": True, "task": "dic-collab-01"},
     {"name": "AI-Assist", "icon": "✨", "href": "/document-intelligence/generate", "desc": "Generate CoD-verified document drafts from your collections.", "ready": True, "task": "dic-generate-01"},
-    {"name": "ACOIC", "icon": "🛰️", "href": "/document-intelligence/acoic", "desc": "Flagship bridge: drift → document impact → regen → NIST re-map.", "ready": True, "task": "dic-acoic-01"},
-    {"name": "Air-Gap Fine-Tuning", "icon": "🧪", "href": "/document-intelligence/finetune", "desc": "Train a local model on a collection's chunks/KG (GPU optional).", "ready": True, "task": "dic-finetune-01"},
-    {"name": "Snippets", "icon": "🧩", "href": "/document-intelligence/snippets", "desc": "Reusable UI building blocks for document workflows.", "ready": True, "task": "dic-snippets-01"},
-    {"name": "Templates", "icon": "📐", "href": "/document-intelligence/templates", "desc": "Pre-built document workflows. ACOIC is the flagship.", "ready": True, "task": "dic-templates-01"},
+    {"name": "DocDrift", "icon": "🛰️", "href": "/document-intelligence/docdrift", "desc": "Is this document still true? Drift → impact → regen → NIST re-map.", "ready": True, "task": "dic-acoic-01"},
+    {"name": "Templates", "icon": "📐", "href": "/document-intelligence/templates", "desc": "Pre-built document workflows. DocDrift is the flagship.", "ready": True, "task": "dic-templates-01"},
     {"name": "Freshness", "icon": "🌡️", "href": "/document-intelligence/freshness", "desc": "Corpus staleness heatmap and remediation queue.", "ready": True, "task": "dic-freshness-01"},
     {"name": "Explorer", "icon": "🔎", "href": "/document-intelligence/explorer", "desc": "KG buried-bodies explorer — orphans, tribal knowledge, contradictions.", "ready": True, "task": "dic-explore-01"},
     {"name": "Handoff", "icon": "🤝", "href": "/document-intelligence/handoff", "desc": "Knowledge handoff — capture retiring SME knowledge into a living collection.", "ready": True, "task": "dic-handoff-01"},
@@ -118,7 +123,46 @@ _PAGES = [
     {"name": "Tech Writer", "icon": "✍️", "href": "/document-intelligence/techwriter", "desc": "Author arch docs, SOPs, runbooks, and standard guides with inline WriteGuard and AI research.", "ready": True, "task": "dic-techwriter-01"},
 ]
 
-_LOCAL_PROVIDERS = ["ollama", "llamacpp", "huggingface-local"]
+# Workflow grouping for the canvas index. 14 undifferentiated sibling tiles give
+# no clue what to do first; these order them by the sequence a user actually
+# follows. Presentation only — no tile is removed, and _PAGES stays the flat
+# source of truth for other consumers.
+_PAGE_GROUPS: list[tuple[str, str, list[str]]] = [
+    ("1 · Ingest & organize",
+     "Get documents in and shape them into collections.",
+     ["Collections", "Notebook", "Handoff"]),
+    ("2 · Explore & search",
+     "Ask questions of what you already have — grounded, with citations.",
+     ["Search & Chat", "Explorer", "Analytics"]),
+    ("3 · Author & generate",
+     "Write new documents, or rebuild existing ones.",
+     ["Tech Writer", "AI-Assist", "Templates"]),
+    ("4 · Govern & review",
+     "Approve AI output, track staleness, keep compliance in sync.",
+     ["HITL Review", "Freshness", "DocDrift"]),
+]
+
+
+def _grouped_pages() -> list[dict]:
+    """Partition _PAGES into the workflow groups above.
+
+    Any tile missing from _PAGE_GROUPS is appended to a trailing group rather
+    than silently dropped — a typo must never make a feature vanish from the UI.
+    """
+    by_name = {p["name"]: p for p in _PAGES}
+    groups: list[dict] = []
+    claimed: set[str] = set()
+    for label, desc, names in _PAGE_GROUPS:
+        pages = [by_name[n] for n in names if n in by_name]
+        claimed.update(p["name"] for p in pages)
+        if pages:
+            groups.append({"label": label, "desc": desc, "pages": pages})
+    leftover = [p for p in _PAGES if p["name"] not in claimed]
+    if leftover:
+        groups.append({"label": "More", "desc": "", "pages": leftover})
+    return groups
+
+
 
 # ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -299,7 +343,11 @@ def _forbid(role: str, msg: str = "Insufficient permissions") -> tuple:
 
 @dic_bp.route("/")
 def index():
-    return render_template("document_intelligence/index.html", pages=_PAGES)
+    return render_template(
+        "document_intelligence/index.html",
+        pages=_PAGES,
+        page_groups=_grouped_pages(),
+    )
 
 
 @dic_bp.route("/collections")
@@ -307,7 +355,7 @@ def collections():
     tenant_id, _ = _security_context()
     conn = _conn()
     try:
-        cols = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 100", (tenant_id,))
+        cols = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = %s ORDER BY created_at DESC LIMIT 100", (tenant_id,))
         for c in cols:
             try:
                 doc_count_row = conn.execute(
@@ -340,12 +388,12 @@ def search():
 def doc_detail(doc_id: str):
     conn = _conn()
     try:
-        doc = _safe_rows(conn, "SELECT * FROM dic_documents WHERE doc_id = ? LIMIT 1", (doc_id,))
+        doc = _safe_rows(conn, "SELECT * FROM dic_documents WHERE doc_id = %s LIMIT 1", (doc_id,))
         doc = doc[0] if doc else {}
         versions = _safe_rows(
             conn,
             "SELECT version_id, version_no, origin, status, assigned_to, created_at, created_by "
-            "FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC",
+            "FROM dic_versions WHERE doc_id = %s ORDER BY version_no DESC",
             (doc_id,),
         )
         # Load sections for the latest pending or latest version
@@ -361,7 +409,7 @@ def doc_detail(doc_id: str):
             sections = _safe_rows(
                 conn,
                 "SELECT section_id, heading, content, citations_json, status, origin, assigned_to "
-                "FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+                "FROM dic_sections WHERE version_id = %s ORDER BY section_id",
                 (active_version_id,),
             )
             for s in sections:
@@ -373,7 +421,7 @@ def doc_detail(doc_id: str):
         collection_id = doc.get("collection_id") or "default"
         team = _safe_rows(
             conn,
-            "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+            "SELECT user_id, role FROM dic_team_access WHERE collection_id = %s ORDER BY role DESC, user_id",
             (collection_id,),
         )
     finally:
@@ -422,16 +470,6 @@ def review():
             "FROM dic_versions v LEFT JOIN dic_documents d ON d.doc_id = v.doc_id "
             "WHERE v.status IN ('pending_review', 'needs_revision') ORDER BY v.created_at DESC LIMIT 50",
         )
-        # Gather team members per collection for assignment dropdowns.
-        team_map: dict[str, list[dict]] = {}
-        for v in pending_versions:
-            cid = v.get("collection_id") or "default"
-            if cid not in team_map:
-                team_map[cid] = _safe_rows(
-                    conn,
-                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
-                    (cid,),
-                )
         # Documents with pending sections (for the Documents tab).
         pending_docs = _safe_rows(
             conn,
@@ -448,7 +486,7 @@ def review():
             if cid not in team_map:
                 team_map[cid] = _safe_rows(
                     conn,
-                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = %s ORDER BY role DESC, user_id",
                     (cid,),
                 )
         for pd in pending_docs:
@@ -456,7 +494,7 @@ def review():
             if cid not in team_map:
                 team_map[cid] = _safe_rows(
                     conn,
-                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = ? ORDER BY role DESC, user_id",
+                    "SELECT user_id, role FROM dic_team_access WHERE collection_id = %s ORDER BY role DESC, user_id",
                     (cid,),
                 )
         # Load latest review note per item.
@@ -496,7 +534,7 @@ def review():
 
 # Template defaults for query prefill when arriving from /templates.
 _TEMPLATE_DEFAULTS = {
-    "acoic": "ACOIC drift → impacted document regeneration → NIST 800-53 re-map",
+    "acoic": "DocDrift — drift → impacted document regeneration → NIST 800-53 re-map",
     "freshness-audit": "Document freshness audit — identify stale documents and remediation plan",
     "airgap-ingest": "Air-gap ingest pipeline — ingest local documents with zero cloud calls",
     "hitl-review": "HITL review queue — surface AI-generated drafts for human review",
@@ -517,26 +555,98 @@ def generate():
     )
 
 
-@dic_bp.route("/acoic")
-def acoic():
-    conn = _conn()
+def _docdrift_topologies() -> list[dict]:
+    """Topologies + whether each has a saved baseline, for the DocDrift controls.
+
+    Network drift can only be detected against a baseline, so the picker must
+    show which topologies are actually ready. Degrades to [] when the NDC
+    database is unreachable — a disabled control beats a 500.
+    """
     try:
-        drift_events = _safe_rows(conn, "SELECT source, entity, severity, detected_at FROM dic_drift_events ORDER BY detected_at DESC LIMIT 50")
-        regen_queue = _safe_rows(conn, "SELECT document_id, impact_level, state, queued_at FROM dic_acoic_regen_queue ORDER BY queued_at DESC LIMIT 50")
-        ssp_fragments = _safe_rows(conn, "SELECT control_id, document_id, status FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT 50")
-    finally:
-        conn.close()
-    return render_template("document_intelligence/acoic.html", drift_events=drift_events, regen_queue=regen_queue, ssp_fragments=ssp_fragments)
+        from tools.network.db.init_db import get_connection as ndc_conn
+        conn = ndc_conn()
+        try:
+            rows = conn.execute(
+                "SELECT t.id, t.name, "
+                "  (SELECT COUNT(*) FROM nc_versions v WHERE v.topology_id = t.id) AS versions "
+                "FROM topologies t ORDER BY t.name LIMIT 100"
+            ).fetchall()
+        finally:
+            conn.close()
+        return [
+            {
+                "id": d["id"],
+                "name": d["name"],
+                "has_baseline": bool(d.get("versions") or 0),
+            }
+            for d in (dict(r) for r in rows)
+        ]
+    except Exception as exc:
+        logger.warning("dic: docdrift topology list unavailable: %s", exc)
+        return []
 
 
-@dic_bp.route("/finetune")
-def finetune():
-    return render_template("document_intelligence/finetune.html", local_providers=_LOCAL_PROVIDERS)
+@dic_bp.route("/docdrift")
+def docdrift():
+    # acoic owns these three tables, and acoic.get_acoic_page_context() exists to
+    # bundle exactly the three lists this template renders — its docstring even
+    # spells out this call. The route re-queried them inline anyway, so the
+    # column list lived in two places and could drift from the module that owns
+    # the schema.
+    #
+    # The helper is also strictly safer: its _rows() calls _ensure_schema first,
+    # so a fresh database renders instead of relying on _safe_rows swallowing
+    # "no such table" into an empty list — the failure mode that had /analytics
+    # telling operators they had no documents. It returns supersets of what the
+    # inline queries selected (regen adds item_id; fragments add fragment_id,
+    # verified, ai_labeled), so the template gains fields and loses none.
+    from tools.document_intelligence import acoic
+
+    page = acoic.get_acoic_page_context()
+    drift_events = page["drift_events"]
+    regen_queue = page["regen_queue"]
+    ssp_fragments = page["ssp_fragments"]
+    topologies = _docdrift_topologies()
+    return render_template(
+        "document_intelligence/docdrift.html",
+        drift_events=drift_events,
+        regen_queue=regen_queue,
+        ssp_fragments=ssp_fragments,
+        topologies=topologies,
+        baselines_saved=sum(1 for t in topologies if t["has_baseline"]),
+    )
 
 
-@dic_bp.route("/snippets")
-def snippets():
-    return render_template("document_intelligence/snippets.html", snippets=_SNIPPETS)
+@dic_bp.route("/acoic")
+def acoic_legacy_redirect():
+    """The page was called ACOIC until it stopped being network-only.
+
+    Kept as a permanent redirect rather than deleted: the old path is in
+    bookmarks, kanban card descriptions (dic-acoic-01/02) and docs, and a 404
+    would read as "the feature is gone" rather than "it was renamed".
+    """
+    return redirect(url_for("dic.docdrift"), code=301)
+
+
+@dic_bp.route("/api/docdrift/drift-check", methods=["POST"])
+def api_docdrift_drift_check():
+    """Run the real NDC->DocDrift drift check on demand.
+
+    Same code path as the ndc_topology_drift reflex — this is not a demo or
+    seed button. It records nothing unless genuine drift is found, and reports
+    baselines_missing when a topology has no saved version to diff against.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        from tools.genesis.reflexes.ndc_topology_drift import run as _drift_run
+        result = _drift_run({
+            "dry_run": bool(data.get("dry_run", False)),
+            "topology_ids": [t for t in (data.get("topology_ids") or []) if t],
+        })
+    except Exception as exc:
+        logger.warning("dic: docdrift drift-check failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
 
 
 @dic_bp.route("/templates")
@@ -550,16 +660,39 @@ def templates_page():
 def techwriter():
     """Tech Writer Workspace — template picker + list of active drafts."""
     tenant_id, classification = _security_context()
+    current_user = _current_user()
     conn = _conn()
     try:
+        # docmod-ux-04: enrich with freshness state, latest-version review
+        # status/assignee, last approval date, and pending-suggestion counts.
         active_docs = _safe_rows(
             conn,
-            "SELECT doc_id, title, template_type, writeguard_mode, created_at "
-            "FROM dic_documents "
-            "WHERE tenant_id = %s AND template_type IS NOT NULL "
-            "ORDER BY created_at DESC LIMIT 50",
+            "SELECT d.doc_id, d.title, d.template_type, d.writeguard_mode, d.created_at, "
+            "  f.state AS freshness_state, "
+            "  (SELECT v.status FROM dic_versions v WHERE v.doc_id = d.doc_id "
+            "     ORDER BY v.version_no DESC LIMIT 1) AS review_status, "
+            "  (SELECT v.assigned_to FROM dic_versions v WHERE v.doc_id = d.doc_id "
+            "     ORDER BY v.version_no DESC LIMIT 1) AS assigned_to, "
+            "  (SELECT v.created_at FROM dic_versions v WHERE v.doc_id = d.doc_id "
+            "     AND v.status = 'approved' ORDER BY v.version_no DESC LIMIT 1) AS last_approved, "
+            "  (SELECT COUNT(*) FROM dic_suggestions sg WHERE sg.doc_id = d.doc_id "
+            "     AND sg.status = 'pending') AS pending_suggestions "
+            "FROM dic_documents d "
+            "LEFT JOIN dic_doc_freshness f ON f.doc_id = d.doc_id "
+            "WHERE d.tenant_id = %s AND d.template_type IS NOT NULL "
+            "ORDER BY d.created_at DESC LIMIT 50",
             (tenant_id,),
         )
+        if not active_docs:
+            # Graceful degradation when the join tables don't exist yet.
+            active_docs = _safe_rows(
+                conn,
+                "SELECT doc_id, title, template_type, writeguard_mode, created_at "
+                "FROM dic_documents "
+                "WHERE tenant_id = %s AND template_type IS NOT NULL "
+                "ORDER BY created_at DESC LIMIT 50",
+                (tenant_id,),
+            )
     finally:
         conn.close()
     from tools.document_intelligence.constants import (
@@ -573,6 +706,7 @@ def techwriter():
         template_types=TEMPLATE_TYPES,
         type_to_mode=TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
         tw_templates=tw_templates,
+        current_user=current_user,
         pages=_PAGES,
     )
 
@@ -630,6 +764,12 @@ def api_techwriter_research():
             "is_airgap": result.is_airgap,
             "warnings": result.warnings,
             "error": result.error,
+            # TRUST: the draft's [source: N] tags resolve against this register,
+            # and citation_report says whether they actually do. Returned in full
+            # (not truncated like rag_chunks) — a citation the caller cannot
+            # resolve is not a citation.
+            "sources": result.sources,
+            "citation_report": result.citation_report,
         })
     except Exception as exc:
         logger.warning("dic: techwriter/research error: %s", exc)
@@ -667,17 +807,69 @@ def api_techwriter_diagram():
         return jsonify({"error": str(exc)}), 500
 
 
+def _split_generated_doc(final_doc_text: str, template_headings: list[str]) -> list[tuple[str, str]]:
+    """Split docgen final_doc_text on the '## ' headings api_generate emits and
+    map the pieces onto the target template's section headings.
+
+    Returns ordered (heading, content) pairs: template headings first (fuzzy-
+    matched content or empty stub), then any unmatched generated sections —
+    content is never dropped in favour of template purity.
+    """
+    import difflib
+    import re
+
+    pieces: list[tuple[str, str]] = []
+    current_heading, buf = None, []
+    for line in (final_doc_text or "").splitlines():
+        m = re.match(r"^##\s+(.+?)\s*$", line)
+        if m:
+            if current_heading is not None:
+                pieces.append((current_heading, "\n".join(buf).strip()))
+            current_heading, buf = m.group(1).strip(), []
+        elif current_heading is not None:
+            buf.append(line)
+    if current_heading is not None:
+        pieces.append((current_heading, "\n".join(buf).strip()))
+
+    norm = lambda s: re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+    generated = {norm(h): (h, c) for h, c in pieces}
+    consumed: set[str] = set()
+
+    ordered: list[tuple[str, str]] = []
+    for th in template_headings:
+        match = difflib.get_close_matches(norm(th), list(generated), n=1, cutoff=0.6)
+        if match and match[0] not in consumed:
+            consumed.add(match[0])
+            ordered.append((th, generated[match[0]][1]))
+        else:
+            ordered.append((th, ""))
+    for key, (h, c) in generated.items():
+        if key not in consumed:
+            ordered.append((h, c))
+    return ordered
+
+
 @dic_bp.route("/api/import-from-docgen", methods=["POST"])
 def api_import_from_docgen():
-    """POST — create a DIC tech-writer document seeded from a docgen session.
+    """POST — open a docgen session's document in the Tech Writer.
 
-    Body: {session_id, title, template_type, classification}
-    Returns: {doc_id, collection_id, template_type, writeguard_mode}
+    Body: {session_id, title?, template_type?, classification?}
+    Returns: {doc_id, collection_id, template_type, writeguard_mode, path}
 
-    Docgen → Tech Writer bridge: imports docgen session metadata and creates a
-    pre-seeded DIC document with the matching template type and sections.
+    Path A (preferred): the session already carries dic_doc_id — the document
+    generation created. Tag it with the Tech Writer template and return it;
+    sections, citations, origin and review status are already correct.
+
+    Path B (legacy sessions): rebuild sections from final_doc_text, preserving
+    the generated content and citations, as origin='ai_generated' /
+    status='pending_review' so the doc enters the review queue.
+
+    Fallback (no session text at all): empty human_authored scaffold from
+    _TEMPLATE_SECTIONS (previous behaviour, minus the wrong 'approved' AI doc).
     """
     from tools.document_intelligence.constants import (
+        DOCGEN_DEFAULT_TEMPLATE,
+        DOCGEN_DOCTYPE_TO_TEMPLATE,
         TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
         TEMPLATE_TYPES,
     )
@@ -685,69 +877,173 @@ def api_import_from_docgen():
     body = request.get_json(silent=True) or {}
     session_id = (body.get("session_id") or "").strip()
     title = (body.get("title") or "Untitled").strip()
-    template_type = (body.get("template_type") or "ARCH_SYSTEM").strip().upper()
     classification = (body.get("classification") or "CUI").strip()
 
+    session = None
+    if session_id:
+        try:
+            from tools.docgen import session_manager as _sm
+            session = _sm.get_session(session_id)
+        except Exception as exc:  # docgen unavailable — degrade to scaffold path
+            logger.warning("dic: import-from-docgen session lookup failed: %s", exc)
+
+    # Server-side template resolution (client map removed): explicit override
+    # wins, else the session's doc_type maps through the shared constant.
+    template_type = (body.get("template_type") or "").strip().upper()
+    if not template_type and session:
+        template_type = DOCGEN_DOCTYPE_TO_TEMPLATE.get(
+            (session.get("doc_type") or "").lower(), DOCGEN_DEFAULT_TEMPLATE
+        )
+    template_type = template_type or DOCGEN_DEFAULT_TEMPLATE
     if template_type not in TEMPLATE_TYPES:
         return jsonify({"error": f"Invalid template_type: {template_type}"}), 400
 
     tenant_id, _ = _security_context()
     writeguard_mode = TEMPLATE_TYPE_TO_WRITEGUARD_MODE.get(template_type, "default")
+    wg_result_id = (session or {}).get("wg_result_id")
 
     try:
         conn = _conn()
-        # Create a new collection for this import if no matching one exists
         import uuid as _uuid
-        doc_id = str(_uuid.uuid4())
-        collection_id = f"docgen-import-{session_id[:8]}" if session_id else str(_uuid.uuid4())[:8]
+        now = _now()
 
-        # Ensure the collection exists (upsert-style: ignore if duplicate)
-        try:
-            conn.execute(
-                """INSERT INTO dic_collections
-                   (collection_id, name, tenant_id, classification, created_at)
-                   VALUES (%s,%s,%s,%s,NOW())
-                   ON CONFLICT (collection_id) DO NOTHING""",
-                (collection_id, f"Docgen Import — {title[:60]}", tenant_id, classification),
-            )
-        except Exception:
-            pass  # collection already exists or ON CONFLICT not supported
+        # ── Path A: reuse the document generation already created ────────────
+        dic_doc_id = (session or {}).get("dic_doc_id")
+        if dic_doc_id:
+            row = conn.execute(
+                "SELECT doc_id, collection_id FROM dic_documents WHERE doc_id = %s",
+                (dic_doc_id,),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    """UPDATE dic_documents
+                       SET template_type = %s, writeguard_mode = %s,
+                           source_idr_session_id = %s, source_wg_result_id = %s
+                       WHERE doc_id = %s""",
+                    (template_type, writeguard_mode, session_id, wg_result_id, dic_doc_id),
+                )
+                conn.commit() if hasattr(conn, "commit") else None
+                logger.info(
+                    "dic: import-from-docgen path=A doc_id=%s template=%s", dic_doc_id, template_type
+                )
+                return jsonify({
+                    "doc_id": dic_doc_id,
+                    "collection_id": dict(row).get("collection_id"),
+                    "template_type": template_type,
+                    "writeguard_mode": writeguard_mode,
+                    "path": "reused_generated_doc",
+                })
+
+        # ── Paths B / fallback: build a document ──────────────────────────────
+        doc_id = str(_uuid.uuid4())
+        collection_id = (session or {}).get("dic_collection_id") or (
+            f"docgen-import-{session_id[:8]}" if session_id else str(_uuid.uuid4())[:8]
+        )
+        # This was the only get-or-create in the codebase; it is now the shared
+        # helper so every ingestion path gets the same guarantee. The `except:
+        # pass` it replaces was itself a latent PostgreSQL bug — a failed
+        # statement poisons the transaction, so a swallowed error here would
+        # resurface as an unrelated "transaction is aborted" on the INSERT below.
+        ensure_collection(
+            conn,
+            collection_id,
+            name=f"Docgen Import — {title[:60]}",
+            tenant_id=tenant_id,
+            classification=classification,
+        )
+
+        final_doc_text = (session or {}).get("final_doc_text") or ""
+        ai_content = bool(final_doc_text.strip())
+        origin = "ai_generated" if ai_content else "human_authored"
+        status = "pending_review" if ai_content else "approved"
 
         conn.execute(
             """INSERT INTO dic_documents
                (doc_id, collection_id, title, filename, status, origin,
-                classification, template_type, writeguard_mode, tenant_id, created_at)
-               VALUES (%s,%s,%s,%s,'approved','human_authored',%s,%s,%s,%s,NOW())""",
+                classification, template_type, writeguard_mode,
+                source_idr_session_id, source_wg_result_id, tenant_id, created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 doc_id,
                 collection_id,
                 title,
                 f"docgen-{session_id[:8]}.doc" if session_id else "imported.doc",
+                status,
+                origin,
                 classification,
                 template_type,
                 writeguard_mode,
+                session_id or None,
+                wg_result_id,
                 tenant_id,
+                now,
             ),
         )
 
-        # Seed sections from _TEMPLATE_SECTIONS
-        sections = _TEMPLATE_SECTIONS.get(template_type, [])
-        for i, heading in enumerate(sections):
-            s_id = str(_uuid.uuid4())
+        # Every document needs a version row (dic_sections.version_id is NOT NULL —
+        # the previous scaffold insert violated this).
+        version_id = f"{doc_id}_v1"
+        conn.execute(
+            """INSERT INTO dic_versions
+               (version_id, doc_id, version_no, origin, status, created_at, created_by,
+                tenant_id, classification)
+               VALUES (%s,%s,1,%s,%s,%s,%s,%s,%s)""",
+            (version_id, doc_id, origin, status, now, "docgen_bridge", tenant_id, classification),
+        )
+
+        template_headings = _TEMPLATE_SECTIONS.get(template_type, ["Overview"])
+        if ai_content:
+            section_pairs = _split_generated_doc(final_doc_text, template_headings)
+        else:
+            section_pairs = [(h, "") for h in template_headings]
+
+        # TRUST: scrub leaked CoT/CoD scaffolding before persisting, exactly as
+        # doc_generator does on its own write path (doc_generator.py:933). This
+        # bridge is a SECOND path into dic_sections and did not scrub, so model
+        # reasoning ("Step 1: Analyze the Source Material...") was being stored
+        # verbatim as published document content. A live audit found it in 20 of
+        # 49 AI-authored sections.
+        if ai_content:
+            from tools.document_intelligence.doc_generator import (
+                _strip_reasoning_artifacts,
+            )
+            section_pairs = [
+                (h, _strip_reasoning_artifacts(c) if c else c) for h, c in section_pairs
+            ]
+
+        for i, (heading, content) in enumerate(section_pairs):
+            # section_id carries a sortable index — section listings ORDER BY section_id.
+            s_id = f"{doc_id[:8]}-s{i:03d}-{_uuid.uuid4().hex[:8]}"
             conn.execute(
                 """INSERT INTO dic_sections
-                   (section_id, doc_id, heading, content, section_order, status, created_at)
-                   VALUES (%s,%s,%s,%s,%s,'draft',NOW())""",
-                (s_id, doc_id, heading, "", i),
+                   (section_id, version_id, doc_id, heading, content,
+                    status, origin, created_at, tenant_id, classification)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    s_id,
+                    version_id,
+                    doc_id,
+                    heading,
+                    content,
+                    "pending_review" if (ai_content and content) else "draft",
+                    origin if content else "human_authored",
+                    now,
+                    tenant_id,
+                    classification,
+                ),
             )
 
         conn.commit() if hasattr(conn, "commit") else None
-        logger.info("dic: import-from-docgen → doc_id=%s template=%s", doc_id, template_type)
+        logger.info(
+            "dic: import-from-docgen path=%s doc_id=%s template=%s sections=%d",
+            "B" if ai_content else "scaffold", doc_id, template_type, len(section_pairs),
+        )
         return jsonify({
             "doc_id": doc_id,
             "collection_id": collection_id,
             "template_type": template_type,
             "writeguard_mode": writeguard_mode,
+            "path": "rebuilt_from_text" if ai_content else "empty_scaffold",
         })
     except Exception as exc:
         logger.warning("dic: import-from-docgen error: %s", exc)
@@ -780,7 +1076,20 @@ def explorer():
     except Exception as exc:
         logger.warning("dic: explorer error: %s", exc)
         findings = []
-    return render_template("document_intelligence/explorer.html", findings=findings)
+    # GraphRAG themes: the community summaries, grouped by collection, for browsing
+    # the thematic structure of the corpus alongside the buried-bodies findings.
+    themes = []
+    try:
+        from tools.knowledge_graph.community_engine import themes_by_collection
+
+        conn = _conn()
+        try:
+            themes = themes_by_collection(conn, tenant_id=tenant_id)
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 — themes are best-effort; findings still render
+        logger.debug("dic: explorer themes unavailable: %s", exc)
+    return render_template("document_intelligence/explorer.html", findings=findings, themes=themes)
 
 
 @dic_bp.route("/handoff")
@@ -792,7 +1101,7 @@ def handoff():
             conn,
             "SELECT session_id, departing_owner_id, successor_owner_id, dest_collection_id, title, status, "
             "agenda_count, answered_count, generated_count, orphan_count, created_at "
-            "FROM dic_handoff_sessions WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            "FROM dic_handoff_sessions WHERE tenant_id = %s ORDER BY created_at DESC LIMIT 50",
             (tenant_id,),
         )
     except Exception as exc:
@@ -842,8 +1151,8 @@ def api_ingest():
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("api_ingest: best-effort INSERT into dic_ingest_jobs failed (non-blocking): %s", _exc)
 
     def _run():
         outcome = None
@@ -888,6 +1197,19 @@ def api_ingest():
                     "chunks": outcome.chunks,
                     "errors": outcome.errors,
                 }
+            # Preserve the uploaded filename — ingest_file only sees the temp
+            # path, which otherwise lands as e.g. 'tmp9x41vmaz.txt'.
+            try:
+                c = _conn()
+                c.execute(
+                    "UPDATE dic_documents SET filename = %s, "
+                    "title = COALESCE(NULLIF(title, ''), %s) WHERE doc_id = %s",
+                    (filename, Path(filename).stem, outcome.doc_id),
+                )
+                c.commit()
+                c.close()
+            except Exception as exc:
+                logger.warning("dic: filename restore failed: %s", exc)
             # Best-effort DB update (may fail if INSERT never succeeded).
             try:
                 c = _conn()
@@ -944,7 +1266,7 @@ def api_ingest_stream(job_id: str):
         # Job may have already completed — check DB.
         conn = _conn()
         try:
-            row = _safe_rows(conn, "SELECT status, stage_detail, chunks_total, doc_id FROM dic_ingest_jobs WHERE job_id=?", (job_id,))
+            row = _safe_rows(conn, "SELECT status, stage_detail, chunks_total, doc_id FROM dic_ingest_jobs WHERE job_id=%s", (job_id,))
         finally:
             conn.close()
         if row:
@@ -997,7 +1319,7 @@ def api_ingest_result(job_id: str):
     # DB fallback (previous server instances).
     conn = _conn()
     try:
-        rows = _safe_rows(conn, "SELECT * FROM dic_ingest_jobs WHERE job_id=?", (job_id,))
+        rows = _safe_rows(conn, "SELECT * FROM dic_ingest_jobs WHERE job_id=%s", (job_id,))
     finally:
         conn.close()
     if not rows:
@@ -1039,7 +1361,7 @@ def api_kg_explore():
             f"{alias}.source_chunk_id IN ("
             f"SELECT l.rag_chunk_id FROM dic_chunk_links l "
             f"JOIN dic_documents d ON d.doc_id = l.doc_id "
-            f"WHERE d.collection_id = ?)"
+            f"WHERE d.collection_id = %s)"
         )
         return sql, [collection_id]
 
@@ -1084,24 +1406,24 @@ def api_kg_explore():
                 clauses.append(cc_sql)
                 params.extend(cc_params)
             if label:
-                clauses.append("LOWER(n.label) LIKE LOWER(?)")
+                clauses.append("LOWER(n.label) LIKE LOWER(%s)")
                 params.append(f"%{label}%")
             if entity_type:
-                clauses.append("n.entity_type = ?")
+                clauses.append("n.entity_type = %s")
                 params.append(entity_type)
             if clauses:
                 sql += " WHERE " + " AND ".join(clauses)
-            sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+            sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT %s"
             params.append(limit)
             rows = _safe_rows(conn, sql, tuple(params))
             if not rows and query_text and collection_id:
                 chunk_ids = _chunk_ids_for_query(query_text, collection_id)[:50]
                 if chunk_ids:
-                    ph = ",".join("?" * len(chunk_ids))
+                    ph = ",".join("%s" * len(chunk_ids))
                     fallback_sql = (
                         "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id "
                         f"FROM kg_nodes n WHERE n.source_chunk_id IN ({ph}) "
-                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT %s"
                     )
                     rows = _safe_rows(
                         conn,
@@ -1127,9 +1449,9 @@ def api_kg_explore():
                 "FROM kg_edges e "
                 "JOIN kg_nodes src ON src.id = e.source_id "
                 "JOIN kg_nodes tgt ON tgt.id = e.target_id "
-                "WHERE (LOWER(src.label) LIKE LOWER(?) OR LOWER(tgt.label) LIKE LOWER(?)) "
+                "WHERE (LOWER(src.label) LIKE LOWER(%s) OR LOWER(tgt.label) LIKE LOWER(%s)) "
                 + collection_clause +
-                "ORDER BY e.weight DESC LIMIT ?",
+                "ORDER BY e.weight DESC LIMIT %s",
                 tuple(params),
             )
             return jsonify({"relationships": rows, "count": len(rows)})
@@ -1150,22 +1472,22 @@ def api_kg_explore():
                 clauses.append(
                     "n.source_chunk_id IN ("
                     "SELECT l.rag_chunk_id FROM dic_chunk_links l "
-                    "WHERE l.doc_id = ?)"
+                    "WHERE l.doc_id = %s)"
                 )
                 node_params.append(doc_id)
             if clauses:
                 node_sql += " WHERE " + " AND ".join(clauses)
-            node_sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+            node_sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT %s"
             node_params.append(limit)
             nodes = _safe_rows(conn, node_sql, tuple(node_params))
             if not nodes and graph_query and collection_id and not doc_id:
                 chunk_ids = _chunk_ids_for_query(graph_query, collection_id)[:50]
                 if chunk_ids:
-                    ph = ",".join("?" * len(chunk_ids))
+                    ph = ",".join("%s" * len(chunk_ids))
                     fallback_sql = (
                         "SELECT n.id, n.label, n.entity_type, n.centrality "
                         f"FROM kg_nodes n WHERE n.source_chunk_id IN ({ph}) "
-                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT %s"
                     )
                     nodes = _safe_rows(
                         conn,
@@ -1175,13 +1497,13 @@ def api_kg_explore():
             node_ids = [n["id"] for n in nodes]
             if not node_ids:
                 return jsonify({"nodes": [], "edges": [], "count": 0})
-            ph = ",".join("?" * len(node_ids))
+            ph = ",".join("%s" * len(node_ids))
             edges = _safe_rows(
                 conn,
                 f"SELECT e.source_id, e.target_id, e.relationship, e.weight "
                 f"FROM kg_edges e "
                 f"WHERE e.source_id IN ({ph}) AND e.target_id IN ({ph}) "
-                f"ORDER BY e.weight DESC LIMIT ?",
+                f"ORDER BY e.weight DESC LIMIT %s",
                 tuple(node_ids + node_ids + [min(limit, 80)]),
             )
             return jsonify({"nodes": nodes, "edges": edges, "count": len(nodes)})
@@ -1198,7 +1520,7 @@ def api_kg_explore():
             node_rows = _safe_rows(
                 conn,
                 "SELECT id, label, entity_type FROM kg_nodes "
-                "WHERE LOWER(label) LIKE LOWER(?)" + collection_clause + " LIMIT 1",
+                "WHERE LOWER(label) LIKE LOWER(%s)" + collection_clause + " LIMIT 1",
                 tuple(node_params),
             )
             if not node_rows:
@@ -1216,9 +1538,9 @@ def api_kg_explore():
                 "SELECT DISTINCT n.label, n.entity_type, e.relationship, e.weight "
                 "FROM kg_edges e "
                 "JOIN kg_nodes n ON (n.id = e.target_id OR n.id = e.source_id) "
-                "WHERE (e.source_id = ? OR e.target_id = ?) AND n.id != ? "
+                "WHERE (e.source_id = %s OR e.target_id = %s) AND n.id != %s "
                 + collection_clause +
-                "ORDER BY e.weight DESC LIMIT ?",
+                "ORDER BY e.weight DESC LIMIT %s",
                 tuple(neighbor_params),
             )
             return jsonify({
@@ -1572,6 +1894,45 @@ def _needs_synthesis(query: str) -> bool:
     return any(kw in q for kw in _SYNTHESIS_KEYWORDS)
 
 
+# Global/thematic questions are about the corpus AS A WHOLE ("what are the main
+# themes", "what topics do these documents cover"). No single chunk answers them
+# — the answer lives in the KG's community structure. These queries get the
+# GraphRAG community summaries fed into synthesis alongside the retrieved chunks.
+_GLOBAL_QUERY_KEYWORDS = frozenset([
+    "main theme", "main topic", "key theme", "key topic", "overall", "overarching",
+    "across all", "across the", "these documents", "this collection", "the corpus",
+    "main points", "high level", "high-level", "big picture", "recurring",
+    "what topics", "what themes", "common themes", "overview of",
+])
+
+
+def _is_global_query(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _GLOBAL_QUERY_KEYWORDS)
+
+
+def _community_context(message: str, tenant_id: str, limit: int = 5, collection_id: str | None = None) -> list[str]:
+    """GraphRAG community summaries relevant to a global/thematic question.
+
+    Scoped to the active collection when one is given, so "the main themes" means
+    the collection the user is in. Returns summary texts (whole-corpus themes) or
+    [] if the engine/table is empty or unavailable — always graceful, never
+    blocks the grounded answer.
+    """
+    try:
+        from tools.knowledge_graph.community_engine import search_communities
+
+        conn = _conn()
+        try:
+            rows = search_communities(conn, message, tenant_id=tenant_id, limit=limit, collection_id=collection_id)
+        finally:
+            conn.close()
+        return [r["summary_text"] for r in rows if r.get("summary_text")]
+    except Exception as exc:  # noqa: BLE001 — GraphRAG augmentation is best-effort
+        logger.debug("dic: community context unavailable: %s", exc)
+        return []
+
+
 def _build_sources(results: list) -> list[dict]:
     """Build a numbered, human-readable source list for chat citations.
 
@@ -1621,54 +1982,229 @@ def _compile_grounded_answer(results: list, query: str) -> dict:
     return {"answer": answer, "sources": sources}
 
 
-def _llm_synthesize(message: str, results: list) -> str | None:
+#: DIC chat's own citation dialect: a bare ``[3]`` ordinal.
+#:
+#: `_llm_synthesize` instructs the model to "cite supporting facts with [N]
+#: markers", but `citation_grounding.parse_citations` recognises only
+#: `[source: ...]` and `[SOURCE-N]` — so chat citations returned []. They have
+#: never been machine-checkable by the TRUST module.
+#:
+#: Normalised HERE rather than by widening the shared parser: a global bare-[N]
+#: rule would also match markdown footnotes, array indices and enumerated list
+#: references in every other drafting surface, trading a silent miss for silent
+#: false positives. Bounded to 1-2 digits, since evidence sets are capped at 5.
+_CHAT_ORDINAL_CITE_RE = re.compile(r"\[(\d{1,2})\]")
+
+
+def _normalise_chat_citations(text: str) -> str:
+    """Rewrite DIC chat's ``[N]`` markers into the shared ``[SOURCE-N]`` form."""
+    return _CHAT_ORDINAL_CITE_RE.sub(lambda m: f"[SOURCE-{m.group(1)}]", text or "")
+
+
+def _claim_grounding(answer: str, results: list) -> dict | None:
+    """Per-claim grounding report for a chat answer, or None if unavailable.
+
+    Binds every claim to the span of the cited source that supports it
+    (token-F1 window) and checks that each concrete anchor — numbers, dates,
+    proper nouns — actually appears in that span. Deterministic: no LLM, so it
+    behaves identically air-gapped, which is the whole point of the
+    ``judge=None`` path in ``ground_claims``.
+
+    Source ids are keyed BOTH by chunk id and by the ``[N]`` ordinal the
+    synthesis prompt tells the model to emit, because DIC chat answers cite
+    ``[1]`` while ``citations_json`` records chunk ids. Keying only one way
+    would report every claim as citing an unavailable source.
+
+    Best-effort by design — a grounding failure must not cost the user their
+    answer, so this returns None and the caller simply omits the field.
+    """
+    try:
+        from tools.quality.citation_grounding import ground_claims
+
+        sources = _chat_claim_sources(results)
+        if not sources:
+            return None
+        return ground_claims(_normalise_chat_citations(answer), sources)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: claim grounding unavailable: %s", exc)
+        return None
+
+
+def _chat_claim_sources(results: list) -> dict:
+    """``source_id -> text`` for a chat answer, keyed both ways.
+
+    Keyed BOTH by chunk id and by the ``[N]`` ordinal the synthesis prompt tells
+    the model to emit, because DIC chat answers cite ``[1]`` while
+    ``citations_json`` records chunk ids. Keying only one way would report every
+    claim as citing an unavailable source.
+    """
+    sources: dict = {}
+    for i, r in enumerate(results[:5], start=1):
+        content = getattr(r, "content", "") or ""
+        if not content:
+            continue
+        sources[str(i)] = content                      # "[1]" ordinal form
+        cid = _r_attr(r, "chunk_id") or _r_attr(r, "id")
+        if cid:
+            sources[str(cid)] = content                # "[source: chunk X]"
+    return sources
+
+
+def _derivation_disclosure(answer: str, results: list) -> dict | None:
+    """Which spans of the answer are quoted, restated, or computed.
+
+    A cited answer presents all three identically today. The computed case is
+    the one that matters: a figure appearing in NO source still passes citation
+    validation, because the chunk it cites genuinely exists.
+
+    Deterministic — the model is never asked whether it quoted or computed
+    something, since a model that fabricated a number will equally happily
+    report that it quoted one (the D391 deterministic-picker rule).
+
+    Best-effort, like ``_claim_grounding``: a disclosure failure must not cost
+    the user their answer.
+    """
+    try:
+        from tools.quality.derivation import disclose_derivations
+
+        sources = _chat_claim_sources(results)
+        if not sources:
+            return None
+        return disclose_derivations(_normalise_chat_citations(answer), sources)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: derivation disclosure unavailable: %s", exc)
+        return None
+
+
+def _r_attr(obj, name):
+    """Read an attribute or mapping key off a heterogeneous result object."""
+    v = getattr(obj, name, None)
+    if v is None and isinstance(obj, dict):
+        v = obj.get(name)
+    return v
+
+
+#: Per-passage extract size. Unchanged from the original 1000 so a passage
+#: still reads as a focused quote rather than a wall; the budget now governs
+#: HOW MANY passages, which is where the old cap actually hurt.
+_PASSAGE_CHARS = 1000
+
+#: Floor on evidence passages, so even a tiny window gets something to cite.
+_MIN_EVIDENCE = 3
+
+#: Ceiling regardless of window. A 1M-token model could swallow the whole
+#: candidate set, but the retriever only ranks ~50 and precision falls off well
+#: before that — more evidence past this point buys noise and latency, not
+#: accuracy. Raise only with a measured recall@k curve behind it.
+_MAX_EVIDENCE = 25
+
+
+def _budgeted_evidence(results: list, message: str) -> tuple:
+    """Pick as many retrieved passages as the model's real window affords.
+
+    Returns ``(kept, dropped_count)``. Falls back to the historical fixed 5 on
+    any failure — a budgeting error must never cost the user their answer.
+    """
+    try:
+        from tools.llm.context_budget import available_input_tokens, estimate_tokens
+
+        budget = available_input_tokens(
+            "question_answering", question=message, reserved_output=1024,
+        )
+        kept, used = [], 0
+        for r in (results or [])[:_MAX_EVIDENCE]:
+            passage = _extract_passage(
+                getattr(r, "content", "") or "", message, max_chars=_PASSAGE_CHARS
+            )
+            cost = estimate_tokens(passage)
+            if len(kept) >= _MIN_EVIDENCE and used + cost > budget:
+                break
+            kept.append(r)
+            used += cost
+        if not kept:
+            kept = list((results or [])[:5])
+        return kept, max(len(results or []) - len(kept), 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dic: context budgeting unavailable, using fixed slice: %s", exc)
+        head = list((results or [])[:5])
+        return head, max(len(results or []) - len(head), 0)
+
+
+def _llm_synthesize(
+    message: str, results: list, community_summaries: list[str] | None = None
+) -> str | None:
     """Call LLM only when synthesis is warranted. Returns None on failure.
 
     Uses LLMRouter.invoke() with a system prompt instructing the model to answer
     only from the provided evidence — grounded, no hallucination. Cites sources
     with [N] markers that match the sources list returned by api_chat.
+
+    For global/thematic questions, ``community_summaries`` carries the GraphRAG
+    whole-corpus themes so the model can answer a question no single chunk covers.
     """
-    evidence_results = results[:5]
+    # Budget the evidence against the model's REAL window instead of a fixed
+    # results[:5] x 1000 chars (~1.2k tokens). The retriever already fetched 50
+    # candidates and the old slice discarded 45 of them before the model was
+    # asked — on a 200k-window model that threw away the answer to save nothing.
+    #
+    # Degrades safely: with no config the floor window applies and the pack is
+    # roughly the old size, so a small local model is not asked to swallow more
+    # than it can hold.
+    evidence_results, dropped_count = _budgeted_evidence(results, message)
     sources = _build_sources(evidence_results)
     source_map = {(s["doc_id"], s["page"]): s["num"] for s in sources}
     evidence_lines = []
     for r in evidence_results:
         num = source_map.get((r.doc_id, r.page), "?")
-        passage = _extract_passage(r.content or "", message, max_chars=1000)
+        passage = _extract_passage(r.content or "", message, max_chars=_PASSAGE_CHARS)
         evidence_lines.append(
             f"[{num}] {r.doc_title or r.doc_id or 'Document'} "
             f"(p.{r.page or '?'})\n{passage}"
         )
     evidence = "\n\n".join(evidence_lines)
+    if dropped_count:
+        # Never drop silently. The model is told what it is NOT seeing, so it
+        # cannot present a partial view as exhaustive.
+        evidence += (
+            f"\n\n[NOTE: {dropped_count} further retrieved passage(s) did not fit "
+            "the context budget and are not shown. Do not claim completeness.]"
+        )
+    graph_overview = ""
+    if community_summaries:
+        overview_lines = "\n".join(f"- {s}" for s in community_summaries[:5])
+        graph_overview = (
+            "\n\nKnowledge-graph thematic overview (themes spanning the whole "
+            "corpus, derived from the document graph — use these for high-level or "
+            "thematic questions the individual passages above do not cover):\n"
+            f"{overview_lines}"
+        )
     prompt = (
         "You are a document assistant. Answer ONLY using the provided evidence — "
         "do not add information beyond what is cited. "
         "Cite supporting facts with [N] markers that match the evidence numbers. "
         "If the evidence is insufficient, say so explicitly.\n\n"
-        f"Evidence:\n{evidence}\n\n"
+        f"Evidence:\n{evidence}{graph_overview}\n\n"
         f"Question: {message}"
     )
+    # Adoption wave 2: route DIC chat synthesis through the GOVERNED cortex.complete
+    # instead of a raw router.invoke. The raw path set skip_injection_scan=True on a
+    # prompt containing the user's `message` — Cortex's gateway pre-check screens it,
+    # and adds egress redaction, provenance, and an append-only audit row to this
+    # user-facing document-QA surface. No-LLM / errors fall through to None (the
+    # route degrades to the grounded RAG+KG evidence without synthesis).
     try:
-        for ns in ("icdev.tools.llm.router", "tools.llm.router"):
-            try:
-                import importlib
-                mod = importlib.import_module(ns)
-                LLMRequest = importlib.import_module(
-                    ns.replace("router", "provider")
-                ).LLMRequest
-                router = mod.LLMRouter()
-                if router.is_no_llm_mode():
-                    return None
-                req = LLMRequest(
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=1024,
-                    skip_injection_scan=True,
-                )
-                resp = router.invoke("question_answering", req)
-                if resp and getattr(resp, "content", None):
-                    return resp.content.strip() or None
-            except ImportError:
-                continue
+        from tools.cortex import api as cortex_api
+        from tools.cortex.schemas import CortexContext
+
+        cx = cortex_api.complete(
+            prompt,
+            function="question_answering",
+            ctx=CortexContext(
+                classification="CUI", domain="document", agent_id="dic-chat"
+            ),
+            max_tokens=1024,
+        )
+        return (cx.text or "").strip() or None
     except Exception as exc:
         logger.warning("dic: chat LLM error: %s", exc)
     return None
@@ -1697,19 +2233,60 @@ def api_chat():
     collection_id = data.get("collection_id")
     tenant_id, _cls = _security_context()
 
+    # Conversational memory (chat_memory): when enabled, resolve a bare follow-up
+    # ("and its retention period?") by prepending the prior turn's GROUNDED subject,
+    # so the existing grounded retrieval resolves it. Off => fully stateless.
+    from tools.document_intelligence import chat_memory as _cm
+    session_id = (data.get("session_id") or "").strip()
+    mem_on = _cm.memory_enabled(data)
+    resolved_subject = ""
+    search_message = message
+    if mem_on and session_id:
+        try:
+            _res = _cm.resolve_followup(session_id, message, tenant_id=tenant_id)
+            if _res.is_followup:
+                search_message = _res.resolved_query
+                resolved_subject = _res.subject
+        except Exception as _mexc:  # noqa: BLE001
+            logger.debug("dic chat memory resolve failed: %s", _mexc)
+
+    def _mem(payload: dict, answer: str = "", record_results=None) -> dict:
+        """Attach memory fields to a response payload and best-effort record the turn."""
+        payload["memory"] = mem_on
+        payload["resolved_subject"] = resolved_subject
+        # Report WHY memory is off. record_turn swallows write failures, so
+        # without this a broken table is indistinguishable from an idle one —
+        # which is how dic_chat_memory sat at 0 rows unnoticed.
+        if mem_on and session_id:
+            try:
+                payload["memory_health"] = _cm.memory_health()
+            except Exception:  # noqa: BLE001
+                payload["memory_health"] = {"available": False, "reason": "probe_failed"}
+        elif mem_on and not session_id:
+            payload["memory_health"] = {"available": False, "reason": "no_session_id"}
+        else:
+            payload["memory_health"] = {"available": False, "reason": "disabled"}
+        if mem_on and session_id and record_results:
+            try:
+                _cm.record_turn(session_id, message, answer, record_results,
+                                tenant_id=tenant_id, collection_id=collection_id or "")
+            except Exception as _rexc:  # noqa: BLE001
+                logger.warning("dic chat memory record failed: %s", _rexc)
+        return payload
+
     try:
         from tools.document_intelligence.search_engine import DICSearchEngine
         engine = DICSearchEngine(tenant_id=tenant_id)
-        results = engine.search(message, collection_id=collection_id, top_k=8)
+        results = engine.search(search_message, collection_id=collection_id, top_k=8)
 
         if not results:
-            return jsonify({
+            return jsonify(_mem({
                 "answer": "No relevant documents found in this collection. Upload documents first.",
                 "sources": [],
                 "citations": [],
                 "abstained": True,
                 "mode": "grounded",
-            })
+            }))
 
         citations = [r.citation.to_dict() for r in results[:5]]
         # Use a lexical match score that works in air-gap mode; raw vector/BM25
@@ -1726,13 +2303,26 @@ def api_chat():
         # ── Path 1: High-confidence direct lookup — NO LLM ──────────────────
         if best_result and top_match_score >= 0.7 and not _needs_synthesis(message):
             grounded = _compile_grounded_answer([best_result], message)
-            return jsonify({
+            # Disclose on THIS path too. It is the one that most often returns a
+            # near-verbatim extract, so "quoted vs restated" is exactly the
+            # distinction a reader needs here — and an answer surface that
+            # silently omits the disclosure is indistinguishable from one that
+            # checked and found nothing derived.
+            p1_derivation = _derivation_disclosure(grounded["answer"], [best_result])
+            return jsonify(_mem({
                 "answer": grounded["answer"],
                 "sources": grounded["sources"],
                 "citations": citations,
                 "abstained": False,
                 "mode": "grounded",
-            })
+                "derivation": p1_derivation,
+                "derivation_summary": {
+                    "counts": (p1_derivation or {}).get("counts", {}),
+                    "has_derived": (p1_derivation or {}).get("has_derived", False),
+                    "has_unexplained_numeric": (p1_derivation or {}).get(
+                        "has_unexplained_numeric", False),
+                } if p1_derivation else None,
+            }, answer=grounded["answer"], record_results=scored_results))
 
         # ── Path 2: Grounded answer from top chunks — NO LLM ────────────────
         grounded = _compile_grounded_answer(scored_results, message)
@@ -1742,31 +2332,79 @@ def api_chat():
         # ── Path 3: LLM synthesis if query warrants it ───────────────────────
         mode = "grounded"
         abstained = False
+        # Whether the verifier actually ran AND every cited claim held. The UI
+        # badge is driven from this — it must never assert verification that did
+        # not happen. The deterministic Path-2 answer is cited but unverified.
+        verified = False
+        # Per-claim grounding report (None when unavailable). Reporting only.
+        claim_report = None
 
         if _needs_synthesis(message):
-            llm_answer = _llm_synthesize(message, scored_results)
+            # Global/thematic questions get the GraphRAG community summaries fed in
+            # — the corpus-level answer no single chunk contains.
+            community_summaries = _community_context(message, tenant_id, collection_id=collection_id) if _is_global_query(message) else []
+            llm_answer = _llm_synthesize(message, scored_results, community_summaries=community_summaries)
             if llm_answer:
-                # Verify LLM answer against evidence before returning.
+                # Verify LLM answer against evidence before returning. Community
+                # summaries are part of the evidence for global questions.
                 try:
                     from tools.document_intelligence.verifier import verify
-                    vr = verify(llm_answer, [r.content for r in scored_results])
+                    vr = verify(llm_answer, [r.content for r in scored_results] + community_summaries)
                     if vr.abstained:
                         abstained = True
                         answer = grounded["answer"]  # fall back to grounded
                     else:
                         answer = vr.verified_text or llm_answer
-                        mode = "ai_assisted"
-                except Exception:
-                    answer = llm_answer
-                    mode = "ai_assisted"
+                        mode = "graphrag" if community_summaries else "ai_assisted"
+                    verified = vr.verified
+                    # Per-claim grounding (trust-halluc): bind each claim to the
+                    # SPAN of the source that supports it, so the UI can show
+                    # which words back which sentence instead of only "this
+                    # answer cites [1]". Deterministic — span F1 + anchor guard,
+                    # no LLM — so it runs on the air-gap path too.
+                    #
+                    # Reporting only. It does not gate the chat answer: a
+                    # corpus audit found 61% of AI-authored sections carry no
+                    # citation at all, so blocking here would reject most
+                    # content for a defect upstream in generation. The verdicts
+                    # make that visible; the approve gate is where it blocks.
+                    claim_report = _claim_grounding(answer, scored_results)
+                except Exception as verr:
+                    # Never publish an unverified draft as if it had passed. A
+                    # verifier failure means we do not know whether the answer is
+                    # grounded, so fall back to the deterministic cited answer and
+                    # say so. A bare `except` that returned `llm_answer` here is
+                    # what kept this gate silently dead.
+                    logger.warning("dic: verifier failed, falling back to grounded: %s", verr)
+                    abstained = True
+                    answer = grounded["answer"]
+                    mode = "grounded"
 
-        return jsonify({
+        # Computed on the FINAL answer, deliberately outside the LLM branch, so
+        # the grounded-fallback and abstention paths are disclosed too. An
+        # abstention that still surfaces a computed figure needs the same badge.
+        derivation_report = _derivation_disclosure(answer, scored_results)
+
+        return jsonify(_mem({
             "answer": answer,
             "sources": sources,
             "citations": citations,
             "abstained": abstained,
+            "verified": verified,
+            "derivation": derivation_report,
+            "derivation_summary": {
+                "counts": (derivation_report or {}).get("counts", {}),
+                "has_derived": (derivation_report or {}).get("has_derived", False),
+                "has_unexplained_numeric": (derivation_report or {}).get(
+                    "has_unexplained_numeric", False),
+            } if derivation_report else None,
+            "claims": (claim_report or {}).get("claims", []),
+            "claim_summary": {
+                k: (claim_report or {}).get(k, 0)
+                for k in ("supported", "partial", "unsupported", "uncited")
+            } if claim_report else None,
             "mode": mode,
-        })
+        }, answer=answer, record_results=scored_results))
     except Exception as exc:
         logger.warning("dic: chat error: %s", exc)
         return jsonify({"answer": f"Error: {exc}", "sources": [], "citations": [], "abstained": True, "mode": "grounded"}), 500
@@ -1779,7 +2417,7 @@ def api_collections_list():
     tenant_id, _ = _security_context()
     conn = _conn()
     try:
-        rows = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = ? ORDER BY created_at DESC", (tenant_id,))
+        rows = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = %s ORDER BY created_at DESC", (tenant_id,))
         return jsonify({"collections": rows})
     finally:
         conn.close()
@@ -1815,7 +2453,7 @@ def api_collections_create():
 def api_team_list(collection_id):
     conn = _conn()
     try:
-        members = _safe_rows(conn, "SELECT user_id, role, granted_by, created_at FROM dic_team_access WHERE collection_id = ? ORDER BY created_at DESC", (collection_id,))
+        members = _safe_rows(conn, "SELECT user_id, role, granted_by, created_at FROM dic_team_access WHERE collection_id = %s ORDER BY created_at DESC", (collection_id,))
         return jsonify({"members": members})
     finally:
         conn.close()
@@ -1857,7 +2495,7 @@ def api_collection_documents(collection_id):
             conn,
             "SELECT doc_id, collection_id, filename, title, content_type, provider, "
             "page_count, content_sha256, created_at, classification "
-            "FROM dic_documents WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC",
+            "FROM dic_documents WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC",
             (collection_id, tenant_id),
         )
         # Augment with latest version status and chunk count
@@ -1907,7 +2545,7 @@ def api_document_versions(doc_id):
             conn,
             "SELECT version_id, version_no, origin, status, assigned_to, "
             "created_at, created_by, content_sha256 "
-            "FROM dic_versions WHERE doc_id = ? ORDER BY version_no DESC",
+            "FROM dic_versions WHERE doc_id = %s ORDER BY version_no DESC",
             (doc_id,),
         )
         return jsonify({"doc_id": doc_id, "versions": versions})
@@ -1929,8 +2567,38 @@ def _record_review_note(item_id: str, item_type: str, note_text: str, reviewer_i
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_record_review_note: best-effort INSERT into dic_review_notes failed (non-blocking): %s", exc)
+
+
+def _record_publish_override(item_id: str, gate: str, findings: list,
+                             reviewer: str, tenant_id: str = "") -> None:
+    """Append a HITL force-override of a publish gate to ``idr_publish_audit``.
+
+    APPEND-ONLY (NIST AU) — never UPDATE or DELETE these rows; the table is
+    registered in ``APPEND_ONLY_TABLES`` in ``.claude/hooks/pre_tool_use.py``.
+    ``gate`` must be one of the values allowed by the table CHECK constraint:
+    ``citation_guard`` or ``placeholder_guard``.
+
+    Best-effort by design: an audit-write failure must not roll back an approval
+    the reviewer already authorised. It is logged at WARNING rather than
+    swallowed, because a silently missing audit row is the failure mode that
+    makes an override untraceable.
+    """
+    try:
+        conn = _conn()
+        audit_id = f"pub_{hashlib.sha256(f'{item_id}:{gate}:{_now()}'.encode()).hexdigest()[:16]}"
+        conn.execute(
+            "INSERT INTO idr_publish_audit (id, session_id, gate, reviewer, findings, tenant_id, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (audit_id, item_id, gate, reviewer,
+             json.dumps(findings, default=str)[:8000], tenant_id or "default", _now()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic approve: could not record %s override audit for %s: %s",
+                       gate, item_id, exc)
 
 
 @dic_bp.route("/api/review/<item_id>/assign", methods=["POST"])
@@ -2020,12 +2688,154 @@ def api_review_approve(item_id):
         cid = "default"
     if not _require_role(cid, "reviewer"):
         return _forbid("reviewer")
+    tenant_id, _cls = _security_context()
     conn = _conn()
     try:
+        resp = {"status": "approved", "item_id": item_id}
+        force_note = ""
         if item_type == "version":
+            # Publish gate (ground-dic-05): a version cannot move to approved
+            # while any section still contains unresolved [PLACEHOLDER] tokens,
+            # unless the reviewer explicitly forces the override.
+            force = bool(data.get("force"))
+            gate: dict = {}
+            try:
+                from tools.document_intelligence.consistency_checker import (
+                    check_version_consistency,
+                )
+                gate = check_version_consistency(item_id)
+            except Exception as exc:
+                logger.warning("dic approve: consistency gate error: %s", exc)
+            placeholder_hits = gate.get("placeholders") or []
+            numeric_conflicts = gate.get("numeric_conflicts") or []
+
+            # citation_guard (TRUST invariant): an AI-authored section may not be
+            # published while it makes uncited claims, or cites evidence that was
+            # never retrieved for it. Mirrors placeholder_guard above and the
+            # docmod regeneration gate — same findings shape, same force+audit
+            # override — so the two gates behave identically to a reviewer.
+            citation_gate_report: dict = {}
+            try:
+                from tools.document_intelligence.consistency_checker import (
+                    check_version_citations,
+                )
+                citation_gate_report = check_version_citations(item_id)
+            except Exception as exc:
+                logger.warning("dic approve: citation gate error: %s", exc)
+            citation_hits = citation_gate_report.get("findings") or []
+
+            if placeholder_hits and not force:
+                return jsonify({
+                    "error": "unresolved_placeholders",
+                    "message": (
+                        f"{len(placeholder_hits)} section(s) contain unresolved "
+                        "placeholder tokens. Resolve them or resubmit with "
+                        "force=true to override."
+                    ),
+                    "gate": "placeholder_guard",
+                    "placeholders": placeholder_hits,
+                    "numeric_conflicts": numeric_conflicts,
+                    "item_id": item_id,
+                }), 409
+            if citation_hits and not force:
+                missing = sum(1 for f in citation_hits if f.get("issue") == "missing_citations")
+                bad = sum(1 for f in citation_hits if f.get("issue") == "hallucinated_citation")
+                parts = []
+                if missing:
+                    parts.append(f"{missing} AI-authored section(s) make uncited claims")
+                if bad:
+                    parts.append(f"{bad} section(s) cite evidence that was never retrieved for them")
+                return jsonify({
+                    "error": "citation_defects",
+                    "gate": "citation_guard",
+                    "message": (
+                        f"{'; '.join(parts)}. Add citations or correct them, or "
+                        "resubmit with force=true to override (the override is audited)."
+                    ),
+                    "citation_findings": citation_hits,
+                    "ai_section_count": citation_gate_report.get("ai_section_count", 0),
+                    "item_id": item_id,
+                }), 409
+
+            # cove_guard (agx-verify-01) — third and last gate, opt-in because
+            # CoVe multiplies LLM calls per artifact. Runs only after the two
+            # cheap deterministic gates pass, so an expensive verification is
+            # never spent on a draft that was going to be rejected anyway.
+            cove_report: dict = {}
+            try:
+                from tools.document_intelligence.consistency_checker import (
+                    check_version_cove,
+                )
+                cove_report = check_version_cove(item_id, force=force)
+            except Exception as exc:
+                logger.warning("dic approve: cove gate error: %s", exc)
+            cove_hits = cove_report.get("findings") or []
+            if cove_report.get("blocked"):
+                return jsonify({
+                    "error": "cove_contradictions",
+                    "gate": "cove_guard",
+                    "message": (
+                        f"Chain-of-Verification flagged {len(cove_hits)} section(s) "
+                        "whose claims did not survive independent interrogation. "
+                        "Revise them, or resubmit with force=true to override "
+                        "(the override is audited)."
+                    ) if cove_hits else (
+                        "Chain-of-Verification could not run and this deployment "
+                        "is configured to fail closed "
+                        f"({cove_report.get('reason', '')}). Resubmit with "
+                        "force=true to override, or set "
+                        "ICDEV_DIC_COVE_ON_ERROR=warn."
+                    ),
+                    "cove_findings": cove_hits,
+                    "unrunnable": bool(cove_report.get("unrunnable")),
+                    "item_id": item_id,
+                }), 409
+            if cove_report.get("unrunnable"):
+                # Surfaced, never silent: a verification that did not run must
+                # not look like one that passed.
+                resp["cove_unrunnable"] = True
+                resp["cove_reason"] = cove_report.get("reason", "")
             conn.execute(
                 "UPDATE dic_versions SET status='approved' WHERE version_id=%s", (item_id,)
             )
+            resp["numeric_conflicts"] = numeric_conflicts
+            if placeholder_hits and force:
+                resp["forced"] = True
+                summary = "; ".join(
+                    f"{f['item_number']}: {', '.join(f['placeholders'][:4])}"
+                    for f in placeholder_hits[:5]
+                )
+                force_note = (
+                    f"FORCE-APPROVED with unresolved placeholders in "
+                    f"{len(placeholder_hits)} section(s): {summary}"
+                )
+                _record_publish_override(item_id, "placeholder_guard",
+                                         placeholder_hits, reviewer, tenant_id)
+            if citation_hits and force:
+                resp["forced"] = True
+                resp["citation_findings"] = citation_hits
+                csummary = "; ".join(
+                    f"{f.get('item_number')}: {f.get('issue')}" for f in citation_hits[:5]
+                )
+                cnote = (
+                    f"FORCE-APPROVED over citation_guard — {len(citation_hits)} "
+                    f"defect(s): {csummary}"
+                )
+                force_note = f"{force_note}. {cnote}" if force_note else cnote
+                _record_publish_override(item_id, "citation_guard",
+                                         citation_hits, reviewer, tenant_id)
+            if cove_hits and force:
+                resp["forced"] = True
+                resp["cove_findings"] = cove_hits
+                vnote = (
+                    f"FORCE-APPROVED over cove_guard — {len(cove_hits)} section(s) "
+                    "failed Chain-of-Verification"
+                )
+                force_note = f"{force_note}. {vnote}" if force_note else vnote
+                # Recording this needs migration 300; before it, the INSERT
+                # raised CheckViolation at exactly this moment.
+                _record_publish_override(item_id, "cove_guard",
+                                         cove_hits, reviewer, tenant_id)
         else:
             # Try ACOIC approve helper first.
             try:
@@ -2037,9 +2847,28 @@ def api_review_approve(item_id):
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
+        if force_note:
+            _record_review_note(item_id, "version", force_note, reviewer)
         if note:
             _record_review_note(item_id, item_type, note, reviewer)
-        return jsonify({"status": "approved", "item_id": item_id})
+        # Cross-reference cascade (dmx-ref-01, best-effort): a version just moved
+        # to approved — raise findings on documents whose inbound references point
+        # at a section that changed. HITL-preserving (findings only, no edits) and
+        # non-blocking (an approval must never fail because a cascade could not run).
+        if item_type == "version":
+            try:
+                from tools.document_intelligence.cross_reference_tracker import (
+                    cascade_on_version_approval,
+                )
+
+                casc = cascade_on_version_approval(item_id)
+                resp["cross_reference_cascade"] = {
+                    "cascaded": casc.get("cascaded", 0),
+                    "inbound": casc.get("inbound", 0),
+                }
+            except Exception as exc:
+                logger.warning("dic approve: cross-reference cascade error: %s", exc)
+        return jsonify(resp)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -2174,13 +3003,13 @@ def api_section_annotations_list(section_id: str):
         _ensure_dic_annotations(conn)
         status_filter = request.args.get("status")
         category_filter = request.args.get("category")
-        sql = "SELECT * FROM dic_section_annotations WHERE section_id = ?"
+        sql = "SELECT * FROM dic_section_annotations WHERE section_id = %s"
         params: list = [section_id]
         if status_filter:
-            sql += " AND status = ?"
+            sql += " AND status = %s"
             params.append(status_filter)
         if category_filter:
-            sql += " AND category = ?"
+            sql += " AND category = %s"
             params.append(category_filter)
         sql += " ORDER BY created_at ASC"
         rows = _safe_rows(conn, sql, params)
@@ -2502,6 +3331,9 @@ def api_template_instantiate(template_id):
     conn = _conn()
     try:
         cur = conn.cursor()
+        # collection_id defaults to "default" above — a collection that has never
+        # had a row. Without this the instantiated document is invisible.
+        ensure_collection(conn, collection_id, tenant_id=tenant_id, classification=classification)
         cur.execute(
             """
             INSERT OR REPLACE INTO dic_documents
@@ -2630,7 +3462,7 @@ def api_version_sections(version_id):
         rows = _safe_rows(
             conn,
             "SELECT section_id, heading, content, citations_json, status, origin "
-            "FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+            "FROM dic_sections WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         )
         for r in rows:
@@ -2678,7 +3510,7 @@ def api_version_style_check(version_id: str):
     try:
         rows = _safe_rows(
             conn,
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+            "SELECT heading, content FROM dic_sections WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         )
         result = check_sections([dict(r) for r in rows])
@@ -2720,7 +3552,7 @@ def api_version_diff(version_a: str, version_b: str):
         def _get_sections(vid):
             rows = _safe_rows(
                 conn,
-                "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+                "SELECT heading, content FROM dic_sections WHERE version_id = %s ORDER BY section_id",
                 (vid,),
             )
             return {(r.get("heading") or "").strip(): (r.get("content") or "") for r in rows}
@@ -2840,10 +3672,36 @@ def api_handoff_answer(item_id):
 @dic_bp.route("/api/freshness/scan", methods=["POST"])
 def api_freshness_scan():
     data = request.get_json(silent=True) or {}
-    collection_id = data.get("collection_id", "default")
+    # Omitted collection_id scans EVERY collection. The old literal 'default'
+    # meant the Scan-now button silently never scored real collections, so
+    # documents with findings stayed invisible on the freshness board.
+    collection_id = (data.get("collection_id") or "").strip() or None
     tenant_id, classification = _security_context()
     try:
         from tools.document_intelligence.freshness_engine import scan_collection
+
+        if collection_id is None:
+            conn = _conn()
+            try:
+                cids = [dict(r)["collection_id"] for r in conn.execute(
+                    "SELECT collection_id FROM dic_collections"
+                ).fetchall()] or ["default"]
+            finally:
+                conn.close()
+            totals = {"collections_scanned": 0, "docs_scanned": 0,
+                      "stale_count": 0, "aging_count": 0, "fresh_count": 0}
+            for cid in cids:
+                try:
+                    r = scan_collection(cid, tenant_id=tenant_id, classification=classification)
+                    totals["collections_scanned"] += 1
+                    totals["docs_scanned"] += getattr(r, "docs_scanned", 0) or 0
+                    totals["stale_count"] += getattr(r, "stale_count", 0) or 0
+                    totals["aging_count"] += getattr(r, "aging_count", 0) or 0
+                    totals["fresh_count"] += getattr(r, "fresh_count", 0) or 0
+                except Exception as exc:
+                    logger.warning("dic freshness: collection %s scan failed: %s", cid, exc)
+            return jsonify(totals)
+
         result = scan_collection(collection_id, tenant_id=tenant_id, classification=classification)
         return jsonify({
             "scan_id": result.scan_id,
@@ -3367,13 +4225,13 @@ def notebook(collection_id: str = "default"):
             conn,
             "SELECT doc_id AS id, title, filename, provider AS source_type, created_at "
             "FROM dic_documents "
-            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            "WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC LIMIT 50",
             (collection_id, tenant_id),
         )
         outputs = _safe_rows(
             conn,
             "SELECT id, output_type, provider, status, created_at FROM dic_generated_outputs "
-            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 20",
+            "WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC LIMIT 20",
             (collection_id, tenant_id),
         )
     finally:
@@ -3714,7 +4572,7 @@ def api_outputs_list():
         rows = _safe_rows(
             conn,
             "SELECT id, output_type, provider, status, created_at FROM dic_generated_outputs "
-            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            "WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC LIMIT 50",
             (collection_id, tenant_id),
         )
     finally:
@@ -4144,3 +5002,67 @@ def api_attach_coworker(collection_id):
         "coworker_url": f"/coworker?dic_collection={collection_id}",
         "message": "Collection attached. Open Co-Worker and launch with DIC context pre-loaded.",
     })
+
+
+# ── Modernization routes (docmod hitl-04..06, ux-02) — registered on dic_bp ──
+# Kept in a separate module so this file stops growing; import has side effects
+# (route registration) and must stay at the bottom after dic_bp is fully built.
+from tools.document_intelligence import modernization_routes  # noqa: E402,F401
+
+
+# ── Chunk inspect & repair (oss-hitl-01) ─────────────────────────────────────
+#
+# Reuses the section-review HITL shape (RBAC via _require_role, _conn, review
+# notes) applied to rag_chunks. A repair is a reviewer-gated mutation, not an
+# autonomous rewrite, and every repair re-baselines dic_chunk_links so the
+# evidence baseline stays honest. The engine (tools/document_intelligence/
+# chunk_repair.py) does the work; these routes are the reviewer-gated seam.
+
+
+def _chunk_repair_engine():
+    from tools.document_intelligence.chunk_repair import ChunkRepairEngine
+    from tools.rag.vector_store_factory import VectorStoreFactory
+
+    return ChunkRepairEngine(
+        store=VectorStoreFactory.create(),
+        conn_factory=_conn,
+        actor=_current_user(),
+    )
+
+
+@dic_bp.route("/api/chunks/<collection_id>/repair", methods=["POST"])
+def api_chunk_repair(collection_id):
+    """Apply a HITL chunk repair. Reviewer role required.
+
+    Body: {operation: merge|split|rechunk|reembed, chunk_ids|chunk_id, texts|text,
+           offset?, template?}. The operator supplies the current text so the
+           engine does not have to re-read it under the reviewer's lock.
+    """
+    from tools.document_intelligence.chunk_repair import (
+        MERGE, RECHUNK, REEMBED, SPLIT,
+    )
+
+    if not _require_role(collection_id, "reviewer"):
+        return _forbid("reviewer")
+
+    data = request.get_json(silent=True) or {}
+    op = (data.get("operation") or "").strip()
+    engine = _chunk_repair_engine()
+    try:
+        if op == MERGE:
+            result = engine.merge(data.get("chunk_ids") or [], data.get("texts") or [])
+        elif op == SPLIT:
+            result = engine.split(data.get("chunk_id", ""), data.get("text", ""),
+                                   int(data.get("offset", 0)))
+        elif op == RECHUNK:
+            result = engine.rechunk(data.get("chunk_id", ""), data.get("text", ""),
+                                    template=data.get("template", "general"))
+        elif op == REEMBED:
+            result = engine.reembed(data.get("chunk_id", ""), data.get("text", ""))
+        else:
+            return jsonify({"error": f"unknown operation {op!r}"}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+
+    status = 200 if result.ok else 422
+    return jsonify(result.to_dict()), status

@@ -8,7 +8,11 @@
     <h2 style="margin:0;color:#eaeaea;font-size:20px;">✍️ Tech Writer Workspace</h2>
     <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Author architecture docs, SOPs, runbooks, and cloud-agnostic standard guides with inline WriteGuard and AI research.</p>
   </div>
-  <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← DIC Overview</a>
+  <div style="display:flex;gap:8px;">
+    <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Document Canvas</a>
+    <a href="/docgen/new" style="background:#16213e;color:#94a3b8;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;text-decoration:none;font-size:13px;">Rebuild from sources (DocGen) →</a>
+    <a href="/standards-catalog" style="background:#16213e;color:#94a3b8;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;text-decoration:none;font-size:13px;">Standards Catalog →</a>
+  </div>
 </div>
 
 <div style="display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start;">
@@ -78,8 +82,14 @@
 
   <!-- RIGHT: Continue Writing -->
   <div>
-    <h3 style="color:#9bb8d8;font-size:14px;margin:0 0 14px;">Continue Writing
-      <span style="font-weight:400;color:#5a7aa0;font-size:12px;">({{ active_docs | length }})</span>
+    <h3 style="color:#9bb8d8;font-size:14px;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;">
+      <span>Continue Writing
+        <span style="font-weight:400;color:#5a7aa0;font-size:12px;">({{ active_docs | length }})</span>
+      </span>
+      <label style="font-weight:400;font-size:11px;color:#7a8cb0;cursor:pointer;">
+        <input type="checkbox" id="needs-my-review" onchange="filterMyReview(this.checked)" style="vertical-align:middle;">
+        Needs my review
+      </label>
     </h3>
     {% if active_docs %}
     <div style="display:flex;flex-direction:column;gap:10px;">
@@ -88,7 +98,8 @@
         'STANDARD_GUIDE': '#7ab3f0', 'SOP': '#fbbf24', 'RUNBOOK': '#f87171',
         'ARCH_NETWORK': '#a78bfa', 'ARCH_APPLICATION': '#a78bfa', 'ARCH_SYSTEM': '#a78bfa'
       }.get(doc.template_type, '#94a3b8') %}
-      <a href="/document-intelligence/doc/{{ doc.doc_id }}"
+      {% set needs_review = doc.get('review_status') == 'pending_review' and (doc.get('assigned_to') or '') == (current_user or '') %}
+      <a href="/document-intelligence/doc/{{ doc.doc_id }}" class="tw-doc-card" data-needs-review="{{ 1 if needs_review else 0 }}"
          style="display:block;background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:12px 14px;text-decoration:none;transition:border-color 0.2s;"
          onmouseenter="this.style.borderColor='{{ kind_color }}'"
          onmouseleave="this.style.borderColor='#1a3560'">
@@ -96,9 +107,20 @@
           <span style="color:#eaeaea;font-size:13px;font-weight:600;">{{ doc.title or 'Untitled' }}</span>
           <span style="background:#1e293b;color:{{ kind_color }};padding:1px 7px;border-radius:8px;font-size:10px;white-space:nowrap;">{{ doc.template_type | replace('_', ' ') }}</span>
         </div>
-        <div style="color:#5a7aa0;font-size:11px;">
-          WG: {{ doc.writeguard_mode | replace('_', ' ') }} ·
-          {{ doc.created_at[:10] if doc.created_at else '—' }}
+        <div style="color:#5a7aa0;font-size:11px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <span>WG: {{ doc.writeguard_mode | replace('_', ' ') }}</span>
+          {% set fstate = doc.get('freshness_state') %}
+          {% if fstate %}
+          <span style="color:{{ {'fresh':'#4ade80','aging':'#fbbf24','stale':'#f87171'}.get(fstate, '#94a3b8') }};">● {{ fstate }}</span>
+          {% endif %}
+          {% if doc.get('review_status') == 'pending_review' %}
+          <span style="background:#1a3a6e;color:#7ab3f0;padding:0 6px;border-radius:3px;font-size:10px;">pending review{% if doc.get('assigned_to') %} → {{ doc.assigned_to }}{% endif %}</span>
+          {% endif %}
+          {% if doc.get('pending_suggestions') %}
+          <span style="background:#3a2a6e;color:#a78bfa;padding:0 6px;border-radius:3px;font-size:10px;">⚡ {{ doc.pending_suggestions }} suggestion{{ 's' if doc.pending_suggestions != 1 }}</span>
+          {% endif %}
+          <span>approved: {{ (doc.get('last_approved') or '—') | string | truncate(10, True, '') }}</span>
+          <span>created: {{ doc.created_at[:10] if doc.created_at else '—' }}</span>
         </div>
       </a>
       {% endfor %}
@@ -113,6 +135,13 @@
 </div>
 
 <script>
+// docmod-ux-04: "Needs my review" filter
+function filterMyReview(on) {
+  document.querySelectorAll('.tw-doc-card').forEach(function(card) {
+    card.style.display = (!on || card.dataset.needsReview === '1') ? 'block' : 'none';
+  });
+}
+
 var _pendingTemplateId = '';
 var _pendingTemplateName = '';
 

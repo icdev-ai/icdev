@@ -26,6 +26,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ci.core.conversation_manager")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "icdev.db"
@@ -449,8 +452,8 @@ class ConversationManager:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_log_turn: best-effort INSERT into ci_conversation_turns failed (non-blocking): %s", exc)
 
     def _update_session(self, session_id: str, last_action: str, turn_count: int):
         """Update session metadata."""

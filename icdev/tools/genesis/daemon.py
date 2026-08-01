@@ -18,24 +18,28 @@ Usage:
 
 import importlib
 import json
-
-from tools.logging.icdev_logger import get_logger
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-logger = get_logger(__name__)
-
 # ---------------------------------------------------------------------------
-# Path bootstrapping
+# Path bootstrapping — MUST run before ANY `tools.*` / `icdev.*` import.
+# Script-style launches (`python tools/genesis/daemon.py`) put only the script
+# directory on sys.path[0]; a user-site `.pth` (e.g. fathomdesk-root.pth) can
+# otherwise inject a STALE vendored copy of the repo ahead of this checkout and
+# bind `sys.modules["tools"]` to it. Inserting the repo root at position 0
+# before the first `tools.*` import guarantees this checkout wins. (shx-safe-05)
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.logging.icdev_logger import get_logger  # noqa: E402 — must follow sys.path bootstrap
+
+logger = get_logger(__name__)
+
 from tools.daemon.base import (  # noqa: E402
-    BASE_DIR,
     DaemonBase,
     ReflexStateBase,
     TrustKernelBase,
@@ -45,7 +49,7 @@ from tools.daemon.base import (  # noqa: E402
     utcnow_iso,
     sha256_hex,
 )
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, reflex_connection_scope  # noqa: E402
 from tools.genesis.constants import TRUST_MODES  # noqa: E402
 
 try:
@@ -84,24 +88,30 @@ REFLEX_NAMES = [
     "experiment",
     "synthesize",
     "kanban",
-    "oracle",
-    "goal_learner",
-    "remediation_lens",
+    # rri: removed dead entries "oracle", "goal_learner", "remediation_lens" —
+    # a stale auto-committed batch with no reflex module, so the daemon marked
+    # each `missing`/`is_stub` and skipped it every cycle. The real triage reflex
+    # is oracle_triage, which runs via the harness/eval path (eval_harness.py),
+    # NOT this loop — adding it here would double-dispatch it. check_reflex_registry
+    # now fails the coherence gate on any REFLEX_NAMES entry with no module.
     "awareness",
     "canvas_indexer",
     "self_monitor",
     "fathomdesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
+    "academy_oracle_reflex",  # penta-aca-06: 6h in-app 7-lens AcademyOracleRunner → fa_oracle_* (replaces dead forge_academy_oracle)
     "e2e_runner",
     "qa_agent_reflex",  # 6-hour QA coverage gap sweep + E2E sweep scheduling
     "coherence_to_kanban_reflex",  # diffs coherence violations → files kanban bug tasks
     "flaky_tracker_reflex",         # ingests pytest XML → files [FLAKY] kanban tasks
     "dep_health_reflex",            # pip check + pip-audit → files [DEP-HEALTH] kanban tasks
     "dead_code_reflex",             # orphan files + dead functions + import cycles → [DEAD-CODE] tasks
+    "kanban_stranded_reflex",       # done/validating tasks vs origin/main → [STRANDED] suggested cards
     "critical_task_watchdog_reflex",  # polls for critical kanban tasks → watchdog_alerts + sidecar JSON
     "api_contract_reflex",            # OpenAPI spec vs live responses → [API-CONTRACT] kanban tasks
     "route_perf_reflex",              # NAV_ROUTES smoke + p50 latency regression detection → [PERF] tasks
+    "redaction_scan_reflex",          # scheduled at-rest PII/CUI scan → [PII-SCAN] remediation tasks
     "log_triage",
     "inspect_adapt",
     "cpmp_monitor",
@@ -110,15 +120,26 @@ REFLEX_NAMES = [
     "slides",
     "aidp_monitor",
     "integrity_monitor",
+    "harness",             # hcx-rt-01: 6h eval-harness metrics/degradation sweep + co-learning when ICDEV_HARNESS_COLEARN
     "foundry_cycle",
     "ace_team_monitor",
     "ace_skill_promoter",
     "pma_credential_monitor",
     "pma_int_gap_monitor",
     "skill_security_monitor",
+    "sdc_control_expiry",  # shx-safe-04: SDC security control-expiry sweep (4h) — IQR anomaly threshold
+    "cato_monitor",        # shx-safe-04: cATO continuous compliance monitoring (6h) — compliance/* IQE + POAM
+    "bdc_isa_expiry",      # bdr-ops-1: BDC ISA expiry alerting (24h) — was registered-but-undispatched
+    "freshness_guardian",  # dcpr-fix-06: DDC freshness quality sweep (1h) → dd_freshness_alerts/dd_quality_runs
+    "cato_twin",           # bdr-ops-1: cATO twin continuous monitoring (6h) — config enabled:false until hardened query path soaks
+    "ndc_topology_drift",  # ndc→ACOIC: topology config drift vs nc_versions baseline
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
     "dic_digest",          # dic-syn-gn: weekly digest of new docs + freshness alerts
+    "doc_modernization_sweep",  # docmod-ops-01: nightly EOL/defacto refresh + doc scan + redlines + cards
+    "confidence_sampler",  # trust-cal-01: random audit of what the system was already sure about
+    "community_refresh",  # dic-graphrag-03: keep DIC GraphRAG community summaries fresh
+    "dic_inbox_sweep",     # dic-inbox-02: 5-min sweep of the DIC drop folder (data/dic_inbox)
     "reflexion_loop",      # nova-echo: weekly batch Reflexion pass → improvement artifacts
     "evolution",           # nova-sela: weekly GEPA-style skill text mutation + promotion
     "wiki_lint",           # karpathy-wiki: nightly health checks on memory wiki (orphans/stale/overflow)
@@ -131,6 +152,16 @@ REFLEX_NAMES = [
     "objective_tracker_reflex",   # second-brain: daily 23:00 UTC — derive objective progress
     "commitment_watch_reflex",    # second-brain: daily 06:00 UTC — commitment date alerts
     "weekly_retro_reflex",        # second-brain: Friday 18:00 UTC — weekly retrospective
+    "pdc_pipeline_stale",  # pdx-ops-01: PDC pipeline staleness alert (6h) — IQR anomaly threshold; was implemented-but-undispatched
+    "twin_freshness_sweep",  # twx-cov-02: cross-canvas twin freshness sweep (6h) — observer-driven, nudges stale twins (AADC/Mission/residual)
+    "observability_retention",  # obx-trc-05: 24h archive-then-prune of otel_spans/prov_*/shap_attributions (append-only → cold twin)
+    "bgp_hijack_monitor",  # cnr-dsoc-05: DSOC RTBH auto-expiry (always) + best-effort BGP hijack/route-leak sweep (pmacct feed)
+    "odc_coverage_refresh",  # obx-cov-02: 6h scheduled ODC MITRE coverage recompute + >15% drift detection → od_audit + suggested cards
+    "retention_sweep",  # crx-db-03: 24h config-driven retention/archival (args/retention_policies.yaml); append-only tables archive-only, dry_run default
+    "agent_cron_reflex",  # sag-cron-01: drains due user-facing cron jobs (agent_cron_jobs) — agent/script exec modes, retry/backoff, delivery
+    "sag_skill_curator",  # sag-skl-01: archives (never deletes) idle unpinned auto-skills; pin support; HITL promotion stays separate
+    "review_loop",
+    "memory_maintenance_reflex",  # mem-embed: scheduled memory upkeep — flush buffer + backfill embeddings (bounded, non-destructive); closes the 0%-embedding scheduling gap oss2-meas-01 measured
 ]
 
 # Backward-compat aliases for module-level access used by other code
@@ -393,7 +424,17 @@ class GenesisDaemon(DaemonBase):
         """
         import threading
 
-        timeout = float(config.get("timeout_seconds", self._default_reflex_timeout))
+        # crx-gen-03: per-reflex hard execution cap. `max_execution_seconds` is the
+        # documented config name; `timeout_seconds` is kept as a backward-compat
+        # alias. Falls back to defaults.reflex_timeout_seconds. Enforcement is the
+        # existing watchdog join-with-timeout below; a breach returns a failure
+        # tuple that base.run_reflex records as a genesis_audit failure row.
+        timeout = float(
+            config.get(
+                "max_execution_seconds",
+                config.get("timeout_seconds", self._default_reflex_timeout),
+            )
+        )
         box: Dict[str, Any] = {}
 
         def _target() -> None:
@@ -502,7 +543,13 @@ class GenesisDaemon(DaemonBase):
             if hasattr(module, "run"):
                 # [DISPATCH POINT] Centralized reflex invocation via importlib.
                 # All 22 reflexes in REFLEX_NAMES are dispatched here.
-                result = self._observe(name, module.run, config, trust)
+                # crx-gen-01: run inside a per-reflex connection scope so a reflex
+                # that raises mid-transaction (or otherwise leaks a get_connection()
+                # handle) has that pooled connection rolled back and returned to the
+                # pool on scope exit — preventing pool exhaustion / idle-in-txn lock
+                # storms from one bad reflex cascading onto every reflex behind it.
+                with reflex_connection_scope():
+                    result = self._observe(name, module.run, config, trust)
                 success = result.get("success", False)
                 if success:
                     try:
@@ -584,7 +631,17 @@ class GenesisDaemon(DaemonBase):
         }
 
     def on_reflex_completed(self, name: str, result: Dict[str, Any]) -> None:
-        """Post-reflex hook: run convergence gate and stagnation detector."""
+        """Post-reflex hook: critical-reflex alerting, convergence, stagnation."""
+        # crx-gen-02: turn recent critical-reflex failures into operator alerts on
+        # the /monitoring page (shared `alerts` table), with per-reflex cooldown.
+        # Guarded so a health-alerting hiccup can never break the reflex loop.
+        try:
+            if self.config.get("reflex_health", {}).get("enabled", True):
+                from tools.genesis.reflex_health import open_critical_reflex_alerts
+                open_critical_reflex_alerts(self.config)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("reflex_health alerting hook skipped: %s", exc)
+
         conv_config = self.config.get("convergence", {})
         stag_config = self.config.get("stagnation", {})
 

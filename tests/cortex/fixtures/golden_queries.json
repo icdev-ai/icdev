@@ -1,0 +1,123 @@
+[
+  {
+    "id": "factual-ac2",
+    "category": "factual",
+    "query": "What is AC-2?",
+    "taxonomy": {"label": "fact_single", "confidence": 0.85},
+    "expected_label": "factual",
+    "expected_backends": ["rag"],
+    "backend_scores": {"rag": 0.88},
+    "expected_order": ["rag"]
+  },
+  {
+    "id": "factual-define-zero-trust",
+    "category": "factual",
+    "query": "Define zero trust architecture",
+    "taxonomy": {"label": "fact_single", "confidence": 0.80},
+    "expected_label": "factual",
+    "expected_backends": ["rag"],
+    "backend_scores": {"rag": 0.79},
+    "expected_order": ["rag"]
+  },
+  {
+    "id": "relational-firewall-router",
+    "category": "relational",
+    "query": "What is the relationship between the firewall and the core router?",
+    "expected_label": "relational",
+    "expected_backends": ["graph"],
+    "backend_scores": {"graph": 0.72},
+    "expected_order": ["graph"]
+  },
+  {
+    "id": "relational-services-depend",
+    "category": "relational",
+    "query": "Which services depend on the auth gateway?",
+    "expected_label": "relational",
+    "expected_backends": ["graph"],
+    "backend_scores": {"graph": 0.64},
+    "expected_order": ["graph"]
+  },
+  {
+    "id": "relational-who-owns",
+    "category": "relational",
+    "query": "Who owns the SIPR enclave?",
+    "expected_label": "relational",
+    "expected_backends": ["graph"],
+    "backend_scores": {"graph": 0.58},
+    "expected_order": ["graph"]
+  },
+  {
+    "id": "document-sop-section",
+    "category": "document",
+    "query": "Which section of the Network Security SOP covers key rotation?",
+    "expected_label": "document",
+    "expected_backends": ["dic"],
+    "backend_scores": {"dic": 0.83},
+    "expected_order": ["dic"]
+  },
+  {
+    "id": "document-clearance-memo",
+    "category": "document",
+    "query": "Show me the clearance requirements memo",
+    "expected_label": "document",
+    "expected_backends": ["dic"],
+    "backend_scores": {"dic": 0.77},
+    "expected_order": ["dic"]
+  },
+  {
+    "id": "document-contract-appendix",
+    "category": "document",
+    "query": "Find the contract appendix on data handling",
+    "expected_label": "document",
+    "expected_backends": ["dic"],
+    "backend_scores": {"dic": 0.69},
+    "expected_order": ["dic"]
+  },
+  {
+    "id": "exact-quoted-error",
+    "category": "exact_term",
+    "query": "How do I fix \"connection pool exhausted\"?",
+    "expected_label": "exact_term",
+    "expected_backends": ["kb"],
+    "backend_scores": {"kb": 0.91},
+    "expected_order": ["kb"]
+  },
+  {
+    "id": "exact-snake-case",
+    "category": "exact_term",
+    "query": "db_connection_timeout keeps recurring",
+    "expected_label": "exact_term",
+    "expected_backends": ["kb"],
+    "backend_scores": {"kb": 0.66},
+    "expected_order": ["kb"]
+  },
+  {
+    "id": "exact-cve",
+    "category": "exact_term",
+    "query": "Is CVE-2024-12345 patched?",
+    "expected_label": "exact_term",
+    "expected_backends": ["kb"],
+    "backend_scores": {"kb": 0.74},
+    "expected_order": ["kb"]
+  },
+  {
+    "id": "ambiguous-zero-trust-posture",
+    "category": "ambiguous",
+    "query": "How would zero trust change our security posture?",
+    "taxonomy": {"label": "reasoning", "confidence": 0.80},
+    "expected_label": "ambiguous",
+    "expected_backends": ["rag", "graph", "dic"],
+    "backend_scores": {"rag": 0.82, "graph": 0.61, "dic": 0.40},
+    "expected_order": ["rag", "graph", "dic"]
+  },
+  {
+    "id": "ambiguous-overview-everything",
+    "category": "ambiguous",
+    "query": "Give me an overview of everything",
+    "taxonomy": {"label": "summary", "confidence": 0.80},
+    "expected_label": "ambiguous",
+    "expected_backends": ["rag", "graph", "dic"],
+    "backend_scores": {"dic": 0.88, "rag": 0.55, "graph": 0.31},
+    "expected_order": ["dic", "rag", "graph"]
+  }
+]

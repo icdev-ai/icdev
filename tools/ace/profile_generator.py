@@ -20,6 +20,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+from icdev.tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
 _ROLES_DIR = Path(__file__).parents[2] / "args" / "ace" / "roles"
 _CANDIDATES_DIR = _ROLES_DIR / "candidates"
 
@@ -99,6 +103,41 @@ def suggest_profile_names(description: str) -> list[str]:
         return ["Custom Co-Worker", "Specialist Agent", "Domain Expert"]
 
 
+# Capability names a generated role may hold. Deliberately read-only: write and
+# execute agency come from `folder_access` (FileAccessBroker) and `icdev_tools`
+# (ToolRunner), neither of which the generator emits at all — a generated role
+# gets them only through explicit human promotion.
+_ALLOWED_TOOL_PERMISSIONS: frozenset[str] = frozenset({"Read", "Grep", "Glob"})
+
+# Tiers a generated role may claim. "green" is excluded on purpose: it clears
+# the CoWorkerThread confidence gate, which is the one thing guaranteeing a
+# human looks at a new role before it acts.
+_ALLOWED_GENERATED_TIERS: frozenset[str] = frozenset({"red", "yellow"})
+
+
+def _sanitize_tool_permissions(raw: Any, default: list[str]) -> list[str]:
+    """Return only allowlisted capability names, preserving order.
+
+    Falls back to *default* when the model returns nothing usable, so a refusal
+    or a malformed response can never widen permissions.
+    """
+    if not isinstance(raw, (list, tuple)):
+        return list(default)
+    kept = [p for p in raw if isinstance(p, str) and p in _ALLOWED_TOOL_PERMISSIONS]
+    dropped = [p for p in raw if p not in kept]
+    if dropped:
+        logger.warning("profile_generator: dropped non-allowlisted tool_permissions %r", dropped)
+    return kept or list(default)
+
+
+def _sanitize_trust_tier(raw: Any, default: str) -> str:
+    """Return *raw* only if it is a tier a generated role may claim."""
+    if isinstance(raw, str) and raw.strip().lower() in _ALLOWED_GENERATED_TIERS:
+        return raw.strip().lower()
+    logger.warning("profile_generator: refused LLM-supplied trust_tier %r", raw)
+    return default
+
+
 def preview_profile(name: str, description: str = "") -> dict[str, Any]:
     """Generate a full role spec dict without writing to disk.
 
@@ -160,9 +199,24 @@ def preview_profile(name: str, description: str = "") -> dict[str, Any]:
         raw = (getattr(result, "content", None) or str(result) or "").strip()
         raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
         enriched = yaml.safe_load(raw) or {}
-        for field in ("steps", "llm_function", "tool_permissions", "trust_tier"):
+        # Descriptive fields are taken from the model as-is.
+        for field in ("steps", "llm_function"):
             if enriched.get(field):
                 base_spec[field] = enriched[field]
+        # Security-relevant fields are NOT. The model is asked for them so the
+        # preview reflects its intent, but an LLM-authored trust_tier of
+        # "green" would clear the confidence gate in CoWorkerThread (learned
+        # trust 0.5 < TRUST_SUPERVISED 0.6), letting a freshly generated role
+        # begin acting with no human sign-off. Anything outside the allowlist
+        # is dropped and the conservative base_spec default stands.
+        if enriched.get("tool_permissions"):
+            base_spec["tool_permissions"] = _sanitize_tool_permissions(
+                enriched["tool_permissions"], base_spec["tool_permissions"]
+            )
+        if enriched.get("trust_tier"):
+            base_spec["trust_tier"] = _sanitize_trust_tier(
+                enriched["trust_tier"], base_spec["trust_tier"]
+            )
         comm = enriched.get("communication") or {}
         if comm.get("listen_topics"):
             base_spec["communication"]["listen_topics"] = comm["listen_topics"]

@@ -27,10 +27,12 @@ import argparse
 import json
 import os
 import sys
-import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.gap_analyzer")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -53,12 +55,12 @@ def _now():
 def _audit(conn, action, details="", actor="gap_analyzer"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.gap_analysis", actor, action, details, "govcon"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.gap_analysis", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ── gap analysis ──────────────────────────────────────────────────────
@@ -363,7 +365,6 @@ def register_gaps_as_innovation_signals():
                 "raw_score, composite_score, keywords, content_hash, status, created_at, metadata) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    str(uuid.uuid4()),
                     "govcon_gap",
                     gap["pattern_id"],
                     f"GovCon Gap: {gap['pattern_name']}",

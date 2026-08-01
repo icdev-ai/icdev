@@ -1,0 +1,131 @@
+# CUI // SP-CTI
+name: Operation PAPER TRAIL — Document Integrity Breach
+slug: document-integrity
+version: '1.0'
+session_mode: live
+duration_minutes: 120
+max_teams: 8
+classification: CUI // SP-CTI
+description: 'A batch of source documents ingested into the Document Intelligence Canvas (DIC)
+
+  has been poisoned. A CUI deliverable generated from that corpus now carries claims
+
+  that are not supported by any real source — fabricated content wearing a valid-looking
+
+  citation. The deliverable is scheduled to promote to a customer in 120 minutes.
+
+
+  Your team must use DIC grounded search, citation/provenance checks, and the TRUST
+
+  citation gate to trace the fabrication back to its poisoned source, quarantine it,
+
+  and make a defensible promote-or-block decision before the window closes. Every
+
+  grounding check and provenance lookup is scored evidence.'
+roles:
+- id: doc_analyst
+  label: Document Analyst
+  icon: 🔎
+  color: '#00D4FF'
+  description: Owns grounded retrieval, citation verification, and claim-to-source tracing.
+  academy_missions:
+  - document-analysis
+  - grounded-retrieval
+  persona_template: personas/doc_analyst.yaml
+- id: knowledge_engineer
+  label: Knowledge Engineer
+  icon: 🕸️
+  color: '#4a90d9'
+  description: Owns the DIC corpus, ingestion provenance, and source quarantine.
+  academy_missions:
+  - knowledge-graph
+  - data-provenance
+  persona_template: personas/knowledge_engineer.yaml
+- id: compliance_officer
+  label: Compliance / TRUST Officer
+  icon: ⚖️
+  color: '#22c55e'
+  description: Owns the citation gate, HITL override discipline, and audit evidence.
+  academy_missions:
+  - compliance-fundamentals
+  - trust-grounding
+  persona_template: personas/compliance_officer.yaml
+injects:
+- id: inject-01-anomalous-citation
+  title: 'ALERT: Deliverable Cites a Passage That Does Not Exist'
+  at_minute: 15
+  sequence: 1
+  body_path: injects/inject-01-anomalous-citation.yaml
+  ai_tools_allowed:
+  - dic.search
+  - knowledge.search
+  scoring:
+    base_pts: 100
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/citation_forensics.yaml
+- id: inject-02-poisoned-source
+  title: 'Trace It: Which Ingested Source Was Poisoned?'
+  at_minute: 40
+  sequence: 2
+  body_path: injects/inject-02-poisoned-source.yaml
+  ai_tools_allowed:
+  - dic.search
+  - dic.ingest
+  - knowledge.search
+  scoring:
+    base_pts: 150
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/source_provenance.yaml
+  depends_on: inject-01-anomalous-citation
+- id: inject-03-grounding-audit
+  title: 'Grounding Audit: Score Every Claim in the Deliverable'
+  at_minute: 70
+  sequence: 3
+  body_path: injects/inject-03-grounding-audit.yaml
+  ai_tools_allowed:
+  - dic.search
+  - cortex.govern
+  scoring:
+    base_pts: 175
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/grounding_audit.yaml
+  depends_on: inject-02-poisoned-source
+- id: inject-04-contested-deliverable
+  title: 'Promote or Block: The TRUST Citation Gate Decision'
+  at_minute: 95
+  sequence: 4
+  body_path: injects/inject-04-contested-deliverable.yaml
+  ai_tools_allowed:
+  - cortex.govern
+  - knowledge.search
+  scoring:
+    base_pts: 175
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/promote_decision.yaml
+  depends_on: inject-03-grounding-audit
+ribbons:
+- id: provenance_hawk
+  label: 🦅 Provenance Hawk
+  description: Traced the fabricated claim to its poisoned source fastest
+- id: grounding_master
+  label: 🔗 Grounding Master
+  description: Highest grounding-audit judge score
+- id: gatekeeper
+  label: 🛡️ Gatekeeper
+  description: Made the most defensible promote/block decision with clean audit evidence

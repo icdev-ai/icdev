@@ -35,6 +35,9 @@ from tools.ai_augmentation.db.init_db import get_connection, init_db
 from tools.ai_augmentation.opportunity_scorer import score_opportunity
 from tools.ai_augmentation.pattern_classifier import detect_patterns
 from tools.ai_augmentation.roadmap_generator import generate_roadmap
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ai_augmentation.engine")
 
 _CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / "aac_config.yaml"
 
@@ -271,8 +274,12 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                 registered += 1
         finally:
             conn.close()
-    except Exception:
-        pass  # innovation_signals table may not exist in all environments
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # innovation_signals table may not exist in all environments
+        logger.warning(
+            "_register_innovation_signals: best-effort INSERT into innovation_signals failed (non-blocking): %s",
+            exc,
+        )
     return registered
 
 

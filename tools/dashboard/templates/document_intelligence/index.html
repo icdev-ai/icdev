@@ -39,26 +39,54 @@
   <div id="upload-results" style="margin-top:12px;text-align:left;max-height:120px;overflow-y:auto;"></div>
 </div>
 
-<!-- Canvas Pages -->
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
-  {% for p in pages %}
-  {% if p.ready %}
-  <a href="{{ p.href }}" style="text-decoration:none;">
-    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;transition:border-color .2s;height:100%;"
-         onmouseover="this.style.borderColor='#4f8ef7'" onmouseout="this.style.borderColor='#1e3a6e'">
-      <h3 style="margin:0 0 6px;color:#eaeaea;font-size:14px;">{{ p.icon }} {{ p.name }}</h3>
-      <p style="color:#7a8cb0;font-size:12px;margin:0;">{{ p.desc }}</p>
+<!-- Which tool do I want? The three authoring surfaces answer different questions. -->
+<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:14px 16px;margin-bottom:22px;">
+  <div style="color:#9bb8d8;font-size:13px;font-weight:600;margin-bottom:8px;">Which one do I want?</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;">
+    <div>
+      <a href="/document-intelligence/techwriter" style="color:#7ab3f0;font-size:12px;font-weight:600;text-decoration:none;">✍️ Tech Writer</a>
+      <p style="color:#7a8cb0;font-size:11.5px;margin:3px 0 0;line-height:1.5;">Writing something <strong>new</strong> from a template — with inline WriteGuard.</p>
     </div>
-  </a>
-  {% else %}
-  <div style="background:#0e1730;border:1px dashed #243a5e;border-radius:8px;padding:16px;opacity:.55;height:100%;" title="Pending — {{ p.task }}">
-    <h3 style="margin:0 0 6px;color:#9aa8c0;font-size:14px;">{{ p.icon }} {{ p.name }}</h3>
-    <p style="color:#5a6e8c;font-size:12px;margin:0;">{{ p.desc }}</p>
-    <div style="margin-top:8px;"><span style="background:#1e293b;color:#7a8cb0;font-size:10px;padding:2px 7px;border-radius:3px;">pending · {{ p.task }}</span></div>
+    <div>
+      <a href="/docgen/new" style="color:#7ab3f0;font-size:12px;font-weight:600;text-decoration:none;">🔄 DocGen</a>
+      <p style="color:#7a8cb0;font-size:11.5px;margin:3px 0 0;line-height:1.5;">Have <strong>diagrams, configs, or docs</strong> to reconcile into one authoritative document.</p>
+    </div>
+    <div>
+      <a href="/document-intelligence/docdrift" style="color:#7ab3f0;font-size:12px;font-weight:600;text-decoration:none;">🛰️ DocDrift</a>
+      <p style="color:#7a8cb0;font-size:11.5px;margin:3px 0 0;line-height:1.5;">Something changed — <strong>which docs and NIST controls are now wrong?</strong> Automatic; nothing to upload.</p>
+    </div>
   </div>
-  {% endif %}
-  {% endfor %}
+  <p style="color:#5a7aa0;font-size:11px;margin:10px 0 0;line-height:1.5;">
+    Tech Writer and DocGen share the same documents — author in one, regenerate in the other. Drop files above to ingest.
+  </p>
 </div>
+
+<!-- Canvas Pages — grouped by workflow order -->
+{% for g in page_groups %}
+<div style="margin-bottom:22px;">
+  <h3 style="color:#9bb8d8;font-size:12px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 2px;">{{ g.label }}</h3>
+  <p style="color:#5a7aa0;font-size:11px;margin:0 0 10px;">{{ g.desc }}</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
+    {% for p in g.pages %}
+    {% if p.ready %}
+    <a href="{{ p.href }}" style="text-decoration:none;">
+      <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;transition:border-color .2s;height:100%;"
+           onmouseover="this.style.borderColor='#4f8ef7'" onmouseout="this.style.borderColor='#1e3a6e'">
+        <h3 style="margin:0 0 6px;color:#eaeaea;font-size:14px;">{{ p.icon }} {{ p.name }}</h3>
+        <p style="color:#7a8cb0;font-size:12px;margin:0;">{{ p.desc }}</p>
+      </div>
+    </a>
+    {% else %}
+    <div style="background:#0e1730;border:1px dashed #243a5e;border-radius:8px;padding:16px;opacity:.55;height:100%;" title="Pending — {{ p.task }}">
+      <h3 style="margin:0 0 6px;color:#9aa8c0;font-size:14px;">{{ p.icon }} {{ p.name }}</h3>
+      <p style="color:#5a6e8c;font-size:12px;margin:0;">{{ p.desc }}</p>
+      <div style="margin-top:8px;"><span style="background:#1e293b;color:#7a8cb0;font-size:10px;padding:2px 7px;border-radius:3px;">pending · {{ p.task }}</span></div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
 
 <script>
 (function() {
@@ -98,6 +126,24 @@
       if (idx >= fileArr.length) {
         status.textContent = fileArr.length + ' file(s) complete.';
         bar.style.width = '100%';
+        // docmod: don't leave the user hanging - offer the next step inline.
+        results.innerHTML +=
+          '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;">' +
+          '<button id="post-upload-scan" style="background:#2a1a3a;color:#a78bfa;padding:7px 14px;border:1px solid #4a2a6e;border-radius:5px;cursor:pointer;font-size:12px;">' +
+          '🧭 Scan for outdated content →</button>' +
+          '<a href="/document-intelligence/freshness" style="color:#7ab3f0;font-size:11px;">or open Freshness &amp; Modernization</a>' +
+          '<span id="post-upload-scan-status" style="color:#7a8cb0;font-size:11px;"></span></div>';
+        document.getElementById('post-upload-scan').addEventListener('click', function() {
+          var btn = this, st = document.getElementById('post-upload-scan-status');
+          btn.disabled = true; st.textContent = 'Scanning…';
+          fetch('/document-intelligence/api/modernization/scan', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({collection_id: collectionId})
+          }).then(function(r){ return r.json(); }).then(function(d) {
+            if (d.error) { st.textContent = 'Scan failed: ' + d.error; btn.disabled = false; return; }
+            window.location.href = '/document-intelligence/freshness';
+          }).catch(function(e){ st.textContent = 'Scan failed: ' + e.message; btn.disabled = false; });
+        });
         return;
       }
       var file = fileArr[idx++];

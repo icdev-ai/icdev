@@ -33,6 +33,14 @@
 .wb-card-body{padding:12px 14px}
 .wb-btn{width:100%;border-radius:5px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:6px;transition:all .15s;border:1px solid transparent}
 #req-panel{background:#0a1525;border:1px solid #1e3a6e;border-radius:6px;margin-top:10px;overflow:hidden}
+.prov-label{color:#5a7aa0;font-size:10px;margin-right:6px;text-transform:uppercase;letter-spacing:.4px}
+.prov-chip{display:inline-block;background:#0a1628;border:1px solid #1e3a6e;color:#7ab3f0;font-size:10px;padding:2px 8px;border-radius:10px;margin-right:5px}
+.prov-reusable{background:#0a2e1a;border-color:#10603a;color:#34d399}
+.cov-grid{display:flex;flex-wrap:wrap;gap:4px}
+.cov{font-size:10px;font-weight:600;padding:3px 6px;border-radius:3px;cursor:default}
+.cov-ok{background:#0a2e1a;color:#34d399}
+.cov-miss{background:#3a2a0a;color:#f0b429}
+.cov-na{background:#141f33;color:#3d5a80}
 #req-panel-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#0f1f3a;border-bottom:1px solid #1e3a6e;cursor:pointer;user-select:none}
 #req-list{max-height:220px;overflow-y:auto;padding:6px 8px}
 .req-item{display:flex;align-items:flex-start;gap:7px;padding:5px 6px;border-radius:4px;margin-bottom:3px;border:1px solid #1a2b4a;background:#060f1c}
@@ -72,12 +80,18 @@
       ⚡ All
     </button>
     <span id="gen-all-status" style="font-size:10px;color:#5a7aa0;"></span>
+    <button id="accept-all-btn" onclick="acceptAllDrafted()" title="Accept every drafted section as final — pending and rejected sections are skipped"
+      style="background:#0d1b2e;color:#4ade80;border:1px solid #16a34a;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">
+      ✓✓ Accept All
+    </button>
     <span id="deadline-badge" title="Click to set deadline" onclick="toggleDeadlinePicker()"
       style="display:none;cursor:pointer;font-size:10px;padding:3px 9px;border-radius:10px;border:1px solid #1e3a6e;color:#94a3b8;"></span>
     <input type="date" id="deadline-input" style="display:none;background:#050d1f;color:#b8d0e8;border:1px solid #1e3a6e;border-radius:4px;padding:3px 6px;font-size:10px;"
       onchange="saveDeadline(this.value)" onblur="document.getElementById('deadline-input').style.display='none'">
     <a href="/rfi/{{ session.id }}/preview" target="_blank"
       style="background:#0a1a30;color:#38bdf8;border:1px solid #0ea5e9;border-radius:4px;padding:5px 10px;font-size:11px;text-decoration:none;">👁 Preview</a>
+    <button onclick="doExport('questions')" title="Export Part 6 questions for ARC/email submission (separate from the response document)"
+      style="background:#1a1030;color:#c4b5fd;border:1px solid #6d28d9;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">❓ Questions</button>
     <button onclick="doExport('md')"
       style="background:#0d1b2e;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;">⬇ MD</button>
     <button onclick="doExport('docx')" id="export-docx-btn"
@@ -106,7 +120,7 @@
     </div>
     <div id="section-tree">
       {% set ns = namespace(cur_part='') %}
-      {% set part_labels = {'part1':'Part 1 — Admin','part2':'Part 2 — Technical','part3':'Part 3 — Schedule','part4':'Part 4 — Business','part5':'Part 5 — Insights','appendix':'Appendix'} %}
+      {% set part_labels = {'part1':'Part 1 — Admin','part2':'Part 2 — Technical','part3':'Part 3 — Schedule','part4':'Part 4 — Business','part5':'Part 5 — Insights','part6':'Part 6 — Questions to Gov','appendix':'Appendix'} %}
       {% for sec in sections %}
         {% if sec.part != ns.cur_part %}
           {% set ns.cur_part = sec.part %}
@@ -209,6 +223,9 @@
         </div>
       </div>
 
+      <!-- Provenance chips — the evidence behind this draft (sources_json, migration 249) -->
+      <div id="provenance" style="margin-top:8px;"></div>
+
       <!-- Generate Why Us panel — shown for section 5.1 (Industry Insights) -->
       <div id="why-us-panel" style="display:none;margin-top:8px;background:#050d1f;border:1px solid #1e3a6e;border-radius:6px;overflow:hidden;">
         <div style="background:#0a1628;padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #1e3a6e;">
@@ -240,6 +257,15 @@
 
   <!-- RIGHT: Controls panel -->
   <div id="wb-panel">
+    <!-- Message coverage — one glance answers "does the whole response argue one thing?" -->
+    <div class="wb-card" style="margin:12px;">
+      <div class="wb-card-hdr" style="background:#0c2a3a;color:#38bdf8;">
+        <span>🎯 Message Coverage</span>
+        <a href="/capture/strategy" style="color:#4f8ef7;font-size:10px;font-weight:400;text-decoration:none;">edit strategy</a>
+      </div>
+      <div class="wb-card-body" id="coverage-body"></div>
+    </div>
+
     <div id="panel-placeholder" style="text-align:center;padding:48px 16px;">
       <div style="font-size:2.5rem;margin-bottom:10px;">🛠️</div>
       <div style="color:#7a8cb0;font-size:12px;font-weight:600;">Select a section to see AI Assist, WriteGuard, and HITL controls</div>
@@ -500,6 +526,8 @@ let currentSectionId = null;
 let currentSection = null;
 let saveTimer = null;
 let previewActive = false;
+
+document.addEventListener('DOMContentLoaded', loadCoverage);
 let sessionWordsPerPage = 250;
 let sectionWordLimit = null;
 let sectionPageLimit = null;
@@ -514,6 +542,7 @@ function loadSection(id) {
     .then(secs => {
       currentSection = secs.find(s => s.id === id);
       if (currentSection) renderSection(currentSection);
+      loadCoverage();   // drafts change as sections are generated and accepted
     });
 }
 
@@ -604,6 +633,61 @@ function renderSection(sec) {
     document.getElementById('why-us-actions').style.display = 'none';
     document.getElementById('why-us-spinner').style.display = 'none';
     _whyUsParagraph = '';
+  }
+
+  loadProvenance(sec.id);
+}
+
+// ── Provenance: what evidence produced this draft ─────────────────────────────
+// sources_json has been persisted since migration 249 and shown nowhere. A writer
+// who can see WHY the model said something can trust it or correct it.
+async function loadProvenance(sectionId) {
+  const box = document.getElementById('provenance');
+  if (!box) return;
+  box.innerHTML = '';
+  try {
+    const d = await (await fetch(`/api/rfi/${SESSION_ID}/sections/${sectionId}/provenance`)).json();
+    const chips = (d.sources || []).map(s =>
+      `<span class="prov-chip">${s}</span>`).join('');
+    const reusable = d.evidence && d.evidence.indexed
+      ? `<span class="prov-chip prov-reusable" title="Indexed as reusable evidence for the next pursuit">♻ Reusable · ${d.evidence.chunks} chunks</span>`
+      : '';
+    box.innerHTML = (chips || reusable)
+      ? `<span class="prov-label">Evidence used:</span>${chips}${reusable}`
+      : '';
+  } catch (e) { /* advisory */ }
+}
+
+// ── Message coverage: is the response uniform, or off-message in places? ──────
+async function loadCoverage() {
+  const box = document.getElementById('coverage-body');
+  if (!box) return;
+  box.innerHTML = '<span style="color:#5a7aa0;font-size:11px;">Loading…</span>';
+  try {
+    const d = await (await fetch(`/api/rfi/${SESSION_ID}/theme-coverage`)).json();
+    if (d.error) { box.innerHTML = `<span style="color:#e94560;font-size:11px;">${d.error}</span>`; return; }
+    if (!(d.themes || []).length) {
+      box.innerHTML = '<span style="color:#5a7aa0;font-size:11px;">No win themes set. <a href="/capture/strategy" style="color:#4f8ef7;">Set a capture strategy →</a></span>';
+      return;
+    }
+    const hit = new Set(Object.values(d.matrix || {}).flat());
+    const cells = (d.sections || []).map(s => {
+      // Parts 1 and 4.2 are excluded by design — grey means "not applicable", not "failed".
+      if (s.policy === 'none')      return `<span class="cov cov-na"      title="${s.item_number}: excluded by design (administrative / cost table)">${s.item_number}</span>`;
+      if (s.policy === 'questions') return `<span class="cov cov-na"      title="${s.item_number}: questions to the Government — asserts nothing">${s.item_number}</span>`;
+      if (hit.has(s.item_number))   return `<span class="cov cov-ok"      title="${s.item_number}: on message">${s.item_number}</span>`;
+      return `<span class="cov cov-miss" title="${s.item_number}: no win theme detected — reads off-message">${s.item_number}</span>`;
+    }).join('');
+    const unused = (d.findings || []).filter(f => f.type === 'theme_unused').length;
+    box.innerHTML = `<div class="cov-grid">${cells}</div>
+      <div style="color:#5a7aa0;font-size:10px;margin-top:8px;line-height:1.5;">
+        Score ${d.score}/100 · <span style="color:#34d399;">■</span> on message
+        <span style="color:#f0b429;">■</span> off message
+        <span style="color:#3d5a80;">■</span> excluded by design
+        ${unused ? `<br><span style="color:#f0b429;">${unused} theme(s) never appear in any section.</span>` : ''}
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<span style="color:#e94560;font-size:11px;">${e}</span>`;
   }
 }
 
@@ -868,6 +952,10 @@ function applyHitl(action) {
     const labels = {approve:'✅ Approved', reject:'❌ Rejected', accept:'🏁 Accepted as final'};
     msg.textContent = labels[action] || 'Done';
     msg.style.color = action === 'reject' ? '#f87171' : '#4ade80';
+    if ((d.section.placeholder_warnings || []).length) {
+      msg.textContent += ' — ⚠ unresolved: ' + d.section.placeholder_warnings.join(', ');
+      msg.style.color = '#fbbf24';
+    }
     currentSection = d.section;
     const badge = document.getElementById('editor-status-badge');
     badge.textContent = d.section.status.replace(/_/g,' ');
@@ -896,7 +984,7 @@ function commentAndRegenerate() {
 function refreshSidebarItem(id, status) {
   const el = document.querySelector(`.section-item[data-id="${id}"]`);
   if (!el) return;
-  el.className = 'section-item active status-' + status;
+  el.className = 'section-item status-' + status + (el.classList.contains('active') ? ' active' : '');
   const badge = el.querySelector('.s-badge');
   if (badge) {
     const icons = {accepted:'✓', hitl_approved:'✓', hitl_rejected:'✗', ai_draft_ready:'⚡', pending:'○'};
@@ -922,14 +1010,24 @@ function updateProgress() {
   document.getElementById('progress-label').textContent = approved + '/' + items.length + ' accepted';
 }
 
-function doExport(fmt) {
+function doExport(fmt, forcePlaceholders) {
   const btn = document.getElementById('export-docx-btn');
   const spinner = document.getElementById('export-spinner');
   if (fmt === 'docx') { btn.disabled = true; spinner.style.display = 'inline-block'; }
-  fetch(`/api/rfi/${SESSION_ID}/export/${fmt}`, {method:'POST'})
+  fetch(`/api/rfi/${SESSION_ID}/export/${fmt}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(forcePlaceholders ? {force_placeholders: true} : {})
+  })
     .then(r => r.json())
     .then(d => {
       btn.disabled = false; spinner.style.display = 'none';
+      if (d.gate === 'placeholder_guard') {
+        const detail = (d.findings || []).map(f => `${f.item_number}: ${f.placeholders.join(', ')}`).join('\n');
+        if (confirm('Unresolved placeholders remain:\n\n' + detail + '\n\nExport anyway?')) {
+          doExport(fmt, true);
+        }
+        return;
+      }
       if (d.error) { alert('Export error: ' + d.error); return; }
       window.location.href = `/api/rfi/${SESSION_ID}/download/${fmt}`;
     })
@@ -958,6 +1056,9 @@ document.addEventListener('DOMContentLoaded', () => {
     parse_fallback: {{ 'true' if (session.rfi_number == 'RFI-UNKNOWN' or not session.get('parsed_data') or not session.get('parsed_data', {}).get('questionnaire_parts')) else 'false' }},
   };
   checkParseWarning();
+  // Resume generate-all polling if a run is in flight (e.g. page was
+  // reloaded mid-run); when idle this also syncs stale sidebar badges.
+  _pollGenerateAll();
 });
 
 // ── Requirements ──────────────────────────────────────────────────────────────
@@ -1502,6 +1603,7 @@ function _pollGenerateAll() {
       const status = document.getElementById('gen-all-status');
       if (d.running) {
         status.textContent = `${d.done}/${d.total} — generating ${d.current_item || '…'}`;
+        btn.textContent = '⏹ Cancel'; btn.onclick = cancelGenerateAll;
         _genAllPollTimer = setTimeout(_pollGenerateAll, 2000);
         if (d.done > 0) _refreshSidebarStatuses();
       } else {
@@ -1512,6 +1614,26 @@ function _pollGenerateAll() {
       }
     })
     .catch(() => { _genAllPollTimer = setTimeout(_pollGenerateAll, 3000); });
+}
+
+function acceptAllDrafted() {
+  if (!confirm('Accept every drafted section as final? Pending and rejected sections are skipped. Reviewing each section before submission is still recommended.')) return;
+  const btn = document.getElementById('accept-all-btn');
+  btn.disabled = true;
+  fetch(`/api/rfi/${SESSION_ID}/accept-all`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      if (d.error) { alert('Accept-all error: ' + d.error); return; }
+      if ((d.placeholder_warnings || []).length) {
+        alert('Accepted, but unresolved placeholders remain:\n\n'
+          + d.placeholder_warnings.map(w => `${w.item_number}: ${w.placeholders.join(', ')}`).join('\n')
+          + '\n\nResolve them before export — the export gate will flag these.');
+      }
+      _refreshSidebarStatuses();
+      if (currentSectionId) loadSection(currentSectionId);
+    })
+    .catch(err => { btn.disabled = false; alert('Accept-all failed: ' + err.message); });
 }
 
 function _refreshSidebarStatuses() {

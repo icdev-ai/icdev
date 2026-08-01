@@ -1,0 +1,10 @@
+{
+  "id": "261",
+  "name": "kanban_verifications_conformance",
+  "description": "Add review_passed / review_findings / pytest_ran columns to kanban_verifications for the Governed Delivery Pipeline Phase 2 conformance-review and pytest gates (record-only; backward-compatible additive columns).",
+  "created_at": "2026-07-11",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

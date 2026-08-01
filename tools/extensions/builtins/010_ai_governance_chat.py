@@ -15,8 +15,7 @@ Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
 
-import sqlite3
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists as _table_exists
 from pathlib import Path
 
 logger = get_logger("icdev.extensions.ai_governance_chat")
@@ -110,14 +109,6 @@ def _record_advisory(context_id: str, turn_number: int):
 # ---------------------------------------------------------------------------
 # Governance gap checking
 # ---------------------------------------------------------------------------
-
-
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=%s",
-        (table_name,),
-    ).fetchone()
-    return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
 
 
 def _check_governance_gaps(project_id: str) -> list:

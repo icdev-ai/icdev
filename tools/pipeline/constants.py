@@ -2476,6 +2476,63 @@ def get_object_by_type(obj_type):
     return None
 
 
+# ── Type → Stage inference (server-side stage derivation) ────────────────────
+# The canvas frontend never persists a node's ``stage`` — the save path sends
+# only ``type``. Server-side scoring (stage coverage, governance) must therefore
+# DERIVE the stage from the type. Two sources, in priority order:
+#   1. The explicit per-type ``stage`` curated in PIPELINE_OBJECTS (authoritative).
+#   2. A type-PREFIX fallback mirroring the frontend's ``autoGroupByStage``
+#      prefixMap (tools/dashboard/static/js/pipeline-canvas.js) for any type not
+#      present in the object library.
+# Stage values are PIPELINE_STAGES keys (the 12 canonical stages).
+
+STAGE_FROM_TYPE: dict[str, str] = {}
+for _cat_items in PIPELINE_OBJECTS.values():
+    for _obj in _cat_items:
+        _st = _obj.get("stage")
+        if _st:
+            STAGE_FROM_TYPE[_obj["type"]] = _st
+
+# Prefix → stage fallback, mirroring pipeline-canvas.js autoGroupByStage().
+# ``infrastructure`` (ndc-/hybrid-/onprem-) is intentionally excluded: it is not
+# one of the 12 canonical PIPELINE_STAGES, so those types have no scored stage.
+STAGE_PREFIX_MAP: tuple[tuple[str, str], ...] = (
+    ("scm-", "source"), ("branch-", "source"), ("commit-", "source"),
+    ("build-", "build"), ("cicd-", "build"), ("sbom-", "build"),
+    ("scan-", "test"),
+    ("registry-", "package"), ("sign-", "package"), ("attest-", "package"),
+    ("policy-", "policy_gate"), ("gate-", "policy_gate"),
+    ("gitops-", "deploy_prod"), ("deploy-", "deploy_prod"),
+    ("k8s-", "deploy_prod"), ("mesh-", "deploy_prod"),
+    ("mon-", "monitor"),
+    ("comp-", "compliance"),
+    ("sre-", "sre"),
+    ("cds-", "cross_domain"), ("boundary-", "cross_domain"),
+    ("pipeline-", "cross_domain"),
+)
+
+
+def stage_from_type(node_type, explicit_stage=None):
+    """Resolve a node's pipeline stage.
+
+    An explicit stage persisted on the node wins. Otherwise the stage is derived
+    from the node type: the curated PIPELINE_OBJECTS mapping first, then a
+    prefix fallback mirroring the frontend ``autoGroupByStage``. Returns ``None``
+    when nothing matches (e.g. ``infrastructure`` types outside the 12 stages).
+    """
+    if explicit_stage:
+        return explicit_stage
+    if not node_type:
+        return None
+    exact = STAGE_FROM_TYPE.get(node_type)
+    if exact:
+        return exact
+    for _pfx, _stage in STAGE_PREFIX_MAP:
+        if node_type.startswith(_pfx):
+            return _stage
+    return None
+
+
 def compute_owasp_coverage(node_types):
     """Given a list of node types, compute OWASP Top 10 coverage.
 
@@ -2552,8 +2609,12 @@ def estimate_execution_time(nodes, edges):
         config = node.get("config") or {}
         minutes = config.get("avg_execution_min", 5)
         if stage not in stage_times:
-            stage_times[stage] = {"total_min": 0, "parallel": config.get("parallel", False)}
+            stage_times[stage] = {"total_min": 0, "parallel": False}
         stage_times[stage]["total_min"] += minutes
+        # Honor the parallel flag from ANY node in the stage, not just the first
+        # one seen — a stage is parallel if at least one of its nodes declares it.
+        if config.get("parallel", False):
+            stage_times[stage]["parallel"] = True
 
     ordered_stages = sorted(
         PIPELINE_STAGES.keys(),

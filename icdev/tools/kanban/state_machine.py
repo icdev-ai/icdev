@@ -26,6 +26,7 @@ Transitions:
                                                              failed
 """
 from __future__ import annotations
+from tools.kanban.gates import is_manual_gate
 from tools.logging.icdev_logger import get_logger
 
 import json
@@ -85,6 +86,12 @@ _TRANSITIONS: Dict[Tuple[KanbanState, KanbanState], str] = {
     (KanbanState.SCHEDULED, KanbanState.BACKLOG): "unschedule",
     (KanbanState.SCHEDULED, KanbanState.FAILED): "cancel",
     (KanbanState.IN_PROGRESS, KanbanState.PR_OPENED): "pr_opened",
+    # NOTE (done-hardening): this in_progress→done edge lets a caller reach 'done'
+    # without passing through PR_OPENED/merge. The runner drives completion through
+    # reflexes/kanban.py::_move_task, which now enforces a git/origin merge-verify
+    # gate (a task can only reach 'done' when its work is actually on origin/main),
+    # so this edge must only ever be taken POST-verify. Left in place because other
+    # callers depend on it; the authoritative guarantee lives in _move_task.
     (KanbanState.IN_PROGRESS, KanbanState.DONE): "complete",
     (KanbanState.IN_PROGRESS, KanbanState.BACKLOG): "retry",
     (KanbanState.IN_PROGRESS, KanbanState.TOKEN_EXHAUSTED): "pause",
@@ -109,21 +116,37 @@ _TRANSITIONS: Dict[Tuple[KanbanState, KanbanState], str] = {
 
 
 #: When persisting to the existing DB schema, map extended states down.
+# TODO(kanban-hardening #4): PR_OPENED / CI_FAILED / MERGE_CONFLICT /
+# CHANGES_REQUESTED all collapse to 'in_progress' below, and FAILED collapses to
+# 'token_exhausted', because the PG kanban_tasks_status_check constraint only
+# permits {backlog, scheduled, in_progress, done, token_exhausted, suggested,
+# decomposed, validating, needs_decomposition}. Consequence: the board literally
+# cannot distinguish "PR open, awaiting merge" from "still coding," nor "failed"
+# from "token-exhausted" — it hides the true lifecycle. The follow-up is a coupled
+# change: (a) a migration expanding the CHECK constraint to add pr_opened, merged,
+# ci_failed, changes_requested, failed, blocked; (b) mapping each extended state to
+# itself here; (c) adding the matching board columns in dashboard/templates/
+# kanban.html. Deferred as a standalone PR because it touches schema + UI together.
 _STATE_TO_DB_STATUS: Dict[KanbanState, str] = {
     KanbanState.SUGGESTED: "suggested",
     KanbanState.BACKLOG: "backlog",
     KanbanState.SCHEDULED: "scheduled",
     KanbanState.IN_PROGRESS: "in_progress",
-    KanbanState.PR_OPENED: "in_progress",
-    KanbanState.CI_FAILED: "in_progress",
-    KanbanState.MERGE_CONFLICT: "in_progress",
-    KanbanState.CHANGES_REQUESTED: "in_progress",
+    # Lifecycle states persist as themselves (migration 260 widened the
+    # kanban_tasks.status CHECK). Previously these collapsed to in_progress /
+    # token_exhausted, which hid "PR open, awaiting merge" from the board and let
+    # genuine failures masquerade as resumable pauses. None of these are in the
+    # dispatcher pickup set (backlog/scheduled/in_progress), so making them
+    # distinct does not cause re-dispatch — it stops pr_opened tasks from being
+    # counted as active work and stops failed tasks from auto-resuming.
+    KanbanState.PR_OPENED: "pr_opened",
+    KanbanState.CI_FAILED: "ci_failed",
+    KanbanState.MERGE_CONFLICT: "merge_conflict",
+    KanbanState.CHANGES_REQUESTED: "changes_requested",
     KanbanState.TOKEN_EXHAUSTED: "token_exhausted",
     KanbanState.DECOMPOSED: "decomposed",
     KanbanState.DONE: "done",
-    # `failed` has no direct schema slot; map to token_exhausted so the
-    # scheduler keeps it out of the active queue.
-    KanbanState.FAILED: "token_exhausted",
+    KanbanState.FAILED: "failed",
 }
 
 
@@ -180,10 +203,10 @@ def db_status_for(state: KanbanState) -> str:
 def _ensure_kanban_cot_enabled() -> None:
     """Defensively add cot_enabled column to kanban_tasks if missing."""
     try:
-        from tools.db.storage import get_connection
+        from tools.db.storage import get_connection, column_exists
         conn = get_connection()
-        cols = conn.execute("PRAGMA table_info(kanban_tasks)").fetchall()
-        if not any(c[1] == "cot_enabled" for c in cols):
+        # Backend-aware column probe — works on PG + SQLite without translate_sql.
+        if not column_exists(conn, "kanban_tasks", "cot_enabled"):
             conn.execute(
                 "ALTER TABLE kanban_tasks ADD COLUMN cot_enabled INTEGER NOT NULL DEFAULT 0"
             )
@@ -339,8 +362,8 @@ def transition(
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("transition: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s", _exc)
 
     # Wire Prometheus metrics — best-effort, never block on metric errors
     if to_state in TERMINAL_STATES:
@@ -435,12 +458,27 @@ def auto_close_by_naming_convention(
         return None
 
     parent_row = conn.execute(
-        "SELECT status FROM kanban_tasks WHERE id = %s", (parent_id,)
+        "SELECT status, title FROM kanban_tasks WHERE id = %s", (parent_id,)
     ).fetchone()
     if not parent_row:
         return None
 
-    parent_status = dict(parent_row)["status"] if hasattr(parent_row, "keys") else parent_row[0]
+    if hasattr(parent_row, "keys"):
+        _pr = dict(parent_row)
+        parent_status = _pr["status"]
+        parent_title = _pr.get("title")
+    else:
+        parent_status = parent_row[0]
+        parent_title = parent_row[1] if len(parent_row) > 1 else None
+
+    # Manual-mode gate sentinels are held in_progress FOREVER by design.
+    # Automation must never release them, even when their dependents finish.
+    if is_manual_gate(parent_id, parent_title):
+        logger.info(
+            "auto_close_by_naming_convention: skipping manual-mode gate %s", parent_id
+        )
+        return None
+
     if parent_status == "done":
         return None
     if parent_status != "decomposed":
@@ -502,12 +540,25 @@ def auto_close_parent_if_all_children_done(
     done, no children, or children not all done).
     """
     parent_row = conn.execute(
-        "SELECT status FROM kanban_tasks WHERE id = %s", (parent_id,)
+        "SELECT status, title FROM kanban_tasks WHERE id = %s", (parent_id,)
     ).fetchone()
     if not parent_row:
         return None
 
-    parent_status = dict(parent_row)["status"]
+    _pr = dict(parent_row)
+    parent_status = _pr["status"]
+    parent_title = _pr.get("title")
+
+    # Manual-mode gate sentinels (e.g. lpx-gate-00) are held in_progress
+    # FOREVER by design; the FK backfill sweep must never auto-close them
+    # once their dependents finish. This is the fix for the reported bug.
+    if is_manual_gate(parent_id, parent_title):
+        logger.info(
+            "auto_close_parent_if_all_children_done: skipping manual-mode gate %s",
+            parent_id,
+        )
+        return None
+
     if parent_status == "done":
         return None
 

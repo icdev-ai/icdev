@@ -64,7 +64,12 @@ def _text_to_features(text: str) -> list:
     unique_words = len(set(words))
     unique_ratio = unique_words / max(word_count, 1)
     avg_word_len = sum(len(w) for w in words) / max(word_count, 1)
-    # Normalize to [0, 1]
+    # Normalize to [0, 1].
+    # NOTE: the last two features are constant 0.5 placeholders (no real quality
+    # or domain-relevance model is wired in). Info-gain scores derived from these
+    # features are therefore heuristic — callers must not treat them as learned
+    # relevance signals. Scoring/selection payloads carry a `heuristic` /
+    # `placeholder_features` flag to surface this.
     return [
         min(1.0, word_count / 100.0),
         unique_ratio,
@@ -156,6 +161,8 @@ def score_experiment_candidate(
         "info_gain_score": round(info_gain, 4),
         "dimensions": {k: round(v, 4) for k, v in dimensions.items()},
         "threshold_band": band,
+        "heuristic": True,
+        "placeholder_features": True,
         "scored_at": now_iso(),
     }
 
@@ -315,6 +322,8 @@ def select_next_experiment(
         "thompson_explored": selected.get("thompson_explored", False),
         "candidates_scored": len(scored),
         "candidates_filtered": len(candidates) - len(filtered),
+        "heuristic": True,
+        "placeholder_features": True,
         "reason": "selected",
     }
 

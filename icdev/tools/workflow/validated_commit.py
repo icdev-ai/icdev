@@ -4,9 +4,17 @@ kanban scheduler.
 
 Single source of truth for the four-gate validation suite:
   1. CodeLens  — py_compile + ruff + bandit on modified files
-  2. Coherence — coherence_checker.py --all --gate (compares to main baseline)
+  2. Coherence — coherence_checker.py --tier fast --gate, diff-scoped, compared
+                 per-check-id against a cached main baseline
   3. E2E       — Selenium lifecycle test if UI files modified
   4. Companion — sync to 10 platforms (best-effort, never fails)
+
+The coherence gate runs the FAST tier: the three whole-app checks that
+dominate its cost (blueprint_imports, openapi_parity, llm_router_api) are
+deferred to the post-merge sweep unless the diff touches their trigger
+surface. A cold kanban worktree measured 328s on the full tier against a 120s
+subprocess budget, so the gate timed out — and returned a PASS — on every
+task. See tools/genesis/reflexes/coherence_sweep.py for the full-tier sweep.
 
 Both interactive sessions (stop hook) and scheduler-dispatched sessions
 (kanban reflex) pass through this module so behavior is consistent.
@@ -30,8 +38,10 @@ from tools.logging.icdev_logger import get_logger
 import concurrent.futures
 import json
 import os
+import re
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -312,19 +322,60 @@ def _run_codelens(
     return True, "CodeLens passed", metrics
 
 
-def _parse_coherence_failures(stdout: str) -> str:
+def _extract_report_json(stdout: str) -> Optional[Dict[str, Any]]:
+    """Pull the coherence report out of stdout, tolerating leading noise.
+
+    Modules imported by the heavy checks (canvas ``db/init_db.py``) print
+    ``[init_db] ...`` banners at import time, so the JSON document is often not
+    the first thing on the stream. Those prints now go to stderr, but a plain
+    ``json.loads(stdout)`` silently turned ANY such regression into "no failure
+    detail available" — so scan for the first line that opens a JSON object and
+    parse from there as a permanent belt-and-braces.
+    """
+    if not stdout:
+        return None
+    try:
+        return json.loads(stdout)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    lines = stdout.splitlines()
+    for idx, line in enumerate(lines):
+        if line.lstrip().startswith("{"):
+            try:
+                return json.loads("\n".join(lines[idx:]))
+            except (json.JSONDecodeError, TypeError):
+                continue
+    return None
+
+
+def _failing_check_ids(report: Optional[Dict[str, Any]]) -> Set[str]:
+    """Ids of every check reporting ``fail`` in *report*."""
+    if not report:
+        return set()
+    return {
+        str(c.get("check_id"))
+        for c in report.get("checks", [])
+        if c.get("status") == "fail"
+    }
+
+
+def _parse_coherence_failures(stdout: str, only: Optional[Set[str]] = None) -> str:
     """Parse coherence checker JSON output and return a compact failure summary.
 
     Extracts the failing check IDs, their messages, and up to 3 missing items
     so the agent can target the exact rule without re-running the checker.
+    When *only* is given, restricts the summary to those check ids (used to
+    report just the NEW failures a change introduced).
     Falls back to raw stdout snippet if JSON is unparseable.
     """
     if not stdout:
         return ""
-    try:
-        data = json.loads(stdout)
+    data = _extract_report_json(stdout)
+    if data is not None:
         checks = data.get("checks", [])
         failed = [c for c in checks if c.get("status") == "fail"]
+        if only is not None:
+            failed = [c for c in failed if str(c.get("check_id")) in only]
         if not failed:
             return ""
         parts = []
@@ -344,15 +395,187 @@ def _parse_coherence_failures(stdout: str) -> str:
         if len(failed) > 5:
             parts.append(f"... and {len(failed) - 5} more failing checks")
         return "; ".join(parts)
-    except (json.JSONDecodeError, AttributeError):
-        # Fall back to raw last 300 chars of output
-        raw = stdout.strip()[-300:]
-        return f"raw: {raw}" if raw else ""
+    # Unparseable output — fall back to the raw tail so something reaches the agent.
+    raw = stdout.strip()[-300:]
+    return f"raw: {raw}" if raw else ""
 
 
-def _run_coherence(cwd: str, compare_to_main: bool = True) -> Tuple[bool, str]:
-    """Run coherence checker. If compare_to_main, only fail when cwd introduces
-    a NEW coherence violation (not pre-existing in main).
+# Coherence gate tuning. The gate runs the FAST tier (whole-app heavies are
+# deferred to the post-merge sweep) so it finishes well inside its timeout; a
+# cold kanban worktree measured 328s on the full tier against a 120s budget,
+# which meant the gate timed out on literally every task.
+_COHERENCE_TIERS = ("fast", "full")
+_BASELINE_TTL_SEC = 86400
+
+
+def _coherence_tier() -> str:
+    tier = os.environ.get("ICDEV_COHERENCE_GATE_TIER", "fast").strip().lower()
+    return tier if tier in _COHERENCE_TIERS else "fast"
+
+
+def _coherence_timeout_sec() -> int:
+    try:
+        return max(30, int(os.environ.get("ICDEV_COHERENCE_TIMEOUT_SEC", "180")))
+    except ValueError:
+        return 180
+
+
+# Windows caps a command line at ~8191 chars. Past this budget we stop passing
+# the diff and ask for the full tier instead — an unscoped fast tier would skip
+# the heavies without the diff evidence that justifies skipping them.
+_MAX_CHANGED_FILES_ARGV = 5000
+
+
+def _coherence_cmd(tier: str, changed_files: Optional[List[str]]) -> List[str]:
+    """Build the checker argv, degrading to --tier full when the diff won't fit."""
+    joined = ",".join(f for f in (changed_files or []) if f)
+    if joined and len(joined) <= _MAX_CHANGED_FILES_ARGV:
+        return [
+            "python", "tools/workflow/coherence_checker.py",
+            "--tier", tier, "--gate", "--changed-files", joined,
+        ]
+    if joined:
+        logger.info(
+            "coherence: %d changed files exceed the argv budget — running full tier",
+            len(changed_files or []),
+        )
+        return ["python", "tools/workflow/coherence_checker.py", "--tier", "full", "--gate"]
+    return ["python", "tools/workflow/coherence_checker.py", "--tier", tier, "--gate"]
+
+
+def _run_cancellable(
+    cmd: List[str],
+    cwd: str,
+    timeout: float,
+    cancel_event: Optional[threading.Event] = None,
+) -> Tuple[Optional[int], str, str]:
+    """Run *cmd*, killable early via *cancel_event*.
+
+    stdout/stderr go to temp files rather than pipes so a full pipe buffer can
+    never deadlock the poll loop on a checker that prints thousands of lines.
+
+    Returns ``(returncode, stdout, status)`` where status is one of
+    ``ok`` / ``timeout`` / ``cancelled`` / ``error:...``. returncode is None
+    unless status is ``ok``.
+    """
+    out_path = err_path = None
+    try:
+        fd_out, out_path = tempfile.mkstemp(suffix=".coh.out")
+        fd_err, err_path = tempfile.mkstemp(suffix=".coh.err")
+        status = "ok"
+        with os.fdopen(fd_out, "w", encoding="utf-8") as fo, \
+                os.fdopen(fd_err, "w", encoding="utf-8") as fe:
+            proc = subprocess.Popen(  # nosec B603 — fixed argv, shell=False
+                cmd, cwd=cwd, stdout=fo, stderr=fe,
+            )
+            deadline = time.monotonic() + timeout
+            while proc.poll() is None:
+                if cancel_event is not None and cancel_event.is_set():
+                    status = "cancelled"
+                    break
+                if time.monotonic() >= deadline:
+                    status = "timeout"
+                    break
+                time.sleep(0.25)
+            if status != "ok":
+                proc.kill()
+                try:
+                    proc.wait(timeout=10)
+                except Exception:
+                    pass
+        stdout = Path(out_path).read_text(encoding="utf-8", errors="replace")
+        return (proc.returncode if status == "ok" else None), stdout, status
+    except Exception as exc:
+        logger.warning("coherence subprocess error: %s", exc)
+        return None, "", f"error:{exc}"
+    finally:
+        for path in (out_path, err_path):
+            if path:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+
+def _main_head_sha() -> str:
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=10,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip() or "unknown"
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _main_baseline_failures(tier: str, timeout: float) -> Optional[Set[str]]:
+    """Check ids already failing on the main checkout, cached per main HEAD.
+
+    The baseline only moves when main moves, but it used to be recomputed for
+    every single task — a second full coherence run per validation. Cache it on
+    disk (``.tmp/`` is gitignored) keyed by the main HEAD sha so a queue of N
+    tasks pays for it once instead of N times.
+
+    Returns None when the baseline could not be established.
+    """
+    sha = _main_head_sha()
+    cache = BASE_DIR / ".tmp" / f"coherence_baseline_{tier}_{sha[:12]}.json"
+    try:
+        if cache.exists() and (time.time() - cache.stat().st_mtime) < _BASELINE_TTL_SEC:
+            data = json.loads(cache.read_text(encoding="utf-8"))
+            return set(data.get("failing", []))
+    except Exception as exc:
+        logger.debug("coherence baseline cache unreadable: %s", exc)
+
+    _rc, stdout, status = _run_cancellable(
+        _coherence_cmd(tier, None), str(BASE_DIR), timeout
+    )
+    if status != "ok":
+        logger.warning("coherence baseline on main not established: %s", status)
+        return None
+    report = _extract_report_json(stdout)
+    if report is None:
+        logger.warning("coherence baseline on main: unparseable checker output")
+        return None
+    failing = _failing_check_ids(report)
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(
+            json.dumps({"sha": sha, "tier": tier, "failing": sorted(failing)}),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.debug("coherence baseline cache not written: %s", exc)
+    return failing
+
+
+def _run_coherence(
+    cwd: str,
+    compare_to_main: bool = True,
+    changed_files: Optional[List[str]] = None,
+    cancel_event: Optional[threading.Event] = None,
+    timeout: Optional[float] = None,
+    tier: Optional[str] = None,
+) -> Tuple[Optional[bool], str]:
+    """Run the coherence gate against *cwd*.
+
+    *tier* overrides ICDEV_COHERENCE_GATE_TIER — phase-exit gates ask for
+    ``full`` because they validate a whole phase, not one task's diff.
+
+    Returns ``(passed, reason)`` where passed is:
+      * ``True``  — no NEW failing check relative to the main baseline
+      * ``False`` — cwd introduces at least one check main does not fail
+      * ``None``  — the gate could not be evaluated (timeout / cancelled /
+        unparseable output). This is deliberately NOT True: the previous
+        version returned a pass on timeout, which recorded ``coherence_passed=1``
+        for tasks whose coherence had never actually run.
+
+    Comparison is per-check-id, not binary. The old code asked only "does main
+    also fail?" — so a single unrelated pre-existing failure on main (there was
+    one) turned the entire gate into an unconditional pass.
     """
     # If cwd is a worktree path that no longer exists, subprocess would raise
     # FileNotFoundError which the except-branch currently returns as True
@@ -365,46 +588,60 @@ def _run_coherence(cwd: str, compare_to_main: bool = True) -> Tuple[bool, str]:
         _parts = cwd_path.parts
         if ".tmp" in _parts and "worktrees" in _parts:
             return False, "worktree missing on disk — rebuild required"
-    try:
-        r = subprocess.run(
-            ["python", "tools/workflow/coherence_checker.py", "--all", "--gate"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=cwd, timeout=120,
+
+    tier = (tier or _coherence_tier()).strip().lower()
+    if tier not in _COHERENCE_TIERS:
+        tier = "fast"
+    budget = float(timeout or _coherence_timeout_sec())
+
+    rc, stdout, status = _run_cancellable(
+        _coherence_cmd(tier, changed_files), cwd, budget, cancel_event
+    )
+    if status == "cancelled":
+        return None, "coherence cancelled — an earlier gate already failed"
+    if status == "timeout":
+        return None, (
+            f"coherence NOT EVALUATED — exceeded {budget:.0f}s on tier '{tier}'"
         )
-        cwd_ok = r.returncode == 0
-    except Exception as exc:
-        logger.warning("coherence error in cwd: %s", exc)
-        return True, f"coherence skipped ({exc})"
+    if status.startswith("error"):
+        return None, f"coherence NOT EVALUATED — {status}"
 
-    if cwd_ok:
-        return True, "coherence passed"
+    report = _extract_report_json(stdout)
+    if report is None:
+        return None, "coherence NOT EVALUATED — unparseable checker output"
 
-    detail = _parse_coherence_failures(r.stdout)
+    cwd_failing = _failing_check_ids(report)
+    if not cwd_failing:
+        return True, f"coherence passed (tier={tier}, exit={rc})"
 
-    if not compare_to_main or str(Path(cwd).resolve()) == str(BASE_DIR.resolve()):
+    detail = _parse_coherence_failures(stdout)
+
+    if not compare_to_main or str(cwd_path.resolve()) == str(BASE_DIR.resolve()):
         # cwd IS main, or baseline comparison disabled → fail
-        reason = f"coherence gate failed (exit {r.returncode})"
+        reason = f"coherence gate failed (exit {rc})"
         if detail:
             reason += f" — {detail}"
         return False, reason
 
-    # Compare to main — if main also fails, this is pre-existing
-    try:
-        r_main = subprocess.run(
-            ["python", "tools/workflow/coherence_checker.py", "--all", "--gate"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(BASE_DIR), timeout=120,
+    baseline = _main_baseline_failures(tier, budget)
+    if baseline is None:
+        # Neither "broken by this change" nor "pre-existing" is provable.
+        return None, (
+            "coherence NOT EVALUATED — cwd failed but the main baseline could "
+            f"not be established; cwd failures: {', '.join(sorted(cwd_failing))}"
         )
-        main_ok = r_main.returncode == 0
-    except Exception:
-        main_ok = True  # Assume main is OK if we can't check
 
-    if main_ok:
-        reason = "coherence broken by cwd changes (main passes, cwd fails)"
-        if detail:
-            reason += f" — {detail}"
-        return False, reason
-    return True, "coherence fails in both main and cwd — pre-existing"
+    new_failures = cwd_failing - baseline
+    if not new_failures:
+        return True, (
+            f"coherence: {len(cwd_failing)} pre-existing failure(s) on main, "
+            "none introduced here"
+        )
+    return False, (
+        "coherence broken by this change — NEW: "
+        + ", ".join(sorted(new_failures))
+        + (f" — {_parse_coherence_failures(stdout, only=new_failures)}" if stdout else "")
+    )
 
 
 def _run_route_smoke(modified_files: List[str]) -> Tuple[bool, str, Dict[str, Any]]:
@@ -442,6 +679,89 @@ def _run_route_smoke(modified_files: List[str]) -> Tuple[bool, str, Dict[str, An
         return False, f"Route smoke FAILED: {fail_summary}", metrics
 
     return True, f"Route smoke passed ({len(results)} routes OK)", metrics
+
+
+def _playwright_specs_for_changed_files(modified_files: Optional[List[str]]) -> List[str]:
+    """Map changed UI files -> relevant tests/e2e/<slug>*.spec.ts spec(s).
+
+    Modeled on route_smoke._routes_for_changed_files. Returns [] (→ caller falls
+    back to Selenium) for backend-only diffs, or for too-broad changes (app.py /
+    base layout) so we never run the whole spec suite synchronously. Capped at 2.
+    """
+    files = modified_files or []
+    specs_dir = BASE_DIR / "tests" / "e2e"
+    if not specs_dir.is_dir():
+        return []
+    ui_exts = (".html", ".js", ".ts", ".css", ".jinja", ".jinja2")
+    slugs: Set[str] = set()
+    for f in files:
+        fp = f.replace("\\", "/")
+        # Too broad → bail to Selenium (never run the whole spec suite here).
+        if fp.endswith("app.py") or fp.endswith("/base.html") or "/templates/base.html" in fp:
+            return []
+        is_ui = any(fp.endswith(e) for e in ui_exts) or "/templates/" in fp or fp.endswith("blueprint.py")
+        if not is_ui:
+            continue
+        parts = fp.split("/")
+        # template subdir: .../templates/<slug>/...
+        if "templates" in parts:
+            i = parts.index("templates")
+            if i + 1 < len(parts) - 1:
+                slugs.add(parts[i + 1])
+        # canvas dir: tools/<canvas>/... (skip the generic "dashboard" bucket)
+        if len(parts) > 2 and parts[0] in ("tools", "icdev"):
+            idx = 1 if parts[0] == "tools" else 2
+            if idx < len(parts) and parts[idx] not in ("dashboard",):
+                slugs.add(parts[idx])
+        # basename slug: kanban.html -> kanban, task_pipeline.js -> task_pipeline
+        base = parts[-1]
+        for e in ui_exts:
+            if base.endswith(e):
+                slugs.add(base[: -len(e)])
+                break
+    specs: List[str] = []
+    for slug in sorted(slugs):
+        if not slug or not re.match(r"^[a-z0-9_]+$", slug):
+            continue
+        for cand in sorted(specs_dir.glob(slug + "*.spec.ts")):
+            p = str(cand)
+            if cand.is_file() and p not in specs:
+                specs.append(p)
+    return specs[:2]
+
+
+def _run_playwright(cwd: str, specs: List[str], time_budget: float) -> Tuple[Optional[bool], str, Dict[str, Any]]:
+    """Run the mapped Playwright spec(s) via e2e_runner.run_playwright_native.
+
+    Returns (passed | None, reason, metrics). None = not_run (unavailable /
+    npx or browser missing / timeout / error) → caller falls back to Selenium.
+    NEVER raises. ``cwd``/``time_budget`` are advisory (the runner uses its own
+    PROJECT_ROOT + internal timeout for a single spec).
+    """
+    if not specs:
+        return None, "no playwright spec mapped", {}
+    try:
+        from tools.testing.e2e_runner import run_playwright_native
+    except Exception as exc:
+        return None, f"playwright runner import failed: {exc}", {}
+    ran_any = False
+    all_pass = True
+    details: List[str] = []
+    for spec in specs:
+        run_id = "pipeline-e2e-" + os.path.basename(spec).replace(".spec.ts", "")
+        try:
+            results = run_playwright_native(run_id, logger, test_file=spec)
+        except Exception as exc:
+            return None, f"playwright unavailable/skipped: {exc}", {}
+        if not results:
+            return None, "playwright produced no results (npx/browser missing?)", {}
+        ran_any = True
+        spec_pass = all(getattr(r, "passed", False) for r in results)
+        all_pass = all_pass and spec_pass
+        details.append(os.path.basename(spec) + ":" + ("pass" if spec_pass else "fail"))
+    if not ran_any:
+        return None, "playwright did not run", {}
+    return all_pass, "; ".join(details), {}
 
 
 def _run_e2e(cwd: str, ui_touched: bool, modified_files: Optional[List[str]] = None) -> Tuple[bool, str, Dict[str, Any]]:
@@ -494,6 +814,28 @@ def _run_e2e(cwd: str, ui_touched: bool, modified_files: Optional[List[str]] = N
     except Exception:
         metrics["e2e_ran"] = False
         return True, f"{smoke_reason}; kanban API unresponsive — full E2E skipped (transient load)", metrics
+
+    # ── Per-task Playwright (preferred E2E engine) ────────────────────────────
+    # Run the Playwright spec(s) mapped to the task's changed files. Falls through
+    # to the existing Selenium test below when no spec maps or Playwright can't
+    # run (npx/browser missing, error, timeout). A Playwright FAILURE blocks the
+    # task ONLY when KANBAN_PIPELINE_ENFORCE is on; otherwise it's record-only.
+    _pw_specs = _playwright_specs_for_changed_files(modified_files)
+    if _pw_specs:
+        _pw_passed, _pw_reason, _pw_metrics = _run_playwright(cwd, _pw_specs, 120.0)
+        if _pw_passed is not None:  # Playwright actually ran → it's the E2E verdict
+            metrics["e2e_ran"] = True
+            metrics["e2e_passed"] = _pw_passed
+            metrics["e2e_engine"] = "playwright"
+            if _pw_passed:
+                return True, f"E2E Playwright passed ({_pw_reason})", metrics
+            if _pipeline_enforce():
+                return False, f"E2E Playwright FAILED: {_pw_reason}", metrics
+            return True, f"E2E Playwright failed (record-only; {_pw_reason})", metrics
+        # not_run → fall through to the existing Selenium path (unchanged)
+        metrics["e2e_engine"] = "selenium"
+    else:
+        metrics["e2e_engine"] = "selenium"
 
     metrics["e2e_ran"] = True
     _cmd = ["python", "tests/e2e_kanban_depends_on.py"]
@@ -565,12 +907,57 @@ def _verify_budget_sec() -> float:
         return 300.0
 
 
+def _pipeline_enforce() -> bool:
+    """Governed Delivery Pipeline enforcement switch. Default OFF: the Phase 2
+    gates (pytest, conformance) RUN and RECORD their result but never block a
+    task's completion. Flip KANBAN_PIPELINE_ENFORCE=1 to make them blocking."""
+    return os.environ.get("KANBAN_PIPELINE_ENFORCE", "0").lower() in ("1", "true", "yes")
+
+
+def _run_pytest(
+    cwd: str, modified_files: List[str], time_budget: float
+) -> Tuple[Optional[bool], List[str]]:
+    """Unit-test gate — runs pytest ONLY on the task's changed test files (never
+    the whole suite, which would blow the budget). Returns (passed, failed_ids):
+      - (None, []) when no test files changed or pytest is unavailable → not_run
+      - (True/False, [...]) on a real run.
+    Never raises; degrades to not_run."""
+    test_files = [
+        f for f in modified_files
+        if f.endswith(".py") and (
+            "/test_" in f.replace("\\", "/")
+            or Path(f).name.startswith("test_")
+            or f.replace("\\", "/").startswith("tests/")
+        )
+    ]
+    if not test_files:
+        return None, []
+    timeout = max(15, min(120, int(time_budget)))
+    try:
+        env = dict(os.environ)
+        env["PYTHONPATH"] = cwd
+        env.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
+        proc = subprocess.run(  # nosec B603 — fixed args, shell=False
+            ["python", "-m", "pytest", *test_files, "-q", "--no-header",
+             "-p", "no:cacheprovider", "-o", "addopts="],
+            cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout, env=env,
+        )
+    except Exception as exc:
+        logger.debug("pytest gate: run skipped (%s)", exc)
+        return None, []
+    out = (proc.stdout or "") + (proc.stderr or "")
+    failed = re.findall(r"^FAILED (\S+)", out, flags=re.MULTILINE)
+    return (proc.returncode == 0), failed[:20]
+
+
 def validate_working_tree(
     cwd: str,
     modified_files: Optional[List[str]] = None,
     compare_to_main: bool = True,
     run_e2e: bool = True,
     run_companion: bool = True,
+    budget_sec: Optional[float] = None,
 ) -> Tuple[bool, str, Dict[str, Any]]:
     """Run the four-gate validation suite.
 
@@ -585,6 +972,10 @@ def validate_working_tree(
         compare_to_main: For coherence, only fail if cwd introduces NEW violations.
         run_e2e: Run E2E test if UI files touched (default True).
         run_companion: Run companion sync at the end (default True).
+        budget_sec: Wall-clock cap for the whole suite. Defaults to
+            ``ICDEV_KANBAN_VERIFY_BUDGET_SEC``; the kanban runner passes a
+            value derived from the task's dispatch budget so validation can
+            never consume the time the build needs.
 
     Returns:
         (passed, reason, metrics): passed is False on any gate failure
@@ -638,7 +1029,7 @@ def validate_working_tree(
         if f.endswith(".py") and (Path(cwd) / f).exists()
     ]
 
-    budget = _verify_budget_sec()
+    budget = float(budget_sec) if budget_sec else _verify_budget_sec()
     t0 = time.monotonic()
 
     def _remaining() -> float:
@@ -660,31 +1051,56 @@ def validate_working_tree(
         "budget_sec": budget,
     }
 
-    # 1+2. CodeLens + Coherence in parallel — wall-clock time is max(cl, co)
-    #       instead of cl + co, which was eating into the 300s budget.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as _pool:
-        _cl_fut = _pool.submit(_run_codelens, cwd, modified_py, compare_to_main)
-        _co_fut = _pool.submit(_run_coherence, cwd, compare_to_main)
-        cl_ok, cl_reason, cl_metrics = _cl_fut.result()
+    # 1+2. CodeLens + Coherence concurrently — wall-clock is max(cl, co) rather
+    #       than cl + co. CodeLens is the cheap gate and runs on this thread so
+    #       that when it fails we CANCEL the coherence subprocess instead of
+    #       blocking on it: a 4s CodeLens failure used to still wait out
+    #       coherence's full timeout before returning.
+    _cancel = threading.Event()
+    _co_budget = max(30.0, min(float(_coherence_timeout_sec()), _remaining()))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+        _co_fut = _pool.submit(
+            _run_coherence, cwd, compare_to_main, modified_files, _cancel, _co_budget,
+        )
+        cl_ok, cl_reason, cl_metrics = _run_codelens(cwd, modified_py, compare_to_main)
+        if not cl_ok:
+            _cancel.set()
         co_ok, co_reason = _co_fut.result()
 
     metrics.update(cl_metrics)
     metrics["codelens_passed"] = cl_ok
+    # co_ok is tri-state: True / False / None ("not evaluated"). None is stored
+    # as NULL so a skipped gate is never laundered into a recorded pass.
     metrics["coherence_passed"] = co_ok
+    if co_ok is not True:
+        metrics["coherence_violations"] = co_reason[:1000]
 
     if not cl_ok:
         metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
         # Include coherence result in reason so the notification shows both
-        suffix = f" | coherence: {'pass' if co_ok else co_reason}" if not co_ok else ""
+        suffix = "" if co_ok is True else f" | coherence: {co_reason}"
         return False, cl_reason + suffix, metrics
 
-    if not co_ok:
+    if co_ok is False:
         metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
         return False, co_reason, metrics
 
     if _over_budget():
         metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
         return False, f"BUDGET EXHAUSTED after CodeLens+Coherence ({budget:.0f}s)", metrics
+
+    # 2b. Unit tests (Governed Delivery Pipeline Phase 2) — pytest on the task's
+    #     changed test files only. RECORD-ONLY by default: a failure blocks the
+    #     task ONLY when KANBAN_PIPELINE_ENFORCE is on. not_run when no test
+    #     files changed. Existing gates above are unaffected.
+    pytest_passed, failed_tests = _run_pytest(cwd, modified_files, _remaining())
+    metrics["pytest_ran"] = pytest_passed is not None
+    metrics["pytest_passed"] = pytest_passed
+    if failed_tests:
+        metrics["failed_tests"] = ", ".join(failed_tests)
+    if pytest_passed is False and _pipeline_enforce():
+        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
+        return False, f"UNIT TESTS FAILED: {', '.join(failed_tests) or 'see pytest output'}", metrics
 
     # 3. E2E
     # Only trigger E2E for actual UI surface changes: templates, JS/CSS/TS assets,

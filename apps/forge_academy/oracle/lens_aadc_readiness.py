@@ -47,7 +47,7 @@ class LensAADCReadiness(BaseLens):
             SELECT u.id, u.username, u.display_name, u.role, u.xp
             FROM fa_users u
             WHERE u.role IN ('secops_eng','isso','issm','ciso')
-              AND u.xp >= ?
+              AND u.xp >= %s
               AND NOT EXISTS (
                   SELECT 1 FROM fa_mission_progress mp
                   JOIN fa_missions m ON m.id = mp.mission_id
@@ -69,7 +69,7 @@ class LensAADCReadiness(BaseLens):
                        d.design_id, d.name AS design_name, d.updated_at
                 FROM aadc_designs d
                 JOIN fa_users u ON u.username = d.created_by
-                WHERE d.updated_at < ?
+                WHERE d.updated_at < %s
                   AND (d.last_score IS NULL OR d.last_score < 50)
                 """,
                 (stale_cutoff,),
@@ -81,6 +81,14 @@ class LensAADCReadiness(BaseLens):
             "gap_users": [dict(r) for r in gap_users],
             "stale_designs": [dict(r) for r in stale_designs],
         }
+
+    def score(self, analysis: dict[str, Any]) -> list[OraclePrediction]:
+        """BaseLens phase 2 — this lens produces final predictions directly."""
+        return self.generate_predictions(analysis)
+
+    def propose(self, predictions: list[OraclePrediction]) -> list[OraclePrediction]:
+        """BaseLens phase 3 — recommendations already inline in each prediction."""
+        return predictions
 
     def generate_predictions(self, analysis: dict[str, Any]) -> list[OraclePrediction]:
         predictions: list[OraclePrediction] = []

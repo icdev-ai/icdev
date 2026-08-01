@@ -1,0 +1,5 @@
+# IQE-TWINOBS-003: Recent cross-canvas twin events
+# The twin_* drift/lifecycle event stream (twin_snapshot_taken, twin_simulation_completed, ...).
+
+foreach e in twin_observatory.events
+select e.source_canvas, e.event_type, e.verdict, e.created_at

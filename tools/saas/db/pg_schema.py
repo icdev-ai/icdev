@@ -115,60 +115,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     id SERIAL PRIMARY KEY,
     project_id TEXT REFERENCES projects(id),
     event_type TEXT NOT NULL CHECK(event_type IN (
-        'project_created', 'project_updated',
-        'code_generated', 'code_reviewed', 'code_approved', 'code_rejected',
-        'test_written', 'test_executed', 'test_passed', 'test_failed',
-        'security_scan', 'vulnerability_found', 'vulnerability_resolved',
-        'compliance_check', 'ssp_generated', 'poam_generated', 'stig_checked', 'sbom_generated',
-        'deployment_initiated', 'deployment_succeeded', 'deployment_failed', 'rollback_executed',
-        'decision_made', 'approval_granted', 'approval_denied',
-        'agent_task_submitted', 'agent_task_completed', 'agent_task_failed',
-        'self_heal_triggered', 'pattern_detected', 'knowledge_recorded',
-        'config_changed', 'secret_rotated',
-        'cssp_assessed', 'cssp_report_generated', 'cssp_evidence_collected',
-        'ir_plan_generated', 'siem_config_generated',
-        'xacta_sync', 'xacta_sync_completed', 'xacta_export',
-        'maintenance_audit', 'dependency_scanned', 'vulnerability_checked',
-        'remediation_applied', 'sla_violation',
-        'fedramp_assessed', 'cmmc_assessed', 'oscal_generated',
-        'emass_sync', 'emass_push', 'emass_pull',
-        'cato_evidence_collected', 'classification_changed',
-        'crosswalk_mapped', 'pi_compliance_updated',
-        'model_imported', 'model_synced', 'model_snapshot',
-        'digital_thread_linked', 'des_assessed',
-        'reqif_imported', 'xmi_imported',
-        'code_from_model', 'model_from_code',
-        'legacy_analyzed', 'migration_assessed', 'migration_planned',
-        'migration_task_completed', 'migration_code_generated',
-        'schema_migrated', 'service_extracted', 'strangler_fig_cutover',
-        'intake_session_created', 'intake_session_resumed', 'intake_session_completed',
-        'requirement_captured', 'requirement_refined', 'requirement_approved',
-        'gap_detected', 'ambiguity_detected',
-        'readiness_scored', 'decomposition_generated',
-        'document_uploaded', 'document_extracted',
-        'bdd_criteria_generated',
-        'boundary_assessed', 'boundary_impact_red', 'boundary_alternative_generated',
-        'ato_system_registered', 'isa_created', 'isa_expired', 'isa_renewed',
-        'scrm_assessed', 'cve_triaged', 'cve_impact_propagated',
-        'supply_chain_risk_escalated',
-        'simulation_created', 'simulation_completed', 'monte_carlo_completed',
-        'coa_generated', 'coa_alternative_generated', 'coa_compared',
-        'coa_selected', 'coa_rejected', 'coa_presented',
-        'integration_configured', 'integration_sync_push', 'integration_sync_pull',
-        'integration_sync_error', 'reqif_exported',
-        'approval_submitted', 'approval_reviewed', 'approval_approved',
-        'approval_rejected', 'approval_escalated',
-        'rtm_generated', 'rtm_gap_detected',
-        'hook_event_logged', 'agent_execution_started', 'agent_execution_completed',
-        'agent_execution_failed', 'agent_execution_retried',
-        'nlq_query_executed', 'nlq_query_blocked',
-        'worktree_created', 'worktree_cleaned',
-        'gitlab_task_claimed', 'gitlab_task_completed', 'gitlab_task_failed',
-        'agentic_fitness_assessed', 'child_app_generated',
-        'agentic_scaffolded', 'agentic_code_generated',
-        'governance_validated', 'agentic_test_generated',
-        'fips199_categorized', 'fips200_assessed',
-        'security_categorization_completed', 'baseline_selected'
+@@AUDIT_EVENT_TYPES@@
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -2172,6 +2119,25 @@ CREATE TABLE IF NOT EXISTS memory_consolidation_log (
 
 
 """
+
+# ---------------------------------------------------------------------------
+# audit_trail.event_type CHECK — generated, never hand-maintained
+# ---------------------------------------------------------------------------
+#
+# This was the FOURTH copy of the event-type list. VALID_EVENT_TYPES is the
+# source of truth; init_icdev_db.py derives from it and migration 318 rebuilds
+# the deployed constraint from it. A hand-maintained copy here meant a SaaS
+# tenant database could still be provisioned with a stale constraint — exactly
+# how the 221-vs-189 drift arose.
+#
+# The list also appears in tools/db/schema/pg_consolidated.sql, but that is a
+# pg_dump snapshot rather than a maintained source: bootstrap_pg.py runs every
+# migration above its through_version (301), so 318 re-applies the correct
+# constraint there. A stale dump is safe by design.
+from tools.audit.audit_logger import VALID_EVENT_TYPES as _VALID_EVENT_TYPES  # noqa: E402
+
+_AUDIT_EVENT_TYPES_SQL = ",\n".join(f"        '{_t}'" for _t in _VALID_EVENT_TYPES)
+PG_SCHEMA_SQL = PG_SCHEMA_SQL.replace("@@AUDIT_EVENT_TYPES@@", _AUDIT_EVENT_TYPES_SQL)
 
 PG_INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_trail(project_id)",

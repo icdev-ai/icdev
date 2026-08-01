@@ -18,7 +18,7 @@ import json
 import os
 import subprocess
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, list_tables
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -72,6 +72,46 @@ def _run_cli(script_path: str, cli_args: list = None, timeout: int = 300) -> dic
         return {"error": f"Script not found: {script_path}"}
     except Exception as exc:
         return {"error": str(exc)}
+
+
+def _mcp_authz_gate(tool_name: str, args: dict) -> dict | None:
+    """Fail-closed MCP per-tool RBAC gate (D261).
+
+    Returns an error dict when the call is NOT authorized (so the caller can
+    return it directly), or None when the call may proceed.
+
+    Authorization is deny-by-default: the caller MUST supply a role via
+    ``args["mcp_role"]`` (or ``args["role"]``). With no role the call is denied.
+    ``ICDEV_MCP_AUTHZ_BYPASS`` is an explicit test/dev opt-out, mirroring the
+    dashboard's ICDEV_AUTH_BYPASS. State-changing DSOC tools (RTBH/flowspec) are
+    gated with this so an ungated MCP client cannot inject routing actions.
+    """
+    if os.environ.get("ICDEV_MCP_AUTHZ_BYPASS", "").lower() in ("1", "true", "yes"):
+        return None
+    role = (args.get("mcp_role") or args.get("role") or "").strip()
+    if not role:
+        return {
+            "error": "authorization required: no MCP role supplied (fail-closed)",
+            "authorized": False,
+            "tool": tool_name,
+        }
+    try:
+        from tools.security.mcp_tool_authorizer import MCPToolAuthorizer
+        decision = MCPToolAuthorizer().authorize(role, tool_name)
+    except Exception as exc:  # noqa: BLE001 — authorizer failure must fail closed
+        return {
+            "error": f"authorization unavailable (fail-closed): {exc}",
+            "authorized": False,
+            "tool": tool_name,
+        }
+    if not decision.get("allowed"):
+        return {
+            "error": f"unauthorized: {decision.get('reason', 'denied')}",
+            "authorized": False,
+            "role": role,
+            "tool": tool_name,
+        }
+    return None
 
 
 # ===========================================================================
@@ -738,8 +778,8 @@ def handle_nlq_query(args: dict) -> dict:
         conn = get_connection()
         # Simple passthrough — NLQ requires LLM which is not invoked here.
         # Return available tables for the user to formulate queries.
-        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        tables = [row["name"] for row in cursor.fetchall()]
+        # Backend-aware table listing (pgrt-sweep-06) — no sqlite_master/translation reliance.
+        tables = list_tables(conn)
         conn.close()
         return {
             "status": "info",
@@ -1422,6 +1462,64 @@ def handle_guard_result(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_finding_replay(args: dict) -> dict:
+    """Replay one stored reproduction for a dynamic finding (oss-poc-01)."""
+    try:
+        from tools.security.reproduction_validator import Reproduction, replay
+
+        repro = Reproduction.from_dict(dict(args.get("reproduction") or {}))
+        result = replay(repro, target=args.get("target") or None)
+        return {**result.to_dict(), "decisive": result.decisive}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def handle_finding_enforce_reproduction(args: dict) -> dict:
+    """Apply the reproduce-or-drop rule to a batch of findings (oss-poc-01)."""
+    try:
+        from tools.security.reproduction_validator import enforce
+
+        report = enforce(
+            list(args.get("findings") or []),
+            persist=bool(args.get("persist", True)),
+        )
+        payload = report.to_dict()
+        if args.get("gate") and report.blocking:
+            return {
+                "error": (
+                    f"reproduce-or-drop: {len(report.blocking)} confirmed finding(s) block the gate"
+                ),
+                **payload,
+            }
+        return payload
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def handle_finding_verify_discrimination(args: dict) -> dict:
+    """Prove a reproduction distinguishes vulnerable from fixed (oss-poc-01)."""
+    try:
+        from tools.security.reproduction_validator import (
+            Reproduction,
+            mark_discriminating,
+            verify_discrimination,
+        )
+
+        repro = Reproduction.from_dict(dict(args.get("reproduction") or {}))
+        proof = verify_discrimination(
+            repro,
+            vulnerable_target=str(args.get("vulnerable_target", "")),
+            fixed_target=str(args.get("fixed_target", "")),
+        )
+        payload = proof.to_dict()
+        finding_key = str(args.get("finding_key") or "")
+        if finding_key:
+            payload["marked"] = mark_discriminating(finding_key, proof)
+        return payload
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
 def handle_evaluate_aggregation_rules(args: dict) -> dict:
     """Evaluate SCG aggregation rules and return fired rules + derived classification (prop-sec-03)."""
     try:
@@ -1855,7 +1953,15 @@ def ccc_loa_create(args: dict) -> dict:
 
 
 def dsoc_rtbh_trigger(args: dict) -> dict:
-    """Trigger RTBH null-route for a target prefix."""
+    """Trigger RTBH null-route record for a target prefix (record-only/simulation).
+
+    Requires MCP authorization (deny-by-default). This does NOT push routes to
+    live routers — it records the RTBH entry and generates apply-ready config
+    text for human review.
+    """
+    denied = _mcp_authz_gate("dsoc_rtbh_trigger", args)
+    if denied is not None:
+        return denied
     try:
         from tools.dsoc_canvas.db.init_db import get_connection
         from tools.dsoc_canvas.rtbh_manager import trigger_rtbh
@@ -1875,6 +1981,8 @@ def dsoc_rtbh_trigger(args: dict) -> dict:
             conn.commit()
         finally:
             conn.close()
+        if isinstance(result, dict):
+            result.setdefault("mode", "simulation-record-only")
         return result
     except Exception as exc:
         logger.warning("dsoc_rtbh_trigger: %s", exc)
@@ -1882,7 +1990,15 @@ def dsoc_rtbh_trigger(args: dict) -> dict:
 
 
 def dsoc_flowspec_activate(args: dict) -> dict:
-    """Activate a BGP flowspec rule by ID."""
+    """Activate a BGP flowspec rule record by ID (record-only/simulation).
+
+    Requires MCP authorization (deny-by-default). This does NOT push flowspec
+    to live routers — it flips the rule's status and generates apply-ready
+    IOS-XR/JunOS config text for human review.
+    """
+    denied = _mcp_authz_gate("dsoc_flowspec_activate", args)
+    if denied is not None:
+        return denied
     try:
         from tools.dsoc_canvas.db.init_db import get_connection
         from tools.dsoc_canvas.flowspec_engine import activate_rule
@@ -1895,6 +2011,8 @@ def dsoc_flowspec_activate(args: dict) -> dict:
             conn.commit()
         finally:
             conn.close()
+        if isinstance(result, dict):
+            result.setdefault("mode", "simulation-record-only")
         return result
     except Exception as exc:
         logger.warning("dsoc_flowspec_activate: %s", exc)
@@ -2059,6 +2177,65 @@ def handle_cod_invoke(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_divergence_invoke(args: dict) -> dict:
+    """Invoke Divergence via ChainOrchestrator: a single isolated generative
+    fan-out that returns a raw pool of candidate ideas, optionally scored by the
+    separate critic (novelty/viability/fit + advisory trap flags).
+
+    Divergence is OPT-IN per function (enabled default false); if the function is
+    not enabled, the orchestrator raises and this handler returns {'error': ...}
+    like any other unavailable path rather than raising. Cross-repo callers
+    (e.g. idea_lab) reach this the same way they reach council_query. CUI:
+    divergence inherits the function's existing LOCAL-ONLY routing — this tool
+    opens no new egress path.
+    """
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+
+        function = args.get("function", "default")
+        orchestrator = ChainOrchestrator()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": args.get("prompt", "")}],
+            system_prompt=args.get("system_prompt", ""),
+        )
+        result = orchestrator.invoke_divergence(function, request)
+
+        payload = {
+            "content": result.content,
+            "chain_mode": result.chain_mode,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_input_tokens": result.total_input_tokens,
+            "total_output_tokens": result.total_output_tokens,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "trace_id": result.trace_id,
+            "rounds": result.rounds,
+        }
+
+        # Optional Focus half: run the separate critic to score + trap-flag the
+        # pool. Best-effort — a critic failure never fails the generate call.
+        if args.get("score") and result.content:
+            try:
+                from tools.quality.divergence_critic import score_idea_pool
+
+                scored = score_idea_pool(
+                    result.content, function=function, trace_id=result.trace_id, persist=False
+                )
+                payload["scored"] = scored.as_dict()
+                # trap_warnings() exists once dvg-critic-02 lands; defensive here.
+                trap_fn = getattr(scored, "trap_warnings", None)
+                payload["trap_warnings"] = trap_fn() if callable(trap_fn) else []
+            except Exception as exc:  # noqa: BLE001 — scoring is optional
+                payload["score_error"] = str(exc)
+
+        return payload
+    except Exception as exc:
+        logger.warning("handle_divergence_invoke: %s", exc)
+        return {"error": str(exc)}
+
+
 # ---------------------------------------------------------------------------
 # SIPA — Software Integrity & Provenance Assessor (sipa-mcp-01)
 # ---------------------------------------------------------------------------
@@ -2215,6 +2392,68 @@ def get_gepa_optimizer_handler(args: dict) -> dict:
     except Exception as exc:
         logger.warning("get_gepa_optimizer_handler: %s", exc)
         return {"applied": [], "skipped": [], "errors": [str(exc)]}
+# ── Knowledge Graph temporal handlers ──────────────────────────────────────
+
+def handle_kg_stale_entities(args: dict) -> dict:
+    """Find KG nodes older than N days (backs the kg_stale_entities MCP tool —
+    previously a dangling stub; logic lives in knowledge_graph.temporal)."""
+    try:
+        from tools.knowledge_graph.temporal import find_stale_entities
+        return find_stale_entities(
+            graph_id=args.get("graph_id"),
+            stale_days=int(args.get("stale_days", 90)),
+        )
+    except Exception as exc:
+        logger.warning("handle_kg_stale_entities: %s", exc)
+        return {"error": str(exc)}
+
+
+# ── Document Modernization Engine (docmod) handlers ────────────────────────
+
+def handle_docmod_scan(args: dict) -> dict:
+    """Scan document(s) for stale content (deterministic verdicts, incremental)."""
+    try:
+        doc_id = (args.get("doc_id") or "").strip()
+        collection_id = (args.get("collection_id") or "").strip() or None
+        force = bool(args.get("force", False))
+        if doc_id:
+            from tools.doc_modernization import scan_document
+            return scan_document(doc_id, force=force)
+        from tools.doc_modernization import scan_collection
+        return scan_collection(collection_id=collection_id, trigger="api", force=force)
+    except Exception as exc:
+        logger.warning("handle_docmod_scan: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_docmod_findings(args: dict) -> dict:
+    """Latest-state modernization findings (supersede chains resolved)."""
+    try:
+        from tools.doc_modernization import get_findings
+        findings = get_findings(
+            doc_id=(args.get("doc_id") or "").strip() or None,
+            state=(args.get("state") or "").strip() or None,
+            finding_type=(args.get("finding_type") or "").strip() or None,
+        )
+        return {"count": len(findings), "findings": findings}
+    except Exception as exc:
+        logger.warning("handle_docmod_findings: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_docmod_redline(args: dict) -> dict:
+    """Draft one TRUST-gated redline for an open finding."""
+    try:
+        finding_id = (args.get("finding_id") or "").strip()
+        if not finding_id:
+            return {"error": "finding_id required"}
+        from tools.doc_modernization.redline_drafter import draft_redline
+        return draft_redline(finding_id).to_dict()
+    except Exception as exc:
+        logger.warning("handle_docmod_redline: %s", exc)
+        return {"error": str(exc)}
+
+
 # ── Document Intelligence Canvas (DIC) handlers ────────────────────────────
 
 def handle_dic_ingest(args: dict) -> dict:
@@ -2389,6 +2628,62 @@ def handle_nova_trust_summary(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+# ── NOVA Skill Generator (adapt-hermes-04) ──────────────────────────────────
+# These adapt the (args: dict) MCP calling convention to the keyword-argument
+# signatures of tools.nova.skill_generator. The registry cannot point directly
+# at those functions because the gateway invokes handlers as handler(args_dict),
+# which would pass the whole dict as the first positional (`limit` / `pattern`).
+
+
+def handle_nova_analyze_patterns(args: dict) -> dict:
+    """Scan session history for repeated command patterns suggesting a skill gap."""
+    try:
+        limit = int(args.get("limit", 50))
+        min_count = int(args.get("min_count", 2))
+        from tools.nova.skill_generator import analyze_patterns
+        patterns = analyze_patterns(limit=limit, min_count=min_count)
+        return {"patterns": patterns, "total": len(patterns)}
+    except ImportError as exc:
+        logger.warning("handle_nova_analyze_patterns import: %s", exc)
+        return {"error": "NOVA skill generator not available", "details": str(exc), "status": "pending"}
+    except Exception as exc:
+        logger.warning("handle_nova_analyze_patterns: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_generate_skill(args: dict) -> dict:
+    """Generate an ICDEV skill spec for a command pattern; queue for SELA harness."""
+    try:
+        pattern = (args.get("pattern") or "").strip()
+        if not pattern:
+            return {"error": "pattern required"}
+        category = (args.get("category") or "general").strip() or "general"
+        dry_run = bool(args.get("dry_run", False))
+        from tools.nova.skill_generator import generate_skill_spec
+        return generate_skill_spec(pattern, category=category, dry_run=dry_run)
+    except ImportError as exc:
+        logger.warning("handle_nova_generate_skill import: %s", exc)
+        return {"error": "NOVA skill generator not available", "details": str(exc), "status": "pending"}
+    except Exception as exc:
+        logger.warning("handle_nova_generate_skill: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_list_skill_queue(args: dict) -> dict:
+    """List pending auto-generated skill specs awaiting SELA harness evaluation."""
+    try:
+        limit = int(args.get("limit", 20))
+        from tools.nova.skill_generator import list_queued
+        rows = list_queued(limit=limit)
+        return {"queued": rows, "total": len(rows)}
+    except ImportError as exc:
+        logger.warning("handle_nova_list_skill_queue import: %s", exc)
+        return {"error": "NOVA skill generator not available", "details": str(exc), "status": "pending"}
+    except Exception as exc:
+        logger.warning("handle_nova_list_skill_queue: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_ace_persona_query(args: dict) -> dict:
     """One-shot, persona-informed answer from a single ACE role -- NOT the
     async multi-role ACE team launch. See tools.ace.persona_query for the
@@ -2529,3 +2824,1064 @@ def handle_pvm_create_patch_plan(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_pvm_create_patch_plan: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_rfi_demand_scan(args: dict) -> dict:
+    """RFI capability-gap demand: list cross-RFI demand signals, or re-scan open
+    gaps and emit atomic SUGGESTED kanban build tasks. See tools/govcon/rfi_demand.py."""
+    try:
+        from tools.govcon import rfi_demand
+
+        mode = (args.get("mode") or "list").lower()
+        if mode == "scan":
+            return rfi_demand.scan(min_priority=args.get("min_priority"))
+        return {"signals": rfi_demand.list_demand_signals(limit=int(args.get("limit") or 50))}
+    except Exception as exc:
+        logger.warning("handle_rfi_demand_scan: %s", exc)
+        return {"error": str(exc)}
+
+
+# ===========================================================================
+# Category: infra — Pipeline Design Canvas (PDC)
+# ===========================================================================
+
+
+def _pdc_resolve_graph(args: dict) -> tuple:
+    """Resolve a pipeline graph + name from args.
+
+    Prefers an inline ``graph`` dict; otherwise loads the pipeline row identified
+    by ``pipeline_id`` from the pipeline-canvas DB. Returns (graph, name, error).
+    """
+    graph = args.get("graph")
+    name = args.get("name") or "pipeline"
+    if isinstance(graph, dict) and graph:
+        return graph, name, None
+    pipeline_id = args.get("pipeline_id")
+    if not pipeline_id:
+        return None, name, "provide either graph or pipeline_id"
+    try:
+        from tools.pipeline.db.init_db import get_connection
+
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT name, graph_json FROM pipelines WHERE id=%s", (pipeline_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:
+        return None, name, f"pipeline lookup failed: {exc}"
+    if not row:
+        return None, name, f"pipeline not found: {pipeline_id}"
+    row = dict(row)
+    try:
+        graph = json.loads(row.get("graph_json") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return None, name, "corrupt graph_json"
+    return graph, (args.get("name") or row.get("name") or "pipeline"), None
+
+
+def handle_pdc_analyze(args: dict) -> dict:
+    """Detect PDC pipeline architectural anti-patterns."""
+    try:
+        graph, _name, err = _pdc_resolve_graph(args)
+        if err:
+            return {"error": err}
+        from tools.pipeline.antipattern_detector import detect_antipatterns
+
+        findings = detect_antipatterns(graph.get("nodes", []), graph.get("edges", []))
+        return {"findings": findings, "count": len(findings)}
+    except Exception as exc:
+        logger.warning("handle_pdc_analyze: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pdc_validate(args: dict) -> dict:
+    """Generate + validate the IaC deploy bundle for a PDC pipeline."""
+    try:
+        graph, name, err = _pdc_resolve_graph(args)
+        if err:
+            return {"error": err}
+        from tools.pipeline.iac_validator import validate_deploy_bundle_from_generator
+
+        return validate_deploy_bundle_from_generator(
+            graph,
+            name,
+            target_csp=args.get("target_csp", "auto"),
+            max_layer=int(args.get("max_layer") or 3),
+        )
+    except Exception as exc:
+        logger.warning("handle_pdc_validate: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_pdc_export(args: dict) -> dict:
+    """Export a PDC pipeline graph to a target CI/CD format."""
+    try:
+        graph, name, err = _pdc_resolve_graph(args)
+        if err:
+            return {"error": err}
+        from tools.pipeline.export import export_pipeline
+
+        return export_pipeline(graph, name, args.get("format", "gitlab_ci"))
+    except Exception as exc:
+        logger.warning("handle_pdc_export: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# LLM proxy virtual keys (lpx-keys-01)
+# ---------------------------------------------------------------------------
+
+def handle_proxy_key_issue(args: dict) -> dict:
+    """Issue an LLM-proxy virtual key. Key returned once; only a hash is stored."""
+    try:
+        from tools.llm.proxy_keys import issue_key
+
+        return issue_key(
+            alias=args.get("alias"),
+            scope_type=args.get("scope_type", "tenant"),
+            scope_ref=args.get("scope_ref"),
+            session_id=args.get("session_id"),
+            max_budget_usd=args.get("max_budget_usd"),
+            budget_window=args.get("budget_window", "none"),
+            rpm_limit=args.get("rpm_limit"),
+            tpm_limit=args.get("tpm_limit"),
+            expires_at=args.get("expires_at"),
+            tenant_id=args.get("tenant_id"),
+            classification=args.get("classification"),
+            created_by=args.get("created_by"),
+        )
+    except Exception as exc:
+        logger.warning("handle_proxy_key_issue: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_proxy_key_list(args: dict) -> dict:
+    """List issued LLM-proxy virtual keys (metadata only)."""
+    try:
+        from tools.llm.proxy_keys import list_keys
+
+        return {
+            "keys": list_keys(
+                scope_type=args.get("scope_type"),
+                scope_ref=args.get("scope_ref"),
+                session_id=args.get("session_id"),
+                status=args.get("status"),
+            )
+        }
+    except Exception as exc:
+        logger.warning("handle_proxy_key_list: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_proxy_key_show(args: dict) -> dict:
+    """Show one LLM-proxy virtual key by id (metadata only)."""
+    try:
+        from tools.llm.proxy_keys import show_key
+
+        row = show_key(args.get("key_id"))
+        return row if row else {"error": "not found", "key_id": args.get("key_id")}
+    except Exception as exc:
+        logger.warning("handle_proxy_key_show: %s", exc)
+        return {"error": str(exc)}
+
+
+# ============================================================
+# REGISTRY GAP CLOSURE (oss-fix-01)
+#
+# The 57 handlers below were referenced by tool_registry.py but never
+# implemented, so unified_server._resolve_handler() silently substituted a
+# stub returning {"error": "Module not available", "status": "pending"}.
+# Every handler here is verified against its backing tool's argparse surface.
+# tests/mcp/test_registry_handler_coverage.py enforces that no registry entry
+# may regress to the stub path again.
+# ============================================================
+
+
+# ---------------------------------------------------------------------------
+# Security — sandboxed execution (D-SEC-10)
+# ---------------------------------------------------------------------------
+
+
+def handle_sandbox_execute(args: dict) -> dict:
+    """Execute code in a container sandbox with resource limits (D-SEC-10).
+
+    Pattern A (direct import): code payloads are multi-line and may exceed
+    command-line length limits, so the SandboxExecutor API is called directly
+    rather than shelling out to the CLI.
+
+    Network access defaults to the config value (False) unless explicitly
+    requested. Timeout is clamped by the executor against max_timeout_seconds.
+    """
+    code = args.get("code")
+    language = args.get("language")
+    if not code:
+        return {"error": "sandbox_execute requires 'code'", "status": "failed"}
+    if not language:
+        return {"error": "sandbox_execute requires 'language'", "status": "failed"}
+
+    try:
+        from tools.security.sandbox_executor import SandboxExecutor
+
+        executor = SandboxExecutor()
+        result = executor.execute(
+            code=str(code),
+            language=str(language),
+            timeout_seconds=args.get("timeout_seconds"),
+            max_memory_mb=args.get("max_memory_mb"),
+            network_enabled=args.get("network_enabled"),
+            libraries=args.get("libraries") or None,
+            executor_type="mcp",
+            actor=args.get("actor"),
+            project_id=args.get("project_id"),
+            tenant_id=args.get("tenant_id"),
+        )
+        return result.to_dict()
+    except Exception as exc:
+        logger.warning("handle_sandbox_execute: %s", exc)
+        return {"error": str(exc), "status": "failed"}
+
+
+# ---------------------------------------------------------------------------
+# Compliance — FedRAMP 20x, OWASP ASI, SLSA, SWFT, VEX
+# ---------------------------------------------------------------------------
+
+
+def handle_fedramp_ksi_generate(args: dict) -> dict:
+    """Generate FedRAMP 20x KSI evidence for continuous authorization."""
+    cli_args = ["--project-id", str(args.get("project_id", ""))]
+    if args.get("ksi_id"):
+        cli_args.extend(["--ksi-id", str(args["ksi_id"])])
+    else:
+        cli_args.append("--all")
+    return _run_cli("tools/compliance/fedramp_ksi_generator.py", cli_args)
+
+
+def handle_fedramp_authorization_package(args: dict) -> dict:
+    """Bundle a FedRAMP 20x authorization package (OSCAL SSP + KSI evidence)."""
+    cli_args = ["--project-id", str(args.get("project_id", ""))]
+    if args.get("output_dir"):
+        cli_args.extend(["--output-dir", str(args["output_dir"])])
+    return _run_cli("tools/compliance/fedramp_authorization_packager.py", cli_args, timeout=600)
+
+
+def handle_owasp_asi_assess(args: dict) -> dict:
+    """Run the OWASP ASI01-ASI10 Agentic AI risk assessment."""
+    cli_args = ["--project-id", str(args.get("project_id", ""))]
+    if args.get("project_dir"):
+        cli_args.extend(["--project-dir", str(args["project_dir"])])
+    return _run_cli("tools/compliance/owasp_asi_assessor.py", cli_args)
+
+
+def handle_slsa_generate(args: dict) -> dict:
+    """Generate a SLSA v1.0 provenance statement from build evidence (D341)."""
+    cli_args = ["--project-id", str(args.get("project_id", "")), "--generate"]
+    if args.get("target_level") is not None:
+        cli_args.extend(["--target-level", str(args["target_level"])])
+    return _run_cli("tools/compliance/slsa_attestation_generator.py", cli_args)
+
+
+def handle_slsa_verify(args: dict) -> dict:
+    """Verify a project meets its target SLSA level, with gap analysis."""
+    cli_args = ["--project-id", str(args.get("project_id", "")), "--verify"]
+    if args.get("target_level") is not None:
+        cli_args.extend(["--target-level", str(args["target_level"])])
+    return _run_cli("tools/compliance/slsa_attestation_generator.py", cli_args)
+
+
+def handle_vex_generate(args: dict) -> dict:
+    """Generate a VEX (Vulnerability Exploitability eXchange) document."""
+    cli_args = ["--project-id", str(args.get("project_id", "")), "--vex"]
+    return _run_cli("tools/compliance/slsa_attestation_generator.py", cli_args)
+
+
+def handle_swft_bundle(args: dict) -> dict:
+    """Bundle a DoD SWFT evidence package (SLSA + SBOM + VEX + artifacts)."""
+    cli_args = ["--project-id", str(args.get("project_id", "")), "--bundle"]
+    if args.get("output_dir"):
+        cli_args.extend(["--output-dir", str(args["output_dir"])])
+    return _run_cli("tools/compliance/swft_evidence_bundler.py", cli_args, timeout=600)
+
+
+# ---------------------------------------------------------------------------
+# RAG — CRAG benchmark, query classification, quality feedback
+# ---------------------------------------------------------------------------
+
+
+def handle_crag_benchmark_run(args: dict) -> dict:
+    """Run a CRAG benchmark evaluation campaign (D-RAG-23)."""
+    cli_args = ["--benchmark-crag"]
+    if args.get("test_set_path"):
+        cli_args.extend(["--test-set", str(args["test_set_path"])])
+    if args.get("task_type"):
+        cli_args.extend(["--task-type", str(args["task_type"])])
+    if args.get("campaign_name"):
+        cli_args.extend(["--campaign-name", str(args["campaign_name"])])
+    return _run_cli("tools/rag/crag_evaluator.py", cli_args, timeout=1800)
+
+
+def handle_query_classify(args: dict) -> dict:
+    """Classify a RAG query into the 4-label taxonomy (D-RAG-24)."""
+    cli_args = ["--classify", "--query", str(args.get("query", ""))]
+    if args.get("context"):
+        cli_args.extend(["--context", str(args["context"])])
+    return _run_cli("tools/rag/query_classifier.py", cli_args)
+
+
+def handle_quality_feedback_run(args: dict) -> dict:
+    """Run the RAG quality feedback loop; dry_run checks without writing."""
+    cli_args = ["--dry-run"] if args.get("dry_run") else ["--run"]
+    return _run_cli("tools/rag/quality_feedback_loop.py", cli_args, timeout=900)
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Graph — GraphRAG, enrichment, crosswalk, resolution, federation
+# ---------------------------------------------------------------------------
+
+
+def handle_kg_search(args: dict) -> dict:
+    """Search the Knowledge Graph via GraphRAG with a scoring profile."""
+    cli_args = ["--query", str(args.get("query", ""))]
+    if args.get("project_id"):
+        cli_args.extend(["--project-id", str(args["project_id"])])
+    if args.get("profile"):
+        cli_args.extend(["--profile", str(args["profile"])])
+    if args.get("top_k") is not None:
+        cli_args.extend(["--top-k", str(args["top_k"])])
+    return _run_cli("tools/knowledge_graph/graph_rag.py", cli_args, timeout=600)
+
+
+def handle_kg_enrich(args: dict) -> dict:
+    """Compute centrality scores and/or entity embeddings for a graph (D-KARL-7)."""
+    cli_args = ["--graph-id", str(args.get("graph_id", ""))]
+    centrality = bool(args.get("centrality"))
+    embeddings = bool(args.get("embeddings"))
+    if centrality and embeddings:
+        cli_args.append("--all")
+    elif centrality:
+        cli_args.append("--centrality")
+    elif embeddings:
+        cli_args.append("--embeddings")
+    else:
+        cli_args.append("--all")
+    return _run_cli("tools/knowledge_graph/enricher.py", cli_args, timeout=900)
+
+
+def handle_kg_generate_ft_pairs(args: dict) -> dict:
+    """Generate fine-tuning training pairs from graph structures (D-KARL-6)."""
+    cli_args = ["--graph-id", str(args.get("graph_id", ""))]
+    if args.get("dataset_id"):
+        cli_args.extend(["--dataset-id", str(args["dataset_id"])])
+    if args.get("strategy"):
+        cli_args.extend(["--strategy", str(args["strategy"])])
+    return _run_cli("tools/finetune/kg_pair_generator.py", cli_args, timeout=900)
+
+
+def handle_kg_compliance_build(args: dict) -> dict:
+    """Build the compliance crosswalk knowledge graph."""
+    cli_args = ["--build"]
+    if args.get("project_id"):
+        cli_args.extend(["--project-id", str(args["project_id"])])
+    return _run_cli("tools/knowledge_graph/compliance_graph.py", cli_args, timeout=600)
+
+
+def handle_kg_compliance_crosswalk(args: dict) -> dict:
+    """Look up crosswalk mappings for a control to a target framework."""
+    cli_args = [
+        "--crosswalk",
+        str(args.get("control_id", "")),
+        "--target",
+        str(args.get("target", "")),
+    ]
+    if args.get("project_id"):
+        cli_args.extend(["--project-id", str(args["project_id"])])
+    return _run_cli("tools/knowledge_graph/compliance_graph.py", cli_args)
+
+
+def handle_kg_compliance_coverage(args: dict) -> dict:
+    """Compute coverage statistics for a framework in the crosswalk graph."""
+    cli_args = ["--coverage", str(args.get("framework", ""))]
+    if args.get("project_id"):
+        cli_args.extend(["--project-id", str(args["project_id"])])
+    return _run_cli("tools/knowledge_graph/compliance_graph.py", cli_args)
+
+
+def handle_kg_find_duplicates(args: dict) -> dict:
+    """Find duplicate entities by label similarity and embedding distance."""
+    cli_args = ["--find-duplicates"]
+    if args.get("graph_id"):
+        cli_args.extend(["--graph-id", str(args["graph_id"])])
+    if args.get("threshold") is not None:
+        cli_args.extend(["--threshold", str(args["threshold"])])
+    return _run_cli("tools/knowledge_graph/disambiguator.py", cli_args, timeout=600)
+
+
+def handle_kg_merge_entities(args: dict) -> dict:
+    """Merge two duplicate entities, combining edges and metadata."""
+    cli_args = [
+        "--merge",
+        "--source",
+        str(args.get("source_id", "")),
+        "--target",
+        str(args.get("target_id", "")),
+    ]
+    return _run_cli("tools/knowledge_graph/disambiguator.py", cli_args)
+
+
+def handle_kg_add_alias(args: dict) -> dict:
+    """Add an alias label to a graph node for improved search recall."""
+    cli_args = [
+        "--add-alias",
+        "--node-id",
+        str(args.get("node_id", "")),
+        "--alias",
+        str(args.get("alias", "")),
+    ]
+    return _run_cli("tools/knowledge_graph/disambiguator.py", cli_args)
+
+
+def handle_kg_resolve_ambiguous(args: dict) -> dict:
+    """Resolve an ambiguous label to a specific node using context."""
+    cli_args = ["--resolve", str(args.get("label", ""))]
+    if args.get("context"):
+        cli_args.extend(["--context", str(args["context"])])
+    if args.get("graph_id"):
+        cli_args.extend(["--graph-id", str(args["graph_id"])])
+    return _run_cli("tools/knowledge_graph/disambiguator.py", cli_args)
+
+
+def _projects_csv(value) -> str:
+    """Normalize a projects list/string into the comma-separated CLI form."""
+    if isinstance(value, (list, tuple)):
+        return ",".join(str(p) for p in value)
+    return str(value)
+
+
+def handle_kg_federated_search(args: dict) -> dict:
+    """Search across knowledge graphs from multiple projects."""
+    cli_args = ["--search", str(args.get("query", ""))]
+    if args.get("projects"):
+        cli_args.extend(["--projects", _projects_csv(args["projects"])])
+    if args.get("profile"):
+        cli_args.extend(["--profile", str(args["profile"])])
+    if args.get("top_k") is not None:
+        cli_args.extend(["--top-k", str(args["top_k"])])
+    return _run_cli("tools/knowledge_graph/federation.py", cli_args, timeout=600)
+
+
+def handle_kg_shared_entities(args: dict) -> dict:
+    """Find entities shared between two project knowledge graphs."""
+    # --shared takes exactly two positional values (PROJ_A PROJ_B).
+    cli_args = ["--shared", str(args.get("project_a", "")), str(args.get("project_b", ""))]
+    return _run_cli("tools/knowledge_graph/federation.py", cli_args, timeout=600)
+
+
+def handle_kg_create_view(args: dict) -> dict:
+    """Create a federated view combining graphs from multiple projects."""
+    cli_args = ["--create-view", str(args.get("name", ""))]
+    # The CLI errors without --projects, so always forward it.
+    cli_args.extend(["--projects", _projects_csv(args.get("projects", ""))])
+    return _run_cli("tools/knowledge_graph/federation.py", cli_args)
+
+
+def handle_kg_cross_project_coverage(args: dict) -> dict:
+    """Compute cross-project compliance coverage across federated graphs."""
+    cli_args = ["--coverage", str(args.get("framework", ""))]
+    if args.get("projects"):
+        cli_args.extend(["--projects", _projects_csv(args["projects"])])
+    return _run_cli("tools/knowledge_graph/federation.py", cli_args, timeout=600)
+
+
+def handle_kg_time_range(args: dict) -> dict:
+    """Query graph nodes and edges created or modified within a time range."""
+    cli_args = ["--range", "--start", str(args.get("start", "")), "--end", str(args.get("end", ""))]
+    if args.get("graph_id"):
+        cli_args.extend(["--graph-id", str(args["graph_id"])])
+    if args.get("entity_type"):
+        cli_args.extend(["--entity-type", str(args["entity_type"])])
+    return _run_cli("tools/knowledge_graph/temporal.py", cli_args)
+
+
+def handle_kg_graph_evolution(args: dict) -> dict:
+    """Show how a knowledge graph evolved over time (counts per interval)."""
+    cli_args = ["--evolution", "--graph-id", str(args.get("graph_id", ""))]
+    if args.get("interval"):
+        cli_args.extend(["--interval", str(args["interval"])])
+    if args.get("limit") is not None:
+        cli_args.extend(["--limit", str(args["limit"])])
+    return _run_cli("tools/knowledge_graph/temporal.py", cli_args)
+
+
+def handle_kg_recent_changes(args: dict) -> dict:
+    """List recently created or modified nodes and edges."""
+    cli_args = ["--recent"]
+    if args.get("days") is not None:
+        cli_args.extend(["--days", str(args["days"])])
+    if args.get("graph_id"):
+        cli_args.extend(["--graph-id", str(args["graph_id"])])
+    return _run_cli("tools/knowledge_graph/temporal.py", cli_args)
+
+
+def handle_kg_temporal_diff(args: dict) -> dict:
+    """Compute the diff between two snapshots of a graph at different dates."""
+    cli_args = [
+        "--diff",
+        "--graph-id",
+        str(args.get("graph_id", "")),
+        "--date-a",
+        str(args.get("date_a", "")),
+        "--date-b",
+        str(args.get("date_b", "")),
+    ]
+    return _run_cli("tools/knowledge_graph/temporal.py", cli_args)
+
+
+# ---------------------------------------------------------------------------
+# Fine-tuning — RAG-to-FT pipeline, quality gate, hyperparameter search
+# ---------------------------------------------------------------------------
+
+
+def handle_ft_pipeline_run(args: dict) -> dict:
+    """Run the automated RAG-to-FT pipeline (detect, generate, trigger)."""
+    cli_args = ["--dry-run"] if args.get("dry_run") else ["--run"]
+    if args.get("source_type"):
+        cli_args.extend(["--source-type", str(args["source_type"])])
+    if args.get("run_type"):
+        cli_args.extend(["--run-type", str(args["run_type"])])
+    return _run_cli("tools/finetune/rag_ft_pipeline.py", cli_args, timeout=1800)
+
+
+def handle_ft_quality_check(args: dict) -> dict:
+    """Check RAG quality metrics against thresholds (D-KARL-9)."""
+    return _run_cli("tools/finetune/quality_monitor.py", ["--check"], timeout=600)
+
+
+def handle_ft_hp_create(args: dict) -> dict:
+    """Create a hyperparameter search over LoRA params for a dataset."""
+    cli_args = ["--create", "--dataset-id", str(args.get("dataset_id", ""))]
+    if args.get("method"):
+        cli_args.extend(["--method", str(args["method"])])
+    if args.get("max_trials") is not None:
+        cli_args.extend(["--max-trials", str(args["max_trials"])])
+    return _run_cli("tools/finetune/hp_search.py", cli_args)
+
+
+def handle_ft_hp_run_next(args: dict) -> dict:
+    """Launch the next pending trial in a hyperparameter search."""
+    cli_args = ["--run-next", "--search-id", str(args.get("search_id", ""))]
+    return _run_cli("tools/finetune/hp_search.py", cli_args, timeout=900)
+
+
+def handle_ft_hp_record(args: dict) -> dict:
+    """Record evaluation results for a completed HP search trial."""
+    cli_args = [
+        "--record",
+        "--trial-id",
+        str(args.get("trial_id", "")),
+        "--score",
+        str(args.get("score", "")),
+    ]
+    return _run_cli("tools/finetune/hp_search.py", cli_args)
+
+
+def handle_ft_hp_status(args: dict) -> dict:
+    """Get status and progress of a hyperparameter search."""
+    cli_args = ["--status", "--search-id", str(args.get("search_id", ""))]
+    return _run_cli("tools/finetune/hp_search.py", cli_args)
+
+
+def handle_ft_hp_list(args: dict) -> dict:
+    """List all hyperparameter searches with summary stats."""
+    cli_args = ["--list"]
+    if args.get("filter_status"):
+        cli_args.extend(["--filter-status", str(args["filter_status"])])
+    return _run_cli("tools/finetune/hp_search.py", cli_args)
+
+
+# ---------------------------------------------------------------------------
+# LLMOps — gateway, prompt registry, cost intelligence, model monitoring
+# ---------------------------------------------------------------------------
+
+
+def handle_llm_gateway_stats(args: dict) -> dict:
+    """Get LLM Gateway statistics (injection blocks, PII scrubs, rate limits)."""
+    return _run_cli("tools/llm/gateway.py", ["--stats"])
+
+
+def handle_llm_gateway_check(args: dict) -> dict:
+    """Run pre-invoke checks on a prompt: injection, PII, length validation."""
+    cli_args = ["--check-text", str(args.get("text", ""))]
+    return _run_cli("tools/llm/gateway.py", cli_args)
+
+
+def handle_prompt_registry_list(args: dict) -> dict:
+    """List registered prompt templates with version and A/B state."""
+    result = _run_cli("tools/llm/prompt_registry.py", ["--list"])
+    # The CLI has no server-side function filter, so apply it here.
+    func = args.get("function_filter")
+    if func and isinstance(result, dict) and isinstance(result.get("prompts"), list):
+        result = dict(result)
+        result["prompts"] = [p for p in result["prompts"] if p.get("function_name") == func]
+        result["filtered_by_function"] = func
+    return result
+
+
+def handle_prompt_registry_register(args: dict) -> dict:
+    """Register a new prompt template version with content hash and audit."""
+    cli_args = [
+        "--register",
+        "--name",
+        str(args.get("name", "")),
+        "--template-text",
+        str(args.get("template", "")),
+        "--function",
+        str(args.get("function", "")),
+    ]
+    return _run_cli("tools/llm/prompt_registry.py", cli_args)
+
+
+def handle_prompt_registry_activate(args: dict) -> dict:
+    """Activate a specific version of a prompt template for production."""
+    cli_args = [
+        "--activate",
+        "--name",
+        str(args.get("name", "")),
+        "--version",
+        str(args.get("version", "")),
+    ]
+    return _run_cli("tools/llm/prompt_registry.py", cli_args)
+
+
+def handle_cost_intelligence_dashboard(args: dict) -> dict:
+    """LLM spend dashboard: per-agent and per-model costs, budget, anomalies."""
+    cli_args = ["--dashboard"]
+    if args.get("agent"):
+        cli_args.extend(["--agent", str(args["agent"])])
+    return _run_cli("tools/llm/cost_intelligence.py", cli_args)
+
+
+def handle_cost_intelligence_anomalies(args: dict) -> dict:
+    """Detect spend anomalies via z-score analysis on token usage."""
+    cli_args = ["--anomalies"]
+    if args.get("lookback") is not None:
+        cli_args.extend(["--lookback", str(args["lookback"])])
+    return _run_cli("tools/llm/cost_intelligence.py", cli_args)
+
+
+def handle_cost_intelligence_recommend(args: dict) -> dict:
+    """Generate cost optimization recommendations."""
+    cli_args = ["--recommend"]
+    if args.get("function"):
+        cli_args.extend(["--function", str(args["function"])])
+    return _run_cli("tools/llm/cost_intelligence.py", cli_args)
+
+
+def handle_model_monitor_health(args: dict) -> dict:
+    """Model health dashboard: quality, latency percentiles, token trends."""
+    cli_args = ["--health"]
+    if args.get("model"):
+        cli_args.extend(["--model", str(args["model"])])
+    if args.get("function"):
+        cli_args.extend(["--function", str(args["function"])])
+    if args.get("days") is not None:
+        cli_args.extend(["--window-days", str(args["days"])])
+    return _run_cli("tools/llm/model_monitor.py", cli_args)
+
+
+def handle_model_monitor_drift(args: dict) -> dict:
+    """Run statistical drift detection (Welch t-test) on model metrics."""
+    cli_args = ["--detect-drift", "--model", str(args.get("model", ""))]
+    if args.get("function"):
+        cli_args.extend(["--function", str(args["function"])])
+    if args.get("window_days") is not None:
+        cli_args.extend(["--window-days", str(args["window_days"])])
+    return _run_cli("tools/llm/model_monitor.py", cli_args, timeout=600)
+
+
+# ---------------------------------------------------------------------------
+# Agent topology — dependency graph, SPOF, air-gap analysis
+# ---------------------------------------------------------------------------
+
+
+def handle_topology_build(args: dict) -> dict:
+    """Build the agent dependency graph (agents to functions to providers)."""
+    return _run_cli("tools/agent/topology.py", ["--build"], timeout=600)
+
+
+def handle_topology_spof(args: dict) -> dict:
+    """Detect single points of failure in the agent topology graph."""
+    return _run_cli("tools/agent/topology.py", ["--spof"], timeout=600)
+
+
+def handle_topology_airgap(args: dict) -> dict:
+    """Analyze which functions can operate without cloud providers."""
+    return _run_cli("tools/agent/topology.py", ["--air-gap-check"], timeout=600)
+
+
+# ---------------------------------------------------------------------------
+# SRE — SLOs, runbooks, incident command
+# ---------------------------------------------------------------------------
+
+
+def handle_slo_define(args: dict) -> dict:
+    """Define a service-level objective with target and measurement window."""
+    service = str(args.get("service", ""))
+    slo_type = str(args.get("slo_type", ""))
+    # The CLI requires --name; derive a stable one when the caller omits it.
+    name = str(args.get("name") or f"{service}-{slo_type}")
+    cli_args = [
+        "--create",
+        "--service",
+        service,
+        "--name",
+        name,
+        "--type",
+        slo_type,
+        "--target",
+        str(args.get("target", "")),
+    ]
+    if args.get("window_days") is not None:
+        cli_args.extend(["--window", str(args["window_days"])])
+    return _run_cli("tools/sre/slo_manager.py", cli_args)
+
+
+def handle_slo_measure(args: dict) -> dict:
+    """Record an SLO measurement and calculate burn rate against budget."""
+    cli_args = [
+        "--record",
+        "--slo-id",
+        str(args.get("slo_id", "")),
+        "--value",
+        str(args.get("value", "")),
+    ]
+    if args.get("good") is not None:
+        cli_args.extend(["--good", str(args["good"])])
+    if args.get("total") is not None:
+        cli_args.extend(["--total", str(args["total"])])
+    if args.get("source"):
+        cli_args.extend(["--source", str(args["source"])])
+    return _run_cli("tools/sre/slo_manager.py", cli_args)
+
+
+def handle_slo_dashboard(args: dict) -> dict:
+    """SLO dashboard: objectives with status, burn rate, remaining budget."""
+    result = _run_cli("tools/sre/slo_manager.py", ["--dashboard"])
+    # get_slo_dashboard() takes no service filter, so narrow the result here.
+    service = args.get("service")
+    if service and isinstance(result, dict) and isinstance(result.get("slos"), list):
+        result = dict(result)
+        result["slos"] = [s for s in result["slos"] if s.get("service") == service]
+        result["filtered_by_service"] = service
+    return result
+
+
+def handle_runbook_register(args: dict) -> dict:
+    """Register an automated runbook with alert matching and risk tier.
+
+    Pattern A (direct import): runbook_executor.py exposes no --register flag,
+    but create_runbook() is a clean Python API.
+    """
+    try:
+        from tools.sre.runbook_executor import create_runbook
+
+        command = args.get("command", "")
+        steps = command if isinstance(command, list) else [{"command": str(command)}]
+        return create_runbook(
+            name=str(args.get("name", "")),
+            description=str(args.get("description", "")),
+            trigger_pattern=str(args.get("alert_pattern", "")),
+            steps=steps,
+            risk_level=str(args.get("risk_tier") or "green"),
+        )
+    except Exception as exc:
+        logger.warning("handle_runbook_register: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_runbook_execute(args: dict) -> dict:
+    """Execute a runbook against an alert, respecting its risk tier."""
+    cli_args = ["--execute", "--runbook-id", str(args.get("runbook_id", ""))]
+    if args.get("alert_message"):
+        cli_args.extend(["--trigger", str(args["alert_message"])])
+    if args.get("dry_run"):
+        cli_args.append("--dry-run")
+    return _run_cli("tools/sre/runbook_executor.py", cli_args, timeout=900)
+
+
+def handle_incident_create(args: dict) -> dict:
+    """Create an incident with severity, auto-triage, and escalation."""
+    cli_args = [
+        "--create",
+        "--title",
+        str(args.get("title", "")),
+        "--severity",
+        str(args.get("severity", "")),
+        # The CLI requires --service; default rather than fail the call.
+        "--service",
+        str(args.get("service") or "unspecified"),
+    ]
+    if args.get("description"):
+        cli_args.extend(["--alert-source", str(args["description"])])
+    return _run_cli("tools/sre/incident_commander.py", cli_args)
+
+
+# Maps the incident_update `status` argument onto incident_commander verbs.
+_INCIDENT_STATUS_VERBS = {
+    "triaged": "--triage",
+    "triage": "--triage",
+    "escalated": "--escalate",
+    "escalate": "--escalate",
+    "resolved": "--resolve",
+    "resolve": "--resolve",
+    "closed": "--close",
+    "close": "--close",
+}
+
+
+def handle_incident_update(args: dict) -> dict:
+    """Update incident status (triage, escalate, resolve, or close)."""
+    status = str(args.get("status", "")).strip().lower()
+    verb = _INCIDENT_STATUS_VERBS.get(status)
+    if not verb:
+        return {
+            "error": f"Unsupported status {status!r}",
+            "supported": sorted(set(_INCIDENT_STATUS_VERBS)),
+        }
+
+    cli_args = [verb, "--id", str(args.get("incident_id", ""))]
+    note = args.get("note")
+    if verb == "--triage" and note:
+        cli_args.extend(["--root-cause", str(note)])
+    elif verb == "--escalate":
+        # --escalate requires a reason; fall back to a placeholder.
+        cli_args.extend(["--reason", str(note or "escalated via MCP")])
+    return _run_cli("tools/sre/incident_commander.py", cli_args)
+
+
+def handle_incident_dashboard(args: dict) -> dict:
+    """Incident dashboard: open incidents plus MTTR statistics."""
+    list_args = ["--list"]
+    if args.get("status_filter"):
+        list_args.extend(["--status", str(args["status_filter"])])
+    incidents = _run_cli("tools/sre/incident_commander.py", list_args)
+    mttr = _run_cli("tools/sre/incident_commander.py", ["--mttr"])
+    return {"incidents": incidents, "mttr": mttr}
+
+
+# ---------------------------------------------------------------------------
+# Signature adapters (oss-fix-01)
+#
+# unified_server._register_lazy_tool dispatches every tool as handler(args: dict).
+# These four registry entries pointed straight at domain functions taking several
+# positional parameters, so each call raised TypeError. The adapters below unpack
+# the args dict; the registry entries now point here.
+# ---------------------------------------------------------------------------
+
+
+def handle_canvas_link_design(args: dict) -> dict:
+    """Link a canvas design to a canvas project."""
+    try:
+        from tools.canvas.orchestrator import link_design
+
+        return link_design(
+            project_id=str(args.get("project_id", "")),
+            canvas_key=str(args.get("canvas_key", "")),
+            design_id=str(args.get("design_id", "")),
+        )
+    except Exception as exc:
+        logger.warning("handle_canvas_link_design: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_canvas_unlink_design(args: dict) -> dict:
+    """Unlink a canvas design from a canvas project."""
+    try:
+        from tools.canvas.orchestrator import unlink_design
+
+        return unlink_design(
+            project_id=str(args.get("project_id", "")),
+            canvas_key=str(args.get("canvas_key", "")),
+        )
+    except Exception as exc:
+        logger.warning("handle_canvas_unlink_design: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_canvas_kg_rebuild(args: dict) -> dict:
+    """Rebuild the knowledge graph for a canvas design."""
+    try:
+        from tools.canvas.kg_builder import rebuild_canvas_kg
+
+        return rebuild_canvas_kg(
+            canvas_key=str(args.get("canvas_key", "")),
+            design_id=str(args.get("design_id", "")),
+        )
+    except Exception as exc:
+        logger.warning("handle_canvas_kg_rebuild: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_mc_net_ai_assist(args: dict) -> dict:
+    """Run the network-migration AI assist turn for a session."""
+    try:
+        from tools.migration_canvas.network_migration import ai_assist
+
+        return ai_assist(
+            session_id=str(args.get("session_id", "")),
+            engineer_prompt=str(args.get("engineer_prompt", "")),
+        )
+    except Exception as exc:
+        logger.warning("handle_mc_net_ai_assist: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Browser agent tools (oss-browse-03, seam 2 of 4)
+# ---------------------------------------------------------------------------
+# Thin adapters over tools.agent_toolkit._browser, which itself delegates to
+# AgentBrowser/GuardedDriver. No scope, budget, or audit logic lives here — a
+# third copy of that policy is a third thing to keep in sync, and oss-browse-01
+# already had to unwind a second one.
+#
+# Every handler below is exercised by tests/mcp/test_registry_handler_coverage.py,
+# which imports each TOOL_REGISTRY entry and asserts it resolves. That test is
+# the reason oss-fix-01's silently-stubbed sandbox_execute cannot recur.
+
+
+def handle_browser_navigate(args: dict) -> dict:
+    """Navigate to a URL and return the indexed page state."""
+    from tools.agent_toolkit import browser_navigate
+
+    url = args.get("url")
+    if not url:
+        return {"error": "url is required", "status": "invalid_request"}
+    return browser_navigate(url, run_id=args.get("run_id"))
+
+
+def handle_browser_read_state(args: dict) -> dict:
+    """Return the current page as indexed interactive elements."""
+    from tools.agent_toolkit import browser_read_state
+
+    return browser_read_state(
+        screenshot=bool(args.get("screenshot", False)),
+        run_id=args.get("run_id"),
+    )
+
+
+def handle_browser_click(args: dict) -> dict:
+    """Click the element carrying the given index."""
+    from tools.agent_toolkit import browser_click
+
+    index = args.get("index")
+    if index is None:
+        return {"error": "index is required", "status": "invalid_request"}
+    return browser_click(int(index), run_id=args.get("run_id"))
+
+
+def handle_browser_type(args: dict) -> dict:
+    """Type text into the element at the given index."""
+    from tools.agent_toolkit import browser_type
+
+    index, text = args.get("index"), args.get("text")
+    if index is None or text is None:
+        return {"error": "index and text are required", "status": "invalid_request"}
+    return browser_type(
+        int(index), str(text),
+        clear=bool(args.get("clear", True)),
+        enter=bool(args.get("enter", False)),
+        run_id=args.get("run_id"),
+    )
+
+
+def handle_browser_screenshot(args: dict) -> dict:
+    """Capture a screenshot under playwright/screenshots/."""
+    from tools.agent_toolkit import browser_screenshot
+
+    return browser_screenshot(name=args.get("name"), run_id=args.get("run_id"))
+
+
+def handle_ace_ensure_sme(args: dict) -> dict:
+    """MCP: ensure a team-capable subject-matter expert exists for a domain.
+
+    Distinct from ``ace_persona_query``, which produces an ADVISORY-only persona
+    (a SOUL.md identity for one-shot Q&A). A persona alone cannot be staffed onto
+    an ACE team, so a cross-repo caller that generated one could ask it a
+    question but never put it to work. ``ensure_sme`` produces both halves — the
+    SOUL.md identity AND the executable role YAML — or neither.
+
+    Resolution order: reuse a previously generated SME for the same normalised
+    domain; else reuse a sufficiently similar role from the existing catalog
+    rather than minting a near-duplicate; else generate.
+
+    The returned ``role_id`` is safe to pass straight to ``ace_launch``'s
+    ``role_ids``.
+    """
+    domain_description = str(args.get("domain_description") or "").strip()
+    if not domain_description:
+        return {"error": "domain_description is required"}
+
+    bundle = args.get("capability_bundle") or None
+    allow_reuse = args.get("allow_reuse", True)
+
+    try:
+        from tools.ace.sme_registry import ensure_sme
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"sme_registry unavailable: {exc}"}
+
+    try:
+        result = ensure_sme(
+            domain_description,
+            capability_bundle=bundle,
+            allow_reuse=bool(allow_reuse),
+        )
+    except PermissionError as exc:
+        # The generated role violated capability policy and was NOT written.
+        return {"error": f"capability policy rejected the generated role: {exc}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+    return result.to_dict()
+
+
+def handle_databridge_fetch(args: dict) -> dict:
+    """MCP: read from an external SaaS connector, through the agent broker.
+
+    The ONLY agent-facing route to DataBridge. Deliberately not a ToolRunner
+    entry: that matches command strings exactly, so a parameterised data fetch
+    cannot be usefully allowlisted there.
+
+    Every call passes the broker's chain — air-gap interlock, per-agent
+    authorization against args/databridge_agent_access.yaml, read-only
+    enforcement, fail-closed outbound redaction of free-text filters, the
+    egress guard in saas_base, and an audit row. A denial is returned as a
+    result rather than raised, so an agent can reason about being refused.
+    """
+    from icdev.tools.databridge import broker
+
+    connector = str(args.get("connector") or "").strip()
+    table = str(args.get("table") or "").strip()
+    if not connector or not table:
+        return {"ok": False, "error": "connector and table are required"}
+
+    outcome = broker.fetch(
+        agent_id=str(args.get("agent_id") or "unknown"),
+        connector=connector,
+        table=table,
+        filters=args.get("filters") or {},
+        query=str(args.get("query") or ""),
+        limit=int(args.get("limit") or broker.DEFAULT_MAX_ROWS),
+        classification=str(args.get("classification") or "UNCLASSIFIED"),
+    )
+    return outcome.to_dict()
+
+
+def handle_databridge_sources(args: dict) -> dict:
+    """MCP: list the connectors and tables this agent may read.
+
+    Lets an agent discover its own reach instead of probing and accumulating
+    denials — probing is indistinguishable from an attack in an audit trail.
+    """
+    from icdev.tools.databridge import broker
+
+    return {"sources": broker.list_available(str(args.get("agent_id") or ""))}

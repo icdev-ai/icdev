@@ -15,8 +15,8 @@ JSON API (mounted under ``/api/integrity``):
                                                session_id?, declared_purpose?}
   GET  /api/integrity/assessments              list (status / verdict / limit filters)
   GET  /api/integrity/assessment/<id>          detail (assessment + caps + findings + verdict)
-  POST /api/integrity/assessment/<id>/promote  HITL approve  {reviewed_by?, reason?}
-  POST /api/integrity/assessment/<id>/reject   HITL reject   {reviewed_by?, reason?}
+  POST /api/integrity/assessment/<id>/promote  HITL approve  {reason?}  (reviewer = authed user)
+  POST /api/integrity/assessment/<id>/reject   HITL reject   {reason?}  (reviewer = authed user)
 
 Although the task spec names ``url_prefix='/integrity'``, the page and API mounts
 live on two different roots (``/integrity`` vs ``/api/integrity``) — Flask cannot
@@ -479,7 +479,11 @@ def create_integrity_blueprint() -> Optional[Blueprint]:
         quarantine. Delegates to the engine (which appends an authorization row +
         audit event); a missing / already-terminal assessment is a 409."""
         data = request.get_json(force=True, silent=True) or {}
-        reviewed_by = (data.get("reviewed_by") or "").strip() or _reviewer()
+        # nav-comp-06: the HITL reviewer recorded on promote/reject is bound to
+        # the authenticated user (g.current_user via _reviewer()), NEVER the
+        # request body — a caller must not attribute a quarantine decision to
+        # someone else. Any body-supplied ``reviewed_by`` is intentionally ignored.
+        reviewed_by = _reviewer()
         reason = data.get("reason")
 
         from tools.integrity import engine

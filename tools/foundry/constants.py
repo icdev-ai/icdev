@@ -17,13 +17,15 @@ from __future__ import annotations
 # ── foundry_signals.source_engine ───────────────────────────────────────────
 # Which existing ICDEV engine store a harvested signal was pulled from. The
 # harvester (acf-harvest-01) emits innovation / creative / research; genesis /
-# telemetry are added by acf-harvest-02. Mirrors the keys under ``sources:`` in
-# args/foundry_config.yaml.
+# telemetry are added by acf-harvest-02; rfi (RFI capability-gap demand signals,
+# rfi_capability_gaps) added by rfidem-fdry-02. Mirrors the keys under ``sources:``
+# in args/foundry_config.yaml.
 SOURCE_ENGINES: tuple[str, ...] = (
     "innovation",
     "creative",
     "research",
     "genesis",
+    "rfi",
     "telemetry",
 )
 

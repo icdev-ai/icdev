@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+id: inject-02-poisoned-source
+title: 'Trace It: Which Ingested Source Was Poisoned?'
+body_md: "## SOURCE PROVENANCE HUNT\n\n**Classification:** CUI // SP-CTI\n\nThe corpus for `del-2291`\
+  \ was assembled from 6 ingested documents. Ingestion provenance\nshows one document was re-ingested\
+  \ 3 hours ago by an unattended service account, replacing\nthe original `LOGREADINESS-Q2.pdf` hash:\n\
+  \n| Doc | Ingested (UTC) | Source hash (prefix) | Ingested by |\n|-----|----------------|----------------------|-------------|\n\
+  | LOGREADINESS-Q2.pdf | 03:14 (re-ingest) | `a91f..` (was `7cc2..`) | svc-batch |\n| PARTS-SURGE-MEMO.docx\
+  \ | yesterday | `4de0..` | analyst-2 |\n| SENTINEL-EVAL.md | yesterday | `bb17..` | analyst-2 |\n\n\
+  ### Your Task\n1. **Identify** the poisoned source and cite the provenance evidence (hash change +\n\
+  \   unattended re-ingest) that implicates it.\n2. **Contain** — State the quarantine action for the\
+  \ poisoned source and which downstream\n   deliverables must be re-grounded.\n3. **Confidence** — High/Medium/Low\
+  \ with justification.\n\nUse DIC Ingest/Search receipts to ground your trace. Each verified tool call\
+  \ earns bonus points."
+context_note: 'Correct answer: LOGREADINESS-Q2.pdf — the hash changed under an unattended re-ingest, and
+  it
+
+  is exactly the source the fabricated claim cited. Full credit requires tying the hash-change
+
+  provenance to the specific fabricated claim from inject-01, not just naming a document.'

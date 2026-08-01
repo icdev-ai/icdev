@@ -8,7 +8,10 @@
     <h4 class="mb-0" style="color:#ef4444;">
       <i class="bi bi-shield-fill-exclamation me-2"></i>DSOC — DDoS &amp; Security Ops Canvas
     </h4>
-    <span class="badge bg-secondary">CUI // SP-CTI</span>
+    <span>
+      <span class="badge bg-warning text-dark" title="DSOC records mitigations and generates apply-ready IOS-XR/JunOS config text for human review. It never pushes routing changes to live routers.">Record-only / Simulation</span>
+      <span class="badge bg-secondary">CUI // SP-CTI</span>
+    </span>
   </div>
 
   <!-- Sub-nav -->
@@ -119,12 +122,30 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — DSOC" %}
+    {% set iqe_examples = [
+      {"label": "Active mitigations", "query": "Show active mitigations"},
+      {"label": "High-confidence threats", "query": "Show high confidence threats"},
+      {"label": "Active RTBH", "query": "List active RTBH entries"},
+      {"label": "Scrubbing utilization", "query": "Which scrubbing centers have high utilization?"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>
 
 <script>
 const IQE_CANVAS = 'dsoc';
+
+/* HTML-escape helper — threat/mitigation fields arrive from ingestion endpoints
+   and are rendered via innerHTML template literals, so every interpolated string
+   MUST be escaped to prevent stored XSS. */
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 /* ── Overview stats ──────────────────────────────────────────────────── */
 fetch('/api/dsoc/overview')
@@ -180,17 +201,17 @@ fetch('/api/dsoc/threats?limit=10')
       return;
     }
     tbody.innerHTML = rows.map(t => {
-      const conf = t.confidence_pct || 0;
+      const conf = Number(t.confidence_pct) || 0;
       const confCls = conf >= 80 ? 'text-danger fw-bold' : conf >= 50 ? 'text-warning' : 'text-muted';
       const activeBadge = t.is_active
         ? '<span class="badge bg-danger" style="font-size:10px;">yes</span>'
         : '<span class="badge bg-secondary" style="font-size:10px;">no</span>';
-      const ls = t.last_seen ? t.last_seen.slice(0, 16).replace('T', ' ') : '—';
+      const ls = t.last_seen ? esc(String(t.last_seen).slice(0, 16).replace('T', ' ')) : '—';
       return `<tr>
-        <td class="text-info" style="font-family:monospace;">${t.source_prefix || '—'}</td>
-        <td><code class="text-warning" style="font-size:.78rem;">${t.threat_type || '—'}</code></td>
+        <td class="text-info" style="font-family:monospace;">${esc(t.source_prefix) || '—'}</td>
+        <td><code class="text-warning" style="font-size:.78rem;">${esc(t.threat_type) || '—'}</code></td>
         <td class="${confCls}">${conf}%</td>
-        <td class="text-muted" style="font-size:.8rem;">${t.feed_source || '—'}</td>
+        <td class="text-muted" style="font-size:.8rem;">${esc(t.feed_source) || '—'}</td>
         <td class="text-muted" style="font-size:.78rem;">${ls}</td>
         <td>${activeBadge}</td>
       </tr>`;
@@ -211,13 +232,13 @@ fetch('/api/dsoc/mitigations?status=active')
       return;
     }
     tbody.innerHTML = rows.map((m, i) => {
-      const started = m.started_at ? m.started_at.slice(0, 16).replace('T', ' ') : '—';
+      const started = m.started_at ? esc(String(m.started_at).slice(0, 16).replace('T', ' ')) : '—';
       return `<tr>
         <td class="text-muted" style="font-size:.8rem;">${i + 1}</td>
-        <td class="text-info fw-bold" style="font-family:monospace;">${m.target_prefix || '—'}</td>
-        <td><span class="badge-rtbh">${m.mitigation_type || '—'}</span></td>
-        <td class="text-muted" style="font-size:.8rem;">${m.attack_type || '—'}</td>
-        <td class="${(m.peak_gbps || 0) > 100 ? 'text-danger fw-bold' : 'text-warning'}">${m.peak_gbps || 0}</td>
+        <td class="text-info fw-bold" style="font-family:monospace;">${esc(m.target_prefix) || '—'}</td>
+        <td><span class="badge-rtbh">${esc(m.mitigation_type) || '—'}</span></td>
+        <td class="text-muted" style="font-size:.8rem;">${esc(m.attack_type) || '—'}</td>
+        <td class="${(m.peak_traffic_gbps || 0) > 100 ? 'text-danger fw-bold' : 'text-warning'}">${m.peak_traffic_gbps || 0}</td>
         <td class="text-muted" style="font-size:.78rem;">${started}</td>
       </tr>`;
     }).join('');

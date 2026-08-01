@@ -20,6 +20,9 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.strategos.war_kg")
 
 # ── Node types ────────────────────────────────────────────────────────────────
 
@@ -173,11 +176,11 @@ def _get_db_path() -> Path:
 
 def ensure_war_graph(conn=None) -> str:
     """Create the war KG graph record if it doesn't exist. Returns graph_id."""
-    import sqlite3
+    from tools.db.storage import get_connection
 
     close_after = conn is None
     if conn is None:
-        conn = sqlite3.connect(str(_get_db_path()))
+        conn = get_connection()
 
     try:
         row = conn.execute(
@@ -194,8 +197,8 @@ def ensure_war_graph(conn=None) -> str:
                 ),
             )
             conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("ensure_war_graph: best-effort INSERT into kg_graphs failed (non-blocking): %s", exc)
     finally:
         if close_after:
             conn.close()
@@ -211,14 +214,14 @@ def upsert_node(
     conn=None,
 ) -> str:
     """Insert or update a war KG node. Returns node_id."""
-    import sqlite3
+    from tools.db.storage import get_connection
 
     if entity_type not in WAR_NODE_TYPES:
         raise ValueError(f"Unknown war node type: {entity_type}. Valid: {WAR_NODE_TYPES}")
 
     close_after = conn is None
     if conn is None:
-        conn = sqlite3.connect(str(_get_db_path()))
+        conn = get_connection()
 
     nid = node_id or str(uuid.uuid4())
     # Inject ontology_id for cross-domain alignment
@@ -257,14 +260,14 @@ def upsert_edge(
     conn=None,
 ) -> str:
     """Insert a war KG edge (idempotent by src+tgt+type). Returns edge_id."""
-    import sqlite3
+    from tools.db.storage import get_connection
 
     if relationship not in WAR_EDGE_TYPES:
         raise ValueError(f"Unknown war edge type: {relationship}. Valid: {WAR_EDGE_TYPES}")
 
     close_after = conn is None
     if conn is None:
-        conn = sqlite3.connect(str(_get_db_path()))
+        conn = get_connection()
 
     now = datetime.now(timezone.utc).isoformat()
     props_json = json.dumps(properties or {})

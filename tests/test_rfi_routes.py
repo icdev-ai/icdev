@@ -9,7 +9,7 @@ import sqlite3
 import sys
 import uuid
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -269,6 +269,88 @@ class TestHITL:
             json={"action": "approve"},
         )
         assert r.status_code in (200, 404, 400)
+
+
+class TestAcceptAll:
+    def test_accepts_drafted_and_approved_skips_pending_and_rejected(self, client):
+        sid = _seed_session(client._db, total=4)
+        drafted = _seed_section(client._db, sid, status="ai_draft_ready", content="Draft")
+        approved = _seed_section(client._db, sid, status="hitl_approved", content="Approved")
+        pending = _seed_section(client._db, sid, status="pending")
+        rejected = _seed_section(client._db, sid, status="hitl_rejected", content="Bad")
+
+        r = client.post(f"/api/rfi/{sid}/accept-all")
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["ok"] is True
+        assert body["accepted"] == 2
+
+        statuses = {
+            row["id"]: row["status"]
+            for row in (dict(x) for x in client._db.execute(
+                "SELECT id, status FROM rfi_workbench_sections WHERE session_id=%s", (sid,)
+            ).fetchall())
+        }
+        assert statuses[drafted] == "accepted"
+        assert statuses[approved] == "accepted"
+        assert statuses[pending] == "pending"
+        assert statuses[rejected] == "hitl_rejected"
+
+    def test_updates_session_progress(self, client):
+        sid = _seed_session(client._db, total=2)
+        _seed_section(client._db, sid, status="ai_draft_ready", content="Draft A")
+        _seed_section(client._db, sid, status="ai_draft_ready", content="Draft B")
+        client._db.execute(
+            "UPDATE rfi_workbench_sessions SET total_sections=2 WHERE id=%s", (sid,)
+        )
+        client._db.commit()
+
+        r = client.post(f"/api/rfi/{sid}/accept-all")
+        assert r.get_json()["accepted"] == 2
+        row = dict(client._db.execute(
+            "SELECT approved_sections, status FROM rfi_workbench_sessions WHERE id=%s", (sid,)
+        ).fetchone())
+        assert row["approved_sections"] == 2
+        assert row["status"] == "complete"
+
+    def test_no_drafted_sections_is_ok(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="pending")
+        r = client.post(f"/api/rfi/{sid}/accept-all")
+        assert r.status_code == 200
+        assert r.get_json()["accepted"] == 0
+
+
+class TestPlaceholderGate:
+    def test_export_blocked_on_unresolved_placeholders(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="accepted", content="Our UEI is [UEI_NUMBER].")
+        r = client.post(f"/api/rfi/{sid}/export/md")
+        assert r.status_code == 409
+        body = r.get_json()
+        assert body["gate"] == "placeholder_guard"
+        assert body["findings"][0]["placeholders"] == ["[UEI_NUMBER]"]
+
+    def test_export_force_bypasses_gate(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="accepted", content="Our UEI is [UEI_NUMBER].")
+        r = client.post(f"/api/rfi/{sid}/export/md", json={"force_placeholders": True})
+        assert r.status_code != 409
+
+    def test_clean_content_exports(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="accepted", content="Our UEI is ABC123DEF456.")
+        r = client.post(f"/api/rfi/{sid}/export/md")
+        assert r.status_code != 409
+
+    def test_accept_all_reports_placeholder_warnings(self, client):
+        sid = _seed_session(client._db)
+        _seed_section(client._db, sid, status="ai_draft_ready", content="CAGE [CAGE_CODE] pending.")
+        r = client.post(f"/api/rfi/{sid}/accept-all")
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["accepted"] == 1
+        assert body["placeholder_warnings"][0]["placeholders"] == ["[CAGE_CODE]"]
 
 
 class TestSave:

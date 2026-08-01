@@ -4,15 +4,21 @@
 
 import sys
 from pathlib import Path
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
+from tools.db.storage import get_connection, table_exists, sql_placeholder  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Flipping a STIG finding status (incl. CAT1 ATO-blockers) is a compliance
+# posture mutation — restrict to security/compliance roles, mirroring
+# GOVCON_WRITE_ROLES in api/govcon.py.
+COMPLIANCE_WRITE_ROLES = ("admin", "isso", "ciso")
 
 stig_manager_api = Blueprint("stig_manager_api", __name__, url_prefix="/api/stig-manager")
 
@@ -44,22 +50,20 @@ def _get_db():
     return conn
 
 
+def _current_actor() -> str:
+    """Attribution for a compliance mutation — bound to the authenticated user,
+    NEVER the request body (nav-comp-06). Taking ``assessed_by`` from the POST
+    body let a caller attribute a STIG finding flip (incl. CAT1 ATO-blockers) to
+    anyone. ``@require_role`` guarantees ``g.current_user`` is set here."""
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        return user.get("email") or user.get("display_name") or user.get("id") or "dashboard"
+    return "dashboard"
+
+
 def _table_exists(conn, table_name: str) -> bool:
     """Check if a table exists (works for both SQLite and PostgreSQL)."""
-    try:
-        if getattr(conn, "_backend", "sqlite") == "postgresql":
-            row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
-                (table_name,),
-            ).fetchone()
-            return row is not None
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-        return row is not None
-    except Exception:
-        return False
+    return table_exists(conn, table_name)
 
 
 @stig_manager_api.route("/stats", methods=["GET"])
@@ -418,6 +422,7 @@ def cat1():
 
 
 @stig_manager_api.route("/assess", methods=["POST"])
+@require_role(*COMPLIANCE_WRITE_ROLES)
 def assess():
     """POST /api/stig-manager/assess — Update finding status."""
     conn = _get_db()
@@ -432,7 +437,9 @@ def assess():
         finding_id = data.get("finding_id")
         new_status = data.get("status")
         comments = data.get("comments", "")
-        assessed_by = data.get("assessed_by", "")
+        # nav-comp-06: attribution is the authenticated user, not the body.
+        # Any body-supplied ``assessed_by`` is intentionally ignored.
+        assessed_by = _current_actor()
 
         if not finding_id or not new_status:
             return jsonify({"error": "finding_id and status are required"}), 400

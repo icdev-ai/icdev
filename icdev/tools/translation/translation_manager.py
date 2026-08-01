@@ -17,7 +17,10 @@ import json
 import time
 import uuid
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
 from pathlib import Path
+
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -40,8 +43,8 @@ def _create_job(db_path, project_id, source_language, target_language, source_pa
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("translation _create_job persist failed for %s: %s", job_id, exc)
     return job_id
 
 
@@ -53,11 +56,16 @@ def _update_job_status(db_path, job_id, status, **kwargs):
         conn = get_connection(db_path=str(db_path))
         c = conn.cursor()
 
-        sets = ["status = ?"]
+        # Runtime SQL is authored for PostgreSQL (%s paramstyle); translate_sql
+        # rewrites %s -> ? for the SQLite init fallback. Mixing ? and %s in a
+        # single statement is invalid on PG (the ? placeholders raise), which
+        # previously left every status/metrics UPDATE swallowed and unpersisted
+        # on the primary backend. Keep the whole statement %s.
+        sets = ["status = %s"]
         values = [status]
         for key, value in kwargs.items():
             if value is not None:
-                sets.append(f"{key} = ?")
+                sets.append(f"{key} = %s")
                 values.append(value if not isinstance(value, (dict, list)) else json.dumps(value))
         values.append(job_id)
 
@@ -67,8 +75,139 @@ def _update_job_status(db_path, job_id, status, **kwargs):
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("translation _update_job_status(%s -> %s) failed: %s", job_id, status, exc)
+
+
+def _collect_gate_errors(validation_report):
+    """Collect findings from *verified*, failed checks — the compiler/validator
+    feedback fed back into the repair prompt (D255).
+
+    Not-verified checks (e.g. absent toolchain) carry no actionable error and are
+    skipped, so a not-verified state never triggers a futile repair attempt.
+    """
+    errors = []
+    for _check_name, check_result in (validation_report.get("checks", {}) or {}).items():
+        if check_result.get("verified", True) and not check_result.get("passed", True):
+            errors.extend(check_result.get("findings", []) or [])
+    return errors
+
+
+def _run_repair_loop(
+    trans_result,
+    source_ir,
+    validation_report,
+    src_lang,
+    tgt_lang,
+    output_dir,
+    out_path,
+    config,
+    dep_mappings,
+    project_id=None,
+    job_id=None,
+    db_path=None,
+):
+    """Bounded compiler-feedback repair loop (D255 — the designed "Validate+Repair"
+    phase). Actually invokes ``repair_translation`` on real (non-mock) translated
+    units whose validation failed, re-assembles, and re-validates after each
+    attempt — replacing the previous no-op that only reported status "attempted".
+
+    Bounded by ``repair.max_repair_attempts``. Stops early when the gate passes or
+    when an attempt produces no code change. Returns a summary dict:
+      ``{final_report, attempts, max_attempts, repaired_units, resolved}``.
+    """
+    # Source-module imports so tests can patch the source symbols directly.
+    from tools.translation.translation_validator import repair_translation, validate_translation
+
+    repair_config = config.get("repair", {}) if config else {}
+    max_attempts = int(repair_config.get("max_repair_attempts", 3) or 0)
+    include_compiler_errors = repair_config.get("include_compiler_errors", True)
+
+    report = validation_report
+    real_units = trans_result.get("translated_units", [])
+    src_code_by_name = {u.get("name"): u.get("source_code", "") for u in source_ir.get("units", [])}
+
+    repaired_names = set()
+    attempts_used = 0
+
+    for _attempt in range(1, max_attempts + 1):
+        if report.get("overall_pass", False):
+            break
+
+        errors = _collect_gate_errors(report)
+        if include_compiler_errors and not errors:
+            # No actionable, verified error to feed back — nothing to repair.
+            break
+
+        attempts_used += 1
+        changed_this_attempt = False
+
+        for unit in real_units:
+            # Never "repair" a mock — mocks are handled by the mock-and-continue
+            # path and must not masquerade as repaired real translations.
+            if unit.get("mock") is True or unit.get("status") == "mocked":
+                continue
+
+            current_code = unit.get("translated_code", "") or ""
+            repaired_code = repair_translation(
+                unit=unit,
+                source_code=src_code_by_name.get(unit.get("name"), unit.get("source_code", "")),
+                translated_code=current_code,
+                errors=errors,
+                source_language=src_lang,
+                target_language=tgt_lang,
+                config=config,
+            )
+            if repaired_code and repaired_code.strip() and repaired_code.strip() != current_code.strip():
+                unit["translated_code"] = repaired_code.strip()
+                unit["repaired"] = True
+                unit["repair_attempts"] = int(unit.get("repair_attempts", 0)) + 1
+                repaired_names.add(unit.get("name"))
+                changed_this_attempt = True
+
+        if not changed_this_attempt:
+            # Repair produced no improvement — stop rather than burn attempts.
+            break
+
+        # Re-assemble so the syntax re-check sees the repaired code on disk.
+        if output_dir:
+            try:
+                from tools.translation.project_assembler import assemble_project
+
+                all_units = trans_result.get("translated_units", []) + trans_result.get("mocked_units", [])
+                dep_resolutions = list(dep_mappings.values()) if dep_mappings else None
+                assemble_project(
+                    output_dir=str(output_dir),
+                    target_language=tgt_lang,
+                    source_language=src_lang,
+                    translated_units=all_units,
+                    dep_resolutions=dep_resolutions,
+                    project_id=project_id,
+                    job_id=job_id,
+                )
+            except Exception as exc:
+                logger.warning("translation repair re-assembly failed: %s", exc)
+
+        # Re-validate the repaired translation.
+        report = validate_translation(
+            source_ir=source_ir,
+            translated_data=trans_result,
+            source_language=src_lang,
+            target_language=tgt_lang,
+            output_dir=str(output_dir) if output_dir else None,
+            project_id=project_id,
+            job_id=job_id,
+            config=config,
+            db_path=db_path,
+        )
+
+    return {
+        "final_report": report,
+        "attempts": attempts_used,
+        "max_attempts": max_attempts,
+        "repaired_units": sorted(n for n in repaired_names if n),
+        "resolved": bool(report.get("overall_pass", False)),
+    }
 
 
 def run_pipeline(
@@ -269,10 +408,14 @@ def run_pipeline(
             mappings = load_mappings()
             imports = ir_data.get("imports", [])
             if imports:
-                resolutions = resolve_imports(src_lang, tgt_lang, imports, mappings)
+                # resolve_imports(import_list, source_lang, target_lang, mappings)
+                # — the import list is the FIRST arg. Passing languages first left
+                # _normalize_lang() calling .lower() on the imports list, raising
+                # AttributeError that was swallowed, so dep_mappings was always {}.
+                resolutions = resolve_imports(imports, src_lang, tgt_lang, mappings)
                 dep_mappings = {r["source_import"]: r for r in resolutions}
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("translation dependency resolution failed (%s->%s): %s", src_lang, tgt_lang, exc)
 
         # Load feature rules
         feature_rules = []
@@ -393,42 +536,90 @@ def run_pipeline(
             "checks_total": validation_report.get("checks_total", 0),
         }
 
-        # Save validation report
+        # Repair loop (D255) — actually invoke repair_translation, bounded, and
+        # re-validate. Runs before the report is saved so the persisted report
+        # reflects the post-repair state.
+        if not validation_report.get("overall_pass", True):
+            pre_repair_errors = _collect_gate_errors(validation_report)
+
+            try:
+                from tools.audit.audit_logger import log_event
+
+                log_event(
+                    event_type="translation.repair_attempted",
+                    actor="translation_manager",
+                    action=f"Repair loop triggered: {len(pre_repair_errors)} findings",
+                    project_id=project_id,
+                    details={"job_id": job_id, "error_count": len(pre_repair_errors)},
+                )
+            except Exception:
+                pass
+
+            repair_summary = _run_repair_loop(
+                trans_result=trans_result,
+                source_ir=ir_data,
+                validation_report=validation_report,
+                src_lang=src_lang,
+                tgt_lang=tgt_lang,
+                output_dir=output_dir,
+                out_path=out_path,
+                config=config,
+                dep_mappings=dep_mappings,
+                project_id=project_id,
+                job_id=job_id,
+                db_path=db_path,
+            )
+
+            # Adopt the post-repair validation report.
+            validation_report = repair_summary["final_report"]
+            result["phases"]["validate"] = {
+                "status": "completed",
+                "overall_pass": validation_report.get("overall_pass", False),
+                "gate_result": validation_report.get("gate_result", "unknown"),
+                "checks_passed": validation_report.get("checks_passed", 0),
+                "checks_total": validation_report.get("checks_total", 0),
+            }
+
+            repaired_units = repair_summary["repaired_units"]
+            result["phases"]["repair"] = {
+                # "attempted" only when the loop actually ran but rewrote nothing;
+                # "completed" when at least one unit was repaired. No longer a
+                # misleading no-op that always claims "attempted".
+                "status": "completed" if repaired_units else "attempted",
+                "error_count": len(pre_repair_errors),
+                "attempts": repair_summary["attempts"],
+                "max_attempts": repair_summary["max_attempts"],
+                "repaired_count": len(repaired_units),
+                "repaired_units": repaired_units,
+                "resolved": repair_summary["resolved"],
+            }
+
+            try:
+                from tools.audit.audit_logger import log_event
+
+                log_event(
+                    event_type="translation.repair_completed",
+                    actor="translation_manager",
+                    action=(
+                        f"Repair loop finished: {len(repaired_units)} unit(s) repaired "
+                        f"over {repair_summary['attempts']} attempt(s), "
+                        f"resolved={repair_summary['resolved']}"
+                    ),
+                    project_id=project_id,
+                    details={
+                        "job_id": job_id,
+                        "repaired_count": len(repaired_units),
+                        "attempts": repair_summary["attempts"],
+                        "resolved": repair_summary["resolved"],
+                    },
+                )
+            except Exception:
+                pass
+
+        # Save validation report (post-repair).
         val_output = out_path / "validation_report.json"
         with open(val_output, "w", encoding="utf-8") as f:
             json.dump(validation_report, f, indent=2)
-
-        # Repair loop (D255)
-        if not validation_report.get("overall_pass", True):
-            repair_config = config.get("repair", {})
-            max_repairs = repair_config.get("max_repair_attempts", 3)
-
-            if repair_config.get("include_compiler_errors", True):
-                # Collect errors from failed checks
-                errors = []
-                for check_name, check_result in validation_report.get("checks", {}).items():
-                    if not check_result.get("passed", True):
-                        errors.extend(check_result.get("findings", []))
-
-                if errors:
-                    try:
-                        from tools.audit.audit_logger import log_event
-
-                        log_event(
-                            event_type="translation.repair_attempted",
-                            actor="translation_manager",
-                            action=f"Repair loop triggered: {len(errors)} findings",
-                            project_id=project_id,
-                            details={"job_id": job_id, "error_count": len(errors)},
-                        )
-                    except Exception:
-                        pass
-
-                    result["phases"]["repair"] = {
-                        "status": "attempted",
-                        "error_count": len(errors),
-                        "max_attempts": max_repairs,
-                    }
 
     except Exception as e:
         result["phases"]["validate"] = {"status": "failed", "error": str(e)}
@@ -467,6 +658,29 @@ def run_pipeline(
     # ========== Finalize ==========
     elapsed = time.time() - start_time
     result["elapsed_seconds"] = round(elapsed, 2)
+
+    # Job summary (nav-intel-05) — distinguishes real / mock / repaired units and
+    # EXCLUDES mocks from success metrics. A mock is an LLM failure degraded to a
+    # stub (D256); it must never be counted as a successful translation.
+    _tstats = trans_result.get("stats", {})
+    _total_units = _tstats.get("total_units", 0)
+    _real_count = _tstats.get("translated_count", 0)  # already excludes mocks
+    _mock_count = _tstats.get("mocked_count", 0)
+    _failed_count = _tstats.get("failed_count", 0)
+    _repaired_count = result.get("phases", {}).get("repair", {}).get("repaired_count", 0)
+    result["summary"] = {
+        "total_units": _total_units,
+        # Real (non-mock) translations only — the success numerator.
+        "real_translations": _real_count,
+        "mocked_units": _mock_count,
+        "failed_units": _failed_count,
+        "repaired_units": _repaired_count,
+        "mock_percentage": _tstats.get("mock_percentage", 0),
+        "mock_threshold_exceeded": _tstats.get("mock_threshold_exceeded", False),
+        # Success rate over real translations, mocks explicitly excluded.
+        "success_count": _real_count,
+        "success_rate": round(_real_count / _total_units, 3) if _total_units else 0.0,
+    }
 
     # Determine final status
     failed_phases = [p for p, r in result["phases"].items() if r.get("status") == "failed"]

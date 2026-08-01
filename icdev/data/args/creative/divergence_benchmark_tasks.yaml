@@ -1,0 +1,72 @@
+# Divergence-vs-single-shot benchmark task suite (dvg-bench-01)
+#
+# Real-ICDEV-representative IDEATION tasks: for each, the harness generates a
+# candidate-idea pool two ways (one single-shot call vs an isolated divergent
+# fan-out), scores BOTH pools with the same divergence critic, and compares
+# breadth / novelty / trap-detection at fixed token cost. These mirror the kinds
+# of problems the creative engine (pain points) and innovation engine (capability
+# signals) actually face -- the surfaces wired in dvg-wire-01 / dvg-wire-02.
+#
+# This file is DATA, not code: edit tasks here without touching the runner.
+# `function` is the router function both methods run under, so the model is held
+# fixed across the comparison (the delta isolates the method, not the model).
+#
+# families covered: creative pain points, innovation signals, compliance,
+# modernization, platform DX.
+version: "1.0"
+tasks:
+  - id: pain-onboarding-friction
+    family: creative_pain_point
+    function: creative_ideation
+    note: "Mirrors a creative_pain_points row scored by gap_scorer."
+    prompt: >-
+      Customer pain point: new analysts take days to become productive in a
+      compliance tooling platform because setup, permissions, and data import are
+      manual and undocumented. Propose distinct candidate solution DIRECTIONS a
+      product could take to remove this onboarding friction.
+
+  - id: pain-alert-fatigue
+    family: creative_pain_point
+    function: creative_ideation
+    note: "SOC alert-fatigue pain point (DSOC canvas territory)."
+    prompt: >-
+      Customer pain point: security operators ignore most alerts because volume
+      is high and signal-to-noise is low, so real incidents are missed. Propose
+      distinct candidate solution DIRECTIONS to cut alert fatigue without hiding
+      true positives.
+
+  - id: signal-air-gap-rag
+    family: innovation_signal
+    function: creative_ideation
+    note: "Mirrors an approved innovation_signal fed to solution_generator."
+    prompt: >-
+      Capability signal: teams want retrieval-augmented answers over internal
+      documents on fully air-gapped networks with no cloud model access. Propose
+      distinct candidate APPROACHES to deliver useful RAG entirely offline.
+
+  - id: signal-compliance-drift
+    family: innovation_signal
+    function: creative_ideation
+    note: "Continuous-ATO drift-detection capability signal."
+    prompt: >-
+      Capability signal: an accredited system slowly drifts out of compliance
+      between annual assessments and nobody notices until audit. Propose distinct
+      candidate APPROACHES to detect and surface compliance drift continuously.
+
+  - id: modernize-monolith-strangler
+    family: modernization
+    function: creative_ideation
+    note: "7-Rs modernization ideation (Modernization agent territory)."
+    prompt: >-
+      A legacy DoD monolith must be modernized without a risky big-bang rewrite
+      and while staying accreditation-ready throughout. Propose distinct candidate
+      APPROACHES for incrementally modernizing it.
+
+  - id: dx-flaky-tests
+    family: platform_dx
+    function: creative_ideation
+    note: "Developer-experience pain point (internal telemetry signal)."
+    prompt: >-
+      Developers lose trust in CI because a subset of tests fail intermittently
+      for reasons unrelated to their change. Propose distinct candidate
+      DIRECTIONS to eliminate or contain flaky-test noise.

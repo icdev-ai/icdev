@@ -39,6 +39,9 @@ from tools.aiify.opportunity_scorer import (
 )
 from tools.aiify.pattern_classifier import detect_patterns
 from tools.aiify.roadmap_generator import generate_roadmap
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.aiify.engine")
 
 _CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / "aiify_config.yaml"
 
@@ -142,17 +145,6 @@ def _dump(value: Any) -> Any:
     return json.dumps(value)
 
 
-def _exec(conn: Any, sql: str, params: tuple) -> Any:
-    try:
-        return conn.execute(sql, params)
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return conn.execute(sql.replace("?", "%s"), params)
-
-
 def _backend() -> str:
     return os.environ.get(
         "AIIFY_STORAGE_BACKEND",
@@ -160,16 +152,31 @@ def _backend() -> str:
     ).lower()
 
 
-def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id") -> int:
-    """Execute INSERT and return the generated PK for both SQLite and PostgreSQL."""
-    if _backend() == "postgresql":
-        pg_sql = sql.replace("?", "%s") + f" RETURNING {id_col}"
-        cur = conn.execute(pg_sql, params)
+def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id",
+            commit: bool = True) -> int:
+    """Execute a ``%s``-placeholder INSERT and return the generated PK.
+
+    Connections are translating StorageConnections (see init_db.get_connection),
+    so the single PG-native ``%s`` style flows through unchanged on PostgreSQL and
+    is rewritten to ``?`` on SQLite. PostgreSQL uses RETURNING; SQLite uses
+    ``lastrowid``. The former ``_exec`` blind retry-with-%s helper is gone — every
+    call site now authors ``%s`` directly (penta-aiify-06).
+
+    ``commit=False`` returns the new PK without committing so a caller can batch
+    many inserts into a single transaction (the returned id is visible within the
+    open transaction for a follow-on FK insert). RETURNING/lastrowid both work
+    pre-commit, so batching is safe.
+    """
+    from tools.db.storage import is_pg
+    if is_pg(conn):
+        cur = conn.execute(sql + f" RETURNING {id_col}", params)
         row = cur.fetchone()
-        conn.commit()
+        if commit:
+            conn.commit()
         return int(row[0]) if row else 0
     cur = conn.execute(sql, params)
-    conn.commit()
+    if commit:
+        conn.commit()
     return cur.lastrowid or 0
 
 
@@ -320,8 +327,12 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                 registered += 1
         finally:
             conn.close()
-    except Exception:
-        pass  # innovation_signals table may not exist in all environments
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # innovation_signals table may not exist in all environments
+        logger.warning(
+            "_register_innovation_signals: best-effort INSERT into innovation_signals failed (non-blocking): %s",
+            exc,
+        )
     return registered
 
 
@@ -338,20 +349,37 @@ def _phase_label(score: float, thresholds: dict | None = None) -> str:
     return "Unclassified"
 
 
-def _promote_top_opportunities(
-    opp_rows: list[dict],
-    score_rows: list[dict],
-    scan_id: int,
-    roadmap_id: str,
-) -> int:
-    """Promote top 5 opportunities (by composite_score) to kanban_tasks.
+# Number of highest-scoring opportunities the "top" promoter takes, before the
+# phase promoter fills the remaining per-scan budget.
+_TOP_PROMOTE_N = 5
 
-    Uses the main ICDEV get_connection() for kanban_tasks and the AI-ify
-    get_connection() for aiify_audit_log. Skips tasks whose id already exists.
-    Returns the count of tasks actually inserted.
+_FALLBACK_PROMOTION_CONFIG = {
+    "auto_promote_cap": 10,
+    "auto_promote_status": "suggested",
+}
+
+
+def _load_promotion_config() -> dict:
+    """Load kanban_promotion settings from args/aiify_config.yaml with fallback.
+
+    Controls auto-promotion of scan opportunities to kanban_tasks:
+      * ``auto_promote_cap``    — hard cap on tasks auto-created per scan.
+      * ``auto_promote_status`` — kanban status for auto-created tasks; always a
+        non-dispatchable/quarantine status (defaults to 'suggested').
     """
-    from tools.db.storage import get_connection as _icdev_get_connection
+    merged = dict(_FALLBACK_PROMOTION_CONFIG)
+    try:
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh)
+        if isinstance(cfg, dict) and isinstance(cfg.get("kanban_promotion"), dict):
+            merged.update(cfg["kanban_promotion"])
+    except Exception:
+        pass
+    return merged
 
+
+def _rank_opportunities(opp_rows: list[dict], score_rows: list[dict]) -> list[dict]:
+    """Return opportunities enriched with scores, sorted by composite desc."""
     score_index: dict[int, dict] = {int(s["opportunity_id"]): s for s in score_rows}
     enriched: list[dict] = []
     for opp in opp_rows:
@@ -369,10 +397,76 @@ def _promote_top_opportunities(
             "feasibility_score": float(score.get("feasibility_score", 0.0)),
             "risk_score": float(score.get("risk_score", 0.0)),
         })
-
     enriched.sort(key=lambda x: x["composite_score"], reverse=True)
-    top5 = enriched[:5]
-    if not top5:
+    return enriched
+
+
+def _write_promotion_audit(scan_id: int, roadmap_id: str, entries: list[dict]) -> None:
+    """Best-effort: one aiify_audit_log 'kanban_promoted' row per created task.
+
+    Batched into a single commit. Audit failure must never break promotion or the
+    scan pipeline, so the whole block is defensive.
+    """
+    if not entries:
+        return
+    try:
+        aiify_conn = get_connection()
+    except Exception:
+        return
+    try:
+        for e in entries:
+            aiify_conn.execute(
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
+                (
+                    "kanban_promoted",
+                    scan_id,
+                    "system",
+                    _dump({
+                        "task_id": e.get("task_id"),
+                        "opportunity_id": e.get("opportunity_id"),
+                        "composite_score": e.get("composite_score"),
+                        "roadmap_id": roadmap_id,
+                    }),
+                ),
+            )
+        aiify_conn.commit()
+    except Exception:
+        try:
+            aiify_conn.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            aiify_conn.close()
+        except Exception:
+            pass
+
+
+def _promote_top_opportunities(
+    opp_rows: list[dict],
+    score_rows: list[dict],
+    scan_id: int,
+    roadmap_id: str,
+) -> int:
+    """Promote the highest-scoring opportunities to kanban_tasks (capped).
+
+    Routes ALL task creation through tools.kanban.task_factory.create_tasks with a
+    per-opportunity idempotency_key (the single dedup choke point), never exceeds
+    ``auto_promote_cap`` (args/aiify_config.yaml), and lands tasks in the
+    configured non-dispatchable status ('suggested') pending HITL review.
+    Returns the count of tasks actually created.
+    """
+    from tools.kanban.task_factory import create_tasks
+
+    cfg = _load_promotion_config()
+    cap = int(cfg.get("auto_promote_cap", 10) or 0)
+    status = str(cfg.get("auto_promote_status", "suggested")) or "suggested"
+    if cap <= 0:
+        return 0
+
+    ranked = _rank_opportunities(opp_rows, score_rows)
+    top = ranked[: min(_TOP_PROMOTE_N, cap)]
+    if not top:
         return 0
 
     thresholds = _load_anomaly_thresholds()
@@ -380,86 +474,61 @@ def _promote_top_opportunities(
         "priority_high_min_score",
         _FALLBACK_ANOMALY_THRESHOLDS["priority_high_min_score"],
     )
-    promoted_opps: list[dict] = []
-    icdev_conn = _icdev_get_connection()
-    try:
-        for opp in top5:
-            opp_id = opp["opportunity_id"]
-            task_id = f"aiify-opp-{str(opp_id)[:8]}"
 
-            existing = _exec(
-                icdev_conn,
-                "SELECT id FROM kanban_tasks WHERE id = ?",
-                (task_id,),
-            ).fetchone()
-            if existing:
-                continue
-
-            priority = "high" if opp["composite_score"] >= priority_high_min else "medium"
-            title = (
-                f"[AI Opp] {opp['pattern_type']} in "
-                f"{opp['module_path']}:{opp['function_name']} "
-                f"-> {opp['ai_paradigm']}"
-            )
-            description = json.dumps(
-                {
-                    "opportunity_id": opp_id,
-                    "scan_id": scan_id,
-                    "roadmap_id": roadmap_id,
-                    "pattern_type": opp["pattern_type"],
-                    "module_path": opp["module_path"],
-                    "function_name": opp["function_name"],
-                    "ai_paradigm": opp["ai_paradigm"],
-                    "scores": {
-                        "composite": opp["composite_score"],
-                        "value": opp["value_score"],
-                        "feasibility": opp["feasibility_score"],
-                        "risk": opp["risk_score"],
-                    },
-                    "roadmap_phase": _phase_label(opp["composite_score"]),
-                    "model_recommendation": opp["il_recommended_model"],
+    specs: list[dict] = []
+    audit: list[dict] = []
+    for opp in top:
+        opp_id = opp["opportunity_id"]
+        task_id = f"aiify-opp-{str(opp_id)[:8]}"
+        priority = "high" if opp["composite_score"] >= priority_high_min else "medium"
+        title = (
+            f"[AI Opp] {opp['pattern_type']} in "
+            f"{opp['module_path']}:{opp['function_name']} "
+            f"-> {opp['ai_paradigm']}"
+        )
+        description = json.dumps(
+            {
+                "opportunity_id": opp_id,
+                "scan_id": scan_id,
+                "roadmap_id": roadmap_id,
+                "pattern_type": opp["pattern_type"],
+                "module_path": opp["module_path"],
+                "function_name": opp["function_name"],
+                "ai_paradigm": opp["ai_paradigm"],
+                "scores": {
+                    "composite": opp["composite_score"],
+                    "value": opp["value_score"],
+                    "feasibility": opp["feasibility_score"],
+                    "risk": opp["risk_score"],
                 },
-                indent=2,
-            )
-            _exec(
-                icdev_conn,
-                "INSERT INTO kanban_tasks "
-                "(id, title, description, task_type, priority, status, executor_type) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (task_id, title, description, "build", priority, "suggested", "claude_cli"),
-            )
-            icdev_conn.commit()
-            promoted_opps.append({**opp, "task_id": task_id})
-    finally:
-        icdev_conn.close()
+                "roadmap_phase": _phase_label(opp["composite_score"]),
+                "model_recommendation": opp["il_recommended_model"],
+            },
+            indent=2,
+        )
+        specs.append({
+            "id": task_id,
+            "idempotency_key": f"aiify-opp-{opp_id}",
+            "title": title,
+            "description": description,
+            "task_type": "build",
+            "priority": priority,
+            "status": status,
+            "dispatch_source": "aiify_auto",
+        })
+        audit.append({
+            "task_id": task_id,
+            "opportunity_id": opp_id,
+            "composite_score": opp["composite_score"],
+        })
 
-    if not promoted_opps:
-        return 0
-
-    # Write one audit entry per promoted task (separate AI-ify connection)
-    aiify_conn = get_connection()
-    try:
-        for opp in promoted_opps:
-            _exec(
-                aiify_conn,
-                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
-                (
-                    "kanban_promoted",
-                    scan_id,
-                    "system",
-                    _dump({
-                        "task_id": opp["task_id"],
-                        "opportunity_id": opp["opportunity_id"],
-                        "composite_score": opp["composite_score"],
-                        "roadmap_id": roadmap_id,
-                    }),
-                ),
-            )
-        aiify_conn.commit()
-    finally:
-        aiify_conn.close()
-
-    return len(promoted_opps)
+    created = create_tasks(specs)
+    created_set = set(created)
+    _write_promotion_audit(
+        scan_id, roadmap_id,
+        [a for a in audit if a["task_id"] in created_set],
+    )
+    return len(created)
 
 
 def _promote_phase_opportunities(
@@ -468,12 +537,26 @@ def _promote_phase_opportunities(
     score_rows: list[dict],
     scan_id: int,
 ) -> int:
-    """Create [Phase] kanban tasks for every opportunity bucketed into P1/P2/P3.
+    """Create capped [Phase] kanban tasks for opportunities not already promoted.
 
-    One task per opportunity, labelled with its roadmap phase.  Tasks whose ID
-    already exists are skipped (idempotent).  Returns the count inserted.
+    Historically this created one task per opportunity across every phase with no
+    cap — the root cause of runaway kanban seeding. It now shares a single
+    per-scan budget with _promote_top_opportunities (total <= auto_promote_cap),
+    excludes the opportunities the top promoter already took, routes through
+    task_factory with a per-opportunity idempotency_key, and lands tasks in the
+    configured non-dispatchable status. Returns the count of tasks created.
     """
-    from tools.db.storage import get_connection as _icdev_get_connection
+    from tools.kanban.task_factory import create_tasks
+
+    cfg = _load_promotion_config()
+    cap = int(cfg.get("auto_promote_cap", 10) or 0)
+    status = str(cfg.get("auto_promote_status", "suggested")) or "suggested"
+    budget = cap - min(_TOP_PROMOTE_N, cap)
+    if budget <= 0:
+        return 0
+
+    ranked = _rank_opportunities(opp_rows, score_rows)
+    excluded = {o["opportunity_id"] for o in ranked[: min(_TOP_PROMOTE_N, cap)]}
 
     roadmap_id: str = roadmap.get("roadmap_id", "")
     # 'rm-8a699d41b6' → '8a699'
@@ -487,70 +570,80 @@ def _promote_phase_opportunities(
         "priority_high_min_score",
         _FALLBACK_ANOMALY_THRESHOLDS["priority_high_min_score"],
     )
-    inserted = 0
-    icdev_conn = _icdev_get_connection()
-    try:
-        for phase in roadmap.get("phases", []):
-            phase_label = phase.get("label", "")
-            for opp_item in phase.get("opportunities", []):
-                opp_id = int(opp_item.get("opportunity_id", 0))
-                task_id = f"aiify-rm-{short_id}-phase-{opp_id}"
 
-                existing = _exec(
-                    icdev_conn,
-                    "SELECT id FROM kanban_tasks WHERE id = ?",
-                    (task_id,),
-                ).fetchone()
-                if existing:
-                    continue
+    specs: list[dict] = []
+    audit: list[dict] = []
+    seen: set[int] = set()
+    for phase in roadmap.get("phases", []):
+        if len(seen) >= budget:
+            break
+        phase_label = phase.get("label", "")
+        for opp_item in phase.get("opportunities", []):
+            if len(seen) >= budget:
+                break
+            opp_id = int(opp_item.get("opportunity_id", 0))
+            if opp_id in excluded or opp_id in seen:
+                continue
+            seen.add(opp_id)
 
-                opp = opp_index.get(opp_id, opp_item)
-                score = score_index.get(opp_id, {})
+            opp = opp_index.get(opp_id, opp_item)
+            score = score_index.get(opp_id, {})
 
-                # Prefer opp_index (has computed paradigm/model); fall back to roadmap item
-                paradigm = opp.get("ai_paradigm") or opp_item.get("ai_paradigm", "")
-                model = opp.get("il_recommended_model") or opp_item.get("il_recommended_model", "")
-                pattern_type = opp.get("pattern_type") or opp_item.get("pattern_type", "")
-                module_path = opp.get("module_path") or opp_item.get("module_path", "")
-                function_name = (
-                    opp.get("function_name") or opp_item.get("function_name", "<unknown>")
-                )
-
-                title = f"[Phase] {pattern_type} in {module_path} -> {paradigm}"
-                description = json.dumps(
-                    {
-                        "opportunity_id": opp_id,
-                        "scan_id": scan_id,
-                        "roadmap_id": roadmap_id,
-                        "phase": phase_label,
-                        "pattern_type": pattern_type,
-                        "module_path": module_path,
-                        "function_name": function_name,
-                        "ai_paradigm": paradigm,
-                        "model_recommendation": model,
-                        "scores": {
-                            "composite": float(score.get("composite_score", 0.0)),
-                            "value": float(score.get("value_score", 0.0)),
-                            "feasibility": float(score.get("feasibility_score", 0.0)),
-                            "risk": float(score.get("risk_score", 0.0)),
-                        },
+            # Prefer opp_index (has computed paradigm/model); fall back to roadmap item
+            paradigm = opp.get("ai_paradigm") or opp_item.get("ai_paradigm", "")
+            model = opp.get("il_recommended_model") or opp_item.get("il_recommended_model", "")
+            pattern_type = opp.get("pattern_type") or opp_item.get("pattern_type", "")
+            module_path = opp.get("module_path") or opp_item.get("module_path", "")
+            function_name = (
+                opp.get("function_name") or opp_item.get("function_name", "<unknown>")
+            )
+            composite = float(score.get("composite_score", 0.0))
+            task_id = f"aiify-rm-{short_id}-phase-{opp_id}"
+            title = f"[Phase] {pattern_type} in {module_path} -> {paradigm}"
+            description = json.dumps(
+                {
+                    "opportunity_id": opp_id,
+                    "scan_id": scan_id,
+                    "roadmap_id": roadmap_id,
+                    "phase": phase_label,
+                    "pattern_type": pattern_type,
+                    "module_path": module_path,
+                    "function_name": function_name,
+                    "ai_paradigm": paradigm,
+                    "model_recommendation": model,
+                    "scores": {
+                        "composite": composite,
+                        "value": float(score.get("value_score", 0.0)),
+                        "feasibility": float(score.get("feasibility_score", 0.0)),
+                        "risk": float(score.get("risk_score", 0.0)),
                     },
-                    indent=2,
-                )
-                priority = "high" if float(score.get("composite_score", 0.0)) >= priority_high_min else "medium"
-                _exec(
-                    icdev_conn,
-                    "INSERT INTO kanban_tasks "
-                    "(id, title, description, task_type, priority, status, executor_type) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (task_id, title, description, "build", priority, "suggested", "claude_cli"),
-                )
-                icdev_conn.commit()
-                inserted += 1
-    finally:
-        icdev_conn.close()
+                },
+                indent=2,
+            )
+            priority = "high" if composite >= priority_high_min else "medium"
+            specs.append({
+                "id": task_id,
+                "idempotency_key": f"aiify-opp-{opp_id}",
+                "title": title,
+                "description": description,
+                "task_type": "build",
+                "priority": priority,
+                "status": status,
+                "dispatch_source": "aiify_auto",
+            })
+            audit.append({
+                "task_id": task_id,
+                "opportunity_id": opp_id,
+                "composite_score": composite,
+            })
 
-    return inserted
+    created = create_tasks(specs)
+    created_set = set(created)
+    _write_promotion_audit(
+        scan_id, roadmap_id,
+        [a for a in audit if a["task_id"] in created_set],
+    )
+    return len(created)
 
 
 def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
@@ -825,14 +918,13 @@ def run_scan(
                 conn,
                 "INSERT INTO aiify_scans "
                 "(input_type, input_ref, language_profile, total_files, total_loc, status) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (input_type, input_ref, _dump(language_profile), total_files, total_loc, "running"),
                 "scan_id",
             )
 
-            _exec(
-                conn,
-                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+            conn.execute(
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
                 ("scan_started", scan_id, "system", _dump({"input_type": input_type, "input_ref": input_ref})),
             )
             conn.commit()
@@ -848,6 +940,10 @@ def run_scan(
 
         conn = get_connection()
         try:
+            # Batch all opportunity+score inserts into ONE transaction (was a
+            # per-row commit each iteration). The opportunity id is visible to its
+            # own score insert pre-commit; a single commit lands after the loop
+            # (penta-aiify-06 — atomic per scan, far fewer fsyncs).
             for pat in patterns:
                 paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
                 il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
@@ -857,7 +953,7 @@ def run_scan(
                     "INSERT INTO aiify_opportunities "
                     "(scan_id, module_path, function_name, line_start, line_end, language, "
                     "pattern_type, pattern_detail, ai_paradigm, il_recommended_model, data_requirements) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         scan_id,
                         pat["module_path"],
@@ -872,16 +968,16 @@ def run_scan(
                         _dump({}),
                     ),
                     "opportunity_id",
+                    commit=False,
                 )
 
                 pat["ai_paradigm"] = paradigm
                 score = score_and_assess(pat, scan_context)
-                _exec(
-                    conn,
+                conn.execute(
                     "INSERT INTO aiify_scores "
                     "(opportunity_id, value_score, feasibility_score, risk_score, composite_score, "
                     "score_detail, verdict, ai_readiness, rationale, pros, cons, category) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         opp_id,
                         score["value_score"],
@@ -897,7 +993,6 @@ def run_scan(
                         score["category"],
                     ),
                 )
-                conn.commit()
 
                 opp_rows.append({
                     "opportunity_id": opp_id,
@@ -906,6 +1001,7 @@ def run_scan(
                     **pat,
                 })
                 score_rows.append({"opportunity_id": opp_id, **score})
+            conn.commit()  # single commit for the whole opportunity+score batch
         finally:
             conn.close()
 
@@ -917,10 +1013,9 @@ def run_scan(
         overall = roll_up_scan_verdict(score_rows)
         conn = get_connection()
         try:
-            _exec(
-                conn,
-                "UPDATE aiify_scans SET project_summary = ?, overall_verdict = ?, "
-                "overall_ai_readiness = ?, overall_rationale = ? WHERE scan_id = ?",
+            conn.execute(
+                "UPDATE aiify_scans SET project_summary = %s, overall_verdict = %s, "
+                "overall_ai_readiness = %s, overall_rationale = %s WHERE scan_id = %s",
                 (project_summary, overall["overall_verdict"],
                  overall["overall_ai_readiness"], overall["overall_rationale"], scan_id),
             )
@@ -938,14 +1033,12 @@ def run_scan(
         # 6. Mark scan completed + final audit entry
         conn = get_connection()
         try:
-            _exec(
-                conn,
-                "UPDATE aiify_scans SET status = ?, completed_at = ? WHERE scan_id = ?",
+            conn.execute(
+                "UPDATE aiify_scans SET status = %s, completed_at = %s WHERE scan_id = %s",
                 ("completed", _now(), scan_id),
             )
-            _exec(
-                conn,
-                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+            conn.execute(
+                "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
                 (
                     "scan_completed",
                     scan_id,

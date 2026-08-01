@@ -1697,9 +1697,234 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
 }
 
 
-def get_tool_catalog() -> dict:
-    """Return the full tool catalog for the palette UI."""
-    return TOOL_CATEGORIES
+# ── MCP palette section (dwo-mcp-03-d3) ────────────────────
+#
+# A `node_type: mcp` step (dwo-mcp-03) dispatches a tool from
+# tools/mcp/tool_registry.py through MCP_EXECUTOR instead of naming a script.
+# That registry exposes 500+ tools, most of which gate MCP-WF-001 refuses, so
+# the palette lists only the tools a step may dispatch unattended: offering a
+# tool the executor will refuse at runtime is worse than not offering it.
+
+#: Script every `node_type: mcp` step runs. Mirrors workflow_runner.MCP_EXECUTOR
+#: — duplicated rather than imported to keep the palette free of a runner import.
+MCP_EXECUTOR = "tools/studio/executors/mcp_executor.py"
+
+#: Gate file holding the allowlist (dwo-mcp-02), and the section inside it.
+GATES_FILENAME = "security_gates.yaml"
+GATE_POLICY_KEY = "mcp_workflow_tools"
+
+#: JSON-Schema type → the form widget the editor should render for it.
+_SCHEMA_WIDGETS: dict[str, str] = {
+    "string": "text",
+    "integer": "number",
+    "number": "number",
+    "boolean": "checkbox",
+    "array": "textarea",
+    "object": "textarea",
+}
+
+#: Schema types whose form value is typed as JSON text, not as a scalar.
+_JSON_SCHEMA_TYPES = ("array", "object")
+
+#: Built section, keyed by nothing — there is one policy per process.
+_MCP_SECTION_CACHE: dict | None = None
+
+
+def _gate_policy_paths() -> list[Path]:
+    """Gate-file locations to probe, nearest ancestor first.
+
+    Probes both ``<root>/args/`` and ``<root>/data/args/`` at every level so the
+    policy resolves from the repo checkout, from the ``icdev/`` package mirror,
+    and from a pip-installed wheel where it ships as package data. Same strategy
+    as the executor that enforces the allowlist.
+    """
+    paths: list[Path] = []
+    for parent in Path(__file__).resolve().parents:
+        for rel in (("args",), ("data", "args")):
+            candidate = parent.joinpath(*rel, GATES_FILENAME)
+            if candidate not in paths:
+                paths.append(candidate)
+    return paths
+
+
+def load_mcp_allowlist(path: str | Path | None = None) -> list[str]:
+    """Return the tools a workflow step may dispatch with no human gate.
+
+    Reads ``mcp_workflow_tools.allowed`` from the gate file, preserving the
+    order the policy declares. ``requires_approval`` tools are deliberately
+    excluded: the executor refuses them until the human gate is wired, so
+    listing them in the palette would only offer a step that cannot run.
+
+    Unlike the executor, a missing or unreadable policy is not an error here —
+    the palette simply shows no MCP tools, which is the same default-deny
+    outcome. Enforcement stays with the executor.
+
+    Args:
+        path: Read this gate file instead of probing for one.
+
+    Returns:
+        Allowlisted tool names, or ``[]`` when no usable policy was found.
+    """
+    for candidate in [Path(path)] if path else _gate_policy_paths():
+        try:
+            data = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError, yaml.YAMLError):
+            continue
+        policy = data.get(GATE_POLICY_KEY) if isinstance(data, dict) else None
+        if not isinstance(policy, dict):
+            continue
+        # A policy that is no longer default-deny models something this palette
+        # does not: show nothing rather than guess what the edit permits.
+        if str(policy.get("default", "")).strip().lower() != "deny":
+            return []
+        seen: set[str] = set()
+        allowed: list[str] = []
+        for name in policy.get("allowed") or []:
+            name = str(name).strip()
+            if name and name not in seen:
+                seen.add(name)
+                allowed.append(name)
+        return allowed
+    return []
+
+
+def _params_field(name: str, spec: Any, *, required: bool) -> dict:
+    """Translate one JSON-Schema property into a palette form field."""
+    spec = spec if isinstance(spec, dict) else {}
+    schema_type = str(spec.get("type", "string") or "string")
+    widget = _SCHEMA_WIDGETS.get(schema_type, "text")
+
+    field: dict[str, Any] = {
+        "name": name,
+        "label": name.replace("_", " ").title(),
+        "type": schema_type,
+        "widget": widget,
+        "required": required,
+        "description": str(spec.get("description", "") or ""),
+    }
+    if schema_type in _JSON_SCHEMA_TYPES:
+        # The editor must parse this field's value as JSON before it reaches
+        # mcp_params, where the executor expects the schema's own type.
+        field["json"] = True
+    if isinstance(spec.get("enum"), list) and spec["enum"]:
+        field["widget"] = "select"
+        field["options"] = [str(o) for o in spec["enum"]]
+    if "default" in spec:
+        field["default"] = spec["default"]
+    return field
+
+
+def build_params_form(input_schema: Any) -> list[dict]:
+    """Build the params form for one tool from its registry ``input_schema``.
+
+    Required fields come first so the form leads with what the tool cannot run
+    without; within each group the schema's own property order is kept.
+
+    Args:
+        input_schema: A tool's JSON-Schema entry. A non-object schema, or one
+            with no properties, yields an empty form — the tool takes no params.
+
+    Returns:
+        Field descriptors carrying the widget, requiredness and help text the
+        editor needs to render an input for each property.
+    """
+    if not isinstance(input_schema, dict):
+        return []
+    properties = input_schema.get("properties")
+    if not isinstance(properties, dict):
+        return []
+
+    required = {str(r) for r in (input_schema.get("required") or [])}
+    fields = [
+        _params_field(str(name), spec, required=str(name) in required)
+        for name, spec in properties.items()
+    ]
+    return sorted(fields, key=lambda f: not f["required"])
+
+
+def build_mcp_palette_section(*, refresh: bool = False) -> dict:
+    """Build the palette's MCP section: allowlisted registry tools only.
+
+    Each entry carries the `node_type: mcp` step fields the editor serialises
+    (``node_type``, ``mcp_tool``), the registry description as help text, and a
+    ``params_form`` generated from the tool's ``input_schema``.
+
+    An allowlisted name the registry does not know is dropped rather than shown
+    — that is gate MCP-WF-001's ``mcp_tool_unknown_to_registry`` condition, and
+    a palette entry for it would only produce a step that fails at dispatch.
+
+    Args:
+        refresh: Rebuild instead of returning the cached section. The policy and
+            the registry are both read from disk, so a long-lived dashboard
+            process otherwise keeps the section it built on first request.
+
+    Returns:
+        A catalog section, or ``{}`` when no allowlisted tool resolved.
+    """
+    global _MCP_SECTION_CACHE
+    if _MCP_SECTION_CACHE is not None and not refresh:
+        return _MCP_SECTION_CACHE
+
+    tools: list[dict] = []
+    allowlist = load_mcp_allowlist()
+    if allowlist:
+        try:
+            from tools.mcp.tool_registry import (  # noqa: PLC0415
+                RESOURCE_REGISTRY,
+                TOOL_REGISTRY,
+                list_tools,
+            )
+            registered = set(list_tools())
+        except ImportError:
+            registered = set()
+            RESOURCE_REGISTRY = TOOL_REGISTRY = {}
+
+        for name in allowlist:
+            if name not in registered:
+                continue
+            entry = TOOL_REGISTRY.get(name) or RESOURCE_REGISTRY.get(name) or {}
+            tools.append(
+                {
+                    "id": f"mcp_{name}",
+                    # The registry key verbatim: it is what goes in `mcp_tool`,
+                    # so a friendlier label would hide the value that matters.
+                    "name": name,
+                    "tool": MCP_EXECUTOR,
+                    "description": str(entry.get("description", "") or ""),
+                    "node_type": "mcp",
+                    "mcp_tool": name,
+                    "params_form": build_params_form(entry.get("input_schema")),
+                }
+            )
+
+    section = (
+        {
+            "label": "MCP Tools",
+            "icon": "plug",
+            # Reuses an existing palette colour so the section renders styled.
+            "color": "code_intel",
+            "node_type": "mcp",
+            "tools": tools,
+        }
+        if tools
+        else {}
+    )
+    _MCP_SECTION_CACHE = section
+    return section
+
+
+def get_tool_catalog(*, refresh: bool = False) -> dict:
+    """Return the full tool catalog for the palette UI.
+
+    Args:
+        refresh: Rebuild the MCP section from the allowlist and registry rather
+            than serving the cached one. The static categories never change.
+    """
+    mcp_section = build_mcp_palette_section(refresh=refresh)
+    if not mcp_section:
+        return TOOL_CATEGORIES
+    # A new mapping — TOOL_CATEGORIES is module state and callers iterate it.
+    return {**TOOL_CATEGORIES, "mcp": mcp_section}
 
 
 def _now_iso() -> str:
@@ -1943,6 +2168,61 @@ def get_builtin_template(template_id: str) -> dict | None:
         }
     except Exception:
         return None
+
+
+# ── Triggers panel (dwo-evt-04-d5) ─────────────────────────
+
+
+def build_triggers_panel(workflow_id: str) -> dict:
+    """Everything the editor's Triggers tab needs, in one call.
+
+    Sources and triggers are fetched together because the panel is useless with
+    either half missing: binding a trigger requires choosing a source, and the
+    bound list has to name its source rather than show a bare id.
+
+    Degrades to empty lists rather than raising. The event tables arrive with
+    migration 304, so an editor opened against a database that has not been
+    migrated yet should render an empty panel, not a 500 that looks like the
+    workflow itself is broken.
+    """
+    try:
+        from tools.studio.event_sources import list_event_sources, list_workflow_triggers
+    except Exception as exc:
+        return {
+            "workflow_id": workflow_id, "sources": [], "triggers": [],
+            "available": False, "error": f"event sources unavailable: {exc}",
+        }
+
+    # Failures degrade to an empty panel but are *reported*. An empty list and a
+    # broken query look identical in the UI, and a panel that silently shows
+    # "no sources" when the query actually raised sends you looking for missing
+    # data instead of the exception.
+    errors: list[str] = []
+    try:
+        sources = list_event_sources()
+    except Exception as exc:
+        sources, _ = [], errors.append(f"sources: {exc}")
+    try:
+        triggers = list_workflow_triggers(workflow_id)
+    except Exception as exc:
+        triggers, _ = [], errors.append(f"triggers: {exc}")
+
+    by_id = {s.get("source_id"): s for s in sources}
+    for trig in triggers:
+        source = by_id.get(trig.get("source_id")) or {}
+        trig["source_name"] = source.get("name") or trig.get("source_id") or ""
+        trig["source_channel"] = source.get("channel") or ""
+
+    return {
+        "workflow_id": workflow_id,
+        "sources": sources,
+        "triggers": triggers,
+        # False only when the module itself is unavailable — an empty but
+        # working panel is a different state from a missing subsystem, and the
+        # UI says so rather than showing "no triggers" for both.
+        "available": True,
+        "error": "; ".join(errors),
+    }
 
 
 # ── CLI ────────────────────────────────────────────────────

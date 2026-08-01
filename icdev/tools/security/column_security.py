@@ -22,6 +22,7 @@ Strategies:
 
 import hashlib
 import json
+import threading
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -33,17 +34,82 @@ logger = get_logger("security.column")
 
 _BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _CONFIG_PATH = _BASE_DIR / "args" / "security_config.yaml"
+# Installed layout: sync_package_tree.py ships args/ under <package>/data/args/,
+# so the source-checkout path above does not exist inside the wheel. Without this
+# fallback every column policy silently resolved to "no policy" (unmasked).
+_PACKAGED_CONFIG_PATH = _BASE_DIR / "data" / "args" / "security_config.yaml"
+
+
+def _resolve_config_path() -> Path:
+    """Return the security config path for the current layout (source or wheel)."""
+    if _CONFIG_PATH.exists():
+        return _CONFIG_PATH
+    return _PACKAGED_CONFIG_PATH
+
+
+#: Memoized parse of the security config, keyed on the file's identity
+#: (path, mtime, size). ``_apply_column_masking`` in tools/db/storage.py calls
+#: ``get_column_policies_for_role`` once per fetched ROW, so an uncached parse
+#: here re-read and re-parsed ~11KB of YAML thousands of times per request —
+#: enough to turn a high-row-count dashboard route into an 86-second request.
+#: The stat() below is microseconds against ~14ms for the parse, and keeping
+#: mtime in the key preserves hot-reload: edit the YAML and the next call
+#: re-parses without a restart.
+_CONFIG_CACHE: dict[str, Any] = {}
+
+#: Guards the compare-and-swap on ``_CONFIG_CACHE``. The dashboard is threaded;
+#: without this, concurrent first-touch requests each parse the file.
+_CONFIG_CACHE_LOCK = threading.Lock()
+
+
+def _config_cache_key(path: Path) -> tuple:
+    """Identity of the config file: re-parse only when one of these changes."""
+    st = path.stat()
+    return (str(path), st.st_mtime_ns, st.st_size)
+
+
+def reset_config_cache() -> None:
+    """Drop the memoized config. For tests and for explicit reload hooks."""
+    with _CONFIG_CACHE_LOCK:
+        _CONFIG_CACHE.clear()
 
 
 def _load_config() -> dict:
-    if not _CONFIG_PATH.exists():
+    """Return the parsed security config.
+
+    The returned dict is the shared cached object and MUST be treated as
+    read-only. Callers that hand policy data outward copy it first (see
+    ``get_column_policies_for_role``); keep it that way — mutating this dict
+    would corrupt masking policy for every later request in the process.
+    """
+    path = _resolve_config_path()
+    if not path.exists():
+        logger.warning("column masking: security_config.yaml not found (looked in %s, %s)",
+                       _CONFIG_PATH, _PACKAGED_CONFIG_PATH)
         return {}
     try:
-        import yaml  # type: ignore[import-untyped]
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
-            return yaml.safe_load(fh) or {}
-    except Exception:
+        key = _config_cache_key(path)
+    except OSError:
+        logger.exception("column masking: failed to stat %s", path)
         return {}
+
+    cached = _CONFIG_CACHE.get("entry")
+    if cached is not None and cached[0] == key:
+        return cached[1]
+
+    try:
+        import yaml  # type: ignore[import-untyped]
+        with open(path, "r", encoding="utf-8") as fh:
+            parsed = yaml.safe_load(fh) or {}
+    except Exception:
+        logger.exception("column masking: failed to load %s", path)
+        # Deliberately not cached: a transient read error must not pin an
+        # empty (fail-open, unmasked) policy set for the life of the process.
+        return {}
+
+    with _CONFIG_CACHE_LOCK:
+        _CONFIG_CACHE["entry"] = (key, parsed)
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +166,52 @@ def get_column_policies_for_role(table: str, role: str) -> Dict[str, str]:
         if policy.get("table") == table and policy.get("role") == role:
             return dict(policy.get("columns", {}))
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Derived-figure masking (computed payloads DB-layer masking cannot protect)
+# ---------------------------------------------------------------------------
+
+#: Roles denied ``ptw_estimate_low/high`` and ``calc_benchmark_median`` on
+#: ``pg_cost_volumes`` by ``column_policies``.
+PTW_DENIED_ROLES = frozenset({"reviewer", "co"})
+
+
+def mask_ptw_payload(result: dict, role: str) -> dict:
+    """Withhold recomputed price-to-win figures from roles denied them at rest.
+
+    ``rate_benchmarker.ptw_analysis`` aggregates raw ``pg_competitor_awards``
+    rows server-side, so DB-layer column masking cannot protect the *output*
+    without corrupting the computation (a NULLed ``award_amount`` would make the
+    analysis silently report "no award amounts" with a bogus recommendation).
+    The derived figures are stripped from the payload here instead, keeping the
+    key shape stable (values nulled + ``*_masked`` flags) so clients don't break.
+    """
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return result
+    if str(role or "") not in PTW_DENIED_ROLES:
+        return result
+    out = dict(result)
+    if isinstance(out.get("ptw_range"), dict):
+        out["ptw_range"] = dict.fromkeys(out["ptw_range"])
+        out["ptw_range_masked"] = True
+    if isinstance(out.get("strategies"), dict):
+        out["strategies"] = {
+            name: ({**s, "target": None} if isinstance(s, dict) and "target" in s else s)
+            for name, s in out["strategies"].items()
+        }
+        out["strategies_masked"] = True
+    return out
+
+
+def current_role() -> str:
+    """Best-effort role of the caller from the Flask security context."""
+    try:
+        from flask import g
+        ctx = getattr(g, "security_context", None)
+    except Exception:
+        return ""
+    return str(getattr(ctx, "role", "") or "") if ctx else ""
 
 
 # ---------------------------------------------------------------------------

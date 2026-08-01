@@ -216,14 +216,37 @@ TEMPLATE_GALLERY: list[dict] = [
 ]
 
 
+_TEMPLATES_PATH = _PROFILES_PATH.parent / "templates.yaml"
+_tpl_cache: list[dict] = []
+_tpl_cache_mtime: float = -1.0
+
+
 def get_template_gallery() -> list[dict]:
-    """Return all pre-built document templates."""
-    return TEMPLATE_GALLERY
+    """Pre-built document templates — YAML-first (args/docgen/templates.yaml,
+    mtime hot-reload like profiles.yaml); the Python list is the fallback
+    when the file is absent or unparseable."""
+    global _tpl_cache, _tpl_cache_mtime
+    try:
+        mtime = _TEMPLATES_PATH.stat().st_mtime
+    except OSError:
+        return TEMPLATE_GALLERY
+    if mtime != _tpl_cache_mtime or not _tpl_cache:
+        try:
+            with open(_TEMPLATES_PATH, encoding="utf-8") as fh:
+                data = yaml.safe_load(fh) or {}
+            templates = [t for t in (data.get("templates") or []) if t.get("id")]
+            if not templates:
+                return TEMPLATE_GALLERY
+            _tpl_cache = templates
+            _tpl_cache_mtime = mtime
+        except Exception:
+            return TEMPLATE_GALLERY
+    return _tpl_cache
 
 
 def get_template(template_id: str) -> dict | None:
     """Return a single template by id, or None if not found."""
-    return next((t for t in TEMPLATE_GALLERY if t["id"] == template_id), None)
+    return next((t for t in get_template_gallery() if t["id"] == template_id), None)
 
 
 def resolve_all_reviewers(domain: str) -> list[dict[str, str]]:

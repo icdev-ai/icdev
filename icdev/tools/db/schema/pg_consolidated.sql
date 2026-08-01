@@ -9130,6 +9130,8 @@ CREATE TABLE public.cpmp_clins (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    obligated_value real DEFAULT 0.0,
     CONSTRAINT cpmp_clins_clin_type_check CHECK ((clin_type = ANY (ARRAY['labor'::text, 'materials'::text, 'travel'::text, 'odc'::text, 'subcontract'::text, 'fixed_price'::text]))),
     CONSTRAINT cpmp_clins_status_check CHECK ((status = ANY (ARRAY['active'::text, 'fully_funded'::text, 'expended'::text, 'deobligated'::text])))
 );
@@ -9163,6 +9165,31 @@ CREATE TABLE public.cpmp_contract_mods (
     updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT cpmp_contract_mods_status_check CHECK ((status = ANY (ARRAY['requested'::text, 'in_review'::text, 'approved'::text, 'rejected'::text, 'executed'::text]))),
     CONSTRAINT cpmp_contract_mods_type_check CHECK ((type = ANY (ARRAY['admin'::text, 'funding'::text, 'scope'::text, 'pop'::text])))
+);
+
+
+--
+-- Name: cpmp_contract_periods; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cpmp_contract_periods (
+    id text NOT NULL,
+    contract_id text NOT NULL,
+    period_type text DEFAULT 'base'::text NOT NULL,
+    option_number integer DEFAULT 0,
+    pop_start text,
+    pop_end text,
+    obligated_value real DEFAULT 0.0,
+    funded_value real DEFAULT 0.0,
+    ceiling_value real DEFAULT 0.0,
+    status text DEFAULT 'unexercised'::text NOT NULL,
+    exercised_at text,
+    exercised_by text,
+    notes text,
+    created_at text DEFAULT now(),
+    updated_at text DEFAULT now(),
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text
 );
 
 
@@ -9206,6 +9233,10 @@ CREATE TABLE public.cpmp_contracts (
     created_by text,
     classification text DEFAULT 'CUI'::text,
     compartments text DEFAULT '[]'::text NOT NULL,
+    tenant_id text,
+    obligated_value real DEFAULT 0.0,
+    period_type text DEFAULT 'base'::text,
+    option_number integer DEFAULT 0,
     CONSTRAINT cpmp_contracts_contract_type_check CHECK ((contract_type = ANY (ARRAY['FFP'::text, 'T&M'::text, 'CPFF'::text, 'CPIF'::text, 'IDIQ'::text, 'BPA'::text, 'BOA'::text]))),
     CONSTRAINT cpmp_contracts_health_check CHECK ((health = ANY (ARRAY['green'::text, 'yellow'::text, 'red'::text]))),
     CONSTRAINT cpmp_contracts_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'option_pending'::text, 'complete'::text, 'closed'::text, 'terminated'::text])))
@@ -10363,7 +10394,7 @@ CREATE TABLE public.dashboard_users (
     classification character varying(50) DEFAULT 'CUI'::character varying,
     clearance_level text DEFAULT 'CUI'::text NOT NULL,
     compartments text DEFAULT '[]'::text NOT NULL,
-    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text]))),
+    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text, 'bd'::text, 'capture_mgr'::text, 'contract_mgr'::text, 'reviewer'::text]))),
     CONSTRAINT dashboard_users_status_check CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text])))
 );
 
@@ -11480,19 +11511,30 @@ CREATE TABLE public.dic_acoic_regen_queue (
 -- Name: dic_chat_memory; Type: TABLE; Schema: public; Owner: -
 --
 
+-- Turn-based schema, kept in sync with
+-- tools/document_intelligence/chat_memory.py::_TURN_TABLE_DDL.
+--
+-- This consolidation previously carried the legacy message-log shape from
+-- migration 191 (memory_id/role/content/token_count), which NO code consumes.
+-- chat_memory.record_turn() writes the turn shape below, so every write failed
+-- and was swallowed. Migration 264 fixed that for migrated databases but was
+-- never folded in here, so a FRESH bootstrap still produced the broken table.
 CREATE TABLE public.dic_chat_memory (
-    memory_id text NOT NULL,
+    turn_id text NOT NULL,
     session_id text NOT NULL,
-    collection_id text DEFAULT 'default'::text NOT NULL,
-    user_id text DEFAULT ''::text NOT NULL,
-    role text DEFAULT 'user'::text NOT NULL,
-    content text DEFAULT ''::text NOT NULL,
+    collection_id text DEFAULT ''::text NOT NULL,
+    turn_index integer DEFAULT 0 NOT NULL,
+    query text DEFAULT ''::text NOT NULL,
+    answer text DEFAULT ''::text NOT NULL,
+    subject text DEFAULT ''::text NOT NULL,
+    subject_doc_id text DEFAULT ''::text NOT NULL,
+    entities_json text DEFAULT '[]'::text NOT NULL,
+    doc_ids_json text DEFAULT '[]'::text NOT NULL,
     citations_json text DEFAULT '[]'::text NOT NULL,
-    token_count integer DEFAULT 0 NOT NULL,
+    mode text DEFAULT 'grounded'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     tenant_id text DEFAULT 'default'::text NOT NULL,
-    classification text DEFAULT 'CUI'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT dic_chat_memory_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text, 'system'::text])))
+    classification text DEFAULT 'CUI'::text NOT NULL
 );
 
 
@@ -18330,7 +18372,7 @@ CREATE TABLE public.kanban_tasks (
     tags text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
     CONSTRAINT kanban_tasks_priority_check CHECK ((priority = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text]))),
-    CONSTRAINT kanban_tasks_status_check CHECK ((status = ANY (ARRAY['backlog'::text, 'scheduled'::text, 'in_progress'::text, 'done'::text, 'token_exhausted'::text, 'suggested'::text, 'decomposed'::text, 'validating'::text, 'needs_decomposition'::text]))),
+    CONSTRAINT kanban_tasks_status_check CHECK ((status = ANY (ARRAY['backlog'::text, 'scheduled'::text, 'in_progress'::text, 'done'::text, 'token_exhausted'::text, 'suggested'::text, 'decomposed'::text, 'validating'::text, 'needs_decomposition'::text, 'pr_opened'::text, 'ci_failed'::text, 'merge_conflict'::text, 'changes_requested'::text, 'failed'::text]))),
     CONSTRAINT kanban_tasks_task_type_check CHECK ((task_type = ANY (ARRAY['build'::text, 'run'::text, 'fix'::text, 'research'::text, 'deploy'::text, 'test'::text, 'chore'::text])))
 );
 
@@ -18381,6 +18423,9 @@ CREATE TABLE public.kanban_verifications (
     e2e_passed integer,
     e2e_errors text,
     companion_synced integer,
+    review_passed integer,
+    review_findings text,
+    pytest_ran integer DEFAULT 0,
     created_at text DEFAULT CURRENT_TIMESTAMP,
     remediation_attempted integer DEFAULT 0,
     remediation_success integer,
@@ -19587,7 +19632,7 @@ CREATE TABLE public.memory_entries (
     content text NOT NULL,
     type text DEFAULT 'event'::text,
     importance integer DEFAULT 5,
-    embedding public.vector(1536),
+    embedding public.vector(768),
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     content_hash text,
@@ -21166,7 +21211,7 @@ CREATE TABLE public.noc_mops (
     classification text DEFAULT 'CUI'::text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT noc_mops_generated_by_check CHECK ((generated_by = ANY (ARRAY['manual'::text, 'ai'::text])))
+    CONSTRAINT noc_mops_generated_by_check CHECK ((generated_by = ANY (ARRAY['manual'::text, 'ai'::text, 'ai_template'::text])))
 );
 
 
@@ -22280,7 +22325,9 @@ CREATE TABLE public.pg_competitor_awards (
     naics_code text,
     labor_categories text,
     source text,
-    created_at text NOT NULL
+    created_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -22609,7 +22656,9 @@ CREATE TABLE public.pg_pwin_assessments (
     past_performance_fit real,
     factor_breakdown text NOT NULL,
     method text DEFAULT 'logistic_weighted'::text NOT NULL,
-    assessed_at text NOT NULL
+    assessed_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -22894,6 +22943,31 @@ CREATE TABLE public.pg_win_loss_records (
 -- Name: pg_win_themes; Type: TABLE; Schema: public; Owner: -
 --
 
+-- prem-pstaff-01: bid-side person -> LCAT registry. Evidence is mandatory (CHECK).
+CREATE TABLE IF NOT EXISTS public.proposal_key_personnel (
+    id text NOT NULL,
+    opportunity_id text NOT NULL,
+    person_ref text NOT NULL,
+    name text NOT NULL,
+    proposed_lcat text NOT NULL,
+    qualification_verdict text NOT NULL,
+    evidence_json text NOT NULL,
+    source text,
+    key_person integer DEFAULT 0 NOT NULL,
+    gaps_json text DEFAULT '[]'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at timestamp without time zone,
+    updated_at timestamp without time zone,
+    CONSTRAINT proposal_key_personnel_pkey PRIMARY KEY (id),
+    CONSTRAINT proposal_key_personnel_opp_person_key UNIQUE (opportunity_id, person_ref),
+    CONSTRAINT proposal_key_personnel_verdict_check CHECK ((qualification_verdict = ANY (ARRAY['qualified'::text, 'gap'::text, 'exceeds'::text]))),
+    CONSTRAINT proposal_key_personnel_source_check CHECK ((source IS NULL OR (source = ANY (ARRAY['compass'::text, 'manual'::text, 'resume_match'::text, 'scraped'::text])))),
+    CONSTRAINT proposal_key_personnel_evidence_check CHECK (((evidence_json <> ''::text) AND (evidence_json <> '[]'::text)))
+);
+CREATE INDEX IF NOT EXISTS idx_pkp_opportunity ON public.proposal_key_personnel(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pkp_verdict ON public.proposal_key_personnel(qualification_verdict);
+
 CREATE TABLE public.pg_win_themes (
     id text NOT NULL,
     opportunity_id text NOT NULL,
@@ -22908,7 +22982,7 @@ CREATE TABLE public.pg_win_themes (
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
     CONSTRAINT pg_win_themes_status_check CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text, 'superseded'::text]))),
-    CONSTRAINT pg_win_themes_theme_type_check CHECK ((theme_type = ANY (ARRAY['win_theme'::text, 'discriminator'::text, 'ghost'::text])))
+    CONSTRAINT pg_win_themes_theme_type_check CHECK ((theme_type = ANY (ARRAY['win_theme'::text, 'discriminator'::text, 'ghost_strategy'::text])))
 );
 
 
@@ -23865,7 +23939,7 @@ CREATE TABLE public.proposal_review_findings (
     created_at text DEFAULT now(),
     resolved_evidence text,
     closure_approved_by text,
-    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'other'::text]))),
+    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'invalid_citation'::text, 'other'::text]))),
     CONSTRAINT proposal_review_findings_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'major'::text, 'minor'::text, 'observation'::text]))),
     CONSTRAINT proposal_review_findings_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text, 'deferred'::text, 'wont_fix'::text])))
 );
@@ -24486,6 +24560,78 @@ CREATE TABLE public.rag_chunks (
     kg_node_ids text DEFAULT '[]'::text,
     CONSTRAINT rag_chunks_tier_check CHECK ((tier = ANY (ARRAY['hot'::text, 'warm'::text, 'cold'::text])))
 );
+
+
+--
+-- Name: rag_provenance_ledger; Type: TABLE; Schema: public; Owner: -
+-- Append-only AIA chain-of-custody ledger (D-AIDP, NIST AU-3). trust-cite-04:
+-- materialized here so fresh-PG bootstrap has it (bootstrap_pg marks migrations
+-- applied, so migration 250 alone would not reach a fresh database).
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_provenance_ledger (
+    id SERIAL PRIMARY KEY,
+    chunk_uuid text NOT NULL,
+    parent_doc_uuid text,
+    sha256_hash text,
+    token_count integer DEFAULT 0,
+    classification_label text,
+    version_tree_ref text,
+    model_id text,
+    hyperparams_json text DEFAULT '{}'::text,
+    prompt_sha256 text,
+    signature text,
+    event_type text NOT NULL DEFAULT 'ingest'::text,
+    ingest_timestamp timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rag_provenance_ledger_event_type_check CHECK ((event_type = ANY (ARRAY['ingest'::text, 'chain_of_custody'::text])))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON public.rag_provenance_ledger(chunk_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc ON public.rag_provenance_ledger(parent_doc_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON public.rag_provenance_ledger(event_type);
+
+--
+-- Name: rag_queries; Type: TABLE; Schema: public; Owner: -
+-- RAG knowledge search requests + lifecycle. Queried by
+-- notification_service/render_handler_service.py; materialized here so fresh-PG
+-- bootstrap has it (bootstrap_pg marks migrations applied, so migration 252
+-- alone would not reach a fresh database).
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_queries (
+    id text PRIMARY KEY,
+    query_text text NOT NULL,
+    lens text DEFAULT 'default'::text,
+    status text DEFAULT 'pending'::text,
+    agent_id text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    completed_at timestamp without time zone,
+    CONSTRAINT rag_queries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_queries_status ON public.rag_queries(status);
+CREATE INDEX IF NOT EXISTS idx_rag_queries_agent ON public.rag_queries(agent_id);
+
+--
+-- Name: rag_citations; Type: TABLE; Schema: public; Owner: -
+-- Source citations attached to a rag_queries result.
+--
+
+CREATE TABLE IF NOT EXISTS public.rag_citations (
+    id BIGSERIAL PRIMARY KEY,
+    query_id text NOT NULL REFERENCES public.rag_queries(id),
+    source_doc text NOT NULL,
+    citation_text text,
+    confidence real DEFAULT 0.0,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_citations_query ON public.rag_citations(query_id);
 
 
 --
@@ -29627,7 +29773,7 @@ CREATE TABLE public.source_citation_registry (
     project_id text,
     trust_score real DEFAULT 0.0,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text])))
+    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text])))
 );
 
 
@@ -31224,6 +31370,16 @@ ALTER SEQUENCE public.ttx_api_log_log_id_seq OWNED BY public.ttx_api_log.log_id;
 --
 -- Name: ttx_formation_plan; Type: TABLE; Schema: public; Owner: -
 --
+-- UNWIRED BY DESIGN (gdx-dead-02, 2026-08-01). No module in tools/, icdev/ or apps/
+-- reads or writes this table, and no migration creates it -- it exists only in this
+-- consolidated snapshot. It backs the designed-but-unbuilt GameDay registration /
+-- snake-draft team formation feature, together with ttx_registrations and the
+-- register.html / registrations.html templates. Retained deliberately rather than
+-- dropped: see docs/features/phase-wge-wargame-enhancements.md
+-- ("Registration & team formation: designed, not built"). Wiring is carded as gdx-reg-01.
+-- Do not treat the absence of queries as drift, and do not extend this table without
+-- also landing a migration -- fresh databases do not have it.
+--
 
 CREATE TABLE public.ttx_formation_plan (
     plan_id integer NOT NULL,
@@ -31308,6 +31464,7 @@ CREATE TABLE public.ttx_injects (
     depends_on_slug text,
     state text DEFAULT 'pending'::text NOT NULL,
     config_json text DEFAULT '{}'::text,
+    ontology_tags_json text DEFAULT '{}'::text,
     dispatched_at text,
     closed_at text,
     created_at text DEFAULT now() NOT NULL,
@@ -31357,6 +31514,18 @@ ALTER SEQUENCE public.ttx_leaderboard_lb_id_seq OWNED BY public.ttx_leaderboard.
 
 --
 -- Name: ttx_registrations; Type: TABLE; Schema: public; Owner: -
+--
+-- UNWIRED BY DESIGN (gdx-dead-02, 2026-08-01). No module in tools/, icdev/ or apps/
+-- reads or writes this table, and no migration creates it -- it exists only in this
+-- consolidated snapshot. It backs the designed-but-unbuilt GameDay registration /
+-- snake-draft team formation feature, together with ttx_formation_plan and the
+-- register.html / registrations.html templates. The implementation that once used it
+-- (apps/ai_gameday/registration.py) was deleted by penta-gd-03 as unreachable code.
+-- Retained deliberately rather than dropped: see
+-- docs/features/phase-wge-wargame-enhancements.md
+-- ("Registration & team formation: designed, not built"). Wiring is carded as gdx-reg-01.
+-- NOTE: this table is NOT evidence of NIST AC-2 account-management coverage -- nothing
+-- writes to it. That control gap is documented in the feature doc.
 --
 
 CREATE TABLE public.ttx_registrations (
@@ -31528,6 +31697,7 @@ CREATE TABLE public.ttx_sessions (
     started_at text,
     ended_at text,
     config_json text DEFAULT '{}'::text,
+    ontology_tags_json text DEFAULT '{}'::text,
     created_at text DEFAULT now() NOT NULL,
     world_state_json text DEFAULT '{}'::text,
     name text DEFAULT ''::text,
@@ -38682,6 +38852,14 @@ ALTER TABLE ONLY public.cpmp_contract_mods
 
 
 --
+-- Name: cpmp_contract_periods cpmp_contract_periods_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cpmp_contract_periods
+    ADD CONSTRAINT cpmp_contract_periods_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cpmp_contracts cpmp_contracts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -39518,7 +39696,7 @@ ALTER TABLE ONLY public.dic_acoic_regen_queue
 --
 
 ALTER TABLE ONLY public.dic_chat_memory
-    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (memory_id);
+    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (turn_id);
 
 
 --
@@ -50250,6 +50428,20 @@ CREATE INDEX idx_cpmp_contract_health ON public.cpmp_contracts USING btree (heal
 --
 
 CREATE INDEX idx_cpmp_contract_idiq ON public.cpmp_contracts USING btree (idiq_contract_id);
+
+
+--
+-- Name: idx_cpmp_contract_periods_contract; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_contract_periods_contract ON public.cpmp_contract_periods USING btree (contract_id);
+
+
+--
+-- Name: idx_cpmp_contract_periods_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_contract_periods_status ON public.cpmp_contract_periods USING btree (contract_id, status);
 
 
 --
@@ -62383,7 +62575,7 @@ CREATE TABLE IF NOT EXISTS public.user_integrations (
     id                TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL,
     tenant_id         TEXT NOT NULL DEFAULT 'default',
-    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','github','gitlab','jira','linear','notion')),
+    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','github','gitlab','jira','linear','notion','msgraph')),
     access_token_enc  TEXT,
     refresh_token_enc TEXT,
     token_expiry      TEXT,
@@ -62418,3 +62610,1311 @@ CREATE INDEX IF NOT EXISTS idx_briefing
 
 \unrestrict Qap9jwGnwjCLnf0yuzwfDjdGVcjK3amQNXgGbTCQZ4s0nx7szFJkVZl8XRi6Q9N
 
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Security Design Canvas (SDC) core schema — parity with migration
+-- tools/db/migrations/272_security_canvas_core.sql and the runtime initializer
+-- tools/security_canvas/db/init_db.py::SCHEMA. Added so a fresh PostgreSQL
+-- bootstrapped from this consolidated baseline can serve /security without
+-- first running runtime init.
+--
+-- PG-NATIVE dialect: this file is applied RAW by tools/db/bootstrap_pg.py
+-- (psycopg2 simple-query, NO translate_sql) under search_path='', so every
+-- object is schema-qualified with public. and INTEGER PRIMARY KEY AUTOINCREMENT
+-- is written as SERIAL PRIMARY KEY. All statements idempotent
+-- (CREATE ... IF NOT EXISTS). NO data seeding (init_db._seed_zig is
+-- authoritative). Tables are ordered so every REFERENCES target precedes its
+-- referrers.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.security_designs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    template_id     TEXT,
+    source_topology_id TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_assets (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES public.security_designs(id),
+    asset_type      TEXT NOT NULL,
+    label           TEXT,
+    description     TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    config_json     TEXT DEFAULT '{}',
+    pos_x           REAL DEFAULT 0,
+    pos_y           REAL DEFAULT 0,
+    source_node_id  TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_threats (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES public.security_designs(id),
+    threat_category TEXT NOT NULL,
+    mitre_technique TEXT,
+    mitre_tactic    TEXT,
+    title           TEXT NOT NULL,
+    description     TEXT,
+    likelihood      TEXT DEFAULT 'medium',
+    impact          TEXT DEFAULT 'medium',
+    risk_score      REAL DEFAULT 0,
+    affected_assets TEXT DEFAULT '[]',
+    status          TEXT DEFAULT 'open',
+    is_stale        INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_controls (
+    id                      TEXT PRIMARY KEY,
+    design_id               TEXT REFERENCES public.security_designs(id),
+    control_family          TEXT NOT NULL,
+    control_id              TEXT NOT NULL,
+    title                   TEXT NOT NULL,
+    description             TEXT,
+    implementation_status   TEXT DEFAULT 'planned',
+    implementation_notes    TEXT,
+    mitigates_threats       TEXT DEFAULT '[]',
+    protects_assets         TEXT DEFAULT '[]',
+    evidence_json           TEXT DEFAULT '{}',
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_trust_boundaries (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES public.security_designs(id),
+    label           TEXT NOT NULL,
+    boundary_type   TEXT DEFAULT 'network',
+    classification  TEXT DEFAULT 'CUI',
+    il_level        TEXT DEFAULT 'IL4',
+    color           TEXT DEFAULT '#e94560',
+    fill_opacity    REAL DEFAULT 0.08,
+    contained_assets TEXT DEFAULT '[]',
+    pos_x           REAL DEFAULT 0,
+    pos_y           REAL DEFAULT 0,
+    width           REAL DEFAULT 400,
+    height          REAL DEFAULT 300,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_data_flows (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT REFERENCES public.security_designs(id),
+    source_asset_id     TEXT REFERENCES public.sc_assets(id),
+    target_asset_id     TEXT REFERENCES public.sc_assets(id),
+    label               TEXT,
+    protocol            TEXT,
+    data_classification TEXT DEFAULT 'CUI',
+    encrypted           INTEGER DEFAULT 0,
+    authenticated       INTEGER DEFAULT 0,
+    crosses_boundary    INTEGER DEFAULT 0,
+    ports               TEXT DEFAULT '[]',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_assessments (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES public.security_designs(id),
+    assessment_type TEXT NOT NULL,
+    trigger_source  TEXT,
+    source_entity_id TEXT,
+    total_threats   INTEGER DEFAULT 0,
+    total_controls  INTEGER DEFAULT 0,
+    risk_score      REAL DEFAULT 0,
+    posture_grade   TEXT DEFAULT 'F',
+    findings_json   TEXT DEFAULT '[]',
+    recommendations_json TEXT DEFAULT '[]',
+    ran_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_remediation_plans (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT REFERENCES public.security_designs(id),
+    assessment_id       TEXT REFERENCES public.sc_assessments(id),
+    title               TEXT NOT NULL,
+    priority            TEXT DEFAULT 'medium',
+    status              TEXT DEFAULT 'open',
+    remediation_steps   TEXT DEFAULT '[]',
+    estimated_effort    TEXT,
+    assigned_to         TEXT,
+    target_date         TEXT,
+    completed_at        TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_templates (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    category        TEXT,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    thumbnail_svg   TEXT,
+    tags            TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_snippets (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    category        TEXT,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    tags            TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS public.sc_versions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    version_number  INTEGER NOT NULL,
+    graph_json      TEXT NOT NULL,
+    change_summary  TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    created_at      TEXT NOT NULL,
+    FOREIGN KEY (design_id) REFERENCES public.security_designs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_sc_versions_design ON public.sc_versions(design_id, version_number);
+
+CREATE TABLE IF NOT EXISTS public.sc_audit (
+    id              SERIAL PRIMARY KEY,
+    action          TEXT NOT NULL,
+    entity_type     TEXT,
+    entity_id       TEXT,
+    details         TEXT,
+    user_id         TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    ts              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.sdc_attack_snapshots (
+    id              TEXT PRIMARY KEY,
+    component_id    TEXT NOT NULL,
+    nodes_json      TEXT NOT NULL DEFAULT '[]',
+    edges_json      TEXT NOT NULL DEFAULT '[]',
+    caldera_op_id   TEXT,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sdc_attack_component ON public.sdc_attack_snapshots(component_id);
+CREATE INDEX IF NOT EXISTS idx_sdc_attack_created ON public.sdc_attack_snapshots(created_at);
+
+CREATE TABLE IF NOT EXISTS public.sdc_sops (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    sop_type            TEXT NOT NULL,
+    description         TEXT,
+    purpose             TEXT,
+    scope               TEXT,
+    steps               TEXT DEFAULT '[]',
+    nist_controls       TEXT DEFAULT '[]',
+    owner               TEXT,
+    reviewer            TEXT,
+    approval_status     TEXT DEFAULT 'draft' CHECK(approval_status IN ('draft','pending_review','approved','rejected')),
+    approved_by         TEXT,
+    approved_at         TEXT,
+    rejected_reason     TEXT,
+    version             TEXT DEFAULT '1.0',
+    next_review_date    TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sdc_sops_type ON public.sdc_sops(sop_type);
+CREATE INDEX IF NOT EXISTS idx_sdc_sops_status ON public.sdc_sops(approval_status);
+
+-- NSA ZIG (Zero Trust Implementation Guide) tables
+CREATE TABLE IF NOT EXISTS public.zig_pillars (
+    slug            TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    full_name       TEXT,
+    pillar_weight   REAL DEFAULT 0.14,
+    icon            TEXT,
+    color           TEXT,
+    csi_url         TEXT,
+    description     TEXT,
+    ficam_components TEXT DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.zig_capabilities (
+    id              TEXT PRIMARY KEY,
+    pillar_slug     TEXT NOT NULL REFERENCES public.zig_pillars(slug),
+    title           TEXT NOT NULL,
+    phase           TEXT NOT NULL CHECK(phase IN ('discovery','phase1','phase2')),
+    maturity_level  TEXT NOT NULL CHECK(maturity_level IN ('basic','intermediate','advanced')),
+    description     TEXT,
+    nist_controls   TEXT DEFAULT '[]',
+    target_fy2027   INTEGER DEFAULT 1,
+    implementation_status TEXT DEFAULT 'not_started'
+        CHECK(implementation_status IN ('not_started','planned','in_progress','implemented')),
+    evidence_note   TEXT,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zig_cap_pillar ON public.zig_capabilities(pillar_slug);
+CREATE INDEX IF NOT EXISTS idx_zig_cap_phase ON public.zig_capabilities(phase);
+
+CREATE TABLE IF NOT EXISTS public.zig_activities (
+    id              TEXT PRIMARY KEY,
+    capability_id   TEXT NOT NULL REFERENCES public.zig_capabilities(id),
+    phase           TEXT NOT NULL CHECK(phase IN ('discovery','phase1','phase2')),
+    title           TEXT NOT NULL,
+    description     TEXT,
+    nist_control_ref TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zig_act_cap ON public.zig_activities(capability_id);
+CREATE INDEX IF NOT EXISTS idx_zig_act_phase ON public.zig_activities(phase);
+
+CREATE TABLE IF NOT EXISTS public.zig_activity_completions (
+    id              SERIAL PRIMARY KEY,
+    activity_id     TEXT NOT NULL REFERENCES public.zig_activities(id),
+    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
+    status          TEXT NOT NULL DEFAULT 'not_started'
+        CHECK(status IN ('not_started','in_progress','complete')),
+    evidence_note   TEXT,
+    completed_by    TEXT,
+    completed_at    TEXT,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON public.zig_activity_completions(activity_id, target_id);
+
+CREATE TABLE IF NOT EXISTS public.zig_maturity_scores (
+    id              SERIAL PRIMARY KEY,
+    pillar_slug     TEXT NOT NULL,
+    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
+    score           REAL NOT NULL DEFAULT 0.0,
+    maturity_level  TEXT,
+    capability_count INTEGER DEFAULT 0,
+    activity_count  INTEGER DEFAULT 0,
+    complete_activities INTEGER DEFAULT 0,
+    assessment_run_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zig_score_pillar ON public.zig_maturity_scores(pillar_slug);
+CREATE INDEX IF NOT EXISTS idx_zig_score_target ON public.zig_maturity_scores(target_id);
+
+-- zig_targets: external ZIG assessment targets. Written/read by
+-- tools/security_canvas/blueprint.py + zig_portfolio.py; not created by
+-- init_db.py (DDL previously only in tests/test_zig_external_targets.py).
+CREATE TABLE IF NOT EXISTS public.zig_targets (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    system_type     TEXT DEFAULT 'general',
+    classification  TEXT DEFAULT 'CUI',
+    status          TEXT DEFAULT 'active',
+    pillar_focus    TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- FedRAMP ATO package tables
+CREATE TABLE IF NOT EXISTS public.fedramp_ato_packages (
+    id                  TEXT PRIMARY KEY,
+    system_name         TEXT NOT NULL,
+    ato_status          TEXT NOT NULL DEFAULT 'in_progress'
+                        CHECK (ato_status IN ('in_progress', 'authorized', 'conditional', 'denied', 'expired')),
+    authorization_date  TEXT,
+    expiry_date         TEXT,
+    package_type        TEXT DEFAULT 'moderate'
+                        CHECK (package_type IN ('low', 'moderate', 'high')),
+    authorizing_official TEXT,
+    notes               TEXT DEFAULT '',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.fedramp_controls (
+    id                     TEXT PRIMARY KEY,
+    package_id             TEXT NOT NULL REFERENCES public.fedramp_ato_packages(id) ON DELETE CASCADE,
+    control_id             TEXT NOT NULL,
+    control_name           TEXT DEFAULT '',
+    implementation_status  TEXT NOT NULL DEFAULT 'not_implemented'
+                           CHECK (implementation_status IN (
+                               'implemented', 'partially_implemented',
+                               'planned', 'not_implemented', 'not_applicable'
+                           )),
+    implementation_origin  TEXT DEFAULT 'service_provider'
+                           CHECK (implementation_origin IN (
+                               'service_provider', 'customer', 'hybrid', 'inherited'
+                           )),
+    responsible_role       TEXT DEFAULT '',
+    implementation_detail  TEXT DEFAULT '',
+    assessment_date        TEXT,
+    assessed_by            TEXT DEFAULT '',
+    classification         TEXT DEFAULT 'CUI // SP-CTI',
+    created_at             TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at             TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_fedramp_controls_package ON public.fedramp_controls(package_id);
+CREATE INDEX IF NOT EXISTS idx_fedramp_controls_status  ON public.fedramp_controls(implementation_status);
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (Security Design Canvas core schema)
+-- ============================================================================
+
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Pipeline Design Canvas (PDC) core schema — parity with the runtime
+-- initializer tools/pipeline/db/init_db.py::SCHEMA and migration
+-- tools/db/migrations/027_pipeline_snapshots/up.py. On PG-primary the canvas
+-- db_path 'pipeline_canvas' routes to the SHARED icdev database
+-- (tools/db/storage.py), so these are shared-DB tables that must exist in the
+-- consolidated baseline; otherwise a fresh PG instance only gets them lazily
+-- if the blueprint factory's swallowed init_db() succeeds. Added so a fresh
+-- PostgreSQL bootstrapped from this baseline can serve /pipeline without first
+-- running runtime init. (task pdx-data-04)
+--
+-- PG-NATIVE dialect: this file is applied RAW by tools/db/bootstrap_pg.py
+-- (psycopg2 simple-query, NO translate_sql) under search_path='', so every
+-- object is schema-qualified with public. and INTEGER PRIMARY KEY AUTOINCREMENT
+-- is written as SERIAL PRIMARY KEY (mirrors translate_sql, tools/db/storage.py).
+-- All statements idempotent (CREATE ... IF NOT EXISTS). NO data seeding
+-- (init_db seeds templates/snippets; it remains authoritative). Tables are
+-- ordered so every REFERENCES target precedes its referrers.
+--
+-- pdx-data-01 (PR #441) decision: pdc_snapshots is the authoritative
+-- twin-snapshot store; pipeline_snapshots (deprecated module, migration 027)
+-- stays — so all 17 tables belong here.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.pipelines (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'public',
+    target_csp      TEXT DEFAULT 'generic',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_templates (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    category        TEXT,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    thumbnail_svg   TEXT,
+    tags            TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_snippets (
+    id                      TEXT PRIMARY KEY,
+    name                    TEXT NOT NULL,
+    category                TEXT NOT NULL DEFAULT 'DevSecOps',
+    description             TEXT,
+    classification_level    TEXT DEFAULT 'CUI',
+    impact_level            TEXT DEFAULT 'IL4',
+    slsa_level              TEXT DEFAULT 'L1',
+    ssdf_practices          TEXT DEFAULT '[]',
+    graph_json              TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    tags                    TEXT DEFAULT '[]',
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_audit (
+    id              SERIAL PRIMARY KEY,
+    action          TEXT NOT NULL,
+    entity_type     TEXT,
+    entity_id       TEXT,
+    details         TEXT,
+    user_id         TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    ts              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_projects (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    status          TEXT DEFAULT 'draft',
+    owner           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pdc_sops (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    sop_type        TEXT NOT NULL DEFAULT 'custom',
+    description     TEXT DEFAULT '',
+    purpose         TEXT DEFAULT '',
+    scope           TEXT DEFAULT '',
+    steps           TEXT,
+    nist_controls   TEXT,
+    owner           TEXT DEFAULT '',
+    reviewer        TEXT DEFAULT '',
+    approval_status TEXT DEFAULT 'draft',
+    version         TEXT DEFAULT '1.0',
+    approved_by     TEXT,
+    approved_at     TEXT,
+    next_review_date TEXT,
+    rejected_reason TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_sops_type ON public.pdc_sops(sop_type);
+CREATE INDEX IF NOT EXISTS idx_pdc_sops_status ON public.pdc_sops(approval_status);
+
+-- pipeline_snapshots: append-only DAG snapshot store (migration 027 PG parity).
+CREATE TABLE IF NOT EXISTS public.pipeline_snapshots (
+    id             TEXT PRIMARY KEY,
+    pipeline_id    TEXT NOT NULL,
+    snapshot_type  TEXT NOT NULL DEFAULT 'baseline',
+    label          TEXT,
+    nodes_json     TEXT NOT NULL DEFAULT '[]',
+    edges_json     TEXT NOT NULL DEFAULT '[]',
+    meta_json      TEXT NOT NULL DEFAULT '{}',
+    created_by     TEXT,
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ps_pipeline ON public.pipeline_snapshots(pipeline_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ps_type ON public.pipeline_snapshots(snapshot_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.pc_versions (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    version_num     INTEGER NOT NULL,
+    label           TEXT,
+    graph_json      TEXT NOT NULL,
+    created_by      TEXT,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_stages (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    parent_id       TEXT,
+    stage_type      TEXT NOT NULL,
+    label           TEXT NOT NULL,
+    description     TEXT,
+    auto_nodes_json TEXT DEFAULT '[]',
+    pos_x           REAL DEFAULT 0,
+    pos_y           REAL DEFAULT 0,
+    width           REAL DEFAULT 300,
+    height          REAL DEFAULT 200,
+    color           TEXT,
+    collapsed       INTEGER DEFAULT 0,
+    parallel        INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_compliance_checks (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    check_type      TEXT NOT NULL,
+    passed          INTEGER DEFAULT 0,
+    failed          INTEGER DEFAULT 0,
+    findings_json   TEXT DEFAULT '[]',
+    ran_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_compliance_findings (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    audit_id        TEXT REFERENCES public.pc_compliance_checks(id),
+    rule_id         TEXT NOT NULL,
+    framework       TEXT NOT NULL,
+    severity        TEXT DEFAULT 'CAT2',
+    title           TEXT NOT NULL,
+    description     TEXT,
+    affected_entity TEXT,
+    affected_type   TEXT,
+    status          TEXT DEFAULT 'open',
+    fix_action      TEXT,
+    remediated_at   TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_boundaries (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    label           TEXT NOT NULL DEFAULT 'Stage Boundary',
+    classification  TEXT DEFAULT 'CUI',
+    color           TEXT DEFAULT '#e94560',
+    fill_opacity    REAL DEFAULT 0.08,
+    node_ids        TEXT DEFAULT '[]',
+    boundary_type   TEXT DEFAULT 'security_zone',
+    pos_x           REAL DEFAULT 0,
+    pos_y           REAL DEFAULT 0,
+    width           REAL DEFAULT 400,
+    height          REAL DEFAULT 300,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_project_pipelines (
+    project_id      TEXT REFERENCES public.pc_projects(id),
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    PRIMARY KEY (project_id, pipeline_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_change_requests (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    cr_number       TEXT,
+    cr_type         TEXT DEFAULT 'modify',
+    status          TEXT DEFAULT 'draft',
+    markup_json     TEXT DEFAULT '[]',
+    created_by      TEXT,
+    approved_by     TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.pc_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL REFERENCES public.pipelines(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_pc_collab_design ON public.pc_collab_sessions(design_id);
+
+CREATE TABLE IF NOT EXISTS public.pdc_snapshots (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    label           TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count      INTEGER DEFAULT 0,
+    edge_count      INTEGER DEFAULT 0,
+    created_by      TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_snapshots_pipeline ON public.pdc_snapshots(pipeline_id);
+
+CREATE TABLE IF NOT EXISTS public.pdc_simulations (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES public.pipelines(id),
+    baseline_snap_id TEXT REFERENCES public.pdc_snapshots(id),
+    delta_graph_json TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict         TEXT NOT NULL DEFAULT 'unknown',
+    antipatterns_json   TEXT DEFAULT '[]',
+    slsa_json           TEXT DEFAULT '{}',
+    compliance_json     TEXT DEFAULT '{}',
+    diff_json           TEXT DEFAULT '{}',
+    critical_count  INTEGER DEFAULT 0,
+    high_count      INTEGER DEFAULT 0,
+    medium_count    INTEGER DEFAULT 0,
+    created_by      TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_simulations_pipeline ON public.pdc_simulations(pipeline_id);
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (Pipeline Design Canvas core schema)
+-- ============================================================================
+
+
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Data Design Canvas (DDC) core schema — parity with the runtime initializer
+-- tools/data_canvas/db/init_db.py::SCHEMA and migration
+-- tools/db/migrations/273_data_canvas_core.sql. On PG-primary the Data Canvas
+-- routes to the SHARED icdev database (tools/db/storage.py), so these are
+-- shared-DB tables that must exist in the consolidated baseline; otherwise a
+-- fresh PG instance only gets them lazily if the blueprint factory's swallowed
+-- init_db() succeeds (tools/data_canvas/blueprint.py). Added so a fresh
+-- PostgreSQL bootstrapped from this baseline can serve /data without first
+-- running runtime init. (task dcpr-db-01)
+--
+-- PG-NATIVE dialect: this file is applied RAW by tools/db/bootstrap_pg.py
+-- (psycopg2 simple-query, NO translate_sql) under search_path='', so every
+-- object is schema-qualified with public. and INTEGER PRIMARY KEY AUTOINCREMENT
+-- is written as SERIAL PRIMARY KEY (mirrors translate_sql, tools/db/storage.py).
+-- The reserved word `user` is double-quoted (existing file convention). All
+-- statements idempotent (CREATE ... IF NOT EXISTS). NO data seeding (init_db
+-- TEMPLATES/SNIPPETS/RUNBOOKS/SOPS remain authoritative). NO append-only
+-- triggers here (dd_audit/dm_audit/dd_mapping_transforms immutability is
+-- provisioned separately — task dcpr-db-02). Tables are ordered so every
+-- REFERENCES target precedes its referrers. The 6 DDC tables already present in
+-- the pg_dump body (data_nodes, data_edges, data_twin_snapshots,
+-- dd_freshness_alerts, dm_ports, dd_pii_scans) are NOT repeated here.
+-- ============================================================================
+
+-- ── Design core ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.data_designs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.dd_templates (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    category      TEXT,
+    description   TEXT,
+    graph_json    TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    tags          TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS public.dd_snippets (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    category    TEXT,
+    description TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    tags        TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS public.dd_assessments (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES public.data_designs(id),
+    assessment_type TEXT NOT NULL,
+    findings_json   TEXT DEFAULT '[]',
+    score           REAL DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.dd_audit (
+    id              SERIAL PRIMARY KEY,
+    design_id       TEXT,
+    "user"          TEXT,
+    action          TEXT NOT NULL,
+    detail          TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.dd_versions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES public.data_designs(id),
+    version_number  INTEGER NOT NULL,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    change_summary  TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_versions_design ON public.dd_versions(design_id);
+
+CREATE TABLE IF NOT EXISTS public.dd_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL REFERENCES public.data_designs(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_dd_collab_design ON public.dd_collab_sessions(design_id);
+
+CREATE TABLE IF NOT EXISTS public.dd_lineage (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL REFERENCES public.data_designs(id) ON DELETE CASCADE,
+    source_node_id  TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    lineage_type    TEXT DEFAULT 'flow',
+    column_name     TEXT DEFAULT '',
+    transform_desc  TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_lineage_design ON public.dd_lineage(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_lineage_source ON public.dd_lineage(source_node_id);
+CREATE INDEX IF NOT EXISTS idx_dd_lineage_target ON public.dd_lineage(target_node_id);
+
+-- ── Ops: runbooks / SOPs ─────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.ddc_runbooks (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    category            TEXT DEFAULT 'general',
+    severity            TEXT DEFAULT 'medium',
+    description         TEXT DEFAULT '',
+    trigger_condition   TEXT DEFAULT '',
+    steps_json          TEXT DEFAULT '[]',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    status              TEXT DEFAULT 'active',
+    linked_design_id    TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ddc_runbooks_category ON public.ddc_runbooks(category);
+CREATE INDEX IF NOT EXISTS idx_ddc_runbooks_severity ON public.ddc_runbooks(severity);
+
+CREATE TABLE IF NOT EXISTS public.ddc_runbook_executions (
+    id              TEXT PRIMARY KEY,
+    runbook_id      TEXT REFERENCES public.ddc_runbooks(id) ON DELETE CASCADE,
+    triggered_by    TEXT DEFAULT '',
+    status          TEXT DEFAULT 'in_progress',
+    notes           TEXT DEFAULT '',
+    started_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT DEFAULT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ddc_runbook_exec_runbook ON public.ddc_runbook_executions(runbook_id);
+
+CREATE TABLE IF NOT EXISTS public.ddc_sops (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    category            TEXT DEFAULT 'general',
+    description         TEXT DEFAULT '',
+    purpose             TEXT DEFAULT '',
+    scope               TEXT DEFAULT '',
+    steps_json          TEXT DEFAULT '[]',
+    references_json     TEXT DEFAULT '[]',
+    version             TEXT DEFAULT '1.0',
+    status              TEXT DEFAULT 'draft',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    linked_design_id    TEXT,
+    owner               TEXT DEFAULT '',
+    reviewer            TEXT DEFAULT '',
+    approver            TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ddc_sops_category ON public.ddc_sops(category);
+CREATE INDEX IF NOT EXISTS idx_ddc_sops_status   ON public.ddc_sops(status);
+
+CREATE TABLE IF NOT EXISTS public.ddc_sop_approvals (
+    id          TEXT PRIMARY KEY,
+    sop_id      TEXT REFERENCES public.ddc_sops(id) ON DELETE CASCADE,
+    reviewer    TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    comment     TEXT DEFAULT '',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ddc_sop_approvals_sop ON public.ddc_sop_approvals(sop_id);
+
+-- ── Data Science: Explore / Query / Quality ──────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.dd_explore_sessions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    "user"          TEXT DEFAULT '',
+    db_conn_json    TEXT DEFAULT '{}',
+    status          TEXT DEFAULT 'completed',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_explore_sessions_design ON public.dd_explore_sessions(design_id);
+
+CREATE TABLE IF NOT EXISTS public.dd_explore_profiles (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    session_id      TEXT REFERENCES public.dd_explore_sessions(id) ON DELETE SET NULL,
+    db_conn_json    TEXT DEFAULT '{}',
+    profile_json    TEXT DEFAULT '{}',
+    table_count     INTEGER DEFAULT 0,
+    anomaly_json    TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_explore_profiles_design ON public.dd_explore_profiles(design_id);
+
+CREATE TABLE IF NOT EXISTS public.dd_anomaly_runs (
+    id              TEXT PRIMARY KEY,
+    profile_id      TEXT,
+    findings_json   TEXT,
+    overall_risk    TEXT,
+    classification  TEXT,
+    created_at      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS public.dd_query_history (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    "user"          TEXT DEFAULT '',
+    sql_text        TEXT NOT NULL,
+    db_conn_json    TEXT DEFAULT '{}',
+    row_count       INTEGER DEFAULT 0,
+    exec_ms         INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_query_history_design ON public.dd_query_history(design_id);
+
+CREATE TABLE IF NOT EXISTS public.dd_quality_rules (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    name            TEXT NOT NULL,
+    table_name      TEXT NOT NULL,
+    column_name     TEXT DEFAULT '',
+    check_type      TEXT NOT NULL,
+    threshold       REAL DEFAULT 90.0,
+    params_json     TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    CHECK (check_type IN ('completeness', 'uniqueness', 'range', 'pattern', 'freshness'))
+);
+CREATE INDEX IF NOT EXISTS idx_dd_quality_rules_design ON public.dd_quality_rules(design_id);
+
+CREATE TABLE IF NOT EXISTS public.dd_quality_runs (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT REFERENCES public.dd_quality_rules(id) ON DELETE CASCADE,
+    db_conn_json    TEXT DEFAULT '{}',
+    passed          INTEGER DEFAULT 0,
+    actual_value    REAL DEFAULT 0.0,
+    threshold       REAL DEFAULT 0.0,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    reflex_run      TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_quality_runs_rule ON public.dd_quality_runs(rule_id);
+
+-- ── Data Mesh Foundation ─────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.dm_domains (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    steward         TEXT DEFAULT '',
+    bounded_context TEXT DEFAULT '',
+    maturity_level  INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    status          TEXT DEFAULT 'active',
+    owner_team      TEXT DEFAULT '',
+    owner_email     TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_domains_status ON public.dm_domains(status);
+
+CREATE TABLE IF NOT EXISTS public.dm_data_products (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT REFERENCES public.dm_domains(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    availability_sla REAL DEFAULT 99.9,
+    latency_sla_ms  INTEGER DEFAULT 500,
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    output_port_type TEXT DEFAULT 'table',
+    sla_tier        TEXT DEFAULT 'standard',
+    owner_team      TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_data_products_domain ON public.dm_data_products(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_data_products_status ON public.dm_data_products(status);
+
+CREATE TABLE IF NOT EXISTS public.dm_contracts (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES public.dm_data_products(id) ON DELETE CASCADE,
+    title           TEXT NOT NULL,
+    version         TEXT DEFAULT '1.0.0',
+    schema_json     TEXT DEFAULT '{}',
+    sla_json        TEXT DEFAULT '{}',
+    quality_rules_json TEXT DEFAULT '[]',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_product ON public.dm_contracts(product_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_status  ON public.dm_contracts(status);
+
+CREATE TABLE IF NOT EXISTS public.dm_input_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES public.dm_data_products(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'cdc',
+    schema_json     TEXT DEFAULT '{}',
+    source_system   TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_input_ports_product ON public.dm_input_ports(product_id);
+
+CREATE TABLE IF NOT EXISTS public.dm_output_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES public.dm_data_products(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'api',
+    schema_json     TEXT DEFAULT '{}',
+    endpoint        TEXT DEFAULT '',
+    sla_json        TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_output_ports_product ON public.dm_output_ports(product_id);
+
+CREATE TABLE IF NOT EXISTS public.dm_domain_maturity (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT REFERENCES public.dm_domains(id) ON DELETE CASCADE,
+    maturity_level  INTEGER NOT NULL DEFAULT 0,
+    scores_json     TEXT DEFAULT '{}',
+    assessed_by     TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_domain_maturity_domain ON public.dm_domain_maturity(domain_id);
+
+CREATE TABLE IF NOT EXISTS public.dm_governance_policies (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    policy_type     TEXT DEFAULT 'opa',
+    rules_json      TEXT DEFAULT '[]',
+    applies_to      TEXT DEFAULT 'all',
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_governance_policies_status ON public.dm_governance_policies(status);
+
+CREATE TABLE IF NOT EXISTS public.dm_catalog_entries (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES public.dm_data_products(id) ON DELETE CASCADE,
+    catalog_name    TEXT NOT NULL,
+    tags_json       TEXT DEFAULT '[]',
+    metadata_json   TEXT DEFAULT '{}',
+    lineage_json    TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_catalog_entries_product ON public.dm_catalog_entries(product_id);
+
+CREATE TABLE IF NOT EXISTS public.dm_audit (
+    id              SERIAL PRIMARY KEY,
+    domain_id       TEXT,
+    product_id      TEXT,
+    "user"          TEXT DEFAULT '',
+    action          TEXT NOT NULL,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_audit_domain  ON public.dm_audit(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_audit_product ON public.dm_audit(product_id);
+
+CREATE TABLE IF NOT EXISTS public.dm_opa_policies (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    name            TEXT NOT NULL,
+    rego_text       TEXT DEFAULT '',
+    policy_path     TEXT DEFAULT 'datamesh/allow',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_opa_policies_domain ON public.dm_opa_policies(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_opa_policies_enabled ON public.dm_opa_policies(enabled);
+
+CREATE TABLE IF NOT EXISTS public.dm_policy_audit_log (
+    id              TEXT PRIMARY KEY,
+    policy_id       TEXT,
+    "user"          TEXT DEFAULT 'system',
+    resource        TEXT DEFAULT '{}',
+    decision        INTEGER DEFAULT 0,
+    reason          TEXT DEFAULT '',
+    method          TEXT DEFAULT 'local',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_policy_audit_created ON public.dm_policy_audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.dm_csp_sync_log (
+    id              TEXT PRIMARY KEY,
+    provider        TEXT NOT NULL,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    operation       TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    synced_count    INTEGER DEFAULT 0,
+    error_detail    TEXT DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dm_csp_provider ON public.dm_csp_sync_log(provider, created_at);
+
+CREATE TABLE IF NOT EXISTS public.dm_product_slas (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES public.dm_data_products(id) ON DELETE CASCADE,
+    sla_type        TEXT NOT NULL,
+    target_value    REAL NOT NULL,
+    unit            TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_product_slas_product ON public.dm_product_slas(product_id);
+
+CREATE TABLE IF NOT EXISTS public.dm_product_subscriptions (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES public.dm_data_products(id) ON DELETE CASCADE,
+    subscriber_team TEXT NOT NULL,
+    purpose         TEXT DEFAULT '',
+    approved        INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_subscriptions_product ON public.dm_product_subscriptions(product_id);
+
+CREATE TABLE IF NOT EXISTS public.dm_data_contracts (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    name            TEXT NOT NULL,
+    contract_yaml   TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_domain ON public.dm_data_contracts(domain_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_product ON public.dm_data_contracts(product_id);
+CREATE INDEX IF NOT EXISTS idx_dm_contracts_status  ON public.dm_data_contracts(status);
+
+CREATE TABLE IF NOT EXISTS public.dm_contract_test_runs (
+    id              TEXT PRIMARY KEY,
+    contract_id     TEXT REFERENCES public.dm_data_contracts(id) ON DELETE CASCADE,
+    passed          INTEGER DEFAULT 0,
+    error_count     INTEGER DEFAULT 0,
+    warnings        INTEGER DEFAULT 0,
+    result_json     TEXT DEFAULT '{}',
+    method          TEXT DEFAULT 'internal',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_test_runs_contract ON public.dm_contract_test_runs(contract_id);
+
+-- ── AI Data Mapping ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.dd_mapping_sessions (
+    id                  TEXT PRIMARY KEY,
+    name                TEXT NOT NULL DEFAULT 'Untitled Mapping',
+    source_format       TEXT NOT NULL DEFAULT 'json_schema',
+    target_format       TEXT NOT NULL DEFAULT 'sql_ddl',
+    source_schema_json  TEXT DEFAULT '{}',
+    target_schema_json  TEXT DEFAULT '{}',
+    status              TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','ingested','suggested','complete','error')),
+    field_count         INTEGER DEFAULT 0,
+    confirmed_count     INTEGER DEFAULT 0,
+    rejected_count      INTEGER DEFAULT 0,
+    classification      TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id           TEXT NOT NULL DEFAULT 'default',
+    created_by          TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_ms_tenant  ON public.dd_mapping_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dd_ms_status  ON public.dd_mapping_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_dd_ms_created ON public.dd_mapping_sessions(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.dd_field_mappings (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.dd_mapping_sessions(id) ON DELETE CASCADE,
+    source_field    TEXT NOT NULL,
+    source_type     TEXT DEFAULT '',
+    source_path     TEXT DEFAULT '',
+    target_field    TEXT NOT NULL,
+    target_type     TEXT DEFAULT '',
+    target_path     TEXT DEFAULT '',
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    match_method    TEXT DEFAULT 'name'
+                    CHECK (match_method IN ('name','semantic','type','combined','manual')),
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','confirmed','rejected','needs_review')),
+    transform_expr  TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_fm_session    ON public.dd_field_mappings(session_id);
+CREATE INDEX IF NOT EXISTS idx_dd_fm_status     ON public.dd_field_mappings(status);
+CREATE INDEX IF NOT EXISTS idx_dd_fm_confidence ON public.dd_field_mappings(confidence DESC);
+
+CREATE TABLE IF NOT EXISTS public.dd_mapping_transforms (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.dd_mapping_sessions(id),
+    artifact_type   TEXT NOT NULL DEFAULT 'sql'
+                    CHECK (artifact_type IN ('sql','python','dbt','xslt')),
+    artifact_text   TEXT NOT NULL DEFAULT '',
+    field_count     INTEGER DEFAULT 0,
+    generated_by    TEXT DEFAULT 'ai',
+    model_used      TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_mt_session ON public.dd_mapping_transforms(session_id);
+CREATE INDEX IF NOT EXISTS idx_dd_mt_created ON public.dd_mapping_transforms(created_at DESC);
+
+-- ── CAM extension: live data migration job tracking ──────────────────────────
+CREATE TABLE IF NOT EXISTS public.dd_migration_jobs (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT REFERENCES public.data_designs(id) ON DELETE CASCADE,
+    source_type         TEXT NOT NULL
+        CHECK(source_type IN ('oracle','mysql','mssql','mongodb','elasticsearch',
+                              'redis','postgres','s3','cassandra','dynamodb','other')),
+    target_type         TEXT NOT NULL,
+    migration_tool      TEXT DEFAULT 'dms'
+        CHECK(migration_tool IN ('dms','sct','pgloader','mongodump','snapshot_restore',
+                                 'aws_glue','manual','other')),
+    status              TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','running','validating','complete','failed','paused')),
+    row_count_source    INTEGER DEFAULT 0,
+    row_count_target    INTEGER DEFAULT 0,
+    validation_query    TEXT DEFAULT '',
+    validation_status   TEXT DEFAULT 'pending'
+        CHECK(validation_status IN ('pending','pass','fail','skipped')),
+    config_json         TEXT DEFAULT '{}',
+    notes               TEXT DEFAULT '',
+    started_at          TEXT,
+    completed_at        TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_design ON public.dd_migration_jobs(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON public.dd_migration_jobs(status);
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (Data Design Canvas core schema)
+-- ============================================================================
+
+
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Intelligent Documentation Regeneration (IDR / DocGen) core schema — parity
+-- with tools/db/migrations/211_idr_tables.sql + 212 + 214/217 + 257 + 277, and
+-- 276_idr_publish_audit.sql. The IDR canvas routes to the SHARED icdev database,
+-- so these must exist in the consolidated baseline: the pg_dump body predates the
+-- canvas and contains NO idr_* tables, so a fresh PG bootstrap would otherwise
+-- lack them entirely (migration 277 is marked-applied by bootstrap_pg and never
+-- runs on a fresh install). (task cnr-doc-04)
+--
+-- PG-NATIVE dialect: applied RAW by tools/db/bootstrap_pg.py (no translate_sql)
+-- under search_path=''. Schema-qualified public.; all statements idempotent.
+-- upload_type CHECK derived from tools/docgen/constants.py::UPLOAD_TYPES.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.idr_sessions (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    domain          TEXT NOT NULL DEFAULT 'network'
+                        CHECK (domain IN ('network','security','devops','developer','compliance','standard_guide')),
+    doc_type        TEXT NOT NULL DEFAULT 'runbook',
+    template_id     TEXT,
+    stage           INTEGER NOT NULL DEFAULT 0 CHECK (stage BETWEEN 0 AND 8),
+    status          TEXT NOT NULL DEFAULT 'setup'
+                        CHECK (status IN ('setup','ingesting','analyzing','conflicts','synthesizing',
+                                          'generating','writeguard','reviewing','publishing','published','failed')),
+    dic_collection_id TEXT,
+    ace_instance_id TEXT,
+    topology_id     TEXT,
+    wg_result_id    TEXT,
+    created_by      TEXT,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    conflicts_resolved BOOLEAN DEFAULT FALSE,
+    suggested_classification TEXT,
+    suggested_classification_confidence REAL,
+    prior_docs_context TEXT,
+    last_source_hash TEXT,
+    source_hash_checked_at TIMESTAMP,
+    final_doc_text  TEXT,
+    dic_doc_id      TEXT,
+    source_dic_doc_id TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_uploads (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
+    filename        TEXT NOT NULL,
+    upload_type     TEXT NOT NULL
+                        CHECK (upload_type IN ('diagram','doc','config','iac','supplement','email')),
+    file_path       TEXT,
+    file_hash       TEXT,
+    dic_doc_id      TEXT,
+    extracted_from_doc_id TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','ingested','analyzed','error')),
+    error_msg       TEXT,
+    tenant_id       TEXT,
+    uploaded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_analyses (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
+    upload_id       TEXT NOT NULL REFERENCES public.idr_uploads(id),
+    analysis_type   TEXT NOT NULL
+                        CHECK (analysis_type IN ('diagram_analysis','config_review',
+                                                 'firewall_review','iac_review','api_review')),
+    result_ref_id   TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','running','done','error')),
+    error_msg       TEXT,
+    tenant_id       TEXT,
+    result_json     TEXT,
+    confidence_score FLOAT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_conflicts (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
+    node_label      TEXT NOT NULL,
+    conflict_type   TEXT NOT NULL
+                        CHECK (conflict_type IN ('node_type','property','missing_in_source',
+                                                 'topology_discrepancy','boundary_discrepancy')),
+    source_a        TEXT NOT NULL,
+    source_a_value  TEXT,
+    source_b        TEXT NOT NULL,
+    source_b_value  TEXT,
+    resolved_by     TEXT,
+    resolution      TEXT CHECK (resolution IN ('a','b','manual')),
+    resolution_notes TEXT,
+    resolved_at     TIMESTAMP,
+    tenant_id       TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_artifacts (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES public.idr_sessions(id),
+    dic_doc_id      TEXT,
+    dic_version_id  TEXT,
+    format          TEXT NOT NULL
+                        CHECK (format IN ('html','docx','pdf')),
+    file_path       TEXT,
+    wg_result_id    TEXT,
+    published_at    TIMESTAMP,
+    tenant_id       TEXT,
+    flagged_sections TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.idr_publish_audit (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    -- Values derived from tools.quality.citation_grounding.PUBLISH_GATES;
+    -- kept in sync by tests/test_publish_gates.py. Widened by migration 300.
+    gate        TEXT NOT NULL
+                    CHECK (gate IN ('citation_guard','cove_guard','placeholder_guard')),
+    reviewer    TEXT,
+    findings    TEXT,
+    tenant_id   TEXT,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_idr_uploads_session      ON public.idr_uploads(session_id);
+CREATE INDEX IF NOT EXISTS idx_idr_analyses_session     ON public.idr_analyses(session_id);
+CREATE INDEX IF NOT EXISTS idx_idr_analyses_upload      ON public.idr_analyses(upload_id);
+CREATE INDEX IF NOT EXISTS idx_idr_conflicts_session    ON public.idr_conflicts(session_id);
+CREATE INDEX IF NOT EXISTS idx_idr_artifacts_session    ON public.idr_artifacts(session_id);
+CREATE INDEX IF NOT EXISTS idx_idr_publish_audit_session ON public.idr_publish_audit(session_id);
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (IDR / DocGen core schema)
+-- ============================================================================

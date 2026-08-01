@@ -18,7 +18,7 @@ _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 if str(_ICDEV_ROOT) not in sys.path:
     sys.path.insert(0, str(_ICDEV_ROOT))
 
-from tools.db.storage import get_connection, translate_sql
+from tools.db.storage import get_canvas_connection, translate_sql
 from tools.govlift.constants import (
     CHECK_WORKLOAD_STATUS,
     CHECK_WORKLOAD_TYPE,
@@ -321,7 +321,10 @@ def init_govlift_db() -> None:
     Idempotent — safe to call on every startup.
     Uses IF NOT EXISTS throughout so repeated calls are no-ops.
     """
-    conn = get_connection()
+    # cvx-sql-03: govlift_* tables have no classification/tenant_id columns, so the
+    # storage-global get_connection() would attach the RLS predicate and raise
+    # UndefinedColumn. Use get_canvas_connection() (RLS disabled) instead.
+    conn = get_canvas_connection("GOVLIFT_DB_URL")
     try:
         for stmt in _SCHEMA_STATEMENTS:
             stmt = stmt.strip()
@@ -338,7 +341,7 @@ def init_govlift_db() -> None:
                 else:
                     raise
         conn.commit()
-        print("GovLift DB: schema initialized OK")
+        print("GovLift DB: schema initialized OK", file=sys.stderr)
     except Exception as exc:
         print(f"GovLift DB init error: {exc}", file=sys.stderr)
         raise

@@ -25,6 +25,9 @@ Checks:
  15. canvas_placeholder_style — bare ? in execute() SQL for get_canvas_connection callers (use %s)
  16. runtime_placeholder_style — bare ? in execute() SQL in ANY runtime tools/ file (use %s; translate_sql is not a fix)
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
+ 18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
+ 19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
+ 20. swallowed_persistence — no `except Exception: pass` guarding an INSERT in tools/; best-effort must log (swp-swallow-01)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -45,10 +48,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import concurrent.futures
 import dataclasses
 import json
+import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -80,6 +86,9 @@ class CoherenceCheck:
     extra: List[str]
     message: str
     fixes_applied: List[str] = dataclasses.field(default_factory=list)
+    # Wall-clock cost of this check, filled in by run_checks. Surfaced in the
+    # JSON report so tier assignment stays evidence-based instead of guessed.
+    duration_sec: float = 0.0
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -155,6 +164,75 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def _scan_targets(
+    changed_files: Optional[List[Path]] = None, subdir: str = "tools"
+) -> List[Path]:
+    """Python files a file-scanning check should read.
+
+    Returns the changed subset under *subdir* when the caller supplied one,
+    otherwise the whole tree.  Diff-scoping is what lets a whole-tree scanner
+    run inside the per-task gate instead of only in the nightly full sweep:
+    the same check costs ~17s over 4k files and milliseconds over a diff.
+    """
+    root = PROJECT_ROOT / subdir
+    if changed_files:
+        picked: List[Path] = []
+        for entry in changed_files:
+            path = entry if isinstance(entry, Path) else Path(str(entry))
+            if not path.is_absolute():
+                path = PROJECT_ROOT / path
+            if path.suffix != ".py" or not path.exists():
+                continue
+            try:
+                path.relative_to(root)
+            except ValueError:
+                continue  # outside the scanned subtree
+            picked.append(path)
+        return sorted(set(picked))
+    if not root.exists():
+        return []
+    return sorted(root.rglob("*.py"))
+
+
+_ROUTE_DECORATOR_RE = re.compile(r"@\w+\.route\s*\(")
+
+
+def _blueprint_has_route(bp_file: Path) -> bool:
+    """Return True if a blueprint declares Flask routes — inline or split.
+
+    Classic blueprints carry ``@bp.route(...)`` decorators directly in the
+    module file. After a route-group split (cvx-net-01), the blueprint module
+    becomes a thin assembler whose ``create_*_blueprint()`` calls
+    ``register_<group>_routes(bp)`` for each module under a sibling ``routes/``
+    subpackage; the actual ``@route`` decorators live in those route modules.
+
+    Detection:
+      1. If the blueprint file itself has a ``@\\w+\\.route(`` decorator -> True.
+      2. Otherwise, if the blueprint (a) references ``register_*_routes`` /
+         imports from a sibling ``routes`` subpackage, OR (b) has a ``routes/``
+         directory beside it — scan ``routes/**/*.py`` for a route decorator and
+         return True if any is found.
+      3. If neither the blueprint nor any routes/ module declares a route,
+         return False (genuine failure — the gate still fires).
+    """
+    text = _read_text(bp_file)
+    if _ROUTE_DECORATOR_RE.search(text):
+        return True
+
+    references_split = bool(
+        re.search(r"register_\w+_routes", text)
+        or re.search(r"from\s+[\w.]*routes(?:\.\w+)?\s+import", text)
+        or re.search(r"import\s+[\w.]*\.routes\b", text)
+    )
+    routes_dir = bp_file.parent / "routes"
+    if references_split or routes_dir.is_dir():
+        if routes_dir.is_dir():
+            for py in sorted(routes_dir.rglob("*.py")):
+                if _ROUTE_DECORATOR_RE.search(_read_text(py)):
+                    return True
+    return False
 
 
 def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
@@ -320,6 +398,18 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 # ---------------------------------------------------------------------------
 
 
+#: Modules pinned to one backend, whose extra columns are created by that
+#: backend's own DDL and must NOT be added to the shared schema.
+#: `sqlite_vector_store` is the case in point: `sign_bits` is a SQLite-only
+#: quantisation column it ALTERs in itself, and the class pins `sqlite3.connect`
+#: precisely so it can never reach PostgreSQL. Declaring `sign_bits` in the
+#: shared schema to satisfy this check would create the column on PG, where it
+#: is inert — the opposite of what the pinning is for.
+_SCHEMA_CODE_BACKEND_PINNED = frozenset({
+    "tools/rag/sqlite_vector_store.py",
+})
+
+
 def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Verify CREATE TABLE columns match INSERT statements in tools."""
     schema_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
@@ -337,6 +427,13 @@ def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
                 scan_files.append(py)
 
     for py_path in scan_files:
+        try:
+            rel_key = str(py_path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+        except ValueError:
+            rel_key = py_path.name
+        if rel_key in _SCHEMA_CODE_BACKEND_PINNED:
+            continue
+
         source = _read_text(py_path)
         if "INSERT" not in source.upper():
             continue
@@ -764,6 +861,49 @@ def check_append_only() -> CoherenceCheck:
     )
 
 
+def check_trust_coverage() -> CoherenceCheck:
+    """Verify the TRUST invariants (xcut-01): the anti-hallucination grounding
+    modules ship in both package trees and are inheritable by child apps, and
+    the redaction fail-closed / ingestion-masking toggles exist in config.
+
+    Guards against a recurrence of the mirror-sync drift that dropped grounding
+    modules from icdev/, and against silently losing the mask toggles.
+    """
+    checks = {
+        "tools/quality/content_grounding.py": (PROJECT_ROOT / "tools/quality/content_grounding.py").is_file(),
+        "tools/quality/citation_grounding.py": (PROJECT_ROOT / "tools/quality/citation_grounding.py").is_file(),
+        "icdev/tools/quality/content_grounding.py": (PROJECT_ROOT / "icdev/tools/quality/content_grounding.py").is_file(),
+        "icdev/tools/quality/citation_grounding.py": (PROJECT_ROOT / "icdev/tools/quality/citation_grounding.py").is_file(),
+    }
+    # Child apps inherit grounding only if tools/quality is in DIRECTORY_TREE.
+    cag = PROJECT_ROOT / "tools/builder/child_app_generator.py"
+    checks["tools/quality in child-app DIRECTORY_TREE"] = (
+        cag.is_file() and '"tools/quality"' in _read_text(cag)
+    )
+    # Redaction toggles present in config.
+    rc = PROJECT_ROOT / "args/redaction_config.yaml"
+    rc_text = _read_text(rc) if rc.is_file() else ""
+    checks["redaction.fail_closed toggle"] = "fail_closed:" in rc_text
+    checks["redaction.mask_at_ingestion toggle"] = "mask_at_ingestion:" in rc_text
+
+    missing = sorted(k for k, ok in checks.items() if not ok)
+    status = "pass" if not missing else "fail"
+    return CoherenceCheck(
+        check_id="trust_coverage",
+        check_name="TRUST Grounding & Masking Coverage",
+        status=status,
+        expected=sorted(checks.keys()),
+        actual=sorted(k for k, ok in checks.items() if ok),
+        missing=missing,
+        extra=[],
+        message=(
+            "All TRUST invariants present"
+            if not missing
+            else f"{len(missing)} TRUST invariant(s) missing: {missing}"
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check 7: Import Usage Coherence
 # ---------------------------------------------------------------------------
@@ -955,6 +1095,49 @@ def _load_page_completeness_whitelist() -> Set[str]:
     return skip
 
 
+def _load_registry_module_dirs() -> Dict[str, Tuple[Path, Path]]:
+    """Map template-dir name → (blueprint_file, package_dir) from the registry.
+
+    The 8-component gate historically assumed a canvas's Python package sits at
+    `tools/<canvas>/blueprint.py`, deriving the path from the *template* directory
+    name. That is wrong whenever the package name differs from the template/URL
+    name — `logs` is served by `tools/logging/blueprint.py`, and `rfi_canvas` by
+    `tools/govcon/rfi_canvas_blueprint.py`. Both were reported as missing their
+    blueprint and backing module even though the pages work.
+
+    component_registry.yaml already declares the truth in `module:`, so resolve it
+    from there. Missing/malformed registry → empty map, and callers fall back to
+    the historical `tools/<canvas>/` guess (fail-safe: gate gets stricter, not looser).
+    """
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return {}
+    registry_path = PROJECT_ROOT / "args" / "component_registry.yaml"
+    if not registry_path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+    resolved: Dict[str, Tuple[Path, Path]] = {}
+    for comp in data.get("components", []) or []:
+        module = comp.get("module")
+        if not module:
+            continue
+        template = (comp.get("completeness") or {}).get("template")
+        canvas = Path(template).parent.name if template else comp.get("key")
+        if not canvas:
+            continue
+        parts = str(module).split(".")
+        if len(parts) < 2:
+            continue
+        bp_file = PROJECT_ROOT.joinpath(*parts).with_suffix(".py")
+        resolved[canvas] = (bp_file, bp_file.parent)
+    return resolved
+
+
 def _load_registry_nav_dirs() -> Set[str]:
     """Return template-dir names of canvases with a registry-declared nav link.
 
@@ -990,8 +1173,14 @@ def _load_registry_nav_dirs() -> Set[str]:
 
     dirs: Set[str] = set()
     for comp in data.get("components", []):
-        if not isinstance(comp, dict) or comp.get("kind") != "canvas":
+        if not isinstance(comp, dict):
             continue
+        # A registry nav link renders via nav_tree / get_nav_context() for ANY
+        # component that declares nav.section — not only kind=canvas. Core
+        # extensions with a page (e.g. standards_catalog, kind=core_extension,
+        # nav.section=Platform, href=/standards-catalog) are genuinely
+        # navigable, so match get_nav_context's kind-agnostic logic here or the
+        # completeness gate false-positives on a page that IS reachable.
         nav = comp.get("nav") or {}
         if not isinstance(nav, dict) or not nav.get("section"):
             continue
@@ -1642,6 +1831,134 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "class, or method is copied. Concept-only citation."
         ),
     },
+    # oss-xcut-01: the four upstreams the OSS-adaptation card studied. Each is a
+    # CONCEPT adoption with an independent implementation and no runtime
+    # dependency — the wording precedent is tools/agent_toolkit/__init__.py. None
+    # is GPL/AGPL. The spike docs/spikes/oss-00-*.md carries the per-item verdict
+    # including everything deliberately REJECTED.
+    "ragflow": {
+        "url": "https://github.com/infiniflow/ragflow",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "Adopted GOALS, not stack. Template chunking (oss-chunk-01), position "
+            "breadcrumbs (oss-chunk-02), HITL chunk repair (oss-hitl-01) and real "
+            "table extraction (oss-table-01) pursue RAGFlow's 'visibility + "
+            "structural chunking' aims with pure-Python/pdfplumber implementations. "
+            "REJECTED: DeepDoc's VLM layout weights, Elasticsearch/Infinity. No "
+            "RAGFlow code, model, or dependency is used."
+        ),
+    },
+    "crawl4ai": {
+        "url": "https://github.com/unclecode/crawl4ai",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "fit_markdown's two-pass prune+BM25 idea (oss-filter-01, "
+            "tools/http/page_extract.py) was re-implemented on stdlib html.parser + "
+            "the already-pinned rank_bm25. REJECTED: a general web crawler, and any "
+            "headless-browser rendering path. No crawl4ai code or dependency."
+        ),
+    },
+    "browser-use": {
+        "url": "https://github.com/browser-use/browser-use",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "The load-bearing idea adopted is the indexed-element PAGE "
+            "REPRESENTATION (act via click(14)), not its agent loop — ICDEV has "
+            "several. Built on the existing vendored-Selenium driver_manager "
+            "(oss-browse-01..04). REJECTED: adding Python Playwright or a chromium "
+            "download. No browser-use code or dependency."
+        ),
+    },
+    "strix": {
+        "url": "https://github.com/usestrix/strix",
+        "license": "Apache-2.0",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss-xcut-01)",
+        "notes": (
+            "Adopted the DISCIPLINE — a finding ships with a discriminating "
+            "reproduction or it is not a finding (oss-poc-01), and a scope-locked "
+            "self-test over HTTP (oss-redteam-01/02). Concept only: "
+            "reproduction_validator.py is a stdlib/requests replay engine over the "
+            "existing tools/http client with its own predicate vocabulary, allowlist "
+            "scope lock, and migration-303 tables. REJECTED: STRIX's Docker sandbox "
+            "image, Caido proxy, nuclei bundle, and curl|bash installer — see "
+            "docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md. "
+            "No STRIX code or dependency."
+        ),
+    },
+    # oss-fix-03 introduced tools/quality/review_loop.py, whose docstring cites
+    # greptileai/skills/greploop. Only the LOOP SHAPE (review -> fix -> re-review
+    # until a score clears or N iterations) was adopted; greploop's score is
+    # Greptile's 5/5 confidence, ICDEV's is its OWN existing gates (ruff,
+    # coherence, sipa) run over the local diff. No greploop code, class, or method
+    # is copied. Registered here to close the attribution warn that oss-fix-03's
+    # cherry-pick left open. License left honest-unknown (Greptile's skills repo
+    # license was not verifiable offline this session) — concept-only citations
+    # carry no derivative-work exposure regardless, and "unknown (audit pending)"
+    # is not a _BLOCKING_LICENSES value, matching the leanstral/nemoclaw precedent.
+    "greptileai/skills/greploop": {
+        "url": "https://github.com/greptileai/skills (skills/greploop)",
+        "license": "unknown (audit pending)",
+        "audit_status": (
+            "concept-only, clean-room 2026-07-26 (attribution follow-up to "
+            "oss-fix-03). tools/quality/review_loop.py adopts the review-until-green "
+            "LOOP SHAPE only; scoring is replaced entirely by ICDEV's own gates "
+            "(ruff / coherence_checker --all / sipa pr_gates over the branch diff). "
+            "Structural review confirms no greploop code, class, or method is "
+            "copied and there is no runtime dependency. Upstream repo license not "
+            "positively verified offline; treated as prose-only reference."
+        ),
+    },
+    # cdp-00 / cdp-port-*: the two upstreams the CDP air-gap browser card studied,
+    # registered proactively per the spike (§6) — before any file cites them.
+    "cdp-use": {
+        "url": "https://github.com/browser-use/cdp-use",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (cdp-port-01/03)",
+        "notes": (
+            "cdp-use showed that a browser can be driven over the DevTools Protocol "
+            "with a tiny pure-Python stack (httpx/websockets). ICDEV adopted the "
+            "TRANSPORT DECISION only and re-implemented it stdlib-only "
+            "(tools/browser/cdp/ws_client.py — a hand-rolled RFC 6455 client, no "
+            "third-party WS library) because the air-gap target has neither websockets "
+            "nor websocket-client declared. No cdp-use code, class, or dependency is "
+            "used; cdp-use also requires Python >=3.11 while ICDEV floors at 3.9."
+        ),
+    },
+    # firecrawl is REJECTED, recorded so the rejection is auditable. It is AGPL-3.0
+    # (a _BLOCKING_LICENSES value), but nothing here CITES it as an adaptation — no
+    # file adapts firecrawl code — so this entry documents the decision without
+    # creating a derivative-work exposure. Its value was already shipped
+    # (page_extract/fetch_extract, oss-00 A1/A1b); self-hosting needs Docker + Redis +
+    # a Playwright microservice, all standing non-goals. See spike cdp-00 §5.
+    "firecrawl": {
+        "url": "https://github.com/firecrawl/firecrawl",
+        "license": "AGPL-3.0 (main repo; SDKs/UI MIT) — REJECTED, not used",
+        "audit_status": "REJECTED 2026-07-26 (cdp-00 §5) — no code, no dependency, no adaptation",
+        "notes": (
+            "Copyleft-blocking and its runtime is the already-rejected shape (Docker + "
+            "Redis + PostgreSQL + a Playwright microservice, which reintroduces the very "
+            "browser download this card eliminates). Its non-duplicated idea (/map "
+            "sitemap discovery) stays deferred per oss-00 Gap C2. Recorded as a "
+            "rejection, not a citation of use."
+        ),
+    },
+    # oss-02 / oss2-triage-01: the one genuinely new idea from the nine-project sweep.
+    "agent-chief": {
+        "url": "https://github.com/(agent-chief)",
+        "license": "MIT",
+        "audit_status": "concept-only, clean-room 2026-07-26 (oss2-triage-01)",
+        "notes": (
+            "Adopted the PATTERN only — a scored interrupt/dispatch/file worthiness "
+            "stage in front of notification routing (tools/notifications/worthiness.py). "
+            "NOT the package (Python 3.12+ against ICDEV's 3.9 floor) and NOT a new "
+            "notification system: it is one config-driven scored stage over the existing "
+            "tools/notifications/ subsystem, off by default. No agent-chief code or "
+            "dependency is used."
+        ),
+    },
 }
 
 # Licenses that block the gate if cited without an explicit audit exemption.
@@ -1767,11 +2084,16 @@ def check_attribution_claims(changed_files: Optional[List[Path]] = None) -> Cohe
         for phrase in _ATTRIBUTION_PHRASES:
             # Match: <phrase> <ProjectName> where ProjectName starts uppercase
             # or looks like a URL/path/identifier.
+            #
+            # The phrase itself is case-insensitive ("Based on the" / "based on the"),
+            # but the project name must NOT be. A blanket re.IGNORECASE made the
+            # leading [A-Z] match lowercase words, so ordinary prose such as
+            # "Based on the requirements analysis" was reported as an unregistered
+            # upstream citation. Scope the flag to the phrase with (?i:...).
             pattern = re.compile(
-                rf"{re.escape(phrase)}\s+"
+                rf"(?i:{re.escape(phrase)})\s+"
                 rf"([A-Z][A-Za-z0-9_\-./]+(?:\s+[A-Za-z0-9][A-Za-z0-9_\-./]*)?"
-                rf"|[a-z][a-z0-9_\-]+[/.][A-Za-z0-9_\-./]+)",
-                re.IGNORECASE,
+                rf"|[a-z][a-z0-9_\-]+[/.][A-Za-z0-9_\-./]+)"
             )
             for match in pattern.finditer(text):
                 raw_project = match.group(1).strip().rstrip("'s").strip()
@@ -2350,6 +2672,84 @@ def check_karpathy_sync() -> CoherenceCheck:
     )
 
 
+def check_reflex_registry() -> CoherenceCheck:
+    """rri — every daemon.REFLEX_NAMES entry must resolve to a dispatchable reflex.
+
+    The daemon schedules reflexes by importing ``tools.genesis.reflexes.<name>``
+    and calling its ``run``. When the module is absent it silently marks the
+    entry ``missing`` / ``is_stub`` and skips it every cycle — a registered
+    capability that never fires, invisible unless someone reads the schedule.
+    This is the same class of defect as a TOOL_REGISTRY entry with no handler
+    (oss-fix-01): a registry that lists something it cannot dispatch.
+
+    Fails the gate on any REFLEX_NAMES entry whose module does not import, or
+    imports without a callable ``run``.
+    """
+    import importlib.util
+
+    try:
+        from tools.genesis.daemon import REFLEX_NAMES
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id="reflex_registry",
+            check_name="Reflex Registry Integrity",
+            status="warn",
+            expected=["daemon.REFLEX_NAMES importable"],
+            actual=[f"import failed: {exc}"],
+            missing=[],
+            extra=[],
+            message=f"could not import REFLEX_NAMES: {exc}",
+        )
+
+    missing: List[str] = []
+    no_run: List[str] = []
+    for name in REFLEX_NAMES:
+        spec = importlib.util.find_spec(f"tools.genesis.reflexes.{name}")
+        if spec is None:
+            missing.append(name)
+            continue
+        try:
+            mod = importlib.import_module(f"tools.genesis.reflexes.{name}")
+            if not callable(getattr(mod, "run", None)):
+                no_run.append(name)
+        except Exception:  # noqa: BLE001 - import error is a dispatch failure
+            no_run.append(name)
+
+    broken = missing + no_run
+    if broken:
+        detail = []
+        if missing:
+            detail.append(f"no module: {', '.join(missing)}")
+        if no_run:
+            detail.append(f"no callable run(): {', '.join(no_run)}")
+        return CoherenceCheck(
+            check_id="reflex_registry",
+            check_name="Reflex Registry Integrity",
+            status="fail",
+            expected=["every REFLEX_NAMES entry resolves to a reflex with run()"],
+            actual=[f"{len(REFLEX_NAMES)} registered, {len(broken)} undispatchable"],
+            missing=broken,
+            extra=[],
+            message=(
+                f"{len(broken)} REFLEX_NAMES entr(y/ies) cannot be dispatched "
+                f"({'; '.join(detail)}). Create the reflex module, correct the "
+                "name, or remove the entry — a registered reflex that never fires "
+                "is worse than an unregistered one."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="reflex_registry",
+        check_name="Reflex Registry Integrity",
+        status="pass",
+        expected=["every REFLEX_NAMES entry resolves to a reflex with run()"],
+        actual=[f"all {len(REFLEX_NAMES)} registered reflexes dispatch"],
+        missing=[],
+        extra=[],
+        message=f"all {len(REFLEX_NAMES)} REFLEX_NAMES entries resolve to a reflex with run()",
+    )
+
+
 def check_sandbox_coverage() -> CoherenceCheck:
     """OPT-58 — verify docs/security/sandbox-coverage.md exists and
     documents all 4 tracked ingress-point gap files.
@@ -2409,11 +2809,111 @@ def check_sandbox_coverage() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: Swallowed Persistence (swp-swallow-01)
+# ---------------------------------------------------------------------------
+
+
+def check_swallowed_persistence(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """swp-swallow-01 — ban ``except Exception: pass`` around an INSERT.
+
+    A broad handler whose body is exactly ``pass`` over a try block that
+    writes means the write can fail forever and nothing ever reports it.
+    That silence is what let a batch of defects survive undetected long
+    enough to be worth a card of their own.
+
+    Best-effort persistence stays legal — the rule is only that it must be
+    *audible*. Keep the ``except Exception``, add a ``logger.warning``.
+    Narrow handlers, handlers that re-raise or return, and handlers that
+    already log are all untouched by this check.
+
+    Detection is shared with the fixer via
+    :mod:`tools.refactor.swallowed_persistence` so the gate and the tool
+    can never drift apart on what counts as a violation.
+    """
+    check_name = "Swallowed Persistence (swp-swallow-01)"
+    expected = ["no `except Exception: pass` around an INSERT in tools/"]
+
+    try:
+        from tools.refactor.swallowed_persistence import find_sites
+    except ImportError as exc:
+        # A missing detector must not silently pass the very gate it backs.
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=["detector unavailable"],
+            missing=["tools/refactor/swallowed_persistence.py"],
+            extra=[],
+            message=(
+                "cannot import tools.refactor.swallowed_persistence — the "
+                f"swallowed-persistence gate cannot run: {exc}"
+            ),
+        )
+
+    targets = _scan_targets(changed_files, "tools") + _scan_targets(
+        changed_files, "icdev/tools"
+    )
+    if changed_files and not targets:
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no Python files under tools/ in this diff"],
+            missing=[],
+            extra=[],
+            message="no scanned files in diff — swallowed-persistence gate skipped",
+        )
+
+    sites = find_sites(targets, PROJECT_ROOT)
+    if sites:
+        offenders = [
+            f"{site.rel}:{site.handler_lineno}"
+            f" ({site.func_name or '<module>'} -> {site.table})"
+            for site in sites
+        ]
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=[f"{len(sites)} swallowed INSERT site(s)"],
+            missing=[],
+            extra=offenders,
+            message=(
+                f"{len(sites)} `except Exception: pass` block(s) guard an INSERT "
+                "— the write can fail forever and nothing reports it. Keep the "
+                "best-effort behaviour and add a logger.warning (see "
+                "tools/canvas/event_bus.py::_audit_event), or narrow the "
+                f"handler. Offenders: {', '.join(offenders[:5])}"
+                + (" ..." if len(offenders) > 5 else "")
+            ),
+        )
+
+    scope = "diff" if changed_files else f"{len(targets)} files"
+    return CoherenceCheck(
+        check_id="swallowed_persistence",
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=[f"no swallowed INSERT sites ({scope})"],
+        missing=[],
+        extra=[],
+        message=f"no `except Exception: pass` guarding an INSERT ({scope})",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check: Direct Anthropic Import (OPT-44)
 # ---------------------------------------------------------------------------
 
 
-def check_direct_anthropic_import() -> CoherenceCheck:
+def check_direct_anthropic_import(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
     """OPT-44 — ban direct `import anthropic` / `from anthropic` outside
     tools/llm/anthropic_provider.py.
 
@@ -2447,18 +2947,16 @@ def check_direct_anthropic_import() -> CoherenceCheck:
         return hits
 
     violations: List[str] = []
-    tools_root = PROJECT_ROOT / "tools"
-    if tools_root.exists():
-        for py_file in sorted(tools_root.rglob("*.py")):
-            try:
-                rel = py_file.relative_to(PROJECT_ROOT)
-            except ValueError:
-                rel = py_file
-            if rel == allowed:
-                continue  # the one permitted file
-            text = _read_text(py_file)
-            for lineno, stmt in _has_direct_anthropic_import(text):
-                violations.append(f"{rel}:{lineno}: {stmt}")
+    for py_file in _scan_targets(changed_files):
+        try:
+            rel = py_file.relative_to(PROJECT_ROOT)
+        except ValueError:
+            rel = py_file
+        if rel == allowed:
+            continue  # the one permitted file
+        text = _read_text(py_file)
+        for lineno, stmt in _has_direct_anthropic_import(text):
+            violations.append(f"{rel}:{lineno}: {stmt}")
 
     if violations:
         return CoherenceCheck(
@@ -2484,6 +2982,341 @@ def check_direct_anthropic_import() -> CoherenceCheck:
         missing=[],
         extra=[],
         message="No disallowed direct anthropic imports detected",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: AGX architecture LLM-agnosticism (agx-core-02)
+# ---------------------------------------------------------------------------
+
+# Vendor SDK / orchestration-framework module roots that architecture code must
+# never import directly — inference flows through LLMRouter, never a raw SDK.
+_AGX_VENDOR_SDK_ROOTS = frozenset({
+    "anthropic", "openai", "langchain", "langgraph", "langchain_core",
+    "langchain_community", "langchain_openai", "cohere", "mistralai", "groq",
+    "together", "fireworks", "ollama", "nebius", "tavily", "boto3", "botocore",
+    "google.generativeai", "vertexai", "azure",
+})
+
+# String literals shaped like a concrete provider model ID. Architecture code
+# must resolve models from args/llm_config.yaml, never hardcode an ID.
+_AGX_MODEL_ID_RE = re.compile(
+    r"\b("
+    r"claude-(?:3|4|opus|sonnet|haiku|instant)"
+    r"|gpt-4|gpt-3\.5|gpt-4o|o1-|o3-"
+    r"|gemini-(?:\d|pro|flash)"
+    r"|llama-?[23]|mixtral-|mistral-(?:large|small|medium)"
+    r"|qwen[\d-]|command-r|deepseek-|grok-\d"
+    r")",
+    re.IGNORECASE,
+)
+
+# Provider modules that bypass the router. `tools.llm.provider` (LLMRequest /
+# LLMResponse dataclasses) is allowed; concrete *_provider modules are not.
+_AGX_ALLOWED_LLM_MODULE_SUFFIXES = frozenset({"provider", "router", "config_path"})
+
+
+def _agx_docstring_node_ids(tree: ast.AST) -> set:
+    """Return id()s of string-constant nodes that are docstrings (module / class /
+    function), so a model-ID scan does not flag prose."""
+    ids: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, "body", None) or []
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                ids.add(id(body[0].value))
+    return ids
+
+
+def scan_architecture_agnosticism(source: str, rel: str) -> List[str]:
+    """AST-scan one architecture source file for LLM-agnosticism violations.
+
+    Returns a list of ``rel:lineno: reason`` violation strings. Detects:
+      1. vendor-SDK / langchain_* imports,
+      2. concrete-model-ID-shaped string literals (excluding docstrings),
+      3. direct provider instantiation / provider-module imports that bypass LLMRouter.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    violations: List[str] = []
+    doc_ids = _agx_docstring_node_ids(tree)
+
+    def _root(mod: str) -> str:
+        return mod.split(".")[0]
+
+    for node in ast.walk(tree):
+        # (1) + (3) imports
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.name
+                if _root(name) in _AGX_VENDOR_SDK_ROOTS or name in _AGX_VENDOR_SDK_ROOTS:
+                    violations.append(f"{rel}:{node.lineno}: vendor-SDK import `{name}`")
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            if _root(mod) in _AGX_VENDOR_SDK_ROOTS or mod in _AGX_VENDOR_SDK_ROOTS:
+                violations.append(f"{rel}:{node.lineno}: vendor-SDK import from `{mod}`")
+            # provider-module bypass: tools.llm.<x>_provider (x not in allowed)
+            elif mod.replace("icdev.", "").startswith("tools.llm."):
+                last = mod.rsplit(".", 1)[-1]
+                if last.endswith("_provider"):
+                    violations.append(
+                        f"{rel}:{node.lineno}: direct provider-module import `{mod}` bypasses LLMRouter"
+                    )
+        # (2) model-ID literals
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in doc_ids:
+                continue
+            m = _AGX_MODEL_ID_RE.search(node.value)
+            if m:
+                violations.append(
+                    f"{rel}:{node.lineno}: model-ID-shaped literal `{m.group(0)}` — resolve from llm_config.yaml"
+                )
+        # (3) direct provider instantiation: SomethingProvider(...)
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            fn_name = None
+            if isinstance(fn, ast.Name):
+                fn_name = fn.id
+            elif isinstance(fn, ast.Attribute):
+                fn_name = fn.attr
+            if fn_name and fn_name.endswith("Provider") and fn_name not in {"EmbeddingProvider"}:
+                violations.append(
+                    f"{rel}:{node.lineno}: direct provider instantiation `{fn_name}(...)` bypasses LLMRouter"
+                )
+    return violations
+
+
+def check_architecture_agnosticism() -> CoherenceCheck:
+    """agx-core-02 — enforce the LLM-agnostic contract on tools/llm/architectures/.
+
+    AGX reasoning architectures must resolve all inference through LLMRouter with
+    no vendor-SDK imports, no hardcoded model IDs, and no direct provider
+    instantiation. This is a hard, hard-won ICDEV property (9 providers, air-gap
+    Ollama routing, CUI egress) that must not drift as later AGX tasks add
+    architectures. Categorical outputs (agx-pick-*) are what MAKE portability
+    achievable, so this gate protects the whole card.
+    """
+    roots = [
+        Path("tools") / "llm" / "architectures",
+        Path("icdev") / "tools" / "llm" / "architectures",
+    ]
+    violations: List[str] = []
+    scanned = 0
+    for root in roots:
+        abs_root = PROJECT_ROOT / root
+        if not abs_root.exists():
+            continue
+        for py_file in sorted(abs_root.rglob("*.py")):
+            try:
+                rel = str(py_file.relative_to(PROJECT_ROOT))
+            except ValueError:
+                rel = str(py_file)
+            scanned += 1
+            violations.extend(scan_architecture_agnosticism(_read_text(py_file), rel))
+
+    if violations:
+        return CoherenceCheck(
+            check_id="architecture_agnosticism",
+            check_name="AGX Architecture LLM-Agnosticism (agx-core-02)",
+            status="fail",
+            expected=["tools/llm/architectures/ resolves all inference via LLMRouter; no vendor SDK / model IDs"],
+            actual=violations,
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} LLM-agnosticism violation(s) in AGX architecture code — "
+                "route through LLMRouter and resolve models from args/llm_config.yaml"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="architecture_agnosticism",
+        check_name="AGX Architecture LLM-Agnosticism (agx-core-02)",
+        status="pass",
+        expected=["tools/llm/architectures/ resolves all inference via LLMRouter; no vendor SDK / model IDs"],
+        actual=[f"{scanned} architecture file(s) scanned, 0 violations"],
+        missing=[],
+        extra=[],
+        message="AGX architecture code is LLM-agnostic (no vendor SDK / model IDs / provider bypass)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: Dead LLMRouter API — .complete()/.chat() (nav-llm-02)
+# ---------------------------------------------------------------------------
+
+
+def check_llm_router_api() -> CoherenceCheck:
+    """nav-llm-02 — ban dead LLMRouter API calls (``.complete()`` / ``.chat()``).
+
+    ``LLMRouter`` (tools/llm/router.py) exposes only ``invoke(fn, LLMRequest)``
+    and ``invoke_*`` variants — there is no ``complete()`` or ``chat()``.
+    A wave of shipped call sites invoked a nonexistent ``router.complete()``
+    inside ``try/except``, so their LLM paths were permanently dead — masked by
+    deterministic fallbacks (fixed in PR #569). This check prevents regression
+    of that whole class.
+
+    Detection (AST, binding-scoped): within each runtime file under
+    ``tools/``, ``apps/`` and ``icdev/tools/``:
+      1. Track every variable / ``self`` attribute bound to ``LLMRouter(...)``
+         or ``get_router(...)``.
+      2. Flag any ``.complete(`` / ``.chat(`` call whose receiver is one of
+         those router bindings — reported as ``file:line``.
+
+    False-positive guards (NOT flagged):
+      • ``cortex_api.complete(...)`` — valid Cortex facade (tools/cortex/api.py);
+        receiver is bound to Cortex, not the router.
+      • provider SDK ``.complete(`` / ``.chat(`` calls — receiver bound to a
+        provider object, not the router; ``tools/llm/providers/`` and
+        ``tools/llm/provider.py`` are skipped outright.
+      • ``.chat(`` on ollama / other non-router clients — receiver not
+        router-bound.
+      • string literals / comments — ignored (real AST parse, not text grep).
+
+    Tier: FAIL — the class is fixed on origin/main; any new occurrence is a
+    real dead-LLM-path bug. Blocks ``--gate``.
+    """
+    dead_methods = {"complete", "chat"}
+    ctor_names = {"LLMRouter", "get_router"}
+
+    def _receiver_key(node: ast.AST) -> Optional[str]:
+        """Return a stable key for a call/assign receiver, or None.
+
+        ``router``            -> "router"
+        ``self.router``       -> "self.router"
+        anything else         -> None (attribute chains we don't track)
+        """
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            return f"{node.value.id}.{node.attr}"
+        return None
+
+    def _is_router_ctor(value: ast.AST) -> bool:
+        """True if an assignment value is LLMRouter(...) / get_router(...)."""
+        if not isinstance(value, ast.Call):
+            return False
+        func = value.func
+        if isinstance(func, ast.Name):
+            return func.id in ctor_names
+        if isinstance(func, ast.Attribute):
+            return func.attr in ctor_names
+        return False
+
+    def _scan_source(source: str) -> List[Tuple[int, str]]:
+        """Return (lineno, snippet) for every dead router .complete()/.chat()."""
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return []
+
+        # Pass 1 — collect receiver keys bound to a router constructor.
+        router_bindings: Set[str] = set()
+        for node in ast.walk(tree):
+            targets: List[ast.AST] = []
+            if isinstance(node, ast.Assign) and _is_router_ctor(node.value):
+                targets = list(node.targets)
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and node.value is not None
+                and _is_router_ctor(node.value)
+            ):
+                targets = [node.target]
+            for tgt in targets:
+                key = _receiver_key(tgt)
+                if key:
+                    router_bindings.add(key)
+
+        if not router_bindings:
+            return []
+
+        # Pass 2 — flag dead-API calls whose receiver is a router binding.
+        hits: List[Tuple[int, str]] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr not in dead_methods:
+                continue
+            key = _receiver_key(func.value)
+            if key and key in router_bindings:
+                hits.append(
+                    (
+                        func.value.lineno if hasattr(func.value, "lineno") else node.lineno,
+                        f"{key}.{func.attr}() — LLMRouter has no {func.attr}(); "
+                        f"use invoke(fn, LLMRequest)",
+                    )
+                )
+        return hits
+
+    # Files/dirs where provider-SDK .complete()/.chat() legitimately live.
+    skip_rel = {
+        Path("tools") / "llm" / "provider.py",
+        Path("icdev") / "tools" / "llm" / "provider.py",
+    }
+    skip_dir_parts = (
+        (Path("tools") / "llm" / "providers"),
+        (Path("icdev") / "tools" / "llm" / "providers"),
+    )
+    exclude_segments = {"tests", ".tmp", "docs", "node_modules", "__pycache__"}
+
+    roots = [
+        PROJECT_ROOT / "tools",
+        PROJECT_ROOT / "apps",
+        PROJECT_ROOT / "icdev" / "tools",
+    ]
+
+    violations: List[str] = []
+    seen_files: Set[Path] = set()
+    for root in roots:
+        if not root.exists():
+            continue
+        for py_file in sorted(root.rglob("*.py")):
+            if py_file in seen_files:
+                continue
+            seen_files.add(py_file)
+            try:
+                rel = py_file.relative_to(PROJECT_ROOT)
+            except ValueError:
+                rel = py_file
+            parts = set(rel.parts)
+            if parts & exclude_segments:
+                continue
+            if rel in skip_rel:
+                continue
+            if any(str(rel).replace("\\", "/").startswith(str(d).replace("\\", "/") + "/") for d in skip_dir_parts):
+                continue
+            for lineno, snippet in _scan_source(_read_text(py_file)):
+                violations.append(f"{rel}:{lineno}: {snippet}")
+
+    if violations:
+        return CoherenceCheck(
+            check_id="llm_router_api",
+            check_name="Dead LLMRouter API (nav-llm-02)",
+            status="fail",
+            expected=["0 router.complete()/router.chat() call sites — use invoke(fn, LLMRequest)"],
+            actual=violations,
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} dead LLMRouter API call(s) found — LLMRouter "
+                "exposes only invoke(fn, LLMRequest); .complete()/.chat() are "
+                "permanently-dead paths masked by fallbacks. Replace with invoke()."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="llm_router_api",
+        check_name="Dead LLMRouter API (nav-llm-02)",
+        status="pass",
+        expected=["0 router.complete()/router.chat() call sites — use invoke(fn, LLMRequest)"],
+        actual=["0 violations"],
+        missing=[],
+        extra=[],
+        message="No dead LLMRouter .complete()/.chat() call sites detected",
     )
 
 
@@ -2815,7 +3648,15 @@ def check_security_context() -> CoherenceCheck:
         PROJECT_ROOT / "tools" / "security",
         PROJECT_ROOT / "tools" / "workflow",  # checker source contains pattern strings
     }
-    bypass_re = re.compile(r"set_security_context\(\s*None\s*\)")
+    # Must look like an actual CALL: a receiver (`conn.set_…`) or a bare call at
+    # statement position. Prose inside a docstring — "…already disables RLS via
+    # set_security_context(None) below" in tools/pipeline/db/init_db.py — is a
+    # description, not a bypass, and the leading-`#` skip below does not catch it
+    # because a docstring line starts with neither `#` nor a quote.
+    bypass_re = re.compile(
+        r"(?:\.\s*set_security_context\(\s*None\s*\)"
+        r"|^\s*set_security_context\(\s*None\s*\))"
+    )
     bypass_ok_re = re.compile(r"#\s*rls-bypass\s*:", re.IGNORECASE)
 
     undocumented: list[str] = []
@@ -2829,6 +3670,12 @@ def check_security_context() -> CoherenceCheck:
             except OSError:
                 continue
             for lineno, line in enumerate(lines, 1):
+                # A comment that merely *describes* a bypass is not a bypass. Without
+                # this, prose explaining why a historical set_security_context(None)
+                # was removed is itself reported as an undocumented bypass — which is
+                # why tools/workflow had to be dir-exempted above.
+                if line.lstrip().startswith("#"):
+                    continue
                 if bypass_re.search(line) and not bypass_ok_re.search(line):
                     rel = py_file.relative_to(PROJECT_ROOT)
                     undocumented.append(f"{rel}:{lineno}")
@@ -2928,6 +3775,7 @@ def check_new_page_completeness() -> CoherenceCheck:
     iqe_queries_dir = PROJECT_ROOT / "context" / "iqe" / "queries"
     whitelist = _load_page_completeness_whitelist()
     registry_nav_dirs = _load_registry_nav_dirs()
+    registry_modules = _load_registry_module_dirs()
 
     violations: List[str] = []
     whitelisted_count = 0
@@ -2947,24 +3795,38 @@ def check_new_page_completeness() -> CoherenceCheck:
         if not mirror.exists():
             missing.append("icdev/ mirror missing")
 
-        # 2. Blueprint with @route
-        bp_file = PROJECT_ROOT / "tools" / canvas / "blueprint.py"
+        # 2. Blueprint with @route. Prefer the registry-declared module path over
+        #    guessing tools/<canvas>/ — the package name need not match the
+        #    template/URL name (logs -> tools/logging, rfi_canvas -> tools/govcon).
+        bp_file, canvas_dir = registry_modules.get(
+            canvas,
+            (PROJECT_ROOT / "tools" / canvas / "blueprint.py", PROJECT_ROOT / "tools" / canvas),
+        )
+        # Child apps live under apps/, not tools/ — and one (strategos) declares
+        # no `module:` because its registry entry exists only to register IQE
+        # collections, so the fallback above guesses tools/ and reports a
+        # blueprint that is present and routed as missing. apps/ is already a
+        # first-class registry location (`module: apps.innovation.blueprint`);
+        # the fallback simply never learned about it.
         if not bp_file.exists():
-            missing.append("tools/<canvas>/blueprint.py missing")
-        elif not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
-            missing.append("blueprint.py has no @route decorator")
+            apps_bp = PROJECT_ROOT / "apps" / canvas / "blueprint.py"
+            if apps_bp.exists():
+                bp_file, canvas_dir = apps_bp, apps_bp.parent
+        if not bp_file.exists():
+            missing.append(f"{bp_file.name} missing (expected at {bp_file.parent.name}/)")
+        elif not _blueprint_has_route(bp_file):
+            missing.append("blueprint has no @route decorator")
 
-        # 3. Backing module (any .py other than __init__.py and blueprint.py)
-        canvas_dir = PROJECT_ROOT / "tools" / canvas
+        # 3. Backing module (any .py other than __init__.py and the blueprint itself)
         if canvas_dir.exists():
             py_modules = [
                 f for f in canvas_dir.glob("*.py")
-                if f.name not in ("__init__.py", "blueprint.py")
+                if f.name not in ("__init__.py", bp_file.name)
             ]
             if not py_modules:
-                missing.append("no backing module in tools/<canvas>/")
+                missing.append(f"no backing module in {canvas_dir.name}/")
         else:
-            missing.append(f"tools/{canvas}/ directory missing")
+            missing.append(f"{canvas_dir.relative_to(PROJECT_ROOT)} directory missing")
 
         # 4. Nav link to /<canvas>: either a literal href in base.html (legacy
         # canvases), or a registry-declared nav.section (modern canvases,
@@ -3161,7 +4023,7 @@ def check_new_page_completeness() -> CoherenceCheck:
                 registry_violations.append(
                     f"tch-completeness-{key}-blueprint: {module_path}.py missing"
                 )
-            elif bp_file and not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
+            elif bp_file and not _blueprint_has_route(bp_file):
                 registry_violations.append(
                     f"tch-completeness-{key}-blueprint: {module_path} has no @route"
                 )
@@ -3240,6 +4102,184 @@ def check_new_page_completeness() -> CoherenceCheck:
         ),
     )
 
+
+# ---------------------------------------------------------------------------
+# Check: chat_card_inheritance — the shared chat action-card renderer must stay
+# globally reachable, in both mirrors, and ungated.
+# ---------------------------------------------------------------------------
+
+
+def check_chat_card_inheritance() -> CoherenceCheck:
+    """Guard the mechanism that makes chat action cards reach every page.
+
+    Why this check exists
+    ---------------------
+    In this repo a shared Jinja include does NOT propagate by being useful. It
+    propagates only if something fails when it is missing:
+
+      includes/iqe_query_widget.html   ~157 templates  (gated — grepped below)
+      includes/classification_macros   56 templates    (convention only)
+      includes/twin_snapshot_panel     1 — itself      (ungated)
+      includes/_canvas_shell.html      1 — itself      (ungated)
+
+    The chat action-card renderer is global JS included once from base.html, so
+    unlike the IQE widget it needs no per-page include — requiring one would be
+    cargo-culting a pattern that does not apply. What it DOES need is for that
+    single global include to survive: both mirrors present, and crucially
+    UNGATED.
+
+    The failure mode being prevented is concrete. base.html already contains
+    ``{% if '/strategos' in request.path %}`` around the Strategos panel, and
+    that one line is the entire reason that panel reaches exactly one route.
+    Wrapping this include the same way would silently reduce "every chat surface
+    in the platform" to "one page", with nothing failing to say so.
+    """
+    include_rel = "tools/dashboard/templates/includes/_chat_action_card.html"
+    base_rel = "tools/dashboard/templates/base.html"
+    marker = "includes/_chat_action_card.html"
+
+    violations: List[str] = []
+    checked: List[str] = []
+
+    for prefix in ("", "icdev/"):
+        partial = PROJECT_ROOT / f"{prefix}{include_rel}"
+        if not partial.exists():
+            violations.append(f"{prefix}{include_rel} missing")
+        else:
+            checked.append(f"{prefix}{include_rel}")
+
+        base = PROJECT_ROOT / f"{prefix}{base_rel}"
+        if not base.exists():
+            violations.append(f"{prefix}{base_rel} missing")
+            continue
+
+        text = base.read_text(encoding="utf-8", errors="replace")
+        if marker not in text:
+            violations.append(
+                f"{prefix}{base_rel} does not include {marker} — chat action cards "
+                "will not render on any page"
+            )
+            continue
+
+        # The include must not sit inside a path-conditional block. Look at the
+        # few lines above it for an `{% if ... request.path ... %}` guard, which
+        # is the exact pattern that limits the Strategos panel to one route.
+        lines = text.splitlines()
+        idx = next((i for i, ln in enumerate(lines) if marker in ln), -1)
+        window = "\n".join(lines[max(0, idx - 3):idx])
+        if "request.path" in window and "{% if" in window:
+            violations.append(
+                f"{prefix}{base_rel}: {marker} is inside a request.path conditional — "
+                "that is what limits the Strategos panel to a single route"
+            )
+        checked.append(f"{prefix}{base_rel}")
+
+    status = "fail" if violations else "pass"
+    return CoherenceCheck(
+        check_id="chat_card_inheritance",
+        check_name="Chat Action-Card Global Inheritance",
+        status=status,
+        expected=[
+            "_chat_action_card.html present in both mirrors and included "
+            "unconditionally from base.html"
+        ],
+        actual=[f"{len(violations)} violation(s) across {len(checked)} checked path(s)"],
+        missing=violations,
+        extra=[],
+        message=(
+            "Chat action cards will not reach every surface: " + "; ".join(violations)
+        ) if violations else (
+            "Chat action-card renderer is globally included and ungated in both mirrors"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: twin_chat_include — twin pages must share the chat panel, not copy it
+# ---------------------------------------------------------------------------
+
+
+def check_twin_chat_include() -> CoherenceCheck:
+    """Stop the digital-twin chat panel being copied into the next canvas.
+
+    This panel and its sendChatDelta() were duplicated verbatim across four
+    twin.html templates. The markup copies differed on exactly two lines (hint,
+    placeholder) and the JS copies on exactly one (the fetch URL); every element
+    id, inline style and handler was identical. Nothing failed when a fifth
+    canvas copied it again, so nothing stopped that happening.
+
+    That is the pattern this repo already demonstrates in both directions:
+    includes/iqe_query_widget.html is gated and reached ~157 templates, while
+    ungated includes reached exactly one — themselves. A shared include here
+    does not survive on merit, only on a check that fails without it.
+
+    A twin template is in scope when it renders the chat surface at all, which
+    is detected by the `sendChatDelta` handler. Templates without it (infra,
+    pipeline) are simply not chat surfaces and are ignored rather than being
+    forced to grow one.
+    """
+    marker_panel = "includes/_twin_chat_panel.html"
+    marker_script = "includes/_twin_chat_script.html"
+    # An inline copy is recognisable by the ids the include owns.
+    inline_markers = ('id="chatInput"', 'async function sendChatDelta')
+
+    violations: List[str] = []
+    checked: List[str] = []
+
+    for prefix in ("", "icdev/"):
+        tpl_root = PROJECT_ROOT / f"{prefix}tools/dashboard/templates"
+        if not tpl_root.exists():
+            continue
+
+        for name in (marker_panel, marker_script):
+            if not (tpl_root / name).exists():
+                violations.append(f"{prefix}tools/dashboard/templates/{name} missing")
+
+        for twin in sorted(tpl_root.glob("*/twin.html")):
+            text = twin.read_text(encoding="utf-8", errors="replace")
+            rel = twin.relative_to(PROJECT_ROOT).as_posix()
+
+            inline = [m for m in inline_markers if m in text]
+            uses_include = marker_panel in text or marker_script in text
+            if not inline and not uses_include:
+                continue  # genuinely not a chat surface (infra, pipeline)
+
+            # Counted whether it passes or fails. Detecting surfaces by the
+            # inline markers ALONE would make this check pass vacuously the
+            # moment the refactor succeeds -- zero surfaces found, zero
+            # violations, green. The include itself must therefore also mark a
+            # file as in scope.
+            checked.append(rel)
+
+            if marker_panel not in text and inline:
+                violations.append(
+                    f"{rel} carries an inline chat panel ({', '.join(inline)}) "
+                    f"instead of including {marker_panel}"
+                )
+            if marker_script not in text and "async function sendChatDelta" in text:
+                violations.append(
+                    f"{rel} defines its own sendChatDelta() instead of including "
+                    f"{marker_script}"
+                )
+
+    status = "fail" if violations else "pass"
+    return CoherenceCheck(
+        check_id="twin_chat_include",
+        check_name="Twin Chat Panel Shared Include",
+        status=status,
+        expected=[
+            "every twin.html with a chat surface includes _twin_chat_panel.html "
+            "and _twin_chat_script.html, in both mirrors"
+        ],
+        actual=[f"{len(violations)} violation(s) across {len(checked)} chat surface(s)"],
+        missing=violations,
+        extra=[],
+        message=(
+            "Twin chat panel is being duplicated again: " + "; ".join(violations)
+        ) if violations else (
+            f"All {len(checked)} twin chat surface(s) use the shared include"
+        ),
+    )
 
 # ---------------------------------------------------------------------------
 # Check: nav_route_parity — every href in base.html nav must have a Flask route
@@ -3420,8 +4460,25 @@ def check_log_standard_compliance() -> CoherenceCheck:
             src = py_file.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        # Flag raw logging.getLogger() usage (allow in logging/ itself)
-        if re.search(r"\blogging\.getLogger\s*\(", src):
+        # Flag raw logging.getLogger() usage (allow in logging/ itself).
+        # AST, not regex: code GENERATORS embed `logging.getLogger(...)` inside
+        # string literals as part of the child app they emit. That is the child
+        # app's logger, not this module's, and no amount of migrating here would
+        # remove it — child_app_generator.py was reported for its own output.
+        if not re.search(r"\blogging\.getLogger\s*\(", src):
+            continue
+        try:
+            uses_raw = any(
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "getLogger"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "logging"
+                for node in ast.walk(ast.parse(src))
+            )
+        except SyntaxError:
+            uses_raw = True  # unparseable — fall back to the textual match
+        if uses_raw:
             violations.append(f"{rel}: uses logging.getLogger() — migrate to tools.logging.icdev_logger.get_logger()")
 
     status = "fail" if violations else "pass"
@@ -3444,6 +4501,21 @@ def check_log_standard_compliance() -> CoherenceCheck:
 # Check 15: canvas_placeholder_style — bare ? in canvas execute() SQL
 # Check 16: runtime_placeholder_style — bare ? in ANY runtime tools/ execute() SQL
 # ---------------------------------------------------------------------------
+
+
+#: Canvases whose ``get_connection()`` is a HYBRID: StorageConnection on the
+#: PostgreSQL branch, but a RAW ``sqlite3.connect`` handle on the SQLite one.
+#: Raw sqlite3 accepts ``?`` and rejects ``%s``, while the PG branch translates
+#: ``?`` → ``%s`` — so positional ``?`` is the only form valid on BOTH, and this
+#: check's advice is inverted for them.
+#:
+#: This is not a guess: ``tests/test_cvx_sql07_datacanvas_pct_s.py`` asserts the
+#: opposite of this check for these paths, and exists because ``%s`` here broke
+#: ``/data/lineage`` and ``check_ext_access`` in production. That test is the
+#: authority; without this exemption the two gates cannot both be satisfied.
+_HYBRID_RAW_SQLITE_CANVASES = (
+    "tools/data_canvas/",
+)
 
 
 def check_canvas_placeholder_style(
@@ -3484,6 +4556,9 @@ def check_canvas_placeholder_style(
     scanned = 0
 
     for py_path in candidates:
+        if any(part in py_path.as_posix() for part in _HYBRID_RAW_SQLITE_CANVASES):
+            continue
+
         try:
             source = py_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -3498,6 +4573,7 @@ def check_canvas_placeholder_style(
             continue
 
         scanned += 1
+        raw_sqlite_vars = _raw_sqlite3_receivers(tree)
         try:
             rel = py_path.relative_to(PROJECT_ROOT).as_posix()
         except ValueError:
@@ -3523,6 +4599,15 @@ def check_canvas_placeholder_style(
                     if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
                         parts.append(frag.value)
                 sql_text = "".join(parts)
+
+            # sqlite3.connect() handles never reach translate_sql, so `?` is
+            # the only placeholder they accept — `%s` raises there. See
+            # _raw_sqlite3_receivers.
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in raw_sqlite_vars
+            ):
+                continue
 
             if sql_text and "?" in sql_text:
                 lineno = getattr(node, "lineno", 0)
@@ -3572,6 +4657,33 @@ _PLACEHOLDER_EXEMPT_PATTERNS = (
     "conftest.py",
     "translate_sql",   # storage.py itself defines the translation
 )
+
+
+def _raw_sqlite3_receivers(tree: ast.AST) -> set:
+    """Names bound to a direct ``sqlite3.connect()`` handle in this module.
+
+    Such a handle is a real sqlite3 connection, not a StorageConnection, so it
+    never passes through ``translate_sql`` and ``?`` is the only placeholder it
+    accepts. Flagging those as "use %s for psycopg2" inverts the truth.
+    """
+    aliases = {"sqlite3"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name == "sqlite3" and a.asname:
+                    aliases.add(a.asname)
+
+    bound: set = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        fn = node.value.func
+        if (isinstance(fn, ast.Attribute) and fn.attr == "connect"
+                and isinstance(fn.value, ast.Name) and fn.value.id in aliases):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    bound.add(tgt.id)
+    return bound
 
 
 def check_runtime_placeholder_style(
@@ -3636,6 +4748,7 @@ def check_runtime_placeholder_style(
             continue
 
         scanned += 1
+        raw_sqlite_vars = _raw_sqlite3_receivers(tree)
         try:
             rel = py_path.relative_to(PROJECT_ROOT).as_posix()
         except ValueError:
@@ -3660,6 +4773,18 @@ def check_runtime_placeholder_style(
                     if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
                         parts.append(frag.value)
                 sql_text = "".join(parts)
+
+            # A connection opened directly with sqlite3.connect() is NOT psycopg2
+            # and `?` is the only placeholder it accepts — `%s` raises there. The
+            # audit writers in tools/db/storage.py are exactly this: they open
+            # their own sqlite3 handle so an RLS/field audit row still lands when
+            # the pooled connection is mid-transaction. "Fixing" those to %s would
+            # silently empty an append-only audit trail, which has happened before.
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in raw_sqlite_vars
+            ):
+                continue
 
             if sql_text and "?" in sql_text:
                 lineno = getattr(node, "lineno", 0)
@@ -4135,6 +5260,125 @@ def check_component_registry(changed_files: Optional[List[Path]] = None) -> Cohe
     )
 
 
+def check_component_cli_reachability(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Every registry component must be reachable from all THREE surfaces.
+
+    pkg-reg-01 closed a 21-flag `enable`/`disable` gap; this is the durable
+    guard that stops the 22nd. A component declared in
+    ``args/component_registry.yaml`` is only truly usable if an operator can
+    turn it on/off from each surface a fresh install offers:
+
+      1. ``icdev enable``/``disable`` — its env flag is covered by a registry
+         CLI toggle (``registry.get_cli_toggles()``).
+      2. the ``icdev setup`` TUI — it appears as a row (``setup.build_rows``).
+      3. the generated ``.env`` — its flag is emitted by
+         ``env_generator.render_component_section``.
+
+    Fails naming the specific component keys + env flags that are missing from
+    each surface (never a bare count — an unnamed coherence failure costs more
+    time than it saves). No safe --fix: a gap means wiring/registry work.
+    """
+    expected = [
+        "every component reachable from icdev enable/disable",
+        "every component reachable from the icdev setup TUI",
+        "every component present in the generated .env",
+    ]
+
+    try:
+        from tools.cli.env_generator import render_component_section
+        from tools.cli.setup import KIND_ORDER as _SETUP_KIND_ORDER
+        from tools.cli.setup import build_rows
+        from tools.config.component_registry import get_registry
+
+        registry = get_registry()
+        components = [c for c in registry.list_all() if c.env_flag]
+
+        # Surface 1: icdev enable/disable — union of all CLI toggle flags.
+        toggle_flags: Set[str] = set()
+        for flags in registry.get_cli_toggles().values():
+            toggle_flags.update(flags)
+
+        # Surface 2: icdev setup TUI — the rows it renders (env-independent).
+        tui_keys = {
+            r.key for r in build_rows(registry, Path("__does_not_exist__.env"))
+        }
+
+        # Surface 3: generated .env — the emitted component section.
+        env_section = render_component_section(registry)
+    except Exception as exc:  # pragma: no cover - import/loader failure
+        return CoherenceCheck(
+            check_id="component_cli_reachability",
+            check_name="Component CLI/TUI/.env Reachability",
+            status="fail",
+            expected=expected,
+            actual=[f"reachability probe failed to run: {exc}"],
+            missing=[str(exc)],
+            extra=[],
+            message=f"Could not evaluate component reachability: {exc}",
+        )
+
+    missing_enable: List[str] = []
+    missing_tui: List[str] = []
+    missing_env: List[str] = []
+    for c in components:
+        if c.env_flag not in toggle_flags:
+            missing_enable.append(f"{c.key} ({c.env_flag})")
+        if c.key not in tui_keys:
+            reason = ("kind not in setup KIND_ORDER"
+                      if c.kind not in _SETUP_KIND_ORDER else "no TUI row")
+            missing_tui.append(f"{c.key} ({c.env_flag}) — {reason}")
+        if f"{c.env_flag}=" not in env_section:
+            missing_env.append(f"{c.key} ({c.env_flag})")
+
+    total_missing = len(missing_enable) + len(missing_tui) + len(missing_env)
+    if total_missing:
+        detail: List[str] = []
+        if missing_enable:
+            detail += [f"enable/disable: {m}" for m in sorted(missing_enable)]
+        if missing_tui:
+            detail += [f"setup TUI: {m}" for m in sorted(missing_tui)]
+        if missing_env:
+            detail += [f".env: {m}" for m in sorted(missing_env)]
+        return CoherenceCheck(
+            check_id="component_cli_reachability",
+            check_name="Component CLI/TUI/.env Reachability",
+            status="fail",
+            expected=expected,
+            actual=[
+                f"{len(missing_enable)} unreachable via enable/disable",
+                f"{len(missing_tui)} unreachable via setup TUI",
+                f"{len(missing_env)} missing from generated .env",
+            ],
+            missing=detail,
+            extra=[],
+            message=(
+                f"{total_missing} component-surface reachability gap(s): "
+                f"{len(missing_enable)} enable, {len(missing_tui)} TUI, "
+                f"{len(missing_env)} .env — see missing[] for the exact "
+                "component keys and env flags"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="component_cli_reachability",
+        check_name="Component CLI/TUI/.env Reachability",
+        status="pass",
+        expected=expected,
+        actual=[
+            f"all {len(components)} components reachable via enable/disable, "
+            "the setup TUI, and the generated .env"
+        ],
+        missing=[],
+        extra=[],
+        message=(
+            f"All {len(components)} registry components are reachable from "
+            "icdev enable/disable, the icdev setup TUI, and the generated .env"
+        ),
+    )
+
+
 def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Run the 8-point completeness gate against every registered canvas."""
     missing_issues: List[str] = []
@@ -4146,7 +5390,10 @@ def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> Coh
             report = registry.validate_canvas_completeness(comp.key)
             if not report.passed:
                 for item in report.items:
-                    if not item.present:
+                    # `required` is False for components the registry never declared —
+                    # e.g. a canvas with no DB migration. Reporting those as missing
+                    # rendered the gate as "missing None" and buried the real gaps.
+                    if item.required and not item.present:
                         missing_issues.append(f"{comp.key}: {item.point} ({item.path or item.message})")
     except Exception as exc:
         return CoherenceCheck(
@@ -4597,6 +5844,1373 @@ def check_canvas_rls_bypass() -> "CoherenceCheck":
 
 
 # ---------------------------------------------------------------------------
+# Check: test DB isolation — raw sqlite3 + %s bypasses translate_sql (kph-B)
+# ---------------------------------------------------------------------------
+_DB_FACTORY_NAMES = {"get_connection", "_get_db", "get_conn", "get_canvas_connection"}
+
+
+def _is_sqlite_connect(call: ast.AST) -> bool:
+    """True when `call` is a `sqlite3.connect(...)` expression."""
+    return (
+        isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == "connect"
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "sqlite3"
+    )
+
+
+def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
+    """Names of local factories that hand back a ``tests/_sql_compat`` connection.
+
+    ``_sql_compat.connect``/``translating`` ARE the sanctioned wrapper — they
+    delegate to the same ``translate_sql`` the runtime uses. A file that fixes one
+    fixture with them almost always still holds a raw ``sqlite3.connect``
+    elsewhere for schema setup or for its own assertions, and that residue must
+    not keep the file flagged: doing so makes the gate reject its own remedy.
+
+    Only the factory actually named in the patch call is cleared. A second,
+    still-raw factory in the same file stays a violation.
+    """
+    compat_calls: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("_sql_compat"):
+            for alias in node.names:
+                compat_calls.add(alias.asname or alias.name)
+
+    def _returns_compat(fn: ast.AST) -> bool:
+        raw = False
+        compat = False
+        for sub in ast.walk(fn):
+            if _is_sqlite_connect(sub):
+                raw = True
+            elif isinstance(sub, ast.Call):
+                fname = sub.func
+                if isinstance(fname, ast.Name) and fname.id in compat_calls:
+                    compat = True
+                elif (
+                    isinstance(fname, ast.Attribute)
+                    and fname.attr in ("connect", "translating")
+                    and isinstance(fname.value, ast.Name)
+                    and fname.value.id.endswith("_sql_compat")
+                ):
+                    compat = True
+        return compat and not raw
+
+    safe: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _returns_compat(node):
+            safe.add(node.name)
+    return safe
+
+
+def _patch_replacement_names(node: ast.Call) -> Set[str]:
+    """Names supplied as the replacement in a patch/setattr call."""
+    names: Set[str] = set()
+    for kw in node.keywords:
+        if kw.arg in ("side_effect", "new", "return_value") and isinstance(kw.value, ast.Name):
+            names.add(kw.value.id)
+    # monkeypatch.setattr(target, "get_connection", _conn) — trailing positional.
+    for arg in node.args:
+        if isinstance(arg, ast.Name):
+            names.add(arg.id)
+    return names
+
+
+def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Flag tests that hand runtime code a RAW sqlite3 connection while %s SQL is reachable.
+
+    Production DB is PostgreSQL (`%s` placeholders); tests/conftest.py forces
+    ICDEV_STORAGE_BACKEND=sqlite and StorageConnection.translate_sql rewrites
+    %s -> ?. A test that monkeypatches the connection factory
+    (get_connection/_get_db/...) to return a bare `sqlite3.connect(...)`, or
+    passes such a raw connection as `conn=` into runtime code, DEFEATS the
+    translation: the %s query raises `near "%": syntax error` and is usually
+    swallowed to None (a silent green test). This bit test_admin_creation_anomaly,
+    tests/trading, and docmod (PRs #207/#209). Every existing sqlite guard
+    (sqlite3_connect_linter, pg_portability_linter, pre_tool_use) exempts tests/,
+    so nothing else catches it.
+
+    FAIL on changed-file scope (gates new violations pre-merge); WARN on full-repo
+    (legacy tests exist). Fix: wrap in StorageConnection(conn, "sqlite") or consume
+    conftest's icdev_db fixture + ICDEV_DB_PATH redirect.
+    """
+    tests_dir = PROJECT_ROOT / "tests"
+    if changed_files:
+        candidates = [
+            p for p in changed_files
+            if p.suffix == ".py" and "tests" in p.as_posix().split("/") and p.exists()
+        ]
+    else:
+        candidates = list(tests_dir.rglob("*.py")) if tests_dir.exists() else []
+
+    violations: List[str] = []
+    scanned = 0
+    for py_path in candidates:
+        try:
+            source = py_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "sqlite3.connect" not in source:
+            continue  # no raw connection -> not this pattern
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        scanned += 1
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = str(py_path)
+
+        has_pct_s = "%s" in source
+
+        # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
+        # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
+        # runtime %s query then hits an untranslated raw sqlite3 connection.
+        safe_factories = _sql_compat_factory_names(tree)
+
+        flagged = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            patch_call = isinstance(node.func, ast.Attribute) and node.func.attr in ("setattr", "patch", "object")
+            patch_call = patch_call or (isinstance(node.func, ast.Name) and node.func.id == "patch")
+            if not patch_call:
+                continue
+            str_args = [a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            if safe_factories and _patch_replacement_names(node) & safe_factories:
+                continue  # patched to a _sql_compat connection — that IS the fix
+            if any(s.split(".")[-1] in _DB_FACTORY_NAMES for s in str_args):
+                violations.append(
+                    f"{rel}:{getattr(node, 'lineno', 0)}: monkeypatches a DB connection factory "
+                    f"to a raw sqlite3 connection — bypasses translate_sql, so %s SQL raises. "
+                    f"Wrap in StorageConnection(conn, 'sqlite')."
+                )
+                flagged = True
+                break
+        if flagged:
+            continue
+
+        # Trigger 2: a raw-sqlite-bound name passed as conn=<name> into a call while
+        # %s SQL literals are present in the file.
+        if has_pct_s:
+            raw_names: Set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and _is_sqlite_connect(node.value):
+                    for tgt in node.targets:
+                        if isinstance(tgt, ast.Name):
+                            raw_names.add(tgt.id)
+            if raw_names:
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    for kw in node.keywords:
+                        if kw.arg == "conn" and isinstance(kw.value, ast.Name) and kw.value.id in raw_names:
+                            violations.append(
+                                f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
+                                f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
+                                f"Wrap in StorageConnection(conn, 'sqlite')."
+                            )
+                            break
+
+    if violations:
+        tier = "fail" if changed_files else "warn"
+        return CoherenceCheck(
+            check_id="test_db_isolation",
+            check_name="Test DB Isolation (raw sqlite3 + %s)",
+            status=tier,
+            expected=["Tests reach runtime DB code through StorageConnection (translate_sql), not raw sqlite3"],
+            actual=[f"{len(violations)} violation(s) across {scanned} test file(s)"],
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} test(s) hand runtime code a raw sqlite3 connection where %s SQL is "
+                f"reachable — the query will raise 'near \"%\": syntax error' and likely be swallowed to None."
+            ),
+        )
+    return CoherenceCheck(
+        check_id="test_db_isolation",
+        check_name="Test DB Isolation (raw sqlite3 + %s)",
+        status="pass",
+        expected=["Tests reach runtime DB code through StorageConnection (translate_sql), not raw sqlite3"],
+        actual=[f"{scanned} raw-sqlite3 test file(s) scanned; none defeat translate_sql"],
+        missing=[],
+        extra=[],
+        message="No test hands runtime %s code a raw sqlite3 connection.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: migration-number collisions (kph-C)
+# ---------------------------------------------------------------------------
+def _migration_prefixes() -> Dict[str, List[str]]:
+    """Map numeric prefix -> list of migration names (flat NNN_*.sql + dir NNN_*/)."""
+    mig_dir = PROJECT_ROOT / "tools" / "db" / "migrations"
+    out: Dict[str, List[str]] = {}
+    if not mig_dir.exists():
+        return out
+    for entry in mig_dir.iterdir():
+        m = re.match(r"^(\d+)_", entry.name)
+        if not m:
+            continue
+        out.setdefault(m.group(1), []).append(entry.name)
+    return out
+
+
+def check_migration_numbering(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Flag a NEW migration whose numeric prefix collides with an existing one.
+
+    Migration numbers are allocated by naive local-max (migration_runner.create_migration),
+    so two sibling task branches off the same main compute the SAME next number — govern-03
+    shipped 259_* while main already had 260/261. Runtime tolerates duplicates (INSERT OR
+    IGNORE) but they silently drop or reorder DDL. There is no collision detector today.
+
+    FAIL when a CHANGED migration prefix is shared by another migration (new collision);
+    WARN full-repo listing existing duplicate prefixes as debt. Message names the next free
+    number.
+    """
+    prefixes = _migration_prefixes()
+    dups = {p: names for p, names in prefixes.items() if len(names) > 1}
+    next_free = (max((int(p) for p in prefixes), default=0) + 1) if prefixes else 1
+
+    if changed_files:
+        changed_migs = [
+            p for p in changed_files
+            if "tools/db/migrations/" in p.as_posix() and re.match(r"^\d+_", p.name)
+        ]
+        new_collisions: List[str] = []
+        for p in changed_migs:
+            m = re.match(r"^(\d+)_", p.name)
+            if not m:
+                continue
+            pref = m.group(1)
+            others = [n for n in prefixes.get(pref, []) if n != p.name]
+            if others:
+                new_collisions.append(
+                    f"{p.as_posix()}: migration number {pref} already used by {', '.join(others)} "
+                    f"— renumber to {next_free:03d} (next free)"
+                )
+        if new_collisions:
+            return CoherenceCheck(
+                check_id="migration_numbering",
+                check_name="Migration Number Collision",
+                status="fail",
+                expected=["Each new migration takes a unique, unused number prefix"],
+                actual=[f"{len(new_collisions)} colliding changed migration(s)"],
+                missing=[],
+                extra=new_collisions,
+                message=f"{len(new_collisions)} changed migration(s) reuse an existing number; next free is {next_free:03d}.",
+            )
+        return CoherenceCheck(
+            check_id="migration_numbering",
+            check_name="Migration Number Collision",
+            status="pass",
+            expected=["Each new migration takes a unique, unused number prefix"],
+            actual=[f"{len(changed_migs)} changed migration(s) checked; no new collisions"],
+            missing=[],
+            extra=[],
+            message="No changed migration reuses an existing number.",
+        )
+
+    # Full-repo: WARN on existing duplicate prefixes (grandfathered debt).
+    if dups:
+        listed = [f"{p}: {', '.join(sorted(names))}" for p, names in sorted(dups.items())]
+        return CoherenceCheck(
+            check_id="migration_numbering",
+            check_name="Migration Number Collision",
+            status="warn",
+            expected=["No duplicate migration number prefixes"],
+            actual=[f"{len(dups)} duplicate prefix(es) in tools/db/migrations/"],
+            missing=[],
+            extra=listed,
+            message=f"{len(dups)} existing duplicate migration prefix(es) (debt); next free is {next_free:03d}.",
+        )
+    return CoherenceCheck(
+        check_id="migration_numbering",
+        check_name="Migration Number Collision",
+        status="pass",
+        expected=["No duplicate migration number prefixes"],
+        actual=[f"{len(prefixes)} distinct migration numbers; next free {next_free:03d}"],
+        missing=[],
+        extra=[],
+        message="No duplicate migration numbers.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: icdev/ mirror parity (kph-D)
+# ---------------------------------------------------------------------------
+# Roots whose tools/ modules MUST have an icdev/tools/ twin. Extend via
+# args/mirror_parity.yaml (key: mirrored_roots) without editing code.
+_DEFAULT_MIRROR_ROOTS = (
+    "tools/cortex",
+    "tools/quality",
+    "tools/iqe/adapters",
+    "tools/mcp/cortex_server.py",
+)
+
+
+def _mirror_roots() -> Tuple[str, ...]:
+    cfg = PROJECT_ROOT / "args" / "mirror_parity.yaml"
+    if cfg.exists():
+        try:
+            import yaml  # lazy — yaml isn't a top-level import here
+            data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+            roots = data.get("mirrored_roots")
+            if isinstance(roots, list) and roots:
+                return tuple(str(r) for r in roots)
+        except Exception:
+            pass
+    return _DEFAULT_MIRROR_ROOTS
+
+
+def _twin_missing(rel_posix: str) -> Optional[str]:
+    """Given a tools/... path, return the expected icdev twin path if it's missing, else None."""
+    if not rel_posix.startswith("tools/"):
+        return None
+    twin_rel = "icdev/" + rel_posix
+    if (PROJECT_ROOT / twin_rel).exists():
+        return None
+    return twin_rel
+
+
+def check_icdev_mirror_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Flag a tools/<mirrored-root>/*.py change whose icdev/tools/ twin is missing.
+
+    Cortex/quality/iqe modules must be mirrored to icdev/tools/* so generated child
+    apps inherit them and the canonical/legacy namespaces stay in sync. This was
+    hand-reconciled every Cortex PR; a forgotten non-template module was never caught
+    (only 2 hardcoded files + dashboard templates are guarded today).
+
+    FAIL when a CHANGED tools/<root>/*.py lacks its icdev twin (or vice versa);
+    WARN full-repo listing existing drift.
+    """
+    roots = _mirror_roots()
+
+    def _under_roots(rel: str) -> bool:
+        return any(rel == r or rel.startswith(r.rstrip("/") + "/") or rel == r for r in roots)
+
+    missing: List[str] = []
+    if changed_files:
+        for p in changed_files:
+            if p.suffix != ".py":
+                continue
+            rel = p.as_posix()
+            # normalize to repo-relative
+            if "/tools/" in rel:
+                rel = "tools/" + rel.split("/tools/", 1)[1]
+            if rel.startswith("icdev/tools/"):
+                # a changed icdev file must have its tools/ origin
+                origin = rel[len("icdev/"):]
+                if _under_roots(origin) and not (PROJECT_ROOT / origin).exists():
+                    missing.append(f"{rel}: canonical twin {origin} missing")
+                continue
+            if not _under_roots(rel):
+                continue
+            twin = _twin_missing(rel)
+            if twin:
+                missing.append(f"{rel}: icdev twin {twin} missing — mirror the change")
+        if missing:
+            return CoherenceCheck(
+                check_id="icdev_mirror_parity",
+                check_name="icdev/ Mirror Parity",
+                status="fail",
+                expected=["Every tools/<mirrored-root> module has an icdev/tools/ twin"],
+                actual=[f"{len(missing)} changed module(s) missing a mirror"],
+                missing=missing,
+                extra=[],
+                message=f"{len(missing)} changed tools/ module(s) not mirrored to icdev/ (roots: {', '.join(roots)}).",
+            )
+        return CoherenceCheck(
+            check_id="icdev_mirror_parity",
+            check_name="icdev/ Mirror Parity",
+            status="pass",
+            expected=["Every tools/<mirrored-root> module has an icdev/tools/ twin"],
+            actual=["changed mirrored modules all have twins"],
+            missing=[],
+            extra=[],
+            message="All changed mirrored modules have their icdev/ twin.",
+        )
+
+    # Full-repo: WARN on existing drift.
+    for root in roots:
+        base = PROJECT_ROOT / root
+        py_files = [base] if base.suffix == ".py" and base.exists() else (
+            list(base.rglob("*.py")) if base.is_dir() else []
+        )
+        for f in py_files:
+            rel = f.relative_to(PROJECT_ROOT).as_posix()
+            twin = _twin_missing(rel)
+            if twin:
+                missing.append(f"{rel} -> {twin} (missing)")
+    if missing:
+        return CoherenceCheck(
+            check_id="icdev_mirror_parity",
+            check_name="icdev/ Mirror Parity",
+            status="warn",
+            expected=["Every tools/<mirrored-root> module has an icdev/tools/ twin"],
+            actual=[f"{len(missing)} module(s) missing a mirror (debt)"],
+            missing=missing,
+            extra=[],
+            message=f"{len(missing)} mirrored-root module(s) lack an icdev/ twin (roots: {', '.join(roots)}).",
+        )
+    return CoherenceCheck(
+        check_id="icdev_mirror_parity",
+        check_name="icdev/ Mirror Parity",
+        status="pass",
+        expected=["Every tools/<mirrored-root> module has an icdev/tools/ twin"],
+        actual=[f"roots checked: {', '.join(roots)}"],
+        missing=[],
+        extra=[],
+        message="All mirrored-root modules have their icdev/ twin.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: mirror drift (hcx-ctx-04) — byte-compare hot mirrored packages
+# ---------------------------------------------------------------------------
+# Packages where tools/<pkg> and icdev/tools/<pkg> are BOTH live physical copies
+# and drift between them has repeatedly served stale code at runtime (e.g. a
+# 14KB-divergent tools/llm/agent_loop.py served pre-TRUST code to Cortex; ACE
+# agent_tools/eval_runner drift; historical kanban reflex drift). Unlike
+# icdev_mirror_parity (which flags MISSING twins), this compares CONTENT of
+# existing twins byte-for-byte. Extend via args/mirror_parity.yaml
+# (key: drift_packages) without editing code.
+_DEFAULT_MIRROR_DRIFT_PKGS = (
+    "llm",
+    "ace",
+    "cortex",
+    "genesis/harness",
+    "genesis/reflexes",
+    "quality",
+    "mcp",
+    "workflow",
+)
+
+# Relative subpaths (posix, under a package) to skip: caches and persona content.
+_MIRROR_DRIFT_EXCLUDE_DIRS = ("__pycache__", "roles")
+
+
+def _mirror_drift_packages() -> Tuple[str, ...]:
+    cfg = PROJECT_ROOT / "args" / "mirror_parity.yaml"
+    if cfg.exists():
+        try:
+            import yaml  # lazy — yaml isn't a top-level import here
+
+            data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+            pkgs = data.get("drift_packages")
+            if isinstance(pkgs, list) and pkgs:
+                return tuple(str(p) for p in pkgs)
+        except Exception:
+            pass
+    return _DEFAULT_MIRROR_DRIFT_PKGS
+
+
+def _is_mirror_shim(path: Path) -> bool:
+    """True if a file is an INTENTIONAL re-export shim of its icdev twin.
+
+    Detected by content marker: the file re-exports from its ``icdev.tools.*``
+    twin (import-star or explicit re-export) and is short (<120 lines). The
+    canonical example is ``tools/llm/agent_loop.py`` — it must never be flagged
+    as drift. Physically-separate full copies are NOT shims and are compared.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    if text.count("\n") >= 120:
+        return False
+    imports_twin = re.search(r"from\s+icdev\.tools[\w.]*\s+import\b", text) is not None
+    marks_reexport = "re-export" in text.lower()
+    return imports_twin and marks_reexport
+
+
+def _rel_under_excluded(rel_posix: str) -> bool:
+    parts = rel_posix.split("/")
+    return any(seg in _MIRROR_DRIFT_EXCLUDE_DIRS for seg in parts)
+
+
+def check_mirror_drift(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """WARN on content/existence drift between tools/<pkg> and icdev/tools/<pkg>.
+
+    For each hot mirrored package, byte-compares every ``*.py`` file that exists
+    under both ``tools/<pkg>`` and ``icdev/tools/<pkg>``. Reports:
+      - exists-only-in-one-tree (tools/ only, or icdev/ only)
+      - content-differs (with a hint of which side has the newer mtime)
+
+    Excludes ``__pycache__``, ACE ``roles/`` persona content, and intentional
+    re-export shims (see ``_is_mirror_shim``). Report-only (WARN) — never fails
+    the gate; today's tree carries real drift and this surfaces it, it does not
+    block on it. Ignores ``changed_files`` (always full sweep of the hot pkgs).
+    """
+    pkgs = _mirror_drift_packages()
+    only_tools: List[str] = []
+    only_icdev: List[str] = []
+    differs: List[str] = []
+
+    for pkg in pkgs:
+        tools_base = PROJECT_ROOT / "tools" / pkg
+        icdev_base = PROJECT_ROOT / "icdev" / "tools" / pkg
+
+        # Collect relative *.py paths (posix) from each side.
+        def _collect(base: Path) -> Set[str]:
+            out: Set[str] = set()
+            if not base.is_dir():
+                return out
+            for f in base.rglob("*.py"):
+                rel = f.relative_to(base).as_posix()
+                if _rel_under_excluded(rel):
+                    continue
+                out.add(rel)
+            return out
+
+        tools_files = _collect(tools_base)
+        icdev_files = _collect(icdev_base)
+
+        for rel in sorted(tools_files - icdev_files):
+            tp = tools_base / rel
+            if _is_mirror_shim(tp):
+                continue
+            only_tools.append(f"tools/{pkg}/{rel}: no icdev twin")
+        for rel in sorted(icdev_files - tools_files):
+            ip = icdev_base / rel
+            if _is_mirror_shim(ip):
+                continue
+            only_icdev.append(f"icdev/tools/{pkg}/{rel}: no tools/ twin")
+
+        for rel in sorted(tools_files & icdev_files):
+            tp = tools_base / rel
+            ip = icdev_base / rel
+            # A shim on either side is an intentional divergence — skip.
+            if _is_mirror_shim(tp) or _is_mirror_shim(ip):
+                continue
+            try:
+                if tp.read_bytes() == ip.read_bytes():
+                    continue
+            except Exception:
+                continue
+            try:
+                t_m = tp.stat().st_mtime
+                i_m = ip.stat().st_mtime
+                if t_m > i_m:
+                    hint = "tools/ newer"
+                elif i_m > t_m:
+                    hint = "icdev/ newer"
+                else:
+                    hint = "same mtime"
+            except Exception:
+                hint = "mtime unknown"
+            differs.append(f"tools/{pkg}/{rel} != icdev/tools/{pkg}/{rel} ({hint})")
+
+    findings = only_tools + only_icdev + differs
+    total = len(findings)
+    if total == 0:
+        return CoherenceCheck(
+            check_id="mirror_drift",
+            check_name="Mirror Drift (hot packages)",
+            status="pass",
+            expected=["tools/<pkg> and icdev/tools/<pkg> byte-identical for hot packages"],
+            actual=[f"packages checked: {', '.join(pkgs)}"],
+            missing=[],
+            extra=[],
+            message=f"No mirror drift across hot packages ({', '.join(pkgs)}).",
+        )
+    return CoherenceCheck(
+        check_id="mirror_drift",
+        check_name="Mirror Drift (hot packages)",
+        status="warn",
+        expected=["tools/<pkg> and icdev/tools/<pkg> byte-identical for hot packages"],
+        actual=[
+            f"{len(differs)} content-differ, {len(only_tools)} tools/-only, "
+            f"{len(only_icdev)} icdev/-only"
+        ],
+        missing=findings,
+        extra=[],
+        message=(
+            f"{total} mirror-drift finding(s) across hot packages "
+            f"({len(differs)} content-differs, {len(only_tools)} tools/-only, "
+            f"{len(only_icdev)} icdev/-only). Report-only; reconcile the newer side "
+            f"into its twin (canonical is usually tools/)."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: LLM provider bypass outside tools/llm/ (lpx-router-03)
+# ---------------------------------------------------------------------------
+
+# Cloud provider API host substrings. A runtime module outside tools/llm/ that
+# embeds one of these is talking to a provider directly instead of through the
+# router — which defeats the opt-in proxy (LPX) and air-gap/CUI routing.
+_LPX_PROVIDER_URL_SUBSTRINGS = (
+    "api.anthropic.com",
+    "api.openai.com",
+    "api.cohere.ai",
+    "api.mistral.ai",
+    "api.groq.com",
+    "api.deepseek.com",
+    "api.together.xyz",
+    "api.fireworks.ai",
+    "api.x.ai",
+    "generativelanguage.googleapis.com",
+)
+
+# Provider API-key environment variables. Reading one of these outside tools/llm/
+# means a module resolves a real provider credential itself rather than letting
+# the provider layer do it. Virtual/proxy/master keys are intentionally absent.
+_LPX_PROVIDER_KEY_ENV_VARS = frozenset({
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "COHERE_API_KEY",
+    "MISTRAL_API_KEY",
+    "GROQ_API_KEY",
+    "TOGETHER_API_KEY",
+    "FIREWORKS_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "XAI_API_KEY",
+    "PERPLEXITY_API_KEY",
+})
+
+# Documented, legitimate exceptions (see lpx-router-02):
+#   - the FathomDesk BYOK credential tester intentionally probes the real endpoint
+#   - the air-gap OpenAI-compatible local endpoints point at vLLM / LM Studio /
+#     llama.cpp, not a cloud provider
+#   - this checker itself necessarily embeds provider host/key literals in order
+#     to DETECT them (meta tool, not a runtime inference path)
+_LPX_BYPASS_EXEMPT_FILES = frozenset({
+    Path("tools") / "trading" / "credentials" / "tester.py",
+    Path("tools") / "airgap" / "pdf_fallback.py",
+    Path("tools") / "document_intelligence" / "extractors.py",
+    Path("tools") / "workflow" / "coherence_checker.py",
+})
+
+# Grandfathered pre-existing sites (signature = "<relpath>::<host-or-envvar>").
+# lpx-router-03's mandate is to FAIL on NEW direct-to-provider access; these
+# already existed when the gate landed and are out of this card's scope. Many are
+# legitimate (air-gap detectors that list cloud URLs precisely to BLOCK egress;
+# embedding/provider-adjacent modules). The gate ratchets: no NEW signature may
+# appear. Shrinking this set is welcome follow-up tech debt; growing it is not.
+_LPX_BYPASS_BASELINE = frozenset({
+    "tools/ai_augmentation/agent_readiness/pillars/_base.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/append_only_audit.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/nist_controls.py::ANTHROPIC_API_KEY",
+    "tools/ai_augmentation/agent_readiness/pillars/stig_compliance.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/append_only_audit.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/nist_controls.py::ANTHROPIC_API_KEY",
+    "tools/aiify/agent_readiness/pillars/stig_compliance.py::ANTHROPIC_API_KEY",
+    "tools/airgap/detector.py::api.anthropic.com",
+    "tools/airgap/ste_validator.py::api.anthropic.com",
+    "tools/airgap/ste_validator.py::api.cohere.ai",
+    "tools/airgap/ste_validator.py::api.openai.com",
+    "tools/ci/workflows/icdev_plan.py::ANTHROPIC_API_KEY",
+    # `icdev setup` probes TCP:443 reachability of these hosts to tell a user
+    # whether a provider is usable before they finish configuring one. It never
+    # sends a request, and it must work before any provider SDK is installed —
+    # so routing it through LLMRouter is not available to it. Same category as
+    # the airgap detectors above: names a cloud host without calling it.
+    "tools/cli/setup_wizard.py::api.anthropic.com",
+    "tools/cli/setup_wizard.py::api.openai.com",
+    "tools/cli/setup_wizard.py::generativelanguage.googleapis.com",
+    "tools/document_intelligence/blueprint.py::ANTHROPIC_API_KEY",
+    "tools/document_intelligence/blueprint.py::OPENAI_API_KEY",
+    "tools/document_intelligence/output_generators.py::ANTHROPIC_API_KEY",
+    "tools/document_intelligence/output_generators.py::OPENAI_API_KEY",
+    "tools/finetune/openai_provider.py::OPENAI_API_KEY",
+    "tools/govcon/reflex_sandbox.py::api.anthropic.com",
+    "tools/memory/embed_memory.py::OPENAI_API_KEY",
+    "tools/memory/hybrid_search.py::OPENAI_API_KEY",
+    "tools/memory/maintenance_cron.py::OPENAI_API_KEY",
+    "tools/memory/semantic_search.py::OPENAI_API_KEY",
+    "tools/pulse/config.py::OPENAI_API_KEY",
+    "tools/rag/pdf_provider.py::ANTHROPIC_API_KEY",
+    "tools/rag/pdf_provider.py::GOOGLE_API_KEY",
+    "tools/testing/e2e_runner.py::ANTHROPIC_API_KEY",
+    "tools/testing/health_check.py::ANTHROPIC_API_KEY",
+    "tools/testing/utils.py::ANTHROPIC_API_KEY",
+    "tools/viz/asset_generator.py::OPENAI_API_KEY",
+})
+
+
+def _lpx_scan_provider_bypass(source: str, rel: str) -> List[Tuple[int, str, str]]:
+    """AST-scan one runtime module for direct-to-provider access.
+
+    Returns ``(lineno, token, reason)`` tuples for (a) cloud provider base-URL
+    string literals (docstrings excluded) and (b) reads of a provider API-key env
+    var via os.environ[...] / os.environ.get(...) / os.getenv(...). ``token`` is
+    the host or env var — used to build a line-independent baseline signature.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    hits: List[Tuple[int, str, str]] = []
+    doc_ids = _agx_docstring_node_ids(tree)
+
+    for node in ast.walk(tree):
+        # (a) provider base-URL literals (skip docstrings)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in doc_ids:
+                continue
+            for host in _LPX_PROVIDER_URL_SUBSTRINGS:
+                if host in node.value:
+                    hits.append((node.lineno, host, f"cloud provider URL `{host}` — call via LLMRouter"))
+                    break
+        # (b) provider API-key env reads
+        elif isinstance(node, ast.Call):
+            key = _lpx_env_read_key(node)
+            if key and key in _LPX_PROVIDER_KEY_ENV_VARS:
+                hits.append((node.lineno, key, f"reads provider key env `{key}` — resolve credentials in tools/llm/"))
+        # os.environ["X"] subscript read
+        elif isinstance(node, ast.Subscript):
+            key = _lpx_environ_subscript_key(node)
+            if key and key in _LPX_PROVIDER_KEY_ENV_VARS:
+                hits.append((node.lineno, key, f"reads provider key env `{key}` — resolve credentials in tools/llm/"))
+    return hits
+
+
+def _lpx_const_str(node) -> Optional[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _lpx_env_read_key(call: ast.Call) -> Optional[str]:
+    """If ``call`` is os.getenv("X"...) or os.environ.get("X"...), return "X"."""
+    fn = call.func
+    if not isinstance(fn, ast.Attribute) or not call.args:
+        return None
+    first = _lpx_const_str(call.args[0])
+    if first is None:
+        return None
+    # os.getenv(...)
+    if fn.attr == "getenv":
+        return first
+    # os.environ.get(...)
+    if fn.attr == "get" and isinstance(fn.value, ast.Attribute) and fn.value.attr == "environ":
+        return first
+    return None
+
+
+def _lpx_environ_subscript_key(sub: ast.Subscript) -> Optional[str]:
+    """If ``sub`` is os.environ["X"], return "X"."""
+    val = sub.value
+    if isinstance(val, ast.Attribute) and val.attr == "environ":
+        return _lpx_const_str(sub.slice)
+    return None
+
+
+def check_provider_bypass(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """lpx-router-03 — no direct-to-provider access outside tools/llm/.
+
+    Fails when a runtime module under ``tools/`` (excluding ``tools/llm/`` and the
+    documented BYOK / air-gap exceptions) either embeds a cloud provider base URL
+    literal or reads a provider API-key env var. All inference must flow through
+    ``LLMRouter`` so the opt-in proxy (LPX), air-gap, and CUI routing hold.
+    """
+    new_violations: List[str] = []
+    grandfathered = 0
+    llm_dir = Path("tools") / "llm"
+    for py_file in _scan_targets(changed_files):
+        try:
+            rel_path = py_file.relative_to(PROJECT_ROOT)
+        except ValueError:
+            rel_path = py_file
+        # Skip the provider layer itself and documented exceptions.
+        if llm_dir in rel_path.parents or rel_path == llm_dir:
+            continue
+        if rel_path in _LPX_BYPASS_EXEMPT_FILES:
+            continue
+        # Skip test scaffolding that may reference provider vars intentionally.
+        if py_file.name.startswith("test_"):
+            continue
+        text = _read_text(py_file)
+        # Cheap prefilter before paying for an AST parse.
+        if "api." not in text and "generativelanguage" not in text and "_API_KEY" not in text:
+            continue
+        rel_str = str(rel_path).replace("\\", "/")
+        for lineno, token, reason in _lpx_scan_provider_bypass(text, rel_str):
+            signature = f"{rel_str}::{token}"
+            if signature in _LPX_BYPASS_BASELINE:
+                grandfathered += 1
+                continue
+            new_violations.append(f"{rel_str}:{lineno}: {reason}")
+
+    if new_violations:
+        return CoherenceCheck(
+            check_id="provider_bypass",
+            check_name="LLM Provider Bypass (lpx-router-03)",
+            status="fail",
+            expected=["no NEW cloud provider URL / API-key env read outside tools/llm/"],
+            actual=new_violations,
+            missing=[],
+            extra=new_violations,
+            message=(
+                f"{len(new_violations)} NEW direct-to-provider bypass(es) outside tools/llm/ "
+                f"({grandfathered} grandfathered) — route through LLMRouter; add a documented "
+                "exemption only for BYOK/air-gap"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="provider_bypass",
+        check_name="LLM Provider Bypass (lpx-router-03)",
+        status="pass",
+        expected=["no NEW cloud provider URL / API-key env read outside tools/llm/"],
+        actual=[f"0 new violations ({grandfathered} pre-existing sites grandfathered)"],
+        missing=[],
+        extra=[],
+        message=(
+            f"No NEW direct-to-provider bypass outside tools/llm/ "
+            f"({grandfathered} grandfathered legacy sites)"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check 19: Documented Command Paths (oss-fix-02)
+# ---------------------------------------------------------------------------
+#
+# A documented command that does not exist is worse than an undocumented one:
+# an agent reading CLAUDE.md will confidently run it, get an opaque
+# "can't open file" error, and burn a cycle deciding whether the tree is
+# broken or the doc is. This check resolves every `python tools/...py` and
+# `python -m tools...` invocation in the doc set against the filesystem.
+#
+# Grandfathering mirrors the args/ruff_gate.yaml pattern: pre-existing broken
+# references are listed in args/doc_command_gate.yaml and downgraded to WARN
+# so the backlog is enumerated and visible, while any NEW broken reference
+# fails the gate.
+
+_DOC_COMMAND_CONFIG = PROJECT_ROOT / "args" / "doc_command_gate.yaml"
+
+# Default doc set — overridable via the `docs:` key in the config file.
+_DOC_COMMAND_DEFAULT_DOCS = ("CLAUDE.md", "docs/reference/commands.md")
+
+# `python tools/foo/bar.py` / `python icdev/tools/foo/bar.py`
+_DOC_SCRIPT_RE = re.compile(r"python[0-9.]*\s+((?:icdev/)?tools/[A-Za-z0-9_./-]+\.py)")
+# `python -m tools.foo.bar` / `python -m icdev.tools.foo.bar`
+_DOC_MODULE_RE = re.compile(r"python[0-9.]*\s+-m\s+((?:icdev\.)?tools(?:\.[A-Za-z0-9_]+)*)")
+
+
+def _load_doc_command_config() -> Tuple[List[str], Dict[str, str]]:
+    """Load the doc set and grandfathered-reference map from args/doc_command_gate.yaml.
+
+    Schema:
+        docs:
+          - CLAUDE.md
+          - docs/reference/commands.md
+        grandfathered:
+          tools/dochub/doc_generator.py: "DocHub subsystem never built (oss-fix-02)"
+
+    Returns ``(docs, grandfathered)``. A missing file, malformed YAML, or
+    missing pyyaml yields the default doc set and an EMPTY grandfather map
+    (fail-safe closed: if the allowlist can't be read, nothing is excused and
+    the gate is stricter, not looser).
+    """
+    docs = list(_DOC_COMMAND_DEFAULT_DOCS)
+    if not _DOC_COMMAND_CONFIG.exists() or not _HAS_YAML:
+        return docs, {}
+    try:
+        raw = yaml.safe_load(_DOC_COMMAND_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return docs, {}
+    if not isinstance(raw, dict):
+        return docs, {}
+
+    cfg_docs = raw.get("docs")
+    if isinstance(cfg_docs, list) and cfg_docs:
+        docs = [str(d).replace("\\", "/") for d in cfg_docs if isinstance(d, (str, Path))]
+
+    grandfathered: Dict[str, str] = {}
+    gf = raw.get("grandfathered") or {}
+    if isinstance(gf, dict):
+        for ref, reason in gf.items():
+            if isinstance(ref, str):
+                grandfathered[ref.replace("\\", "/").lstrip("./")] = str(reason or "")
+    elif isinstance(gf, list):  # tolerate a bare list of paths
+        for ref in gf:
+            if isinstance(ref, str):
+                grandfathered[ref.replace("\\", "/").lstrip("./")] = ""
+    return docs, grandfathered
+
+
+def _doc_reference_exists(ref: str) -> bool:
+    """Resolve a documented reference (script path or dotted module) to a file."""
+    if ref.endswith(".py"):
+        return (PROJECT_ROOT / ref).is_file()
+    # Dotted module: `tools.airgap` -> tools/airgap.py or tools/airgap/__init__.py
+    rel = Path(*ref.split("."))
+    return (PROJECT_ROOT / rel).with_suffix(".py").is_file() or (PROJECT_ROOT / rel / "__init__.py").is_file()
+
+
+def _expand_doc_entries(docs: List[str]) -> List[str]:
+    """Expand wildcard entries in the doc set to concrete repo-relative paths.
+
+    Listing files one by one means a doc surface added later silently escapes
+    the gate — which is how context/capabilities/harness.yaml came to advertise
+    three tools that were never written (ahx-doc-01). A pattern entry keeps new
+    files covered by default. Non-wildcard entries pass through untouched, so
+    existing configs behave exactly as before.
+    """
+    expanded: List[str] = []
+    for doc in docs:
+        if "*" not in doc and "?" not in doc:
+            expanded.append(doc)
+            continue
+        for match in sorted(PROJECT_ROOT.glob(doc)):
+            if match.is_file():
+                expanded.append(match.relative_to(PROJECT_ROOT).as_posix())
+    # Preserve order, drop duplicates (a file may match a pattern and be listed).
+    seen: set = set()
+    return [d for d in expanded if not (d in seen or seen.add(d))]
+
+
+def _scan_doc_commands(docs: List[str]) -> List[Tuple[str, int, str]]:
+    """Return ``(doc, lineno, reference)`` for every documented python invocation."""
+    found: List[Tuple[str, int, str]] = []
+    for doc in _expand_doc_entries(docs):
+        path = PROJECT_ROOT / doc
+        if not path.is_file():
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            for match in _DOC_SCRIPT_RE.finditer(line):
+                found.append((doc, lineno, match.group(1)))
+            for match in _DOC_MODULE_RE.finditer(line):
+                found.append((doc, lineno, match.group(1)))
+    return found
+
+
+def check_doc_command_paths(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Check 19: every documented `python tools/...` invocation resolves to a real file."""
+    check_id = "doc_command_paths"
+    check_name = "Documented Command Paths"
+
+    docs, grandfathered = _load_doc_command_config()
+    references = _scan_doc_commands(docs)
+
+    if not references:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=[f"documented commands in {', '.join(docs)}"],
+            actual=[],
+            missing=[],
+            extra=[],
+            message=f"No documented python invocations found in {len(docs)} doc file(s) — check doc set",
+        )
+
+    # Resolve each distinct reference once; docs repeat the same tool many times.
+    resolved: Dict[str, bool] = {}
+    new_broken: List[str] = []
+    excused: Set[str] = set()
+    for doc, lineno, ref in references:
+        if ref not in resolved:
+            resolved[ref] = _doc_reference_exists(ref)
+        if resolved[ref]:
+            continue
+        if ref in grandfathered:
+            excused.add(ref)
+        else:
+            new_broken.append(f"{doc}:{lineno}: {ref}")
+
+    # A grandfather entry whose target now exists (or is no longer cited) is
+    # stale — surface it so the allowlist shrinks instead of rotting.
+    cited = {ref for _, _, ref in references}
+    stale = sorted(
+        ref
+        for ref in grandfathered
+        if ref not in cited or _doc_reference_exists(ref)
+    )
+
+    total = len(resolved)
+    if new_broken:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=["every documented `python tools/...` command resolves to an existing file"],
+            actual=new_broken[:40],
+            missing=sorted({line.rsplit(": ", 1)[1] for line in new_broken}),
+            extra=stale,
+            message=(
+                f"{len(new_broken)} documented command(s) reference a file that does not exist "
+                f"({len(excused)} grandfathered). Create the tool, fix the path, or — only if the "
+                f"capability is genuinely deferred — add it to args/doc_command_gate.yaml with a reason."
+            ),
+        )
+
+    if excused or stale:
+        bits = []
+        if excused:
+            bits.append(f"{len(excused)} grandfathered broken reference(s) remain")
+        if stale:
+            bits.append(f"{len(stale)} stale allowlist entry(ies) can be removed")
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=["every documented `python tools/...` command resolves to an existing file"],
+            actual=[f"{total} distinct reference(s) checked; 0 new breakage"],
+            missing=sorted(excused),
+            extra=stale,
+            message="No NEW broken documented commands — " + "; ".join(bits),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=["every documented `python tools/...` command resolves to an existing file"],
+        actual=[f"{total} distinct reference(s) checked across {len(docs)} doc file(s)"],
+        missing=[],
+        extra=[],
+        message=f"All {total} documented command path(s) resolve",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check 20: INSERT column lists vs the LIVE database schema (swp-gate-01)
+# ---------------------------------------------------------------------------
+#
+# `check_schema_code` compares INSERT columns against the CREATE TABLE text in
+# tools/db/init_icdev_db.py. That misses the failure mode this gate exists for:
+# `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a table
+# created by an older migration keeps its old columns while the DDL in the
+# source moves on. Code and database disagree with nothing in the source tree
+# recording the disagreement. An automated pass against live PostgreSQL found
+# 95 INSERT statements naming columns that do not exist — each one raises at
+# runtime inside `except Exception: pass`, so the feature reports success and
+# persists nothing (module_budget_usage held 0 rows; audit_trail has never
+# received a row from tools/govcon).
+#
+# This check therefore reads the LIVE schema — information_schema.columns on
+# PostgreSQL, PRAGMA table_info on SQLite — not the DDL.
+
+_INSERT_SCHEMA_CONFIG = PROJECT_ROOT / "args" / "insert_schema_gate.yaml"
+
+#: `INSERT [OR REPLACE] INTO [schema.]table (col, ...) VALUES|SELECT`.
+#: The column group excludes parentheses so a function call or a nested SELECT
+#: in the column position simply fails to match rather than mis-parsing.
+_INSERT_COLUMN_LIST_RE = re.compile(
+    r"INSERT\s+(?:OR\s+(?:REPLACE|IGNORE|ABORT|FAIL|ROLLBACK)\s+)?INTO\s+"
+    r'(?:["`\[]?\w+["`\]]?\s*\.\s*)?'  # optional schema/database qualifier
+    r'["`\[]?(?P<table>\w+)["`\]]?\s*'
+    r"\(\s*(?P<cols>[^()]+?)\s*\)\s*(?:VALUES|SELECT)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: Names a module binds when it obtains its own database handle.
+_CONNECTION_FACTORY_NAMES = frozenset({"get_connection", "get_canvas_connection", "get_conn"})
+
+
+def _uses_foreign_database(source: str) -> bool:
+    """True if *source* gets its connection from outside the ICDEV package tree.
+
+    ``tools/ais/ais_importer.py`` imports ``get_connection`` from
+    ``apps.geosigint.models`` and writes to that app's own ``sg_tracks`` — a
+    table whose name also exists, with a completely different shape, in the
+    ICDEV database. Validating it against the ICDEV schema reports nine columns
+    "missing" that are all present in the database the module actually writes
+    to. Canvas ``db/init_db.py`` modules are NOT foreign: every one of them
+    delegates to ``tools.db.storage`` on PostgreSQL, so their tables really do
+    live in the schema this check reads.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if not any(alias.name in _CONNECTION_FACTORY_NAMES for alias in node.names):
+            continue
+        if getattr(node, "level", 0):  # relative import — in-tree by definition
+            continue
+        root = (node.module or "").split(".")[0]
+        if root and root not in ("tools", "icdev"):
+            return True
+    return False
+
+#: A live schema this small is an empty/uninitialised database, not a real one.
+#: Validating against it would report every table as "unknown" (harmless) but
+#: would also let a genuinely broken INSERT pass unnoticed, so warn instead.
+_INSERT_SCHEMA_MIN_TABLES = 20
+
+
+def _extract_insert_column_lists(source: str) -> List[Tuple[int, str, List[str]]]:
+    """Return ``(lineno, table, [columns])`` for every STATIC INSERT in *source*.
+
+    Only fully static statements are returned. If any token in the column list
+    is not a bare SQL identifier — an f-string hole, a ``%s``, a concatenated
+    variable — the statement is dynamic and is skipped entirely rather than
+    guessed at. A dynamic table name (``INSERT INTO {table} (...)``) never
+    matches the pattern in the first place.
+    """
+    found: List[Tuple[int, str, List[str]]] = []
+    for match in _INSERT_COLUMN_LIST_RE.finditer(source):
+        raw_cols = match.group("cols")
+        cols: List[str] = []
+        dynamic = False
+        for token in raw_cols.split(","):
+            col = token.strip().strip('"').strip("`").strip("[]").strip()
+            if not _SQL_IDENTIFIER_RE.match(col):
+                dynamic = True
+                break
+            cols.append(col.lower())
+        if dynamic or not cols:
+            continue
+        lineno = source.count("\n", 0, match.start()) + 1
+        found.append((lineno, match.group("table").lower(), cols))
+    return found
+
+
+def _live_table_columns() -> Tuple[Dict[str, Set[str]], str, str]:
+    """Read ``table -> {columns}`` from the connected database.
+
+    Returns ``(schema, backend, error)``. ``error`` is a non-empty explanation
+    when no usable live schema could be read, in which case ``schema`` is empty
+    and the caller must WARN rather than fail — a gate that fails closed on a
+    missing database would block every commit made without one.
+    """
+    try:
+        from tools.db.storage import (
+            _introspect_backend,
+            _introspect_raw,
+            get_connection,
+            list_tables,
+        )
+    except Exception as exc:  # pragma: no cover - import environment specific
+        return {}, "", f"tools.db.storage unavailable: {exc}"
+
+    conn = None
+    try:
+        conn = get_connection()
+        backend = _introspect_backend(conn)
+        raw = _introspect_raw(conn)
+        schema: Dict[str, Set[str]] = {}
+        if backend == "postgresql":
+            cur = raw.cursor()
+            cur.execute(
+                "SELECT table_name, column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public'"
+            )
+            for row in cur.fetchall():
+                if isinstance(row, dict):
+                    table, column = row["table_name"], row["column_name"]
+                else:
+                    table, column = row[0], row[1]
+                schema.setdefault(str(table).lower(), set()).add(str(column).lower())
+        else:
+            for table in list_tables(conn):
+                if not _SQL_IDENTIFIER_RE.match(table):
+                    continue
+                cur = raw.cursor()
+                cur.execute(f'PRAGMA table_info("{table}")')  # nosec B608 — identifier regex-validated
+                cols = set()
+                for row in cur.fetchall():
+                    name = row["name"] if isinstance(row, dict) else row[1]
+                    cols.add(str(name).lower())
+                if cols:
+                    schema[table.lower()] = cols
+        if len(schema) < _INSERT_SCHEMA_MIN_TABLES:
+            return (
+                {},
+                backend,
+                f"{backend} schema has only {len(schema)} table(s) — database not initialised",
+            )
+        return schema, backend, ""
+    except Exception as exc:
+        return {}, "", f"could not read live schema: {type(exc).__name__}: {exc}"
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _load_insert_schema_gate() -> Tuple[Set[str], Dict[str, str]]:
+    """Load ``(ignored_tables, grandfathered)`` from args/insert_schema_gate.yaml.
+
+    Schema::
+
+        ignore_tables:
+          - some_table_owned_by_another_database
+        grandfathered:
+          "tools/govcon/x.py:audit_trail:actor": "swp-scan-01 backlog"
+
+    Grandfather keys are ``<repo-relative path>:<table>:<column>`` — deliberately
+    line-number-free so an unrelated edit above the statement does not
+    invalidate the entry. A missing file or missing pyyaml yields empty sets:
+    fail-safe CLOSED, so an unreadable allowlist makes the gate stricter.
+    """
+    if not _INSERT_SCHEMA_CONFIG.exists() or not _HAS_YAML:
+        return set(), {}
+    try:
+        raw = yaml.safe_load(_INSERT_SCHEMA_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set(), {}
+    if not isinstance(raw, dict):
+        return set(), {}
+
+    ignored = {
+        str(t).lower()
+        for t in (raw.get("ignore_tables") or [])
+        if isinstance(t, (str, int))
+    }
+    grandfathered: Dict[str, str] = {}
+    entries = raw.get("grandfathered") or {}
+    if isinstance(entries, dict):
+        for key, reason in entries.items():
+            if isinstance(key, str):
+                grandfathered[key.replace("\\", "/")] = str(reason or "")
+    elif isinstance(entries, list):  # tolerate a bare list of keys
+        for key in entries:
+            if isinstance(key, str):
+                grandfathered[key.replace("\\", "/")] = ""
+    return ignored, grandfathered
+
+
+def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Check 20: every static INSERT column list exists in the live schema."""
+    check_id = "insert_schema_parity"
+    check_name = "INSERT / Live Schema Parity"
+    expected = ["every column named in a static INSERT exists in the live database schema"]
+
+    targets = _scan_targets(changed_files, "tools")
+    if not targets:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no Python files under tools/ in scope"],
+            missing=[],
+            extra=[],
+            message="No INSERT statements in scope",
+        )
+
+    schema, backend, error = _live_table_columns()
+    if error:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=expected,
+            actual=[error],
+            missing=[],
+            extra=[],
+            message=(
+                f"Live schema unavailable ({error}) — INSERT column parity NOT verified. "
+                "Point ICDEV_STORAGE_BACKEND at an initialised database to enable this gate."
+            ),
+        )
+
+    ignored_tables, grandfathered = _load_insert_schema_gate()
+
+    new_findings: List[str] = []
+    excused_keys: Set[str] = set()
+    statements = 0
+    validated = 0
+    unknown_tables: Set[str] = set()
+
+    for py_path in targets:
+        if "__pycache__" in str(py_path):
+            continue
+        source = _read_text(py_path)
+        if "INSERT" not in source.upper():
+            continue
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = py_path.name
+        if rel in _SCHEMA_CODE_BACKEND_PINNED or _uses_foreign_database(source):
+            continue
+        for lineno, table, cols in _extract_insert_column_lists(source):
+            statements += 1
+            if table in ignored_tables:
+                continue
+            table_cols = schema.get(table)
+            if table_cols is None:
+                # Not in THIS database — a canvas, tenant, platform or child-app
+                # table. Nothing to validate against; silence beats a guess.
+                unknown_tables.add(table)
+                continue
+            validated += 1
+            absent = sorted(set(cols) - table_cols)
+            for column in absent:
+                key = f"{rel}:{table}:{column}"
+                if key in grandfathered:
+                    excused_keys.add(key)
+                    continue
+                new_findings.append(f"{rel}:{lineno}: INSERT INTO {table} names missing column '{column}'")
+
+    # Stale allowlist entries are only meaningful after a whole-tree scan; a
+    # diff-scoped run has not looked at the files the other entries name.
+    stale: List[str] = []
+    if not changed_files:
+        stale = sorted(set(grandfathered) - excused_keys)
+
+    actual = [
+        f"{statements} static INSERT statement(s) parsed; {validated} validated "
+        f"against {len(schema)} live {backend} table(s)"
+    ]
+
+    if new_findings:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=actual + new_findings,
+            missing=sorted({f.split("names missing column ")[-1].strip("'") for f in new_findings}),
+            extra=new_findings,
+            message=(
+                f"{len(new_findings)} INSERT column(s) do not exist in the live schema "
+                f"({len(excused_keys)} grandfathered). These raise at runtime and are "
+                "usually swallowed — fix the column list, or add a migration that adds "
+                "the column, before merging."
+            ),
+        )
+
+    if excused_keys or stale:
+        bits = []
+        if excused_keys:
+            bits.append(f"{len(excused_keys)} grandfathered mismatch(es) remain")
+        if stale:
+            bits.append(f"{len(stale)} stale allowlist entry(ies) can be removed")
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=expected,
+            actual=actual,
+            missing=sorted(excused_keys),
+            extra=stale,
+            message="No NEW INSERT/schema mismatches — " + "; ".join(bits),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=actual + [f"{len(unknown_tables)} table(s) absent from this database were skipped"],
+        missing=[],
+        extra=[],
+        message=f"All {validated} validated INSERT statement(s) match the live schema",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -4607,6 +7221,7 @@ CHECK_REGISTRY = {
     "fixture_schema": check_fixture_schema,
     "manifest": check_manifest,
     "append_only": check_append_only,
+    "trust_coverage": check_trust_coverage,
     "import_usage": check_import_usage,
     "ruff_lint": check_ruff_lint,
     "api_wiring": check_api_wiring,
@@ -4615,7 +7230,12 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "swallowed_persistence": check_swallowed_persistence,
+    "reflex_registry": check_reflex_registry,
     "direct_anthropic_import": check_direct_anthropic_import,
+    "provider_bypass": check_provider_bypass,
+    "architecture_agnosticism": check_architecture_agnosticism,
+    "llm_router_api": check_llm_router_api,
     "karpathy_sync": check_karpathy_sync,
     "openapi_parity": check_openapi_parity,
     "hitl_workflow": check_hitl_workflow,
@@ -4627,17 +7247,106 @@ CHECK_REGISTRY = {
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
+    "chat_card_inheritance": check_chat_card_inheritance,
+    "twin_chat_include": check_twin_chat_include,
     "canvas_placeholder_style": check_canvas_placeholder_style,
     "runtime_placeholder_style": check_runtime_placeholder_style,
     "ace_yaml_listen_topics": check_ace_yaml_listen_topics,
     "skill_security": check_skill_security,
     "spec_discipline": check_spec_discipline,
     "component_registry": check_component_registry,
+    "component_cli_reachability": check_component_cli_reachability,
     "canvas_completeness": check_canvas_completeness,
     "nav_sync": check_nav_sync,
     "iqe_map_sync": check_iqe_map_sync,
     "profile_sync": check_profile_sync,
+    "test_db_isolation": check_test_db_isolation,
+    "migration_numbering": check_migration_numbering,
+    "icdev_mirror_parity": check_icdev_mirror_parity,
+    "mirror_drift": check_mirror_drift,
+    "doc_command_paths": check_doc_command_paths,
+    "insert_schema_parity": check_insert_schema_parity,
 }
+
+
+# ---------------------------------------------------------------------------
+# Check tiers — the gate/sweep split
+# ---------------------------------------------------------------------------
+
+TIERS = ("fast", "full")
+
+# Checks that import or introspect the ENTIRE application rather than the diff.
+# Measured on a warm checkout these three cost ~100s of a ~170s full run, which
+# is why the per-task coherence gate could never finish inside its subprocess
+# timeout. They are global invariants — a single task can only break one in a
+# way that also shows up in the main baseline — so the fast tier runs a heavy
+# check ONLY when the diff touches its trigger surface. `--tier full` (the
+# nightly sweep and post-merge reflex) always runs every check.
+#
+# NOTE: direct_anthropic_import and provider_bypass used to belong here too;
+# they are now diff-scoped via _scan_targets() and cheap enough to always run.
+HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
+    "blueprint_imports": (
+        "tools/dashboard/",
+        "icdev/tools/dashboard/",
+        "blueprint.py",
+        "args/component_registry.yaml",
+    ),
+    "openapi_parity": (
+        "tools/dashboard/",
+        "icdev/tools/dashboard/",
+        "blueprint.py",
+        "openapi",
+    ),
+    "llm_router_api": (
+        "tools/llm/",
+        "icdev/tools/llm/",
+        "args/llm_config.yaml",
+    ),
+}
+
+
+def _normalised_paths(changed_files: Optional[List[Path]]) -> List[str]:
+    """Changed paths as forward-slash strings for substring trigger matching."""
+    return [str(entry).replace("\\", "/") for entry in (changed_files or [])]
+
+
+def select_checks(
+    tier: str = "full", changed_files: Optional[List[Path]] = None
+) -> List[str]:
+    """Ordered check ids to run for *tier*.
+
+    ``full`` returns every registered check. ``fast`` drops the whole-app
+    heavies in HEAVY_CHECKS, re-adding any whose trigger surface appears in
+    *changed_files*.
+
+    With no diff information the fast tier still drops the heavies — "fast"
+    means fast. Callers that cannot supply a file list and need full coverage
+    should ask for ``full`` explicitly rather than relying on this to guess.
+    """
+    all_ids = list(CHECK_REGISTRY.keys())
+    if tier != "fast":
+        return all_ids
+    touched = _normalised_paths(changed_files)
+    keep: List[str] = []
+    for check_id in all_ids:
+        triggers = HEAVY_CHECKS.get(check_id)
+        if triggers is None:
+            keep.append(check_id)
+        elif any(trigger in path for path in touched for trigger in triggers):
+            keep.append(check_id)
+    return keep
+
+
+def _check_workers() -> int:
+    """Thread count for the parallel check sweep. ``1`` forces serial."""
+    try:
+        configured = int(os.environ.get("ICDEV_COHERENCE_WORKERS", "0"))
+    except ValueError:
+        configured = 0
+    if configured > 0:
+        return configured
+    return max(1, min(4, (os.cpu_count() or 2) - 1))
 
 
 # ---------------------------------------------------------------------------
@@ -4661,6 +7370,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "skill_standard": "suggest",  # description rewrites need human judgment
     "sandbox_coverage": "skip",  # doc/decision — requires human judgment
     "direct_anthropic_import": "skip",  # violations require code routing fix
+    "llm_router_api": "skip",  # dead-API call sites require routing fix to invoke(fn, req)
     "karpathy_sync": "skip",  # add section to CLAUDE.md + companion sync, then re-run
     "openapi_parity": "skip",  # route drift requires human fix (add/remove route or update spec)
     "hitl_workflow": "skip",  # module fixes require human judgment
@@ -4672,10 +7382,14 @@ _FIX_REGISTRY: Dict[str, str] = {
     "runtime_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment
     "component_registry": "skip",  # registry schema issues require human editing
+    "component_cli_reachability": "skip",  # a surface gap needs CLI/TUI/.env wiring, not a mechanical fix
     "canvas_completeness": "skip",  # missing canvas components must be created by hand
     "nav_sync": "skip",  # template changes require human review
     "iqe_map_sync": "skip",  # adapter wiring requires human review
     "profile_sync": "skip",  # profile YAML changes require human review
+    "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
+    "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
+    "insert_schema_parity": "skip",  # drop the column or write a migration — the choice is the fix
 }
 
 
@@ -4787,68 +7501,114 @@ def _apply_fixes(check: CoherenceCheck) -> CoherenceCheck:
     return check
 
 
+def _unknown_check(check_id: str) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=f"Unknown: {check_id}",
+        status="warn",
+        expected=[],
+        actual=[],
+        missing=[],
+        extra=[],
+        message=f"Unknown check: {check_id}",
+    )
+
+
+def _run_one_check(
+    check_id: str, changed_files: Optional[List[Path]]
+) -> CoherenceCheck:
+    """Execute a single check, timing it and converting any raise into a warn."""
+    import inspect
+
+    func = CHECK_REGISTRY.get(check_id)
+    if not func:
+        return _unknown_check(check_id)
+
+    started = time.monotonic()
+    try:
+        if "changed_files" in inspect.signature(func).parameters:
+            result = func(changed_files=changed_files)
+        else:
+            result = func()
+    except Exception as exc:
+        result = CoherenceCheck(
+            check_id=check_id,
+            check_name=check_id,
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message=f"Check error: {exc}",
+        )
+    result.duration_sec = round(time.monotonic() - started, 3)
+    return result
+
+
 def run_checks(
     selected: Optional[List[str]] = None,
     changed_files: Optional[List[Path]] = None,
     autofix: bool = False,
+    tier: Optional[str] = None,
 ) -> CoherenceReport:
     """Run selected coherence checks and produce aggregate report.
 
     Args:
-        selected: specific check IDs to run (None = all)
-        changed_files: restrict import check to these files
+        selected: specific check IDs to run (None = tier selection)
+        changed_files: diff-scope passed to every check that accepts it
         autofix: if True, auto-fix safe issues after detection
+        tier: ``fast`` or ``full``; ignored when *selected* is given.
+
+    Checks run concurrently on a small thread pool — most of the cost is
+    subprocess, file I/O, and imports, all of which release the GIL. Autofix
+    forces the serial path because fixers mutate the tree and two of them
+    landing at once is not something the fix registry is written for.
     """
-    checks_to_run = selected or list(CHECK_REGISTRY.keys())
+    if selected:
+        checks_to_run = list(selected)
+    else:
+        checks_to_run = select_checks(tier or "full", changed_files)
+
     results: List[CoherenceCheck] = []
+    workers = 1 if autofix else min(_check_workers(), max(1, len(checks_to_run)))
+
+    if workers > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_run_one_check, check_id, changed_files): check_id
+                for check_id in checks_to_run
+            }
+            by_id: Dict[str, CoherenceCheck] = {}
+            for future in concurrent.futures.as_completed(futures):
+                check_id = futures[future]
+                try:
+                    by_id[check_id] = future.result()
+                except Exception as exc:  # pragma: no cover — defensive
+                    by_id[check_id] = CoherenceCheck(
+                        check_id=check_id,
+                        check_name=check_id,
+                        status="warn",
+                        expected=[],
+                        actual=[],
+                        missing=[],
+                        extra=[],
+                        message=f"Check error: {exc}",
+                    )
+        # Preserve registry order regardless of completion order.
+        results = [by_id[check_id] for check_id in checks_to_run if check_id in by_id]
+    else:
+        for check_id in checks_to_run:
+            results.append(_run_one_check(check_id, changed_files))
+
     total_fixes = 0
-
-    for check_id in checks_to_run:
-        func = CHECK_REGISTRY.get(check_id)
-        if not func:
-            results.append(
-                CoherenceCheck(
-                    check_id=check_id,
-                    check_name=f"Unknown: {check_id}",
-                    status="warn",
-                    expected=[],
-                    actual=[],
-                    missing=[],
-                    extra=[],
-                    message=f"Unknown check: {check_id}",
-                )
-            )
-            continue
-
-        try:
-            # Pass changed_files to checks that accept it
-            import inspect
-
-            sig = inspect.signature(func)
-            if "changed_files" in sig.parameters:
-                result = func(changed_files=changed_files)
-            else:
-                result = func()
-
-            # Auto-fix if requested and check failed/warned
-            if autofix and result.status in ("fail", "warn"):
+    if autofix:
+        fixed: List[CoherenceCheck] = []
+        for result in results:
+            if result.status in ("fail", "warn"):
                 result = _apply_fixes(result)
                 total_fixes += len(result.fixes_applied)
-
-            results.append(result)
-        except Exception as exc:
-            results.append(
-                CoherenceCheck(
-                    check_id=check_id,
-                    check_name=check_id,
-                    status="warn",
-                    expected=[],
-                    actual=[],
-                    missing=[],
-                    extra=[],
-                    message=f"Check error: {exc}",
-                )
-            )
+            fixed.append(result)
+        results = fixed
 
     passed = sum(1 for r in results if r.status == "pass")
     failed = sum(1 for r in results if r.status == "fail")
@@ -4923,23 +7683,73 @@ def main() -> None:
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     parser.add_argument("--gate", action="store_true", help="Exit 0=pass, 1=fail")
     parser.add_argument("--fix", action="store_true", help="Auto-fix safe issues (imports, append-only)")
-    parser.add_argument("--all", action="store_true", help="Run all checks")
+    parser.add_argument("--all", action="store_true", help="Run all checks (alias for --tier full)")
+    parser.add_argument(
+        "--tier",
+        choices=TIERS,
+        default=None,
+        help=(
+            "fast = per-task gate (drops whole-app heavies unless the diff "
+            "touches them); full = every check (nightly sweep / post-merge). "
+            "Default: full."
+        ),
+    )
     parser.add_argument("--check", type=str, default="", help=f"Specific check: {', '.join(CHECK_REGISTRY.keys())}")
     parser.add_argument("--changed-files", type=str, default="", help="Comma-separated list of changed file paths")
+    parser.add_argument(
+        "--changed-files-from",
+        type=str,
+        default="",
+        help="Read changed file paths (one per line) from a file — avoids the OS argv length limit on large diffs",
+    )
+    parser.add_argument(
+        "--list-tier",
+        action="store_true",
+        help="Print the check ids the selected tier would run, then exit",
+    )
 
     args = parser.parse_args()
 
     selected = None
     if args.check:
         selected = [c.strip() for c in args.check.split(",")]
-    elif args.all:
-        selected = None  # All checks
 
-    changed: Optional[List[Path]] = None
+    tier = args.tier or ("full" if args.all else "full")
+
+    raw_changed: List[str] = []
     if args.changed_files:
-        changed = [PROJECT_ROOT / f.strip() for f in args.changed_files.split(",")]
+        raw_changed += [f.strip() for f in args.changed_files.split(",") if f.strip()]
+    if args.changed_files_from:
+        try:
+            raw_changed += [
+                line.strip()
+                for line in Path(args.changed_files_from).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except OSError as exc:
+            print(f"could not read --changed-files-from: {exc}", file=sys.stderr)
+            sys.exit(2)
+    changed: Optional[List[Path]] = [PROJECT_ROOT / f for f in raw_changed] or None
 
-    report = run_checks(selected, changed, autofix=args.fix)
+    if args.list_tier:
+        for check_id in (selected or select_checks(tier, changed)):
+            print(check_id)
+        sys.exit(0)
+
+    # Checks import application modules that print banners at import time
+    # (canvas `db/init_db.py` emits ~67 lines of "[init_db] ..."). Those landed
+    # on stdout AHEAD of the JSON document, so every downstream
+    # json.loads(stdout) raised and callers silently fell back to "no failure
+    # detail available". Swap stdout for stderr while the checks run so the
+    # report is the only thing on stdout — this covers noisy imports we haven't
+    # met yet, not just today's eleven offenders. sys.stdout is process-global,
+    # so the thread pool inside run_checks is covered too.
+    _real_stdout = sys.stdout
+    try:
+        sys.stdout = sys.stderr
+        report = run_checks(selected, changed, autofix=args.fix, tier=tier)
+    finally:
+        sys.stdout = _real_stdout
 
     if args.human:
         print(_format_human(report))

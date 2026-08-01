@@ -35,7 +35,10 @@
     {% for c in collections %}
       <tr style="border-top:1px solid #0d1e30;color:#a8c8e0;">
         <td style="padding:7px 12px;font-weight:600;">
-          <span style="cursor:pointer;" onclick="toggleDocs('{{ c.collection_id }}')">{{ c.name }} <span style="color:#5a7aa0;font-size:10px;">▼</span></span>
+          <a href="#" onclick="toggleDocs('{{ c.collection_id }}');return false;"
+             title="Show/hide this collection's documents"
+             style="color:#7ab3f0;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;">{{ c.name }}</a>
+          <span style="color:#5a7aa0;font-size:10px;">▼</span>
         </td>
         <td style="padding:7px 12px;">{{ c.doc_count }}</td>
         <td style="padding:7px 12px;"><span style="background:#1e293b;color:#e94560;padding:1px 6px;border-radius:3px;font-size:10px;">{{ c.classification }}</span></td>
@@ -43,9 +46,12 @@
         <td style="padding:7px 12px;color:#7a8cb0;">{{ c.retention_days }}d</td>
         <td style="padding:7px 12px;color:#7a8cb0;">{{ c.team_size }} member(s)</td>
         <td style="padding:7px 12px;">
+          <a href="#" onclick="scanCollection(this, '{{ c.collection_id }}');return false;" title="Run the modernization + freshness scans on this collection, then review findings" style="color:#a78bfa;font-size:11px;text-decoration:none;margin-right:8px;">🧭 Scan</a>
+          <a href="/document-intelligence/freshness" style="color:#a78bfa;font-size:11px;text-decoration:none;margin-right:8px;">Findings</a>
           <a href="/document-intelligence/search?collection={{ c.collection_id }}" style="color:#4f8ef7;font-size:11px;text-decoration:none;margin-right:8px;">Search</a>
           <a href="/document-intelligence/?collection={{ c.collection_id }}" style="color:#7fd8a0;font-size:11px;text-decoration:none;margin-right:8px;">Upload</a>
-          <a href="#" onclick="showTeam('{{ c.collection_id }}', '{{ c.name }}');return false;" style="color:#7ab3f0;font-size:11px;text-decoration:none;">Team</a>
+          <a href="#" onclick="showTeam('{{ c.collection_id }}', '{{ c.name }}');return false;" style="color:#7ab3f0;font-size:11px;text-decoration:none;margin-right:8px;">Team</a>
+          <a href="#" onclick="deleteCollection('{{ c.collection_id }}', '{{ c.name }}', {{ c.doc_count }});return false;" style="color:#f87171;font-size:11px;text-decoration:none;">Delete</a>
         </td>
       </tr>
       <!-- Document list sub-row -->
@@ -120,6 +126,40 @@
 
 <script>
 var _activeCollectionId = null;
+
+
+function scanCollection(el, cid) {
+  var original = el.textContent;
+  el.textContent = 'Scanning…';
+  Promise.allSettled([
+    fetch('/document-intelligence/api/modernization/scan', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({collection_id: cid})
+    }),
+    fetch('/document-intelligence/api/freshness/scan', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({collection_id: cid})
+    })
+  ]).then(function() {
+    el.textContent = original;
+    window.location.href = '/document-intelligence/freshness';
+  }).catch(function() { el.textContent = original; });
+}
+
+function deleteCollection(cid, name, docCount) {
+  var msg = 'Delete collection "' + name + '" and its ' + docCount + ' document(s)?'
+    + String.fromCharCode(10, 10)
+    + 'This removes the documents, sections, and search chunks. '
+    + 'Version history and modernization findings are retained for audit.';
+  if (!confirm(msg)) return;
+  fetch('/document-intelligence/api/collections/' + cid, {method: 'DELETE'})
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.error) { alert('Delete failed: ' + d.error); return; }
+      location.reload();
+    })
+    .catch(function(e){ alert('Delete failed: ' + e.message); });
+}
 
 function toggleDocs(colId) {
   var row = document.getElementById('docs-row-' + colId);

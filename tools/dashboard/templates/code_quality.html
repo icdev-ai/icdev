@@ -134,6 +134,7 @@
     const API = '/api/code-quality';
 
     function fmt(n, d) { return n !== null && n !== undefined ? Number(n).toFixed(d || 0) : '--'; }
+    function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); }
 
     function loadSummary() {
         fetch(API + '/summary').then(r => r.json()).then(d => {
@@ -154,8 +155,8 @@
             if (!d.functions || !d.functions.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">No data — run a scan first.</td></tr>'; return; }
             tbody.innerHTML = d.functions.map(f =>
                 '<tr>' +
-                '<td><code>' + (f.function_name || '--') + '</code></td>' +
-                '<td>' + (f.file_path || '--').split('/').pop() + '</td>' +
+                '<td><code>' + _esc(f.function_name || '--') + '</code></td>' +
+                '<td>' + _esc((f.file_path || '--').split('/').pop()) + '</td>' +
                 '<td style="font-weight:bold;color:' + (f.cyclomatic_complexity > 15 ? '#f44336' : f.cyclomatic_complexity > 10 ? '#ff9800' : '#4caf50') + ';">' + f.cyclomatic_complexity + '</td>' +
                 '<td>' + (f.cognitive_complexity || 0) + '</td>' +
                 '<td>' + (f.nesting_depth || 0) + '</td>' +
@@ -175,7 +176,7 @@
             const colors = {'long_function':'#ff9800','deep_nesting':'#f44336','high_complexity':'#e91e63','too_many_params':'#9c27b0','god_class':'#673ab7'};
             el.innerHTML = d.smells.map(s =>
                 '<div style="display:flex;align-items:center;gap:0.5rem;margin:0.4rem 0;">' +
-                '<span style="min-width:140px;font-size:0.9rem;">' + s.name.replace(/_/g, ' ') + '</span>' +
+                '<span style="min-width:140px;font-size:0.9rem;">' + _esc(String(s.name || '').replace(/_/g, ' ')) + '</span>' +
                 '<div style="flex:1;background:#eee;border-radius:4px;height:20px;">' +
                 '<div style="width:' + (s.count/max*100) + '%;background:' + (colors[s.name]||'#1976d2') + ';height:100%;border-radius:4px;"></div>' +
                 '</div>' +

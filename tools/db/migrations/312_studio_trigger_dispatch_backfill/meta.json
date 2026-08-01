@@ -1,0 +1,7 @@
+{
+  "id": "312_studio_trigger_dispatch_backfill",
+  "description": "Backfill studio_event_sources.max_il and studio_workflow_triggers.workflow_il/project_id. schema_migrations recorded 308 as applied via a 'squashed-308' baseline marker written by bootstrap_pg.py before it was fixed, so 308's DDL never ran; only the five columns migration 310 also adds were present. The gap is invisible in behaviour because event_dispatch defaults workflow_il to IL6, the top of IL_ORDER, so the classification gate fails OPEN on a missing column instead of refusing",
+  "created": "2026-07-29",
+  "targets": ["icdev.db"],
+  "adrs": []
+}

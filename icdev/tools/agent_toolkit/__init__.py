@@ -43,8 +43,22 @@ from tools.agent_toolkit._fs import (
     grep,
 )
 from tools.agent_toolkit._shell import execute_shell
+from tools.agent_toolkit._browser import (
+    browser_click,
+    browser_navigate,
+    browser_press,
+    browser_read_state,
+    browser_screenshot,
+    browser_select,
+    browser_session,
+    browser_type,
+)
 from tools.agent_toolkit._planning import write_todos, update_todo
-from tools.agent_toolkit._subagent import spawn_subagent
+from tools.agent_toolkit._subagent import (
+    delegate_batch,
+    delegate_task,
+    spawn_subagent,
+)
 from tools.agent_toolkit._composer import (
     Agent,
     AgentResult,
@@ -62,11 +76,23 @@ __all__ = [
     "grep",
     # Shell
     "execute_shell",
+    # Browser (oss-browse-03) — scope/budget/audit enforced by
+    # tools.browser.scope.GuardedDriver, not re-implemented here
+    "browser_session",
+    "browser_navigate",
+    "browser_read_state",
+    "browser_click",
+    "browser_type",
+    "browser_select",
+    "browser_press",
+    "browser_screenshot",
     # Planning
     "write_todos",
     "update_todo",
     # Subagent
     "spawn_subagent",
+    "delegate_task",
+    "delegate_batch",
     # Composer
     "Agent",
     "AgentResult",

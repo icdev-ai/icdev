@@ -54,6 +54,14 @@
      * Falls back to escaped text if marked.js is unavailable.
      */
     function renderMarkdown(text) {
+        // nav-sec-08: sanitize markdown output (marked + DOMPurify, fail-closed) so
+        // untrusted agent/LLM message content cannot inject active markup. The shared
+        // helper uses the globally-configured marked renderer (code highlighting).
+        // DOMPurify strips inline on* handlers, so the code-block Copy button is wired
+        // via delegation below instead of the inline onclick.
+        if (typeof window.safeMarkdown === 'function') {
+            return window.safeMarkdown(text);
+        }
         if (typeof marked !== 'undefined') {
             try { return marked.parse(text); } catch (e) { /* fallthrough */ }
         }
@@ -157,6 +165,18 @@
             var orig = btn.textContent;
             btn.textContent = 'Copied!';
             setTimeout(function () { btn.textContent = orig; }, 1500);
+        });
+    }
+
+    // nav-sec-08: delegated Copy handler. DOMPurify strips the inline
+    // onclick="ICDEV.copyCodeBlock(this)" from sanitized markdown, so wire the
+    // Copy buttons through a single document-level listener instead.
+    if (typeof document !== 'undefined' && !window.__icdevCopyDelegated) {
+        window.__icdevCopyDelegated = true;
+        document.addEventListener('click', function (ev) {
+            var btn = ev.target && ev.target.closest
+                ? ev.target.closest('.msg-code-block__copy') : null;
+            if (btn) copyCodeBlock(btn);
         });
     }
 

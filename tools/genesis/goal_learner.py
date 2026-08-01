@@ -38,6 +38,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.goal_learner")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -199,8 +202,9 @@ def _log_audit(event_type: str, goal_id: str = None, details: Dict = None) -> No
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Best-effort
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best-effort
+        logger.warning("_log_audit: best-effort INSERT into genesis_audit failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

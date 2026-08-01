@@ -18,6 +18,9 @@ from pathlib import Path
 
 import pytest
 
+
+from tools.db.storage import get_connection as _real_get_connection
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -174,9 +177,12 @@ def kanban_flask_client(tmp_path, monkeypatch):
 
     # Patch get_connection inside the kanban module to point at our temp DB.
     def _fake_conn():
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        # Go through tools.db.storage, NOT raw sqlite3. Runtime SQL is authored for
+        # PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper translates
+        # them to SQLite's ?. A raw sqlite3 connection makes every %s a syntax error.
+        # _real_get_connection is bound at import time, so patching storage's attribute
+        # below cannot recurse back into this.
+        return _real_get_connection(db_path=str(db_path))
 
     from icdev.tools.dashboard.api import kanban as kanban_mod
 
@@ -355,9 +361,8 @@ class TestListenerDependencyGating:
         from icdev.tools.genesis.reflexes import kanban as listener
 
         def _fake_conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            # Storage wrapper, not raw sqlite3 — see the note in the fixture above.
+            return _real_get_connection(db_path=str(db_path))
 
         monkeypatch.setattr(listener, "get_connection", _fake_conn)
         monkeypatch.setattr(listener, "_count_in_progress", lambda: 0)

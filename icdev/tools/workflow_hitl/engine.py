@@ -7,7 +7,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from tools.db.storage import get_connection
+from tools.db.storage import column_exists, get_connection
 from tools.workflow_hitl.constants import WfStatus
 
 logger = get_logger(__name__)
@@ -325,8 +325,8 @@ class WorkflowEngine:
             approval_id = f"wfa-{uuid.uuid4().hex[:12]}"
             conn = get_connection()
             try:
-                cols = conn.execute("PRAGMA table_info(wf_approvals)").fetchall()
-                if not any(c[1] == "cot_trace_id" for c in cols):
+                # Backend-aware column probe (pgrt-sweep-06) — no PRAGMA/translation reliance.
+                if not column_exists(conn, "wf_approvals", "cot_trace_id"):
                     conn.execute("ALTER TABLE wf_approvals ADD COLUMN cot_trace_id TEXT")
                 conn.execute(
                     "INSERT INTO wf_approvals "
@@ -335,8 +335,8 @@ class WorkflowEngine:
                     (approval_id, instance_id, stage_config["name"], None, None, "approved", trace_id, _now(), _now()),
                 )
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning("_open_approval: best-effort INSERT into wf_approvals failed (non-blocking): %s", _exc)
             finally:
                 conn.close()
             # Auto-advance past automated stages immediately

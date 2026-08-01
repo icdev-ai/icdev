@@ -1,7 +1,22 @@
 #!/usr/bin/env python3
-"""ACOIC — Autonomous Compliance-Of-Impact Coupler (DIC flagship).
+"""DocDrift — is this document still true? (DIC flagship).
 
 [TEMPLATE: CUI // SP-CTI]
+
+**Naming.** This was ACOIC ("Autonomous Compliance-Of-Impact Coupler") while it
+only understood network-infrastructure drift. It is now fed by every docmod pack
+— network, crypto, software, policy, approved-change records and cited evidence —
+so the user-facing name is **DocDrift** and the page lives at
+``/document-intelligence/docdrift`` (``/acoic`` 301-redirects).
+
+The module file and the tables (``dic_drift_events``, ``dic_acoic_regen_queue``,
+``dic_ssp_fragments``) deliberately keep the old name. Renaming them buys nothing
+a user can see and costs a real migration plus an import churn across
+drift_detector, ndc_topology_drift, drift_bridge and the DIC blueprint — and
+``_ensure_schema`` uses CREATE TABLE IF NOT EXISTS, so a missed call site would
+silently recreate the old table alongside the new one and split the data rather
+than fail loudly. If you are here because "acoic" looked stale: it is, and that
+is on purpose.
 
 ACOIC is the bridge that turns a *canvas drift event* into *compliance work*:
 
@@ -12,8 +27,17 @@ ACOIC is the bridge that turns a *canvas drift event* into *compliance work*:
 This module owns the **dic-acoic-02** scope: the RICOAS / NIST 800-53 bridge and
 SSP-fragment generation. It also carries the minimal **dic-acoic-01** base
 (drift-event recording + impact scoring + regen queue) so the bridge is
-runnable end-to-end; the richer event subscription (``ndc.topology.drift_detected``)
-plugs into :func:`handle_drift` when the DIC event bus lands.
+runnable end-to-end.
+
+**How drift actually arrives here.** The producer is the ``ndc_topology_drift``
+Genesis reflex (``tools/genesis/reflexes/ndc_topology_drift.py``), which diffs a
+topology's generated device configs against its saved ``nc_versions`` baseline
+and calls :func:`tools.network.drift_detector.emit_drift_events` ->
+:func:`record_drift_event` / :func:`enqueue_regen`. Do **not** wire this via
+``event_bus.subscribe('dic', ...)``: ``_LISTENERS`` is a process-local registry,
+and the reflex runs in the genesis daemon while DIC runs in Flask, so an
+in-process subscriber would never fire. :func:`handle_drift` remains the sink for
+direct/programmatic callers (e.g. the IDC feed and the ACOIC CLI).
 
 Design principles (mirrors :mod:`tools.document_intelligence.verifier`):
 
@@ -201,16 +225,29 @@ def record_drift_event(
     severity: str = "medium",
     *,
     payload: dict | None = None,
+    dedup_key: str | None = None,
     tenant_id: str | None = None,
     classification: str | None = None,
 ) -> str:
     """Persist a canvas drift event. Returns the event_id.
 
-    This is the sink for the ``ndc.topology.drift_detected`` subscription and
-    the IDC drift feed (wired in :func:`handle_drift`).
+    This is the sink for the ``ndc.topology.drift_detected`` feed (wired in
+    :func:`handle_drift` and called directly by the ``ndc_topology_drift``
+    reflex via :func:`tools.network.drift_detector.emit_drift_events`).
+
+    Args:
+        dedup_key: Stable content key for cross-run idempotency. Without it the
+            event_id hashes ``detected_at``, so a scheduled producer re-reporting
+            the SAME unchanged drift inserts a new row every run. Callers on a
+            cadence MUST pass a content-derived key (e.g. topology|device|
+            category|baseline_hash|current_hash). Omitted => legacy behavior.
     """
     detected_at = _now()
-    event_id = _hid("dic_drift", source, entity or "", detected_at)
+    event_id = (
+        _hid("dic_drift", dedup_key)
+        if dedup_key
+        else _hid("dic_drift", source, entity or "", detected_at)
+    )
     conn = get_connection()
     try:
         _ensure_schema(conn)
@@ -239,19 +276,35 @@ def enqueue_regen(
     drift_source: str | None = None,
     drift_entity: str | None = None,
     severity: str = "medium",
+    dedup_key: str | None = None,
     tenant_id: str | None = None,
     classification: str | None = None,
 ) -> dict[str, Any]:
-    """Enqueue an impacted document for HITL regeneration."""
+    """Enqueue an impacted document for HITL regeneration.
+
+    Args:
+        dedup_key: Stable content key for cross-run idempotency (see
+            :func:`record_drift_event`). When set, an existing row is left
+            untouched rather than replaced — re-running the producer must never
+            reset a queue item a human already moved to drafted/approved.
+            Omitted => legacy replace-on-conflict behavior.
+    """
     impact_level, impact_score = _score_impact(severity)
     queued_at = _now()
-    item_id = _hid("dic_regen", document_id, event_id or "", queued_at)
+    item_id = (
+        _hid("dic_regen", dedup_key)
+        if dedup_key
+        else _hid("dic_regen", document_id, event_id or "", queued_at)
+    )
+    # OR IGNORE preserves human-advanced state; OR REPLACE would stomp it back
+    # to 'queued'. storage.translate_sql maps both to the PG ON CONFLICT form.
+    verb = "INSERT OR IGNORE" if dedup_key else "INSERT OR REPLACE"
     conn = get_connection()
     try:
         _ensure_schema(conn)
         conn.cursor().execute(
-            """
-            INSERT OR REPLACE INTO dic_acoic_regen_queue
+            f"""
+            {verb} INTO dic_acoic_regen_queue
                 (item_id, document_id, event_id, drift_source, drift_entity,
                  impact_level, impact_score, state, queued_at, updated_at,
                  tenant_id, classification)
@@ -301,10 +354,16 @@ def _set_queue_state(item_id: str, state: str, *, fragment_id: str | None = None
 def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
     """Reflex / subscription handler for a canvas drift event.
 
-    Wire this to ``subscribe('dic', 'ndc.topology.drift_detected', handle_drift)``
-    once the DIC event bus is live. ``event`` is expected to carry at least a
-    ``source`` and ``severity``; ``document_id`` and ``control_ids`` are
-    optional and drive enqueue + control re-map respectively.
+    Called directly by producers (the docmod drift bridge, the IDC feed, the CLI).
+    ``event`` is expected to carry at least a ``source`` and ``severity``;
+    ``document_id`` and ``control_ids`` are optional and drive enqueue + control
+    re-map respectively.
+
+    ``dedup_key`` is optional but REQUIRED for any producer on a schedule: without
+    it the event id hashes ``detected_at``, so every sweep re-inserts the same
+    unchanged drift. Pass a stable content key (the docmod bridge uses the
+    finding_id, which is stable per finding and changes when the finding is
+    superseded).
 
     End-to-end: record event -> enqueue impacted doc -> re-map affected NIST
     controls. SSP-fragment drafting is a separate, explicitly-invoked step
@@ -316,9 +375,10 @@ def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
     severity = event.get("severity", "medium")
     tenant_id = event.get("tenant_id")
     classification = event.get("classification")
+    dedup_key = event.get("dedup_key")
 
     event_id = record_drift_event(
-        source, entity, severity, payload=event,
+        source, entity, severity, payload=event, dedup_key=dedup_key,
         tenant_id=tenant_id, classification=classification,
     )
 
@@ -330,6 +390,7 @@ def handle_drift(event: dict, ctx: Any = None) -> dict[str, Any]:
             enqueue_regen(
                 document_id, event_id=event_id, drift_source=source,
                 drift_entity=entity, severity=severity,
+                dedup_key=f"{dedup_key}|{document_id}" if dedup_key else None,
                 tenant_id=tenant_id, classification=classification,
             )
         )
@@ -674,14 +735,47 @@ def _review_fragment(fragment_id: str, status: str, reviewed_by: str | None) -> 
         changed = cur.rowcount
         # Advance the linked queue item.
         cur.execute(
-            "SELECT regen_item_id FROM dic_ssp_fragments WHERE fragment_id = %s",
+            "SELECT control_id, document_id, regen_item_id FROM dic_ssp_fragments "
+            "WHERE fragment_id = %s",
             (fragment_id,),
         )
         row = cur.fetchone()
     finally:
         conn.close()
+
+    # Audit the human decision. dic_ssp_fragments is a mutable workflow table —
+    # it holds only the CURRENT status, so an approval leaves no evidence of who
+    # decided what, when. These fragments become SSP content, so that record is
+    # the cATO audit trail. audit_trail is append-only (enforced in
+    # .claude/hooks/pre_tool_use.py) and hash-chained by audit_logger.
+    #
+    # Fail-closed (raise_on_error=True): an approval that cannot be audited must
+    # not silently stand. NIST AU-5 — an unrecorded authorisation decision is an
+    # audit finding, so failing the approval is the safer outcome. Machine-driven
+    # transitions stay best-effort; only human decisions gate on the audit write.
+    rd = dict(row) if row is not None and hasattr(row, "keys") else {}
+    if changed:
+        from tools.audit.audit_logger import log_event
+
+        log_event(
+            event_type="dic.ssp_fragment.review",
+            actor=reviewed_by or "unknown",
+            action=f"ssp_fragment.{status}",
+            details={
+                "fragment_id": fragment_id,
+                "status": status,
+                "control_id": rd.get("control_id"),
+                "document_id": rd.get("document_id"),
+                "regen_item_id": rd.get("regen_item_id"),
+            },
+            classification="CUI",
+            raise_on_error=True,
+        )
+
     if row:
-        item_id = row["regen_item_id"] if hasattr(row, "keys") else row[0]
+        # NB: the SELECT above fetches three columns for the audit record, so the
+        # positional fallback must index regen_item_id explicitly (not row[0]).
+        item_id = rd.get("regen_item_id") if rd else row[2]
         if item_id:
             queue_state = "drafted" if status == "needs_revision" else status
             _set_queue_state(item_id, queue_state)
@@ -742,10 +836,15 @@ def _rows(sql: str, args: tuple = ()) -> list[dict[str, Any]]:
         conn.close()
 
 
+# These three carried bare `?` placeholders while the rest of this module uses
+# %s. They did not crash on PostgreSQL — translate_sql rewrote them — but that
+# made a runtime read path depend on the translator, which is an init-time
+# SQLite fallback and explicitly not load-bearing, and it logged a
+# "bare ? placeholder detected" warning on every call. Authored for PG directly.
 def list_drift_events(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT source, entity, severity, detected_at FROM dic_drift_events "
-        "ORDER BY detected_at DESC LIMIT ?",
+        "ORDER BY detected_at DESC LIMIT %s",
         (limit,),
     )
 
@@ -753,7 +852,7 @@ def list_drift_events(limit: int = 50) -> list[dict[str, Any]]:
 def list_regen_queue(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT item_id, document_id, impact_level, state, queued_at "
-        "FROM dic_acoic_regen_queue ORDER BY impact_score DESC, queued_at DESC LIMIT ?",
+        "FROM dic_acoic_regen_queue ORDER BY impact_score DESC, queued_at DESC LIMIT %s",
         (limit,),
     )
 
@@ -761,7 +860,7 @@ def list_regen_queue(limit: int = 50) -> list[dict[str, Any]]:
 def list_ssp_fragments(limit: int = 50) -> list[dict[str, Any]]:
     return _rows(
         "SELECT fragment_id, control_id, document_id, status, verified, ai_labeled "
-        "FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT ?",
+        "FROM dic_ssp_fragments ORDER BY created_at DESC LIMIT %s",
         (limit,),
     )
 

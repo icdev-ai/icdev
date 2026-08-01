@@ -24,6 +24,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.compliance.poam_auto_generator")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -131,7 +134,7 @@ def generate_poam_items(conn: Any) -> list[dict[str, Any]]:
     # _VIOLATION_STATUSES is a hardcoded frozenset — no user input ever flows here.
     # The IN-list is parameterized (? placeholders); bandit B608 is a false positive.
     statuses = list(_VIOLATION_STATUSES)
-    in_clause = ",".join("?" * len(statuses))
+    in_clause = ",".join(["%s"] * len(statuses))
     sql = f"SELECT snapshot_id, project_id, framework_id, control_id, status, evidence_ref, taken_at FROM compliance_snapshots WHERE status IN ({in_clause})"  # nosec B608 - placeholders only, no user input
     cursor = conn.execute(sql, statuses)
     cols = [d[0] for d in cursor.description]
@@ -190,8 +193,9 @@ def _write_audit_event(conn: Any, item: dict[str, Any]) -> None:
                 }),
             ),
         )
-    except Exception:  # noqa: BLE001
-        pass  # audit_trail may not exist in test DBs without full schema
+    except Exception as exc:  # noqa: BLE001
+        # audit_trail may not exist in test DBs without full schema
+        logger.warning("_write_audit_event: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def run_auto_generator(conn: Any) -> dict[str, Any]:

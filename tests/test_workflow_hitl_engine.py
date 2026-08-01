@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
+from _sql_compat import connect as _tconnect
+
 # ── minimal in-memory DB fixture ──────────────────────────────────────────────
 
 MINIMAL_WF_SCHEMA = """
@@ -107,7 +109,12 @@ CREATE TABLE IF NOT EXISTS wf_citations (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS kanban_tasks (
-    id TEXT PRIMARY KEY, title TEXT, status TEXT, hitl_stage TEXT
+    id TEXT PRIMARY KEY, title TEXT, status TEXT, hitl_stage TEXT,
+    -- team_manager.resolve_team() reads these when falling back from a direct
+    -- task assignment to a project / task_group assignment. They were missing
+    -- while the fixture left team_manager bound to the ambient DB, so the query
+    -- failed there and the caller's except swallowed it.
+    project_id TEXT, tags TEXT
 );
 """
 
@@ -142,11 +149,41 @@ def tmp_db(tmp_path):
     conn.close()
 
     def _get_conn():
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        # Translating wrapper so the module's PG-native %s SQL is rewritten for
+        # SQLite, via the shared tests/_sql_compat.py helper (which delegates to
+        # the same translate_sql the runtime uses).
+        return _tconnect(db_path)
 
-    with patch("tools.db.storage.get_connection", side_effect=_get_conn):
+    # Patch the canonical location AND every tools.workflow_hitl module that has
+    # already bound get_connection into its own namespace via
+    # `from tools.db.storage import get_connection`.
+    #
+    # Patching only "tools.db.storage.get_connection" rebinds the attribute on
+    # the storage module; a module that ran that from-import earlier still holds
+    # the ORIGINAL function object and is untouched. Run alone, this file passed
+    # because each module was first imported lazily inside a patched test. Run
+    # after any file that imports tools.workflow_hitl (e.g.
+    # test_workflow_hitl_api.py), the bindings already existed and 17 tests hit
+    # the ambient DB instead -- "no such table: wf_teams".
+    #
+    # Only modules already in sys.modules are patched, so this neither forces
+    # imports nor depends on file order: anything imported later re-reads the
+    # (patched) attribute from tools.db.storage.
+    import sys
+    from contextlib import ExitStack
+
+    _targets = ["tools.db.storage.get_connection"]
+    _targets += [
+        f"{name}.get_connection"
+        for name, mod in list(sys.modules.items())
+        if name.startswith("tools.workflow_hitl")
+        and mod is not None
+        and hasattr(mod, "get_connection")
+    ]
+
+    with ExitStack() as stack:
+        for target in _targets:
+            stack.enter_context(patch(target, side_effect=_get_conn))
         yield db_path
 
 
@@ -349,7 +386,11 @@ class TestFeedback:
             comments="Looks good",
             submitted_by="reviewer-1",
         )
-        assert result.get("ok") or result.get("feedback_id")
+        # submit_feedback() is declared `-> str` and returns the feedback id.
+        # The previous dict-shaped assertion never ran: _get_approval_id() found
+        # no approval while the fixture left the engine on the ambient DB, so
+        # this test skipped every time and the mismatch stayed hidden.
+        assert isinstance(result, str) and result
 
     def test_submit_kickback_requires_reason(self, tmp_db):
         from tools.workflow_hitl import feedback as fb

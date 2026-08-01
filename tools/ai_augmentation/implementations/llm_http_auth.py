@@ -162,13 +162,12 @@ def advise_retry_threshold(
     try:
         router = LLMRouter()
         request = LLMRequest(
-            function="llm_generation",
-            prompt=prompt,
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=128,
             temperature=0.0,
         )
-        response = router.complete(request)
-        return _parse_threshold(response.text)
+        response = router.invoke("llm_generation", request)
+        return _parse_threshold(response.content)
     except Exception:  # LLMUnavailableError or any provider error
         return _DEFAULT_THRESHOLD
 

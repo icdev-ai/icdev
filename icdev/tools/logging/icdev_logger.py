@@ -10,6 +10,28 @@ rather than calling ``logging.getLogger()`` directly.  This ensures:
   * Per-component level overrides via args/logging_config.yaml
   * Consistent trace_id / session_id fields for AI triage
 
+Windows multi-process rotation (hcx-ace-10)
+-------------------------------------------
+Several ICDEV processes (dashboard, Genesis daemon, kanban runner, ACE
+controllers) open the SAME per-component log file concurrently.  On Windows a
+file that is open in one process cannot be renamed by another, so when a
+``TimedRotatingFileHandler`` / ``RotatingFileHandler`` tries to roll the file
+over it fails with ``PermissionError: [WinError 32]`` (ERROR_SHARING_VIOLATION).
+The stock handlers propagate that error into ``handleError`` on every single
+record — log records are lost and stderr floods with ``--- Logging error ---``.
+
+Chosen fix (option **a**): the handlers are subclassed
+(``_SafeTimedRotatingFileHandler`` / ``_SafeRotatingFileHandler``) so that a
+rotation blocked by a sharing violation is **swallowed once** and the process
+simply keeps appending to the current file.  A single one-line notice is written
+to stderr per handler instance (never repeated — no flood), and for the timed
+handler the next-rollover clock is advanced so the doomed rename is not
+re-attempted on every subsequent record.  This keeps behaviour on POSIX (where
+renaming an open file is legal) completely unchanged: ``super().doRollover()``
+succeeds there and the swallow path is never taken.  Per-process filenames
+(option b) were rejected because they fragment each component's log across N
+files, breaking the log_triage reflex's single-stream assumption.
+
 Usage:
     from tools.logging.icdev_logger import get_logger
     log = get_logger("my_component")
@@ -20,6 +42,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
+import time
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
@@ -56,6 +80,81 @@ class _JsonFormatter(logging.Formatter):
         )
 
 
+def _is_sharing_violation(exc: BaseException) -> bool:
+    """True when *exc* is a Windows 'file in use by another process' error.
+
+    ERROR_SHARING_VIOLATION is WinError 32; ERROR_ACCESS_DENIED is 5.  Any
+    ``PermissionError`` raised while renaming an open log file falls in this
+    bucket on Windows.  On POSIX this returns False for the (legal) rename path,
+    so unrelated OSErrors still propagate.
+    """
+    if isinstance(exc, PermissionError):
+        return True
+    return getattr(exc, "winerror", None) in (5, 32)
+
+
+class _WindowsSafeRotationMixin:
+    """Mixin that tolerates a rotation blocked by a cross-process file lock.
+
+    When ``doRollover`` fails because another process holds the base file open
+    (Windows sharing violation), we swallow the error, make sure the stream is
+    reopened on the current file so records keep landing, and advance the timed
+    handler's next-rollover clock so we don't re-attempt the doomed rename on
+    every record.  A single stderr notice is emitted per handler instance.
+    """
+
+    _rotation_skip_warned = False
+
+    def _warn_rotation_skipped_once(self) -> None:
+        if self._rotation_skip_warned:
+            return
+        self._rotation_skip_warned = True
+        try:
+            sys.stderr.write(
+                f"[icdev_logger] rotation of {getattr(self, 'baseFilename', '?')} "
+                "skipped: file held open by another process (Windows sharing "
+                "violation); continuing to append to the current file. This "
+                "notice is shown once per handler.\n"
+            )
+        except Exception:
+            pass
+
+    def rotate(self, source: str, dest: str) -> None:  # type: ignore[override]
+        # Primary swallow point: base->rotated rename goes through here for both
+        # RotatingFileHandler and TimedRotatingFileHandler.
+        try:
+            super().rotate(source, dest)  # type: ignore[misc]
+        except OSError as exc:
+            if not _is_sharing_violation(exc):
+                raise
+            self._warn_rotation_skipped_once()
+
+    def doRollover(self) -> None:  # type: ignore[override]
+        # Safety net: intermediate os.rename/os.remove calls in
+        # RotatingFileHandler.doRollover bypass self.rotate() and can also hit a
+        # sharing violation.  Swallow those too and recover the stream.
+        try:
+            super().doRollover()  # type: ignore[misc]
+        except OSError as exc:
+            if not _is_sharing_violation(exc):
+                raise
+            self._warn_rotation_skipped_once()
+            # Reopen the current base file so subsequent records are not lost.
+            if getattr(self, "stream", None) is None and not getattr(self, "delay", False):
+                self.stream = self._open()  # type: ignore[attr-defined]
+            # Advance the timed handler's clock so we don't retry every record.
+            if hasattr(self, "computeRollover") and hasattr(self, "rolloverAt"):
+                self.rolloverAt = self.computeRollover(int(time.time()))  # type: ignore[attr-defined]
+
+
+class _SafeTimedRotatingFileHandler(_WindowsSafeRotationMixin, TimedRotatingFileHandler):
+    """TimedRotatingFileHandler that tolerates Windows cross-process rotation."""
+
+
+class _SafeRotatingFileHandler(_WindowsSafeRotationMixin, RotatingFileHandler):
+    """RotatingFileHandler that tolerates Windows cross-process rotation."""
+
+
 def _load_config() -> Dict[str, Any]:
     global _CONFIG_CACHE
     if _CONFIG_CACHE is not None:
@@ -85,7 +184,7 @@ def _build_handlers(component: str, cfg: Dict[str, Any]) -> list:
 
     # Time-based rotation (daily at midnight, 30-day retention)
     timed_path = log_dir / f"{component}.ndjson"
-    timed = TimedRotatingFileHandler(
+    timed = _SafeTimedRotatingFileHandler(
         timed_path,
         when=rotation.get("when", "midnight"),
         backupCount=int(rotation.get("retention_days", 30)),
@@ -96,7 +195,7 @@ def _build_handlers(component: str, cfg: Dict[str, Any]) -> list:
 
     # Size-based rotation (10 MB, 5 backups)
     sized_path = log_dir / f"{component}_size.ndjson"
-    sized = RotatingFileHandler(
+    sized = _SafeRotatingFileHandler(
         sized_path,
         maxBytes=int(rotation.get("max_bytes", 10_485_760)),
         backupCount=5,

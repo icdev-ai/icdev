@@ -107,3 +107,25 @@ def test_where_and_predicate() -> None:
     result = ex.run(ast, conn=None)
     assert len(result) == 1
     assert result[0]["name"] == "rtr-01"
+
+
+# 7 — WHERE > against a NULL field excludes the row instead of raising ------
+# (prop-vv-02: IQE smoke surfaced "'>' not supported between instances of
+# 'NoneType' and 'int'" on real data with an unset numeric column.)
+
+_DEVICES_WITH_NULL = _DEVICES + [{"name": "rtr-03", "vendor": "Cisco", "bandwidth_gbps": None}]
+
+
+def _stub_adapter_with_null(_conn: object) -> list[dict]:
+    return list(_DEVICES_WITH_NULL)
+
+
+def test_where_gt_excludes_null_field_without_raising() -> None:
+    ex = Executor()
+    ex.register_collection("network.devices", _stub_adapter_with_null)
+    ast = _ast(
+        where=[WhereNode(BinOp(">", AttrRef(["device", "bandwidth_gbps"]), Literal(5)))]
+    )
+    result = ex.run(ast, conn=None)
+    assert len(result) == 2
+    assert all(r["bandwidth_gbps"] is not None and r["bandwidth_gbps"] > 5 for r in result)

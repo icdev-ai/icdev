@@ -140,17 +140,15 @@ class EUAIActClassifier(BaseAssessor):
     def _count_records(self, conn: sqlite3.Connection, table: str, project_id: str) -> int:
         """Count records for a project in a table. Returns 0 if table missing."""
         try:
-            # Check table exists
-            row = conn.execute(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
-                (table,),
-            ).fetchone()
-            if row[0] == 0:
+            from tools.db.storage import column_exists, table_exists
+            # Backend-aware existence/column probes (information_schema on PG,
+            # sqlite_master / PRAGMA table_info on SQLite) so this evidence count
+            # runs on the PostgreSQL code path instead of silently returning 0.
+            if not table_exists(conn, table):
                 return 0
 
             # Check if table has project_id column
-            cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})").fetchall()]
-            if "project_id" in cols:
+            if column_exists(conn, table, "project_id"):
                 row = conn.execute(
                     f"SELECT COUNT(*) FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id,),

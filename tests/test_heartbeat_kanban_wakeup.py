@@ -1,6 +1,6 @@
 """Tests for heartbeat kanban stale-scheduler detection (acw-sched-02).
 
-Verifies that check_kanban_stale():
+Verifies that check_kanban_genesis_health():
   - Returns ok when the reflex ran recently
   - Returns warning + fires wakeup when last_run_at is stale
   - Returns ok when the reflex is disabled or circuit breaker is open
@@ -20,7 +20,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.monitor.heartbeat_daemon import (  # noqa: E402
     _trigger_kanban_wakeup,
-    check_kanban_stale,
+    check_kanban_genesis_health,
 )
 
 
@@ -92,23 +92,29 @@ def _patch_get_conn(db_path: Path):
     are self-contained.
     """
     def _fake(path=None):
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+        # Go through tools.db.storage, NOT raw sqlite3. Runtime SQL is authored
+        # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+        # translates them to SQLite's ?. With a raw connection every %s is a
+        # syntax error, check_kanban_genesis_health swallows it and reports "ok" -- so the
+        # stale-detection warnings never fired and the "ok" cases passed by
+        # accident rather than on merit.
+        from tools.db.storage import get_connection as _real_get_connection
+
+        return _real_get_connection(db_path=str(db_path))
 
     with patch("tools.monitor.heartbeat_daemon._get_connection", side_effect=_fake):
         yield
 
 
 # ---------------------------------------------------------------------------
-# Tests: check_kanban_stale — ok paths
+# Tests: check_kanban_genesis_health — ok paths
 # ---------------------------------------------------------------------------
 class TestCheckKanbanStaleOk(unittest.TestCase):
     def test_no_row_returns_ok(self):
         db = _make_db()
         try:
             with _patch_get_conn(db):
-                result = check_kanban_stale(config={"stale_threshold_minutes": 5}, db_path=db)
+                result = check_kanban_genesis_health(config={"stale_threshold_minutes": 5}, db_path=db)
             self.assertEqual(result["status"], "ok")
             self.assertEqual(result["count"], 0)
         finally:
@@ -119,7 +125,7 @@ class TestCheckKanbanStaleOk(unittest.TestCase):
         try:
             _insert_kanban_state(db, _ts(2))  # 2 minutes ago — not stale
             with _patch_get_conn(db):
-                result = check_kanban_stale(config={"stale_threshold_minutes": 5}, db_path=db)
+                result = check_kanban_genesis_health(config={"stale_threshold_minutes": 5}, db_path=db)
             self.assertEqual(result["status"], "ok")
             self.assertEqual(result["count"], 0)
         finally:
@@ -130,7 +136,7 @@ class TestCheckKanbanStaleOk(unittest.TestCase):
         try:
             _insert_kanban_state(db, _ts(10), enabled=0)
             with _patch_get_conn(db):
-                result = check_kanban_stale(config={"stale_threshold_minutes": 5}, db_path=db)
+                result = check_kanban_genesis_health(config={"stale_threshold_minutes": 5}, db_path=db)
             self.assertEqual(result["status"], "ok")
         finally:
             db.unlink(missing_ok=True)
@@ -140,14 +146,14 @@ class TestCheckKanbanStaleOk(unittest.TestCase):
         try:
             _insert_kanban_state(db, _ts(10), circuit_open=1)
             with _patch_get_conn(db):
-                result = check_kanban_stale(config={"stale_threshold_minutes": 5}, db_path=db)
+                result = check_kanban_genesis_health(config={"stale_threshold_minutes": 5}, db_path=db)
             self.assertEqual(result["status"], "ok")
         finally:
             db.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
-# Tests: check_kanban_stale — stale → wakeup
+# Tests: check_kanban_genesis_health — stale → wakeup
 # ---------------------------------------------------------------------------
 class TestCheckKanbanStaleTriggersWakeup(unittest.TestCase):
     def test_stale_10m_triggers_wakeup_via_api(self):
@@ -161,7 +167,7 @@ class TestCheckKanbanStaleTriggersWakeup(unittest.TestCase):
                     "tools.monitor.heartbeat_daemon._trigger_kanban_wakeup",
                     return_value="triggered_via_api",
                 ) as mock_wake:
-                    result = check_kanban_stale(
+                    result = check_kanban_genesis_health(
                         config={"stale_threshold_minutes": 5}, db_path=db
                     )
 
@@ -186,7 +192,7 @@ class TestCheckKanbanStaleTriggersWakeup(unittest.TestCase):
                     "tools.monitor.heartbeat_daemon._trigger_kanban_wakeup",
                     return_value="triggered_via_api",
                 ):
-                    result = check_kanban_stale(
+                    result = check_kanban_genesis_health(
                         config={"stale_threshold_minutes": 5}, db_path=db
                     )
             self.assertEqual(result["status"], "warning")
@@ -201,7 +207,7 @@ class TestCheckKanbanStaleTriggersWakeup(unittest.TestCase):
 
             # threshold=10 → not yet stale
             with _patch_get_conn(db):
-                result = check_kanban_stale(
+                result = check_kanban_genesis_health(
                     config={"stale_threshold_minutes": 10}, db_path=db
                 )
             self.assertEqual(result["status"], "ok")
@@ -212,7 +218,7 @@ class TestCheckKanbanStaleTriggersWakeup(unittest.TestCase):
                     "tools.monitor.heartbeat_daemon._trigger_kanban_wakeup",
                     return_value="triggered_direct",
                 ):
-                    result2 = check_kanban_stale(
+                    result2 = check_kanban_genesis_health(
                         config={"stale_threshold_minutes": 5}, db_path=db
                     )
             self.assertEqual(result2["status"], "warning")
@@ -229,7 +235,18 @@ class TestTriggerKanbanWakeup(unittest.TestCase):
             result = _trigger_kanban_wakeup()
         self.assertEqual(result, "triggered_via_api")
 
-    def test_api_failure_falls_back_to_direct(self):
+    def test_api_failure_does_NOT_run_the_reflex_in_process(self):
+        """A health check must not become an executor.
+
+        This used to assert the opposite — that an unreachable dashboard caused
+        the daemon to import the kanban reflex and call run() in ITS OWN
+        process. The reflex tracks live subprocesses in a module-global dict,
+        so that second process saw an empty _running, concluded the real
+        scheduler's live tasks were dead, and reaped them to backlog with
+        failure_count++. The scheduler's next poll then found the DB status
+        changed underneath it and killed the subprocess as "stale-cleanup".
+        Those two reasons together were 51 of 182 recorded task failures.
+        """
         import urllib.error
 
         mock_kanban = MagicMock()
@@ -239,18 +256,16 @@ class TestTriggerKanbanWakeup(unittest.TestCase):
             with patch.dict("sys.modules", {"tools.genesis.reflexes.kanban": mock_kanban}):
                 result = _trigger_kanban_wakeup()
 
-        self.assertEqual(result, "triggered_direct")
-        mock_kanban.run.assert_called_once_with({}, None)
+        self.assertIn("wakeup_unavailable", result)
+        mock_kanban.run.assert_not_called()
 
-    def test_api_and_import_both_fail_returns_wakeup_failed(self):
+    def test_api_failure_reports_unavailable_rather_than_failing_silently(self):
         import urllib.error
 
-        # Setting a module to None in sys.modules causes ImportError on import
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("conn refused")):
-            with patch.dict("sys.modules", {"tools.genesis.reflexes.kanban": None}):
-                result = _trigger_kanban_wakeup()
+            result = _trigger_kanban_wakeup()
 
-        self.assertIn("wakeup_failed", result)
+        self.assertIn("wakeup_unavailable", result)
 
 
 if __name__ == "__main__":

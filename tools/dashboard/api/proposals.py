@@ -19,6 +19,9 @@ from pathlib import Path
 from flask import Blueprint, jsonify, make_response, request
 
 from tools.common.helpers import now_iso
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.proposals")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -242,6 +245,7 @@ def list_opportunities():
 
 
 @proposals_api.route("/opportunities", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_opportunity():
     """POST /api/proposals/opportunities — Create a new opportunity."""
     data = request.get_json(force=True, silent=True) or {}
@@ -368,6 +372,7 @@ def get_opportunity(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_opportunity(opp_id):
     """PUT /api/proposals/opportunities/<id> — Update opportunity fields."""
     data = request.get_json(force=True, silent=True) or {}
@@ -565,6 +570,7 @@ def _check_aggregation_guard_for_opportunity(opp_id, conn):
 
 
 @proposals_api.route("/opportunities/<opp_id>/aggregation-guard/override", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def override_aggregation_guard(opp_id):
     """POST /api/proposals/opportunities/<id>/aggregation-guard/override — HITL clear."""
     data = request.get_json(force=True, silent=True) or {}
@@ -594,6 +600,7 @@ def override_aggregation_guard(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/status", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def change_opportunity_status(opp_id):
     """PUT /api/proposals/opportunities/<id>/status — Change opportunity status.
 
@@ -679,6 +686,7 @@ def list_volumes(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/volumes", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_volume(opp_id):
     """POST /api/proposals/<opp_id>/volumes — Create a volume."""
     data = request.get_json(force=True, silent=True) or {}
@@ -709,6 +717,7 @@ def create_volume(opp_id):
 
 
 @proposals_api.route("/volumes/<vol_id>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_volume(vol_id):
     """PUT /api/proposals/volumes/<id> — Update volume."""
     data = request.get_json(force=True, silent=True) or {}
@@ -768,6 +777,7 @@ def list_sections(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/sections", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_section(opp_id):
     """POST /api/proposals/<opp_id>/sections — Create a section."""
     data = request.get_json(force=True, silent=True) or {}
@@ -869,6 +879,7 @@ def get_section(sec_id):
 
 
 @proposals_api.route("/sections/<sec_id>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 @abac_protect(_section_resource_attrs, "PUT")
 def update_section(sec_id):
     """PUT /api/proposals/sections/<id> — Update section fields (not status)."""
@@ -912,6 +923,7 @@ def update_section(sec_id):
 
 
 @proposals_api.route("/sections/<sec_id>/status", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 @abac_protect(_section_resource_attrs, "PUT")
 def advance_section_status(sec_id):
     """PUT /api/proposals/sections/<id>/status — Advance section status (enforces transitions)."""
@@ -984,6 +996,7 @@ def advance_section_status(sec_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/sections/dependencies", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def add_section_dependency(opp_id):
     """POST /api/proposals/<opp_id>/sections/dependencies — Add a section dependency."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1053,6 +1066,7 @@ def list_compliance(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/compliance", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_compliance_item(opp_id):
     """POST /api/proposals/<opp_id>/compliance — Add a compliance matrix item."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1087,6 +1101,7 @@ def create_compliance_item(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/compliance/batch", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def batch_create_compliance(opp_id):
     """POST /api/proposals/<opp_id>/compliance/batch — Batch create compliance items."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1123,6 +1138,7 @@ def batch_create_compliance(opp_id):
 
 
 @proposals_api.route("/compliance/<item_id>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_compliance_item(item_id):
     """PUT /api/proposals/compliance/<id> — Update compliance item."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1230,6 +1246,7 @@ def list_reviews(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/reviews", methods=["POST"])
+@require_role("admin", "pm", "reviewer")
 def schedule_review(opp_id):
     """POST /api/proposals/<opp_id>/reviews — Schedule a color team review."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1263,6 +1280,7 @@ def schedule_review(opp_id):
 
 
 @proposals_api.route("/reviews/<rev_id>", methods=["PUT"])
+@require_role("admin", "pm", "reviewer")
 def update_review(rev_id):
     """PUT /api/proposals/reviews/<id> — Update review (start, complete, rate)."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1317,6 +1335,7 @@ def list_findings(rev_id):
 
 
 @proposals_api.route("/reviews/<rev_id>/findings", methods=["POST"])
+@require_role("admin", "pm", "reviewer")
 def add_finding(rev_id):
     """POST /api/proposals/reviews/<rev_id>/findings — Add a review finding."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1348,6 +1367,7 @@ def add_finding(rev_id):
 
 
 @proposals_api.route("/findings/<find_id>", methods=["PUT"])
+@require_role("admin", "pm", "reviewer")
 def update_finding(find_id):
     """PUT /api/proposals/findings/<id> — Update finding (resolve, assign)."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1717,6 +1737,7 @@ def get_status_history(entity_type, entity_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/create-contract", methods=["POST"])
+@require_role("admin", "pm")
 def create_contract_from_opportunity(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/create-contract
 
@@ -1755,6 +1776,7 @@ def list_questions(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/questions", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_question(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/questions"""
     data = request.get_json(force=True, silent=True) or {}
@@ -1813,6 +1835,7 @@ def get_question(q_id):
 
 
 @proposals_api.route("/questions/<q_id>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_question(q_id):
     """PUT /api/proposals/questions/<q_id>"""
     data = request.get_json(force=True, silent=True) or {}
@@ -1838,6 +1861,7 @@ def update_question(q_id):
 
 
 @proposals_api.route("/questions/<q_id>", methods=["DELETE"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def delete_question(q_id):
     """DELETE /api/proposals/questions/<q_id>"""
     conn = _get_db()
@@ -1856,6 +1880,7 @@ def delete_question(q_id):
 
 
 @proposals_api.route("/questions/<q_id>/responses", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_question_response(q_id):
     """POST /api/proposals/questions/<q_id>/responses"""
     conn = _get_db()
@@ -1895,6 +1920,7 @@ def create_question_response(q_id):
 
 
 @proposals_api.route("/question-responses/<qr_id>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_question_response(qr_id):
     """PUT /api/proposals/question-responses/<qr_id>"""
     data = request.get_json(force=True, silent=True) or {}
@@ -1937,6 +1963,7 @@ def list_amendments(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/amendments", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_amendment(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/amendments"""
     data = request.get_json(force=True, silent=True) or {}
@@ -1978,6 +2005,7 @@ def create_amendment(opp_id):
 
 
 @proposals_api.route("/amendments/<amend_id>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_amendment(amend_id):
     """PUT /api/proposals/amendments/<amend_id>"""
     data = request.get_json(force=True, silent=True) or {}
@@ -2002,6 +2030,7 @@ def update_amendment(amend_id):
 
 
 @proposals_api.route("/amendments/<amend_id>", methods=["DELETE"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def delete_amendment(amend_id):
     """DELETE /api/proposals/amendments/<amend_id>"""
     conn = _get_db()
@@ -2021,6 +2050,7 @@ _CAPTURE_PHASES = ("pipeline", "qualify", "capture", "bid_no_bid", "proposal", "
 
 
 @proposals_api.route("/opportunities/<opp_id>/capture", methods=["PATCH"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_capture_fields(opp_id):
     """PATCH /api/proposals/opportunities/<opp_id>/capture"""
     data = request.get_json(force=True, silent=True) or {}
@@ -2068,6 +2098,7 @@ def list_competitors(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/competitors", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_competitor(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/competitors"""
     data = request.get_json(force=True, silent=True) or {}
@@ -2094,6 +2125,7 @@ def create_competitor(opp_id):
 
 
 @proposals_api.route("/competitors/<cid>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_competitor(cid):
     """PUT /api/proposals/competitors/<cid>"""
     data = request.get_json(force=True, silent=True) or {}
@@ -2119,6 +2151,7 @@ def update_competitor(cid):
 
 
 @proposals_api.route("/competitors/<cid>", methods=["DELETE"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def delete_competitor(cid):
     """DELETE /api/proposals/competitors/<cid>"""
     conn = _get_db()
@@ -2145,6 +2178,7 @@ def list_teaming_partners(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/teaming", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_teaming_partner(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/teaming"""
     data = request.get_json(force=True, silent=True) or {}
@@ -2173,6 +2207,7 @@ def create_teaming_partner(opp_id):
 
 
 @proposals_api.route("/teaming/<tid>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_teaming_partner(tid):
     """PUT /api/proposals/teaming/<tid>"""
     data = request.get_json(force=True, silent=True) or {}
@@ -2195,6 +2230,7 @@ def update_teaming_partner(tid):
 
 
 @proposals_api.route("/teaming/<tid>", methods=["DELETE"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def delete_teaming_partner(tid):
     """DELETE /api/proposals/teaming/<tid>"""
     conn = _get_db()
@@ -2212,6 +2248,7 @@ def delete_teaming_partner(tid):
 
 
 @proposals_api.route("/opportunities/<opp_id>/snapshots", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_snapshot(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/snapshots — serialize current state."""
     import json as _json
@@ -2329,6 +2366,7 @@ def list_shred_items(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/shred", methods=["POST"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def create_shred_item(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/shred"""
     data = request.get_json(force=True, silent=True) or {}
@@ -2356,6 +2394,7 @@ def create_shred_item(opp_id):
 
 
 @proposals_api.route("/shred/<item_id>", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_shred_item(item_id):
     """PUT /api/proposals/shred/<item_id>"""
     data = request.get_json(force=True, silent=True) or {}
@@ -2379,6 +2418,7 @@ def update_shred_item(item_id):
 
 
 @proposals_api.route("/shred/<item_id>", methods=["DELETE"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def delete_shred_item(item_id):
     """DELETE /api/proposals/shred/<item_id>"""
     conn = _get_db()
@@ -2391,6 +2431,7 @@ def delete_shred_item(item_id):
 
 
 @proposals_api.route("/amendments/<amend_id>/impact", methods=["PUT"])
+@require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def update_amendment_impact(amend_id):
     """PUT /api/proposals/amendments/<amend_id>/impact"""
     import json as _json
@@ -2501,6 +2542,12 @@ def _mask_ptw_sensitive(row):
     return row
 
 
+def _mask_ptw_analysis(result: dict) -> dict:
+    """Strip recomputed PTW figures for roles denied them at rest (prop-sec-01)."""
+    from tools.security.column_security import current_role, mask_ptw_payload
+    return mask_ptw_payload(result, current_role())
+
+
 @proposals_api.route("/opportunities/<opp_id>/ptw/analysis", methods=["GET"])
 def ptw_analysis_endpoint(opp_id):
     """GET /api/proposals/opportunities/<opp_id>/ptw/analysis — rate_benchmarker PTW + SCG gate."""
@@ -2523,7 +2570,7 @@ def ptw_analysis_endpoint(opp_id):
             f"Aggregating pricing across {n_competitors} competitors may trigger SCG rule "
             "SCG-AGG-003 (pattern-of-life disclosure). Review disclosure permissions before sharing."
         )
-    return jsonify(result)
+    return jsonify(_mask_ptw_analysis(result))
 
 
 @proposals_api.route("/opportunities/<opp_id>/ptw/leaderboard", methods=["GET"])
@@ -2557,6 +2604,7 @@ def ptw_leaderboard(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/ptw/vendor-profile", methods=["POST"])
+@require_role("admin", "capture_mgr", "pm")
 def ptw_vendor_profile(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/ptw/vendor-profile — profile a competitor."""
     conn = _get_db()
@@ -2579,6 +2627,7 @@ def ptw_vendor_profile(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/ptw/bid-score", methods=["POST"])
+@require_role("admin", "capture_mgr", "pm")
 def ptw_bid_score(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/ptw/bid-score — Bayesian bid scorer."""
     conn = _get_db()
@@ -2620,6 +2669,7 @@ def list_blackhat_assessments(opp_id):
 
 
 @proposals_api.route("/opportunities/<opp_id>/ptw/blackhat", methods=["POST"])
+@require_role("admin", "capture_mgr", "pm")
 def create_blackhat_assessment(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/ptw/blackhat — create competitor black-hat model."""
     conn = _get_db()
@@ -2667,6 +2717,7 @@ def create_blackhat_assessment(opp_id):
 
 
 @proposals_api.route("/blackhat/<bh_id>", methods=["PUT"])
+@require_role("admin", "capture_mgr", "pm")
 def update_blackhat_assessment(bh_id):
     """PUT /api/proposals/blackhat/<bh_id> — update a black-hat competitor model."""
     data = request.get_json(force=True, silent=True) or {}
@@ -2698,6 +2749,7 @@ def update_blackhat_assessment(bh_id):
 
 
 @proposals_api.route("/blackhat/<bh_id>", methods=["DELETE"])
+@require_role("admin", "capture_mgr", "pm")
 def delete_blackhat_assessment(bh_id):
     """DELETE /api/proposals/blackhat/<bh_id> — remove a black-hat competitor model."""
     conn = _get_db()
@@ -2708,6 +2760,42 @@ def delete_blackhat_assessment(bh_id):
         return jsonify({"deleted": bh_id})
     finally:
         conn.close()
+
+
+@proposals_api.route("/iqe-query", methods=["POST"])
+def proposals_iqe_query():
+    """IQE NL-to-SQL for the Proposals canvas (prop-iqe-01). Mirrors
+    tools/dashboard/api/govcon.py::govcon_iqe_query."""
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import IQESyntaxError, parse
+    from tools.iqe.executor import execute_query
+    import tools.iqe.adapters.proposals  # noqa: F401
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = [
+        "proposals.opportunities", "proposals.sections",
+        "proposals.compliance", "proposals.reviews",
+    ]
+    translation = nl_to_iqe(question, collections)
+    iqe_str = translation.get("iqe", "")
+    explanation = translation.get("explanation", "")
+
+    if not data.get("execute", True):
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+    try:
+        ast = parse(iqe_str)
+        rows = execute_query(ast, None)
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                        "results": rows, "row_count": len(rows)}), 200
+    except IQESyntaxError as exc:
+        return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -2773,6 +2861,7 @@ def list_annotations(sec_id):
 
 
 @proposals_api.route("/sections/<sec_id>/annotations", methods=["POST"])
+@require_role("admin", "pm", "reviewer")
 def create_annotation(sec_id):
     """POST /api/proposals/sections/<sec_id>/annotations — create an inline annotation."""
     body = request.get_json(silent=True) or {}
@@ -2815,8 +2904,8 @@ def create_annotation(sec_id):
                 (str(uuid.uuid4()), ts, "proposals.annotation.create", body.get("author", "reviewer"),
                  "create_annotation", f"section={sec_id} category={category}", "proposals"),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("create_annotation: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
         conn.commit()
         row = conn.execute(
             "SELECT * FROM proposal_section_annotations WHERE id = %s", (ann_id,)
@@ -2827,6 +2916,7 @@ def create_annotation(sec_id):
 
 
 @proposals_api.route("/annotations/<ann_id>", methods=["PUT"])
+@require_role("admin", "pm", "reviewer")
 def update_annotation(ann_id):
     """PUT /api/proposals/annotations/<ann_id> — update comment, category, status, or resolution_note."""
     body = request.get_json(silent=True) or {}
@@ -2867,6 +2957,7 @@ def update_annotation(ann_id):
 
 
 @proposals_api.route("/annotations/<ann_id>", methods=["DELETE"])
+@require_role("admin", "pm", "reviewer")
 def delete_annotation(ann_id):
     """DELETE /api/proposals/annotations/<ann_id> — remove an annotation."""
     conn = _get_db()

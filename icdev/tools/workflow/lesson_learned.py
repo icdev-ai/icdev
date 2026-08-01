@@ -53,6 +53,13 @@ class LessonPattern:
     CHAT_PERMISSION = "chat_permission"
     CHAT_PHANTOM = "chat_phantom"
     CHAT_GENERIC = "chat_correction_generic"
+    # Pipeline-hardening failure classes (kph) — surfaced by the stranded-branch
+    # auditor, the merge-verify done-gate, the sibling-conflict guard, and the
+    # migration-number / icdev-mirror coherence gates.
+    UNMERGED_STRANDED = "unmerged_stranded"
+    MIGRATION_NUMBER_COLLISION = "migration_number_collision"
+    SIBLING_FILE_CONFLICT = "sibling_file_conflict"
+    MISSING_ICDEV_MIRROR = "missing_icdev_mirror"
     UNKNOWN = "unknown"
 
 
@@ -73,6 +80,10 @@ _SYSTEMIC_PATTERNS = {
     LessonPattern.CHAT_PERMISSION,
     LessonPattern.CHAT_PHANTOM,
     LessonPattern.CHAT_GENERIC,
+    LessonPattern.UNMERGED_STRANDED,
+    LessonPattern.MIGRATION_NUMBER_COLLISION,
+    LessonPattern.SIBLING_FILE_CONFLICT,
+    LessonPattern.MISSING_ICDEV_MIRROR,
 }
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -248,6 +259,20 @@ def _classify_outcome(outcome: str, failure_count: int, last_reason: str, transi
     if outcome == "auto_remediated":
         return LessonPattern.AUTO_REMEDIATED
 
+    # Pipeline-hardening failure classes (kph) — checked BEFORE the generic
+    # phantom/failure paths so a stranded "unmerged commits" reason is not
+    # misfiled as phantom ("no commits").
+    if outcome in ("refused_done_unmerged", "unmerged_stranded") \
+            or "unmerged" in reason or "stranded" in reason:
+        return LessonPattern.UNMERGED_STRANDED
+    if outcome == "migration_number_collision" \
+            or ("migration" in reason and ("collision" in reason or "number" in reason)):
+        return LessonPattern.MIGRATION_NUMBER_COLLISION
+    if outcome == "sibling_file_conflict" or "sibling file conflict" in reason:
+        return LessonPattern.SIBLING_FILE_CONFLICT
+    if outcome == "missing_icdev_mirror" or ("icdev" in reason and "mirror" in reason):
+        return LessonPattern.MISSING_ICDEV_MIRROR
+
     # Token exhaustion indicators
     if "token" in reason or "rate limit" in reason or "session limit" in reason:
         return LessonPattern.TOKEN_EXHAUSTION
@@ -298,6 +323,10 @@ def _pattern_to_category(pattern: str) -> str:
         LessonPattern.STALE_CLEANUP: "Stale cleanup",
         LessonPattern.AUTOFIXED: "Autofixed",
         LessonPattern.AUTO_REMEDIATED: "Auto-remediated",
+        LessonPattern.UNMERGED_STRANDED: "Unmerged / stranded branch",
+        LessonPattern.MIGRATION_NUMBER_COLLISION: "Migration number collision",
+        LessonPattern.SIBLING_FILE_CONFLICT: "Sibling file conflict",
+        LessonPattern.MISSING_ICDEV_MIRROR: "Missing icdev/ mirror",
         LessonPattern.CHAT_RLS_MISUNDERSTANDING: "Chat: RLS misunderstanding",
         LessonPattern.CHAT_WRONG_IMPORT: "Chat: wrong import",
         LessonPattern.CHAT_DB_BACKEND: "Chat: DB/backend mismatch",

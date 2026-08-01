@@ -7,15 +7,37 @@ PostgreSQL database (inconsistent directive conventions, unsupported flat-file
 .py migrations, and severe create-after-alter ordering). For fresh PG installs
 (CI E2E, new deployments) this "squash" loads the authoritative consolidated
 schema — a pg_dump of the canonical production schema at
-``tools/db/schema/pg_consolidated.sql`` — and marks every existing migration as
-applied, so ``migrate.py --up`` reports no pending work. New migrations append
-and run normally on top of the snapshot.
+``tools/db/schema/pg_consolidated.sql``.
+
+The snapshot is a point-in-time dump, so it contains the schema only *through*
+the migration that was newest when it was taken. That version is recorded in
+``pg_consolidated.meta.json`` and it is the pivot for everything below:
+
+* versions **<= through_version** are marked applied without running — their
+  DDL is already in the snapshot and the historical chain is not replayable;
+* versions **> through_version** are *executed*, because nothing has created
+  their objects yet.
+
+Bootstrap previously marked *every* discovered migration applied, including the
+ones the snapshot predates. Their DDL therefore never ran anywhere, while
+``schema_migrations`` claimed otherwise, so ``migrate.py --up`` had no pending
+work to report and nothing anywhere said the database was incomplete. On
+2026-07-29 that silently cost the CI E2E database every migration merged since
+the snapshot (302-310) — including 306, whose absent ``inputs_json`` column made
+every workflow-run POST return 500 and the DWO V&V specs fail in CI while
+passing locally against a fully-migrated database.
 
 Regenerate the snapshot after schema changes land in the canonical DB:
 
     docker exec -e PGPASSWORD=$PW icdev-postgres pg_dump --schema-only \
         --no-owner --no-privileges --no-comments -U icdev -d icdev \
         > tools/db/schema/pg_consolidated.sql
+
+then bump ``through_version`` in ``pg_consolidated.meta.json`` to the highest
+migration on disk at that moment. Leaving it stale is safe (the surplus
+migrations simply re-run, and every post-snapshot migration is idempotent on
+PostgreSQL); raising it past what the dump actually contains is the failure
+mode, and is what ``tests/db/test_pg_bootstrap_baseline.py`` guards.
 
 Usage:
     python tools/db/bootstrap_pg.py            # load schema + mark migrations applied
@@ -33,26 +55,87 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 SCHEMA_FILE = BASE_DIR / "tools" / "db" / "schema" / "pg_consolidated.sql"
+META_FILE = SCHEMA_FILE.with_suffix(".meta.json")
 
 
-def _raw_pg_conn():
+def snapshot_through_version() -> str:
+    """Highest migration version whose DDL the consolidated snapshot contains.
+
+    Read from the sidecar rather than inferred: the snapshot is a dump of a live
+    database, so its contents cannot be derived from the migration files alone
+    (a table created at runtime by ``init_db.py`` appears in the dump without any
+    migration ever having created it).
+    """
+    if not META_FILE.exists():
+        raise SystemExit(
+            f"snapshot baseline marker not found: {META_FILE}\n"
+            "It records which migrations pg_consolidated.sql already contains. "
+            "Without it bootstrap cannot tell which migrations still need to run."
+        )
+    raw = str(json.loads(META_FILE.read_text(encoding="utf-8")).get("through_version", "")).strip()
+    if not raw.isdigit():
+        raise SystemExit(f"through_version in {META_FILE} must be a version number, got {raw!r}")
+    return raw.zfill(3)
+
+
+def baseline_versions(all_versions, through: str) -> list:
+    """The versions to record as applied without executing them.
+
+    Split out as a pure function so the rule — and only versions the snapshot
+    actually covers are ever marked — is testable without a database.
+    """
+    return sorted(v for v in set(all_versions) if v <= through)
+
+
+def _raw_pg_conn(retries: int = 10, backoff: float = 1.5):
     """Raw psycopg2 connection — NOT the StorageConnection wrapper, so the
-    already-PostgreSQL dump is executed verbatim without SQL translation."""
+    already-PostgreSQL dump is executed verbatim without SQL translation.
+
+    Connects with a bounded retry/backoff loop. In CI, PostgreSQL runs in a
+    freshly-launched container: ``pg_isready`` can report ready moments before
+    the backend truly accepts connections, and a shared-memory spike during
+    heavy schema/index work can briefly bounce the backend. A single-shot
+    connect turns any of those transient blips into a hard job failure, so we
+    retry with capped exponential backoff (and a ``connect_timeout`` so a wedged
+    server fails fast instead of hanging) before giving up.
+    """
+    import time
+
     import psycopg2
 
     url = os.environ.get("ICDEV_DATABASE_URL")
-    if url:
-        return psycopg2.connect(url)
-    host = os.environ.get("ICDEV_PG_HOST", "127.0.0.1")
-    if host == "localhost":
-        host = "127.0.0.1"
-    return psycopg2.connect(
-        host=host,
-        port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
-        user=os.environ.get("ICDEV_PG_USER", "icdev"),
-        password=os.environ.get("ICDEV_PG_PASSWORD", ""),
-        dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
-    )
+
+    def _connect():
+        if url:
+            return psycopg2.connect(url, connect_timeout=10)
+        host = os.environ.get("ICDEV_PG_HOST", "127.0.0.1")
+        if host == "localhost":
+            host = "127.0.0.1"
+        return psycopg2.connect(
+            host=host,
+            port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
+            user=os.environ.get("ICDEV_PG_USER", "icdev"),
+            password=os.environ.get("ICDEV_PG_PASSWORD", ""),
+            dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
+            connect_timeout=10,
+        )
+
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            return _connect()
+        except psycopg2.OperationalError as exc:
+            last_exc = exc
+            if attempt >= retries:
+                break
+            wait = min(backoff ** attempt, 15.0)
+            print(
+                f"[bootstrap_pg] PG connect attempt {attempt}/{retries} failed: "
+                f"{exc}; retrying in {wait:.1f}s",
+                file=sys.stderr,
+            )
+            time.sleep(wait)
+    raise last_exc
 
 
 def _strip_psql_meta(sql: str) -> str:
@@ -91,6 +174,12 @@ def bootstrap() -> dict:
     # were caused by unconditional CREATE TABLE execution on a non-empty DB.
     state = check()
     if state["bootstrapped"]:
+        # NOTE the asymmetry with the fresh path below, which runs every
+        # post-snapshot migration. Here the tables were built by the init_db
+        # modules, which declare the *current* shape directly — so the newer
+        # migrations' columns already exist and marking them applied is correct
+        # by construction. Running them instead would fail: several (e.g. 308)
+        # use bare ADD COLUMN, which errors on a column that is already there.
         conn = _raw_pg_conn()
         try:
             cur = conn.cursor()
@@ -127,11 +216,16 @@ def bootstrap() -> dict:
         # names resolve for the migration bookkeeping below.
         cur.execute("SET search_path TO public, pg_catalog")
 
-        # Mark every discovered migration as applied so migrate.py --up is a no-op.
+        # Mark only the migrations the snapshot already contains. Anything newer
+        # is left pending on purpose — the snapshot predates it, so its objects
+        # do not exist yet and it has to actually run (see module docstring).
         from tools.db.migration_runner import MigrationRunner
 
         runner = MigrationRunner(engine="postgresql")
-        versions = sorted({m["version"] for m in runner.discover_migrations()})
+        through = snapshot_through_version()
+        versions = baseline_versions(
+            (m["version"] for m in runner.discover_migrations()), through
+        )
         for v in versions:
             cur.execute(
                 "INSERT INTO public.schema_migrations (version, name, checksum, execution_time_ms) "
@@ -139,14 +233,51 @@ def bootstrap() -> dict:
                 (v, f"squashed-{v}"),
             )
         conn.commit()
-
-        return {
-            "status": "bootstrapped",
-            "tables": _table_count(cur),
-            "migrations_marked": len(versions),
-        }
+        table_count = _table_count(cur)
     finally:
         conn.close()
+
+    # Apply the post-snapshot migrations. Runs on its own connection (the
+    # runner manages its own), after the baseline rows are committed, so
+    # get_pending_migrations sees exactly the tail.
+    applied, failures = _apply_post_snapshot_migrations(runner)
+
+    return {
+        "status": "bootstrapped",
+        "tables": table_count,
+        "migrations_marked": len(versions),
+        "baseline_through": through,
+        "migrations_applied": applied,
+        "failed": failures,
+    }
+
+
+def _apply_post_snapshot_migrations(runner) -> tuple:
+    """Run every migration newer than the snapshot, loudest failure first.
+
+    A failure here must not be swallowed: a half-migrated database that reports
+    success is precisely the state that let the missing ``inputs_json`` column
+    reach CI disguised as a test bug.
+    """
+    results = runner.migrate_up()
+    applied = [r.get("version") for r in results if r.get("success")]
+    failures = [
+        {"version": r.get("version"), "error": str(r.get("error"))[:400]}
+        for r in results
+        if not r.get("success")
+    ]
+    for f in failures:
+        print(
+            f"[bootstrap_pg] post-snapshot migration {f['version']} FAILED: {f['error']}",
+            file=sys.stderr,
+        )
+    if failures:
+        raise SystemExit(
+            f"{len(failures)} post-snapshot migration(s) failed; the database is "
+            f"incomplete. Failing loudly rather than leaving a schema that "
+            f"claims to be current: {[f['version'] for f in failures]}"
+        )
+    return applied, failures
 
 
 def main():

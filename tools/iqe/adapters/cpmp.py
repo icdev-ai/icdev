@@ -22,18 +22,28 @@ def _conn(conn: Any):
     return conn
 
 
+def _rollback(c: Any) -> None:
+    # A failed adapter query must not leave the shared PG connection in an
+    # aborted transaction, or every later collection reads as empty.
+    try:
+        c.rollback()
+    except Exception:
+        pass
+
+
 def contracts_adapter(conn: Any) -> list[dict]:
     c = _conn(conn)
     try:
         cur = c.execute(
-            "SELECT id, contract_number, title, agency, vehicle, "
-            "total_value, period_of_performance_start, period_of_performance_end, "
-            "status, health_color, cpi, spi, cor_email, classification, created_at "
+            "SELECT id, contract_number, title, agency, contract_type, "
+            "total_value, funded_value, obligated_value, pop_start, pop_end, "
+            "status, health, health_score, cor_email, classification, created_at "
             "FROM cpmp_contracts ORDER BY created_at DESC"
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
     except Exception:
+        _rollback(c)
         return []
 
 
@@ -42,12 +52,13 @@ def deliverables_adapter(conn: Any) -> list[dict]:
     try:
         cur = c.execute(
             "SELECT id, contract_id, cdrl_number, title, due_date, status, "
-            "cdrl_type, classification, created_at "
+            "deliverable_type, classification, created_at "
             "FROM cpmp_deliverables ORDER BY due_date ASC"
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
     except Exception:
+        _rollback(c)
         return []
 
 
@@ -62,6 +73,7 @@ def clins_adapter(conn: Any) -> list[dict]:
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
     except Exception:
+        _rollback(c)
         return []
 
 
@@ -78,6 +90,7 @@ def cpars_adapter(conn: Any) -> list[dict]:
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
     except Exception:
+        _rollback(c)
         return []
 
 
@@ -86,13 +99,13 @@ def evm_adapter(conn: Any) -> list[dict]:
     try:
         cur = c.execute(
             "SELECT id, contract_id, period_date, bcws, bcwp, acwp, "
-            "SELECT id, contract_id, period_date AS snapshot_date, bcws, bcwp, acwp, "
             "cpi, spi, eac, bac, vac, classification, created_at "
             "FROM cpmp_evm_periods ORDER BY period_date DESC LIMIT 500"
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
     except Exception:
+        _rollback(c)
         return []
 
 

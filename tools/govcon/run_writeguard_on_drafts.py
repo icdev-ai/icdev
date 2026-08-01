@@ -36,7 +36,10 @@ _TARGET_OPP_IDS = [
     "bff9507d-cd14-a03e-8359-9af65d01f55f",  # DHS-FY26-541511-0304 AI/ML
 ]
 
-# Map WriteGuard dimension → proposal_review_findings.finding_type
+# Map WriteGuard dimension → proposal_review_findings.finding_type.
+# 'invalid_citation' is not a WriteGuard dimension — it is raised separately
+# from the deterministic citation check recorded in draft metadata by
+# response_drafter.py (ground-prop-02).
 _DIMENSION_TO_FINDING_TYPE: dict[str, str] = {
     "grammar": "content_weakness",
     "readability": "content_weakness",
@@ -253,6 +256,35 @@ def _build_finding_description(dimension: str, details: dict) -> str:
     return "\n".join(lines)
 
 
+def _citation_finding(meta: dict) -> tuple[str, str, str] | None:
+    """Build an invalid_citation finding from draft metadata (ground-prop-02).
+
+    response_drafter.py validates every Section/Factor/Volume/CLIN reference
+    against the parsed solicitation and records failures in
+    metadata.invalid_references. Returns (severity, description,
+    recommendation), or None when the draft has no invalid citations.
+    """
+    invalid_refs = meta.get("invalid_references") or []
+    if not invalid_refs:
+        return None
+    severity = "major" if len(invalid_refs) >= 3 else "minor"
+    lines = [
+        f"invalid_citation: {len(invalid_refs)} reference(s) cite solicitation "
+        "structure that does not exist in the parsed document"
+    ]
+    for r in invalid_refs[:5]:
+        if isinstance(r, dict):
+            lines.append(f"  • {r.get('ref', '?')} — {r.get('reason', '')}")
+        else:
+            lines.append(f"  • {r}")
+    recommendation = (
+        "Correct or remove each citation so it references only sections, "
+        "instructions, volumes, evaluation factors, and CLINs that exist in "
+        "the solicitation (see the parsed structure for this opportunity)."
+    )
+    return severity, "\n".join(lines), recommendation
+
+
 def _build_recommendation(dimension: str, details: dict, wg_recs: list[str]) -> str:
     # Try to match a WriteGuard recommendation to this dimension
     dim_lower = dimension.lower()
@@ -277,6 +309,14 @@ def _process_draft(conn, draft: dict) -> dict:
         logger.warning("Draft %s has no content; skipping.", draft.get("id"))
         return {"draft_id": draft.get("id"), "skipped": True, "reason": "empty_content"}
 
+    # Draft metadata carries the deterministic citation-check result written
+    # by response_drafter.py (ground-prop-02).
+    meta_str = draft.get("metadata", "{}")
+    try:
+        meta = json.loads(meta_str) if isinstance(meta_str, str) and meta_str.strip() else {}
+    except Exception:
+        meta = {}
+
     # 1. Run WriteGuard
     wg = _run_writeguard_on_text(text)
     details = wg.get("details", {})
@@ -298,6 +338,10 @@ def _process_draft(conn, draft: dict) -> dict:
             has_major = True
         if sev == "critical":
             has_critical = True
+
+    citation = _citation_finding(meta)
+    if citation and citation[0] == "major":
+        has_major = True
 
     overall_rating = _overall_rating(overall_score, passed, has_major)
     new_sec_status = _new_section_status(overall_score, has_major, has_critical)
@@ -328,6 +372,13 @@ def _process_draft(conn, draft: dict) -> dict:
         _insert_finding(conn, rev_id, draft.get("section_id"), ftype, sev, desc, rec)
         findings_created += 1
 
+    # 4b. Invalid-citation finding from the deterministic solicitation
+    # reference check (ground-prop-02)
+    if citation:
+        sev, desc, rec = citation
+        _insert_finding(conn, rev_id, draft.get("section_id"), "invalid_citation", sev, desc, rec)
+        findings_created += 1
+
     # 5. Append-only reviewed draft row
     review_notes_json = json.dumps(
         {
@@ -343,13 +394,6 @@ def _process_draft(conn, draft: dict) -> dict:
         default=str,
     )
     # Merge writeguard summary into metadata for downstream template visibility
-    import json as _json
-
-    meta_str = draft.get("metadata", "{}")
-    try:
-        meta = _json.loads(meta_str) if isinstance(meta_str, str) and meta_str.strip() else {}
-    except Exception:
-        meta = {}
     meta["writeguard"] = {
         "passed": passed,
         "overall_score": overall_score,
@@ -357,7 +401,7 @@ def _process_draft(conn, draft: dict) -> dict:
         "findings_created": findings_created,
         "review_id": rev_id,
     }
-    merged_metadata = _json.dumps(meta, default=str)
+    merged_metadata = json.dumps(meta, default=str)
     draft["metadata"] = merged_metadata
     _insert_reviewed_draft(conn, draft, review_notes_json)
     draft["metadata_parsed"] = meta  # for any downstream use in this run

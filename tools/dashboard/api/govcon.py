@@ -120,8 +120,8 @@ def _audit(conn, action, details="", actor="govcon_api"):
             conn.execute("RELEASE SAVEPOINT govcon_audit")
         except Exception:
             conn.execute("ROLLBACK TO SAVEPOINT govcon_audit")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # =====================================================================
@@ -446,9 +446,57 @@ def bid_recommendation(opp_id):
         return jsonify({"error": str(e)}), 500
 
 
+@govcon_api.route("/opportunities/<opp_id>/clause-risk", methods=["POST"])
+@require_role(*GOVCON_WRITE_ROLES)
+def clause_risk(opp_id):
+    """POST /api/govcon/opportunities/<id>/clause-risk — deterministic clause risk scan.
+
+    Body (all optional): {"text": "...", "assist": false, "persist": true}.
+    Falls back to the opportunity's stored ``description`` when no text is given.
+    Deterministic rulebook produces the score; the optional LLM narrative
+    (assist=true) EXPLAINS the findings and never changes the score.
+    """
+    try:
+        from tools.govcon.clause_risk_engine import assess, persist
+
+        data = request.get_json(silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            conn = _get_db()
+            try:
+                row = conn.execute(
+                    "SELECT description FROM proposal_opportunities WHERE id = %s",
+                    (opp_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row:
+                text = (row[0] if not isinstance(row, dict) else row.get("description")) or ""
+        if not text.strip():
+            return jsonify({"error": "no solicitation text available for this opportunity"}), 400
+
+        report = assess(text, opportunity_id=opp_id, use_llm=bool(data.get("assist")))
+        result = report.to_dict()
+        if data.get("persist", True):
+            result["assessment_id"] = persist(report)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # =====================================================================
 # AI Drafting → proposal_section_drafts
 # =====================================================================
+
+
+def _draft_resource_attrs(request):
+    """ABAC resource dict for a draft approve/reject decision (prop-sec-01).
+
+    Separation of duties, not ownership: privileged/reviewer roles decide;
+    a section_writer never self-approves/rejects (see proposal_draft_*
+    policies in args/security_config.yaml), so no per-draft lookup is needed.
+    """
+    return {"type": "proposal_draft"}
 
 
 @govcon_api.route("/opportunities/<opp_id>/auto-draft", methods=["POST"])
@@ -520,22 +568,92 @@ def list_drafts(opp_id):
 
 
 @govcon_api.route("/drafts/<draft_id>/approve", methods=["PUT"])
-@abac_protect(_draft_resource_attrs, "PUT")
+@abac_protect(_draft_resource_attrs, "approve")
 def approve_draft(draft_id):
     """PUT /api/govcon/drafts/<id>/approve — Approve a draft.
 
     When approved, the draft content flows into the linked proposal_section
     and advances the section to 'drafting' status if currently 'not_started' or 'outlining'.
+
+    Blocked with 409 gate=placeholder_guard while unresolved [PLACEHOLDER]
+    tokens remain in the draft (ground-prop-03, mirroring the RFI export
+    gate), or 409 gate=citation_guard when the draft has citation defects
+    (trust-cite-02). Body {"force_placeholders": true} / {"force_citations":
+    true} bypasses the respective gate after human review and writes an
+    explicit audit trail entry.
     """
     conn = _get_db()
     try:
         data = request.get_json(silent=True) or {}
         reviewer = data.get("reviewed_by", "govcon_api")
+        force = bool(data.get("force_placeholders"))
+        force_citations = bool(data.get("force_citations"))
 
         draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = %s", (draft_id,)).fetchone()
         if not draft:
             return jsonify({"error": "Draft not found"}), 404
         draft = dict(draft)
+
+        # Placeholder gate (ground-prop-03)
+        try:
+            from tools.govcon.response_drafter import unresolved_placeholders
+            placeholder_tokens = unresolved_placeholders(draft)
+        except Exception:
+            import json as _json
+            try:
+                meta = _json.loads(draft.get("metadata") or "{}")
+                placeholder_tokens = list(meta.get("placeholder_tokens") or [])
+            except (ValueError, TypeError):
+                placeholder_tokens = []
+        if placeholder_tokens and not force:
+            return (
+                jsonify(
+                    {
+                        "error": "Placeholder gate: unresolved [PLACEHOLDER] tokens remain — resolve or force",
+                        "gate": "placeholder_guard",
+                        "placeholder_tokens": placeholder_tokens,
+                        "draft_id": draft_id,
+                    }
+                ),
+                409,
+            )
+        if placeholder_tokens:
+            _audit(
+                conn,
+                "placeholder_guard_override",
+                f"Draft {draft_id} approved by {reviewer} despite {len(placeholder_tokens)} "
+                f"unresolved placeholder token(s): {', '.join(placeholder_tokens)}",
+                actor=reviewer,
+            )
+
+        # Citation gate (trust-cite-02, mirrors placeholder_guard)
+        try:
+            from tools.govcon.response_drafter import citation_findings
+            citation_issues = citation_findings(draft)
+        except Exception:
+            citation_issues = []
+        if citation_issues and not force_citations:
+            return (
+                jsonify(
+                    {
+                        "error": "Citation gate: draft has citation defects — add "
+                                 "[source: <id>] citations or force",
+                        "gate": "citation_guard",
+                        "citation_findings": citation_issues,
+                        "draft_id": draft_id,
+                    }
+                ),
+                409,
+            )
+        if citation_issues:
+            import json as _json
+            _audit(
+                conn,
+                "citation_guard_override",
+                f"Draft {draft_id} approved by {reviewer} despite {len(citation_issues)} "
+                f"citation defect(s): {_json.dumps(citation_issues)}",
+                actor=reviewer,
+            )
 
         # Update draft status (new row for audit trail)
         conn.execute(
@@ -585,7 +703,7 @@ def approve_draft(draft_id):
 
 
 @govcon_api.route("/drafts/<draft_id>/reject", methods=["PUT"])
-@abac_protect(_draft_resource_attrs, "PUT")
+@abac_protect(_draft_resource_attrs, "reject")
 def reject_draft(draft_id):
     """PUT /api/govcon/drafts/<id>/reject — Reject a draft with feedback."""
     conn = _get_db()
@@ -1555,7 +1673,7 @@ def govcon_iqe_query():
     if not question:
         return jsonify({"error": "question is required"}), 400
 
-    collections = ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]
+    collections = ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors", "govcon.requirements"]
     translation = nl_to_iqe(question, collections)
     iqe_str = translation.get("iqe", "")
     explanation = translation.get("explanation", "")

@@ -1,0 +1,7 @@
+# Intent: Show ROI tracking periods that produced measurable savings, joined to
+#         their roadmap, to quantify the financial return of AI enablement work.
+# Expected: rows from aisg.roi where cost_saved_usd > 0.
+
+foreach t in aisg.roi
+  where t.cost_saved_usd > 0
+  select t.roadmap_name, t.action_type, t.count, t.minutes_saved, t.cost_saved_usd, t.period_end

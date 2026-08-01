@@ -230,21 +230,32 @@ def run_all(graph: dict, design: dict) -> dict:
     il_suit = assess_il_suitability(graph, design)
     omm = assess_omm_m25_21(graph, design)
 
-    # Try external assessors (graceful degradation if not available)
+    # Try external assessors. On import/call failure, surface an explicit
+    # {"status": "unavailable"} entry so the UI can distinguish a framework that
+    # genuinely passed/failed from one that could not be run (penta-aimc-04).
     external: list[dict] = []
-    for module_name, fn_name, fw_id in [
-        ("tools.compliance.nist_ai_rmf_assessor", "assess", "nist-ai-rmf"),
-        ("tools.compliance.owasp_llm_assessor",   "assess", "owasp-llm"),
-        ("tools.compliance.atlas_assessor",        "assess", "mitre-atlas"),
+    for module_name, fn_name, fw_id, fw_name in [
+        ("tools.compliance.nist_ai_rmf_assessor", "assess", "nist-ai-rmf", "NIST AI RMF"),
+        ("tools.compliance.owasp_llm_assessor",   "assess", "owasp-llm",   "OWASP Top 10 for LLM"),
+        ("tools.compliance.atlas_assessor",        "assess", "mitre-atlas", "MITRE ATLAS"),
     ]:
         try:
             import importlib
             mod = importlib.import_module(module_name)
             result = getattr(mod, fn_name)(project_id=design.get("id", "aimc"), gate=False)
             if isinstance(result, dict):
-                external.append({"framework_id": fw_id, **result})
-        except Exception:
-            pass
+                external.append({"framework_id": fw_id, "status": "assessed", **result})
+            else:
+                external.append({
+                    "framework_id": fw_id, "framework": fw_name,
+                    "status": "unavailable",
+                    "reason": f"{module_name}.{fn_name} returned {type(result).__name__}, expected dict",
+                })
+        except Exception as exc:
+            external.append({
+                "framework_id": fw_id, "framework": fw_name,
+                "status": "unavailable", "reason": str(exc),
+            })
 
     overall_scores = [dod_rai["score"], il_suit["score"], omm["score"]]
     overall = round(sum(overall_scores) / len(overall_scores), 1)

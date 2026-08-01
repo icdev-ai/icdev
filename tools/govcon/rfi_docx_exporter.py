@@ -12,7 +12,7 @@ Formatting per NSA RFI-26-00358 guidance:
 Usage:
     python tools/govcon/rfi_docx_exporter.py --input response.md --output response.docx
     python tools/govcon/rfi_docx_exporter.py --input response.md --output response.docx --fouo
-    python tools/govcon/rfi_docx_exporter.py --input response.md --output response.docx --profile peraton
+    python tools/govcon/rfi_docx_exporter.py --input response.md --output response.docx --profile own_company
 """
 
 from __future__ import annotations

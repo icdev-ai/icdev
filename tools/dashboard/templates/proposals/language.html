@@ -2,6 +2,8 @@
 {% block title %}{{ opp.title }} — Language Settings — ICDEV™{% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(opp) }}
 <div class="breadcrumbs">
     <a href="/">Home</a><span class="separator">/</span>
     <a href="/proposals">Proposals</a><span class="separator">/</span>

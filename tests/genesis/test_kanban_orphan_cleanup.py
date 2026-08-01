@@ -15,6 +15,8 @@ import sqlite3
 
 import pytest
 
+from tools.db.storage import get_connection as _storage_get_connection
+
 
 _SCHEMA = """
 CREATE TABLE kanban_tasks (
@@ -55,9 +57,11 @@ def orphan_ctx(tmp_path, monkeypatch):
     prompt_dir.mkdir()
 
     def _fake_conn(*_a, **_kw):
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        # Go through tools.db.storage, NOT raw sqlite3. Runtime SQL is authored for
+        # PostgreSQL (%s placeholders, per CLAUDE.md); the storage wrapper translates
+        # them to SQLite's ?. Handing the code under test a raw sqlite3 connection
+        # makes every %s a `near "%": syntax error`.
+        return _storage_get_connection(db_path=str(db_path))
 
     import tools.genesis.reflexes.kanban as km
     monkeypatch.setattr(km, "get_connection", _fake_conn)

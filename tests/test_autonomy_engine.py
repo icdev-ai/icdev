@@ -11,6 +11,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+# trust_engine authors %s placeholders for PostgreSQL and expects
+# _get_connection to rewrite them; a bare sqlite3 connection does not.
+from _sql_compat import connect as _tconnect  # noqa: E402
+
 
 def _create_autonomy_db(db_path):
     """Create minimal autonomy DB for testing."""
@@ -136,9 +140,7 @@ class TestTrustEngine:
         _create_autonomy_db(db_path).close()
 
         def _conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            return _tconnect(db_path)
 
         with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn):
             from tools.autonomy.trust_engine import get_trust_state
@@ -155,9 +157,7 @@ class TestTrustEngine:
         _create_autonomy_db(db_path).close()
 
         def _conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            return _tconnect(db_path)
 
         with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn):
             from tools.autonomy.trust_engine import get_trust_state, observe
@@ -174,9 +174,7 @@ class TestTrustEngine:
         _create_autonomy_db(db_path).close()
 
         def _conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            return _tconnect(db_path)
 
         with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn):
             from tools.autonomy.trust_engine import get_trust_state, observe
@@ -191,9 +189,7 @@ class TestTrustEngine:
         _create_autonomy_db(db_path).close()
 
         def _conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            return _tconnect(db_path)
 
         with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn):
             from tools.autonomy.trust_engine import get_trust_state, observe
@@ -308,9 +304,7 @@ class TestSelfEvolve:
         _create_autonomy_db(db_path).close()
 
         def _conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            return _tconnect(db_path)
 
         with (
             patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn),

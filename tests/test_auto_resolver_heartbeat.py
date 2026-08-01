@@ -153,12 +153,15 @@ def test_db(tmp_path):
 
 def _patch_get_connection(db_path: Path):
     """Return a patcher that routes get_connection to the test SQLite file."""
-    import sqlite3 as _sqlite3
 
     def _fake_get_connection(db_path=None, **kwargs):
-        conn = _sqlite3.connect(str(db_path) if db_path and str(db_path) != "None" else str(db_path))
-        conn.row_factory = _sqlite3.Row
-        return conn
+        # Go through tools.db.storage, NOT raw sqlite3. Runtime SQL is authored for
+        # PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+        # translates them to SQLite's ?. A raw connection makes every %s a syntax
+        # error, which the heartbeat checks swallow into a bogus "ok".
+        from tools.db.storage import get_connection as _real_get_connection
+
+        return _real_get_connection(db_path=str(db_path))
 
     return _fake_get_connection
 
@@ -192,12 +195,14 @@ class TestResolveComponent:
         conn.close()
 
         # Patch get_connection to use the test DB
-        import sqlite3 as _sq3
-
         def _fake_conn(db_path=None, **kw):
-            c = _sq3.connect(str(test_db))
-            c.row_factory = _sq3.Row
-            return c
+            # Go through tools.db.storage, NOT raw sqlite3: runtime SQL is authored
+            # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+            # translates them to SQLite's ?. A raw connection makes every %s a
+            # `near "%": syntax error` inside auto_resolver.
+            from tools.db.storage import get_connection as _real_get_connection
+
+            return _real_get_connection(db_path=str(test_db))
 
         with patch("tools.monitor.auto_resolver._get_connection", side_effect=lambda p=None: _fake_conn(p)):
             from tools.monitor.auto_resolver import resolve_component
@@ -230,12 +235,14 @@ class TestResolveComponent:
         conn.commit()
         conn.close()
 
-        import sqlite3 as _sq3
-
         def _fake_conn(db_path=None, **kw):
-            c = _sq3.connect(str(test_db))
-            c.row_factory = _sq3.Row
-            return c
+            # Go through tools.db.storage, NOT raw sqlite3: runtime SQL is authored
+            # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+            # translates them to SQLite's ?. A raw connection makes every %s a
+            # `near "%": syntax error` inside auto_resolver.
+            from tools.db.storage import get_connection as _real_get_connection
+
+            return _real_get_connection(db_path=str(test_db))
 
         with patch("tools.monitor.auto_resolver._get_connection", side_effect=lambda p=None: _fake_conn(p)):
             from tools.monitor import auto_resolver
@@ -251,12 +258,14 @@ class TestResolveComponent:
 
     def test_unknown_component_defaults_to_supervised(self, test_db):
         """Component with no trust history → supervised (safe default)."""
-        import sqlite3 as _sq3
-
         def _fake_conn(db_path=None, **kw):
-            c = _sq3.connect(str(test_db))
-            c.row_factory = _sq3.Row
-            return c
+            # Go through tools.db.storage, NOT raw sqlite3: runtime SQL is authored
+            # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+            # translates them to SQLite's ?. A raw connection makes every %s a
+            # `near "%": syntax error` inside auto_resolver.
+            from tools.db.storage import get_connection as _real_get_connection
+
+            return _real_get_connection(db_path=str(test_db))
 
         with patch("tools.monitor.auto_resolver._get_connection", side_effect=lambda p=None: _fake_conn(p)):
             from tools.monitor import auto_resolver
@@ -284,12 +293,14 @@ class TestResolveComponent:
         conn.commit()
         conn.close()
 
-        import sqlite3 as _sq3
-
         def _fake_conn(db_path=None, **kw):
-            c = _sq3.connect(str(test_db))
-            c.row_factory = _sq3.Row
-            return c
+            # Go through tools.db.storage, NOT raw sqlite3: runtime SQL is authored
+            # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+            # translates them to SQLite's ?. A raw connection makes every %s a
+            # `near "%": syntax error` inside auto_resolver.
+            from tools.db.storage import get_connection as _real_get_connection
+
+            return _real_get_connection(db_path=str(test_db))
 
         with patch("tools.monitor.auto_resolver._get_connection", side_effect=lambda p=None: _fake_conn(p)):
             from tools.monitor import auto_resolver
@@ -314,12 +325,14 @@ class TestHeartbeatChecks:
         conn.commit()
         conn.close()
 
-        import sqlite3 as _sq3
-
         def _fake_conn(db_path=None, **kw):
-            c = _sq3.connect(str(test_db))
-            c.row_factory = _sq3.Row
-            return c
+            # Go through tools.db.storage, NOT raw sqlite3: runtime SQL is authored
+            # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+            # translates them to SQLite's ?. A raw connection makes every %s a
+            # `near "%": syntax error` inside auto_resolver.
+            from tools.db.storage import get_connection as _real_get_connection
+
+            return _real_get_connection(db_path=str(test_db))
 
         with patch("tools.monitor.heartbeat_daemon._get_connection", side_effect=lambda p=None: _fake_conn(p)):
             from tools.monitor.heartbeat_daemon import check_ace_instance_stale
@@ -342,12 +355,14 @@ class TestHeartbeatChecks:
         conn.commit()
         conn.close()
 
-        import sqlite3 as _sq3
-
         def _fake_conn(db_path=None, **kw):
-            c = _sq3.connect(str(test_db))
-            c.row_factory = _sq3.Row
-            return c
+            # Go through tools.db.storage, NOT raw sqlite3: runtime SQL is authored
+            # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+            # translates them to SQLite's ?. A raw connection makes every %s a
+            # `near "%": syntax error` inside auto_resolver.
+            from tools.db.storage import get_connection as _real_get_connection
+
+            return _real_get_connection(db_path=str(test_db))
 
         with patch("tools.monitor.heartbeat_daemon._get_connection", side_effect=lambda p=None: _fake_conn(p)):
             from tools.monitor.heartbeat_daemon import check_ace_instance_stale
@@ -377,12 +392,14 @@ class TestHeartbeatChecks:
         conn.commit()
         conn.close()
 
-        import sqlite3 as _sq3
-
         def _fake_conn(db_path=None, **kw):
-            c = _sq3.connect(str(test_db))
-            c.row_factory = _sq3.Row
-            return c
+            # Go through tools.db.storage, NOT raw sqlite3: runtime SQL is authored
+            # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+            # translates them to SQLite's ?. A raw connection makes every %s a
+            # `near "%": syntax error` inside auto_resolver.
+            from tools.db.storage import get_connection as _real_get_connection
+
+            return _real_get_connection(db_path=str(test_db))
 
         with patch("tools.monitor.heartbeat_daemon._get_connection", side_effect=lambda p=None: _fake_conn(p)):
             from tools.monitor.heartbeat_daemon import check_kanban_stale
@@ -468,12 +485,14 @@ class TestHeartbeatAutoResolverIntegration:
         def _mock_resolve(component_id, failure_type, db_path=None):
             resolved_calls.append({"component_id": component_id, "failure_type": failure_type})
 
-        import sqlite3 as _sq3
-
         def _fake_conn(db_path=None, **kw):
-            c = _sq3.connect(str(test_db))
-            c.row_factory = _sq3.Row
-            return c
+            # Go through tools.db.storage, NOT raw sqlite3: runtime SQL is authored
+            # for PostgreSQL (%s placeholders, per CLAUDE.md) and the storage wrapper
+            # translates them to SQLite's ?. A raw connection makes every %s a
+            # `near "%": syntax error` inside auto_resolver.
+            from tools.db.storage import get_connection as _real_get_connection
+
+            return _real_get_connection(db_path=str(test_db))
 
         with (
             patch("tools.monitor.heartbeat_daemon._get_connection", side_effect=lambda p=None: _fake_conn(p)),

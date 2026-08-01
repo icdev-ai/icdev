@@ -5,11 +5,19 @@
 TDD suite covering:
   - DB migration 027 (compliance_twin_snapshots, compliance_twin_violations, compliance_twin_runs)
   - snapshot_writer.py — freeze cross-framework state
-  - query_engine.py — IQE executor for boundary/compliance domain
   - poam_auto_generator.py — POA&M from twin violations
   - cato_twin Genesis reflex (6h cadence)
 
-All tests use in-memory SQLite so they do not touch data/icdev.db.
+The IQE query surface (formerly ``query_engine.py``) was migrated onto the
+maintained IQE executor/adapters in bdt-iqe-1; its behaviour is covered by
+tests/test_bdt_iqe_migration.py.
+
+All tests use in-memory SQLite (wrapped in the shared translating
+StorageConnection) so they do not touch data/icdev.db. The wrapper is
+mandatory: the modules under test issue PG-native ``%s`` placeholders, and a
+RAW ``sqlite3.Connection`` bypasses the ``%s`` → ``?`` translator (raising
+sqlite3.ProgrammingError). This mirrors the connection pattern used by
+tests/test_bdt_iqe_migration.py and tests/test_bdc_poam_generator_fk.py.
 """
 
 import sqlite3
@@ -116,14 +124,23 @@ CREATE TABLE IF NOT EXISTS compliance_twin_runs (
 
 @pytest.fixture
 def mem_db():
-    """Return an in-memory sqlite3 connection with the cATO twin schema."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(MINIMAL_DDL)
-    conn.execute("INSERT INTO projects (id, name) VALUES ('proj-001', 'Test Project')")
-    conn.commit()
+    """Return a translating StorageConnection over in-memory SQLite.
+
+    The raw sqlite3 connection is set up (schema + seed project) directly, then
+    wrapped in ``StorageConnection(raw, "sqlite")`` so that the PG-native ``%s``
+    placeholders issued by snapshot_writer / poam_auto_generator
+    are translated to SQLite ``?`` exactly as they are in production.
+    """
+    from tools.db.storage import StorageConnection
+
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    raw.executescript(MINIMAL_DDL)
+    raw.execute("INSERT INTO projects (id, name) VALUES ('proj-001', 'Test Project')")
+    raw.commit()
+    conn = StorageConnection(raw, "sqlite")
     yield conn
-    conn.close()
+    raw.close()
 
 
 # ---------------------------------------------------------------------------
@@ -279,94 +296,9 @@ class TestSnapshotWriter:
 
 
 # ---------------------------------------------------------------------------
-# 3. IQE Query Engine
+# 3. IQE Query Engine — migrated onto the IQE executor/adapters (bdt-iqe-1).
+#    Behaviour now lives in tests/test_bdt_iqe_migration.py.
 # ---------------------------------------------------------------------------
-
-class TestBoundaryQueryEngine:
-    """query_engine.run_query() executes IQE-style compliance queries."""
-
-    def _seed_snapshot(self, mem_db, framework="FedRAMP Moderate"):
-        from tools.boundary_canvas.cato_twin.snapshot_writer import write_snapshot
-        controls = [
-            {"control_id": "AC-2", "implementation_status": "satisfied", "evidence_ref": "ev-1", "score": 1.0},
-            {"control_id": "AC-3", "implementation_status": "not_satisfied", "evidence_ref": None, "score": 0.0},
-            {"control_id": "IA-2", "implementation_status": "partially_satisfied", "evidence_ref": "ev-3", "score": 0.5},
-            {"control_id": "SC-7", "implementation_status": "not_satisfied", "evidence_ref": None, "score": 0.0},
-        ]
-        return write_snapshot("proj-001", framework, controls, conn=mem_db)
-
-    def test_query_unsatisfied_controls(self, mem_db):
-        self._seed_snapshot(mem_db)
-        from tools.boundary_canvas.cato_twin.query_engine import run_query
-        results = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.status != 'satisfied' "
-            "select ctrl.control_id, ctrl.implementation_status",
-            conn=mem_db,
-        )
-        control_ids = [r["control_id"] for r in results]
-        assert "AC-3" in control_ids
-        assert "SC-7" in control_ids
-        assert "AC-2" not in control_ids
-
-    def test_query_no_evidence_controls(self, mem_db):
-        self._seed_snapshot(mem_db)
-        from tools.boundary_canvas.cato_twin.query_engine import run_query
-        results = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.evidence_ref is null "
-            "select ctrl.control_id",
-            conn=mem_db,
-        )
-        ids = [r["control_id"] for r in results]
-        assert "AC-3" in ids
-        assert "SC-7" in ids
-
-    def test_query_compliance_score_threshold(self, mem_db):
-        self._seed_snapshot(mem_db)
-        from tools.boundary_canvas.cato_twin.query_engine import run_query
-        results = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.score < 0.5 "
-            "select ctrl.control_id, ctrl.score",
-            conn=mem_db,
-        )
-        ids = [r["control_id"] for r in results]
-        assert "AC-3" in ids
-        assert "AC-2" not in ids
-
-    def test_query_returns_list_of_dicts(self, mem_db):
-        self._seed_snapshot(mem_db)
-        from tools.boundary_canvas.cato_twin.query_engine import run_query
-        results = run_query(
-            "foreach ctrl in framework('FedRAMP Moderate').controls "
-            "where ctrl.status != 'satisfied' "
-            "select ctrl.control_id",
-            conn=mem_db,
-        )
-        assert isinstance(results, list)
-        assert all(isinstance(r, dict) for r in results)
-
-    def test_query_unknown_framework_returns_empty(self, mem_db):
-        from tools.boundary_canvas.cato_twin.query_engine import run_query
-        results = run_query(
-            "foreach ctrl in framework('UnknownFramework').controls "
-            "where ctrl.status != 'satisfied' "
-            "select ctrl.control_id",
-            conn=mem_db,
-        )
-        assert results == []
-
-    def test_query_fedramp_high_unsatisfied(self, mem_db):
-        self._seed_snapshot(mem_db, framework="FedRAMP High")
-        from tools.boundary_canvas.cato_twin.query_engine import run_query
-        results = run_query(
-            "foreach ctrl in framework('FedRAMP High').controls "
-            "where ctrl.status != 'satisfied' "
-            "select ctrl.control_id",
-            conn=mem_db,
-        )
-        assert len(results) >= 1
 
 
 # ---------------------------------------------------------------------------

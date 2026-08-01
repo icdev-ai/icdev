@@ -227,12 +227,20 @@ class _FakeConn:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._c = conn
+        # Route execute() through the REAL storage wrapper. Runtime SQL is
+        # authored for PostgreSQL (%s placeholders, per CLAUDE.md); the wrapper
+        # is what translates them to SQLite's ?. Passing SQL straight to a raw
+        # sqlite3 connection makes every %s a `near "%": syntax error`, which the
+        # reflexes swallow -- so they silently seeded nothing.
+        from tools.db.storage import StorageConnection
+
+        self._storage = StorageConnection(conn, "sqlite")
 
     def set_security_context(self, ctx) -> None:
         pass
 
     def execute(self, sql: str, params=()):
-        return self._c.execute(sql, params)
+        return self._storage.execute(sql, params)
 
     def executemany(self, sql: str, params):
         return self._c.executemany(sql, params)
@@ -275,6 +283,11 @@ def client(db_path):
 
     app = Flask(__name__)
     app.config["TESTING"] = True
+    @app.before_request
+    def _inject_fake_auth_0():
+        from flask import g
+        g.current_user = {"username": "test_user", "role": "admin", "email": "test@test.mil", "classification": "CUI"}
+
     app.register_blueprint(cpmp_api)
 
     with patch("tools.dashboard.api.cpmp._get_db", side_effect=lambda: _open(db_path)):

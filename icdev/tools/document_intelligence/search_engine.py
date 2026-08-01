@@ -449,16 +449,32 @@ def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
     result: dict[str, Any] = {"page": 0, "section": "", "doc_id": "", "collection_id": "", "sha256": "", "attribution_pct": 0}
     try:
         cur = conn.execute(
-            "SELECT content, content_hash FROM rag_chunks WHERE id = %s",
+            "SELECT content, content_hash, project_id FROM rag_chunks WHERE id = %s",
             (chunk_id,),
         )
         row = cur.fetchone()
         if row:
             content = row["content"] if hasattr(row, "keys") else row[0]
             content_hash = row["content_hash"] if hasattr(row, "keys") else row[1]
+            project_id = (row["project_id"] if hasattr(row, "keys") else row[2]) or ""
             sha256 = content_hash or hashlib.sha256((content or "").encode()).hexdigest()
             result["sha256"] = sha256
             result["attribution_pct"] = min(100, max(40, int((len(content or "") / 500) * 80)))
+            # Collection of record. `rag_chunks.project_id` is what the retriever
+            # itself filters on (`_rag_search` passes `project_id=collection_id`),
+            # so seeding from it keeps the caller's post-filter consistent with the
+            # query that produced the candidate. `dic_chunk_links` refines it below
+            # when a link row exists.
+            #
+            # Without this the post-filter re-derived the collection from
+            # `dic_chunk_links` ALONE, which is populated only by
+            # `ingest_orchestrator.ingest_file`. Chunks ingested by any other path
+            # — or before linking existed — had no row, resolved to "", and were
+            # dropped by `if collection_id and col_id != collection_id`. Measured
+            # on the live corpus: 168 of 559 chunks linked, so a scoped query
+            # against a 236-chunk collection returned ZERO while the retriever had
+            # correctly returned its chunks. Silent, and it looks like bad recall.
+            result["collection_id"] = project_id
     except Exception:
         pass
     try:
@@ -469,9 +485,15 @@ def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
         row2 = cur2.fetchone()
         if row2:
             if hasattr(row2, "keys"):
-                result.update({"page": row2["page"] or 0, "section": row2["section"] or "", "doc_id": row2["doc_id"] or "", "collection_id": row2["collection_id"] or ""})
+                page, section, doc_id, col = row2["page"], row2["section"], row2["doc_id"], row2["collection_id"]
             else:
-                result.update({"page": row2[0] or 0, "section": row2[1] or "", "doc_id": row2[2] or "", "collection_id": row2[3] or ""})
+                page, section, doc_id, col = row2[0], row2[1], row2[2], row2[3]
+            result.update({"page": page or 0, "section": section or "", "doc_id": doc_id or ""})
+            # Only override when the link actually names a collection — a link row
+            # with a NULL/empty collection_id must not erase the project_id seeded
+            # above and re-create the drop-everything behaviour.
+            if col:
+                result["collection_id"] = col
     except Exception:
         pass
     return result
@@ -1067,14 +1089,10 @@ def _file_qa_to_wiki(query: str, answer: str, collection_id: str | None) -> None
     are silently swallowed so they never break the caller.
     """
     try:
-        import os
-        from pathlib import Path
+        from tools.memory.claude_memory_path import claude_memory_dir
         from tools.memory.memory_write import update_crossrefs
 
-        auto_dir = (
-            Path(os.environ.get("USERPROFILE", Path.home()))
-            / ".claude/projects/C--AI-ICDev/memory"
-        )
+        auto_dir = claude_memory_dir()
         if not auto_dir.is_dir():
             return
 
@@ -1158,13 +1176,9 @@ def _check_wiki_cache(query: str, collection_id: str | None) -> "DICAnswer | Non
     Karpathy-wiki integration plan).
     """
     try:
-        import os
-        from pathlib import Path
+        from tools.memory.claude_memory_path import claude_memory_dir
 
-        auto_dir = (
-            Path(os.environ.get("USERPROFILE", Path.home()))
-            / ".claude/projects/C--AI-ICDev/memory"
-        )
+        auto_dir = claude_memory_dir()
         if not auto_dir.is_dir():
             return None
 
@@ -1376,7 +1390,11 @@ class DICSearchEngine:
             return []
         conn = get_connection()
         try:
-            like_clauses = " OR ".join(["content LIKE ?" for _ in terms])
+            # One placeholder style per statement. This mixed SQLite `?` with
+            # `%s` for LIMIT, so psycopg2 raised on every call and the outer
+            # `except` returned [] — the keyword safety net was dead on the
+            # PRIMARY backend, silently, for every query that reached it.
+            like_clauses = " OR ".join(["content LIKE %s" for _ in terms])
             params = [f"%{t}%" for t in terms]
             cur = conn.execute(
                 f"SELECT chunk_id, content, source_id FROM rag_chunks WHERE {like_clauses} LIMIT %s",

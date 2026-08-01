@@ -250,6 +250,16 @@ class TestRunPipelineRoute(unittest.TestCase):
         import flask
         self.app = flask.Flask(__name__)
 
+        # Stand in for the platform auth hook. /run-pipeline is a POST, so
+        # aadc_bp's _aadc_auth_guard (penta-aadc-01) requires an authenticated
+        # user and 401s otherwise. Production resolves that user from
+        # g.current_user, populated by tools/dashboard/auth.py's app-level
+        # before_request; Flask runs app-level hooks ahead of blueprint ones,
+        # so setting it here reproduces that ordering without a user DB.
+        @self.app.before_request
+        def _fake_platform_auth():
+            flask.g.current_user = {"id": "test-admin", "status": "active"}
+
         # Register blueprint
         from tools.agentic_ai_canvas.blueprint import aadc_bp
         self.app.register_blueprint(aadc_bp)

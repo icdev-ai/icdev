@@ -22,8 +22,15 @@ def _maturity_level_for_score(score: float) -> str:
     return "preparation"
 
 
-def score_pillar(pillar_slug: str) -> dict:
-    """Compute maturity score for a single ZIG pillar.
+def score_pillar(pillar_slug: str, target_id: str = "icdev-self") -> dict:
+    """Compute maturity score for a single ZIG pillar for one assessment target.
+
+    Activity completions are per-target (zig_activity_completions.target_id), so
+    the 60% activity-completion weight is scoped to ``target_id``. Capability
+    implementation status is a platform-wide concept (zig_capabilities has no
+    target dimension), so the 40% capability weight is shared across targets.
+    Two targets with different completion progress therefore produce independent
+    scores.
 
     Returns:
         {slug, score, maturity_level, capability_count, implemented_capabilities,
@@ -33,7 +40,7 @@ def score_pillar(pillar_slug: str) -> dict:
     try:
         # Capabilities for this pillar
         caps = conn.execute(
-            "SELECT id, implementation_status FROM zig_capabilities WHERE pillar_slug=%s",
+            "SELECT id, implementation_status FROM zig_capabilities WHERE pillar_slug=?",
             (pillar_slug,),
         ).fetchall()
 
@@ -63,8 +70,9 @@ def score_pillar(pillar_slug: str) -> dict:
         if act_ids:
             comp_placeholders = ",".join("?" * len(act_ids))
             completions = conn.execute(
-                f"SELECT status FROM zig_activity_completions WHERE activity_id IN ({comp_placeholders})",
-                act_ids,
+                f"SELECT status FROM zig_activity_completions "
+                f"WHERE activity_id IN ({comp_placeholders}) AND target_id=?",
+                act_ids + [target_id],
             ).fetchall()
             complete_acts = sum(1 for c in completions if c["status"] == "complete")
             in_progress_acts = sum(1 for c in completions if c["status"] == "in_progress")
@@ -91,11 +99,11 @@ def score_pillar(pillar_slug: str) -> dict:
         conn.close()
 
 
-def score_all_pillars() -> list:
-    """Score all 7 ZIG pillars. Returns list of pillar score dicts."""
+def score_all_pillars(target_id: str = "icdev-self") -> list:
+    """Score all 7 ZIG pillars for one target. Returns list of pillar score dicts."""
     results = []
     for p in ZIG_PILLARS:
-        score_data = score_pillar(p["slug"])
+        score_data = score_pillar(p["slug"], target_id=target_id)
         score_data["name"] = p["name"]
         score_data["full_name"] = p.get("full_name", p["name"])
         score_data["color"] = p.get("color", "#6366f1")

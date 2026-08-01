@@ -1,10 +1,10 @@
 # Plan: Innovation Lab Executive Investment Deck
 
 ## Objective
-Create a 10–12 slide internal executive deck inside ICDEV's Slides canvas that makes the business case for investing in an Innovation Lab. The deck must answer the executive questions **"So What?"**, **"Why Now?"**, and **"Why Peraton / why not another lab?"** while weaving in capabilities from `ICDEV_Capabilities_Challenges_Solutions.xlsx` and providing editable ROI placeholder models.
+Create a 10–12 slide internal executive deck inside ICDEV's Slides canvas that makes the business case for investing in an Innovation Lab. The deck must answer the executive questions **"So What?"**, **"Why Now?"**, and **"Why us / why not another lab?"** while weaving in capabilities from `ICDEV_Capabilities_Challenges_Solutions.xlsx` and providing editable ROI placeholder models.
 
 ## Scope Boundaries
-- **Audience:** Internal Peraton executives only (no customer/partner classification gates needed).
+- **Audience:** Internal company executives only (no customer/partner classification gates needed).
 - **Format:** Curated deck script under `tools/slides/curated_decks/` using the existing `tools/slides/pptx_builder.py` engine.
 - **Visual style:** Narrative / strategic — no product screenshots or live demo embeds.
 - **Length:** 10–12 slides.
@@ -12,11 +12,11 @@ Create a 10–12 slide internal executive deck inside ICDEV's Slides canvas that
 - **ROI:** Build editable placeholder formulas for customer opportunity pipeline, recruitment pipeline, and partner-hosting revenue/cost-avoidance.
 
 ## Proposed Slide Arc (12 slides)
-1. **Title** — Peraton Innovation Lab: Not Another Lab
+1. **Title** — {company} Innovation Lab: Not Another Lab (company resolved from the own_company GovCon profile)
 2. **The Ask** — Investment thesis: Infrastructure → Apps/AI/Agents → Hosting
 3. **Why Now?** — Market window (AI/ML, Agentic AI, Digital Twin, DoD/IC interoperability demand)
 4. **So What?** — The four executive outcomes: pipeline, recruitment, thought leadership, customer stickiness
-5. **Our Differentiators** — What separates Peraton's lab from every other innovation lab (extracted from Excel differentiators)
+5. **Our Differentiators** — What separates our lab from every other innovation lab (extracted from Excel differentiators)
 6. **Capability Stack** — Infrastructure as the foundation; Application/AI/Agentic development on top; Hosting as the outward-facing showcase
 7. **Use Case 1: AI/ML & Agentic AI Factory** — From concept to deployed, governed agents
 8. **Use Case 2: Digital Twin & Interoperability Testbed** — Mirror customer environments for POCs

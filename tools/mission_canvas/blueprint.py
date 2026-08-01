@@ -8,6 +8,7 @@ Feature flag: ICDEV_MISSION_CANVAS_ENABLED.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import hmac
 import os
 from functools import wraps
 from pathlib import Path
@@ -22,7 +23,10 @@ _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
 
 
 def _get_conn():
-    from tools.db.storage import get_connection
+    # cnr-mc-01: use the Mission Canvas connection (RLS disabled, dedicated
+    # mission_* tables), NOT the main icdev DB — otherwise canvas data is
+    # unreachable and the global RLS predicate raises UndefinedColumn on PG.
+    from tools.mission_canvas.db.init_db import get_connection
 
     return get_connection()
 
@@ -48,11 +52,24 @@ def create_mission_canvas_blueprint():
         @wraps(f)
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
-                # Allow bypass when ICDEV_AUTH_BYPASS or ICDEV_DASHBOARD_API_KEY is set
-                # (used by E2E tests and CI environments that don't perform a login flow)
-                if os.environ.get("ICDEV_AUTH_BYPASS") or os.environ.get("ICDEV_DASHBOARD_API_KEY"):
+                # ICDEV_AUTH_BYPASS: explicit test-only opt-in — bypass unchanged.
+                if os.environ.get("ICDEV_AUTH_BYPASS"):
                     session["user_id"] = "e2e-bypass"
                     return f(*args, **kwargs)
+                # ICDEV_DASHBOARD_API_KEY: presented-key semantics. Authenticate
+                # ONLY if the request presents the key (header X-ICDEV-API-Key or
+                # Authorization: Bearer), compared with constant-time
+                # hmac.compare_digest. A merely-set env var does NOT auto-auth.
+                api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+                if api_key:
+                    presented = request.headers.get("X-ICDEV-API-Key", "")
+                    if not presented:
+                        auth_header = request.headers.get("Authorization", "")
+                        if auth_header.startswith("Bearer "):
+                            presented = auth_header[len("Bearer "):].strip()
+                    if presented and hmac.compare_digest(presented, api_key):
+                        session["user_id"] = "api-key"
+                        return f(*args, **kwargs)
                 if request.is_json or request.path.startswith("/api/"):
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect("/login")
@@ -67,25 +84,45 @@ def create_mission_canvas_blueprint():
     @bp.route("/")
     @mc_login_required
     def mc_index():
+        # cnr-mc-01: query the real Mission Canvas tables (mission_designs and
+        # friends), not the nonexistent mission_canvas_sessions table. Table
+        # existence is handled gracefully so a not-yet-initialized canvas renders.
         conn = _get_conn()
+        designs: list[dict] = []
+        counts = {"designs": 0, "twins": 0, "evidence": 0, "posture": 0}
         try:
-            sessions = [
+            designs = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT id, name, status, created_at, updated_at "
-                    "FROM mission_canvas_sessions ORDER BY updated_at DESC LIMIT 20"
+                    "SELECT id, name, description, design_type, classification, "
+                    "created_at, updated_at "
+                    "FROM mission_designs ORDER BY updated_at DESC LIMIT 20"
                 ).fetchall()
             ]
         except Exception:
-            sessions = []
-        finally:
+            designs = []
+        for label, table in (
+            ("designs", "mission_designs"),
+            ("twins", "mission_twin_snapshots"),
+            ("evidence", "mission_evidence"),
+            ("posture", "mission_security_posture"),
+        ):
+            try:
+                row = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
+                counts[label] = (row["c"] if row else 0) or 0
+            except Exception:
+                counts[label] = 0
+        try:
             conn.close()
+        except Exception:
+            pass
 
         from tools.mission_canvas.constants import OBJECT_TYPES
 
         return render_template(
             "mission_canvas/index.html",
-            sessions=sessions,
+            designs=designs,
+            counts=counts,
             objects=OBJECT_TYPES,
         )
 
@@ -237,7 +274,8 @@ def create_mission_canvas_blueprint():
         """IQE structured query — translate NL to IQE and optionally execute against mission collections."""
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import IQESyntaxError, parse
-        from tools.iqe.executor import Executor
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.mission_canvas  # noqa: F401 — registers mission.* collections
 
         data = request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
@@ -258,11 +296,10 @@ def create_mission_canvas_blueprint():
         except IQESyntaxError as exc:
             return jsonify({"error": f"IQE parse error: {exc}", "iqe": iqe_str, "explanation": explanation}), 400
 
+        # cnr-mc-02: adapters open their own Mission Canvas connection (conn=None),
+        # so mission.* collections resolve against the real canvas tables.
         try:
-            from tools.db.storage import get_connection
-            with get_connection() as conn:
-                executor = Executor(conn)
-                rows = executor.run(ast)
+            rows = execute_query(ast, conn=None)
         except Exception as exc:
             logger.warning("IQE execution failed: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str, "explanation": explanation}), 500

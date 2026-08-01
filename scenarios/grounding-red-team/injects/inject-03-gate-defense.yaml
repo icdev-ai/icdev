@@ -1,0 +1,16 @@
+# CUI // SP-CTI
+id: inject-03-gate-defense
+title: 'Blue Stand: Defend the Promote/Export Gate Under a Forced Override'
+body_md: "## BLUE STAND — HOLD THE GATE\n\n**Classification:** CUI // SP-CTI\n\nA deliverable containing\
+  \ one still-spoofed claim (#2, encryption) reaches the promote/export gate.\nA stakeholder account requests\
+  \ `force_export` to meet a deadline, arguing 'it's basically right.'\n\n### Blue Task\n1. **Gate decision**\
+  \ — Block, or allow only via an audited HITL override. Justify against the\n   TRUST citation-guard\
+  \ policy (ungrounded/spoofed claims block export unless an audited HITL\n   force override is recorded).\n\
+  2. **Override discipline** — If an override is used, exactly what audit record + justification\n   must\
+  \ be captured, and who is authorized to approve it.\n3. **Attack resistance** — How you prevent the\
+  \ `force_export` path from becoming a routine bypass.\n\nUse Cortex Govern to enforce the gate. The\
+  \ judge rewards a policy-grounded, audit-complete stand."
+context_note: 'Correct posture: the spoofed claim blocks export; a force override is permissible ONLY
+  with a recorded, audited HITL justification by an authorized approver. Full credit requires naming the
+  audit record contents and a control that keeps force_export from becoming routine (e.g. approver separation,
+  override rate alerting).'

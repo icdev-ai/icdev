@@ -117,90 +117,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT REFERENCES projects(id),
     event_type TEXT NOT NULL CHECK(event_type IN (
-        'project_created', 'project_updated',
-        'code_generated', 'code_reviewed', 'code_approved', 'code_rejected',
-        'test_written', 'test_executed', 'test_passed', 'test_failed',
-        'security_scan', 'vulnerability_found', 'vulnerability_resolved',
-        'compliance_check', 'ssp_generated', 'poam_generated', 'stig_checked', 'sbom_generated',
-        'deployment_initiated', 'deployment_succeeded', 'deployment_failed', 'rollback_executed',
-        'decision_made', 'approval_granted', 'approval_denied',
-        'agent_task_submitted', 'agent_task_completed', 'agent_task_failed',
-        'self_heal_triggered', 'pattern_detected', 'knowledge_recorded',
-        'config_changed', 'secret_rotated',
-        'cssp_assessed', 'cssp_report_generated', 'cssp_evidence_collected',
-        'ir_plan_generated', 'siem_config_generated',
-        'xacta_sync', 'xacta_sync_completed', 'xacta_export',
-        'maintenance_audit', 'dependency_scanned', 'vulnerability_checked',
-        'remediation_applied', 'sla_violation',
-        'fedramp_assessed', 'cmmc_assessed', 'oscal_generated',
-        'emass_sync', 'emass_push', 'emass_pull',
-        'cato_evidence_collected', 'classification_changed',
-        'crosswalk_mapped', 'pi_compliance_updated',
-        'model_imported', 'model_synced', 'model_snapshot',
-        'digital_thread_linked', 'des_assessed',
-        'reqif_imported', 'xmi_imported',
-        'code_from_model', 'model_from_code',
-        'legacy_analyzed', 'migration_assessed', 'migration_planned',
-        'migration_task_completed', 'migration_code_generated',
-        'schema_migrated', 'service_extracted', 'strangler_fig_cutover',
-        'intake_session_created', 'intake_session_resumed', 'intake_session_completed',
-        'requirement_captured', 'requirement_refined', 'requirement_approved',
-        'gap_detected', 'ambiguity_detected',
-        'readiness_scored', 'decomposition_generated',
-        'document_uploaded', 'document_extracted',
-        'bdd_criteria_generated',
-        'boundary_assessed', 'boundary_impact_red', 'boundary_alternative_generated',
-        'ato_system_registered', 'isa_created', 'isa_expired', 'isa_renewed',
-        'scrm_assessed', 'cve_triaged', 'cve_impact_propagated',
-        'supply_chain_risk_escalated',
-        'simulation_created', 'simulation_completed', 'monte_carlo_completed',
-        'coa_generated', 'coa_alternative_generated', 'coa_compared',
-        'coa_selected', 'coa_rejected', 'coa_presented',
-        'integration_configured', 'integration_sync_push', 'integration_sync_pull',
-        'integration_sync_error', 'reqif_exported',
-        'approval_submitted', 'approval_reviewed', 'approval_approved',
-        'approval_rejected', 'approval_escalated',
-        'rtm_generated', 'rtm_gap_detected',
-        'hook_event_logged', 'agent_execution_started', 'agent_execution_completed',
-        'agent_execution_failed', 'agent_execution_retried',
-        'nlq_query_executed', 'nlq_query_blocked',
-        'worktree_created', 'worktree_cleaned',
-        'gitlab_task_claimed', 'gitlab_task_completed', 'gitlab_task_failed',
-        'agentic_fitness_assessed', 'child_app_generated',
-        'agentic_scaffolded', 'agentic_code_generated',
-        'governance_validated', 'agentic_test_generated',
-        'fips199_categorized', 'fips200_assessed',
-        'security_categorization_completed', 'baseline_selected',
-        'marketplace_asset_published', 'marketplace_asset_installed',
-        'marketplace_asset_uninstalled', 'marketplace_asset_updated',
-        'marketplace_asset_deprecated', 'marketplace_asset_revoked',
-        'marketplace_review_submitted', 'marketplace_review_completed',
-        'marketplace_scan_completed', 'marketplace_federation_sync',
-        'marketplace_rating_submitted',
-        'openclaw_skill_imported', 'openclaw_skill_promoted',
-        'openclaw_skill_rejected', 'openclaw_skill_exported',
-        'openclaw_export_approved', 'openclaw_export_rejected',
-        'openclaw_quarantine_expired',
-        'compliance_detected', 'compliance_confirmed',
-        'multi_regime_assessed', 'multi_regime_gate_evaluated',
-        'data_category_assigned', 'data_category_detected',
-        'framework_applicability_set', 'iso_bridge_mapped',
-        'cjis_assessed', 'hipaa_assessed', 'hitrust_assessed',
-        'soc2_assessed', 'pci_dss_assessed', 'iso27001_assessed',
-        'remote_binding_created', 'remote_binding_provisioned', 'remote_binding_revoked',
-        'remote_command_received', 'remote_command_rejected', 'remote_command_completed',
-        'remote_response_filtered',
-        'spec_quality_check', 'spec_consistency_check',
-        'constitution_added', 'constitution_removed', 'constitution_defaults_loaded',
-        'clarification_analyzed',
-        'spec.init', 'spec.register',
-        'heartbeat_check_warning', 'heartbeat_check_critical',
-        'auto_resolution_started', 'auto_resolution_completed',
-        'auto_resolution_failed', 'auto_resolution_escalated',
-        'critique_session_created', 'critique_completed',
-        'critique_revision_requested',
-        'pir_alert_generated',
-        'integrity_promoted', 'integrity_rejected'
+@@AUDIT_EVENT_TYPES@@
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -2167,6 +2084,13 @@ CREATE TABLE IF NOT EXISTS agent_token_usage (
     thinking_tokens INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,
     cost_estimate_usd REAL DEFAULT 0.0,
+    -- nav-sec-09 attribution. token_tracker.py has always INSERTed these and
+    -- ALTERs them in at runtime as a best-effort guarded by `except: pass`, so
+    -- a fresh bootstrap that hit any error got a table its own writer could not
+    -- use. Declaring them here makes the ALTER a no-op rather than the only
+    -- thing standing between the schema and a broken INSERT.
+    user_id TEXT DEFAULT NULL,
+    api_key_source TEXT DEFAULT 'config',
     classification TEXT DEFAULT 'CUI',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -3410,8 +3334,17 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     display_name TEXT NOT NULL,
+    -- Keep in sync with tools/dashboard/auth.py::VALID_DASHBOARD_ROLES.
+    -- bd/capture_mgr/contract_mgr/reviewer (prop-fix-08, RBAC_MATRIX) and
+    -- migration_engineer/component_admin/auditor/ciso (migration 139,
+    -- tools/govlift/rbac.py::GOVLIFT_ROLES) were both added to their
+    -- respective Python role lists but never reached this CHECK constraint
+    -- until now -- those roles could never actually be assigned to a user
+    -- (dashboard-users-role-check-constraint).
     role TEXT NOT NULL DEFAULT 'developer'
-        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor')),
+        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor',
+                        'migration_engineer', 'component_admin', 'auditor', 'ciso',
+                        'bd', 'capture_mgr', 'contract_mgr', 'reviewer')),
     status TEXT NOT NULL DEFAULT 'active'
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,
@@ -5648,7 +5581,7 @@ CREATE TABLE IF NOT EXISTS proposal_review_findings (
     finding_type TEXT NOT NULL CHECK(finding_type IN (
         'compliance_gap', 'content_weakness', 'competitive_risk',
         'formatting', 'pricing_concern', 'technical_error',
-        'missing_content', 'other')),
+        'missing_content', 'invalid_citation', 'other')),
     severity TEXT NOT NULL DEFAULT 'medium' CHECK(severity IN (
         'critical', 'major', 'minor', 'observation')),
     description TEXT NOT NULL,
@@ -6909,6 +6842,32 @@ CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type
     ON rag_provenance_ledger(event_type);
 
+-- rag_queries: tracks RAG knowledge search requests and their lifecycle
+CREATE TABLE IF NOT EXISTS rag_queries (
+    id              TEXT    PRIMARY KEY,
+    query_text      TEXT    NOT NULL,
+    lens            TEXT    DEFAULT 'default',
+    status          TEXT    DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'done', 'failed')),
+    agent_id        TEXT,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT
+);
+
+-- rag_citations: source citations attached to a rag_queries result
+CREATE TABLE IF NOT EXISTS rag_citations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id        TEXT    NOT NULL REFERENCES rag_queries(id),
+    source_doc      TEXT    NOT NULL,
+    citation_text   TEXT,
+    confidence      REAL    DEFAULT 0.0,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================
 -- FINE-TUNING SUBSYSTEM (Phase 64 Extension, D-FT-1 through D-FT-22)
 -- ============================================================
@@ -7565,6 +7524,30 @@ CREATE TABLE IF NOT EXISTS db_sync_log (
 );
 CREATE INDEX IF NOT EXISTS idx_db_sync_conn ON db_sync_log(connection_id);
 CREATE INDEX IF NOT EXISTS idx_db_sync_time ON db_sync_log(synced_at);
+
+-- Agent access decisions for external DataBridge connectors.
+--
+-- DISTINCT from db_sync_log, which records sync OPERATIONS and requires a
+-- connection_id FK plus row counts. An authorization decision is a different
+-- thing: a DENIED fetch has no connection, transferred nothing, and is the most
+-- important row in the table. Forcing it into a sync log meant the insert
+-- failed silently and the trail was empty exactly when it mattered.
+--
+-- Append-only (NIST AU) -- see APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL DEFAULT 'unknown',
+    connector_name TEXT NOT NULL DEFAULT '',
+    table_name TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL DEFAULT 'denied' CHECK(decision IN ('allowed','denied')),
+    reason TEXT NOT NULL DEFAULT '',
+    rows_returned INTEGER DEFAULT 0,
+    redactions_applied INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_agent_access_agent ON databridge_agent_access_log(agent_id);
+CREATE INDEX IF NOT EXISTS idx_db_agent_access_decision ON databridge_agent_access_log(decision);
 
 -- Connector configuration registry
 CREATE TABLE IF NOT EXISTS db_connector_configs (
@@ -8622,6 +8605,10 @@ CREATE TABLE IF NOT EXISTS genesis_audit (
 CREATE INDEX IF NOT EXISTS idx_genesis_audit_type ON genesis_audit(event_type);
 CREATE INDEX IF NOT EXISTS idx_genesis_audit_reflex ON genesis_audit(reflex_name);
 CREATE INDEX IF NOT EXISTS idx_genesis_audit_created ON genesis_audit(created_at);
+-- crx-gen-02: reflex health-trend queries filter by reflex + time window and by
+-- event_type + time window; composite indexes keep the 7/30-day rollups cheap.
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_reflex_created ON genesis_audit(reflex_name, created_at);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_type_created ON genesis_audit(event_type, created_at);
 
 CREATE TABLE IF NOT EXISTS genesis_reflex_state (
     reflex_name         TEXT PRIMARY KEY,
@@ -9385,7 +9372,7 @@ CREATE INDEX IF NOT EXISTS idx_pg_talvel_comp ON pg_talent_velocity(competitor_n
 CREATE TABLE IF NOT EXISTS pg_win_themes (
     id                  TEXT PRIMARY KEY,
     opportunity_id      TEXT NOT NULL,
-    theme_type          TEXT NOT NULL CHECK(theme_type IN ('win_theme', 'discriminator', 'ghost')),
+    theme_type          TEXT NOT NULL CHECK(theme_type IN ('win_theme', 'discriminator', 'ghost_strategy')),
     theme_statement     TEXT NOT NULL,
     supporting_evidence TEXT,
     target_eval_factor  TEXT,
@@ -9399,6 +9386,38 @@ CREATE TABLE IF NOT EXISTS pg_win_themes (
     FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pg_wintheme_opp ON pg_win_themes(opportunity_id);
+
+-- prem-pstaff-01: the bid side's person -> LCAT registry. pg_lcat_allocations is
+-- task->LCAT->FTE and never names a human; pma_personnel is post-award (contract_id).
+-- Before this, the Key Personnel volume was built by regex-scraping capitalised
+-- bigrams out of proposal prose (program_bridge._gather_key_personnel).
+--
+-- The CHECKs here MUST match tools/govcon/key_personnel.py's QUALIFICATION_VERDICTS
+-- and PERSON_SOURCES. They are restated rather than derived because this file is the
+-- literal SQLite bootstrap; tests/test_key_personnel.py asserts they agree, so a
+-- change to the Python constants that is not mirrored here fails the suite.
+--
+-- The evidence CHECK is the refuse-the-unevidenced rule in the schema: an unevidenced
+-- person->LCAT mapping reaches the customer as an assertion nobody can defend.
+CREATE TABLE IF NOT EXISTS proposal_key_personnel (
+    id                    TEXT PRIMARY KEY,
+    opportunity_id        TEXT NOT NULL,
+    person_ref            TEXT NOT NULL,
+    name                  TEXT NOT NULL,
+    proposed_lcat         TEXT NOT NULL,
+    qualification_verdict TEXT NOT NULL CHECK(qualification_verdict IN ('qualified', 'gap', 'exceeds')),
+    evidence_json         TEXT NOT NULL CHECK(evidence_json <> '' AND evidence_json <> '[]'),
+    source                TEXT CHECK(source IS NULL OR source IN ('compass', 'manual', 'resume_match', 'scraped')),
+    key_person            INTEGER NOT NULL DEFAULT 0,
+    gaps_json             TEXT NOT NULL DEFAULT '[]',
+    tenant_id             TEXT NOT NULL DEFAULT 'default',
+    classification        TEXT NOT NULL DEFAULT 'CUI',
+    created_at            TIMESTAMP,
+    updated_at            TIMESTAMP,
+    UNIQUE (opportunity_id, person_ref)
+);
+CREATE INDEX IF NOT EXISTS idx_pkp_opportunity ON proposal_key_personnel(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pkp_verdict ON proposal_key_personnel(qualification_verdict);
 
 CREATE TABLE IF NOT EXISTS pg_theme_tracking (
     id                      TEXT PRIMARY KEY,
@@ -11093,6 +11112,26 @@ CREATE INDEX IF NOT EXISTS idx_cag_principal ON canvas_access_grants (principal_
 
 """
 
+# ---------------------------------------------------------------------------
+# audit_trail.event_type CHECK — generated, never hand-maintained
+# ---------------------------------------------------------------------------
+#
+# This list used to be duplicated here as a literal. It drifted: the constant
+# held 221 event types while this copy admitted 189, and neither included the
+# 25 govcon.* types that tools/govcon writes — so every govcon audit INSERT was
+# rejected by the constraint and silently swallowed.
+#
+# CLAUDE.md requires CHECK constraints be derived from Python constants rather
+# than hardcoded. Deriving it here means the two cannot drift again: adding an
+# event type to VALID_EVENT_TYPES is now sufficient for a fresh database, and
+# tests/test_audit_event_type_parity.py fails if an existing one falls behind.
+from tools.audit.audit_logger import VALID_EVENT_TYPES as _VALID_EVENT_TYPES  # noqa: E402
+
+_AUDIT_EVENT_TYPES_SQL = ",\n".join(
+    f"        '{_t}'" for _t in _VALID_EVENT_TYPES
+)
+SCHEMA_SQL = SCHEMA_SQL.replace("@@AUDIT_EVENT_TYPES@@", _AUDIT_EVENT_TYPES_SQL)
+
 
 # Phase 64: RAG columns on projects table
 RAG_ALTER_SQL = [
@@ -11267,6 +11306,8 @@ def _has_migration_system(path):
         return False
     try:
         conn = sqlite3.connect(str(path))
+        # pg-portability: sqlite-only path — monolithic SQLite initializer probing
+        # a raw sqlite3 file; the PG init path is handled by pg_init / MigrationRunner.
         c = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
         has_table = c.fetchone() is not None
         conn.close()
@@ -11462,6 +11503,8 @@ def init_db(db_path=None):
 
     # D-WG-14: Migrate wg_glossary CHECK constraint to include 'required'
     try:
+        # pg-portability: sqlite-only path — reads table DDL from sqlite_master to
+        # migrate a CHECK constraint during the monolithic SQLite init; not run on PG.
         _cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='wg_glossary'")
         _row = _cur.fetchone()
         if _row and _row[0] and "'required'" not in _row[0]:
@@ -11518,12 +11561,24 @@ def init_db(db_path=None):
         print(f"Warning: workflow template seed skipped — {_exc}")
 
     # Seed E2E demo session (ME conflict intelligence) — idempotent INSERT OR IGNORE
+    #
+    # Two bugs used to live in this block. It bound `%s` placeholders on a RAW
+    # sqlite3 connection, which does not go through storage.translate_sql, so every
+    # run raised `near "%": syntax error` and the seed has never once been written —
+    # the failure was invisible because it printed a warning and moved on. And
+    # because the raise happened at .execute(), the `close()` below it was never
+    # reached, leaking the handle: on Windows that leaked handle makes the
+    # subsequent `--reset` unlink fail with WinError 32 (which is what broke
+    # tests/test_init_icdev_db.py::TestMainFunction::test_main_with_reset_flag).
+    # This is the SQLite-only monolithic init path, so `?` is the correct
+    # placeholder here; the close now happens in a finally.
+    _seed_conn = None
     try:
         _seed_conn = sqlite3.connect(str(path))
         _seed_conn.execute(
             "INSERT OR IGNORE INTO intake_sessions "
             "(id, customer_name, customer_org, session_status, classification, context_summary) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 "sess-9cc6891cb548",
                 "E2E Test User",
@@ -11534,13 +11589,17 @@ def init_db(db_path=None):
             ),
         )
         _seed_conn.commit()
-        _seed_conn.close()
     except Exception as _exc:
         print(f"Warning: demo session seed skipped — {_exc}")
+    finally:
+        if _seed_conn is not None:
+            _seed_conn.close()
 
     # Verify tables
     conn = sqlite3.connect(str(path))
     c = conn.cursor()
+    # pg-portability: sqlite-only path — verifies created tables in the raw sqlite3
+    # file at the end of the monolithic SQLite init; PG uses information_schema.
     c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = [row[0] for row in c.fetchall()]
     conn.close()

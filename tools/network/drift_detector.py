@@ -438,6 +438,11 @@ def emit_drift_events(
             continue
         seen.add(key)
         try:
+            # Content-derived dedup key: the snapshot ids are already content
+            # hashes (see detect_drift), so an unchanged drift re-reported on the
+            # next scheduled run collapses onto the same row instead of appending
+            # a duplicate. A real config change moves current_snapshot_id and
+            # therefore produces a genuinely new event.
             eid = record_drift_event(
                 source=f"network.{item.category}",
                 entity=item.device_id,
@@ -452,6 +457,10 @@ def emit_drift_events(
                     "snapshot_current": report.current_snapshot_id,
                     "document_id": document_id,
                 },
+                dedup_key=(
+                    f"{report.topology_id}|{item.device_id}|{item.category}"
+                    f"|{report.baseline_snapshot_id}|{report.current_snapshot_id}"
+                ),
                 tenant_id=tenant_id or None,
                 classification=classification or None,
             )
@@ -468,6 +477,10 @@ def emit_drift_events(
                 drift_source=f"network/{report.topology_id}",
                 drift_entity=report.topology_id,
                 severity=report.overall_severity,
+                dedup_key=(
+                    f"{document_id}|{report.topology_id}"
+                    f"|{report.current_snapshot_id}"
+                ),
                 tenant_id=tenant_id or None,
                 classification=classification or None,
             ))

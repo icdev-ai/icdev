@@ -95,7 +95,16 @@
     <!-- AI Tool Quick Links -->
     <div style="font-size:.75rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">AI Tools</div>
     {% for tool in ai_tools %}
+    {% if tool.navigable %}
     <a class="ai-tool-btn" href="{{ tool.endpoint }}" target="_blank" data-slug="{{ tool.slug }}">{{ tool.icon }} {{ tool.label }}</a>
+    {% else %}
+    {# POST-only API: a click would open a tab that 405s. Show the endpoint so a
+       player can still call it from their own tooling. #}
+    <span class="ai-tool-btn" data-slug="{{ tool.slug }}" title="POST {{ tool.endpoint }} — call this from your own client, not the browser"
+          style="opacity:.75;cursor:default;display:block;">{{ tool.icon }} {{ tool.label }}
+      <span style="font-size:.62rem;color:#6e7681;display:block;">POST {{ tool.endpoint }}</span>
+    </span>
+    {% endif %}
     {% endfor %}
     <div style="font-size:.72rem;color:#6e7681;margin-top:.5rem;">Click a tool, then submit your receipt token to earn bonus points.</div>
   </div>
@@ -107,6 +116,10 @@ let myTeamId=null, myMemberId=null, myPersona=null;
 let usedTools=[], pendingReceiptId=null;
 let injectTimers={};
 const startTimes={};
+
+// XSS guard: escape attacker-influenced strings (team/player names, persona
+// fields, inject title/body, tool names) before interpolating into innerHTML.
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 // Restore from sessionStorage
 const stored=sessionStorage.getItem('gd_player_'+SESSION_ID);
@@ -137,7 +150,7 @@ function showPersona(){
   document.getElementById('persona-role-label').textContent='🎖️ '+myPersona.role_id.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
   const fields=document.getElementById('persona-fields');
   const skip=['role_id','player_name','generated_by','role_brief'];
-  fields.innerHTML=Object.entries(persona).filter(([k])=>!skip.includes(k)).slice(0,6).map(([k,v])=>`<div class="persona-field"><strong>${k.replace(/_/g,' ')}:</strong> ${v}</div>`).join('');
+  fields.innerHTML=Object.entries(persona).filter(([k])=>!skip.includes(k)).slice(0,6).map(([k,v])=>`<div class="persona-field"><strong>${esc(k.replace(/_/g,' '))}:</strong> ${esc(v)}</div>`).join('');
   document.getElementById('persona-brief').textContent=persona.role_brief||'';
 }
 
@@ -174,12 +187,12 @@ function renderInjects(injects){
          </div>`
       : `<textarea class="gd-textarea" id="response-${inj.inject_id.slice(0,8)}" placeholder="Write your team's response here. Reference the AI tool outputs you used..."></textarea>`;
     card.innerHTML=`
-      <h3>${inj.title}${isAADC?' <span style="font-size:.72rem;background:#0a84ff22;color:#58a6ff;border:1px solid #0a84ff44;border-radius:4px;padding:.15rem .4rem;vertical-align:middle;">AADC Design Challenge</span>':''}</h3>
+      <h3>${esc(inj.title)}${isAADC?' <span style="font-size:.72rem;background:#0a84ff22;color:#58a6ff;border:1px solid #0a84ff44;border-radius:4px;padding:.15rem .4rem;vertical-align:middle;">AADC Design Challenge</span>':''}</h3>
       <div class="ic-meta">⏱️ <span id="timer-${inj.inject_id.slice(0,8)}" class="timer">00:00</span> elapsed${inj.at_minute?' · dispatched at T+'+inj.at_minute+'min':''}</div>
-      <div class="inject-body">${(inj.body_md||'').replace(/\n/g,'<br>').replace(/##/g,'<strong>').replace(/\*\*/g,'')}</div>
+      <div class="inject-body">${esc(inj.body_md||'').replace(/\n/g,'<br>').replace(/##/g,'<strong>').replace(/\*\*/g,'')}</div>
       <div style="margin-top:.8rem;">
         <div style="font-size:.78rem;color:#6e7681;margin-bottom:.3rem;">AI Tools available for this inject:</div>
-        ${tools?tools.split(',').map(t=>`<button class="ai-tool-btn" onclick="linkTool('${inj.inject_id}','${t.trim()}')">${t.trim()}</button>`).join(''):'<span style="color:#6e7681;font-size:.8rem;">Any ICDEV tool</span>'}
+        ${tools?tools.split(',').map(t=>`<button class="ai-tool-btn" onclick="linkTool('${inj.inject_id}','${esc(t.trim())}')">${esc(t.trim())}</button>`).join(''):'<span style="color:#6e7681;font-size:.8rem;">Any ICDEV tool</span>'}
       </div>
       <div style="margin-top:.8rem;">
         <div style="font-size:.78rem;color:#6e7681;margin-bottom:.3rem;">Receipts logged:</div>
@@ -216,7 +229,7 @@ async function linkTool(injectId, toolSlug){
     if(!_receipts[key])_receipts[key]=[];
     _receipts[key].push({call_id:d.call_id,tool:toolSlug,result_hash:d.result_hash});
     const rcEl=document.getElementById('receipts-'+key);
-    if(rcEl)rcEl.innerHTML=_receipts[key].map(r=>`<div>✓ ${r.tool} — <code>${r.call_id.slice(0,8)}…</code></div>`).join('');
+    if(rcEl)rcEl.innerHTML=_receipts[key].map(r=>`<div>✓ ${esc(r.tool)} — <code>${esc(r.call_id.slice(0,8))}…</code></div>`).join('');
     document.querySelectorAll(`.ai-tool-btn[onclick*="${toolSlug}"]`).forEach(b=>b.classList.add('used'));
   }
 }
@@ -242,7 +255,8 @@ async function submitResponse(injectId, isAADC=false){
   if(d.ok){
     scoreEl.style.display='block';
     const aadc_score=d.aadc_score!=null?` · AADC: ${d.aadc_score}/100`:'';
-    scoreEl.innerHTML=`✅ Submitted! Receipts: +${d.receipt_pts} · AI Judge: +${d.judge_pts} · Speed: +${d.time_bonus_pts}${aadc_score} · <strong>Total: ${d.total_pts} pts</strong>`;
+    const judgePart=d.judge_unscored?'AI Judge: ⚠️ unscored (LLM unavailable)':`AI Judge: +${d.judge_pts}`;
+    scoreEl.innerHTML=`✅ Submitted! Receipts: +${d.receipt_pts} · ${judgePart} · Speed: +${d.time_bonus_pts}${aadc_score} · <strong>Total: ${d.total_pts} pts</strong>`;
     document.querySelector(`#inj-${key} .submit-btn`).disabled=true;
   }else{
     scoreEl.style.display='block';scoreEl.style.background='#2d1b1b';scoreEl.style.borderColor='#f85149';scoreEl.style.color='#f85149';
@@ -259,7 +273,7 @@ async function refreshLb(){
   const r=await fetch('/api/gameday/session/'+SESSION_ID+'/leaderboard');
   const d=await r.json();
   document.getElementById('mini-lb').querySelector('tbody').innerHTML=
-    d.leaderboard.slice(0,5).map((row,i)=>`<tr><td style="color:#6e7681;">${i+1}</td><td style="color:#e6edf3;font-weight:600;">${row.team_name}</td><td style="text-align:right;color:#FF6B35;font-weight:700;">${row.total_score}</td></tr>`).join('')||
+    d.leaderboard.slice(0,5).map((row,i)=>`<tr><td style="color:#6e7681;">${i+1}</td><td style="color:#e6edf3;font-weight:600;">${esc(row.team_name)}</td><td style="text-align:right;color:#FF6B35;font-weight:700;">${row.total_score}</td></tr>`).join('')||
     '<tr><td colspan="3" style="text-align:center;color:#6e7681;">No scores yet</td></tr>';
 }
 refreshLb();

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% set active = "semiconductor" %}
+{% set static_reference = true %}
 {% block title %}Semiconductor Chain Simulator — GeoSIGINT{% endblock %}
 
 {% block head %}
@@ -34,6 +35,7 @@ table.node-table td { padding:.35rem .5rem; border-bottom:1px solid #1f2937; ver
 {% endblock %}
 
 {% block content %}
+{% include "_geosigint_reference_badge.html" %}
 <div class="page-header page-header--compact">
     <h1>Semiconductor Chain Simulator</h1>
     <span style="font-size:.8rem;color:#6b7280">TSMC · ASML EUV · Rare Earth Flow · Disruption Cascade</span>

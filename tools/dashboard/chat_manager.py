@@ -28,6 +28,7 @@ Usage:
 """
 
 import json
+import os
 import sqlite3
 import threading
 import time
@@ -710,6 +711,122 @@ def _resolve_chat_reasoning_mode(reasoning_mode: str, user_content: str, router)
         return "cot" if reasoning_mode == "on" else "off"
 
 
+# ---------------------------------------------------------------------------
+# Cortex governance for chat turns
+# ---------------------------------------------------------------------------
+# Chat called LLMRouter directly, which meant the platform's single largest
+# prompt-injection surface ran with none of Cortex's TRUST gates and wrote no
+# audit row. We wrap the existing ``router.invoke`` rather than swapping in
+# ``cortex_api.complete()``: by the time ``_process_message`` reaches the model
+# it has assembled the RICOAS constitution, corrections, RAG, KG, live
+# compliance, hybrid memory and history compression, plus the reasoned-codegen
+# branch and the CLIJobDeferred protocol. ``complete()`` takes a bare prompt and
+# would drop all of it along with ``ctx.agent_model``.
+
+CHAT_GOVERNANCE_OPERATION = "chat.message"
+
+# Kept in sync with the refusal assertions in tests/test_chat_cortex_governance.py.
+_CHAT_BLOCKED_TEMPLATE = (
+    "This message was **blocked** by the Cortex governance gate "
+    "({gate}): {reason}. The decision was recorded in the audit trail."
+)
+
+_CHAT_GOVERNANCE_OFF = {"0", "false", "off", "no"}
+
+
+def _chat_governance_enabled() -> bool:
+    """Governance is on unless explicitly switched off.
+
+    Ungoverned chat is the gap this closes, so this is opt-out, not opt-in —
+    but a change on every turn needs one obvious lever to disable it.
+    """
+    return os.environ.get("ICDEV_CHAT_GOVERNANCE", "").strip().lower() not in _CHAT_GOVERNANCE_OFF
+
+
+def _build_chat_cortex_ctx(ctx):
+    """Map a :class:`ChatContext` onto a ``CortexContext``.
+
+    Returns None when Cortex's schemas aren't importable — Cortex is optional,
+    and the caller degrades to an ungoverned call.
+    """
+    try:
+        from tools.cortex.schemas import CortexContext
+    except Exception:
+        return None
+
+    return CortexContext(
+        tenant_id=getattr(ctx, "tenant_id", "") or "",
+        user_id=getattr(ctx, "user_id", "") or "",
+        classification=DEFAULT_CLASSIFICATION,
+        session_id=getattr(ctx, "context_id", "") or "",
+        # A conversation must not be blocked because a reply cites nothing;
+        # the grounding gates are skipped entirely below (retrieval=False), and
+        # the injection pre-check blocks regardless of this setting.
+        fail_closed=False,
+    )
+
+
+def governed_chat_invoke(invoke, prompt: str, ctx):
+    """Run ``invoke(governed_prompt)`` inside the Cortex TRUST chain.
+
+    Returns ``(reply, blocked)``. ``invoke`` receives the screened/redacted
+    prompt — not the original — so input redaction actually takes effect
+    instead of merely being recorded.
+
+    A failure anywhere in the governance layer degrades to an ungoverned call:
+    a Cortex outage must not break every conversation on the platform.
+    """
+    if not _chat_governance_enabled():
+        return invoke(prompt), False
+
+    try:
+        from tools.cortex.governance import GovernancePipeline, GovernanceBlockedError
+    except Exception as exc:
+        logger.debug("cortex governance unavailable (%s) — ungoverned chat turn", exc)
+        return invoke(prompt), False
+
+    cortex_ctx = _build_chat_cortex_ctx(ctx)
+    if cortex_ctx is None:
+        logger.debug("cortex schemas unavailable — ungoverned chat turn")
+        return invoke(prompt), False
+
+    # Degrading must not call the model twice. Once the pipeline has handed the
+    # governed prompt to the invoker, any later failure is the invoker's own
+    # (e.g. CLIJobDeferred from the CLI bridge, which the caller handles) and
+    # must propagate rather than trigger a retry.
+    reached_model = {"called": False}
+
+    def _tracked(text):
+        reached_model["called"] = True
+        return invoke(text)
+
+    try:
+        pipeline = GovernancePipeline(operation=CHAT_GOVERNANCE_OPERATION)
+        result, _report = pipeline.wrap(
+            _tracked,
+            cortex_ctx,
+            prompt=prompt,
+            # A conversational turn is generative, not retrieval-grounded.
+            # Scoring it against no sources would manufacture a defect every
+            # turn and make governance look broken.
+            context_sources=None,
+            retrieval=False,
+            attach=False,
+        )
+        return result, False
+    except GovernanceBlockedError as exc:
+        logger.warning(
+            "chat turn blocked by governance gate %s for context %s: %s",
+            exc.gate, getattr(ctx, "context_id", ""), exc.reason,
+        )
+        return _CHAT_BLOCKED_TEMPLATE.format(gate=exc.gate, reason=exc.reason), True
+    except Exception as exc:
+        if reached_model["called"]:
+            raise
+        logger.warning("chat governance failed (%s) — degrading to ungoverned call", exc)
+        return invoke(prompt), False
+
+
 class ChatContext:
     """Represents a single chat stream with its own message queue and thread."""
 
@@ -998,6 +1115,52 @@ class ChatManager:
         logger.info("Closed chat context %s", context_id)
         return {"context_id": context_id, "status": "completed"}
 
+    def shutdown(self, timeout: float = 2.0) -> int:
+        """Stop every running agent loop and wait for its thread to exit.
+
+        Returns the number of threads still alive after *timeout*.
+
+        ``close_context`` sets a context's stop event but never joins its
+        thread, and it only ever addresses one context. Nothing else stops an
+        agent loop at all, so a process that creates contexts accumulates
+        threads that outlive whatever created them.
+
+        In tests that is actively harmful rather than merely untidy. Each loop
+        polls on a 0.1s sleep and touches the database -- task rows, message
+        rows, budget usage -- so a thread left running from an earlier test
+        keeps writing during later ones. Its work is then attributed to whatever
+        test happens to be executing, and a transaction it holds blocks DDL on
+        other connections until the busy timeout expires. That is the same
+        cross-test interference that made the suite hang, arriving from a
+        different direction.
+
+        Threads are daemons, so this is not needed for interpreter exit; it is
+        needed for a clean boundary between tests, and for a graceful shutdown
+        that does not abandon in-flight work mid-write.
+        """
+        with self._lock:
+            contexts = list(self._contexts.values())
+
+        threads = []
+        for ctx in contexts:
+            ctx._stop_event.set()
+            thread = getattr(ctx, "_thread", None)
+            if thread is not None and thread.is_alive():
+                threads.append(thread)
+
+        # One shared deadline, not `timeout` per thread: N contexts must not
+        # take N * timeout to shut down.
+        deadline = time.monotonic() + timeout
+        for thread in threads:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+
+        still_alive = sum(1 for t in threads if t.is_alive())
+        if still_alive:
+            logger.warning(
+                "%d chat agent loop(s) did not stop within %.1fs", still_alive, timeout
+            )
+        return still_alive
+
     # ------------------------------------------------------------------
     # Messaging
     # ------------------------------------------------------------------
@@ -1045,14 +1208,27 @@ class ChatManager:
 
         if role == "user":
             _fire_intake_hook(context_id, content)
-            # ACE co-worker trigger: detect @team / implicit RICOAS signals and launch
+            # ACE co-worker trigger. Two paths, deliberately different:
+            #
+            #   explicit  "@team <problem>"  -> launch immediately. An explicit
+            #             command IS the approval, and this is a pinned
+            #             regression contract (tests/test_ace_chat_trigger.py).
+            #   implicit  4+ RICOAS signals  -> PROPOSE. A heuristic must not
+            #             spawn agents that hold read/write/execute agency; the
+            #             user gets an action card and decides.
             if not hook_ctx.get("coworker_instance_id"):
                 try:
-                    from icdev.tools.ace.chat_trigger import detect_ace_trigger, maybe_launch_ace
-                    if detect_ace_trigger(content):
-                        _ace_id = maybe_launch_ace(context_id, content)
+                    from icdev.tools.ace import chat_trigger as _ct
+
+                    _trigger = _ct.detect_ace_trigger(content)
+                    if _trigger == "explicit":
+                        _ace_id = _ct.maybe_launch_ace(context_id, content)
                         if _ace_id:
                             hook_ctx["coworker_instance_id"] = _ace_id
+                    elif _trigger == "implicit":
+                        _proposal = _ct.build_team_proposal(context_id, content)
+                        if _proposal:
+                            self._post_action_card(context_id, _proposal)
                 except Exception as _ace_exc:
                     logger.debug("ACE trigger skipped: %s", _ace_exc)
             _check_coworker_trigger(context_id, content, hook_ctx)
@@ -1459,30 +1635,47 @@ class ChatManager:
             reasoning_mode = _resolve_chat_reasoning_mode(
                 getattr(ctx, "reasoning_mode", "off"), user_content, router,
             )
-            if reasoning_mode != "off":
-                try:
-                    from tools.llm.reasoned_codegen import generate_reasoned_code
 
-                    rc = generate_reasoned_code(
-                        function="code_generation",
-                        request=request,
-                        router=router,
-                        mode=reasoning_mode,
-                        project_id=ctx.project_id,
-                    )
-                    result = rc.code if rc and rc.code else ""
-                    if not result:
-                        response = router.invoke("chat_response", request)
-                        result = response.content if response.content else str(response)
-                except CLIJobDeferred:
-                    raise  # let the outer handler switch to background mode
-                except Exception as exc:
-                    logger.debug("reasoned codegen failed (%s) — plain chat", exc)
-                    response = router.invoke("chat_response", request)
-                    result = response.content if response.content else str(response)
-            else:
-                response = router.invoke("chat_response", request)
-                result = response.content if response.content else str(response)
+            def _invoke_model(governed_text: str) -> str:
+                """Call the model with the governed prompt.
+
+                Cortex screens/redacts the user's turn; substitute the governed
+                text back into the assembled conversation so redaction takes
+                effect rather than only being recorded. Everything else the
+                turn assembled above is preserved.
+                """
+                req = request
+                if governed_text != user_content:
+                    msgs = [dict(m) for m in conversation]
+                    for m in reversed(msgs):
+                        if m.get("role") == "user":
+                            m["content"] = governed_text
+                            break
+                    req = LLMRequest(messages=msgs, model=ctx.agent_model)
+
+                if reasoning_mode != "off":
+                    try:
+                        from tools.llm.reasoned_codegen import generate_reasoned_code
+
+                        rc = generate_reasoned_code(
+                            function="code_generation",
+                            request=req,
+                            router=router,
+                            mode=reasoning_mode,
+                            project_id=ctx.project_id,
+                        )
+                        out = rc.code if rc and rc.code else ""
+                        if out:
+                            return out
+                    except CLIJobDeferred:
+                        raise  # let the outer handler switch to background mode
+                    except Exception as exc:
+                        logger.debug("reasoned codegen failed (%s) — plain chat", exc)
+
+                response = router.invoke("chat_response", req)
+                return response.content if response.content else str(response)
+
+            result, _blocked = governed_chat_invoke(_invoke_model, user_content, ctx)
 
             # Store RAG sources in metadata for attribution display
             if rag_results:
@@ -1680,6 +1873,41 @@ class ChatManager:
             conn.close()
         except sqlite3.OperationalError:
             pass
+
+    def _post_action_card(self, context_id: str, card: dict) -> None:
+        """Insert an interactive card into the conversation.
+
+        Stored as a normal ``chat_messages`` row with
+        ``content_type='action_card'`` — a value the CHECK constraint already
+        permits, so this needs no migration. The payload lives in ``metadata``;
+        ``content`` carries a plain-markdown fallback so a surface that does not
+        know about cards still renders something meaningful instead of a blank
+        turn.
+
+        Posted as ``system`` rather than ``assistant`` on purpose: it is not a
+        model turn, and it must not be fed back as conversational context.
+        """
+        try:
+            roles = card.get("roles") or []
+            names = ", ".join(r.get("display_name") or r.get("role_id") for r in roles)
+            fallback = (
+                "**Subject-matter experts available.** "
+                + (f"Proposed team: {names}. " if names else "")
+                + "Reply `@team <goal>` to start one."
+            )
+            with self._lock:
+                ctx = self._contexts.get(context_id)
+                if ctx is None:
+                    return
+                ctx.turn_number += 1
+                turn = ctx.turn_number
+            self._db_insert_message(
+                context_id, turn, "system", fallback,
+                content_type="action_card", metadata=card,
+            )
+            _mark_dirty(context_id, "action_card", {"card": card.get("card")})
+        except Exception as exc:  # noqa: BLE001 — a card must never break the turn
+            logger.debug("action card post skipped: %s", exc)
 
     def _db_insert_message(
         self,

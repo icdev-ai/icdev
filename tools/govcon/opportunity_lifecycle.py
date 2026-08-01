@@ -43,7 +43,10 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, column_exists  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.opportunity_lifecycle")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -142,8 +145,8 @@ def _audit(conn, action: str, details: str = "", project_id: str = "") -> None:
     try:
         conn.execute(
             "INSERT INTO audit_trail "
-            "(id, created_at, event_type, actor, action, details, session_id, project_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "(created_at, event_type, actor, action, details, session_id, project_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 _now(),
@@ -155,8 +158,8 @@ def _audit(conn, action: str, details: str = "", project_id: str = "") -> None:
                 project_id,
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _ensure_tables(conn) -> None:
@@ -244,9 +247,8 @@ def _ensure_tables(conn) -> None:
 def _ensure_workflow_loop_id_column(conn) -> bool:
     """Add workflow_loop_id column to proposal_opportunities if missing."""
     try:
-        cols = conn.execute("PRAGMA table_info(proposal_opportunities)").fetchall()
-        col_names = [c["name"] if isinstance(c, dict) else c[1] for c in cols]
-        if "workflow_loop_id" in col_names:
+        # Backend-aware column probe — works on PG + SQLite without translate_sql.
+        if column_exists(conn, "proposal_opportunities", "workflow_loop_id"):
             return True
         conn.execute("ALTER TABLE proposal_opportunities ADD COLUMN workflow_loop_id TEXT")
         conn.commit()

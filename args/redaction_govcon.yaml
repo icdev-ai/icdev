@@ -32,10 +32,23 @@ protected_organizations:
 # ---------------------------------------------------------------------------
 # Maps real agency names to codenames for surrogate generation.
 # If an agency is detected but not in this map, it gets a generic surrogate.
+# Applied only on cloud-bound prompts; the real name is restored in the
+# response via de-anonymization, so proposals still read normally.
+# trust-mask-04: seeded with common DoD/federal agencies so the deny-list is
+# active out of the box. Extend/override per engagement.
 agency_surrogates:
-  # "Missile Defense Agency": "Agency ALPHA"
-  # "Defense Health Agency": "Agency BRAVO"
-  # "Defense Information Systems Agency": "Agency CHARLIE"
+  "Missile Defense Agency": "Agency ALPHA"
+  "Defense Health Agency": "Agency BRAVO"
+  "Defense Information Systems Agency": "Agency CHARLIE"
+  "Defense Logistics Agency": "Agency DELTA"
+  "Defense Threat Reduction Agency": "Agency ECHO"
+  "Defense Advanced Research Projects Agency": "Agency FOXTROT"
+  "National Geospatial-Intelligence Agency": "Agency GOLF"
+  "National Security Agency": "Agency HOTEL"
+  "Defense Counterintelligence and Security Agency": "Agency INDIA"
+  "Defense Intelligence Agency": "Agency JULIET"
+  "Cybersecurity and Infrastructure Security Agency": "Agency KILO"
+  "Defense Contract Management Agency": "Agency LIMA"
 
 # ---------------------------------------------------------------------------
 # Custom Sensitive Terms (user-defined words and phrases)

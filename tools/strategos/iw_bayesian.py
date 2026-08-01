@@ -32,10 +32,10 @@ import json
 import math
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
+from tools.logging.icdev_logger import get_logger
 
-_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
+logger = get_logger("icdev.strategos.iw_bayesian")
 
 
 def _now() -> str:
@@ -43,12 +43,13 @@ def _now() -> str:
 
 
 def _get_conn():
-    try:
-        from tools.db.storage import get_connection
-        return get_connection()
-    except Exception:
-        import sqlite3
-        return sqlite3.connect(str(_DB_PATH))
+    # Always route through the shared storage layer. Its translate layer
+    # handles placeholder/dialect differences on both SQLite and PostgreSQL.
+    # A raw sqlite3 fallback would reject the %s placeholders these queries
+    # use, so it was dead weight that masked genuine import failures — let
+    # an import error raise loudly instead.
+    from tools.db.storage import get_connection
+    return get_connection()
 
 
 # ── Likelihood ratios for each evidence type ─────────────────────────────────
@@ -194,8 +195,11 @@ class BayesianIWUpdater:
                     ),
                 )
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "_persist: best-effort INSERT into sg_bayesian_war_posteriors failed (non-blocking): %s",
+                    exc,
+                )
         finally:
             conn.close()
 

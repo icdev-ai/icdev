@@ -16,13 +16,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.sdc.demo_runner")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -44,10 +46,11 @@ _PRIMARY_DESIGN_ID = "demo-design-001"
 
 # ── Canvas DB connection ───────────────────────────────────────────────────────
 
-def _canvas_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_CANVAS_DB))
-    conn.row_factory = sqlite3.Row
-    return conn
+def _canvas_conn():
+    # PG-primary via the Security Canvas helper; SQLite is a guarded fallback.
+    from tools.security_canvas.db.init_db import get_connection
+
+    return get_connection()
 
 
 def _main_conn():
@@ -516,8 +519,9 @@ def _persist_run(run_id: str, audience: str, scenarios: List[str], status: str, 
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Persistence failure must not abort the demo run
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Persistence failure must not abort the demo run
+        logger.warning("_persist_run: best-effort INSERT into sdc_demo_runs failed (non-blocking): %s", exc)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

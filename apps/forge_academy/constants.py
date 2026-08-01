@@ -86,6 +86,111 @@ STEP_TYPES = [
 ]
 
 # ---------------------------------------------------------------------------
+# Step progress vocabulary
+# ---------------------------------------------------------------------------
+# fa_step_progress.status. 'attempted' exists because a failed submission used to
+# be filed as 'completed' with score 0 (aca-int-05) — a failure is now visibly a
+# failure. If a CHECK constraint is ever added to the column, derive it from
+# STEP_STATUSES rather than hardcoding the list in SQL.
+STEP_STATUS_NOT_STARTED = "not_started"
+STEP_STATUS_ATTEMPTED   = "attempted"
+STEP_STATUS_COMPLETED   = "completed"
+STEP_STATUSES = (STEP_STATUS_NOT_STARTED, STEP_STATUS_ATTEMPTED, STEP_STATUS_COMPLETED)
+
+# ---------------------------------------------------------------------------
+# Tier gating (aca-ux-04)
+# ---------------------------------------------------------------------------
+# Percentage of the PRIOR tier's *completable* missions required to unlock a tier.
+# Tier 1 is deliberately absent: it is the entry point and must never gate.
+#
+# "Completable" excludes missions with zero steps. This is not a nicety — Tier 1
+# contains m-chat-agent-interview, which has no steps by design (fga-wire-06 marks
+# genuinely-empty missions Coming Soon). A "100% of the prior tier" rule would
+# therefore have made Tier 2 PERMANENTLY unreachable. 12 of 13 Tier-1 missions and
+# 95 of 104 Tier-2 missions are completable.
+#
+# Tier 3's bar is deliberately much lower than Tier 2's: Tier 2 is a 95-mission
+# role-track catalogue that no single learner is expected to finish (a netops
+# engineer has no reason to complete the ISSM track), so a high percentage there
+# would gate Tier 3 on irrelevant work. Scoping the Tier-3 threshold to the
+# learner's own role missions is the better answer and is deliberately deferred:
+# role matching currently uses LIKE '%role%', so 'swe' matches 'swe_arch'
+# (aca-hyg-02). Revisit once that is exact-token.
+TIER_UNLOCK_PCT = {
+    2: 80,
+    3: 25,
+}
+
+# fa_mission_progress.status. Same rule as above: if a CHECK is ever added to the
+# column, derive it from MISSION_STATUSES.
+MISSION_STATUS_NOT_STARTED = "not_started"
+MISSION_STATUS_IN_PROGRESS = "in_progress"
+MISSION_STATUS_COMPLETED   = "completed"
+MISSION_STATUSES = (
+    MISSION_STATUS_NOT_STARTED, MISSION_STATUS_IN_PROGRESS, MISSION_STATUS_COMPLETED,
+)
+
+# ---------------------------------------------------------------------------
+# Assessment model (aca-trn-01)
+# ---------------------------------------------------------------------------
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Before this, a step was 100 or 0 — grading._verdict and db.record_step_attempt
+# both hardcoded it — attempts were unbounded and uncounted, and the
+# assessment_score_min declared in CERT_TIERS below was never read by
+# check_cert_eligibility. Nothing here may be hardcoded at a call site.
+
+# Fraction of an item-scored step's served items that must be correct.
+# Deliberately equal to CERT_ASSESSMENT_THRESHOLD_PCT: a learner meets one
+# standard, not two.
+STEP_PASS_THRESHOLD_PCT = 70
+
+# A test suite is all-or-nothing BECAUSE THE RUNNER SAYS SO: code_runner.run_code
+# returns a single boolean for the whole script, so partial credit would be invented
+# rather than measured. Named as a constant rather than left implicit in `if passed`
+# so there is one place to change when the runner reports per-test results.
+CODING_PASS_THRESHOLD_PCT = 100
+
+# Fraction of a mission's GRADED steps that must be passed for the mission to count
+# as 'demonstrated'. This does NOT gate completion: since aca-int-05 a failed step is
+# filed 'attempted', never 'completed', so "all steps completed" already implies
+# "all assessed steps passed" — a percentage here would be strictly weaker. It
+# classifies what a completed mission is evidence OF. See assessment.py.
+MISSION_ASSESSMENT_THRESHOLD_PCT = 80
+
+# Wires the previously-dead assessment_score_min in CERT_TIERS.
+CERT_ASSESSMENT_THRESHOLD_PCT = 70
+
+# Items drawn per attempt. Three is the smallest draw for which a 70% threshold is
+# not degenerate: 2/3 = 67% fails, 3/3 passes. With one item a "threshold" is just
+# the binary pass/fail this model exists to remove.
+ASSESSMENT_ITEMS_PER_ATTEMPT = 3
+
+# A bank must exceed the draw or every attempt serves the same items and the
+# randomisation is decorative. Enforced by assessment.validate_item_bank.
+ASSESSMENT_MIN_BANK_SIZE = 5
+
+# Attempt policy. 'practice' is formative — retry until it clicks, which is what
+# practice is for. 'summative' is a check that gates a certificate.
+ATTEMPT_POLICY_PRACTICE  = "practice"
+ATTEMPT_POLICY_SUMMATIVE = "summative"
+ATTEMPT_POLICIES = (ATTEMPT_POLICY_PRACTICE, ATTEMPT_POLICY_SUMMATIVE)
+
+SUMMATIVE_MAX_ATTEMPTS = 3
+
+# Step assessment classes (derived at runtime by assessment.classify_step, never
+# stored, so they cannot drift from the row they describe).
+STEP_CLASS_GRADED       = "graded"        # server can compute a real score
+STEP_CLASS_UNGRADED     = "ungraded"      # assessed type with nothing to grade against
+STEP_CLASS_ACKNOWLEDGED = "acknowledged"  # real work, but not evidence of a skill
+
+# Mission assessment classification.
+MISSION_ASSESSMENT_DEMONSTRATED = "demonstrated"
+MISSION_ASSESSMENT_ATTESTED     = "attested"
+MISSION_ASSESSMENT_PARTIAL      = "partial"
+MISSION_ASSESSMENT_INCOMPLETE   = "incomplete"
+
+# ---------------------------------------------------------------------------
 # XP multipliers
 # ---------------------------------------------------------------------------
 XP_MULT_FIRST_TRY_NO_HINTS = 1.5

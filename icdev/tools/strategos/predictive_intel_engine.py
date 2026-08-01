@@ -23,6 +23,9 @@ from datetime import datetime, timezone
 
 from tools.db.storage import get_connection, is_pg
 from tools.llm.router import LLMRouter
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.strategos.predictive_intel_engine")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -354,13 +357,16 @@ def _generate_narrative(
     )
 
     try:
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
-        response = router.complete(
-            system=_BRIEF_SYSTEM_PROMPT,
-            user=user_prompt,
-            function="intelligence_report",
+        response = router.invoke(
+            "intelligence_report",
+            LLMRequest(
+                system_prompt=_BRIEF_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_prompt}],
+            ),
         )
-        return response.get("text", "").strip() or _fallback_narrative(theater, oracle, mesh, forecasts)
+        return (response.content or "").strip() or _fallback_narrative(theater, oracle, mesh, forecasts)
     except Exception:
         return _fallback_narrative(theater, oracle, mesh, forecasts)
 
@@ -514,8 +520,8 @@ def _persist_brief(brief: dict, mesh: dict) -> None:
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_persist_brief: best-effort INSERT into sg_leadership_briefs failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

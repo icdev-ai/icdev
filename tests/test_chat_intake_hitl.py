@@ -21,9 +21,26 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from _sql_compat import connect as _tconnect  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+def _storage_conn(db_path):
+    """Connect the way production does: %s placeholders translated for SQLite.
+
+    Runtime SQL is authored for PostgreSQL (%s placeholders, per CLAUDE.md); the
+    storage wrapper is what translates them to SQLite's ?. Injecting a RAW sqlite3
+    connection makes every %s a `near "%": syntax error`, which the intake hook
+    swallows -- so it silently never promoted anything and the tests failed on
+    "Expected 'promote' to be called once. Called 0 times."
+
+    Delegates to the shared tests/_sql_compat.py helper so this file cannot
+    drift from the translation the runtime actually performs.
+    """
+    return _tconnect(db_path)
+
 
 @pytest.fixture()
 def tmp_db(tmp_path):
@@ -79,7 +96,16 @@ def tmp_db(tmp_path):
     """)
     conn.commit()
     conn.close()
-    return db
+
+    # process_message_for_intake() swallows db_path into **_kwargs and ignores
+    # it -- every write goes through the module-level get_connection(), i.e. the
+    # ambient DB. Patching here is what actually binds the code under test to
+    # `db`; without it the hook wrote to data/icdev.db and, in a checkout where
+    # that DB has not been seeded, failed with "no such table: kanban_tasks"
+    # -- reported as a missing HITL feature rather than a leaky fixture.
+    with patch("tools.chat.requirement_intake_hook.get_connection",
+               side_effect=lambda *_a, **_kw: _storage_conn(db)):
+        yield db
 
 
 # ---------------------------------------------------------------------------
@@ -204,8 +230,6 @@ class TestHitlPendingMapping:
             patch("tools.workflow_hitl.engine.WorkflowEngine.advance_stage",
                   return_value={"advanced": True}),
             patch("tools.chat.requirement_intake_hook._req_count", side_effect=[0, 1]),
-            patch("tools.chat.requirement_intake_hook.get_connection",
-                  side_effect=lambda **kw: sqlite3.connect(str(tmp_db))),
         ):
             process_message_for_intake(
                 "ctx-mapping",
@@ -232,7 +256,7 @@ class TestMaybePromote:
     def test_skips_unknown_instance(self, tmp_db):
         """AC-5: instance not from intake hook → skipped."""
         with patch("tools.workflow_hitl.intake_promote_handler.get_connection",
-                   return_value=sqlite3.connect(str(tmp_db))):
+                   side_effect=lambda *_a, **_kw: _storage_conn(tmp_db)):
             from tools.workflow_hitl.intake_promote_handler import maybe_promote
             result = maybe_promote("wfi-unknown-xyz")
 
@@ -251,7 +275,7 @@ class TestMaybePromote:
         from tools.workflow_hitl import intake_promote_handler
         with (
             patch.object(intake_promote_handler, "get_connection",
-                         return_value=sqlite3.connect(str(tmp_db))),
+                         side_effect=lambda *_a, **_kw: _storage_conn(tmp_db)),
             patch("tools.requirements.intake_kanban_promoter.promote",
                   return_value={"inserted": 3, "skipped": 0}) as mock_promote,
         ):

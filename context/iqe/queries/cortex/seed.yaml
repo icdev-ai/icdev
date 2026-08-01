@@ -1,0 +1,14 @@
+canvas: cortex
+queries:
+  - label: Recent sessions
+    query: "foreach s in cortex.chat_sessions select s.session_id, s.mode, s.domain, s.status, s.created_at"
+  - label: Active sessions
+    query: "foreach s in cortex.chat_sessions where s.status == \"active\" select s.session_id, s.mode, s.domain, s.user_id"
+  - label: Search history
+    query: "foreach h in cortex.search_history select h.query_text, h.mode, h.domain, h.result_count, h.grounded"
+  - label: Ungrounded answers
+    query: "foreach h in cortex.search_history where h.grounded == false select h.query_text, h.mode, h.domain"
+  - label: Governance audit
+    query: "foreach a in cortex.audit select a.function, a.outcome, a.blocked, a.created_at"
+  - label: Blocked invocations
+    query: "foreach a in cortex.audit where a.blocked == true select a.function, a.created_at"

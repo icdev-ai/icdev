@@ -1,0 +1,64 @@
+# CUI // SP-CTI
+# Worked example for `node_type: mcp` (dwo-mcp-03).
+#
+# Every step below except the rollup names a tool from
+# tools/mcp/tool_registry.py in `mcp_tool` instead of a script path in `tool`,
+# and every one of those names appears in the `allowed` tier of
+# `mcp_workflow_tools` in args/security_gates.yaml — so the run needs no
+# approval gate.  A tool from the `requires_approval` tier (terraform_apply,
+# emass_sync, self_heal, ...) would additionally need an approved `approval`
+# node earlier in the same run.
+description: "Worked example: read-only security posture review dispatched through the MCP tool registry"
+category: security
+
+steps:
+
+  # ── Zero-argument MCP tool.  `mcp_params: {}` is the same as omitting it. ──
+  - id: platform_health
+    name: "Platform Health Probe"
+    node_type: mcp
+    mcp_tool: health_check
+    mcp_params: {}
+    description: "Confirm the platform is healthy before spending a scan on it"
+
+  # ── project_id is *not* authored in mcp_params.  The runner passes the run's
+  #    project as --project-id unless the step sets inject_project_id: false. ──
+  - id: dependency_scan
+    name: "Python Dependency Inventory"
+    node_type: mcp
+    mcp_tool: scan_dependencies
+    mcp_params:
+      language: python
+      offline: true
+    depends_on: [platform_health]
+    description: "Inventory Python dependencies without reaching a package registry"
+
+  - id: code_quality
+    name: "Studio Complexity Scan"
+    node_type: mcp
+    mcp_tool: code_analyze
+    mcp_params:
+      project_dir: tools/studio
+      store: false
+    depends_on: [platform_health]
+    description: "AST complexity and maintainability metrics for the Studio package"
+
+  - id: stig_baseline
+    name: "Web Application STIG Check"
+    node_type: mcp
+    mcp_tool: stig_check
+    mcp_params:
+      stig_profile: webapp
+    depends_on: [platform_health]
+    description: "Report-only STIG evaluation — CAT1/CAT2/CAT3 findings"
+
+  # ── An ordinary tool node.  `args` are forwarded here; on an mcp node they
+  #    would be ignored in favour of mcp_params. ──
+  - id: audit_rollup
+    name: "Maintenance Audit Rollup"
+    tool: "tools/maintenance/maintenance_auditor.py"
+    node_type: tool
+    depends_on: [dependency_scan, code_quality, stig_baseline]
+    args:
+      offline: true
+    description: "Consolidate the scan results into a scored maintenance audit"

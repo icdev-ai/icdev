@@ -5,7 +5,26 @@
 Architecture Decision D248: Round-trip IR consistency check.
 Architecture Decision D255: Compiler-feedback repair loop (Google ICSE 2025 + CoTran ECAI 2024).
 Runs syntax, lint, round-trip IR, API surface, type coverage, complexity,
-compliance, and feature mapping checks. On failure, feeds errors back to LLM."""
+compliance, and feature mapping checks. On failure, feeds errors back to LLM.
+
+Honesty invariants (nav-intel-03):
+  * ``verified`` dimension — every check result carries an explicit ``verified``
+    boolean. A check is *verified* only when its underlying validation actually
+    ran. Consumers (dashboard ``/translations``, gate summary, MCP) MUST
+    distinguish a verified pass from a "not verified" state and never treat the
+    latter as success.
+  * Air-gap safe — the absence of a target-language compiler/toolchain is the
+    *expected* condition in an air-gapped environment. When the toolchain is
+    absent, ``check_syntax`` returns an explicit ``verified=False`` (not-verified)
+    state. Not-verified is NOT a failure: it never blocks the gate, but it also
+    never counts as a pass. Only a *verified* failure (toolchain present, syntax
+    errors) blocks.
+  * Mocked stubs never inflate scores — units emitted by the mock-and-continue
+    path (D256) are incomplete placeholders. They are excluded from the passing
+    numerator of the API-surface and compliance checks and reported as
+    "mocked (not verified)", so a stub that merely carries the right name/CUI
+    banner can never fabricate a preserved API surface or compliance coverage.
+"""
 
 import argparse
 import json
@@ -14,6 +33,9 @@ import subprocess
 import uuid
 from tools.db.storage import get_connection
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.translation.translation_validator")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -84,17 +106,22 @@ def _load_config():
 
 
 def check_syntax(file_path, language):
-    """Check syntax validity of translated code. Returns (passed, errors)."""
+    """Check syntax validity of translated code.
+
+    Returns a 3-tuple ``(passed, errors, verified)``:
+      * ``(True,  [],     True)``  — compiler ran and the file compiled cleanly.
+      * ``(False, errors, True)``  — compiler ran and reported errors (blocking).
+      * ``(True,  msg,   False)``  — the target-language toolchain is absent
+        (expected in air-gap) OR no checker is configured for the language.
+        This is an explicit *not-verified* state: distinct from a pass, it must
+        NOT be treated as a passing gate and must NOT block air-gapped use.
+    """
     cmd_parts = SYNTAX_COMMANDS.get(language)
     if not cmd_parts:
-        return True, []
+        # No syntax command defined for this language → cannot verify.
+        return True, [f"No syntax checker configured for {language} (not verified)"], False
 
-    if language == "python":
-        cmd = cmd_parts + [str(file_path)]
-    elif language in ("typescript", "javascript"):
-        cmd = cmd_parts + [str(file_path)]
-    else:
-        cmd = cmd_parts + [str(file_path)]
+    cmd = cmd_parts + [str(file_path)]
 
     try:
         result = subprocess.run(
@@ -105,16 +132,17 @@ def check_syntax(file_path, language):
             stdin=subprocess.DEVNULL,
         )
         if result.returncode == 0:
-            return True, []
+            return True, [], True
         errors = (result.stderr or result.stdout or "").strip().split("\n")
-        return False, errors
+        return False, errors, True
     except FileNotFoundError:
-        # Tool not installed — skip
-        return True, [f"Syntax checker not available for {language}"]
+        # Toolchain not installed (expected in air-gap) — NOT VERIFIED, not a pass.
+        return True, [f"Syntax checker not available for {language} (not verified — toolchain absent)"], False
     except subprocess.TimeoutExpired:
-        return False, ["Syntax check timed out"]
+        return False, ["Syntax check timed out"], True
     except Exception as e:
-        return True, [f"Syntax check skipped: {str(e)}"]
+        # Unexpected failure — treat as not-verified rather than fabricating a pass.
+        return True, [f"Syntax check skipped: {str(e)} (not verified)"], False
 
 
 def check_lint(file_path, language):
@@ -140,6 +168,30 @@ def check_lint(file_path, language):
         return True, [f"Linter not available for {language}"]
     except Exception as e:
         return True, [f"Lint skipped: {str(e)}"]
+
+
+def _is_mocked(unit):
+    """A unit is 'mocked' (incomplete, not a real translation) if flagged as such
+    (D256 mock-and-continue) or its body carries the translation-mock marker.
+
+    Mocked units are placeholders — they must never inflate a gate score.
+    """
+    # nav-intel-05: an explicit ``mock: true`` flag (set by the mock-and-continue
+    # path when an LLM error degrades a unit to a stub) is authoritative.
+    if unit.get("mock") is True:
+        return True
+    if unit.get("status") == "mocked":
+        return True
+    code = (unit.get("translated_code", "") or "").lower()
+    return "translation mock" in code or "mock — translation failed" in code
+
+
+def _name_matches(name, unit_map):
+    """Case/underscore-insensitive lookup of ``name`` in a {name: unit} map."""
+    if name in unit_map:
+        return True
+    norm = name.lower().replace("_", "")
+    return any(tname.lower().replace("_", "") == norm for tname in unit_map)
 
 
 def check_round_trip(source_ir, translated_file, target_language):
@@ -191,29 +243,30 @@ def check_round_trip(source_ir, translated_file, target_language):
 
 
 def check_api_surface(source_ir, translated_units):
-    """Check that public API signatures are preserved. Returns (score, findings)."""
+    """Check that public API signatures are preserved. Returns (score, findings).
+
+    Only *real* (non-mocked) translated units count toward the preserved surface.
+    A source unit that is present only as a mock stub is reported as
+    "mocked (not verified)" and does NOT count as matched — a placeholder that
+    merely carries the right name must never fabricate a preserved API surface.
+    """
     source_units = source_ir.get("units", [])
     if not source_units:
         return 1.0, []
 
-    translated_names = {u.get("name", ""): u for u in translated_units}
+    real_names = {u.get("name", ""): u for u in translated_units if not _is_mocked(u)}
+    mocked_names = {u.get("name", ""): u for u in translated_units if _is_mocked(u)}
     findings = []
     matched = 0
 
     for unit in source_units:
         name = unit.get("name", "")
-        if name in translated_names:
+        if _name_matches(name, real_names):
             matched += 1
+        elif _name_matches(name, mocked_names):
+            findings.append(f"Mocked (not verified): {name} ({unit.get('kind', 'function')})")
         else:
-            # Check case-insensitive
-            found = False
-            for tname in translated_names:
-                if tname.lower().replace("_", "") == name.lower().replace("_", ""):
-                    matched += 1
-                    found = True
-                    break
-            if not found:
-                findings.append(f"Missing: {name} ({unit.get('kind', 'function')})")
+            findings.append(f"Missing: {name} ({unit.get('kind', 'function')})")
 
     score = matched / len(source_units) if source_units else 1.0
     return round(score, 3), findings
@@ -302,6 +355,11 @@ def check_compliance(translated_units, target_language):
     cui_marker = "CUI // SP-CTI"
 
     for unit in translated_units:
+        # Mocked stubs are incomplete — their CUI banner must not fabricate
+        # compliance coverage. Count them as not-verified (against total).
+        if _is_mocked(unit):
+            findings.append(f"Mocked (not verified): {unit.get('name', '?')} — compliance not confirmed")
+            continue
         code = unit.get("translated_code", "")
         if cui_marker in code:
             marked += 1
@@ -313,49 +371,75 @@ def check_compliance(translated_units, target_language):
 
 
 def check_feature_mapping(source_ir, translated_units, source_language, target_language):
-    """Validate feature mapping rules were applied (D247). Returns (score, findings)."""
+    """Validate feature mapping rules were applied (D247).
+
+    Wires the REAL ``FeatureMapLoader.validate_output`` against each translated
+    unit (previously this was a no-op that hardcoded a 1.0 pass). Returns a
+    3-tuple ``(score, findings, verified)``:
+      * ``verified=False`` — the feature-map loader could not be imported, so
+        the rules could not be checked (not a pass, not a failure).
+      * ``verified=True``  — validation actually ran; ``score`` reflects the
+        fraction of feature-validation checks that passed.
+    """
     try:
         from tools.translation.feature_map import FeatureMapLoader
 
         loader = FeatureMapLoader()
         rules = loader.get_rules(source_language, target_language)
     except ImportError:
-        return 1.0, ["Feature map loader not available"]
+        return 1.0, ["Feature map loader not available (not verified)"], False
 
     if not rules:
-        return 1.0, []
+        # No feature-mapping rules for this language pair → nothing to enforce.
+        return 1.0, [], True
 
-    # Detect features in source
-    source_features = set()
-    for unit in source_ir.get("units", []):
-        for idiom in unit.get("idioms", []):
-            source_features.add(idiom)
+    # Detect features actually present in the source so we only enforce rules
+    # whose source pattern really appeared (avoids false-positive violations).
+    source_code_parts = []
+    for u in source_ir.get("units", []):
+        for field in ("source_code", "source", "code", "body"):
+            if u.get(field):
+                source_code_parts.append(u[field])
+                break
+    top_src = source_ir.get("source_code") or source_ir.get("source", "")
+    if top_src:
+        source_code_parts.append(top_src)
 
-    if not source_features:
-        return 1.0, []
+    if source_code_parts:
+        detected = loader.detect_features(
+            "\n".join(source_code_parts), source_language, target_language
+        )
+    else:
+        # Conservative fallback: no per-unit source available — enforce all pair
+        # rules. This can never fabricate success, only surface potential gaps.
+        detected = rules
 
-    # Check that translated code doesn't still contain source patterns
+    if not detected:
+        return 1.0, [], True
+
     findings = []
-    violations = 0
     total_checks = 0
+    failed_checks = 0
 
-    for rule in rules:
-        validation = rule.get("validation", "")
-        if not validation:
+    for tu in translated_units:
+        translated_code = tu.get("translated_code", "")
+        if not translated_code:
             continue
+        result = loader.validate_output(translated_code, detected, target_language)
+        for check in result.get("checks", []):
+            total_checks += 1
+            if not check.get("passed", True):
+                failed_checks += 1
+                findings.append(
+                    f"{tu.get('name', '?')}: {check.get('validation', '?')} — "
+                    f"{check.get('details', 'rule violated')}"
+                )
 
-        total_checks += 1
-        # Check validation constraints across all translated units
-        all_code = "\n".join(u.get("translated_code", "") for u in translated_units)
+    if total_checks == 0:
+        return 1.0, findings, True
 
-        if validation == "no_list_comprehension_syntax" and "[" in all_code and "for" in all_code:
-            # Rough check — might have list comprehension syntax in non-Python target
-            if target_language not in ("python",):
-                pass  # OK, other languages use [] differently
-        # More validation checks can be added per rule
-
-    score = 1.0 - (violations / total_checks) if total_checks > 0 else 1.0
-    return round(max(0.0, score), 3), findings
+    score = 1.0 - (failed_checks / total_checks)
+    return round(max(0.0, score), 3), findings, True
 
 
 def validate_translation(
@@ -376,38 +460,73 @@ def validate_translation(
     thresholds = config.get("validation", {}).get("thresholds", {})
     compliance_config = config.get("compliance", {})
 
-    translated_units = translated_data.get("translated_units", []) + translated_data.get("mocked_units", [])
+    real_units = translated_data.get("translated_units", [])
+    mocked_units = translated_data.get("mocked_units", [])
+    # Checks see the full set but distinguish real vs mocked internally so mocked
+    # stubs cannot inflate scores (see check_api_surface / check_compliance).
+    translated_units = real_units + mocked_units
+    mocked_count = len(mocked_units)
 
     results = {}
     overall_pass = True
 
-    # 1. Syntax check (per file)
-    syntax_passed = True
+    ext_map = {
+        "python": "*.py",
+        "java": "*.java",
+        "go": "*.go",
+        "rust": "*.rs",
+        "csharp": "*.cs",
+        "typescript": "*.ts",
+        "javascript": "*.js",
+    }
+
+    # 1. Syntax check (per file) — air-gap safe with an explicit not-verified state.
+    syntax_ran_any = False  # a real compiler actually ran on ≥1 file
+    syntax_failed = False  # a verified syntax error was found
     syntax_findings = []
+    files_seen = 0
     if output_dir:
         out = Path(output_dir)
-        ext_map = {
-            "python": "*.py",
-            "java": "*.java",
-            "go": "*.go",
-            "rust": "*.rs",
-            "csharp": "*.cs",
-            "typescript": "*.ts",
-            "javascript": "*.js",
-        }
         pattern = ext_map.get(target_language, "*")
         for f in out.rglob(pattern):
-            passed, errors = check_syntax(f, target_language)
-            if not passed:
-                syntax_passed = False
+            files_seen += 1
+            passed, errors, verified = check_syntax(f, target_language)
+            if verified:
+                syntax_ran_any = True
+                if not passed:
+                    syntax_failed = True
+                    syntax_findings.extend(errors)
+            else:
+                # Toolchain absent for this language — not verified, not a failure.
                 syntax_findings.extend(errors)
-    results["syntax"] = {
-        "passed": syntax_passed,
-        "score": 1.0 if syntax_passed else 0.0,
-        "findings": syntax_findings[:20],
-    }
-    if not syntax_passed:
-        overall_pass = False
+
+    syntax_verified = syntax_ran_any
+    if files_seen == 0:
+        # Nothing was actually compiled → cannot claim a pass.
+        syntax_verified = False
+        syntax_findings.append("No target-language files found to syntax-check (not verified)")
+
+    if syntax_verified:
+        syntax_status = "fail" if syntax_failed else "pass"
+        results["syntax"] = {
+            "passed": not syntax_failed,
+            "verified": True,
+            "status": syntax_status,
+            "score": 0.0 if syntax_failed else 1.0,
+            "findings": syntax_findings[:20],
+        }
+        # Only a VERIFIED syntax failure blocks the gate.
+        if syntax_failed:
+            overall_pass = False
+    else:
+        # Not verified: distinct from pass, never counts as passed, never blocks.
+        results["syntax"] = {
+            "passed": False,
+            "verified": False,
+            "status": "not_verified",
+            "score": None,
+            "findings": syntax_findings[:20],
+        }
 
     # 2. Lint check
     lint_findings = []
@@ -419,6 +538,7 @@ def validate_translation(
                 lint_findings.extend(warnings)
     results["lint"] = {
         "passed": len(lint_findings) == 0,
+        "verified": True,
         "score": 1.0 if not lint_findings else 0.5,
         "findings": lint_findings[:20],
     }
@@ -431,6 +551,7 @@ def validate_translation(
     min_rt = thresholds.get("min_round_trip_similarity", 0.80)
     results["round_trip"] = {
         "passed": rt_score >= min_rt,
+        "verified": True,
         "score": rt_score,
         "threshold": min_rt,
         "findings": rt_findings[:20],
@@ -441,8 +562,10 @@ def validate_translation(
     min_api = thresholds.get("min_api_surface_match", 0.90)
     results["api_surface"] = {
         "passed": api_score >= min_api,
+        "verified": True,
         "score": api_score,
         "threshold": min_api,
+        "mocked_count": mocked_count,
         "findings": api_findings[:20],
     }
     if api_score < min_api:
@@ -453,6 +576,7 @@ def validate_translation(
     min_type = thresholds.get("min_type_coverage", 0.85)
     results["type_coverage"] = {
         "passed": type_score >= min_type,
+        "verified": True,
         "score": type_score,
         "threshold": min_type,
         "findings": type_findings[:20],
@@ -463,6 +587,7 @@ def validate_translation(
     max_cx = thresholds.get("max_complexity_increase_pct", 30)
     results["complexity"] = {
         "passed": cx_score >= 0.7,
+        "verified": True,
         "score": cx_score,
         "threshold": max_cx,
         "findings": cx_findings[:20],
@@ -473,20 +598,35 @@ def validate_translation(
     min_comp = compliance_config.get("min_control_coverage_pct", 95.0) / 100.0
     results["compliance"] = {
         "passed": comp_score >= min_comp,
+        "verified": True,
         "score": comp_score,
         "threshold": min_comp,
+        "mocked_count": mocked_count,
         "findings": comp_findings[:20],
     }
     if comp_score < min_comp:
         overall_pass = False
 
-    # 8. Feature mapping
-    fm_score, fm_findings = check_feature_mapping(source_ir, translated_units, source_language, target_language)
-    results["feature_mapping"] = {
-        "passed": fm_score >= 0.8,
-        "score": fm_score,
-        "findings": fm_findings[:20],
-    }
+    # 8. Feature mapping — real FeatureMapLoader.validate_output wiring.
+    fm_score, fm_findings, fm_verified = check_feature_mapping(
+        source_ir, translated_units, source_language, target_language
+    )
+    if fm_verified:
+        results["feature_mapping"] = {
+            "passed": fm_score >= 0.8,
+            "verified": True,
+            "status": "pass" if fm_score >= 0.8 else "fail",
+            "score": fm_score,
+            "findings": fm_findings[:20],
+        }
+    else:
+        results["feature_mapping"] = {
+            "passed": False,
+            "verified": False,
+            "status": "not_verified",
+            "score": None,
+            "findings": fm_findings[:20],
+        }
 
     # Gate evaluation
     gate_result = "pass" if overall_pass else "fail"
@@ -503,8 +643,16 @@ def validate_translation(
         "checks": results,
         "overall_pass": overall_pass,
         "gate_result": gate_result,
-        "checks_passed": sum(1 for r in results.values() if r.get("passed", False)),
+        # A check counts as "passed" only if it was verified AND passed — a
+        # not-verified check never inflates the passed tally.
+        "checks_passed": sum(
+            1 for r in results.values() if r.get("passed", False) and r.get("verified", True)
+        ),
         "checks_total": len(results),
+        "checks_verified": sum(1 for r in results.values() if r.get("verified", True)),
+        "not_verified_checks": [k for k, r in results.items() if not r.get("verified", True)],
+        "fully_verified": all(r.get("verified", True) for r in results.values()),
+        "mocked_count": mocked_count,
     }
 
     # Record in DB
@@ -542,6 +690,15 @@ def _record_validations(db_path, job_id, results):
         c = conn.cursor()
         for check_type, result in results.items():
             val_id = str(uuid.uuid4())
+            # Not-verified checks persist passed=NULL and score=NULL so the
+            # dashboard can render an honest "not verified" state distinct from
+            # both pass (1) and fail (0).
+            if result.get("verified", True) is False:
+                passed_val = None
+                score_val = None
+            else:
+                passed_val = 1 if result.get("passed") else 0
+                score_val = result.get("score", 0.0)
             c.execute(
                 """INSERT INTO translation_validations
                    (id, job_id, check_type, passed, score, findings)
@@ -550,15 +707,18 @@ def _record_validations(db_path, job_id, results):
                     val_id,
                     job_id,
                     check_type,
-                    1 if result.get("passed") else 0,
-                    result.get("score", 0.0),
+                    passed_val,
+                    score_val,
                     json.dumps(result.get("findings", [])),
                 ),
             )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_record_validations: best-effort INSERT into translation_validations failed (non-blocking): %s",
+            exc,
+        )
 
 
 def repair_translation(unit, source_code, translated_code, errors, source_language, target_language, config=None):
@@ -667,11 +827,21 @@ def main():
         print(f"Validation: {args.source_language} → {args.target_language}")
         print(f"  Gate: {report['gate_result'].upper()}")
         print(f"  Checks passed: {report['checks_passed']}/{report['checks_total']}")
+        if report.get("not_verified_checks"):
+            print(f"  Not verified: {', '.join(report['not_verified_checks'])} (toolchain absent / not run)")
+        if report.get("mocked_count"):
+            print(f"  Mocked units (excluded from pass counts): {report['mocked_count']}")
         print()
         for check, result in report["checks"].items():
-            status = "PASS" if result.get("passed") else "FAIL"
-            score = result.get("score", 0)
-            print(f"  [{status}] {check}: {score:.2f}")
+            if result.get("verified", True) is False:
+                status = "NOT VERIFIED"
+            elif result.get("passed"):
+                status = "PASS"
+            else:
+                status = "FAIL"
+            score = result.get("score")
+            score_str = f"{score:.2f}" if isinstance(score, (int, float)) else "n/a"
+            print(f"  [{status}] {check}: {score_str}")
             for finding in result.get("findings", [])[:3]:
                 print(f"         → {finding}")
 

@@ -1797,3 +1797,9 @@ ZIG_INGEST_SOURCE_TYPES = [
     {"slug": "nmap",    "label": "Nmap Scan (XML)",        "icon": "scan",    "ext": ".xml"},
     {"slug": "openapi", "label": "OpenAPI Spec (YAML/JSON)", "icon": "api",   "ext": ".yaml"},
 ]
+
+# Maximum accepted ingest payload size (bytes). Enforced at the route level
+# (zig_api_target_ingest) with an HTTP 413 before any parsing runs, to bound
+# memory/CPU for external scan uploads (nmap XML, CycloneDX SBOM, SAST JSON,
+# survey, OpenAPI). 5 MiB comfortably fits real scan outputs.
+ZIG_INGEST_MAX_BYTES = 5 * 1024 * 1024

@@ -14,6 +14,7 @@
   var _debounceTimer = null;
   var _activeTextarea = null;
   var _lastText = '';
+  var _researchWarnings = [];
 
   // ── Severity colours ──────────────────────────────────────────────────────
   var SEV_COLOR = { critical: '#f87171', high: '#fb923c', medium: '#fbbf24', low: '#60a5fa', suggestion: '#a78bfa' };
@@ -45,12 +46,25 @@
       '</svg>';
   }
 
+  // ── Research warnings (standards check, placeholders) ────────────────────
+  function _warningsHtml() {
+    if (!_researchWarnings.length) return '';
+    var html = '<div class="wg-sb-warnings" style="background:#2e1a05;border-left:3px solid #fbbf24;border-radius:0 4px 4px 0;padding:7px 9px;margin-bottom:10px;font-size:11px;">' +
+      '<div style="color:#fbbf24;font-weight:600;margin-bottom:3px;">DRAFT WARNINGS</div>';
+    _researchWarnings.slice(0, 8).forEach(function (w) {
+      html += '<div style="color:#b8d0e8;margin-bottom:3px;">⚠ ' + _esc(w) + '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
   // ── Render findings ───────────────────────────────────────────────────────
   function _renderFindings(data) {
-    if (!data) { _setContent('<p style="color:#5a7aa0;font-size:11px;margin:0;">No analysis yet.</p>'); return; }
+    if (!data) { _setContent(_warningsHtml() + '<p style="color:#5a7aa0;font-size:11px;margin:0;">No analysis yet.</p>'); return; }
 
     var score = data.overall_score || 0;
-    var html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+    var html = _warningsHtml() +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
       _scoreRing(score) +
       '<div><div style="color:#eaeaea;font-size:12px;font-weight:600;">' +
       (data.passed ? '✓ Passed' : '✗ Needs work') + '</div>' +
@@ -106,6 +120,34 @@
 
   function _esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Research warnings (standards-reference validation etc.) ──────────────
+  var _researchWarnings = [];
+
+  function _warningsHtml() {
+    if (!_researchWarnings.length) return '';
+    var html = '<div style="background:#2e1a05;border-left:3px solid #fbbf24;border-radius:0 4px 4px 0;padding:7px 9px;margin-bottom:10px;font-size:11px;">' +
+      '<div style="color:#fbbf24;font-weight:600;margin-bottom:4px;">⚠ Research warnings (' + _researchWarnings.length + ')</div>';
+    _researchWarnings.forEach(function (w) {
+      html += '<div style="color:#b8d0e8;margin-bottom:3px;">• ' + _esc(w) + '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function _renderWarnings() {
+    var el = _sidebar();
+    if (!el) return;
+    var box = el.querySelector('.wg-sb-warnings');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'wg-sb-warnings';
+      var body = el.querySelector('.wg-sb-body');
+      if (body && body.parentNode) body.parentNode.insertBefore(box, body);
+      else el.appendChild(box);
+    }
+    box.innerHTML = _warningsHtml();
   }
 
   // ── Analysis call ─────────────────────────────────────────────────────────
@@ -209,10 +251,29 @@
       .catch(function () {});
     },
 
+    // Surface ResearchResult.warnings (standards check, unresolved
+    // placeholders) from /api/techwriter/research in the sidebar.
+    showWarnings: function (warnings) {
+      _researchWarnings = (warnings || []).filter(Boolean);
+      var el = _sidebar();
+      var body = el && el.querySelector('.wg-sb-body');
+      if (!body) return;
+      var existing = body.querySelector('.wg-sb-warnings');
+      if (existing) existing.parentNode.removeChild(existing);
+      if (_researchWarnings.length) body.insertAdjacentHTML('afterbegin', _warningsHtml());
+    },
+
     setMode: function (mode) {
       _mode = mode;
       _lastText = '';
       _analyze();
+    },
+
+    // Surface ResearchResult.warnings (e.g. standards-reference validation)
+    // in the sidebar, above WriteGuard analysis findings.
+    showWarnings: function (warnings) {
+      _researchWarnings = Array.isArray(warnings) ? warnings : [];
+      _renderWarnings();
     }
   };
 

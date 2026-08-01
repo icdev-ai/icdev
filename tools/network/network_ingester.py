@@ -412,7 +412,7 @@ def _persist_to_knowledge_graph(graph: dict, project_id: str, topology_id: str) 
             )
         else:
             lookup_sql = (
-                f"SELECT id, json_extract({props_col}, '$.node_id') as node_id "
+                f"SELECT id, json_extract({props_col}, '$.node_id') as node_id "  # pg-ok: SQLite fallback; is_pg branch above uses ::json->>
                 f"FROM kg_nodes WHERE graph_id = {ph} AND entity_type LIKE 'network_%'"
             )
         rows = conn.execute(lookup_sql, (project_id,)).fetchall()

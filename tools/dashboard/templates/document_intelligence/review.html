@@ -25,6 +25,21 @@
     style="background:none;color:#5a7aa0;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
     Documents <span style="background:#1e293b;color:#94a3b8;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px;">{{ pending_docs|length }}</span>
   </button>
+  <button id="tab-mod" onclick="setTab('modernization')"
+    style="background:none;color:#5a7aa0;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+    🧭 Modernization <span id="mod-tab-count" style="background:#2a1a3a;color:#a78bfa;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px;">…</span>
+  </button>
+</div>
+
+<!-- docmod-hitl-05: Modernization panel (filled by JS from the summary API) -->
+<div id="panel-modernization" style="display:none;">
+  <div style="background:#140a24;border:1px solid #4a2a6e;border-radius:8px;padding:16px;">
+    <div style="color:#7a8cb0;font-size:12px;margin-bottom:10px;">
+      Open modernization findings per document — redlines are reviewed inline on each document page
+      (⚡ suggestions); full regenerations arrive here as pending Document Versions.
+    </div>
+    <div id="mod-review-list" style="color:#5a7aa0;font-size:12px;">Loading…</div>
+  </div>
 </div>
 
 <!-- SSP Fragments Panel -->
@@ -90,7 +105,7 @@
 </div>
 {% else %}
 <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:24px;text-align:center;color:#3a6080;">
-  No SSP fragments pending review. They appear here when ACOIC generates new NIST 800-53 control mappings.
+  No SSP fragments pending review. They appear here when DocDrift generates new NIST 800-53 control mappings.
 </div>
 {% endfor %}
 </div>
@@ -205,6 +220,10 @@ function setTab(tab) {
   var isFrag = tab === 'fragments';
   var isVers = tab === 'versions';
   var isDocs = tab === 'documents';
+  var isMod = tab === 'modernization';
+  document.getElementById('tab-mod').style.background = isMod ? '#0f3460' : 'none';
+  document.getElementById('tab-mod').style.color = isMod ? '#a78bfa' : '#5a7aa0';
+  document.getElementById('panel-modernization').style.display = isMod ? 'block' : 'none';
   document.getElementById('tab-frags').style.background = isFrag ? '#0f3460' : 'none';
   document.getElementById('tab-frags').style.color = isFrag ? '#7ab3f0' : '#5a7aa0';
   document.getElementById('tab-vers').style.background = isVers ? '#0f3460' : 'none';
@@ -215,6 +234,26 @@ function setTab(tab) {
   document.getElementById('panel-versions').style.display = isVers ? 'block' : 'none';
   document.getElementById('panel-documents').style.display = isDocs ? 'block' : 'none';
 }
+
+// docmod-hitl-05: modernization tab loader
+fetch('/document-intelligence/api/modernization/summary')
+  .then(function(r){ return r.json(); })
+  .then(function(d) {
+    document.getElementById('mod-tab-count').textContent = d.total_open;
+    var list = document.getElementById('mod-review-list');
+    if (!(d.documents || []).length) { list.textContent = 'No open modernization findings 🎉'; return; }
+    list.innerHTML = d.documents.map(function(doc) {
+      var chips = Object.keys(doc.types).map(function(k) {
+        return '<span style="background:#2a1a3a;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:4px;">' + k + ' ' + doc.types[k] + '</span>';
+      }).join('');
+      return '<div style="border-bottom:1px solid #241640;padding:8px 0;display:flex;justify-content:space-between;align-items:center;">'
+        + '<div><a href="/document-intelligence/doc/' + doc.doc_id + '" style="color:#eaeaea;text-decoration:none;font-size:13px;">' + (doc.title || doc.doc_id) + '</a>'
+        + '<div style="margin-top:4px;">' + chips + '</div></div>'
+        + '<div><span style="color:' + (doc.max_severity === 'critical' || doc.max_severity === 'high' ? '#f87171' : '#fbbf24') + ';font-size:11px;margin-right:10px;">' + doc.open_findings + ' open · ' + doc.max_severity + '</span>'
+        + '<a href="/document-intelligence/doc/' + doc.doc_id + '" style="color:#7ab3f0;font-size:11px;">Review →</a></div></div>';
+    }).join('');
+  })
+  .catch(function(){ document.getElementById('mod-tab-count').textContent = '0'; });
 
 function reviewDoc(docId, action) {
   var note = prompt('Bulk review note (optional):') || '';

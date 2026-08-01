@@ -1,6 +1,10 @@
 # CUI // SP-CTI
 """Promote eligible backlog tasks to SCHEDULED.
 
+SQL is authored for PostgreSQL (%s placeholders). This module previously used
+bare `?` and leaned on translate_sql, which is an init-only fallback and must
+never be load-bearing at runtime (see CLAUDE.md).
+
 This script identifies backlog tasks whose dependencies are satisfied
 (scalar + junction deps all done/decomposed), sets their status to 'scheduled'
 with a current timestamp, and logs the promotion.
@@ -27,30 +31,33 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+
+from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
+
 def _deps_satisfied(task_id: str, conn) -> bool:
     """Check if ALL dependencies (scalar + junction) are done/decomposed."""
     # Scalar dep
     row = conn.execute(
-        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?", (task_id,)
+        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (task_id,)
     ).fetchone()
     if row:
         scalar_dep = dict(row).get("depends_on_task_id")
         if scalar_dep:
             dep_row = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = ?", (scalar_dep,)
+                "SELECT status FROM kanban_tasks WHERE id = %s", (scalar_dep,)
             ).fetchone()
             if not dep_row or dict(dep_row)["status"] not in ("done", "decomposed"):
                 return False
 
     # Junction deps
     jdeps = conn.execute(
-        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = ?",
+        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
         (task_id,),
     ).fetchall()
     for r in jdeps:
         dep_id = dict(r)["depends_on_id"]
         dep_row = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = ?", (dep_id,)
+            "SELECT status FROM kanban_tasks WHERE id = %s", (dep_id,)
         ).fetchone()
         if not dep_row or dict(dep_row)["status"] not in ("done", "decomposed"):
             return False
@@ -80,7 +87,7 @@ def promote(
         where = "WHERE status = 'backlog'"
         params: list = []
         if project_filter:
-            where += " AND project_id = ?"
+            where += " AND project_id = %s"
             params.append(project_filter)
 
         rows = conn.execute(
@@ -100,6 +107,10 @@ def promote(
         tasks = [dict(r) for r in rows]
         eligible = []
         for t in tasks:
+            # A manual gate has NO dependencies, so _deps_satisfied() happily calls it
+            # "ready" — promoting it out of the very state that makes it a gate. Skip.
+            if _is_manual_gate(t["id"], t.get("title")):
+                continue
             if _deps_satisfied(t["id"], conn):
                 eligible.append(t)
             if max_tasks and len(eligible) >= max_tasks:
@@ -122,8 +133,8 @@ def promote(
             print(f"  -> {tid} | {proj} | {t['priority']} | {t['title'][:60]}")
             if not dry_run:
                 conn.execute(
-                    "UPDATE kanban_tasks SET status = 'scheduled', scheduled_at = ?, updated_at = ? "
-                    "WHERE id = ? AND status = 'backlog'",
+                    "UPDATE kanban_tasks SET status = 'scheduled', scheduled_at = %s, updated_at = %s "
+                    "WHERE id = %s AND status = 'backlog'",
                     (now_iso, now_iso, tid),
                 )
                 promoted.append(tid)

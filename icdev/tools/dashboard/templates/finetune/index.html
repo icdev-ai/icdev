@@ -10,6 +10,13 @@
     <h1>Fine-Tuning &amp; Custom Model Training</h1>
     <p class="text-muted">Phase 64 Extension — QLoRA fine-tuning pipeline with evaluation, auto-promotion, and two-tier LLM integration (D-FT-1 through D-FT-22).</p>
 
+    {% if error %}
+    <div role="alert" style="margin:1rem 0;padding:0.75rem 1rem;border:1px solid #f44336;border-left-width:4px;border-radius:6px;background:#fdecea;color:#611a15;">
+        <strong>⚠ Fine-tuning data is temporarily unavailable.</strong>
+        The database could not be reached, so the metrics below may be incomplete or show zeros. This is a service degradation, not an empty pipeline. Check the dashboard logs and database health.
+    </div>
+    {% endif %}
+
     <!-- Stat Grid -->
     <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin:1.5rem 0;">
         <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">

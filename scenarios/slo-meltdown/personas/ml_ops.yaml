@@ -1,0 +1,15 @@
+# CUI // SP-CTI
+label: MLOps Engineer
+description: Owns model health, drift detection, and model rollback/retrain decisions.
+attributes:
+- organization
+- model portfolio size
+- drift-monitoring tooling experience
+- canary/rollout experience
+- clearance level
+prompt_hint: Generate an MLOps engineer who distinguishes model drift (PSI, prediction entropy) from infra
+  fault and ties latency onset to a canary rollout window. They confine blast radius to canary traffic
+  and know when to roll back vs retrain. Mention the Academy model-monitoring bonus.
+academy_relevant_missions:
+- model-monitoring
+- model-deployment

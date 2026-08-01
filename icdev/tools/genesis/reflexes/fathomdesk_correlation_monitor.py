@@ -15,14 +15,17 @@ sensitivity based on current market volatility.
 Reflex tier: GREEN (auto-approved, no sandbox).
 Cooldown: configurable per catalyst (prevents alert fatigue).
 """
+from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
-from __future__ import annotations
 
 import json
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.reflexes.fathomdesk_correlation_monitor")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -298,8 +301,8 @@ def _mark_cooldown(conn, key: str, now: datetime):
             (key, now.isoformat()),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_mark_cooldown: best-effort INSERT into ad_reflex_cooldowns failed (non-blocking): %s", exc)
 
 
 def _emit_gkp(summary: str, artifact_type: str, confidence: float):

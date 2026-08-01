@@ -6,6 +6,48 @@
 # Master toggle — disable to bypass all redaction
 enabled: true
 
+# Fail-closed egress (trust-mask-01). When true, an LLM call whose sanitizer
+# MUST run but is missing or errors is BLOCKED (raises RedactionUnavailableError)
+# instead of proceeding with unredacted text. Legitimate skips (redaction
+# disabled, excluded_functions, local-only routing) never block.
+# Default false = fail-open (log + proceed) for backward compatibility; set true
+# to guarantee no raw PII/CUI ever egresses to a cloud LLM on sanitizer failure.
+#
+# prem-p0-03: ARMED. Two things had to change together, and the second is the
+# reason this had never actually protected anything:
+#   1. The value below is now true — a sanitizer that MUST run but cannot now
+#      BLOCKS the call instead of sending raw text.
+#   2. The router was reading `fail_closed` from args/llm_config.yaml's
+#      `redaction:` block, which HAS NO SUCH KEY — so it resolved to False no
+#      matter what was written here, and RedactionUnavailableError could never
+#      fire. Setting this flag was a no-op that looked like a control.
+#      Fixed in tools/llm/router.py::_resolve_redaction_fail_closed.
+#
+# Fail-open on a CUI egress is the whole risk in one flag: if the sanitizer breaks,
+# the choice is between refusing the call and shipping raw CUI to a cloud LLM.
+# Refuse. Local-only routing keeps its legitimate skip — nothing is egressing.
+fail_closed: true
+
+# Ingestion-time masking (trust-mask-02). When true, RAG ingestion anonymizes
+# content BEFORE chunking/embedding, so raw PII/CUI never lands in the vector
+# store at rest (not only masked at LLM egress). Default false (opt-in) — adds
+# per-row detection cost (regex + optional local NER) during ingestion.
+mask_at_ingestion: false
+
+# ---------------------------------------------------------------------------
+# Second Brain (/me) egress masking (cnr-me-02)
+# ---------------------------------------------------------------------------
+# The Second Brain assembles deeply personal context (full name, work email,
+# org, objectives, challenges, meeting titles, attendee names/emails) into
+# LLM prompts for briefings and profile summaries. When redact_llm_egress is
+# true these prompts are run through the anonymizer BEFORE they reach the
+# router, so raw PII never egresses to a cloud LLM. Default true — this is an
+# IL4 canvas of personal data. Env override: ICDEV_SECOND_BRAIN_REDACT_EGRESS.
+# On anonymizer failure the platform `fail_closed` flag above governs whether
+# the call is refused (fail-closed) or proceeds unmasked (fail-open).
+second_brain:
+  redact_llm_egress: true
+
 # ---------------------------------------------------------------------------
 # Detection Engine
 # ---------------------------------------------------------------------------
@@ -171,6 +213,7 @@ scope:
     - requirement_extraction # R5 Extract — redact before cloud LLM
     - bid_scoring            # R9 Decide — redact if cloud-routed
     - color_review           # R15 Review — redact if cloud-routed
+    - specialist_consult     # Egress to idea_lab (cloud-routed, separate process) — always redact
     # GovCon / RFI Workbench (CMMC L3 / NIST 800-172 defense-in-depth: these 5 chains
     # are local-only today with no cloud fallback, but that's a routing fact, not a
     # sanitization guarantee — enforce explicitly so raw RFI/RFP CUI text is never sent

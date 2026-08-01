@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Cortex Metrics — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">📊 Cortex Metrics</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Governance, usage &amp; spend over the append-only <code style="color:#b8d0e8;">cortex_audit</code> trail · last {{ stats.window_hours }}h · <a href="{{ url_for('cortex.index') }}" style="color:#5aa9e6;">← back to Cortex</a></p>
+  </div>
+  <div>
+    {% for h in [1, 24, 168, 720] %}
+    <a href="?hours={{ h }}" style="color:{{ '#e94560' if stats.window_hours == h else '#7a8cb0' }};font-size:12px;margin-left:10px;text-decoration:none;">{{ '1h' if h==1 else ('24h' if h==24 else ('7d' if h==168 else '30d')) }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if stats.status == 'unavailable' %}
+<div style="background:#2a0f14;border:1px solid #7f1d1d;border-radius:8px;padding:24px;color:#fca5a5;text-align:center;">
+  <strong>Metrics unavailable.</strong><br>
+  The <code style="color:#fecaca;">cortex_audit</code> trail could not be read — the table is missing or the query failed.
+  This is a fault, not an idle system. On a fresh database the table is created on the first governed call.
+</div>
+{% elif stats.status == 'idle' %}
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:24px;color:#7a8cb0;text-align:center;">
+  <strong style="color:#b8d0e8;">Idle</strong> — the audit trail is readable but recorded no governed calls in the last {{ stats.window_hours }}h.<br>
+  {% if stats.last_call_at %}
+  Last governed call: <code style="color:#b8d0e8;">{{ stats.last_call_at }}</code>.
+  History outside this window is still there —
+  <a href="?hours=168" style="color:#5aa9e6;">last 7 days</a> ·
+  <a href="?hours=720" style="color:#5aa9e6;">last 30 days</a>.
+  {% else %}
+  No governed calls have ever been recorded.
+  {% endif %}
+</div>
+{% else %}
+{% set s = stats.summary %}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
+  {% macro card(label, value, hint='') -%}
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <div style="color:#7a8cb0;font-size:11px;text-transform:uppercase;letter-spacing:.5px;">{{ label }}</div>
+    <div style="color:#eaeaea;font-size:24px;font-weight:600;margin-top:6px;">{{ value }}</div>
+    {% if hint %}<div style="color:#5a6b8a;font-size:10px;margin-top:2px;">{{ hint }}</div>{% endif %}
+  </div>
+  {%- endmacro %}
+  {{ card('Calls', s.calls) }}
+  {{ card('Blocked', s.blocked, s.block_rate_pct ~ '% block rate') }}
+  {{ card('Redactions', s.redactions, 'PII/CUI spans masked') }}
+  {{ card('Cache hits', s.cache_hits) }}
+  {{ card('Cost (USD)', '$%.4f'|format(s.cost_usd)) }}
+  {{ card('Avg latency', s.avg_latency_ms ~ ' ms') }}
+  {{ card('Tokens', '{:,}'.format(s.total_tokens), '{:,} in / {:,} out'.format(s.input_tokens, s.output_tokens)) }}
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:13px;margin:0 0 10px;">By function</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:#c8d6ea;">
+      <thead><tr style="color:#7a8cb0;text-align:left;"><th style="padding:4px 6px;">Function</th><th style="padding:4px 6px;text-align:right;">Calls</th><th style="padding:4px 6px;text-align:right;">Blocked</th><th style="padding:4px 6px;text-align:right;">Cost</th></tr></thead>
+      <tbody>
+      {% for f in stats.by_function %}
+        <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;">{{ f.function }}</td><td style="padding:4px 6px;text-align:right;">{{ f.calls }}</td><td style="padding:4px 6px;text-align:right;color:{{ '#e94560' if f.blocked else '#c8d6ea' }};">{{ f.blocked }}</td><td style="padding:4px 6px;text-align:right;">${{ '%.4f'|format(f.cost_usd) }}</td></tr>
+      {% else %}
+        <tr><td colspan="4" style="padding:8px 6px;color:#5a6b8a;">no calls</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:13px;margin:0 0 10px;">By outcome</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:#c8d6ea;">
+      <tbody>
+      {% for outcome, n in stats.by_outcome.items() %}
+        <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;text-transform:capitalize;color:{{ '#e94560' if outcome in ['blocked','fail'] else ('#e6b85a' if outcome=='warn' else '#5ab97a') }};">{{ outcome }}</td><td style="padding:4px 6px;text-align:right;">{{ n }}</td></tr>
+      {% else %}
+        <tr><td colspan="2" style="padding:8px 6px;color:#5a6b8a;">no data</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:13px;margin:0 0 10px;">By domain lens</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:#c8d6ea;">
+      <tbody>
+      {% for d in stats.by_domain %}
+        <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;">{{ d.domain }}</td><td style="padding:4px 6px;text-align:right;">{{ d.calls }}</td></tr>
+      {% else %}
+        <tr><td colspan="2" style="padding:8px 6px;color:#5a6b8a;">no data</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:13px;margin:0 0 10px;">By tenant</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:#c8d6ea;">
+      <thead><tr style="color:#7a8cb0;text-align:left;"><th style="padding:4px 6px;">Tenant</th><th style="padding:4px 6px;text-align:right;">Calls</th><th style="padding:4px 6px;text-align:right;">Blocked</th></tr></thead>
+      <tbody>
+      {% for t in stats.by_tenant %}
+        <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;">{{ t.tenant_id }}</td><td style="padding:4px 6px;text-align:right;">{{ t.calls }}</td><td style="padding:4px 6px;text-align:right;">{{ t.blocked }}</td></tr>
+      {% else %}
+        <tr><td colspan="3" style="padding:8px 6px;color:#5a6b8a;">no data</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:13px;margin:0 0 10px;">By model</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:#c8d6ea;">
+      <thead><tr style="color:#7a8cb0;text-align:left;"><th style="padding:4px 6px;">Model</th><th style="padding:4px 6px;text-align:right;">Calls</th><th style="padding:4px 6px;text-align:right;">Tokens</th><th style="padding:4px 6px;text-align:right;">Cost</th></tr></thead>
+      <tbody>
+      {% for m in stats.by_model %}
+        <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;">{{ m.model }}</td><td style="padding:4px 6px;text-align:right;">{{ m.calls }}</td><td style="padding:4px 6px;text-align:right;">{{ '{:,}'.format(m.total_tokens) }}</td><td style="padding:4px 6px;text-align:right;">${{ '%.4f'|format(m.cost_usd) }}</td></tr>
+      {% else %}
+        <tr><td colspan="4" style="padding:8px 6px;color:#5a6b8a;">no data</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -24,11 +24,15 @@ import argparse
 import json
 import os
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+from tools.db.storage import get_connection
+
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.govcon.portfolio_manager")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -106,8 +110,8 @@ def _audit(conn, action, details="", actor="portfolio_manager"):
             "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _record_status_change(conn, entity_type, entity_id, old_status, new_status, changed_by=None, reason=None):
@@ -447,26 +451,100 @@ def transition_from_opportunity(opportunity_id, created_by=None):
         conn.close()
         return {"status": "error", "message": f"Contract already exists for this opportunity: {existing['id']}"}
 
-    # 2. Create contract
+    # 2. Read the PRICE we actually bid (prem-bid-03).
+    #
+    # This used to hardcode contract_type="FFP" with the comment "default, user updates
+    # later", and leave total_value / funded_value / ceiling_value / PoP entirely out of
+    # the INSERT — so they defaulted to 0.0. A won bid produced a contract with NO MONEY
+    # IN IT. Everything downstream that reads a contract value (EVM, CLIN burn, the
+    # /cpmp dashboards) was reading zero, and nothing said why. The cost volume we spent
+    # the whole bid building was sitting right there in pg_cost_volumes, unread.
+    cv = conn.execute(
+        "SELECT id, contract_type, total_evaluated_price, direct_labor_cost "
+        "FROM pg_cost_volumes WHERE opportunity_id = %s "
+        "ORDER BY created_at DESC LIMIT 1",
+        (opportunity_id,),
+    ).fetchone()
+    cv = dict(cv) if cv else {}
+
+    total_value = float(cv.get("total_evaluated_price") or 0.0)
+    # contract_type is DERIVED from the volume we priced, not guessed. Falling back to
+    # FFP only when there is genuinely no cost volume — and saying so in the audit.
+    contract_type = str(cv.get("contract_type") or "FFP").upper()
+
+    # Period of performance is deliberately NOT set here. proposal_opportunities carries
+    # no PoP columns — there is nothing to derive it from. Inventing dates would be the
+    # same failure as the $85 default rate: a made-up number that looks like a real one.
+    # It is left NULL and reported in the return value, so contracts staff know it is
+    # the one thing they must supply before this baseline is accepted.
     contract_id = _uuid()
     conn.execute(
         "INSERT INTO cpmp_contracts "
         "(id, contract_number, title, agency, naics_code, contract_type, "
+        "total_value, funded_value, ceiling_value, "
         "status, opportunity_id, created_at, updated_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             contract_id,
             f"TBD-{opp['solicitation_number'] or opportunity_id[:8]}",
             opp["title"],
             opp["agency"],
             opp["naics_code"],
-            "FFP",  # default, user updates later
+            contract_type,
+            total_value,
+            # funded == total at award: nothing is incrementally funded until a mod says
+            # so. ceiling == total for the base award; option years raise it via a mod.
+            total_value,
+            total_value,
+            # 'draft', not 'active'. This is a PROPOSED baseline. A won bid does not get
+            # to self-approve itself into an active contract — contracts staff accept it.
             "draft",
             opportunity_id,
             _now(),
             _now(),
         ),
     )
+
+    # 2b. CLINs from the priced allocations. A contract with a value but no CLINs cannot
+    # be invoiced against or burned down — the money exists as a single number and
+    # nothing can be tracked against it.
+    clin_count = 0
+    if cv.get("id"):
+        # NOTE the column is LYING. pg_lcat_allocations.cost_volume_id holds the
+        # OPPORTUNITY id, not a cost-volume id — lcat_mapper.generate_boe() writes
+        # opportunity_id into it, and generate_cost_volume() reads it back with the
+        # opportunity_id. Querying it with the actual cv id (as the name invites) matches
+        # nothing and silently produces ZERO CLINs. Renaming the column is a migration
+        # for another day; trusting its name is the bug.
+        allocs = conn.execute(
+            "SELECT labor_category, fte_count, hourly_rate, annual_cost "
+            "FROM pg_lcat_allocations WHERE cost_volume_id = %s "
+            "ORDER BY annual_cost DESC",
+            (opportunity_id,),
+        ).fetchall()
+        for i, a in enumerate(allocs, start=1):
+            d = dict(a)
+            if not d.get("annual_cost"):
+                # An unpriced allocation must not become a $0 CLIN. A zero-value CLIN
+                # reads as "this work is free", which is worse than its absence.
+                continue
+            try:
+                conn.execute(
+                    "INSERT INTO cpmp_clins "
+                    "(id, contract_id, clin_number, description, clin_type, "
+                    "total_value, funded_value, status, created_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        _uuid(), contract_id, f"{i:04d}",
+                        f"{d['labor_category']} — {d.get('fte_count') or 0} FTE",
+                        "labor",
+                        float(d["annual_cost"]), float(d["annual_cost"]),
+                        "active", _now(), _now(),
+                    ),
+                )
+                clin_count += 1
+            except Exception as exc:  # pragma: no cover - table shape varies by install
+                logger.warning("could not create CLIN for %s: %s", d.get("labor_category"), exc)
     _record_status_change(
         conn,
         "contract",
@@ -526,8 +604,12 @@ def transition_from_opportunity(opportunity_id, created_by=None):
                 conn, "deliverable", deliv_id, None, "not_started", "system", "Seeded from compliance matrix"
             )
             deliverables_seeded += 1
-    except Exception:
-        pass  # compliance matrix may not exist
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # compliance matrix may not exist
+        logger.warning(
+            "transition_from_opportunity: best-effort INSERT into cpmp_deliverables failed (non-blocking): %s",
+            _exc,
+        )
 
     # 5. Create initial WBS from proposal volumes
     wbs_seeded = 0
@@ -555,8 +637,8 @@ def transition_from_opportunity(opportunity_id, created_by=None):
             )
             _record_status_change(conn, "wbs", wbs_id, None, "not_started", "system", "Seeded from proposal volume")
             wbs_seeded += 1
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("transition_from_opportunity: best-effort INSERT into cpmp_wbs failed (non-blocking): %s", _exc)
 
     _audit(
         conn,
@@ -567,12 +649,37 @@ def transition_from_opportunity(opportunity_id, created_by=None):
     conn.commit()
     conn.close()
 
+    # The money is REPORTED, not just written. A caller that gets back
+    # total_value: 0.0 needs to see that immediately — before this, a won bid produced a
+    # contract worth nothing and said "status: ok" about it.
+    needs = []
+    if not cv.get("id"):
+        needs.append(
+            "no cost volume found for this opportunity — the contract has NO VALUE. "
+            "Price the bid (rate_benchmarker.generate_cost_volume) before transitioning, "
+            "or set total_value by hand."
+        )
+    if not clin_count:
+        needs.append("no CLINs created — the value cannot be invoiced against or burned down.")
+    needs.append(
+        "period of performance is NOT set: proposal_opportunities carries no PoP, and "
+        "inventing dates would be a made-up number that looks like a real one. Contracts "
+        "staff must supply pop_start / pop_end."
+    )
+
     return {
-        "status": "ok",
+        # 'proposed', not 'ok'. This is a baseline awaiting acceptance by contracts
+        # staff (the contract row is 'draft'), not a finished contract.
+        "status": "proposed",
         "contract_id": contract_id,
         "opportunity_id": opportunity_id,
+        "contract_type": contract_type,
+        "cost_volume_id": cv.get("id"),
+        "total_value": total_value,
+        "clins_created": clin_count,
         "deliverables_seeded": deliverables_seeded,
         "wbs_seeded": wbs_seeded,
+        "needs_attention": needs,
     }
 
 

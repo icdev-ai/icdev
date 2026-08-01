@@ -18,7 +18,13 @@ from unittest.mock import patch
 # ─── Shared helpers ───────────────────────────────────────────────────────────
 
 
-def _make_conn() -> sqlite3.Connection:
+def _make_conn():
+    # Wrapped in StorageConnection so narrative_generator's PG-native %s
+    # placeholders translate to ? on SQLite — mirroring the production caller
+    # (network get_connection() returns a StorageConnection). A raw sqlite3
+    # connection bypasses that translator and %s becomes a syntax error.
+    from tools.db.storage import StorageConnection
+
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript("""
@@ -51,7 +57,7 @@ def _make_conn() -> sqlite3.Connection:
             UNIQUE(step_id, persona_id)
         );
     """)
-    return conn
+    return StorageConnection(conn, "sqlite")
 
 
 _FAKE_STEPS = [

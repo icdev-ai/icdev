@@ -1,17 +1,31 @@
 # CUI // SP-CTI
 """Migration Intelligence Engine — Database initialization.
 
-Single SQLite DB: data/migration_intel.db
+Dual-backend: PostgreSQL (default, shared icdev db) or SQLite (dedicated file
+data/migration_intel.db).  Env: MI_STORAGE_BACKEND, MI_DB_PATH.
+
 Tables cover: goals, opportunities, strategies, roadmaps, wishlist, budget cycles, scan history.
 All financial and goal tables are append-only/immutable after approval.
+
+All runtime SQL uses ``%s`` placeholders; connections are StorageConnection
+wrappers whose translate_sql pass rewrites placeholders per backend, so callers
+never mix ``?``/``%s`` styles (cnr-mi-01).
 """
 
 from __future__ import annotations
 
-import sqlite3
+import os
+import sys
 from pathlib import Path
 
-_DB_PATH = Path(__file__).resolve().parents[3] / "data" / "migration_intel.db"
+_ICDEV_ROOT = Path(__file__).resolve().parents[3]
+_DB_PATH = _ICDEV_ROOT / "data" / "migration_intel.db"
+
+# Env var carrying the dedicated SQLite path when the resolved backend is sqlite.
+# On PostgreSQL (primary) it is ignored; mi_* tables live in the shared icdev
+# database, namespaced by their `mi_` prefix.
+_MI_DB_PATH_ENV = "MI_DB_PATH"
+os.environ.setdefault(_MI_DB_PATH_ENV, str(_DB_PATH))
 
 SCHEMA = """
 -- ── Enterprise Technical Goals ─────────────────────────────────────────────
@@ -68,6 +82,8 @@ CREATE TABLE IF NOT EXISTS mi_opportunities (
     affected_systems TEXT,    -- JSON array
     current_platform TEXT,
     target_platform TEXT,
+    -- App profile (set by sla_enforcer): standard_three_tier | other
+    app_profile     TEXT DEFAULT '',
     -- Scoring dimensions (0.0–1.0 each)
     eol_urgency_score   REAL DEFAULT 0.0,
     goal_alignment_score REAL DEFAULT 0.0,
@@ -122,6 +138,9 @@ CREATE TABLE IF NOT EXISTS mi_strategies (
     pros            TEXT,   -- JSON array
     cons            TEXT,   -- JSON array
     prerequisites   TEXT,   -- JSON array
+    -- SLA annotations (set by sla_enforcer)
+    cutover_hours_estimate REAL,
+    sla_compliant   INTEGER DEFAULT 1,
     recommended     INTEGER DEFAULT 0,
     status          TEXT DEFAULT 'generated'
         CHECK(status IN ('generated','reviewed','approved','executing','completed')),
@@ -234,19 +253,46 @@ CREATE INDEX IF NOT EXISTS idx_mi_scans_started ON mi_scans(started_at DESC);
 """
 
 
-def get_connection(db_path: str | None = None) -> sqlite3.Connection:
-    path = db_path or str(_DB_PATH)
-    conn = sqlite3.connect(path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+def _backend() -> str:
+    """Resolve the migration-intel storage backend (PG-primary)."""
+    from tools.db.storage import resolve_canvas_backend
+    return resolve_canvas_backend("MI_STORAGE_BACKEND")
+
+
+def get_connection(db_path: str | None = None):
+    """Return a StorageConnection (RLS disabled) for migration-intel tables.
+
+    cnr-mi-01: previously returned a raw ``sqlite3.connect`` in qmark style while
+    every call site used ``%s`` placeholders, which raised OperationalError on
+    SQLite and left the whole pipeline non-functional.  Routing through
+    StorageConnection makes ``%s`` work on both backends (translate_sql rewrites
+    it to ``?`` for SQLite) and, on PostgreSQL, targets the shared icdev db.
+
+    mi_* tables carry no tenant_id/classification columns, so RLS is disabled
+    (security_context=None) to avoid UndefinedColumn on PostgreSQL.
+    """
+    from tools.db.storage import get_connection as _storage_get_connection
+
+    if _backend() == "sqlite":
+        path = db_path or os.environ.get(_MI_DB_PATH_ENV, str(_DB_PATH))
+        conn = _storage_get_connection(db_path=path)
+    else:
+        # PG-primary: shared icdev database (mi_* tables namespaced by prefix).
+        conn = _storage_get_connection()
+    conn.set_security_context(None)  # rls-bypass: canvas tables have no tenant_id/classification columns, so RLS injection would raise UndefinedColumn on every query
     return conn
 
 
 def init_db(db_path: str | None = None) -> None:
-    path = db_path or str(_DB_PATH)
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with get_connection(path) as conn:
+    if _backend() == "sqlite":
+        path = db_path or os.environ.get(_MI_DB_PATH_ENV, str(_DB_PATH))
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+    else:
+        path = None
+    conn = get_connection(db_path)
+    try:
         conn.executescript(SCHEMA)
         conn.commit()
-    print(f"[mi_init_db] Migration Intelligence DB initialized at {path}")
+    finally:
+        conn.close()
+    print(f"[mi_init_db] Migration Intelligence DB initialized ({_backend()})", file=sys.stderr)

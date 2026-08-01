@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 from tools.redaction.detector import RedactionDetector  # noqa: E402
 
 logger = get_logger("icdev.redaction.db_scanner")
@@ -109,13 +109,14 @@ class DBScanner:
 
     def _scan_table(self, conn, table: str) -> Optional[Dict[str, Any]]:
         """Scan a single table."""
-        # Check if table exists
-        exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
-        if not exists:
+        # Check if table exists — backend-aware probe (pgrt-sweep-06).
+        if not table_exists(conn, table):
             return None
 
-        # Get text columns
-        pragma = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        # Get text columns. PRAGMA table_info is translated to information_schema on
+        # PG by the StorageConnection wrapper (rule 1); no shared list-columns helper
+        # exists, so this stays as a translated probe (needs both name AND type).
+        pragma = conn.execute(f"PRAGMA table_info({table})").fetchall()  # noqa: S608 — table from GOVCON_TABLES constant
         text_columns = [
             col["name"]
             for col in pragma
@@ -181,6 +182,52 @@ class DBScanner:
             "sample_size": self._sample_size,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+
+# ---------------------------------------------------------------------------
+# Remediation planning (trust-mask-03)
+# ---------------------------------------------------------------------------
+
+# Entity types that warrant hard redaction rather than reversible masking.
+_HARD_REDACT_ENTITIES = {"US_SSN", "CREDIT_CARD", "US_PASSPORT", "US_BANK_NUMBER", "US_ITIN", "IBAN_CODE"}
+
+
+def _recommend_treatment(entity_types: Dict[str, int]) -> str:
+    """Recommend a redaction treatment from the entity types found in a column."""
+    types = set(entity_types or {})
+    if types & _HARD_REDACT_ENTITIES:
+        return "redact"
+    if "PERSON" in types or "LOCATION" in types:
+        return "surrogate"
+    return "mask"
+
+
+def remediation_plan(scan_result: Dict[str, Any], threshold: float = 0.3) -> List[Dict[str, Any]]:
+    """Turn a scan() result into a structured anonymize plan (trust-mask-03).
+
+    Returns one item per column whose ``pii_density`` meets ``threshold``:
+      {table, column, pii_density, entity_types, recommended_treatment}
+    sorted by density (highest first). Empty list == nothing to remediate.
+    """
+    items: List[Dict[str, Any]] = []
+    for table, tres in (scan_result.get("tables") or {}).items():
+        if not isinstance(tres, dict):
+            continue
+        for col, cres in (tres.get("columns") or {}).items():
+            if not isinstance(cres, dict):
+                continue
+            density = cres.get("pii_density", 0) or 0
+            if density >= threshold:
+                entity_types = cres.get("entity_types") or {}
+                items.append({
+                    "table": table,
+                    "column": col,
+                    "pii_density": round(float(density), 3),
+                    "entity_types": entity_types,
+                    "recommended_treatment": _recommend_treatment(entity_types),
+                })
+    items.sort(key=lambda x: x["pii_density"], reverse=True)
+    return items
 
 
 # ---------------------------------------------------------------------------

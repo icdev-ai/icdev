@@ -50,6 +50,14 @@ def seed_for_maturity(
     else:
         conn = db_conn
 
+    # Resolve the backend-correct placeholder for THIS connection. A raw sqlite3
+    # connection (tests) has no ``_backend`` attribute, so sql_placeholder returns
+    # ``?``; a StorageConnection returns ``%s`` on PG (and its execute() translate
+    # layer rewrites ``INSERT OR IGNORE`` for PostgreSQL). Hard-coding ``%s`` here
+    # broke injected raw-sqlite3 connections, which never see the translate layer.
+    from tools.db.storage import sql_placeholder
+    ph = sql_placeholder(conn)
+
     now = datetime.now(timezone.utc).isoformat()
     inserted: list[str] = []
 
@@ -57,10 +65,10 @@ def seed_for_maturity(
         for task in tasks:
             task_id = task["id"]
             conn.execute(
-                """INSERT OR IGNORE INTO kanban_tasks
+                f"""INSERT OR IGNORE INTO kanban_tasks
                    (id, title, task_type, priority, status, created_at, updated_at,
                     scheduled_at, dispatch_source)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
                 (
                     task_id,
                     task["title"],

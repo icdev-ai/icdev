@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Cortex — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🧠 Cortex</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Unified AI layer — one governed facade over RAG, knowledge graph, documents, and keyword search · complete · classify · extract · search · ask · govern · agent</p>
+  </div>
+  <div>
+    <a href="{{ url_for('cortex.metrics_page') }}" style="color:#5aa9e6;font-size:12px;border:1px solid #1e3a6e;border-radius:5px;padding:6px 12px;text-decoration:none;">📊 Metrics</a>
+  </div>
+</div>
+
+<!-- Ask surface -->
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:20px;margin-bottom:24px;">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+    <label style="color:#7a8cb0;font-size:11px;">Mode
+      <select id="cortex-mode" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;margin-left:6px;">
+        {% for m in modes %}
+        <option value="{{ m.key }}" {% if m.key == default_mode %}selected{% endif %}>{{ m.icon }} {{ m.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label style="color:#7a8cb0;font-size:11px;">Domain lens
+      <select id="cortex-domain" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;margin-left:6px;">
+        {% for d in domain_lenses %}
+        <option value="{{ d.key }}" {% if d.key == default_domain %}selected{% endif %}>{{ d.icon }} {{ d.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div style="display:flex;gap:8px;align-items:flex-end;">
+    <textarea id="cortex-question" rows="2" placeholder="Ask Cortex anything…"
+      style="flex:1;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:9px 12px;border-radius:5px;font-size:13px;resize:vertical;"></textarea>
+    <button id="cortex-send" onclick="cortexAsk()"
+      style="background:#0f3460;color:#7ab3f0;padding:10px 22px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">Ask</button>
+  </div>
+  <div id="cortex-answer" style="margin-top:14px;color:#b8d0e8;font-size:13px;line-height:1.5;"></div>
+</div>
+
+<!-- Modes -->
+<h3 style="color:#eaeaea;font-size:14px;margin:0 0 10px;">Facades</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:24px;">
+  {% for m in modes %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;">
+    <h4 style="margin:0 0 6px;color:#eaeaea;font-size:13px;">{{ m.icon }} {{ m.label }}</h4>
+    <p style="color:#7a8cb0;font-size:12px;margin:0;">{{ m.desc }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Domain lenses -->
+<h3 style="color:#eaeaea;font-size:14px;margin:0 0 10px;">Domain lenses</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:24px;">
+  {% for d in domain_lenses %}
+  <div style="background:#0e1730;border:1px solid #243a5e;border-radius:8px;padding:14px;">
+    <h4 style="margin:0 0 6px;color:#cfe0f5;font-size:13px;">{{ d.icon }} {{ d.label }}</h4>
+    <p style="color:#5a6e8c;font-size:12px;margin:0;">{{ d.desc }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+function cortexAsk() {
+  var q = document.getElementById('cortex-question').value.trim();
+  var out = document.getElementById('cortex-answer');
+  if (!q) { out.textContent = 'Enter a question first.'; return; }
+  var btn = document.getElementById('cortex-send');
+  btn.disabled = true;
+  out.textContent = 'Thinking…';
+  fetch('/cortex/api/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      question: q,
+      mode: document.getElementById('cortex-mode').value,
+      domain: document.getElementById('cortex-domain').value
+    })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { out.textContent = 'Error: ' + d.error; return; }
+    out.innerHTML = renderCortexAnswer(d);
+  }).catch(function(e) {
+    out.textContent = 'Request failed: ' + e;
+  }).finally(function() { btn.disabled = false; });
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
+
+function renderCortexAnswer(d) {
+  // Grounded / confidence badge — ungrounded answers show the visible banner.
+  var badge = d.grounded
+    ? '<span style="color:#4ade80;">✓ grounded</span>'
+    : '<span style="color:#f59e0b;">⚠ ungrounded — not evidence-backed</span>';
+  if (d.confidence) { badge += ' <span style="color:#7a8cb0;">(' + esc(d.confidence) + ')</span>'; }
+
+  var html = '<div style="white-space:pre-wrap;">' + esc(d.answer) + '</div>';
+
+  // Confirm affordance for multi-step goals routed to cortex.agent.
+  if (d.requires_confirm) {
+    html += '<div style="margin-top:8px;"><button onclick="cortexConfirmAgent()" ' +
+      'style="background:#3a2a0f;color:#f0c060;padding:6px 14px;border:1px solid ' +
+      '#6e5a1e;border-radius:5px;cursor:pointer;font-size:12px;">Confirm — run agent</button></div>';
+  }
+
+  // Citations.
+  if (d.citations && d.citations.length) {
+    html += '<div style="margin-top:10px;font-size:11px;color:#7a8cb0;">Sources:</div><ul style="margin:4px 0 0;padding-left:18px;">';
+    d.citations.forEach(function(c) {
+      var label = c.title || c.source_id || c.source_table || 'source';
+      html += '<li style="color:#8fb0d8;font-size:11px;">' + esc(label) +
+        (c.snippet ? ' — <span style="color:#5a6e8c;">' + esc(c.snippet.slice(0, 120)) + '</span>' : '') + '</li>';
+    });
+    html += '</ul>';
+  }
+
+  // GovernanceReport summary — which gates ran.
+  var gov = d.governance || {};
+  var gates = gov.gates_run || [];
+  if (gates.length) {
+    var parts = gates.map(function(g) {
+      var o = (gov.outcomes || {})[g] || '';
+      var color = o === 'fail' ? '#f87171' : (o === 'warn' ? '#f59e0b' : '#4ade80');
+      return '<span style="color:' + color + ';">' + esc(g) + (o ? ':' + esc(o) : '') + '</span>';
+    });
+    html += '<div style="margin-top:8px;font-size:11px;color:#5a6e8c;">Governance: ' + parts.join(' · ') +
+      (gov.blocked ? ' <span style="color:#f87171;">[BLOCKED]</span>' : '') + '</div>';
+  }
+
+  html += '<div style="margin-top:6px;font-size:11px;color:#5a6e8c;">' + badge +
+    ' · facade: cortex.' + esc(d.mode) +
+    (d.routing && d.routing.source === 'auto' ? ' <span style="color:#7a8cb0;">(auto-routed: ' + esc(d.routing.reason || '') + ')</span>' : '') +
+    ' · domain: ' + esc(d.domain) + '</div>';
+  return html;
+}
+
+function cortexConfirmAgent() {
+  var out = document.getElementById('cortex-answer');
+  out.innerHTML += '<div style="margin-top:8px;color:#f0c060;font-size:12px;">' +
+    'Cortex agents are not yet wired into this canvas — this affordance confirms ' +
+    'the routing decision only.</div>';
+}
+</script>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cortex" %}
+{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Cortex" %}
+{% set iqe_examples = [
+  {"label": "Recent sessions", "query": "foreach s in cortex.sessions select s.session_id, s.mode, s.domain, s.status"},
+  {"label": "Search history", "query": "foreach h in cortex.search_history select h.query_text, h.mode, h.domain, h.result_count"},
+  {"label": "Governance audit", "query": "foreach a in cortex.audit select a.facade, a.outcome, a.blocked, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

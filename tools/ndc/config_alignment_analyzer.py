@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -382,8 +381,9 @@ def analyze_config(
 
 def analyze_device(device_id: str, use_llm: bool = True) -> Dict[str, Any]:
     """Fetch config from ni_device_configs and analyze."""
-    conn = sqlite3.connect(str(_NC_DB))
-    conn.row_factory = sqlite3.Row
+    from tools.network.db.init_db import get_connection
+
+    conn = get_connection()
     row = conn.execute(
         """SELECT config_text, config_type FROM ni_device_configs
            WHERE device_id = %s

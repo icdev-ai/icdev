@@ -168,6 +168,14 @@
   </div>
 </div>
 
+{% set iqe_canvas = "dsoc" %}
+{% set iqe_api_route = "/api/dsoc/iqe-query" %}
+{% set iqe_title = "IQE Query — BGP Security" %}
+{% set iqe_examples = [
+  {"label": "Open hijacks", "query": "Show high confidence bgp hijacks"},
+  {"label": "Route leaks", "query": "Show route leaks"},
+  {"label": "Type-0 hijacks", "query": "Show type_0 exact-prefix hijacks"},
+] %}
 {% include "includes/iqe_query_widget.html" %}
 
 <script>

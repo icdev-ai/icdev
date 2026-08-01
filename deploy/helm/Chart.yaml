@@ -4,7 +4,10 @@ name: icdev
 description: ICDEV™ - Intelligent Certified Development Platform (On-Premises)
 type: application
 version: 1.0.0
-appVersion: "21.0.0"
+# Tracks icdev/_version.py. A chart advertising a version the
+# package never had makes "which build is this cluster running?"
+# unanswerable; release.py gates that these stay in step.
+appVersion: "1.2.42"
 keywords:
   - compliance
   - automation

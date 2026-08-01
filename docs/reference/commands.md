@@ -78,6 +78,17 @@ python tools/testing/e2e_runner.py --run-all           # Execute all E2E tests
 
 ## Enterprise-Configurable Platform Commands
 ```bash
+# Project scaffolding — ALWAYS run `icdev init` after `pip install icdev`
+icdev init [target]               # Scaffold a project (CLAUDE.md + FORGE data + .claude/ + .env)
+icdev init my-project --profile air-gap   # Non-interactive: apply a core profile
+icdev init my-project --profile none      # Registry defaults, skip the profile prompt
+icdev init --list                 # Dry-run: show what would be copied
+
+# Interactive feature-toggle TUI (stdlib-only; primary browser-free on/off surface)
+icdev setup                       # Browse every component + sub-pages, toggle, write .env
+icdev setup --plain               # Force the plain numbered-menu mode (non-TTY)
+icdev setup --json                # Dump current component state as JSON
+
 # Component registry — single source of truth for canvases, child apps, features, core extensions
 python -c "from tools.config.component_registry import get_registry; r=get_registry(); print([c.key for c in r.iter_canvases()])"
 python -c "from tools.config.component_registry import get_registry; r=get_registry(); print(r.get_nav_context())"
@@ -98,6 +109,16 @@ icdev profile apply <name> --dry-run  # Preview overrides
 # Scaffolding
 icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas
 icdev scaffold child-app <key> --display-name "Name" --flavor <flavor> [--canvases k1,k2] [--out <dir>]  # Generate a child app (minimal, compliance, ai-lab, govcon)
+
+# Document-currency packs (docmod) — let any domain own its own coverage.
+# Writes IN PLACE (packs are discovered by location under args/docmod/) and never
+# overwrites an existing file.
+icdev scaffold docmod-pack <key> --display-name "Name"                        # rulebook flavor: YAML only, NO Python
+icdev scaffold docmod-pack <key> --display-name "Name" --entity-type standard --finding-type deprecated_tech
+icdev scaffold docmod-pack <key> --display-name "Name" --flavor catalog --evidence-table <table>  # table-driven; generates a Python stub
+icdev scaffold docmod-pack <key> --display-name "Name" --dry-run --json       # preview
+# Then: write rules in args/docmod/rulebook_<key>.yaml, set enabled: true in
+# args/docmod/packs/<key>.yaml — the next docmod sweep auto-discovers it.
 
 # Validation
 python tools/workflow/coherence_checker.py --all --gate      # Registry/profile/completeness coherence gate
@@ -157,6 +178,35 @@ python tools/db/storage.py --info --json           # Show backend configuration
 
 ---
 
+## Untrusted HTML Extraction (oss-filter-01)
+```bash
+# Two-pass fit_markdown filter: prune site chrome, then BM25-rank against a query.
+python tools/http/page_extract.py --file page.html                      # prune only
+python tools/http/page_extract.py --file page.html --query "rate limits"  # + relevance
+python tools/http/page_extract.py --file page.html --query "rate limits" --json
+cat page.html | python tools/http/page_extract.py --query "rate limits"
+
+# Thresholds (prune threshold/type, min_word_threshold, BM25 threshold, stopwords,
+# stemming, section propagation, markdown rendering): args/page_extract.yaml
+```
+
+## Untrusted URL Fetch → Extract → Scan (oss-filter-02)
+```bash
+# One hardened path: central HTTP client (mTLS/proxy/retry) → two-pass page_extract
+# → prompt-injection scan. Use this instead of adding a urllib/requests call site.
+python tools/http/fetch_extract.py --url https://example.gov/spec
+python tools/http/fetch_extract.py --url https://example.gov/spec --query "key rotation"
+python tools/http/fetch_extract.py --url https://example.gov/spec --json
+
+# In Python — never raises; a hostile or dead URL comes back as data:
+# from tools.http.fetch_extract import fetch_page
+# page = fetch_page(url, query="key rotation")
+# page.text      # fit_markdown, already injection-scanned
+# page.blocked   # True when a critical finding dropped the content
+
+# Read cap, User-Agent, block_on_critical_injection: `fetch:` in args/http_client.yaml
+```
+
 ## Security Commands
 ```bash
 python tools/security/sast_runner.py --project-dir "/path"
@@ -180,6 +230,40 @@ python tools/security/audit_posture.py --json
 python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
 python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)
 python tools/integrity/pr_gates.py --base origin/main --gate            # CI gate: exit 1 on a blocking (QUARANTINE) verdict
+```
+
+---
+
+## Browser Automation & Agent Scope Controls
+```bash
+# Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
+python tools/browser/driver_manager.py --probe            # Resolved browser + driver path
+python tools/browser/driver_manager.py --smoke            # Launch, visit about:blank, quit
+
+# Agent browser scope controls (oss-browse-02) — config: args/browser_scope.yaml
+python tools/browser/scope.py --show --json               # Print the active policy
+python tools/browser/scope.py --check-url http://localhost:5050/ --json   # exit 0 = allowed
+python tools/browser/scope.py --check-url https://example.com/ --json     # exit 1 = denied
+# Override the config path with ICDEV_BROWSER_SCOPE_CONFIG.
+```
+
+Any **agent-driven** browser session must go through `GuardedDriver`, never a raw
+WebDriver. It enforces the domain allowlist (loopback only by default; a routable
+host needs to be allowlisted **and** `allow_non_local: true` **and** cleared by
+`egress_guard`), the per-run action cap, the per-step timeout, `<secret>name</secret>`
+placeholder substitution at the driver, and an `audit_trail` row per action.
+
+```python
+from tools.browser import get_driver, GuardedDriver
+
+driver = get_driver(headless=True)
+try:
+    session = GuardedDriver(driver, run_id="vv-001")
+    session.navigate("http://localhost:5050/")        # allowed
+    session.type_text(field, "<secret>dashboard_password</secret>")
+    session.navigate("https://example.com/")          # raises NavigationDenied
+finally:
+    driver.quit()
 ```
 
 ---
@@ -242,6 +326,33 @@ python tools/security/aggregation_guard.py --health --json
 
 ---
 
+## Reproduce-or-Drop for Dynamic Findings (oss-poc-01)
+```bash
+# Is this reproduction replayable at all? (predicate hygiene + step/kind checks)
+python tools/security/reproduction_validator.py --validate repro.json --json
+
+# Replay one reproduction; exits 2 when the replay was not decisive
+python tools/security/reproduction_validator.py --replay repro.json --json
+
+# Replay against a different build (proves a fix landed)
+python tools/security/reproduction_validator.py --replay repro.json --target http://127.0.0.1:5051 --json
+
+# Apply the rule to a batch — unconfirmed findings are reported but never block
+python tools/security/reproduction_validator.py --enforce findings.json --json
+
+# Gate mode — exits non-zero only for CONFIRMED findings at a blocking severity
+python tools/security/reproduction_validator.py --enforce findings.json --gate
+
+# Classify without writing to dynamic_findings / finding_replay_attempts
+python tools/security/reproduction_validator.py --enforce findings.json --no-persist --json
+```
+
+Replay targets are default-deny allowlisted in `args/reproduction_policy.yaml`
+(loopback only out of the box); widen with `ICDEV_REPRO_TARGET_ALLOWLIST` for a
+self-hosted staging box — own targets only.
+
+---
+
 ## Requirements Intake (RICOAS) Commands
 ```bash
 python tools/requirements/intake_engine.py --project-id "sparkpilot" --customer-name "Name" --customer-org "Org" --impact-level IL4 --json
@@ -288,6 +399,17 @@ python tools/logging/log_query.py --component genesis --level ERROR --json
 python tools/logging/log_query.py --contains timeout --since 2026-06-06 --limit 50
 # Dashboard: /logs  |  JSON API: GET /api/logs?component=&level=&since=&contains=&limit=
 # IQE: POST /logs/api/iqe-query {question}  (collection logs.entries)
+```
+
+## Swallowed-Persistence Gate (swp-swallow-01)
+```bash
+# Report `except Exception: pass` blocks guarding an INSERT (nothing is written)
+python tools/refactor/fix_swallowed_persistence.py --dry-run --json
+# Rewrite them into logged best-effort handlers (behaviour kept, silence removed)
+python tools/refactor/fix_swallowed_persistence.py --write --json
+python tools/refactor/fix_swallowed_persistence.py --write --path tools/govcon --path icdev/tools/govcon
+# The gate that fails the build if the pattern is reintroduced (fast + full tier)
+python tools/workflow/coherence_checker.py --check swallowed_persistence --json
 ```
 
 ---
@@ -622,6 +744,29 @@ create_tasks([{
 
 # Adversarial verify (invoked automatically when adversarial_enabled=True on a looping task)
 # _run_adversarial_verify(task_id) in tools/kanban/task_factory.py — not a standalone CLI
+
+# OSS Adaptation card (oss- prefix) — 23 tasks / 12 epics adapting RAGFlow, Crawl4AI,
+# browser-use and STRIX as patterns rather than dependencies.
+# Analysis: docs/spikes/oss-00-ragflow-crawl4ai-browseruse-strix-adaptation.md
+python tools/kanban/seed_oss_adaptation.py --dry-run --json   # Validate the graph, write nothing
+python tools/kanban/seed_oss_adaptation.py --json             # Seed tasks + ordering edges (idempotent)
+python -m tools.kanban.cli --set-status oss-gate-00 done      # RELEASE the card (deliberate human act)
+# Seeds TWO dependency layers and needs both: the scalar oss-gate-00 sentinel (blocks
+# everything while held in_progress) and 21 junction kanban_task_deps edges for intra-epic
+# ordering. Without the edges all 22 tasks become eligible at once with an arbitrary
+# created_at tiebreak, so the runner can build oss-browse-02 (scope controls) before
+# oss-browse-01 (the primitive they constrain). validate() refuses to seed on an unknown
+# edge endpoint, a self-dependency, or a cycle.
+
+# Compass dispatch probe — seeds the one trivial compass task that proves repo-aware
+# dispatch end to end (prem-vfy-01). Definition: args/kanban_seed_compass_dispatch.yaml;
+# routing: `prem-vfy` prefix in args/kanban_external_repos.yaml.
+python -m tools.kanban.seed_compass_dispatch_probe --dry-run --json   # Validate routing, write nothing
+python -m tools.kanban.seed_compass_dispatch_probe --json             # Seed onto the board
+# Refuses to seed if the id's prefix does not resolve to the repo the YAML claims
+# (an unregistered prefix defaults to ICDev — that would build a compass task in ICDev).
+# The external repo root must be set where the scheduler runs, else dispatch SKIPs it:
+#   $env:ICDEV_KANBAN_REPO_COMPASS = "C:/path/to/compass"
 ```
 
 ---
@@ -765,6 +910,28 @@ python tools/intelligence/bayesian_teacher.py --health --json                   
 
 ---
 
+## Studio Workflow Executor Commands
+```bash
+# Generic MCP tool executor — dispatch any tool_registry.TOOL_REGISTRY entry as a workflow step
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}'
+python tools/studio/executors/mcp_executor.py --tool kg_search --params '{"query":"NIST AC-2"}'
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' --run-id "run-xxx" --step-id "probe"
+# Dispatch as a specific principal (default: the run's `caller` memory key, else
+# $ICDEV_MCP_CALLER_IL / $ICDEV_IMPACT_LEVEL, else IL4 with no roles)
+python tools/studio/executors/mcp_executor.py --tool health_check --params '{}' \
+  --caller-il IL5 --caller-roles isso,compliance_officer --caller-id u1 --tenant-id t1
+# A `requires_approval` tool parks a pending human gate on the run and blocks on it
+# (dwo-mcp-02-d4). Approve/reject it like any HITL node — workflow Details modal, or
+# workflow_runner.approve_step(step_run_id) — the refusal payload names the step_run_id.
+python tools/studio/executors/mcp_executor.py --tool terraform_apply   --params '{"terraform_dir":"infra"}' --run-id "run-xxx" --approval-wait 3600
+# --approval-wait 0 parks the gate without blocking; the run resumes into the decision.
+# Exit 0 = handler returned; exit 1 = unknown tool (suggests closest matches),
+# params failing the entry's input_schema, the handler raised, or gate MCP-WF-001
+# refused it (not allowlisted / awaiting approval / caller IL too low / missing role).
+```
+
+---
+
 ## Workflow Discipline Engine Commands
 ```bash
 # PLAN-APPLY-UNIFY Lifecycle (Phase 66, D-WF-1 through D-WF-7)
@@ -791,11 +958,36 @@ python tools/workflow/coherence_checker.py --all --fix --json                   
 python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+python tools/workflow/coherence_checker.py --changed-files-from diff.txt --tier fast --gate         # Read the diff from a file (avoids argv limits)
+python tools/workflow/coherence_checker.py --tier fast --gate                                       # Per-task gate tier (defers whole-app heavies)
+python tools/workflow/coherence_checker.py --tier full --gate                                       # Every check (nightly sweep / post-merge)
+python tools/workflow/coherence_checker.py --tier fast --list-tier                                  # Print the check ids a tier would run
+python tools/genesis/reflexes/coherence_sweep.py                                                    # Full-tier sweep on main + refresh the gate's baseline
+
+# Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
+# CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
+# grandfathered in args/doc_command_gate.yaml; NEW broken references fail the gate.
+python tools/workflow/coherence_checker.py --check doc_command_paths --json                         # List unresolved documented commands
+python tools/workflow/coherence_checker.py --check doc_command_paths --gate                         # Fail on any NEW broken reference
+
+# INSERT / Live Schema Parity gate (swp-gate-01) — every column named in a static
+# INSERT under tools/ must exist in the LIVE schema (information_schema on PostgreSQL,
+# PRAGMA table_info on SQLite). `CREATE TABLE IF NOT EXISTS` never alters an existing
+# table, so source DDL and database drift apart silently; the resulting INSERT raises
+# inside `except Exception: pass` and the feature reports success while persisting
+# nothing. The 146-entry pre-existing backlog is grandfathered (WARN) in
+# args/insert_schema_gate.yaml; NEW mismatches FAIL. No live database = WARN, not fail.
+python tools/workflow/coherence_checker.py --check insert_schema_parity --json                      # List INSERT columns absent from the live schema
+python tools/workflow/coherence_checker.py --check insert_schema_parity --gate                      # Fail on any NEW mismatch
 
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout
 python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
 python tools/quality/completion_auditor.py --md                                                      # Write docs/quality/completion-scorecard.md (sorted least->most complete)
+# Local "review-until-green" loop (greploop-adapted) — gates as a score function over the diff
+python tools/quality/review_loop.py --json                            # Working-tree mode: ruff + coherence + SIPA, autofix, iterate
+python tools/quality/review_loop.py --base origin/main --max 3 --gate # Branch diff vs base; exit 0=green / 1=not green
+python tools/quality/review_loop.py --no-autofix --json               # Report only (no edits); emit fix_brief for the agent
 ```
 
 ---
@@ -1779,6 +1971,19 @@ python tools/rag/ingestion_manager.py --daemon --json                           
 python tools/rag/retriever.py --query "FedRAMP AC-2" --json                          # Search across all knowledge
 python tools/rag/retention_manager.py --migrate --json                               # Hot/warm/cold tier migration
 python tools/rag/retention_manager.py --status --json                                # Retention tier status
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference --dry-run --json          # Plan a contextual re-index
+python tools/rag/reindex_contextual.py --reindex --source compliance_reference --limit 500 --offset 0 --execute --json  # Resumable window (next_offset/has_more)
+python tools/rag/reindex_contextual.py --benchmark --baseline data/rag/rce_baseline.json --json          # Measure retrieval vs baseline
+
+# Chunking Templates (oss-chunk-01) — document-type chunking driven by the source_registry 'chunking' key
+python tools/rag/chunking_templates.py --list --json                                 # All templates + the default
+python tools/rag/chunking_templates.py --show oscal_catalog --json                   # One template definition
+python tools/rag/chunking_templates.py --suggest docs/catalog.md --json              # ADVISORY suggestion — never auto-applied
+python tools/rag/chunking_templates.py --preview docs/catalog.md --template oscal_catalog --json  # Chunks a template would produce
+# Templates: oscal_catalog (1 chunk/control, never split) · stig_checklist (1 chunk/rule) · rfp_sow (Section L/M)
+#            contract (numbered clauses) · sop_runbook (numbered steps) · slide_deck (1 chunk/slide)
+#            spreadsheet (row groups + header repeat) · general (default sliding window, unchanged)
+# Wire a source: set "chunking": "<template>" on its entry in tools/rag/source_registry.py
 
 # Fine-Tuning (Phase 64 Extension)
 python tools/finetune/dataset_manager.py --create --name "my-dataset" --purpose general --json   # Create dataset
@@ -2069,6 +2274,12 @@ python tools/creative/trend_tracker.py --report --json
 python tools/creative/spec_generator.py --generate-all --json
 python tools/creative/spec_generator.py --list --json
 
+# Divergent ideation benchmark (dvg-bench-01) — divergence vs single-shot on real
+# ICDEV functions; recommend-only (flips no default), air-gap => status "unmeasured"
+python tools/creative/divergence_benchmark.py --dry-run                 # list tasks, no model calls
+python tools/creative/divergence_benchmark.py --run --json              # measure + persist to data/divergence/
+python tools/creative/divergence_benchmark.py --run --tasks <path> --out <dir>
+
 # Daemon mode
 python tools/creative/creative_engine.py --daemon --json
 ```
@@ -2253,6 +2464,61 @@ python tools/databridge/connectors/clawhub_connector.py --health --json
 ## LLM Tools — Gateway, Prompt Registry, Cost Intelligence, Model Monitor
 
 ```bash
+# AGX reasoning-architecture benchmark + leaderboard (agx-bench-01/02)
+python tools/llm/architectures/benchmark.py --dry-run --json                            # List task suite + registered architectures (no model calls)
+python tools/llm/architectures/benchmark.py --run --json                                # Run the bench (live models if reachable) -> data/agx/benchmark_latest.json
+python tools/llm/architectures/benchmark.py --run --architectures chain_of_thought,baseline --min-samples 3  # Subset / threshold
+python tools/llm/architectures/leaderboard.py --markdown                                # Render leaderboard + routing recommendations from latest report
+python tools/llm/architectures/leaderboard.py --recommend --json                        # Evidence-based routing recommendations only (RECOMMEND — never writes config)
+
+# LLM Proxy Keys (lpx-keys-01) — virtual keys for /gameday & /academy cohorts
+python tools/llm/proxy_keys.py issue --scope-type team --scope-ref 7 --session-id 42 --budget 10 --budget-window exercise --json  # Issue a budgeted team key (shown once)
+python tools/llm/proxy_keys.py list --session-id 42 --json                              # List keys (metadata only, never the key/hash)
+python tools/llm/proxy_keys.py show <key_id> --json                                     # Show one key by id
+python tools/llm/proxy_keys.py revoke <key_id> --actor admin --reason "left cohort" --json  # Revoke (per-key, immediate)
+python tools/llm/proxy_keys.py rotate <key_id> --actor admin --json                     # Rotate: revoke old, issue linked successor (new key shown once)
+python tools/llm/proxy_keys.py expire --json                                            # Sweep keys past expiry -> status expired
+python tools/llm/proxy_keys.py audit --key-id <key_id> --json                           # Append-only lifecycle audit trail (NIST AU)
+# Default expiry: ICDEV_LLM_PROXY_KEY_TTL_DAYS (default 30; 0 disables) so a cohort key cannot outlive the cohort
+# Master/admin key from ICDEV_LLM_PROXY_MASTER_KEY (never logged/returned); LiteLLM sync is best-effort and OFF unless ICDEV_LLM_PROXY_ENABLED=true
+
+# Local canvas copy (lpx-keys-04) — per-person virtual key, fail-closed, no real key on a laptop
+#   Use .env.local-copy.template (gateway URL + virtual-key slot, NO real-provider-key slot). Set ICDEV_LLM_LOCAL_COPY=true.
+python -c "import json;from tools.llm.proxy_gateway import local_copy_preflight;print(json.dumps(local_copy_preflight()))"  # onboarding/health preflight
+# A local copy with no gateway reachable / no virtual key fails CLOSED with a clear message; it never falls back to a real provider key.
+
+# Per-team spend attribution (lpx-teams-03) — "what did each team spend this exercise?"
+python tools/ttx/team_spend.py <session_id> --json                                  # Per-team calls/tokens/cost from ttx_api_log
+python tools/ttx/team_spend.py <session_id> --total --json                           # + exercise roll-up
+
+# LLM Proxy Team Budgets (lpx-teams-02) — per-team gameday spend (a team's budget is its key's budget)
+python tools/llm/proxy_team_budgets.py provision <session_id> <team_id> --budget 40 --json  # Provision/update exercise budget
+python tools/llm/proxy_team_budgets.py check <session_id> <team_id> --projected 0.05 --json  # allow/warn/block + facilitator_message
+python tools/llm/proxy_team_budgets.py status <session_id> --json                    # Per-team spend vs budget (attribution is per-team)
+
+# LLM Proxy Team Rate Ceilings (lpx-teams-01) — competition fairness for /gameday
+python tools/llm/proxy_team_limits.py configure <session_id> --json                 # Compute+persist per-team RPM/TPM ceilings (sized off actual team count)
+python tools/llm/proxy_team_limits.py check <session_id> <team_id> --tokens 1200 --json  # allow/deny for one team (degrades only that team)
+python tools/llm/proxy_team_limits.py status <session_id> --json                    # Facilitator per-team usage vs ceiling (at_ceiling flag)
+# Org limits: ICDEV_LLM_ORG_RPM (60) / ICDEV_LLM_ORG_TPM (100000); burst ICDEV_LLM_TEAM_BURST_FACTOR (1.5)
+
+# LLM Proxy Budgets (lpx-keys-02) — per-key spend budgets scoped to team/guild/user
+python tools/llm/proxy_budgets.py check <key_id> --projected 0.05 --json          # allow|warn|block for a key's budget
+python tools/llm/proxy_budgets.py spend <key_id> --json                            # spend summary for current window
+python tools/llm/proxy_budgets.py record <key_id> --cost 0.05 --input-tokens 1200 --output-tokens 400 --json  # record spend
+
+# LLM Proxy Observability (lpx-obs-01) — spend + rate metrics into /ops/llm
+python tools/llm/proxy_metrics.py --json                                            # Proxy spend/rate metrics (ledger + best-effort Prometheus scrape)
+python tools/llm/proxy_metrics.py --window-hours 24 --top 10 --no-scrape --json     # Ledger-only aggregation over a window
+
+# LLM Proxy Reconciliation (lpx-obs-02) — proxy spend vs token_tracker
+python tools/llm/proxy_reconcile.py --json                                          # Reconcile proxy spend vs token_tracker/gateway audit
+python tools/llm/proxy_reconcile.py --window-hours 24 --threshold-pct 10 --gate --json  # Exit 1 if divergence past threshold (proxy active + both have spend)
+
+# LLM Proxy CUI egress gate (lpx-egress-02) — classified content never traverses the proxy
+# ICDEV_LLM_PROXY_MAX_CLASSIFICATION (default UNCLASSIFIED) — highest classification allowed through the proxy;
+# CUI and above are refused (fail-closed, invoke-time) unless explicitly raised (an ATO-boundary decision).
+
 # LLM Gateway
 python tools/llm/gateway.py --stats --json                                             # Gateway usage statistics
 python tools/llm/gateway.py --audit --json --limit 50                                  # Audit log (last N requests)
@@ -2283,6 +2549,135 @@ python tools/llm/model_monitor.py --record --model qwen3-local --function code_g
 python tools/llm/model_monitor.py --detect-drift --json                                # Detect model quality drift
 python tools/llm/model_monitor.py --health --json                                      # Model health dashboard
 python tools/llm/model_monitor.py --gate                                               # Gate check (CI/CD)
+```
+
+---
+
+## ICDEV Cortex — Unified AI Facade (ctx-*)
+
+Cortex is a Python **API facade** (`tools/cortex/`, mirrored to `icdev/tools/cortex/`) over
+LLMRouter, the four retrieval backends (RAG / GraphRAG / DIC / KB), IQE, and the enforced
+TRUST governance chain. There is no standalone argparse CLI — call it in-process or via
+`python -c`. Routing is config-driven (`cortex_*` chains in `args/llm_config.yaml`); behavior
+tuning lives in `args/cortex_config.yaml` (`$ICDEV_CORTEX_CONFIG` overrides). All chains keep a
+local ollama tier so the facade is air-gap safe.
+
+```bash
+# --- Generation (api.py: complete / classify / extract) ---
+# Free-form completion via the cortex_complete routing chain
+python -c "from tools.cortex import complete; r = complete('Summarize NIST 800-53 AC-2'); print(r.text)"
+
+# Single-label classification (LLM chain, deterministic query_classifier fallback offline/air-gap)
+python -c "from tools.cortex import classify; r = classify('reset my password', ['billing','account','technical']); print(r.text, r.provider)"
+
+# Structured extraction to a JSON schema (output_schema + fenced-JSON parse)
+python -c "from tools.cortex import extract; r = extract('Contact: Jane Doe, jane@x.mil', {'type':'object','properties':{'name':{'type':'string'},'email':{'type':'string'}}}); print(r.text)"
+
+# --- Unified search (search_service.py: strategy routing + CRAG correction) ---
+# Agentic auto-routing (classify_route -> backend selection / fan-out), top_k=5
+python -c "from tools.cortex import search; [print(h.backend, round(h.score,3), h.content[:60]) for h in search('who owns satellite AX-7', top_k=5)]"
+
+# Force a specific backend or full fan-out (bypass classification): rag|graph|dic|kb|all
+python -c "from tools.cortex import search; print(len(search('quarterly revenue trend', strategy='all')))"
+
+# Inspect the routing decision without running backends
+python -c "from tools.cortex import classify_route; print(classify_route('list all vendors linked to CVE-2024-1234'))"
+
+# --- Analyst (analyst.py: ask-your-data, IQE primary + NL->SQL fallback) ---
+# Natural-language query over platform data (mode: auto | iqe | nlq)
+python -c "from tools.cortex import ask; r = ask('show all satellites', mode='auto'); print(r.provider); print(r.text)"
+
+# Pin a canvas scope and request an LLM prose summary (citations grounded/validated)
+python -c "from tools.cortex import ask; r = ask('top 5 open incidents', canvas='nocc', summarize=True); print(r.metadata.get('grounding')); print(r.text)"
+
+# --- Governance (governance.py: enforced TRUST chain — gateway, redaction, grounding, provenance) ---
+# Wrap any Cortex call so every gate in GATE_ORDER runs (fail-open unless ctx.fail_closed)
+python -c "from tools.cortex import GovernancePipeline, complete, CortexContext; ctx=CortexContext(tenant_id='t1', classification='CUI', fail_closed=True); res, rpt = GovernancePipeline().wrap(lambda: complete('draft an RFI intro'), ctx, prompt='draft an RFI intro'); print(rpt.gates_run, rpt.outcomes)"
+
+# --- Config / air-gap invariant (config.py) ---
+# Load the merged cortex config (weights, rrf_k, crag_threshold, timeouts)
+python -c "from tools.cortex import load_cortex_config; c = load_cortex_config(); print(c['search']['crag_threshold'], c['search']['timeouts'])"
+
+# Verify every cortex_* routing chain retains a local ollama tier (raises CortexAirgapError if not)
+python -c "from tools.cortex import assert_airgap_ready; assert_airgap_ready(); print('cortex air-gap ready')"
+
+# --- Domain lenses (domains/: data-driven config profiles over the facade, ctx-canvas-04) ---
+# Load the security (XSIAM-style) lens; scope search to threat/vuln/incident sources
+python -c "from tools.cortex import load_domain_profile, list_domain_names; print(list_domain_names()); print(load_domain_profile('security').sources)"
+
+# --- MCP server (cortex_server.py: 8 cortex_* tools, ctx-expose-01) ---
+# Start the Cortex MCP server over stdio (cortex_search/ask/complete/reason/classify/extract/govern/agent_launch)
+python tools/mcp/cortex_server.py
+
+# --- REST API v1 (rest_v1.py folded onto the /cortex blueprint, ctx-expose-02) ---
+# POST JSON to the versioned surface (identity derived server-side; only `domain` is caller-supplied):
+#   POST /cortex/api/v1/search   {"query": "...", "top_k": 5, "strategy": "auto", "domain": "security"}
+#   POST /cortex/api/v1/ask      {"question": "...", "mode": "auto", "summarize": true}
+#   POST /cortex/api/v1/complete {"prompt": "...", "system_prompt": "..."}
+#   POST /cortex/api/v1/reason   {"prompt": "...", "mode": "cot"}   # mode: cot | debate | council
+#   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}
+#   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
+#   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
+# Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
+#   GET  /cortex/api/v1/health   (unauthenticated liveness — status only)
+
+# --- Service keys (service_keys.py: external-caller auth, ctx-expose-02) ---
+# Issue a scoped, tenant-bound icdev_ctx_ key for an external consumer (raw key shown ONCE)
+python -m tools.cortex.service_keys create --label compass --tenant compass --scopes cortex:search,cortex:ask,cortex:complete,cortex:govern --ceiling CUI --json
+python -m tools.cortex.service_keys list --json
+python -m tools.cortex.service_keys revoke --key-id <id> --json
+# External callers send the key as `Authorization: Bearer icdev_ctx_...` on
+# /cortex/api/v1/* and /api/databridge/v1/* ONLY; tenant/classification bind server-side.
+
+# --- Client SDK (client.py — vendored into compass/idea_lab, ctx-expose-06) ---
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.is_available())"
+
+# --- DataBridge feeds (IRIS stub, ctx-expose-05) ---
+#   GET  /api/databridge/v1/iris/staffing_alignment     (scope databridge:iris:read)
+#   POST /api/databridge/v1/iris/performance_reviews    (scope databridge:iris:write)
+# Stub rows carry metadata.stub=true until the vendor publishes the IRIS API
+# (flip with IRIS_STUB_MODE=false + IRIS_BASE_URL + IRIS_API_KEY).
+```
+
+Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_classify`
+(4-label taxonomy: fact_single/summary/reasoning/unanswerable), `crag_benchmark_run`
+(CRAG evaluation campaign with hallucination-penalizing scoring).
+
+### Retrieval toggle measurement (oss-meas-01-d2)
+
+```bash
+# Which toggles can a retrieval benchmark actually score?
+python tools/rag/toggle_harness.py --probe
+python tools/rag/toggle_harness.py --probe --json
+python tools/rag/toggle_harness.py --list
+
+# Prove the isolation reaches the loader the retriever calls (and restores after)
+python tools/rag/toggle_harness.py --verify rerank --json
+
+# Benchmark ONE toggle in isolation. Exits 3 if the toggle is NOT-WIRED.
+python tools/rag/rag_benchmark.py --toggle rerank --json
+
+# Control arm + one isolated arm per wired toggle, with per-metric deltas
+python tools/rag/rag_benchmark.py --sweep
+python tools/rag/rag_benchmark.py --sweep --only rerank,binary_prefilter --json
+```
+
+```
+# Why the probe exists: an UNWIRED toggle and a wired-but-useless toggle both
+# measure as a zero delta. Reporting a number for the first turns "never
+# connected" into an evidence-backed "DROP". So --toggle/--sweep refuse to
+# benchmark a toggle whose consumer is not in the import closure of
+# tools/rag/retriever.py, and say NOT-WIRED instead.
+#
+# As of oss-meas-01-d2, of the five toggles oss-meas-01 names:
+#   WIRED     rerank, binary_prefilter        (measurable)
+#   NOT-WIRED reflective_rerank (agx-rag-02), adaptive_routing (agx-rag-01),
+#             auto_indexer — 0 non-test import sites; auto_indexer is also
+#             ingest-side, so it cannot move a retrieval metric even once wired.
+#
+# Isolation never writes args/rag_config.yaml. It writes a temp config and sets
+# ICDEV_RAG_CONFIG (tools/rag/config_path.py), because this checkout is shared
+# with other agent sessions and the kanban scheduler.
 ```
 
 ---
@@ -2390,6 +2785,13 @@ python tools/studio/workflow_editor.py --json templates                         
 python tools/studio/workflow_editor.py --json list                                     # List saved studio workflows
 python tools/studio/workflow_editor.py --json get <workflow_id>                        # Get workflow by ID
 
+# Run Memory — run-scoped shared state for workflow steps (dwo-mem-01)
+# Inside a step the runner sets ICDEV_RUN_ID, so --run-id may be omitted.
+python tools/studio/run_memory.py --run-id <run_id> --set artifact --value '{"path":"x.pdf"}'   # Write a key
+python tools/studio/run_memory.py --run-id <run_id> --get artifact                     # Read a key
+python tools/studio/run_memory.py --run-id <run_id> --all                              # Dump every key
+python tools/studio/run_memory.py --run-id <run_id> --delete artifact                  # Delete a key
+
 # Form Builder — create custom forms with JSON Schema output
 python tools/studio/form_builder.py --json field-types                                     # List field types
 python tools/studio/form_builder.py --json templates                                       # List form templates
@@ -2416,6 +2818,8 @@ python tools/studio/automation_builder.py --json templates                      
 python tools/studio/automation_builder.py --json list                                       # List saved automations
 python tools/studio/automation_builder.py --json runs                                       # List recent runs
 python tools/studio/automation_builder.py --json simulate <automation_id>                   # Dry-run simulation
+python tools/studio/automation_builder.py --json simulate <automation_id> --event '{...}'   # Dry-run against a specific event
+python tools/studio/automation_builder.py --json trigger <automation_id> --event '{...}'    # Fire for real (run_workflow starts a run)
 
 # NL App Builder — describe what you want, get a working app
 python tools/studio/nl_app_builder.py --json extract "description of app"                  # Extract capabilities
@@ -2565,10 +2969,16 @@ python tools/data_canvas/sync/openmetadata_sync.py --all --gate --json
 
 ## Showcase Commands
 ```bash
-python tools/showcase/generate_app.py --slug <name> --category <cat>
-python tools/showcase/osint_engine.py --source cve --fetch --json
-python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
-python tools/showcase/validator.py --app <slug> --json
+# AI Canvas Demo Runner — 5-act DoD/IC demo across live canvas DBs
+python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --json
+python tools/showcase/ai_canvas_demo_runner.py --scenario 5 --audience tech
+```
+
+`tools/showcase/synthetic_data_engine.py` is a **library, not a CLI** — import
+`SyntheticDataEngine` / `DOMAINS` from it:
+
+```python
+from icdev.tools.showcase.synthetic_data_engine import DOMAINS, SyntheticDataEngine
 ```
 
 
@@ -2903,6 +3313,26 @@ full async ACE team session:
 # tools/manifest/writeguard-writing-quality-analysis.md for full details.
 ```
 
+### Divergent Ideation (Divergence)
+Generative counterpart to the Council: widen the option space, then score. OPT-IN
+per function (`chain_orchestration.divergence.enabled` default false).
+
+```bash
+# Generate a raw idea pool (single isolated generative fan-out)
+python tools/llm/chain_orchestrator.py --divergence --function <fn> --prompt "<problem>" --json
+
+# Score + trap-flag the pool (the separate critic; novelty/viability/fit + advisory traps)
+python tools/quality/divergence_critic.py --function <fn> --pool-file <pool.md> --json
+
+# Headless skill (both halves, documented steps)
+python tools/skills/invoke.py --exec icdev-divergence -- --function <fn> --prompt "<problem>"
+
+# MCP tool: divergence_invoke  params: function, prompt, system_prompt?, score?(bool)
+#   Returns: {content, chain_mode, models_used, total_cost_usd, trace_id, stop_reason,
+#             rounds, scored?, trap_warnings?}  — advisory traps, never a blocker.
+# Registered in tools/mcp/tool_registry.py; handler tools/mcp/gap_handlers.py::handle_divergence_invoke
+```
+
 ### Cross-Repo Compass Bridge (MCP tools, optional)
 Two MCP tools let ICDEV's CPMP/GovCon modules query a separate, standalone
 Compass app (`C:\AI\standalone\compass` — LCAT/staffing/rate-card automation)
@@ -3086,3 +3516,357 @@ python tools/iqe/cli.py --file context/iqe/queries/network/pvm_01_risk_trajector
 python tools/iqe/cli.py --file context/iqe/queries/network/pvm_02_attack_surface.iqe   --adapter ndc --json
 python tools/iqe/cli.py --file context/iqe/queries/network/pvm_03_triage_queue.iqe     --adapter ndc --json
 ```
+
+## Document Modernization Engine (docmod)
+
+```bash
+# Scan documents for stale content (EOL hardware/software, deprecated tech, superseded standards)
+python -c "from tools.doc_modernization import scan_collection; import json; print(json.dumps(scan_collection(), indent=2))"
+python -c "from tools.doc_modernization import scan_document; import json; print(json.dumps(scan_document('<doc_id>'), indent=2))"
+
+# Latest-state findings (append-only supersede chains resolved)
+python -c "from tools.doc_modernization import get_findings; import json; print(json.dumps(get_findings(state='open'), indent=2, default=str))"
+
+# endoflife.date cache — seed (air-gap), live sync, bundle import
+python -m tools.doc_modernization.eol_products_sync --seed --json
+python -m tools.doc_modernization.eol_products_sync --sync --json
+python -m tools.doc_modernization.eol_products_sync --import bundle.yaml --json
+
+# De facto deployment standards from ni_devices (recency-weighted)
+python -c "from tools.doc_modernization.defacto_learner import recompute; print(recompute())"
+
+# Nightly sweep reflex (standalone)
+python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
+
+# UI: http://localhost:5050/standards-catalog (curated standards, all domains)
+#     http://localhost:5050/document-intelligence/freshness (staleness triage)
+# Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
+# MCP tools: docmod_scan, docmod_findings, docmod_redline
+```
+
+## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
+
+```bash
+# Cross-canvas twin health report (snapshot freshness, verdict distribution,
+# violation counts by severity, refresh-schedule adherence vs genesis reflexes)
+python -m tools.twin_core.observer --json
+python -m tools.twin_core.observer --window-hours 24 --stale-after-hours 48 --json
+
+# Library API
+python -c "from tools.twin_core import observe; import json; print(json.dumps(observe(), default=str)[:400])"
+python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"  # registered twins
+# Config/registry: adapters self-register from tools/twin_core/adapters/*.py
+# Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
+```
+
+## Agent Browser — Indexed-Element Page Representation (tools/browser/)
+
+```bash
+# Probe which WebDriver resolves (vendored msedgedriver → chromedriver → Selenium Manager)
+python tools/browser/driver_manager.py --probe
+python tools/browser/driver_manager.py --smoke
+
+# Index a page — prints exactly what a model sees:
+#   [24] <button> + Add Task
+#   [20] <input> role=text Filter tasks (id=kanban-filter-input, type=text)
+python tools/browser/agent_browser.py --url http://localhost:5050/kanban --text
+
+# JSON state (index, role, text, allowlisted attributes, bounds, in_viewport, disabled)
+python tools/browser/agent_browser.py --url http://localhost:5050 --json
+
+# State + screenshot (always lands under playwright/screenshots/)
+python tools/browser/agent_browser.py --url http://localhost:5050 --text --screenshot --name home
+
+# Show the resolved config
+python tools/browser/agent_browser.py --config --json
+
+# In a git worktree use the module form — a script path does not put the repo
+# root on sys.path, so tools.* resolves to the shared checkout's vendor/drivers.
+python -m tools.browser.agent_browser --url http://localhost:5050 --text
+```
+
+```python
+# Library API — act by index, never by an invented CSS selector
+from tools.browser.agent_browser import AgentBrowser
+
+with AgentBrowser() as b:
+    state = b.navigate("http://localhost:5050/kanban")
+    print(state.to_text())              # model-facing rendering
+    b.type_text(20, "oss-browse")       # index from the state above
+    b.click(24)
+    b.press("Escape")
+    b.select(19, "Engineering")         # matches option value, then visible text
+    state = b.read_state(screenshot=True)
+    print(b.validate("The CUI banner is visible"))   # reuses screenshot_validator
+
+# Agent-loop wiring (same convention as tools/ace/agent_tools.py)
+from tools.browser.agent_tools import BrowserToolRegistry
+tools, handlers = BrowserToolRegistry(browser).build()
+```
+
+```
+# Config: args/agent_browser.yaml — page representation only
+#   include_attributes  — DOM verbosity allowlist (the main prompt-size knob)
+#   max_elements / max_text_length / max_attr_length — hard caps (state.truncated)
+#   viewport_only / occlusion_check — geometry filters
+#   navigation.settle_ms — post-action pause before re-reading state
+#
+# Config: args/browser_scope.yaml — the enforced policy (tools/browser/scope.py)
+#   allowed_domains / denied_domains / allowed_schemes — default-deny nav gate
+#   allow_non_local + require_egress_guard — the two extra switches a routable host needs
+#   limits.max_actions_per_run / max_failures / step_timeout_seconds — per-run budget
+#   AgentBrowser holds a GuardedDriver, so all of the above applies to every method.
+#   There is no navigation policy in agent_browser.yaml — one policy, one file.
+# Tests: tests/test_agent_browser.py (56 tests; real-browser test auto-skips with no driver)
+#        tests/browser/test_scope.py (52 tests; the policy decision table)
+```
+
+## Release & PyPI Packaging
+
+One command from version bump to publish. The middle of the pipeline (sync,
+validate, build, wheel inspection, throwaway-venv smoke, air-gap install) is
+delegated to `build_release.py` — never reimplemented.
+
+```bash
+# Dry run — bump, build, verify everything. Uploads NOTHING. Start here.
+python tools/installer/release.py --version 1.2.43
+
+# Let it pick the number
+python tools/installer/release.py --bump patch
+
+# Stub out the README + CHANGELOG sections, then stop so you can write them
+python tools/installer/release.py --version 1.2.43 --scaffold-notes
+
+# Publish for real (irreversible — a version number can never be reused)
+python tools/installer/release.py --version 1.2.43 --publish
+
+# Only reconcile the version declarations
+python tools/installer/release.py --version 1.2.43 --bump-only
+
+# Machine-readable report
+python tools/installer/release.py --bump patch --json
+```
+
+Credentials are read from `.env` (`TWINE_USERNAME`/`TWINE_PASSWORD`, or
+`PYPI_API_TOKEN`) and never printed.
+
+**Refusals, each traceable to a release that shipped broken:**
+
+| Refusal | Why |
+|---|---|
+| `--publish` with `--skip-smoke` | The throwaway-venv smoke test is the only step that catches a wheel which builds, passes `twine check`, and cannot import. 1.2.41 shipped exactly that. |
+| `--publish` with `--allow-missing-notes` | `/updates` renders `CHANGELOG.md`; a release with no entry leaves the dashboard advertising an older version. 1.2.38 and 1.2.39 shipped with no entry. |
+| Publishing by default | Uploads are irreversible. The default run builds and verifies, then tells you the command to publish. |
+
+The notes gate runs **before** the version bump, so a missing-notes run writes
+nothing. Re-running the current version is treated as resuming a half-finished
+release, not an error — otherwise a failure after the bump would wedge the retry.
+
+> Do not call `python -m build` directly. That skips `sync_package_tree.py`,
+> which is what made the 1.2.40 wheel ship 29 differing and 53 missing `args/`
+> files — including the `component_registry.yaml` that 1.2.39 had just fixed.
+
+
+## Getting ICDEV files WITHOUT a full scaffold
+
+`pip install icdev` installs the package; it does not write into your project.
+`icdev init` copies the payload out. If you don't want a full scaffold, take
+only what you need:
+
+```bash
+icdev init --list                      # dry run: show what WOULD be copied
+icdev init --only CLAUDE.md            # just the master instruction file
+icdev init --only CLAUDE.md goals      # CLAUDE.md + the FORGE Goals layer
+icdev init --only AGENTS.md            # a single AI-platform instruction file
+icdev init --minimal                   # CLAUDE.md + .claude/ + platform files + goals/
+```
+
+The packaged `CLAUDE.md` is the repo's file **byte-for-byte** — no template
+substitution, no stripped-down variant. A test pins that
+(`test_packaged_claude_md_is_not_a_stripped_template`).
+
+`goals/` is copied even under `--minimal`. It is the Goals layer of FORGE and
+the entry point of ANVIL, and CLAUDE.md instructs the agent to read
+`goals/manifest.md` before starting any task — a scaffold without it produces a
+project that contradicts its own first instruction.
+
+## Guided setup after `pip install icdev`
+
+`pip install` installs the package; `icdev init` copies the project payload out;
+`icdev setup` configures it. The wizard is OS-aware (Windows, WSL, Linux, macOS)
+and writes everything to `.env`.
+
+```bash
+icdev setup                    # guided: OS → LLM → database → RAG+KG → Docker
+icdev setup --components       # skip to the component enable/disable TUI
+icdev setup --non-interactive  # accept detected defaults, ask nothing
+icdev setup --no-probe         # skip LLM reachability checks (air-gapped)
+icdev setup --docker-only      # only (re)generate docker-compose.yml
+icdev setup --postgres         # assume PostgreSQL rather than SQLite
+icdev setup --dry-run          # show what would change; write nothing
+icdev setup --json             # machine-readable environment report
+```
+
+**What it configures**
+
+| Step | Detail |
+|---|---|
+| Environment | OS + release, Python, Docker, local PostgreSQL (:5432), local Ollama (:11434), WSL |
+| LLM | primary + fallback provider, API keys, bounded reachability probe |
+| Database | SQLite (zero-config) or PostgreSQL; writes DSN or DB path |
+| RAG + KG | enable flags and embedding dimension (768 — the air-gap-safe default) |
+| Docker | generates a `docker-compose.yml` matched to the answers |
+| Components | hands off to the existing registry-driven TUI |
+
+**Why the compose file is generated rather than documented**
+
+Volume paths are where setup actually fails, and the failure is silent — the
+container starts and the mount is empty:
+
+| Host | Bind-mount source |
+|---|---|
+| Windows | `C:/ai/proj/data` — forward slashes, not what `os.path` produces |
+| WSL | `./data` — **Linux** rules, even though users think of it as Windows |
+| Linux / macOS | `./data` |
+
+The generated file also uses `pgvector/pgvector:pg16` rather than stock
+`postgres:16` (ICDEV stores embeddings in a `vector` column, so plain postgres
+cannot host the RAG schema), points the app at the `postgres` **service name**
+rather than `localhost`, and gates startup on a healthcheck so the first
+migration doesn't race the database.
+
+**The LLM probe** is bounded and skippable. A key that is present but rejected
+is worse than one that is absent — it fails over silently at runtime, which is
+how a stale key can degrade retrieval for weeks before anyone notices.
+
+### Kubernetes (Helm)
+
+```bash
+helm install icdev deploy/helm/                       # defaults: RAG on, pgvector
+helm install icdev deploy/helm/ -f deploy/helm/values-aws.yaml
+helm install icdev deploy/helm/ --set rag.enabled=false   # no vector DB needed
+```
+
+`rag.enabled` (default **true**) selects `pgvector/pgvector:pg16` for the
+platform database and runs `CREATE EXTENSION IF NOT EXISTS vector` on first
+start. With RAG off, the hardened base image is used instead.
+
+This matters: ICDEV stores embeddings in a `vector` column, so a stock postgres
+image cannot host the RAG schema — the extension fails to create and every
+embedding write raises. Override `rag.vectorImage` with your own mirrored build
+in air-gapped or registry-restricted clusters.
+
+`Chart.yaml`'s `appVersion` tracks `icdev/_version.py` and is bumped by
+`release.py`. The chart's own `version:` is deliberately independent — it moves
+when the templates change, not when the application does.
+
+### Provisioning the database and vector store
+
+`icdev setup` writes a DSN; it does not make a database exist. `--provision-db`
+creates whatever is missing, in dependency order:
+
+```bash
+icdev setup --provision-db                 # create what's missing
+python -m tools.cli.provision_db --check   # report only, change nothing
+python -m tools.cli.provision_db --provision --docker --dry-run
+python -m tools.cli.provision_db --sqlite --provision
+```
+
+Four things must exist before RAG works, and each fails differently:
+
+| Layer | Failure when absent |
+|---|---|
+| PostgreSQL **server** | connection refused |
+| **database + role** | `FATAL: database "icdev" does not exist` |
+| **pgvector extension** | `ERROR: type "vector" does not exist` |
+| **schema** | `relation "rag_chunks" does not exist` |
+
+The third bites hardest: the extension is only *installable* if the running
+image ships pgvector. On stock `postgres:16` the `CREATE EXTENSION` in migration
+044 fails and every embedding write raises afterwards — so availability is
+checked, not just whether it's enabled.
+
+**Greenfield options**
+
+| Option | Notes |
+|---|---|
+| **SQLite** | Zero install. File created on first connect; vector store is `rag_chunks` with a BLOB column. Always works, air-gap safe. Brute-force cosine rather than an indexed scan. |
+| **Docker** | Starts `pgvector/pgvector:pg16` from the generated compose file and **waits for the server to accept connections** — `compose up -d` returns when the container is created, not when Postgres is ready. |
+| **Native** | Per-OS install commands are printed, not executed: that needs elevation and changes the machine outside your project. |
+| **Existing server** | Provisions the database, role, extension and schema into a server that's already running (RDS, Cloud SQL, a shared box) without touching its install. |
+
+**Port conflicts** are detected and distinguished, because the three cases need
+opposite handling:
+
+- **free** — start a container here
+- **an existing PostgreSQL** — do *not* start a second one; provision into it. Two servers is a silent second source of truth.
+- **something else** — republish on 5433+, rewriting the DSN and the compose file's host port together. Only the host side moves; Postgres inside the container always listens on 5432.
+
+Provisioning is non-destructive: it creates a database, role and extension, and
+never drops, alters or overwrites one that exists. `--dry-run` prints the plan.
+
+### Corporate proxies and LLM gateways
+
+Most enterprises reach the model through a proxy or an internal gateway, and in
+that world **there is no API key to configure** — the gateway holds the real
+credentials and authenticates upstream on your behalf.
+
+```bash
+python -m tools.cli.proxy_detect          # what proxy is this machine using?
+python -m tools.cli.proxy_detect --json
+```
+
+`icdev setup` runs this automatically, reports what it found, and adopts it.
+Detection order — ICDEV's own settings first, because an explicitly configured
+rotator is a decision and must not be overwritten by a staler OS value:
+
+| Source | Where |
+|---|---|
+| `ICDEV_LLM_PROXY_CMD` / `ICDEV_LLM_PROXY` | already configured |
+| `HTTPS_PROXY`, `ALL_PROXY`, `HTTP_PROXY` | environment |
+| WinINET registry (incl. PAC / `AutoConfigURL`) | Windows |
+| `scutil --proxy` (incl. PAC) | macOS |
+
+Pick the `gateway` provider in the wizard and leave the key blank; set
+`ICDEV_LLM_GATEWAY_URL` to its OpenAI-compatible base URL. The provider sends
+the placeholder `not-needed`, which is what an unauthenticated OpenAI-compatible
+endpoint expects.
+
+**Rotation is the part that bites.** A rotating proxy written into `.env` as a
+literal URL works until the pool moves, then presents as the LLM being down. So
+setup deliberately records the *source*, not the value:
+
+| Config | Behaviour |
+|---|---|
+| `ICDEV_LLM_PROXY_CMD` | a command printing the **current** proxy; re-run per call, TTL-cached via `ICDEV_LLM_PROXY_CMD_TTL` (default 2 s). Correct under any rotation. |
+| nothing written | the SDKs read `HTTPS_PROXY` on every call — correct when the rotator updates the environment |
+| `ICDEV_LLM_PROXY` | a fixed URL. Only written when the detected source is **not** rotating. |
+
+`tools/llm/proxy_resolver.py` re-resolves on every invoke and calls
+`provider.reset_client()` when the value changed, so an SDK client that captured
+the old proxy at construction is rebuilt rather than silently reused.
+
+Note this is a *different* thing from `proxy_gateway.py`: that is ICDEV's own
+LiteLLM proxy issuing virtual keys to callers. This is your organisation's
+egress path out to the vendor. They compose — ICDEV's proxy can itself sit
+behind a corporate one.
+
+Behind a proxy, a direct connection to `api.anthropic.com` is *supposed* to
+fail, so the setup probe reports that as expected rather than as a fault.
+
+### Keeping `/updates` correct
+
+`http://localhost:5050/updates` renders `CHANGELOG.md` live, so the page updates
+the moment the file does. What `release.py` guarantees is that the file is
+*worth rendering* — the notes gate blocks a release unless, checked with the
+page's own parser:
+
+| Check | Blocks when |
+|---|---|
+| `updates_parses` | the entry doesn't parse — `/updates` would silently omit the release |
+| `updates_is_newest` | it isn't the top entry — the page would lead with an older version |
+| `updates_has_content` | it's still a `--scaffold-notes` TODO stub |
+
+The middle one is the state that had `/updates` advertising 1.2.37 while the
+package shipped 1.2.39. The last exists because notes that read as written but
+say nothing are worse than none.

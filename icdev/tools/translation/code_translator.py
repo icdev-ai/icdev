@@ -13,6 +13,9 @@ import json
 import uuid
 from tools.db.storage import get_connection
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.translation.code_translator")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -360,6 +363,12 @@ def translate_units(
                     "source_file": unit.get("source_file", ""),
                     "translated_code": best_result,
                     "status": "translated",
+                    # Explicit provenance flags (nav-intel-05): a real translation
+                    # is never a mock and is only "repaired" once the Phase 5
+                    # compiler-feedback loop rewrites it. Downstream success
+                    # metrics count only mock=False units.
+                    "mock": False,
+                    "repaired": False,
                     "source_hash": unit.get("source_hash", ""),
                     "candidate_selected": k + 1,
                 }
@@ -380,6 +389,11 @@ def translate_units(
                         "source_file": unit.get("source_file", ""),
                         "translated_code": mock_code,
                         "status": "mocked",
+                        # nav-intel-05: an LLM failure degraded to a stub. Flag it
+                        # explicitly so it is NEVER counted as a real translation
+                        # and is surfaced in the job summary.
+                        "mock": True,
+                        "repaired": False,
                         "source_hash": unit.get("source_hash", ""),
                     }
                 )
@@ -447,8 +461,8 @@ def _record_unit(db_path, job_id, unit, status, translated_code, candidate):
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_record_unit: best-effort INSERT into translation_units failed (non-blocking): %s", exc)
 
 
 def main():
@@ -488,7 +502,9 @@ def main():
         # Pre-resolve imports from IR
         imports = ir_data.get("imports", [])
         if imports:
-            resolutions = resolve_imports(args.source_language, args.target_language, imports, mappings)
+            # resolve_imports(import_list, source_lang, target_lang, mappings) —
+            # import list is the first positional arg.
+            resolutions = resolve_imports(imports, args.source_language, args.target_language, mappings)
             dep_mappings = {r["source_import"]: r for r in resolutions}
     except ImportError:
         pass

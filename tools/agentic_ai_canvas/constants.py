@@ -545,6 +545,22 @@ AADC_MODEL_COSTS: dict[str, dict] = {
     "ollama-local":       {"input": 0.0,      "output": 0.0,     "avg_in": 600, "avg_out": 300},
 }
 
+# Default model slug for an unspecified LLM node. Overridable at runtime via the
+# AADC_DEFAULT_LLM_MODEL env var (LLM config lives in .env, never hard-coded in
+# call sites). Must be a key in AADC_MODEL_COSTS.
+AADC_DEFAULT_LLM_MODEL: str = "gpt-4o"
+
+# Cost-optimization swap suggestions: expensive model → cheaper alternative.
+# BOTH sides MUST be keys in AADC_MODEL_COSTS — the alternative's prices are
+# DERIVED from AADC_MODEL_COSTS at suggestion time so they never drift from the
+# single pricing source above.
+AADC_MODEL_SWAPS: dict[str, str] = {
+    "claude-opus-4":  "claude-sonnet-4",
+    "gpt-4o":         "gpt-4o-mini",
+    "gemini-1.5-pro": "gemini-1.5-flash",
+    "mistral-large":  "llama-3.3-70b",
+}
+
 # node-type prefix → (terraform_resource, helm_template_type)
 AADC_IAC_NODE_MAP: dict[str, tuple[str, str]] = {
     "autonomous-agent":  ("kubernetes_deployment", "deployment"),

@@ -43,8 +43,8 @@ class LensLearnerRisk(BaseLens):
             LEFT JOIN fa_mission_progress mp
                    ON mp.user_id = u.id AND mp.status IN ('in_progress','not_started')
             WHERE u.last_active IS NOT NULL
-              AND u.last_active < ?
-              AND u.last_active >= ?
+              AND u.last_active < %s
+              AND u.last_active >= %s
             GROUP BY u.id
             HAVING incomplete_count > 0
             """,
@@ -59,7 +59,7 @@ class LensLearnerRisk(BaseLens):
             LEFT JOIN fa_mission_progress mp
                    ON mp.user_id = u.id AND mp.status IN ('in_progress','not_started')
             WHERE u.last_active IS NOT NULL
-              AND u.last_active < ?
+              AND u.last_active < %s
             GROUP BY u.id
             HAVING incomplete_count > 0
             """,
@@ -74,10 +74,10 @@ class LensLearnerRisk(BaseLens):
                    u.username, u.display_name
             FROM fa_step_progress sp
             JOIN fa_users u ON u.id = sp.user_id
-            WHERE sp.started_at >= ?
+            WHERE sp.started_at >= %s
               AND sp.status = 'failed'
             GROUP BY sp.user_id, sp.step_id
-            HAVING attempt_count >= ?
+            HAVING attempt_count >= %s
             """,
             (today, _RETRY_STORM_THRESHOLD),
         ).fetchall()

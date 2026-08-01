@@ -856,6 +856,21 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         })
         .catch(e => openRightPanel('Export Error', `<p style="color:#e74c3c;">Visio export failed: ${e}</p>`));
+    } else if (format === 'pptx') {
+      // PowerPoint export via server-side API (GET -> raw .pptx bytes)
+      if (cfg.designId === 'new') { openRightPanel('Export', '<p style="color:#f39c12;">Save design first to export PowerPoint.</p>'); return; }
+      fetch(cfg.apiBase + '/export/' + cfg.designId + '/pptx', { method: 'GET' })
+        .then(r => {
+          if (!r.ok) { throw new Error('HTTP ' + r.status); }
+          return r.blob();
+        })
+        .then(blob => {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = (cfg.designId || 'design') + '.pptx';
+          a.click();
+        })
+        .catch(e => openRightPanel('Export Error', `<p style="color:#e74c3c;">PowerPoint export failed: ${e}</p>`));
     } else if (format === 'terraform' || format === 'ansible') {
       openRightPanel('Export', `<p style="color:#7a8cb0;">${format.charAt(0).toUpperCase() + format.slice(1)} export: use the IaC Gallery for generated code.</p>`);
     }

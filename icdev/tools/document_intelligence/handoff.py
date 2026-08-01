@@ -264,8 +264,11 @@ def close_session(session_id: str, closed_by: str = "system") -> dict:
                         "VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                         (_hid("access", dest_cid, successor, _now_utc()), dest_cid, successor, "admin", "default"),
                     )
-                except Exception:
-                    pass
+                except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                    logger.warning(
+                        "close_session: best-effort INSERT into dic_team_access failed (non-blocking): %s",
+                        _exc,
+                    )
         conn.commit()
         return {"status": "closed", "session_id": session_id}
     except Exception as exc:

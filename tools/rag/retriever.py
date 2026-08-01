@@ -49,8 +49,15 @@ _RESULT_PREVIEW_CHARS     = 120    # max chars in result preview/logging
 
 
 def _load_rag_config() -> dict:
-    """Load RAG config."""
-    config_path = BASE_DIR / "args" / "rag_config.yaml"
+    """Load RAG config.
+
+    Path comes from :func:`tools.rag.config_path.rag_config_path` so a
+    measurement run can point ``ICDEV_RAG_CONFIG`` at a temp config with exactly
+    one toggle flipped, instead of rewriting the shared committed file.
+    """
+    from tools.rag.config_path import rag_config_path
+
+    config_path = rag_config_path()
     if not config_path.exists():
         return {}
     try:
@@ -199,6 +206,41 @@ def _time_decay_adjust(results: List[SearchResult]) -> List[SearchResult]:
 
 
 # ---------------------------------------------------------------------------
+# RAPTOR multi-level merge + dedup (RCE, rce-raptor-02)
+# ---------------------------------------------------------------------------
+
+
+def _merge_raptor_results(
+    leaf_results: List[SearchResult],
+    summary_results: List[SearchResult],
+) -> List[SearchResult]:
+    """Merge summary-tier hits into the leaf candidate pool, dedup by lineage.
+
+    Precision + TRUST: when a summary and one of its children (a leaf, or a
+    lower-level summary) both hit, prefer the finer-grained result — drop the
+    parent summary. Summaries whose children are absent survive as *fallback
+    context* (rescues weak leaf retrieval). Leaves are always kept and always
+    preferred for citation (summaries carry ``metadata.is_summary = True`` and
+    must never be surfaced as a citation source).
+
+    Summaries are processed lowest-level-first so that when a level-1 summary
+    survives, its level-2 parent (whose ``child_ids`` include that level-1 id)
+    is dropped in favor of the finer level-1 summary.
+    """
+    if not summary_results:
+        return leaf_results
+    covered = {r.chunk_id for r in leaf_results}
+    kept: List[SearchResult] = []
+    for s in sorted(summary_results, key=lambda r: r.metadata.get("level", 1)):
+        child_ids = s.metadata.get("child_ids", []) or []
+        if any(cid in covered for cid in child_ids):
+            continue  # a finer-grained child already present → drop this parent
+        kept.append(s)
+        covered.add(s.chunk_id)
+    return leaf_results + kept
+
+
+# ---------------------------------------------------------------------------
 # Citation validation (D-RAG-21)
 # ---------------------------------------------------------------------------
 
@@ -241,6 +283,11 @@ class RAGRetriever:
         self._rag_cfg = self._config.get("rag", {})
         self._retrieval_cfg = self._rag_cfg.get("retrieval", {})
         self._rerank_cfg = self._rag_cfg.get("rerank", {})
+        # RCE (rce-raptor-02): RAPTOR multi-level retrieval. Default OFF — when
+        # disabled the pipeline is byte-for-byte the flat-leaf path.
+        self._raptor_cfg = self._rag_cfg.get("raptor", {})
+        # agx-rag-02, wired by oss-meas-01. Default OFF — see step 5b.
+        self._reflective_cfg = self._rag_cfg.get("reflective_rerank", {})
 
         # SEC: Warn when tenant_id is empty in multi-tenant environment
         if not tenant_id:
@@ -332,6 +379,12 @@ class RAGRetriever:
                 filters["tenant_id"] = self._tenant_id
             results = store.search(query_embedding, top_k=vector_top_k, filters=filters)
 
+        # RCE (rce-raptor-02): also search the RAPTOR summary tier and merge it
+        # into the leaf pool (dedup by lineage). Default OFF → exact old path.
+        if self._raptor_cfg.get("enabled", False):
+            summary_results = self._search_summaries(query_embedding, vector_top_k, project_id)
+            results = _merge_raptor_results(results, summary_results)
+
         if not results:
             self._log_retrieval(query, 0, 0.0, start_ms, "vector", project_id)
             return []
@@ -378,6 +431,37 @@ class RAGRetriever:
         else:
             results = results[:final_top_k]
 
+        # Step 5b: Self-RAG per-document reflective reranking (agx-rag-02).
+        # Default OFF → this branch is skipped entirely and the path above is
+        # byte-for-byte unchanged.
+        #
+        # Wired by oss-meas-01. It shipped with a config block, a test file and
+        # zero callers, so `rag.reflective_rerank.enabled` read as a live
+        # capability and did nothing — and a benchmark flipping it measured a
+        # 0.0 delta indistinguishable from "wired and useless".
+        #
+        # Runs AFTER the cross-encoder rather than instead of it: this scores
+        # each surviving candidate on separate RELEVANT/SUPPORTS/USEFUL axes and
+        # composes the ordering in Python, so it refines a shortlist rather than
+        # replacing the cheap ranker. `max_candidates` bounds the per-document
+        # LLM calls — the cost lives here, which is why it stays default OFF
+        # until measured (see docs/features/oss-meas-01-*.md).
+        if self._reflective_cfg.get("enabled", False) and results:
+            try:
+                from tools.rag.reflective_reranker import reflective_rerank
+
+                results = reflective_rerank(
+                    query,
+                    results,
+                    top_k=final_top_k,
+                    max_candidates=self._reflective_cfg.get("max_candidates"),
+                )
+                retrieval_mode = "reflective_reranked"
+            except Exception as exc:
+                # Same posture as the cross-encoder above: a reranker failure
+                # must degrade to the existing ordering, never drop results.
+                logger.debug("reflective rerank unavailable (%s); keeping order", exc)
+
         # Step 6: Log retrieval
         duration_ms = int(time.time() * 1000) - start_ms
         top_score = results[0].final_score if results else 0.0
@@ -397,6 +481,31 @@ class RAGRetriever:
             self._record_provenance(query, results, project_id)
 
         return results
+
+    def _search_summaries(
+        self,
+        query_embedding: List[float],
+        top_k: int,
+        project_id: str = "",
+    ) -> List[SearchResult]:
+        """Search the RAPTOR summary tier (rag_chunk_summaries).
+
+        Best-effort: returns [] when the summary store / table is unavailable
+        (e.g. no hierarchy built yet), so enabling raptor never breaks retrieval.
+        """
+        try:
+            from tools.rag.raptor import SummaryStore
+
+            store = SummaryStore(tenant_id=self._tenant_id)
+            filters: Dict[str, Any] = {}
+            if project_id:
+                filters["project_id"] = project_id
+            if self._tenant_id:
+                filters["tenant_id"] = self._tenant_id
+            summary_top_k = self._raptor_cfg.get("summary_top_k", top_k)
+            return store.search(query_embedding, top_k=summary_top_k, filters=filters)
+        except Exception:
+            return []
 
     def _log_retrieval(
         self,
@@ -444,8 +553,8 @@ class RAGRetriever:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_log_retrieval: best-effort INSERT into rag_retrieval_log failed (non-blocking): %s", exc)
 
     def _record_provenance(self, query: str, results: List[SearchResult], project_id: str):
         """Record PROV-AGENT provenance for this retrieval (D-RAG-8)."""

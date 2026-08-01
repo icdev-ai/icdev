@@ -151,7 +151,20 @@ def ato_db():
     conn.row_factory = sqlite3.Row
     conn.executescript(ATO_DASHBOARD_SCHEMA)
     conn.commit()
-    return conn
+    # Wrapped in StorageConnection so the module's PG-native %s SQL is
+    # translated for SQLite (same pattern as tests/test_cato_twin.py).
+    from tools.db.storage import StorageConnection
+
+    # Closed rather than returned: the constraint tests here drive an INSERT to
+    # an IntegrityError, which aborts the statement but leaves SQLite's implicit
+    # transaction open, so the test ends with an uncommitted write and the guard
+    # in conftest.py fails it (tsh-leak-01). seeded_ato_db builds on this
+    # fixture, so closing here covers both.
+    wrapped = StorageConnection(conn, "sqlite")
+    try:
+        yield wrapped
+    finally:
+        wrapped.close()
 
 
 @pytest.fixture()

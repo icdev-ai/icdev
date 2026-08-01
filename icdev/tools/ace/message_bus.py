@@ -247,7 +247,7 @@ class MessageBus:
         try:
             row = conn.execute(
                 """SELECT id FROM ace_coworkers
-                   WHERE instance_id = ? AND role_id = ?
+                   WHERE instance_id = %s AND role_id = %s
                      AND state NOT IN ('offline', 'suspended')
                    LIMIT 1""",
                 (self.instance_id, to_role),
@@ -269,7 +269,7 @@ class MessageBus:
         conn = get_canvas_connection("ICDEV_ACE_DB_URL")
         try:
             rows = conn.execute(
-                "SELECT id, role_id, state FROM ace_coworkers WHERE instance_id = ?",
+                "SELECT id, role_id, state FROM ace_coworkers WHERE instance_id = %s",
                 (self.instance_id,),
             ).fetchall()
         finally:
@@ -352,7 +352,7 @@ class MessageBus:
             conn.execute(
                 """INSERT INTO ace_messages
                        (id, instance_id, coworker_id, message_type, role, content, metadata_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     msg_id,
                     self.instance_id,

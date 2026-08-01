@@ -56,7 +56,13 @@ def conn():
         );
         """
     )
-    return c
+    # Hand production code a StorageConnection, not the raw sqlite3 one. Runtime
+    # SQL is authored for PostgreSQL (%s placeholders, per CLAUDE.md); the storage
+    # wrapper is what translates them to SQLite's ?. Passing the raw connection
+    # makes every %s a `near "%": syntax error`.
+    from tools.db.storage import StorageConnection
+
+    return StorageConnection(c, "sqlite")
 
 
 def _add(conn, tid, *, status="suggested", fc=5, reason="stale-reaper ... HITL review",

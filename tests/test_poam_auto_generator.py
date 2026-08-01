@@ -73,8 +73,10 @@ CREATE TABLE IF NOT EXISTS poam_items (
 
 def _make_conn(snapshots: list[dict]) -> sqlite3.Connection:
     """Create an in-memory DB pre-loaded with provided snapshot rows."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    # Translating wrapper — poam_auto_generator authors %s for PostgreSQL.
+    from _sql_compat import connect as _tconnect
+
+    conn = _tconnect(":memory:")
     conn.executescript(_SNAPSHOTS_DDL + _POAM_DDL)
     for s in snapshots:
         conn.execute(

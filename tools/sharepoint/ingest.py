@@ -162,6 +162,20 @@ def _upsert_document(
     )
 
 
+def _document_change_hash(server_rel: str, size: int, modified_at: Any) -> str:
+    """A per-document change token for sharepoint_documents.content_hash.
+
+    This is a metadata list crawl — file content is never downloaded — so a true
+    content hash is not available. It must nonetheless CHANGE when the document
+    changes, or change-detection built on it silently never fires. Hashing the
+    path alone (the original bug) failed that: the path is stable across edits.
+    Fold in SharePoint's Modified timestamp (its canonical change signal) and the
+    size; keep the path for per-document namespacing.
+    """
+    signal = f"{server_rel}|{int(size)}|{modified_at or ''}"
+    return hashlib.sha256(signal.encode("utf-8")).hexdigest()[:16]
+
+
 # ---------------------------------------------------------------------------
 # Per-site walk
 # ---------------------------------------------------------------------------
@@ -325,7 +339,7 @@ def _ingest_site(
                     or 0
                 )
                 mime = item.get("File_x0020_Type") or ""
-                content_hash = hashlib.sha256(server_rel.encode("utf-8")).hexdigest()[:16]
+                content_hash = _document_change_hash(server_rel, size, modified_at)
                 db_doc_id = _stable_id(site_url, server_rel)
                 stats["documents"] += 1
 

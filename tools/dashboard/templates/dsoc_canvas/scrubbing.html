@@ -150,12 +150,26 @@
 
   <!-- IQE Widget -->
   <div class="iqe-host">
+    {% set iqe_canvas = "dsoc" %}
+    {% set iqe_api_route = "/api/dsoc/iqe-query" %}
+    {% set iqe_title = "IQE Query — Scrubbing Centers" %}
+    {% set iqe_examples = [
+      {"label": "High utilization", "query": "Which scrubbing centers have high utilization?"},
+      {"label": "Saturated centers", "query": "Show saturated scrubbing centers"},
+      {"label": "Offline centers", "query": "Show offline scrubbing centers"},
+    ] %}
     {% include 'includes/iqe_query_widget.html' %}
   </div>
 </div>
 
 <script>
 const IQE_CANVAS = 'dsoc';
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 function addCenter() {
   const data = {
@@ -180,10 +194,10 @@ function addCenter() {
       if (d.status === 'created' || d.id) {
         msg.innerHTML = '<span class="text-success">Center added. Reload to see it.</span>';
       } else {
-        msg.innerHTML = `<span class="text-danger">${d.error || 'Error adding center.'}</span>`;
+        msg.innerHTML = `<span class="text-danger">${esc(d.error) || 'Error adding center.'}</span>`;
       }
     })
-    .catch(e => { msg.innerHTML = `<span class="text-danger">${e}</span>`; });
+    .catch(e => { msg.innerHTML = `<span class="text-danger">${esc(e)}</span>`; });
 }
 </script>
 {% endblock %}

@@ -760,9 +760,25 @@ body { overflow: hidden; height: 100vh; }
 </div>
 
 <script>
+// ── HTML escaping (XSS defense — penta-aadc-04) ──
+// Entity-escape any server/user-controlled value before it is interpolated
+// into an innerHTML string. Node labels/icons/colors persist in graph_json
+// and design metadata persists in versions/snippets/checkpoints, so an
+// unescaped sink is a stored-XSS vector for every subsequent viewer. Escapes
+// the five HTML-significant characters so the value is inert in both element
+// text and single/double-quoted attribute contexts.
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ── State ──
 const DESIGN_ID = "{{ design.id or '' }}";
-let graph = {{ design.graph_json | safe }};
+let graph = {{ design.graph_json | json_script_safe }};
 let selectedNode = null;
 let connectingFrom = null;
 let nextId = () => 'n-' + Math.random().toString(36).substr(2, 10);
@@ -1112,8 +1128,8 @@ function renderNodes() {
     `;
     const streamBadge = (n.streaming && (n.type === 'llm' || n.type === 'llm-local'))
       ? '<span class="stream-badge">⚡ STREAM</span>' : '';
-    el.innerHTML = `<span style="color:${n.color||'#6366f1'};font-size:14px;">${n.icon||'⬡'}</span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.label}${streamBadge}</span>`;
+    el.innerHTML = `<span style="color:${esc(n.color||'#6366f1')};font-size:14px;">${esc(n.icon||'⬡')}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(n.label)}${streamBadge}</span>`;
 
     el.addEventListener('mousedown', e => startNodeDrag(e, n));
     el.addEventListener('click', e => {
@@ -1478,8 +1494,8 @@ function doExportSVG() {
     svgContent += `<path d="M${x1},${y1} Q${mx},${y1} ${x2},${y2}" stroke="#6366f1" stroke-width="1.5" fill="none" marker-end="url(#arr)" opacity="0.7"/>`;
   });
   graph.nodes.forEach(n => {
-    svgContent += `<rect x="${n.x}" y="${n.y}" width="${n.w||140}" height="${n.h||50}" rx="6" fill="#16213e" stroke="${n.color||'#6366f1'}" stroke-width="2"/>`;
-    svgContent += `<text x="${n.x+(n.w||140)/2}" y="${n.y+(n.h||50)/2+4}" fill="#eaeaea" font-size="11" text-anchor="middle" font-family="sans-serif">${n.label}</text>`;
+    svgContent += `<rect x="${n.x}" y="${n.y}" width="${n.w||140}" height="${n.h||50}" rx="6" fill="#16213e" stroke="${esc(n.color||'#6366f1')}" stroke-width="2"/>`;
+    svgContent += `<text x="${n.x+(n.w||140)/2}" y="${n.y+(n.h||50)/2+4}" fill="#eaeaea" font-size="11" text-anchor="middle" font-family="sans-serif">${esc(n.label)}</text>`;
   });
   svgContent += '</svg>';
   const blob = new Blob([svgContent], {type:'image/svg+xml'});
@@ -1518,8 +1534,8 @@ function doExportDrawio() {
   const cells = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>'];
   graph.nodes.forEach((n, i) => {
     const id = 'cell' + (i + 2);
-    const label = (n.label || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    cells.push(`<mxCell id="${id}" value="${label}" style="rounded=1;fillColor=#16213e;strokeColor=${n.color||'#6366f1'};fontColor=#eaeaea;" vertex="1" parent="1"><mxGeometry x="${n.x}" y="${n.y}" width="${n.w||140}" height="${n.h||50}" as="geometry"/></mxCell>`);
+    const label = esc(n.label || '');
+    cells.push(`<mxCell id="${id}" value="${label}" style="rounded=1;fillColor=#16213e;strokeColor=${esc(n.color||'#6366f1')};fontColor=#eaeaea;" vertex="1" parent="1"><mxGeometry x="${n.x}" y="${n.y}" width="${n.w||140}" height="${n.h||50}" as="geometry"/></mxCell>`);
   });
   const xml = `<mxfile><diagram><mxGraphModel><root>${cells.join('')}</root></mxGraphModel></diagram></mxfile>`;
   const blob = new Blob([xml], {type: 'application/xml'});
@@ -1601,8 +1617,8 @@ function loadVersionsList() {
           onclick="toggleVersionSelect(${v.version_number}, this)">
           <input type="checkbox" class="version-checkbox" data-vnum="${v.version_number}" style="pointer-events:none;">
           <div style="flex:1;">
-            <div style="color:#eaeaea;font-size:12px;">v${v.version_number}${v.label ? ' — ' + v.label : ''}</div>
-            <div style="color:#7a8cb0;font-size:10px;">${v.created_at || ''}</div>
+            <div style="color:#eaeaea;font-size:12px;">v${v.version_number}${v.label ? ' — ' + esc(v.label) : ''}</div>
+            <div style="color:#7a8cb0;font-size:10px;">${esc(v.created_at || '')}</div>
           </div>
         </div>`).join('');
     })
@@ -1665,15 +1681,15 @@ function showDiffModal(v1, v2, diff) {
   let html = '';
   if (added.length) {
     html += `<div style="color:#4ade80;margin-bottom:8px;"><strong>Added (${added.length})</strong></div>`;
-    added.forEach(n => { html += `<div style="padding:4px 8px;background:#052e1644;border-radius:3px;margin-bottom:3px;color:#4ade80;">+ ${n.label || n.id}</div>`; });
+    added.forEach(n => { html += `<div style="padding:4px 8px;background:#052e1644;border-radius:3px;margin-bottom:3px;color:#4ade80;">+ ${esc(n.label || n.id)}</div>`; });
   }
   if (removed.length) {
     html += `<div style="color:#f87171;margin:8px 0;"><strong>Removed (${removed.length})</strong></div>`;
-    removed.forEach(n => { html += `<div style="padding:4px 8px;background:#450a0a44;border-radius:3px;margin-bottom:3px;color:#f87171;">− ${n.label || n.id}</div>`; });
+    removed.forEach(n => { html += `<div style="padding:4px 8px;background:#450a0a44;border-radius:3px;margin-bottom:3px;color:#f87171;">− ${esc(n.label || n.id)}</div>`; });
   }
   if (changed.length) {
     html += `<div style="color:#fb923c;margin:8px 0;"><strong>Changed (${changed.length})</strong></div>`;
-    changed.forEach(n => { html += `<div style="padding:4px 8px;background:#431a0044;border-radius:3px;margin-bottom:3px;color:#fb923c;">~ ${n.label || n.id}</div>`; });
+    changed.forEach(n => { html += `<div style="padding:4px 8px;background:#431a0044;border-radius:3px;margin-bottom:3px;color:#fb923c;">~ ${esc(n.label || n.id)}</div>`; });
   }
   if (!added.length && !removed.length && !changed.length) {
     html = '<div style="color:#7a8cb0;">No differences found.</div>';
@@ -1708,8 +1724,8 @@ function loadSnippetsSidebar() {
       if (!snippets.length) { el.textContent = 'No snippets'; return; }
       el.innerHTML = snippets.map(s =>
         `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1e293b;">
-          <span style="font-size:11px;color:#eaeaea;">${s.name}</span>
-          <button onclick="insertSnippet('${s.id}')" style="background:#0f3460;color:#7ab3f0;border:none;padding:2px 6px;border-radius:2px;cursor:pointer;font-size:10px;">+</button>
+          <span style="font-size:11px;color:#eaeaea;">${esc(s.name)}</span>
+          <button onclick="insertSnippet('${esc(s.id)}')" style="background:#0f3460;color:#7ab3f0;border:none;padding:2px 6px;border-radius:2px;cursor:pointer;font-size:10px;">+</button>
         </div>`).join('');
     });
 }
@@ -1921,14 +1937,14 @@ function loadCheckpointsList() {
       el.innerHTML = ckpts.map(c => `
         <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid #1e293b;">
           <div style="flex:1;">
-            <div style="color:#eaeaea;font-size:12px;">💾 ${c.label || 'Checkpoint'}</div>
-            <div style="color:#7a8cb0;font-size:10px;">${(c.created_at||'').slice(0,19).replace('T',' ')}</div>
+            <div style="color:#eaeaea;font-size:12px;">💾 ${esc(c.label || 'Checkpoint')}</div>
+            <div style="color:#7a8cb0;font-size:10px;">${esc((c.created_at||'').slice(0,19).replace('T',' '))}</div>
           </div>
-          <button onclick="restoreCheckpoint('${c.id}')"
+          <button onclick="restoreCheckpoint('${esc(c.id)}')"
             style="background:#052e16;color:#4ade80;border:1px solid #166534;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;">Restore</button>
-          <button onclick="forkCheckpoint('${c.id}')"
+          <button onclick="forkCheckpoint('${esc(c.id)}')"
             style="background:#1e1b4b;color:#a5b4fc;border:1px solid #3730a3;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;">Fork</button>
-          <button onclick="deleteCheckpoint('${c.id}')"
+          <button onclick="deleteCheckpoint('${esc(c.id)}')"
             style="background:none;color:#475569;border:none;padding:3px 6px;cursor:pointer;font-size:12px;" title="Delete">✕</button>
         </div>`).join('');
     })
@@ -2048,15 +2064,15 @@ function renderProvenanceModal(data) {
       const hasSource = !!entry.model_source;
       html += `<div style="background:#1e293b;border:1px solid #334155;border-radius:6px;padding:10px 12px;margin-bottom:8px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-          <span style="background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;">${entry.type}</span>
-          <span style="color:#eaeaea;font-size:12px;font-weight:600;">${entry.label}</span>
+          <span style="background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;">${esc(entry.type)}</span>
+          <span style="color:#eaeaea;font-size:12px;font-weight:600;">${esc(entry.label)}</span>
           ${!hasSource ? '<span style="color:#f59e0b;font-size:10px;">⚠ no source</span>' : ''}
         </div>
         <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
-          <span style="color:#64748b;">Source</span><span style="color:#cbd5e1;">${entry.model_source || '—'}</span>
-          <span style="color:#64748b;">Version</span><span style="color:#cbd5e1;">${entry.model_version || '—'}</span>
-          <span style="color:#64748b;">Training data</span><span style="color:#cbd5e1;">${entry.training_data || '—'}</span>
-          <span style="color:#64748b;">License</span><span style="color:#cbd5e1;">${entry.model_license || '—'}</span>
+          <span style="color:#64748b;">Source</span><span style="color:#cbd5e1;">${esc(entry.model_source || '—')}</span>
+          <span style="color:#64748b;">Version</span><span style="color:#cbd5e1;">${esc(entry.model_version || '—')}</span>
+          <span style="color:#64748b;">Training data</span><span style="color:#cbd5e1;">${esc(entry.training_data || '—')}</span>
+          <span style="color:#64748b;">License</span><span style="color:#cbd5e1;">${esc(entry.model_license || '—')}</span>
         </div>
       </div>`;
     }
@@ -2066,8 +2082,8 @@ function renderProvenanceModal(data) {
     for (const f of flags) {
       const color = f.severity === 'WARN' ? '#f97316' : f.severity === 'INFO' ? '#38bdf8' : '#94a3b8';
       html += `<div style="background:#1e293b;border-left:3px solid ${color};padding:7px 10px;border-radius:0 4px 4px 0;margin-bottom:5px;font-size:11px;">
-        <span style="color:${color};font-weight:600;">${f.severity}</span>
-        <span style="color:#cbd5e1;margin-left:6px;">${f.message}</span>
+        <span style="color:${color};font-weight:600;">${esc(f.severity)}</span>
+        <span style="color:#cbd5e1;margin-left:6px;">${esc(f.message)}</span>
       </div>`;
     }
   }
@@ -2151,12 +2167,12 @@ function renderCoordMatrix(data) {
   }
   const topologyColors = { mesh: '#10b981', 'hub-spoke': '#f59e0b', pipeline: '#3b82f6', hierarchical: '#8b5cf6', single: '#94a3b8', none: '#475569' };
   const tcolor = topologyColors[data.topology] || '#94a3b8';
-  const hubLabels = (data.hub_nodes || []).map(h => h.label).join(', ');
-  const isoLabels = (data.isolated_agents || []).map(a => a.label).join(', ');
+  const hubLabels = (data.hub_nodes || []).map(h => esc(h.label)).join(', ');
+  const isoLabels = (data.isolated_agents || []).map(a => esc(a.label)).join(', ');
 
   let html = `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
     <span style="background:${tcolor}22;border:1px solid ${tcolor};color:${tcolor};padding:3px 10px;border-radius:12px;font-size:11px;">
-      Topology: ${data.topology}
+      Topology: ${esc(data.topology)}
     </span>
     ${hubLabels ? `<span style="color:#94a3b8;font-size:11px;">Hub: ${hubLabels}</span>` : ''}
     ${isoLabels ? `<span style="color:#f87171;font-size:11px;">Isolated: ${isoLabels}</span>` : ''}
@@ -2165,10 +2181,10 @@ function renderCoordMatrix(data) {
   html += '<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:11px;">';
   // Header row
   html += '<tr><th style="background:#1e293b;padding:6px 10px;color:#64748b;"></th>';
-  for (const a of agents) html += `<th style="background:#1e293b;padding:6px 8px;color:#94a3b8;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;">${a.label}</th>`;
+  for (const a of agents) html += `<th style="background:#1e293b;padding:6px 8px;color:#94a3b8;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;">${esc(a.label)}</th>`;
   html += '</tr>';
   for (let i = 0; i < agents.length; i++) {
-    html += `<tr><td style="background:#1e293b;padding:6px 10px;color:#94a3b8;white-space:nowrap;font-weight:600;">${agents[i].label}</td>`;
+    html += `<tr><td style="background:#1e293b;padding:6px 10px;color:#94a3b8;white-space:nowrap;font-weight:600;">${esc(agents[i].label)}</td>`;
     for (let j = 0; j < agents.length; j++) {
       const cell = data.matrix[i][j];
       const bg = cell === 'direct' ? '#1d4ed8' : cell === 'indirect' ? '#1e3a6e' : cell === 'self' ? '#1e293b' : '#0f172a';
@@ -2241,18 +2257,18 @@ function renderSimResults(data) {
   });
 
   let html = `<div style="color:${status==='halted'?'#f97316':status==='complete'?'#4ade80':'#94a3b8'};font-size:11px;font-weight:600;padding:6px 0;border-bottom:1px solid #1e293b;margin-bottom:6px;">
-    ${status==='halted' ? '⏸ Halted at: '+data.halted_by_label : status==='complete' ? '✅ Completed' : '⚠ '+status}
-    &nbsp;(${data.steps_count} steps)
+    ${status==='halted' ? '⏸ Halted at: '+esc(data.halted_by_label) : status==='complete' ? '✅ Completed' : '⚠ '+esc(status)}
+    &nbsp;(${esc(data.steps_count)} steps)
   </div>`;
 
   for (const step of trace) {
     const oc = step.outcome;
     const dot = oc==='halted' ? '🔴' : oc==='filtered' ? '🟡' : '🟢';
     html += `<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:11px;">
-      <span style="color:#475569;min-width:22px;text-align:right;">${step.step}.</span>
+      <span style="color:#475569;min-width:22px;text-align:right;">${esc(step.step)}.</span>
       <span>${dot}</span>
-      <span style="color:#eaeaea;">${step.node_label}</span>
-      <span style="color:#475569;font-size:10px;">[${step.node_type}]</span>
+      <span style="color:#eaeaea;">${esc(step.node_label)}</span>
+      <span style="color:#475569;font-size:10px;">[${esc(step.node_type)}]</span>
     </div>`;
   }
 
@@ -2260,7 +2276,7 @@ function renderSimResults(data) {
     html += '<div style="color:#94a3b8;font-size:10px;margin-top:8px;border-top:1px solid #1e293b;padding-top:6px;">Decisions</div>';
     for (const d of decisions) {
       const color = d.type==='halt' ? '#f97316' : '#38bdf8';
-      html += `<div style="font-size:10px;color:${color};padding:2px 0;">${d.type==='halt'?'⏸':'🔵'} ${d.node_label}: ${d.reason}</div>`;
+      html += `<div style="font-size:10px;color:${color};padding:2px 0;">${d.type==='halt'?'⏸':'🔵'} ${esc(d.node_label)}: ${esc(d.reason)}</div>`;
     }
   }
 
@@ -2450,9 +2466,9 @@ function _applyLintOverlay(data) {
     let html = `<div style="color:#fbbf24;font-size:11px;font-weight:600;margin-bottom:6px;">💡 ${recs.length} recommendations</div>`;
     for (const r of recs.slice(0, 8)) {
       html += `<div style="padding:4px 0;border-bottom:1px solid #1e293b;">
-        <span style="color:${sevColor[r.severity]||'#94a3b8'};font-size:10px;font-weight:700;">[${r.severity}]</span>
-        <span style="color:#eaeaea;font-size:11px;margin-left:4px;">${r.message}</span>
-        ${r.add_node_type ? `<div style="color:#38bdf8;font-size:10px;">→ Add: ${r.add_node_type}</div>` : ''}
+        <span style="color:${sevColor[r.severity]||'#94a3b8'};font-size:10px;font-weight:700;">[${esc(r.severity)}]</span>
+        <span style="color:#eaeaea;font-size:11px;margin-left:4px;">${esc(r.message)}</span>
+        ${r.add_node_type ? `<div style="color:#38bdf8;font-size:10px;">→ Add: ${esc(r.add_node_type)}</div>` : ''}
       </div>`;
     }
     panel.innerHTML = html;
@@ -2492,12 +2508,12 @@ function runRegulatoryAnalysis() {
     .then(r => r.json())
     .then(d => {
       if (btn) { btn.disabled = false; btn.textContent = '↻ Analyze'; }
-      if (d.error) { body.innerHTML = '<div style="color:#f87171;padding:16px;">' + d.error + '</div>'; return; }
+      if (d.error) { body.innerHTML = '<div style="color:#f87171;padding:16px;">' + esc(d.error) + '</div>'; return; }
       renderRegModal(d);
     })
     .catch(err => {
       if (btn) { btn.disabled = false; btn.textContent = '↻ Analyze'; }
-      body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + err + '</div>';
+      body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + esc(err) + '</div>';
     });
 }
 
@@ -2538,7 +2554,7 @@ function renderRegModal(d) {
       const pct = fd.total ? Math.round(fd.compliant / fd.total * 100) : 0;
       const col = pct >= 80 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
       html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:6px 10px;min-width:100px;">
-        <div style="color:#94a3b8;font-size:9px;margin-bottom:3px;">${fw}</div>
+        <div style="color:#94a3b8;font-size:9px;margin-bottom:3px;">${esc(fw)}</div>
         <div style="font-size:14px;font-weight:700;color:${col};">${pct}%</div>
         <div style="background:#1e293b;border-radius:2px;height:4px;margin-top:3px;">
           <div style="background:${col};width:${pct}%;height:4px;border-radius:2px;"></div>
@@ -2559,16 +2575,16 @@ function renderRegModal(d) {
       html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:8px 10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
           <div style="display:flex;gap:6px;align-items:center;">
-            <span style="color:#475569;font-size:9px;">[${g.framework} ${g.article}]</span>
-            <span style="color:#eaeaea;font-size:11px;font-weight:500;">${g.title}</span>
+            <span style="color:#475569;font-size:9px;">[${esc(g.framework)} ${esc(g.article)}]</span>
+            <span style="color:#eaeaea;font-size:11px;font-weight:500;">${esc(g.title)}</span>
           </div>
           <div style="display:flex;gap:4px;align-items:center;">
-            <span style="color:${fg};font-size:9px;font-weight:700;">${g.severity}</span>
+            <span style="color:${fg};font-size:9px;font-weight:700;">${esc(g.severity)}</span>
             <span style="background:${bg};color:${fc};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${g.status === 'compliant' ? '✓ OK' : '✗ GAP'}</span>
           </div>
         </div>
-        <div style="color:#64748b;font-size:10px;">${g.requirement}</div>
-        ${g.gap_advice ? `<div style="color:#fbbf24;font-size:10px;margin-top:3px;">⚡ ${g.gap_advice}</div>` : ''}
+        <div style="color:#64748b;font-size:10px;">${esc(g.requirement)}</div>
+        ${g.gap_advice ? `<div style="color:#fbbf24;font-size:10px;margin-top:3px;">⚡ ${esc(g.gap_advice)}</div>` : ''}
       </div>`;
     }
     html += '</div>';
@@ -2600,12 +2616,12 @@ function generateThreatModel() {
     .then(r => r.json())
     .then(d => {
       if (btn) { btn.disabled = false; btn.textContent = '↻ Generate'; }
-      if (d.error) { body.innerHTML = '<div style="color:#f87171;padding:16px;">' + d.error + '</div>'; return; }
+      if (d.error) { body.innerHTML = '<div style="color:#f87171;padding:16px;">' + esc(d.error) + '</div>'; return; }
       renderThreatModal(d);
     })
     .catch(err => {
       if (btn) { btn.disabled = false; btn.textContent = '↻ Generate'; }
-      body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + err + '</div>';
+      body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + esc(err) + '</div>';
     });
 }
 
@@ -2646,13 +2662,13 @@ function renderThreatModal(d) {
       const fg = sevFg[t.severity] || '#94a3b8';
       html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:8px 10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <span style="color:${cc};font-size:10px;font-weight:600;">${t.category}</span>
-          <span style="background:${bg};color:${fg};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${t.severity}</span>
+          <span style="color:${cc};font-size:10px;font-weight:600;">${esc(t.category)}</span>
+          <span style="background:${bg};color:${fg};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${esc(t.severity)}</span>
         </div>
-        <div style="color:#eaeaea;font-size:11px;font-weight:500;">${t.id} · ${t.title}</div>
-        <div style="color:#64748b;font-size:10px;margin-top:2px;">${t.description}</div>
-        ${t.affected_nodes && t.affected_nodes.length ? '<div style="color:#475569;font-size:10px;margin-top:3px;">Nodes: ' + t.affected_nodes.slice(0,3).map(n=>n.label||n.node_id).join(', ') + (t.affected_nodes.length>3?'…':'') + '</div>' : ''}
-        <div style="color:#38bdf8;font-size:10px;margin-top:3px;">Mitigation: ${t.mitigation}</div>
+        <div style="color:#eaeaea;font-size:11px;font-weight:500;">${esc(t.id)} · ${esc(t.title)}</div>
+        <div style="color:#64748b;font-size:10px;margin-top:2px;">${esc(t.description)}</div>
+        ${t.affected_nodes && t.affected_nodes.length ? '<div style="color:#475569;font-size:10px;margin-top:3px;">Nodes: ' + t.affected_nodes.slice(0,3).map(n=>esc(n.label||n.node_id)).join(', ') + (t.affected_nodes.length>3?'…':'') + '</div>' : ''}
+        <div style="color:#38bdf8;font-size:10px;margin-top:3px;">Mitigation: ${esc(t.mitigation)}</div>
       </div>`;
     }
     html += '</div>';
@@ -2669,12 +2685,12 @@ function renderThreatModal(d) {
       const fg = sevFg[a.severity] || '#94a3b8';
       html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:7px 10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="color:#a78bfa;font-size:10px;font-weight:600;">${a.tactic}</span>
-          <span style="background:${bg};color:${fg};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${a.severity}</span>
+          <span style="color:#a78bfa;font-size:10px;font-weight:600;">${esc(a.tactic)}</span>
+          <span style="background:${bg};color:${fg};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${esc(a.severity)}</span>
         </div>
-        <div style="color:#eaeaea;font-size:11px;">${a.id} · ${a.title}</div>
-        <div style="color:#64748b;font-size:10px;margin-top:2px;">${a.description}</div>
-        <div style="color:#38bdf8;font-size:10px;margin-top:2px;">Mitigation: ${a.mitigation}</div>
+        <div style="color:#eaeaea;font-size:11px;">${esc(a.id)} · ${esc(a.title)}</div>
+        <div style="color:#64748b;font-size:10px;margin-top:2px;">${esc(a.description)}</div>
+        <div style="color:#38bdf8;font-size:10px;margin-top:2px;">Mitigation: ${esc(a.mitigation)}</div>
       </div>`;
     }
     html += '</div>';
@@ -2808,7 +2824,7 @@ function loadModelLinker() {
     renderModelLinker(aiNodes, catalog, refsData.refs || [], refsData.il_violations || []);
   }).catch(err => {
     document.getElementById('ml-body').innerHTML =
-      '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Error: ' + err + '</div>';
+      '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Error: ' + esc(err) + '</div>';
   });
 }
 
@@ -2862,8 +2878,10 @@ function unlinkNodeModel(refId, nodeId) {
     .catch(err => setStatus('Unlink error: ' + err));
 }
 
+// Legacy alias — single source of truth is esc() at the top of the script
+// (esc() additionally escapes the single quote, so it is a safe superset).
 function _esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return esc(s);
 }
 
 // ────────────────────────────────────────────────

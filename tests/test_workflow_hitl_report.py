@@ -115,9 +115,16 @@ def tmp_db(tmp_path):
     conn.close()
 
     def _get():
+        # StorageConnection, NOT a bare sqlite3 connection. The modules under
+        # test author PostgreSQL-dialect SQL (`%s` placeholders) -- correct,
+        # since PG is the primary backend -- which sqlite3 cannot parse. A raw
+        # connection made `get_sections` raise `near "%": syntax error`, so the
+        # test failed on the fixture rather than on the behaviour it asserts.
+        from tools.db.storage import StorageConnection
+
         c = sqlite3.connect(str(db_path))
         c.row_factory = sqlite3.Row
-        return c
+        return StorageConnection(c, "sqlite")
 
     # Patch both the canonical location and the already-bound module references
     # (blueprint.py imports report_generator at module level, so the binding

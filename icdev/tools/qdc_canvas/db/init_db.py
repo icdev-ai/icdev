@@ -37,7 +37,16 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        # Wrap so the %s placeholders used across init_db + blueprint + IQE
+        # adapter translate to ? on SQLite (mirrors tools/security_canvas). Without
+        # this the raw sqlite3 connection raises "near %: syntax error" on every
+        # seed/query, and the canvas is unusable on the SQLite backend.
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except Exception:
+        return conn
 
 
 SCHEMA = """
@@ -181,6 +190,49 @@ CREATE TABLE IF NOT EXISTS qdc_collab_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_qdc_collab_design ON qdc_collab_sessions(design_id);
+
+CREATE TABLE IF NOT EXISTS qdc_collab_ops (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    seq         INTEGER NOT NULL DEFAULT 0,
+    session_id  TEXT,
+    user_id     TEXT,
+    operation   TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_qdc_collab_ops_design ON qdc_collab_ops(design_id, seq);
+
+-- QDC digital twin (twx-cov-01). Snapshots follow the PDC retention pattern
+-- (sha256 dedup + bounded auto-snapshot retention) — NOT append-only. No
+-- tenant_id/classification columns: canvas tables, accessed via QDC's
+-- get_canvas_connection()-backed get_connection().
+CREATE TABLE IF NOT EXISTS qdc_twin_snapshots (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    label       TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count  INTEGER DEFAULT 0,
+    edge_count  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_qdc_twin_snapshots_design ON qdc_twin_snapshots(design_id);
+
+CREATE TABLE IF NOT EXISTS qdc_simulations (
+    id                TEXT PRIMARY KEY,
+    design_id         TEXT NOT NULL,
+    baseline_snap_id  TEXT,
+    delta_graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict           TEXT NOT NULL DEFAULT 'unknown',
+    findings_json     TEXT DEFAULT '[]',
+    diff_json         TEXT DEFAULT '{}',
+    created_by        TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_qdc_simulations_design ON qdc_simulations(design_id);
 """
 
 

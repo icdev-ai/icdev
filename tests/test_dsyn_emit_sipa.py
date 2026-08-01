@@ -34,9 +34,16 @@ def shim(): return _ShimConn()
 
 @contextmanager
 def _patch(shim):
+    # get_canvas_connection, NOT get_connection. event_emitter writes to
+    # canvas_events, which (migration 039) has no tenant_id/classification
+    # columns — so it deliberately uses the RLS-disabled canvas connection
+    # (e59929a98), or get_connection()'s predicate injection would raise
+    # UndefinedColumn on PostgreSQL. Patching the old name raised
+    # "module does not have the attribute 'get_connection'" and every test
+    # here errored, which is not the same as the code being broken.
     @contextmanager
     def _gc(): yield shim
-    with patch("tools.integrity.event_emitter.get_connection", _gc): yield shim
+    with patch("tools.integrity.event_emitter.get_canvas_connection", _gc): yield shim
 
 def test_emit_vulnerability_found(shim):
     from tools.integrity import event_emitter
@@ -70,7 +77,7 @@ def test_emit_failure_returns_false():
         c = _ShimConn()
         c.execute = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("fail"))
         yield c
-    with patch("tools.integrity.event_emitter.get_connection", _boom):
+    with patch("tools.integrity.event_emitter.get_canvas_connection", _boom):
         assert event_emitter.emit_vulnerability_found("f.py", "vuln", "high") is False
 
 def test_source_and_target_canvas(shim):

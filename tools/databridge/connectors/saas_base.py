@@ -290,6 +290,54 @@ class SaaSBaseConnector(DataConnector):
             return data
         return [data] if isinstance(data, dict) else data
 
+    # ── Egress control ────────────────────────────────────────────────────
+    #
+    # Every outbound call from a SaaS connector passes through here before the
+    # socket opens. Previously the three _http_* methods called urlopen bare,
+    # each annotated "# nosec B310 -- URL scheme validated" while NO validation
+    # occurred anywhere. A suppression comment asserting a control that does not
+    # exist is worse than no comment: it tells the reviewer and the scanner the
+    # problem is handled.
+    #
+    # tools/http/egress_guard.py was already written and correct (HTTPS-only,
+    # deny-beats-allow, DNS resolve-then-check on EVERY A record so a hostname
+    # cannot resolve to link-local or RFC1918). It simply had no callers here.
+    #
+    # Air-gap is an absolute stop: in that posture no connector may reach out at
+    # all, regardless of allowlist.
+
+    def _egress_config(self) -> dict:
+        """Allow/deny config for this connector, from its own connection config."""
+        return {
+            "allowlist": list(self._config.get("egress_allowlist") or []),
+            "denylist": list(self._config.get("egress_denylist") or []),
+        }
+
+    def _guard_egress(self, url: str) -> None:
+        """Raise ``PermissionError`` unless *url* may be contacted."""
+        try:
+            from tools.airgap import is_airgap
+            if is_airgap():
+                raise PermissionError(
+                    f"egress blocked: air-gap mode is active (target {url!r})"
+                )
+        except PermissionError:
+            raise
+        except Exception:  # noqa: BLE001 — airgap module optional
+            pass
+
+        try:
+            from tools.http.egress_guard import egress_guard
+        except Exception as exc:  # noqa: BLE001
+            # Fail CLOSED. An unimportable guard means the destination is
+            # unchecked, which is precisely when an outbound call should not
+            # proceed.
+            raise PermissionError(f"egress guard unavailable: {exc}") from exc
+
+        allowed, reason, _ips = egress_guard(url, self._egress_config())
+        if not allowed:
+            raise PermissionError(f"egress blocked ({reason}) for {url!r}")
+
     def _http_get(self, url: str) -> Any:
         """Execute authenticated HTTP GET, return parsed JSON."""
         headers = {
@@ -301,7 +349,8 @@ class SaaSBaseConnector(DataConnector):
         req = Request(url, headers=headers, method="GET")
         timeout = self._config.get("timeout", REQUEST_TIMEOUT)
 
-        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- URL scheme validated; internal/configured endpoints only
+        self._guard_egress(url)
+        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- scheme + destination validated by _guard_egress above
             body = resp.read().decode("utf-8")
             return json.loads(body) if body.strip() else {}
 
@@ -318,7 +367,8 @@ class SaaSBaseConnector(DataConnector):
         req = Request(url, data=payload, headers=headers, method="POST")
         timeout = self._config.get("timeout", REQUEST_TIMEOUT)
 
-        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- URL scheme validated; internal/configured endpoints only
+        self._guard_egress(url)
+        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- scheme + destination validated by _guard_egress above
             body = resp.read().decode("utf-8")
             return json.loads(body) if body.strip() else {}
 
@@ -333,6 +383,7 @@ class SaaSBaseConnector(DataConnector):
         req = Request(url, headers=headers, method="DELETE")
         timeout = self._config.get("timeout", REQUEST_TIMEOUT)
 
-        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- URL scheme validated; internal/configured endpoints only
+        self._guard_egress(url)
+        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- scheme + destination validated by _guard_egress above
             body = resp.read().decode("utf-8")
             return json.loads(body) if body.strip() else {}

@@ -1,1 +1,1 @@
-foreach s in mission.sessions where s.status == "active" select s.id, s.name, s.classification, s.updated_at
+foreach s in mission.sessions where s.design_type == "operational" select s.id, s.name, s.classification, s.updated_at

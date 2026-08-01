@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
+from types import SimpleNamespace
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -341,6 +342,104 @@ def test_watcher_fails_gracefully_on_fetch_exception():
     report = w.poll_once()
     assert report.actions[0].action == "wait"
     assert "gh down" in report.actions[0].reason
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Base-branch guard (incident 2026-07-08: PR #114 auto-merged into a
+# feature branch instead of main)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _green_pr_state(base_ref=None):
+    state = {
+        "state": "OPEN",
+        "mergeable": "MERGEABLE",
+        "reviews": [{"state": "APPROVED", "author": "b"}],
+        "statusCheckRollup": [{"conclusion": "SUCCESS", "name": "tests"}],
+    }
+    if base_ref is not None:
+        state["baseRefName"] = base_ref
+    return state
+
+
+def _build_merge_watcher(base_ref, merge_calls):
+    tasks = [_FakeRow(
+        id="task-m", title="T", description="",
+        status="in_progress",
+        executor_url="https://github.com/o/r/pull/114",
+    )]
+    state_map = {"https://github.com/o/r/pull/114": _green_pr_state(base_ref)}
+
+    def fake_merge_runner(cmd, **kwargs):
+        merge_calls.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    return pw.PRWatcher(
+        config={
+            "auto_merge_enabled": True,
+            "auto_merge_require_approval": False,
+            "max_resume_cycles_per_task": 5,
+        },
+        get_connection=_fake_connection_factory(tasks),
+        queue_message=lambda *a, **kw: {"queued": True},
+        fetch_state=lambda url, **kw: state_map[url],
+        fetch_logs=lambda url, **kw: "",
+        auto_merge_runner=fake_merge_runner,
+        default_branch_resolver=lambda: "main",
+    )
+
+
+def test_watcher_refuses_auto_merge_into_feature_branch():
+    merge_calls = []
+    w = _build_merge_watcher("feat/rfi-six-parts", merge_calls)
+    report = w.poll_once()
+    action = report.actions[0]
+    assert action.classification == "done"
+    assert action.action == "wait"
+    assert "refusing auto-merge" in action.reason
+    assert "feat/rfi-six-parts" in action.reason
+    assert merge_calls == []
+
+
+def test_watcher_refuses_auto_merge_when_base_unknown():
+    merge_calls = []
+    w = _build_merge_watcher(None, merge_calls)
+    report = w.poll_once()
+    action = report.actions[0]
+    assert action.action == "wait"
+    assert "refusing auto-merge" in action.reason
+    assert merge_calls == []
+
+
+def test_watcher_auto_merges_on_default_base():
+    merge_calls = []
+    w = _build_merge_watcher("main", merge_calls)
+    report = w.poll_once()
+    action = report.actions[0]
+    assert action.action == "merge"
+    assert action.reason == "auto-merge ok"
+    assert len(merge_calls) == 1
+
+
+def test_repo_default_branch_via_gh():
+    def fake_runner(cmd, **kwargs):
+        assert cmd[:3] == ["gh", "repo", "view"]
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"defaultBranchRef": {"name": "main"}}',
+            stderr="",
+        )
+
+    assert pw.repo_default_branch(runner=fake_runner) == "main"
+
+
+def test_repo_default_branch_git_fallback():
+    def fake_runner(cmd, **kwargs):
+        if cmd[0] == "gh":
+            return SimpleNamespace(returncode=1, stdout="", stderr="no auth")
+        return SimpleNamespace(returncode=0, stdout="origin/develop\n", stderr="")
+
+    assert pw.repo_default_branch(runner=fake_runner) == "develop"
 
 
 def test_cli_dry_run_json(monkeypatch, capsys):

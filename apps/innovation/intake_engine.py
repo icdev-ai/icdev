@@ -151,7 +151,7 @@ def generate_brief(title: str, submitter_role: str, answers: dict) -> str:
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1500,
         )
-        result = router.complete(req)
+        result = router.invoke("idea_brief_generation", req)
         brief_text = result.content if hasattr(result, "content") else str(result)
         if brief_text and len(brief_text) > 100:
             return brief_text

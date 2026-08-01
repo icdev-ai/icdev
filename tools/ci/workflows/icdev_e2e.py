@@ -26,7 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def check_dashboard_running(base_url: str = "http://localhost:5000") -> bool:
+def check_dashboard_running(base_url: str = "http://localhost:5050") -> bool:
     """Check if the dashboard is reachable."""
     try:
         import urllib.request

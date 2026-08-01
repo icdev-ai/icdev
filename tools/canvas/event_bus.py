@@ -15,7 +15,10 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from tools.compliance.classification_manager import get_clearance_order
-from tools.db.storage import get_connection
+from tools.db.storage import get_canvas_connection, get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.canvas.event_bus")
 
 # ---------------------------------------------------------------------------
 # New event types
@@ -67,7 +70,11 @@ def publish(
     payload = {**payload_dict, "_security_context": sec_ctx}
     payload_json = json.dumps(payload)
 
-    conn = get_connection()
+    # canvas_events is a canvas table with NO tenant_id/classification columns
+    # (migration 039), so it must use the RLS-disabled canvas connection.  A
+    # normal get_connection() would inject the global tenant/classification RLS
+    # predicate and raise UndefinedColumn on PostgreSQL, aborting the txn.
+    conn = get_canvas_connection()
     try:
         conn.execute(
             """
@@ -127,8 +134,9 @@ def _audit_event(
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Never let audit failure crash the bus
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Never let audit failure crash the bus
+        logger.warning("_audit_event: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _downgrade_payload(payload: dict) -> dict:
@@ -250,7 +258,10 @@ def _dispatch_to_listeners(
 
 def dispatch_pending(canvas_id: str) -> int:
     """Fire handlers for unconsumed events targeting canvas_id; mark them consumed."""
-    conn = get_connection()
+    # canvas_events lacks tenant_id/classification columns — use the RLS-disabled
+    # canvas connection so the SELECT/UPDATE below are not rewritten with a
+    # classification/tenant predicate (UndefinedColumn on PostgreSQL).
+    conn = get_canvas_connection()
     try:
         rows = conn.execute(
             """

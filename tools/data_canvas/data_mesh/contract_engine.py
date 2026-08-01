@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.data_canvas.db.init_db import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.data_canvas.data_mesh.contract_engine")
 
 _ODCS_REQUIRED_FIELDS = ("dataContractSpecification", "id", "info", "models")
 _ODCS_INFO_REQUIRED = ("title", "owner")
@@ -50,7 +53,7 @@ def get_contract(contract_id: str) -> dict | None:
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT * FROM dm_data_contracts WHERE id=%s", (contract_id,)
+                "SELECT * FROM dm_data_contracts WHERE id=?", (contract_id,)
             ).fetchone()
         return dict(row) if row else None
     except Exception as exc:
@@ -66,7 +69,7 @@ def create_contract(data: dict) -> dict:
                 """INSERT INTO dm_data_contracts
                    (id, domain_id, product_id, name, contract_yaml,
                     version, status, classification, created_at, updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (
                     contract_id,
                     data.get("domain_id", ""),
@@ -98,7 +101,7 @@ def update_contract(contract_id: str, data: dict) -> dict | None:
         values = list(fields.values()) + [now, contract_id]
         with get_connection() as conn:
             conn.execute(
-                f"UPDATE dm_data_contracts SET {set_clause}, updated_at=%s WHERE id=%s",
+                f"UPDATE dm_data_contracts SET {set_clause}, updated_at=? WHERE id=?",
                 values,
             )
             conn.commit()
@@ -110,7 +113,7 @@ def update_contract(contract_id: str, data: dict) -> dict | None:
 def delete_contract(contract_id: str) -> bool:
     try:
         with get_connection() as conn:
-            conn.execute("DELETE FROM dm_data_contracts WHERE id=%s", (contract_id,))
+            conn.execute("DELETE FROM dm_data_contracts WHERE id=?", (contract_id,))
             conn.commit()
         return True
     except Exception:
@@ -227,15 +230,15 @@ def test_contract(contract_id: str, conn_params: dict | None = None) -> dict:
             conn.execute(
                 """INSERT INTO dm_contract_test_runs
                    (id, contract_id, passed, error_count, warnings, result_json, method, created_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (?,?,?,?,?,?,?,?)""",
                 (run_id, contract_id,
                  1 if result["passed"] else 0,
                  result["error_count"], result["warnings"],
                  result["result_json"][:4000], result["method"], _now()),
             )
             conn.commit()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("test_contract: best-effort INSERT into dm_contract_test_runs failed (non-blocking): %s", _exc)
 
     result["run_id"] = run_id
     return result

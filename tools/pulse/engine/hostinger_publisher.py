@@ -451,8 +451,13 @@ def check_session() -> dict:
 # ---------------------------------------------------------------------------
 
 
-def publish_post(post_id: str) -> dict:
-    """Publish a single Pulse post to Hostinger builder blog."""
+def publish_post(post_id: str, force: bool = False) -> dict:
+    """Publish a single Pulse post to Hostinger builder blog.
+
+    Gated on the LLM-judge verdict (nav-intel-09, "block red"): a RED verdict —
+    or no verdict at all — refuses the publish unless ``force=True`` (an audited
+    admin override recorded upstream). Fail-closed.
+    """
     # 1. Fetch post from DB
     post = get_row("pulse_posts", post_id)
     if not post:
@@ -463,6 +468,22 @@ def publish_post(post_id: str) -> dict:
             "status": "error",
             "message": f"Post status is '{post.get('status')}' — must be 'approved' or 'published'.",
         }
+
+    # Judge-verdict publish gate (fail-closed; bypassed only by an audited force).
+    if not force:
+        from tools.pulse.publish_gate import evaluate_publish_gate
+
+        gate = evaluate_publish_gate(post)
+        if gate["blocked"]:
+            _log(f"Publish blocked for {post_id}: {gate['reason']}")
+            return {
+                "status": "blocked",
+                "blocked": True,
+                "post_id": post_id,
+                "verdict": gate["verdict"],
+                "reason": gate["reason"],
+                "message": gate["reason"],
+            }
 
     _log(f"Publishing: {post.get('title', 'Untitled')}")
 
@@ -742,13 +763,36 @@ def _create_blog_post(page, post: dict, selectors: dict) -> dict:
 
 
 def publish_all_approved() -> dict:
-    """Publish all approved Pulse posts."""
+    """Publish all approved Pulse posts (batch / scheduler auto-publish).
+
+    Judge-verdict gated (nav-intel-09, "block red"): posts whose latest verdict
+    is RED — or that have no verdict on record — are skipped (never force-pushed)
+    and logged; only cleared posts are published.
+    """
+    from tools.pulse.publish_gate import evaluate_publish_gate
+
     posts = query_rows("pulse_posts", where="status = ?", params=("approved",))
     if not posts:
         return {"status": "ok", "message": "No approved posts to publish.", "count": 0}
 
     results = []
+    skipped = []
     for post in posts:
+        gate = evaluate_publish_gate(post)
+        if gate["blocked"]:
+            _log(
+                f"Auto-publish skipped for {post['id']} "
+                f"(verdict={gate['verdict'] or 'absent'}): {gate['reason']}"
+            )
+            skipped.append(
+                {
+                    "post_id": post["id"],
+                    "status": "skipped",
+                    "verdict": gate["verdict"],
+                    "reason": gate["reason"],
+                }
+            )
+            continue
         result = publish_post(post["id"])
         results.append(result)
         # Brief pause between posts
@@ -762,6 +806,8 @@ def publish_all_approved() -> dict:
         "total": len(results),
         "succeeded": succeeded,
         "failed": failed,
+        "skipped": len(skipped),
+        "skipped_details": skipped,
         "results": results,
     }
 

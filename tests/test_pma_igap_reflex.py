@@ -113,9 +113,17 @@ class _FakeConn:
         self._conn = sqlite3.connect(":memory:")
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA_SQL)
+        # Route execute() through the REAL storage wrapper. Runtime SQL is
+        # authored for PostgreSQL (%s placeholders, per CLAUDE.md); the wrapper
+        # is what translates them to SQLite's ?. Passing SQL straight to a raw
+        # sqlite3 connection makes every %s a `near "%": syntax error`, which the
+        # reflexes swallow -- so they silently seeded nothing.
+        from tools.db.storage import StorageConnection
+
+        self._storage = StorageConnection(self._conn, "sqlite")
 
     def execute(self, sql, params=()):
-        return self._conn.execute(sql, params)
+        return self._storage.execute(sql, params)
 
     def executescript(self, sql):
         return self._conn.executescript(sql)

@@ -26,6 +26,7 @@ Routes:
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import uuid
 
@@ -43,27 +44,75 @@ docgen_bp = Blueprint(
 )
 
 
+# ─── Tenant scoping (cnr-doc-03: cross-tenant IDOR guard) ────────────────────
+
+def _request_tenant_id():
+    """Current request's tenant id from the security context, or None (system/CLI)."""
+    try:
+        from flask import g
+        ctx = getattr(g, "security_context", None)
+        return getattr(ctx, "tenant_id", None) if ctx else None
+    except Exception:
+        return None
+
+
+def _tenant_visible(row) -> bool:
+    """False when *row* belongs to a DIFFERENT tenant than the request's.
+
+    Rows with no tenant (shared/default) and requests with no tenant context
+    (system/CLI/single-tenant) are always visible — this blocks cross-tenant IDOR
+    without breaking the default single-tenant deployment.
+    """
+    req_tenant = _request_tenant_id()
+    if not req_tenant:
+        return True
+    if isinstance(row, dict):
+        row_tenant = row.get("tenant_id")
+    else:
+        row_tenant = getattr(row, "tenant_id", None)
+    return row_tenant is None or row_tenant == req_tenant
+
+
 # ─── Page routes ─────────────────────────────────────────────────────────────
+
+def _sessions_with_freshness(limit: int = 20) -> list:
+    """List sessions annotated with freshness_stale for the UI badge.
+
+    Shared by ``/`` and ``/new`` so both render the same session list.
+    Only checks published sessions with a stored source hash (avoids DB churn
+    for drafts).
+    """
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import check_freshness
+
+    # cnr-doc-04(b): the /docgen landing must not 500 when the idr_* tables are
+    # absent (e.g. a squash-bootstrapped PG DB where migration 211 was marked
+    # applied but never ran). Degrade to an empty board instead.
+    try:
+        sessions = sm.list_sessions(limit=limit)
+    except Exception as exc:
+        logger.warning("docgen: session list unavailable (tables not initialized?): %s", exc)
+        return []
+    for s in sessions:
+        if s.get("last_source_hash") and s.get("status") in ("published", "reviewing"):
+            try:
+                uploads = sm.list_uploads(s["id"])
+                paths = [u["file_path"] for u in uploads if u.get("file_path")]
+                fresh = check_freshness(s["id"], paths, stored_hash=s.get("last_source_hash"))
+                s["freshness_stale"] = fresh["stale"]
+            except Exception:
+                s["freshness_stale"] = False
+        else:
+            s["freshness_stale"] = False
+    return sessions
+
 
 @docgen_bp.route("/")
 def index():
-    from tools.docgen import session_manager as sm
     from tools.docgen.domain_profiles import list_profiles
-    from tools.docgen.workflow import check_freshness
 
-    sessions = sm.list_sessions(limit=20)
+    sessions = _sessions_with_freshness()
     profiles = list_profiles()
-
-    # Annotate sessions with freshness_stale for UI badge.
-    # Only checks published sessions with a stored source hash (avoids DB churn for drafts).
-    for s in sessions:
-        if s.get("last_source_hash") and s.get("status") in ("published", "reviewing"):
-            uploads = sm.list_uploads(s["id"])
-            paths = [u["file_path"] for u in uploads if u.get("file_path")]
-            fresh = check_freshness(s["id"], paths)
-            s["freshness_stale"] = fresh["stale"]
-        else:
-            s["freshness_stale"] = False
 
     return render_template(
         "docgen/index.html",
@@ -81,13 +130,55 @@ def new_session_page():
     domain = request.args.get("domain", "network")
     from_topo = request.args.get("from_topo")
     profiles = list_profiles()
+
+    # docmod-regen-01: 'Regenerate in DocGen' from a stale DIC document —
+    # prefill title/classification/doc_type from the source doc so generation
+    # appends a new pending_review version on the SAME document.
+    source_doc = None
+    source_doc_id = (request.args.get("source_doc_id") or "").strip()
+    if source_doc_id:
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT doc_id, title, collection_id, classification, template_type "
+                    "FROM dic_documents WHERE doc_id = %s",
+                    (source_doc_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row:
+                source_doc = dict(row)
+                from tools.document_intelligence.constants import (
+                    DOCGEN_DOCTYPE_TO_TEMPLATE,
+                )
+                # first doc_type per template wins — the map lists canonical
+                # doc_types before aliases (standard_guide before baseline, ...)
+                reverse_map: dict = {}
+                for dt, tpl in DOCGEN_DOCTYPE_TO_TEMPLATE.items():
+                    reverse_map.setdefault(tpl, dt)
+                source_doc["doc_type"] = reverse_map.get(
+                    source_doc.get("template_type") or "", "standard_guide"
+                )
+        except Exception as exc:
+            logger.warning("docgen: source_doc prefill failed: %s", exc)
+
     return render_template(
         "docgen/index.html",
         session=None,
-        sessions=[],
+        # Show the real session list — /new is the same page with the wizard
+        # open, not an empty board. Previously hardcoded [], which made the
+        # page claim "No regeneration sessions yet" even when sessions existed.
+        sessions=_sessions_with_freshness(),
         profiles=profiles,
         preselect_domain=domain,
         from_topo=from_topo,
+        source_doc=source_doc,
+        # Auto-open the wizard: /new is advertised as the "DocGen Wizard"
+        # entry point, so arriving here must show the form, not hide it
+        # behind a button.
+        open_wizard=True,
         page_title="New Doc Regeneration",
     )
 
@@ -98,7 +189,7 @@ def session_detail(session_id: str):
     from tools.docgen.domain_profiles import get_profile
 
     session = sm.get_session(session_id)
-    if not session:
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
         return render_template("errors/404.html"), 404
     uploads = sm.list_uploads(session_id)
     analyses = sm.list_analyses(session_id)
@@ -210,6 +301,29 @@ def api_create_session():
         tenant_id=tenant_id,
         classification=classification,
     )
+
+    # docmod-regen-01: sessions started from a DIC document regenerate THAT
+    # document — persist the source link and reuse its collection as evidence.
+    source_dic_doc_id = (data.get("source_dic_doc_id") or "").strip()
+    if source_dic_doc_id:
+        fields = {"source_dic_doc_id": source_dic_doc_id}
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT collection_id FROM dic_documents WHERE doc_id = %s",
+                    (source_dic_doc_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row and dict(row).get("collection_id"):
+                fields["dic_collection_id"] = dict(row)["collection_id"]
+        except Exception as exc:
+            logger.warning("docgen: source doc collection lookup failed: %s", exc)
+        sm.set_field(session["id"], **fields)
+        session = sm.get_session(session["id"]) or session
+
     return jsonify(session), 201
 
 
@@ -223,12 +337,60 @@ def api_list_sessions():
     return jsonify(sessions)
 
 
+@docgen_bp.route("/api/sessions/<session_id>/refresh", methods=["POST"])
+def api_refresh_session(session_id: str):
+    """One-click 'Re-run with updated sources' (docmod-ux-03): clone a stale
+    session — same title/domain/doc_type/uploads by file reference — re-hash
+    the sources, and start the clone at stage 0 for a fresh generation run."""
+    from tools.docgen import session_manager as sm
+
+    old = sm.get_session(session_id)
+    if not old:
+        return jsonify({"error": "not found"}), 404
+
+    clone = sm.create_session(
+        title=f"{old['title']} (refreshed)",
+        domain=old.get("domain") or "network",
+        doc_type=old.get("doc_type") or "runbook",
+        template_id=old.get("template_id"),
+        created_by=old.get("created_by") or "dashboard",
+        tenant_id=old.get("tenant_id"),
+        classification=old.get("classification") or "CUI",
+    )
+    paths: list[str] = []
+    for up in sm.list_uploads(session_id):
+        sm.add_upload(
+            clone["id"],
+            filename=up.get("filename") or "upload",
+            upload_type=up.get("upload_type") or "doc",
+            file_path=up.get("file_path"),
+            file_hash=up.get("file_hash"),
+            tenant_id=up.get("tenant_id"),
+        )
+        if up.get("file_path"):
+            paths.append(up["file_path"])
+    try:
+        from tools.docgen.workflow import record_source_hash
+        record_source_hash(clone["id"], paths)
+    except Exception as exc:
+        logger.warning("docgen refresh: source hash snapshot failed: %s", exc)
+    if old.get("source_dic_doc_id") or old.get("dic_collection_id"):
+        sm.set_field(
+            clone["id"],
+            source_dic_doc_id=old.get("source_dic_doc_id"),
+            dic_collection_id=old.get("dic_collection_id"),
+        )
+    logger.info("docgen: session %s refreshed -> %s (%d uploads)",
+                session_id, clone["id"], len(paths))
+    return jsonify({"session_id": clone["id"], "uploads": len(paths)}), 201
+
+
 @docgen_bp.route("/api/sessions/<session_id>", methods=["GET"])
 def api_get_session(session_id: str):
     from tools.docgen import session_manager as sm
 
     session = sm.get_session(session_id)
-    if not session:
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
         return jsonify({"error": "not found"}), 404
     return jsonify(session)
 
@@ -287,9 +449,36 @@ def api_add_upload(session_id: str):
 
     # Handle multipart file upload or JSON metadata
     if request.files:
+        from tools.docgen.constants import ALLOWED_UPLOAD_EXTENSIONS, max_upload_bytes
+
         file = next(iter(request.files.values()))
         upload_type = (request.form.get("upload_type") or "doc").strip()
-        safe_name = pathlib.Path(file.filename or "upload").name
+        safe_name = pathlib.Path(file.filename or "upload").name  # traversal-safe
+
+        # cnr-doc-03: extension allowlist — reject executables/scripts and anything
+        # outside the documented analyzer input set.
+        ext = pathlib.Path(safe_name).suffix.lower()
+        if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+            return jsonify({
+                "error": f"File type '{ext or '(none)'}' is not permitted.",
+                "allowed_extensions": sorted(ALLOWED_UPLOAD_EXTENSIONS),
+            }), 400
+
+        # cnr-doc-03: per-file size cap (coordinates with cnr-plat-02 global cap via env).
+        cap = max_upload_bytes()
+        try:
+            file.stream.seek(0, os.SEEK_END)
+            size = file.stream.tell()
+            file.stream.seek(0)
+        except (OSError, ValueError):
+            size = request.content_length or 0
+        if size > cap:
+            return jsonify({
+                "error": f"File exceeds the {cap // (1024 * 1024)} MiB upload limit.",
+                "max_bytes": cap,
+                "size": size,
+            }), 400
+
         save_dir = pathlib.Path("data") / "docgen" / "uploads" / session_id
         save_dir.mkdir(parents=True, exist_ok=True)
         file_path = str(save_dir / safe_name)
@@ -323,6 +512,9 @@ def api_add_upload(session_id: str):
 def api_list_uploads(session_id: str):
     from tools.docgen import session_manager as sm
 
+    session = sm.get_session(session_id)
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
+        return jsonify({"error": "not found"}), 404
     uploads = sm.list_uploads(session_id)
     return jsonify(uploads)
 
@@ -511,13 +703,54 @@ def api_generate(session_id: str):
     try:
         from tools.document_intelligence.doc_generator import generate_document as _dic_gen
 
+        # docmod-regen-01: sessions started from a DIC doc rebuild THAT doc —
+        # old approved text + open modernization findings become mandatory
+        # OPERATOR-tier context, and generation appends version N+1 on the
+        # same document (target_doc_id) instead of minting a new one.
+        supplemental = context.get("supplemental_text", "")
+        target_doc_id = (session.get("source_dic_doc_id") or "").strip() or None
+        if target_doc_id:
+            try:
+                from tools.doc_modernization.regen_orchestrator import _approved_text
+
+                from tools.db.storage import get_connection
+                _conn = get_connection()
+                try:
+                    _, old_text = _approved_text(_conn, target_doc_id)
+                    try:
+                        from tools.doc_modernization import get_findings
+                        findings = get_findings(doc_id=target_doc_id, state="open", conn=_conn)
+                    except Exception:
+                        findings = []  # engine tables absent — old text still injects
+                finally:
+                    _conn.close()
+                change_lines = [
+                    f"- '{f['entity_label']}' is {f['currency_verdict']}"
+                    + (f" -> replace with '{f['recommended_replacement']}'"
+                       if f.get("recommended_replacement") else "")
+                    for f in findings
+                ]
+                regen_ctx = (
+                    "CURRENT APPROVED DOCUMENT (modernize its content, keep its "
+                    "purpose and structure):\n" + old_text
+                )
+                if change_lines:
+                    regen_ctx += (
+                        "\n\nMANDATORY MODERNIZATION CHANGES (deterministic "
+                        "findings — apply each):\n" + "\n".join(change_lines)
+                    )
+                supplemental = f"{supplemental}\n\n{regen_ctx}".strip()
+            except Exception as _exc:
+                logger.warning("IDR regen context assembly failed: %s", _exc)
+
         result = _dic_gen(
             query=context["query_string"],
             collection_id=None,  # full DIC KB search; falls back to session-scoped internally
             classification=context.get("classification", "CUI"),
             created_by="idr_pipeline",
-            supplemental_text=context.get("supplemental_text", ""),
+            supplemental_text=supplemental,
             kg_chunks=context.get("kg_chunks", []),
+            target_doc_id=target_doc_id,
         )
         doc_id = result.doc_id if result else None
         # Persist assembled text so WriteGuard / HITL review can read it
@@ -536,7 +769,13 @@ def api_generate(session_id: str):
         return jsonify({"error": "Generation failed — check logs"}), 500
 
     if doc_id:
-        sm.set_field(session_id, dic_collection_id=context["session_id"])
+        # Persist the DIC document generation created so the Tech Writer bridge
+        # can reuse it (Path A) instead of rebuilding an empty scaffold.
+        sm.set_field(
+            session_id,
+            dic_collection_id=context["session_id"],
+            dic_doc_id=doc_id,
+        )
 
     from tools.docgen.domain_profiles import get_ato_doc_type as _get_ato
     ato_cfg = _get_ato(context.get("doc_type"))
@@ -796,6 +1035,10 @@ def api_writeguard(session_id: str):
             "blocked": False,
             "ace_regen_triggered": False,
             "wg_result_id": wg_result_id,
+            # TRUST (cnr-doc-01): surface citation/placeholder defects so reviewers
+            # resolve them before the publish gate blocks export.
+            "citation_findings": gate.get("citation_findings", []),
+            "placeholder_findings": gate.get("placeholder_findings", []),
         })
 
     # Gate failed after all auto-fix attempts.
@@ -815,10 +1058,14 @@ def api_writeguard(session_id: str):
         "blocked": gate.get("blocked", False),
         "ace_regen_triggered": ace_regen_triggered,
         "message": (
+            "WriteGuard engine unavailable — quality gate failed closed (cnr-doc-02). "
+            "Publishing is blocked until the engine is restored."
+            if gate.get("writeguard_unavailable") else
             "WriteGuard blocked after maximum auto-fix attempts — ACE regeneration triggered."
             if ace_regen_triggered else
             f"Quality gate failed (score {gate['score']:.1f} < 70)."
         ),
+        "writeguard_unavailable": bool(gate.get("writeguard_unavailable")),
     }), 409
 
 
@@ -835,7 +1082,7 @@ def api_publish(session_id: str):
     Returns list of idr_artifacts rows.
     """
     from tools.docgen import session_manager as sm
-    from tools.docgen.workflow import stage8_publish, stage6_check_gate
+    from tools.docgen.workflow import stage8_publish, stage6_check_gate, citation_publish_gate
 
     session = sm.get_session(session_id)
     if not session:
@@ -852,13 +1099,53 @@ def api_publish(session_id: str):
         }), 409
 
     data = request.get_json(force=True, silent=True) or {}
-    doc_text = (
-        data.get("doc_text")
-        or session.get("final_doc_text")
-        or session.get("title", "Document")
-    )
+    # cnr-doc-02: publish ONLY the server-side validated document. A client-supplied
+    # doc_text is IGNORED — otherwise a caller could pass clean text through the
+    # WriteGuard gate, then publish arbitrary unvalidated bytes (publish-gate bypass).
+    doc_text = session.get("final_doc_text") or session.get("title", "Document")
+    if data.get("doc_text") and data.get("doc_text") != doc_text:
+        logger.warning(
+            "IDR publish: ignoring client-supplied doc_text (session=%s) — publishing "
+            "server-side validated final_doc_text only", session_id,
+        )
     title = data.get("title") or session.get("title", "Document")
     classification = data.get("classification") or session.get("classification", "CUI")
+
+    # ── TRUST publish gate (cnr-doc-01) ──────────────────────────────────────
+    # Block export on citation / placeholder defects. A HITL force_* override
+    # publishes past the defect but writes an append-only audit row.
+    force_citations = bool(data.get("force_citations", False))
+    force_placeholders = bool(data.get("force_placeholders", False))
+    trust = citation_publish_gate(
+        doc_text,
+        force_citations=force_citations,
+        force_placeholders=force_placeholders,
+    )
+    if trust["blocked"]:
+        return jsonify({
+            "error": (
+                "Cannot publish: document has "
+                + ("unresolved [PLACEHOLDER] tokens"
+                   if trust["gate"] == "placeholder_guard"
+                   else "citation defects (missing/hallucinated [source: …] tags)")
+                + f" — resolve them or pass force_{trust['gate'].split('_')[0]}s=True after review."
+            ),
+            "gate": trust["gate"],
+            "citation_findings": trust["citation_findings"],
+            "placeholder_findings": trust["placeholder_findings"],
+        }), 409
+    reviewer = data.get("reviewer") or session.get("created_by") or "dashboard"
+    for gate_name, key in (("placeholder_guard", "placeholder_guard_override"),
+                           ("citation_guard", "citation_guard_override")):
+        if trust["overrides"].get(key):
+            sm.record_publish_audit(
+                session_id, gate_name, reviewer,
+                trust["overrides"][key], tenant_id=session.get("tenant_id"),
+            )
+            logger.warning(
+                "IDR publish %s OVERRIDE: session=%s reviewer=%s defects=%d",
+                gate_name, session_id, reviewer, len(trust["overrides"][key]),
+            )
 
     try:
         artifacts = stage8_publish(
@@ -883,6 +1170,9 @@ def api_publish(session_id: str):
 def api_list_artifacts(session_id: str):
     from tools.docgen import session_manager as sm
 
+    session = sm.get_session(session_id)
+    if not session or not _tenant_visible(session):  # cnr-doc-03: cross-tenant IDOR guard
+        return jsonify({"error": "not found"}), 404
     artifacts = sm.list_artifacts(session_id)
     return jsonify(artifacts)
 
@@ -895,7 +1185,8 @@ def api_download_artifact(session_id: str, artifact_id: str):
     from tools.docgen import session_manager as sm
 
     artifact = sm.get_artifact(artifact_id)
-    if not artifact or artifact.get("session_id") != session_id:
+    if (not artifact or artifact.get("session_id") != session_id
+            or not _tenant_visible(artifact)):  # cnr-doc-03: cross-tenant IDOR guard
         abort(404)
 
     file_path = artifact.get("file_path")

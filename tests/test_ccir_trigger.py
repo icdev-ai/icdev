@@ -6,6 +6,13 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+# ccir_trigger authors SQL for PostgreSQL. A bare sqlite3 connection handed to
+# production code drops the StorageConnection translation layer, so any `%s`
+# placeholder raises `near "%": syntax error` — or, where the caller swallows
+# it, silently no-ops. Use the translating wrapper wherever the connection
+# crosses into production code. See tests/_sql_compat.py.
+from _sql_compat import connect as _tconnect  # noqa: E402
+
 from tools.strategos.ccir_trigger import (
     _get_historical_scores,
     _validate_baseline,
@@ -68,7 +75,7 @@ def test_match_score_no_match():
 
 def test_get_historical_scores_empty(tmp_path):
     db_path = tmp_path / "test.db"
-    conn = sqlite3.connect(str(db_path))
+    conn = _tconnect(db_path)
     conn.executescript(
         """
         CREATE TABLE sg_ccir_trigger_events (
@@ -86,7 +93,7 @@ def test_get_historical_scores_empty(tmp_path):
 
 def test_get_historical_scores_returns_past_scores(tmp_path):
     db_path = tmp_path / "test.db"
-    conn = sqlite3.connect(str(db_path))
+    conn = _tconnect(db_path)
     conn.executescript(
         """
         CREATE TABLE sg_ccir_trigger_events (
@@ -119,7 +126,7 @@ def test_get_historical_scores_returns_past_scores(tmp_path):
 
 def test_validate_baseline_no_history_returns_true(tmp_path):
     db_path = tmp_path / "test.db"
-    conn = sqlite3.connect(str(db_path))
+    conn = _tconnect(db_path)
     conn.executescript(
         """
         CREATE TABLE sg_ccir_trigger_events (
@@ -136,7 +143,7 @@ def test_validate_baseline_no_history_returns_true(tmp_path):
 
 def test_validate_baseline_insufficient_history_returns_true(tmp_path):
     db_path = tmp_path / "test.db"
-    conn = sqlite3.connect(str(db_path))
+    conn = _tconnect(db_path)
     conn.executescript(
         """
         CREATE TABLE sg_ccir_trigger_events (
@@ -157,7 +164,7 @@ def test_validate_baseline_insufficient_history_returns_true(tmp_path):
 
 def test_validate_baseline_cusum_detects_anomaly(tmp_path):
     db_path = tmp_path / "test.db"
-    conn = sqlite3.connect(str(db_path))
+    conn = _tconnect(db_path)
     conn.executescript(
         """
         CREATE TABLE sg_ccir_trigger_events (
@@ -180,7 +187,7 @@ def test_validate_baseline_cusum_detects_anomaly(tmp_path):
 
 def test_validate_baseline_cusum_normal_returns_false(tmp_path):
     db_path = tmp_path / "test.db"
-    conn = sqlite3.connect(str(db_path))
+    conn = _tconnect(db_path)
     conn.executescript(
         """
         CREATE TABLE sg_ccir_trigger_events (
@@ -277,8 +284,7 @@ def test_evaluate_ccirs_trigger_and_alert_when_baseline_true(icdev_intelligence_
         patch("tools.strategos.ccir_trigger.publish") as mock_publish,
         patch("tools.strategos.ccir_trigger.NotificationGateway") as mock_gw,
     ):
-        conn = sqlite3.connect(str(icdev_intelligence_db))
-        conn.row_factory = sqlite3.Row
+        conn = _tconnect(icdev_intelligence_db)
         mock_get_conn.return_value = conn
 
         mock_gw_instance = MagicMock()
@@ -320,8 +326,7 @@ def test_evaluate_ccirs_no_alert_when_baseline_false(icdev_intelligence_db):
         patch("tools.strategos.ccir_trigger.NotificationGateway") as mock_gw,
         patch("tools.strategos.ccir_trigger._validate_baseline") as mock_val,
     ):
-        conn = sqlite3.connect(str(icdev_intelligence_db))
-        conn.row_factory = sqlite3.Row
+        conn = _tconnect(icdev_intelligence_db)
         mock_get_conn.return_value = conn
 
         mock_gw_instance = MagicMock()

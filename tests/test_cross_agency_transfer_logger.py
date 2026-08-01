@@ -87,9 +87,13 @@ def logger(db):
     """CrossAgencyTransferLogger with get_connection mocked to the temp DB."""
 
     def _make_conn():
+        # Wrapped in StorageConnection so the module's PG-native %s SQL is
+        # translated for SQLite (same pattern as tests/test_cato_twin.py).
+        from tools.db.storage import StorageConnection
+
         conn = sqlite3.connect(str(db))
         conn.row_factory = sqlite3.Row
-        return conn
+        return StorageConnection(conn, "sqlite")
 
     with patch(f"{_MODULE}.get_connection", side_effect=_make_conn):
         yield CrossAgencyTransferLogger(), db, _make_conn
@@ -275,9 +279,11 @@ class TestSqlInjectionInQueryFunction:
         """Pre-seed two known transfers then yield the db path and a conn factory."""
 
         def _conn():
+            from tools.db.storage import StorageConnection
+
             conn = sqlite3.connect(str(db))
             conn.row_factory = sqlite3.Row
-            return conn
+            return StorageConnection(conn, "sqlite")
 
         with patch(f"{_MODULE}.get_connection", side_effect=_conn):
             cat = CrossAgencyTransferLogger()
@@ -484,6 +490,14 @@ class TestNistAu9Compliance:
 
             def commit(self):
                 return self._real.commit()
+
+            def cursor(self):
+                # table_exists() (pgrt-sweep-06) probes via raw.cursor();
+                # pass through so the existence check succeeds.
+                return self._real.cursor()
+
+            def __getattr__(self, name):
+                return getattr(self._real, name)
 
         conn = make_conn()
         recording = _RecordingConn(conn)

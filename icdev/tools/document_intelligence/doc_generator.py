@@ -19,10 +19,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -58,6 +61,34 @@ a claim, omit it rather than inventing it."""
 
 # Minimum evidence length to justify CoT (cheaper direct call below this)
 _COT_EVIDENCE_THRESHOLD = 500
+
+# Confidence bands — coupled to the shared TRUST bands rather than re-hardcoded.
+# citation_grounding is the single source of truth (>=0.7 include, 0.4-0.69 flag
+# + HITL, <0.4 abstain); that module's docstring already records that it
+# "Mirrors the DIC doc_generator thresholds. Kept here so every surface uses the
+# same bands." Importing the constants here closes the loop so DIC drafting and
+# the citation gate cannot silently drift apart when the bands are retuned. The
+# literal fallback keeps this module importable if quality/ is unavailable.
+try:
+    from tools.quality.citation_grounding import (
+        CONF_ABSTAIN as _CONF_ABSTAIN,
+        CONF_INCLUDE as _CONF_INCLUDE,
+    )
+except Exception:  # pragma: no cover — defensive; preserves historical values
+    _CONF_INCLUDE = 0.7
+    _CONF_ABSTAIN = 0.4
+
+
+def _dic_cot_enabled() -> bool:
+    """Whether DIC drafting uses Chain-of-Thought / CoD compression.
+
+    Default OFF: CoT leaks reasoner/critic scaffolding into output on many
+    models; the direct _SECTION_PROMPT path produces clean, cited, TRUST-
+    compliant prose. Set ICDEV_DIC_COT_ENABLED=true to opt into the richer
+    (but leak-prone) CoT path.
+    """
+    import os
+    return os.environ.get("ICDEV_DIC_COT_ENABLED", "false").strip().lower() in ("1", "true", "yes")
 # Minimum section word count to trigger CoD compression
 _COD_WORD_THRESHOLD = 800
 
@@ -72,6 +103,7 @@ class GeneratedSection:
     confidence: float = 1.0
     low_confidence: bool = False
     hitl_note: str = ""
+    confabulation: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -85,6 +117,7 @@ class GenerateResult:
     origin: str = "ai_generated"
     status: str = "pending_review"
     error: str = ""
+    quality_gate: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -103,12 +136,14 @@ class GenerateResult:
                     "confidence": round(s.confidence, 3),
                     "low_confidence": s.low_confidence,
                     "hitl_note": s.hitl_note,
+                    "confabulation": s.confabulation,
                 }
                 for s in self.sections
             ],
             "origin": self.origin,
             "status": self.status,
             "error": self.error,
+            "quality_gate": self.quality_gate,
         }
 
 
@@ -175,7 +210,13 @@ def _build_evidence_pool(
     return "\n\n".join(parts) or "(no evidence available)"
 
 
-_LLM_TIMEOUT = 45  # seconds — guards against CLI-bridge poll thread hanging
+# Per-attempt timeout guards against a hung CLI-bridge poll loop. Cloud providers
+# (e.g. Kimi) can take well over the old 45s to synthesize a full 2k-token section,
+# so the default is generous and env-overridable. Empty (not timed-out) responses
+# are retried a bounded number of times because cloud models intermittently return
+# an empty completion — a single empty answer must not silently abstain a section.
+_LLM_TIMEOUT = int(os.environ.get("ICDEV_DIC_LLM_TIMEOUT", "90"))  # seconds per attempt
+_LLM_EMPTY_RETRIES = int(os.environ.get("ICDEV_DIC_LLM_RETRIES", "2"))  # extra tries on empty
 
 
 def _llm_generate(
@@ -185,7 +226,10 @@ def _llm_generate(
 
     Degrades gracefully to ``None`` when no LLM provider is available (air-gapped
     / headless mode) so the caller can abstain rather than hallucinate.
-    Times out after _LLM_TIMEOUT seconds to avoid hanging on CLI-bridge poll loops.
+    Each attempt times out after _LLM_TIMEOUT seconds to avoid hanging on CLI-bridge
+    poll loops. A non-empty answer returns immediately; an *empty* completion is
+    retried up to _LLM_EMPTY_RETRIES times (transient cloud emptiness), while a
+    timeout stops retrying (it would only double the wait).
     """
     import concurrent.futures as _cf
     try:
@@ -204,19 +248,112 @@ def _llm_generate(
             max_tokens=max_tokens,
             skip_injection_scan=True,
         )
-        _ex = _cf.ThreadPoolExecutor(max_workers=1)
-        _fut = _ex.submit(router.invoke, function, req)
-        try:
-            resp = _fut.result(timeout=_LLM_TIMEOUT)
-            if resp and getattr(resp, "content", None):
-                return resp.content.strip() or None
-        except _cf.TimeoutError:
-            pass  # timed out — CLI-bridge not running; degrade gracefully
-        finally:
-            _ex.shutdown(wait=False)  # don't block on CLI-bridge poll thread
+        for attempt in range(1 + max(0, _LLM_EMPTY_RETRIES)):
+            _ex = _cf.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(router.invoke, function, req)
+            try:
+                resp = _fut.result(timeout=_LLM_TIMEOUT)
+                text = (resp.content.strip() if resp and getattr(resp, "content", None) else "")
+                if text:
+                    return text
+                logger.warning(
+                    "doc_generator: empty LLM completion (attempt %d/%d); retrying",
+                    attempt + 1, 1 + max(0, _LLM_EMPTY_RETRIES),
+                )
+            except _cf.TimeoutError:
+                break  # timed out — CLI-bridge not running / provider stalled; degrade
+            finally:
+                _ex.shutdown(wait=False)  # don't block on CLI-bridge poll thread
     except Exception as exc:
         logger.warning("doc_generator: LLM call failed: %s", exc)
     return None
+
+
+# ── TRUST: leaked-reasoning scrubber ──────────────────────────────────────────
+# Some models emit their Chain-of-Thought / Chain-of-Debate scaffolding
+# ("Step 1: Analyze…", "[INSTRUCTION]", "Critique E1-E3", meta-narration) into
+# the synthesizer output. That reasoning must never reach published section
+# prose — it is not grounded, cited, or reader-facing. This deterministic
+# scrubber removes it so generated content is TRUST-compliant.
+# Bracketed control tags: named ([SYNTHESIS]) or "[X APPLIED]"/"[X CRITIQUE]" etc.
+_ARTIFACT_TOKEN_RE = re.compile(
+    r"\[(?:ARGUMENT|JUDGMENT|SYNTHESIS|INSTRUCTION|CRITIQUE|REASONING|TASK|"
+    r"FINAL\s*ANSWER|ANSWER|THOUGHT|PLAN|STEP|SELF[- ]?CRITIQUE|SELF[- ]?CORRECTION)\]"
+    r"|\[[A-Z][A-Z0-9 _/-]{1,28}?(?:APPLIED|CRITIQUE|CORRECTION|REVISION|REASONING|EDIT)\]",
+    re.IGNORECASE,
+)
+_FINAL_MARKER_RE = re.compile(
+    r"(?:^|\n)\s*\*{0,2}(?:final answer|final section|final response|final|"
+    r"answer|output|section text|final draft|clean(?:ed)? (?:version|text|draft))\*{0,2}"
+    r"\s*[:\-–—]\s*",
+    re.IGNORECASE,
+)
+# A paragraph is reasoning scaffolding (not reader-facing prose) if it opens
+# with any of these. Broadened from real observed CoT/CoD leaks.
+_REASONING_PARA_RE = re.compile(
+    r"^\s*[#>*_\s]*(?:"
+    r"step\s+\d+\b"
+    r"|critique\s+e?\d"
+    r"|reasoning(?:\s+step)?s?\b"
+    r"|(?:self[- ]?)?correction\b"
+    r"|self[- ]?critique\b"
+    r"|refining\b|revising\b|rewriting\b|drafting\b"
+    r"|wait[,.\s]|hmm[,.\s]|okay[,.\s]|let'?s\b"
+    r"|the (?:central|core|main) (?:error|issue|problem)\b"
+    r"|the user (?:has )?(?:provided|requests|asks|wants)"
+    r"|(?:this|the) (?:task|input|prompt|evidence) (?:description|requests?|asks?)"
+    r"|the prompt (?:asks|requests|says|wants)"
+    r"|to (?:be|make it) (?:\"?denser|more concise)"
+    r"|i(?:'ll| will| need to| must| should| have to| can) (?:analyze|break down|identify|compress|reason|synthesize|ensure|make|combine|keep|stick|avoid|not)"
+    r"|let me (?:analyze|break|think|start|see|re-?read)"
+    r"|here(?:'s| is) (?:my|the) (?:reasoning|analysis|breakdown|thought|step-by-step)"
+    r"|here(?:'s| is) (?:the )?step-by-step"
+    r"|based on (?:my|the) (?:reasoning|analysis)"
+    r"|looking at the\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _strip_reasoning_artifacts(text: str) -> str:
+    """Remove leaked CoT/CoD reasoning scaffolding from generated section prose.
+
+    - Keeps only what follows the last explicit final-answer/synthesis marker.
+    - Drops individual lines that open with reasoning meta-narration (handles
+      single-block reasoning, not just leading paragraphs).
+    - Strips inline control tokens; collapses the blank lines left behind.
+    Returns clean prose. If scrubbing would remove nearly everything (the output
+    was pure reasoning), falls back to the token-stripped original so a real
+    section is never silently emptied; a no-op for already-clean content.
+    """
+    if not text or not text.strip():
+        return text
+    original = text
+    matches = list(_FINAL_MARKER_RE.finditer(text))
+    if matches:
+        text = text[matches[-1].end():]
+    kept = [ln for ln in text.split("\n") if not _REASONING_PARA_RE.match(ln.strip())]
+    text = _ARTIFACT_TOKEN_RE.sub("", "\n".join(kept))
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    if len(text) < 40 <= len(original.strip()):
+        text = _ARTIFACT_TOKEN_RE.sub("", original).strip()
+    return text
+
+
+# Residual reasoning cues that survive scrubbing → the section is polluted and
+# must be flagged for human review (never silently published as clean).
+_RESIDUE_RE = re.compile(
+    r"\bstep\s+\d+\b|\[(?:INSTRUCTION|CRITIQUE|SYNTHESIS|ARGUMENT|JUDGMENT)\b"
+    r"|critique\s+e?\d|self[- ]?correction|self[- ]?critique|the (?:central|core) error"
+    r"|the prompt (?:asks|requests|says)|i must ensure|the following (?:section|evidence|chunks)"
+    r"|compress(?:ed|ion)?\b.*\bdenser|reasoning steps?\b|the task is\b.*\bcompress",
+    re.IGNORECASE,
+)
+
+
+def _has_reasoning_residue(text: str) -> bool:
+    """True if generation artifacts remain after scrubbing (flag for HITL)."""
+    return bool(text) and bool(_RESIDUE_RE.search(text))
 
 
 def _cot_generate(
@@ -244,7 +381,10 @@ def _cot_generate(
             skip_injection_scan=True,
         )
         result = orchestrator.invoke_chain_of_thought(function, req)
-        return result.content.strip() if result and result.content else None
+        if result and result.content:
+            # Scrub any leaked CoT reasoning so only clean prose is returned.
+            return _strip_reasoning_artifacts(result.content).strip() or None
+        return None
     except Exception as exc:
         logger.debug("doc_generator: CoT failed (%s), falling back to direct LLM", exc)
         return None
@@ -285,10 +425,9 @@ def _cod_compress(text: str, heading: str, *, function: str = "document_qna") ->
         # CoD produces argument evaluations, not compressed prose.
         result = orchestrator.invoke_chain_of_thought(function, req)
         compressed = result.content.strip() if result and result.content else None
-        # Strip any residual chain-marker artifacts from prompt templates
+        # Scrub leaked CoT/CoD reasoning scaffolding (TRUST compliance).
         if compressed:
-            import re
-            compressed = re.sub(r"\[ARGUMENT\]|\[JUDGMENT\]|\[SYNTHESIS\]", "", compressed).strip()
+            compressed = _strip_reasoning_artifacts(compressed).strip()
         if compressed and len(compressed) > 100:
             logger.info(
                 "doc_generator: CoD compressed '%s' from %d → %d words",
@@ -301,15 +440,30 @@ def _cod_compress(text: str, heading: str, *, function: str = "document_qna") ->
 
 
 def _compute_section_confidence(verdict) -> float:
-    """Compute a [0, 1] confidence score from a verifier VerifyResult."""
+    """Compute a [0, 1] confidence score from a verifier ``VerifyResult``.
+
+    Only *cited* claims count. An uncited sentence makes no attributed
+    assertion, so scoring it as supported inflates confidence — which is how
+    every section came to score 1.0 and sail through the CONF_INCLUDE /
+    CONF_ABSTAIN bands.
+
+    A scoring failure returns 0.0, not 1.0. If we cannot tell whether a section
+    is grounded, the safe reading is "not grounded"; the previous 1.0 meant an
+    exception here silently published an unverified section at full confidence.
+    """
+    if verdict is None or getattr(verdict, "abstained", False):
+        return 0.0
     try:
-        claims = getattr(verdict, "claims", [])
-        if not claims:
-            return 1.0 if not getattr(verdict, "abstained", False) else 0.0
-        supported = [c for c in claims if getattr(c, "supported", False)]
-        return len(supported) / len(claims)
-    except Exception:
-        return 1.0
+        claims = getattr(verdict, "claims", None) or []
+        cited = [c for c in claims if getattr(c, "method", "") != "uncited"]
+        if not cited:
+            # Nothing was actually checked against a source.
+            return 0.0
+        supported = [c for c in cited if getattr(c, "supported", False)]
+        return len(supported) / len(cited)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("doc_generator: confidence scoring failed: %s", exc)
+        return 0.0
 
 
 def _parse_outline(raw: str | None) -> dict:
@@ -335,8 +489,17 @@ def generate_document(
     created_by: str = "ai_assist",
     supplemental_text: str = "",
     kg_chunks: list[dict] | None = None,
+    target_doc_id: str | None = None,
+    quality_gate=None,
 ) -> "GenerateResult":
     """Generate a document draft grounded in DIC search results.
+
+    ``quality_gate`` (optional): a callable invoked right before persistence with
+    ``(sections, allowed_source_ids, full_text)`` that returns the status string
+    the version should be persisted with. Lets a caller (e.g. the modernization
+    regeneration gate) withhold ``pending_review`` from a defective draft without
+    the gate itself mutating dic_versions. Default None preserves the historical
+    unconditional ``pending_review`` behavior for every other caller.
 
     Steps:
       1. Retrieve top chunks via DICSearchEngine (full-KB when collection_id=None;
@@ -411,9 +574,13 @@ def generate_document(
         # Build section-specific evidence
         sec_evidence = evidence  # per-section targeted retrieval would improve this further
 
-        # 4. Draft — CoT when evidence is rich, direct otherwise
+        # 4. Draft — direct clean-prose prompt by default; CoT only when opted in.
+        # CoT (reasoner→critic→synthesizer) tends to leak its reasoning into the
+        # output on many models; the direct _SECTION_PROMPT mandates clean prose
+        # with [source:] citations, which is TRUST-compliant. Enable the richer
+        # CoT path with ICDEV_DIC_COT_ENABLED=true (accepts the leakage risk).
         raw_text: str | None = None
-        if len(sec_evidence) > _COT_EVIDENCE_THRESHOLD:
+        if _dic_cot_enabled() and len(sec_evidence) > _COT_EVIDENCE_THRESHOLD:
             raw_text = _cot_generate(heading, sec_evidence)
 
         if not raw_text:
@@ -439,8 +606,12 @@ def generate_document(
                 )
                 continue
 
-        # 5. CoD compression for verbose sections
-        raw_text = _cod_compress(raw_text, heading)
+        # 5. CoD compression for verbose sections (opt-in — the CoT-based
+        # compressor also leaks reasoning; off by default for clean output).
+        if _dic_cot_enabled():
+            raw_text = _cod_compress(raw_text, heading)
+        # TRUST: scrub so no leaked reasoning reaches published prose.
+        raw_text = _strip_reasoning_artifacts(raw_text)
 
         # 6. Verify and confidence-gate
         confidence = 1.0
@@ -461,30 +632,91 @@ def generate_document(
                     raw_text = "(Abstained — insufficient evidence to support this section.)"
                 else:
                     raw_text = vr.verified_text or raw_text
-                    verified = True
+                    # `verified` must reflect the verdict, not merely the fact
+                    # that verify() returned without raising.
+                    verified = vr.verified
             except Exception as exc:
+                # A verifier failure is not a pass. Leave verified False and
+                # drop confidence to 0 so the HITL bands below can act on it.
                 logger.warning("doc_generator: verifier error: %s", exc)
+                confidence = 0.0
+                verified = False
+
+        # TRUST: scrub AFTER the verifier (which may reintroduce reasoning by
+        # replacing raw_text with its verified_text) so the final stored/published
+        # prose carries no leaked CoT/CoD scaffolding.
+        if not abstained:
+            raw_text = _strip_reasoning_artifacts(raw_text)
+
+        # Deterministic placeholder check — unresolved [BRACKETED] tokens
+        # force a HITL flag regardless of verifier confidence.
+        placeholder_tokens: list = []
+        try:
+            from tools.quality.content_grounding import find_placeholders
+            placeholder_tokens = find_placeholders(raw_text)
+        except Exception:
+            pass
 
         # Apply confidence threshold gate
         if not abstained:
-            if confidence >= 0.7:
-                pass  # include normally
-            elif confidence >= 0.4:
+            # TRUST: if generation artifacts survived scrubbing, never publish
+            # silently — flag for human review / regeneration.
+            if _has_reasoning_residue(raw_text) and not low_confidence:
                 low_confidence = True
                 hitl_note = (
-                    f"⚠ Confidence {confidence:.0%} — below 0.7 threshold; "
-                    f"verify against source documents before publishing."
+                    "⚠ Generation artifacts detected (leaked reasoning) — "
+                    "regenerate or edit this section before publishing."
+                )
+                if heading not in flagged_headings:
+                    flagged_headings.append(heading)
+            if placeholder_tokens and not low_confidence:
+                low_confidence = True
+                hitl_note = (
+                    f"⚠ Unresolved placeholders {', '.join(placeholder_tokens[:6])} — "
+                    f"resolve before publishing."
                 )
                 flagged_headings.append(heading)
+                raw_text = f"{raw_text}\n\n> {hitl_note}"
+            if confidence >= _CONF_INCLUDE:
+                pass  # include normally
+            elif confidence >= _CONF_ABSTAIN:
+                low_confidence = True
+                hitl_note = (
+                    f"⚠ Confidence {confidence:.0%} — below {_CONF_INCLUDE:.0%} threshold; "
+                    f"verify against source documents before publishing."
+                )
+                if heading not in flagged_headings:
+                    flagged_headings.append(heading)
                 raw_text = f"{raw_text}\n\n> {hitl_note}"
             else:
                 # Very low confidence — exclude (abstain)
                 abstained = True
                 confidence = confidence
                 logger.info(
-                    "doc_generator: section '%s' excluded — confidence %.2f < 0.4",
-                    heading, confidence,
+                    "doc_generator: section '%s' excluded — confidence %.2f < %.2f",
+                    heading, confidence, _CONF_ABSTAIN,
                 )
+
+        # halluc-03: non-blocking confabulation assessment (fabricated-citation
+        # patterns, internal contradictions, hedging) — complements DIC's
+        # confidence verifier, which does not target these specifically. Skips
+        # abstained sections (no claims). Elevates hitl_note on high risk.
+        confab: dict = {}
+        if not abstained and raw_text:
+            try:
+                from tools.security.confabulation_detector import assess as _confab_assess
+                confab = _confab_assess(raw_text)
+                if confab.get("risk_level") == "high" and not low_confidence:
+                    low_confidence = True
+                    if heading not in flagged_headings:
+                        flagged_headings.append(heading)
+                    note = (
+                        f"⚠ Confabulation risk {confab.get('risk_score')} "
+                        f"({confab.get('findings_count')} finding(s)) — review before publishing."
+                    )
+                    hitl_note = f"{hitl_note} {note}".strip()
+            except Exception:
+                confab = {}
 
         generated_sections.append(GeneratedSection(
             heading=heading,
@@ -495,6 +727,7 @@ def generate_document(
             confidence=confidence,
             low_confidence=low_confidence,
             hitl_note=hitl_note,
+            confabulation=confab,
         ))
 
     result.sections = generated_sections
@@ -503,21 +736,52 @@ def generate_document(
     try:
         from tools.db.storage import get_connection
 
-        doc_id = _hid("dic_gen", query, collection_id or "")
+        # target_doc_id: append the NEXT version to an existing document (full
+        # regeneration / reverse-bridge path) instead of minting a new doc.
+        doc_id = target_doc_id or _hid("dic_gen", query, collection_id or "")
         version_id = f"ver-{uuid.uuid4().hex[:16]}"
         full_text = "\n\n".join(
             f"## {s.heading}\n\n{s.content}" for s in generated_sections if not s.abstained
         )
         sha = hashlib.sha256(full_text.encode()).hexdigest()
 
+        # Pre-persist quality gate (optional): a caller may withhold the
+        # pending_review status from a defective draft. The gate decides the
+        # INITIAL persisted status (an append, not a dic_versions mutation);
+        # default None keeps the historical unconditional pending_review.
+        persist_status = "pending_review"
+        if quality_gate is not None:
+            try:
+                allowed_source_ids = {
+                    str(getattr(r, "chunk_id", "")) for r in search_results
+                    if getattr(r, "chunk_id", None) is not None
+                }
+                gate_status = quality_gate(generated_sections, allowed_source_ids, full_text)
+                if gate_status:
+                    persist_status = gate_status
+            except Exception as exc:
+                logger.warning("doc_generator: quality_gate hook error: %s", exc)
+
         conn = get_connection()
         try:
+            version_no = 1
+            if target_doc_id:
+                row = conn.execute(
+                    "SELECT MAX(version_no) AS vmax FROM dic_versions WHERE doc_id = %s",
+                    (target_doc_id,),
+                ).fetchone()
+                version_no = int((dict(row).get("vmax") if row else 0) or 0) + 1
+            # An empty collection_id guaranteed an invisible document: the
+            # Collections UI enumerates dic_collections, so "" has no container.
+            # Fall back to "default" like every other ingest path, then register it.
+            collection_id = (collection_id or "").strip() or "default"
+            ensure_collection(conn, collection_id, tenant_id=tenant_id, classification=classification)
             conn.execute(
                 "INSERT OR IGNORE INTO dic_documents "
                 "(doc_id, collection_id, source_id, filename, content_type, provider, title, "
                 "byte_size, content_sha256, page_count, created_at, tenant_id, classification) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (doc_id, collection_id or "", doc_id, "ai_generated.md", "text/markdown",
+                (doc_id, collection_id, doc_id, "ai_generated.md", "text/markdown",
                  "ai_generator", title, len(full_text), sha, 1, _now_utc(), tenant_id, classification),
             )
             conn.execute(
@@ -525,7 +789,7 @@ def generate_document(
                 "(version_id, doc_id, version_no, origin, status, assigned_to, review_notes, content_sha256, "
                 "created_at, created_by, tenant_id, classification) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (version_id, doc_id, 1, "ai_generated", "pending_review", None, None, sha,
+                (version_id, doc_id, version_no, "ai_generated", persist_status, None, None, sha,
                  _now_utc(), created_by, tenant_id, classification),
             )
             for idx, sec in enumerate(generated_sections, start=1):
@@ -536,7 +800,7 @@ def generate_document(
                     "created_at, created_by, tenant_id, classification) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (section_id, version_id, doc_id, sec.heading, sec.content,
-                     json.dumps(sec.citations), "pending_review", "ai_generated",
+                     json.dumps(sec.citations), persist_status, "ai_generated",
                      _now_utc(), created_by, tenant_id, classification),
                 )
             conn.commit()
@@ -545,6 +809,7 @@ def generate_document(
 
         result.doc_id = doc_id
         result.version_id = version_id
+        result.status = persist_status
     except Exception as exc:
         logger.warning("doc_generator: DB write failed: %s", exc)
         result.error = str(exc)
@@ -664,6 +929,8 @@ def regenerate_section(
             "If the evidence does not support a claim, omit it rather than inventing it."
         )
     raw_text = _llm_generate(prompt)
+    if raw_text:
+        raw_text = _strip_reasoning_artifacts(raw_text)  # TRUST: no leaked reasoning
     if not raw_text:
         return {
             "version_id": version_id,

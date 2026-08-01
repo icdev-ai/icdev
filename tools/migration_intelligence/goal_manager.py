@@ -15,6 +15,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.migration_intelligence.goal_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = BASE_DIR / "data" / "migration_intel.db"
@@ -78,9 +81,9 @@ def list_goals(status: str | None = None, category: str | None = None, db_path: 
     try:
         where, params = [], []
         if status:
-            where.append("status = ?"); params.append(status)
+            where.append("status = %s"); params.append(status)
         if category:
-            where.append("category = ?"); params.append(category)
+            where.append("category = %s"); params.append(category)
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         rows = conn.execute(
             f"SELECT * FROM mi_goals {clause} ORDER BY priority DESC, created_at DESC", params
@@ -110,7 +113,7 @@ def update_goal(goal_id: str, updates: dict[str, Any], db_path: str | None = Non
         if f in cols and isinstance(cols[f], list):
             cols[f] = json.dumps(cols[f])
     cols["updated_at"] = _now()
-    set_clause = ", ".join(f"{k} = ?" for k in cols)
+    set_clause = ", ".join(f"{k} = %s" for k in cols)
     conn = _get_conn(db_path)
     try:
         conn.execute(f"UPDATE mi_goals SET {set_clause} WHERE id = %s", [*cols.values(), goal_id])
@@ -170,8 +173,12 @@ def parse_goals_from_chat(
 
     prompt = _GOAL_PARSE_PROMPT.format(user_input=user_input)
     try:
-        response = router.complete(prompt, function="text_analysis", max_tokens=2048)
-        raw_text = response.get("text", "").strip()
+        from tools.llm.provider import LLMRequest
+        response = router.invoke(
+            "text_analysis",
+            LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=2048),
+        )
+        raw_text = (response.content or "").strip()
     except Exception as exc:
         return {"ok": False, "error": f"LLM call failed: {exc}", "log_id": log_id}
 
@@ -233,8 +240,8 @@ def _log_chat(log_id, user_input, parsed_goals, goal_ids, model, confidence, db_
              model, confidence, _now()),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_log_chat: best-effort INSERT into mi_goal_chat_log failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

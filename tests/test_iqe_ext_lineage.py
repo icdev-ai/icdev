@@ -1,50 +1,57 @@
 # CUI // SP-CTI
-"""Tests for Phase III — DDC lineage tagging on IQE external fetches."""
+"""Tests for Phase III — DDC lineage tagging on IQE external fetches.
+
+Connections are obtained through ``tools.db.storage`` (the translate layer)
+rather than a raw ``sqlite3.connect(":memory:")`` + hand-written schema. This
+exercises the real ``StorageConnection``/``translate_sql`` path and seeds the
+canonical DDC DDL (``tools.data_canvas.db.init_db.SCHEMA``), so column/DDL drift
+in ``data_designs`` / ``dd_lineage`` surfaces as a test failure instead of a
+silent false pass (a known repo pitfall where tests passed by accident).
+"""
 from __future__ import annotations
 
-import sqlite3
+import importlib
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # Ensure repo root on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Module objects resolved via importlib so patch.object targets the exact
+# module the code under test imports (tools.* and icdev.tools.* are DISTINCT
+# objects — shim-aware patching). record_external_fetch does a lazy
+# ``from tools.data_canvas.db.init_db import get_connection`` INSIDE the call,
+# so the name must be patched on the init_db module, not on lineage.
+_INIT_DB = importlib.import_module("tools.data_canvas.db.init_db")
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
-def _make_in_memory_conn():
-    """Create a minimal in-memory SQLite DB with data_designs + dd_lineage tables."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(
-        """
-        CREATE TABLE data_designs (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            graph_json TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
-            template_id TEXT,
-            classification TEXT,
-            created_at TEXT,
-            updated_at TEXT
-        );
-        CREATE TABLE dd_lineage (
-            id TEXT PRIMARY KEY,
-            design_id TEXT NOT NULL REFERENCES data_designs(id),
-            source_node_id TEXT,
-            target_node_id TEXT,
-            lineage_type TEXT,
-            column_name TEXT,
-            transform_desc TEXT,
-            classification TEXT,
-            created_at TEXT
-        );
-        """
-    )
-    return conn
+@pytest.fixture
+def ddc_conn(tmp_path):
+    """A StorageConnection (SQLite backend under conftest) seeded with the real
+    DDC schema via the storage translate layer — no raw sqlite3.connect.
+
+    Under tests/conftest.py ICDEV_STORAGE_BACKEND is forced to sqlite, so
+    get_connection(db_path=<tmp .db>) returns a StorageConnection wrapping a
+    dedicated, RLS-free SQLite file. Seeding through executescript() and every
+    later conn.execute() therefore flow through StorageCursor/translate_sql.
+    """
+    from tools.db.storage import get_connection
+
+    db_path = tmp_path / "data_canvas_test.db"
+    conn = get_connection(db_path=str(db_path))
+    conn.executescript(_INIT_DB.SCHEMA)
+    conn.commit()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -52,15 +59,14 @@ def _make_in_memory_conn():
 # ---------------------------------------------------------------------------
 
 class TestRecordExternalFetch:
-    def test_inserts_lineage_row(self):
+    def test_inserts_lineage_row(self, ddc_conn):
         """Successful call inserts exactly one row into dd_lineage."""
         from tools.data_canvas.lineage import record_external_fetch
 
-        conn = _make_in_memory_conn()
-        with patch("tools.data_canvas.db.init_db.get_connection", return_value=conn):
+        with patch.object(_INIT_DB, "get_connection", return_value=ddc_conn):
             record_external_fetch("splunk", "alerts", 42)
 
-        rows = conn.execute("SELECT * FROM dd_lineage").fetchall()
+        rows = ddc_conn.execute("SELECT * FROM dd_lineage").fetchall()
         assert len(rows) == 1
         row = dict(rows[0])
         assert row["source_node_id"] == "ext.splunk.alerts"
@@ -69,43 +75,41 @@ class TestRecordExternalFetch:
         assert row["column_name"] == "*"
         assert "42 rows" in row["transform_desc"]
 
-    def test_creates_sentinel_design(self):
+    def test_creates_sentinel_design(self, ddc_conn):
         """_ensure_ext_provenance_design creates the sentinel row on first call."""
         from tools.data_canvas.lineage import (
             _EXT_PROVENANCE_DESIGN_ID,
             _ensure_ext_provenance_design,
         )
 
-        conn = _make_in_memory_conn()
-        _ensure_ext_provenance_design(conn)
+        _ensure_ext_provenance_design(ddc_conn)
 
-        designs = conn.execute("SELECT * FROM data_designs WHERE id = ?",
-                               (_EXT_PROVENANCE_DESIGN_ID,)).fetchall()
+        designs = ddc_conn.execute(
+            "SELECT * FROM data_designs WHERE id = ?", (_EXT_PROVENANCE_DESIGN_ID,)
+        ).fetchall()
         assert len(designs) == 1
         assert dict(designs[0])["name"] == "External IQE Query Provenance"
 
-    def test_sentinel_design_idempotent(self):
+    def test_sentinel_design_idempotent(self, ddc_conn):
         """Calling _ensure_ext_provenance_design twice does not duplicate the sentinel row."""
         from tools.data_canvas.lineage import (
             _EXT_PROVENANCE_DESIGN_ID,
             _ensure_ext_provenance_design,
         )
 
-        conn = _make_in_memory_conn()
-        _ensure_ext_provenance_design(conn)
-        _ensure_ext_provenance_design(conn)
+        _ensure_ext_provenance_design(ddc_conn)
+        _ensure_ext_provenance_design(ddc_conn)
 
-        count = conn.execute(
+        count = ddc_conn.execute(
             "SELECT COUNT(*) FROM data_designs WHERE id = ?", (_EXT_PROVENANCE_DESIGN_ID,)
         ).fetchone()[0]
         assert count == 1
 
-    def test_returns_dict_with_expected_keys(self):
+    def test_returns_dict_with_expected_keys(self, ddc_conn):
         """Return dict must contain id, design_id, source_node_id, row_count, created_at."""
         from tools.data_canvas.lineage import record_external_fetch
 
-        conn = _make_in_memory_conn()
-        with patch("tools.data_canvas.db.init_db.get_connection", return_value=conn):
+        with patch.object(_INIT_DB, "get_connection", return_value=ddc_conn):
             result = record_external_fetch("tenable", "vulnerabilities", 10)
 
         assert result is not None
@@ -119,18 +123,17 @@ class TestRecordExternalFetch:
         """record_external_fetch returns None (never raises) when DB is unavailable."""
         from tools.data_canvas.lineage import record_external_fetch
 
-        with patch("tools.data_canvas.db.init_db.get_connection",
-                   side_effect=RuntimeError("no DB")):
+        with patch.object(_INIT_DB, "get_connection",
+                          side_effect=RuntimeError("no DB")):
             result = record_external_fetch("gdelt", "events", 5)
 
         assert result is None
 
-    def test_classification_default(self):
+    def test_classification_default(self, ddc_conn):
         """Default classification is CUI // SP-CTI."""
         from tools.data_canvas.lineage import record_external_fetch
 
-        conn = _make_in_memory_conn()
-        with patch("tools.data_canvas.db.init_db.get_connection", return_value=conn):
+        with patch.object(_INIT_DB, "get_connection", return_value=ddc_conn):
             result = record_external_fetch("servicenow_itsm", "incident", 3)
 
         assert result is not None

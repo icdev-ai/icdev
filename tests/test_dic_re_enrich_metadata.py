@@ -59,6 +59,38 @@ def _patch_router(monkeypatch, content: str = "{}"):
 _DOC_ID = "dic_doc_re_enrich_test"
 _CHUNK_TEXT = "This is a security policy document requiring MFA for all access."
 
+#: rag_chunks belongs to the RAG layer; DIC's `_ensure_schema` correctly does
+#: not own its DDL. On a database that has never had a RAG ingest (a fresh
+#: checkout or worktree, where icdev.db is empty) the table is simply absent.
+#:
+#: Deliberately PERMISSIVE — no NOT NULL, no CHECK. Other test fixtures issue
+#: their own `CREATE TABLE IF NOT EXISTS rag_chunks` against this same database
+#: with a narrower column list, and whichever runs first wins. A strict shape
+#: here would make THEIR inserts fail with a constraint they never declared,
+#: turning one fixture's convenience into another file's mystery failure.
+_RAG_CHUNKS_DDL = """
+CREATE TABLE IF NOT EXISTS rag_chunks (
+    id TEXT PRIMARY KEY,
+    content TEXT,
+    content_hash TEXT,
+    embedding BLOB,
+    source_type TEXT,
+    source_id TEXT DEFAULT '',
+    source_table TEXT DEFAULT '',
+    chunk_index INTEGER DEFAULT 0,
+    total_chunks INTEGER DEFAULT 1,
+    metadata TEXT DEFAULT '{}',
+    tier TEXT DEFAULT 'hot',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    sign_bits BLOB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    embedding_vec BLOB,
+    kg_node_ids TEXT
+);
+"""
 
 @pytest.fixture()
 def _db_with_doc():
@@ -66,6 +98,13 @@ def _db_with_doc():
     conn = get_connection()
     try:
         ingest._ensure_schema(conn)
+        # `_ensure_schema` creates the dic_* tables only — rag_chunks belongs to
+        # the RAG layer and DIC correctly does not own its DDL. On a database
+        # that has never had a RAG ingest (a fresh checkout or worktree, where
+        # icdev.db is empty) the table is simply absent and the cleanup DELETE
+        # below fails at setup, which reads as a broken test rather than an
+        # unseeded database.
+        conn.executescript(_RAG_CHUNKS_DDL)
 
         conn.execute("DELETE FROM dic_chunk_links WHERE doc_id = ?", (_DOC_ID,))
         conn.execute("DELETE FROM dic_documents WHERE doc_id = ?", (_DOC_ID,))

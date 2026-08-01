@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Capture Strategy{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<style>
+  .cap-card{background:#16213e;border:1px solid #1e3a6e;border-radius:8px;margin-bottom:16px;overflow:hidden}
+  .cap-hdr{background:#0f3460;padding:10px 16px;display:flex;align-items:center;gap:8px}
+  .cap-hdr span.t{color:#7ab3f0;font-weight:600;font-size:13px}
+  .cap-body{padding:16px}
+  .cap-label{display:block;color:#b8d0e8;font-size:12px;font-weight:600;margin-bottom:6px}
+  .cap-input,.cap-ta{width:100%;background:#0d1b2e;border:1px solid #1e3a6e;border-radius:5px;color:#eaeaea;padding:8px 10px;font-size:13px;font-family:inherit;box-sizing:border-box}
+  .cap-ta{resize:vertical;min-height:64px;line-height:1.5}
+  .theme{background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;margin-bottom:10px}
+  .chip{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.3px}
+  .chip-unproven{background:#3a2a0a;color:#f0b429;border:1px solid #6b4c0a}
+  .chip-proven{background:#0a2e1a;color:#34d399;border:1px solid #10603a}
+  .warn{color:#f0b429;font-size:11px;margin-top:6px}
+  .btn{background:#0f3460;border:1px solid #2a5298;color:#7ab3f0;padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600}
+  .btn-primary{background:#2a5298;color:#fff}
+  .hint{color:#5a7aa0;font-size:11px;margin-top:4px;line-height:1.5}
+  .steps{display:flex;gap:6px;align-items:center;margin-bottom:18px;font-size:11px;color:#5a7aa0}
+  .steps b{color:#7ab3f0}
+</style>
+
+<div style="margin-bottom:16px;">
+  <h2 style="margin:0;color:#eaeaea;font-size:20px;">🎯 Capture Strategy &amp; Win Themes</h2>
+  <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">One message, carried by every generated RFI part and proposal section.</p>
+</div>
+
+<div class="steps">
+  Upload RFI &rsaquo; <b>Set Strategy</b> &rsaquo; <a href="/capture/evidence" style="color:#4f8ef7;">Attach Evidence</a> &rsaquo; Generate &rsaquo; Approve
+</div>
+
+<div class="cap-card">
+  <div class="cap-hdr"><span>🧵</span><span class="t">Golden Thread</span></div>
+  <div class="cap-body">
+    <label class="cap-label">The single idea every narrative section must carry</label>
+    <textarea id="golden" class="cap-ta" maxlength="240">{{ strategy.golden_thread }}</textarea>
+    <div class="hint">Repeated verbatim across parts. Keep it short enough that an evaluator remembers it.</div>
+  </div>
+</div>
+
+<div class="cap-card">
+  <div class="cap-hdr"><span>🏆</span><span class="t">Win Themes</span></div>
+  <div class="cap-body">
+    <div class="hint" style="margin-bottom:12px;">
+      Shipley form — <em>Because [discriminator], you [benefit], as proven by [evidence].</em>
+      A theme with no evidence makes generation emit <code style="color:#f0b429;">[VERIFY]</code>,
+      which blocks export until you supply proof. That is deliberate.
+    </div>
+    <div id="themes"></div>
+    <button class="btn" onclick="addTheme()">+ Add theme</button>
+  </div>
+</div>
+
+<div class="cap-card">
+  <div class="cap-hdr"><span>👻</span><span class="t">Ghosting</span></div>
+  <div class="cap-body">
+    <label class="cap-label">Why alternative approaches fall short — never name a competitor</label>
+    <textarea id="ghosting" class="cap-ta" rows="4">{{ strategy.ghosting | map(attribute='statement') | join('\n') }}</textarea>
+    <div class="hint">One per line. Argued as weaknesses of an approach, not attacks on a company.</div>
+  </div>
+</div>
+
+<div class="cap-card">
+  <div class="cap-hdr"><span>🎛️</span><span class="t">Customer Hot Buttons</span></div>
+  <div class="cap-body">
+    <input id="hotbuttons" class="cap-input" value="{{ strategy.hot_buttons | join(', ') }}">
+    <div class="hint">Comma-separated. Steers emphasis, never claims.</div>
+  </div>
+</div>
+
+<div style="display:flex;gap:10px;align-items:center;">
+  <button class="btn btn-primary" onclick="saveStrategy()">Save strategy</button>
+  <span id="save-status" style="color:#5a7aa0;font-size:12px;"></span>
+</div>
+
+<div class="cap-card" style="margin-top:20px;">
+  <div class="cap-hdr" style="background:#0c2a3a;"><span>📐</span><span class="t" style="color:#38bdf8;">Where themes are applied</span></div>
+  <div class="cap-body hint" style="margin:0;">
+    Themes are woven into Parts 2, 3, 4.1, 4.3, 5 and the Appendix.
+    They are <strong style="color:#b8d0e8;">withheld</strong> from Part 1 (entity data, CAGE code, FOCI) and
+    Part 4.2 (the ROM cost table) — positioning in a factual table reads as marketing to an evaluator.
+    Part 6 asks questions <em>of</em> the Government, so the strategy chooses which questions to ask and asserts nothing.
+  </div>
+</div>
+
+<script>
+const INITIAL = {{ strategy.win_themes | tojson }};
+let themes = INITIAL.length ? INITIAL : [{statement:"", evidence:"", target_eval_factor:"", priority:1}];
+
+function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function render(){
+  document.getElementById('themes').innerHTML = themes.map((t,i) => `
+    <div class="theme">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="color:#7ab3f0;font-size:11px;font-weight:600;">THEME ${i+1}</span>
+        <span>
+          <span class="chip ${t.evidence && t.evidence.trim() ? 'chip-proven' : 'chip-unproven'}">
+            ${t.evidence && t.evidence.trim() ? 'PROVEN' : 'UNPROVEN — will block export'}
+          </span>
+          <span style="color:#e94560;cursor:pointer;margin-left:10px;font-size:11px;" onclick="removeTheme(${i})">remove</span>
+        </span>
+      </div>
+      <textarea class="cap-ta" data-i="${i}" data-f="statement"
+        oninput="onEdit(this)" placeholder="Because ..., you ..., as proven by ...">${esc(t.statement)}</textarea>
+      <div id="style-${i}" class="warn"></div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:8px;">
+        <input class="cap-input" data-i="${i}" data-f="evidence" oninput="onEdit(this)"
+          placeholder="Proof point — program, metric, contract number" value="${esc(t.evidence)}">
+        <input class="cap-input" data-i="${i}" data-f="target_eval_factor" oninput="onEdit(this)"
+          placeholder="Evaluation factor" value="${esc(t.target_eval_factor)}">
+      </div>
+    </div>`).join('');
+}
+
+let debounce;
+function onEdit(el){
+  const i = +el.dataset.i, f = el.dataset.f;
+  themes[i][f] = el.value;
+  if (f === 'evidence') { render(); return; }   // repaint the PROVEN/UNPROVEN chip
+  if (f === 'statement') {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => styleCheck(i, el.value), 400);
+  }
+}
+
+// Catch banned puffery here, before it is injected verbatim into every prompt.
+async function styleCheck(i, text){
+  if (!text.trim()) { const n = document.getElementById('style-'+i); if(n) n.textContent=''; return; }
+  try {
+    const r = await fetch('/api/capture/strategy/style-check', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})
+    });
+    const d = await r.json();
+    const node = document.getElementById('style-'+i);
+    if (!node) return;
+    node.textContent = (d.findings||[]).map(f => '⚠ ' + f.message).join('  ');
+  } catch (e) { /* advisory only — never block typing */ }
+}
+
+function addTheme(){ themes.push({statement:"",evidence:"",target_eval_factor:"",priority:themes.length+1}); render(); }
+function removeTheme(i){ themes.splice(i,1); if(!themes.length) addTheme(); else render(); }
+
+async function saveStrategy(){
+  const status = document.getElementById('save-status');
+  status.textContent = 'Saving…';
+  const payload = {
+    golden_thread: document.getElementById('golden').value,
+    win_themes: themes.filter(t => t.statement.trim()).map((t,i) => ({...t, priority:i+1})),
+    ghosting: document.getElementById('ghosting').value.split('\n').filter(s=>s.trim()).map(s=>({statement:s.trim()})),
+    hot_buttons: document.getElementById('hotbuttons').value.split(',').map(s=>s.trim()).filter(Boolean),
+    discriminators: {{ strategy.discriminators | tojson }},
+    proof_points: []
+  };
+  try {
+    const r = await fetch('/api/capture/strategy', {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    status.textContent = d.error ? ('Failed: ' + d.error) : 'Saved. New drafts will use this strategy.';
+    status.style.color = d.error ? '#e94560' : '#34d399';
+  } catch (e) { status.textContent = 'Failed: ' + e; status.style.color = '#e94560'; }
+}
+
+render();
+themes.forEach((t,i) => t.statement && styleCheck(i, t.statement));
+</script>
+{% endblock %}

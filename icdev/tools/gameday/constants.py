@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import os
+
 # ── Tournament / Round States ──────────────────────────────────────────────────
 TOURNAMENT_STATES = ("pending", "active", "completed", "aborted")
 ROUND_STATES      = ("pending", "active", "completed", "timed_out")
@@ -81,10 +83,21 @@ MEMBER_TIME_BUDGET_MINUTES     = 8
 ORCHESTRATOR_TIME_BUDGET_MINUTES = 6
 MODEL_TRAIN_TRIGGER_PAIRS      = 20   # LoRA fine-tune fires at this threshold
 
-# ── Default Models ─────────────────────────────────────────────────────────────
-DEFAULT_AGENT_MODEL = "qwen3.5:9b"
-JUDGE_MODEL         = "gemma4:e4b"
-OLLAMA_BASE_URL     = "http://localhost:11434"
+# ── Model resolution ────────────────────────────────────────────────────────
+# Model IDs are NOT hardcoded here. Concrete models are resolved by the ICDEV
+# LLM router from args/llm_config.yaml / .env via get_provider_for_function().
+# These optional env overrides let an operator pin a specific model without
+# touching code; when empty (the default) the router's routing chain decides.
+DEFAULT_AGENT_MODEL = os.environ.get("GAMEDAY_AGENT_MODEL", "").strip()
+JUDGE_MODEL         = os.environ.get("GAMEDAY_JUDGE_MODEL", "").strip()
+
+# LLM router routing keys (see the `routing` section of args/llm_config.yaml).
+GAMEDAY_LLM_FUNCTION       = os.environ.get("GAMEDAY_LLM_FUNCTION", "chat").strip() or "chat"
+GAMEDAY_JUDGE_LLM_FUNCTION = os.environ.get("GAMEDAY_JUDGE_LLM_FUNCTION", "chat").strip() or "chat"
+
+# Retained for backward compatibility (base_agent no longer calls Ollama
+# directly — inference goes through the router).
+OLLAMA_BASE_URL     = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # ── Scenario Pack ──────────────────────────────────────────────────────────────
 SCENARIO_PACK = "cyber_adversarial"
@@ -222,12 +235,95 @@ DOCGEN_RACE_SCENARIOS = [
     },
 ]
 
+# ── Current-platform AI capability packs (penta-gd-05) ────────────────────────
+# Every capability referenced below maps to a real MCP tool in
+# tools/mcp/tool_registry.py (cortex_*, dic_*, topology_*, mc_net_*, slo_*,
+# model_monitor_*, foundry_*, kg_*, kanban_board_summary). No invented tools.
+
+CORTEX_GAUNTLET_SCENARIOS = [
+    {
+        "id": "cx-001",
+        "name": "Cortex Gauntlet: Ask, Extract, Classify, Govern",
+        "description": "Teams drive the unified ICDEV Cortex layer end-to-end — cortex_ask for grounded Q&A, cortex_extract for structured facts, cortex_classify for sensitivity, and cortex_govern as the policy gate. Highest governed-answer quality wins.",
+        "red_brief": "Craft adversarial queries and poisoned context designed to make cortex_ask hallucinate or leak beyond classification. Try to slip prompt-injected instructions past cortex_govern.",
+        "blue_brief": "Build a cortex_ask -> cortex_extract -> cortex_classify -> cortex_govern pipeline that answers the mission questions with grounded citations. Score: governed answers that pass the govern gate with zero classification violations.",
+        "gold_brief": "Assemble a reusable Cortex agent (cortex_agent_launch) that chains ask/extract/classify/govern automatically and emits a structured, cited dossier. Publish it for other teams.",
+        "green_brief": "Audit every cortex_govern decision against the platform egress and classification policy. Confirm CUI never egresses and that each answer carries a valid provenance record. Produce a governance verdict.",
+    },
+]
+
+DIC_DOCUMENT_SPRINT_SCENARIOS = [
+    {
+        "id": "di-001",
+        "name": "DIC Document Sprint: Grounded Deliverable",
+        "description": "A stack of raw source documents lands. Teams use the Document Intelligence Canvas — dic_ingest to load, dic_search to retrieve, dic_generate to draft a grounded deliverable — where every claim must carry an inline [source: ...] citation validated against the ingested evidence.",
+        "red_brief": "Seed the corpus with contradictory and partially fabricated source passages so dic_generate is tempted to cite unsupported claims. Attack the grounding, not the formatting.",
+        "blue_brief": "Run dic_ingest on the sources, use dic_search to gather evidence, then dic_generate a deliverable in which every claim is grounded with a valid citation. Score: fraction of claims with passing citations and zero citation defects.",
+        "gold_brief": "Build a DIC verifier co-worker that re-runs dic_search on each generated citation and flags any claim whose evidence does not support it before promote/export.",
+        "green_brief": "Gate the deliverable on the TRUST citation guard: any ungrounded claim blocks export unless a HITL force override with audit is recorded. Produce the provenance and defect report.",
+    },
+]
+
+NDC_TOPOLOGY_CHALLENGE_SCENARIOS = [
+    {
+        "id": "nt-001",
+        "name": "NDC Topology Challenge: Resilient Redesign",
+        "description": "Teams ingest a network topology into the Network Design Canvas and race to redesign it for resilience and segmentation. topology_build assembles the graph, topology_spof surfaces single points of failure, mc_net_ai_assist and network_segmentation_generate propose the fixes.",
+        "red_brief": "Propose topology changes that quietly introduce new single points of failure or flat, unsegmented paths, and dare the Blue team's topology_spof run to catch them.",
+        "blue_brief": "Use topology_build to construct the graph, topology_spof to enumerate SPOFs, and network_segmentation_generate to produce a zero-trust segmentation plan. Score: SPOFs eliminated and segments correctly enforced.",
+        "gold_brief": "Build an mc_net_ai_assist driven redesign co-worker that iterates build -> find SPOF -> segment -> rebuild, maximizing resilience gain per change. Package the plan (mc_net_plan_protocol_migration where a protocol uplift helps).",
+        "green_brief": "Assess the redesigned topology against zero-trust and segmentation policy (NIST 800-207). Flag any residual SPOF or unsegmented CUI path and produce a boundary-impact note.",
+    },
+]
+
+OBSERVABILITY_FIRE_DRILL_SCENARIOS = [
+    {
+        "id": "of-001",
+        "name": "Observability Fire Drill: SLO Breach & Drift Triage",
+        "description": "Production is on fire: an alert storm, a breached SLO, and a drifting model. Teams triage with slo_dashboard, slo_measure, model_monitor_drift and detect_drift, then drive a rollback decision and an after-action review.",
+        "red_brief": "Inject noisy, correlated alerts and a subtle model-quality regression so the true SLO breach and the drift signal are hard to separate from the noise. Make the on-call chase red herrings.",
+        "blue_brief": "Use slo_dashboard and slo_measure to confirm which SLO is breached, model_monitor_drift / detect_drift to diagnose the regression, and decide rollback vs mitigate. Score: correct root cause and time-to-mitigate.",
+        "gold_brief": "Build a triage co-worker that correlates SLO breaches with drift signals and drafts a rollback runbook plus an AAR skeleton automatically. Publish it for reuse.",
+        "green_brief": "Verify the incident is logged (incident_dashboard) with an immutable audit trail and that the rollback decision, drift evidence, and SLO measurements are captured. Produce the AAR compliance summary.",
+    },
+]
+
+FOUNDRY_ZERO_TO_ONE_SCENARIOS = [
+    {
+        "id": "fz-001",
+        "name": "Foundry 0->1 Race: Capability From Scratch",
+        "description": "Teams race a raw capability need through the Autonomous Capability Foundry — foundry_run to synthesize a novelty-gated capability and foundry_status to track it — highest-quality shippable capability wins.",
+        "red_brief": "Submit capability requests that are near-duplicates of existing tools or that hide unsafe requirements, probing whether the Foundry novelty gate and safety checks let them through.",
+        "blue_brief": "Use foundry_run to drive a capability from concept to a validated artifact and foundry_status to monitor gates. Score: capability passes the novelty gate and its validation with no critical findings.",
+        "gold_brief": "Chain foundry_run with a self-review loop that reads foundry_status and re-submits refinements until the capability clears every gate. Maximize quality per Foundry cycle.",
+        "green_brief": "Confirm each Foundry output carries provenance, passed the novelty and safety gates, and maps to a NIST 800-53 control family where applicable. Produce the acceptance verdict.",
+    },
+]
+
+GRAPHRAG_HUNT_SCENARIOS = [
+    {
+        "id": "gr-001",
+        "name": "GraphRAG Hunt: Cross-Corpus Evidence Chase",
+        "description": "A single answer is buried across multiple corpora and the knowledge graph. Teams combine kg_search and kg_federated_search with rag_search to trace an evidence chain across projects, then enrich the graph (kg_enrich) with what they learn.",
+        "red_brief": "Plant misleading graph edges and near-duplicate entities so a naive kg_search follows a false trail. Force the Blue team to disambiguate before trusting a path.",
+        "blue_brief": "Use kg_search and kg_federated_search to trace the entity path, corroborate with rag_search over the document corpus, and assemble a cited evidence chain to the answer. Score: correct answer with a fully grounded chain.",
+        "gold_brief": "Build a GraphRAG hunter co-worker that alternates graph traversal and retrieval, resolves ambiguous entities, and writes verified findings back with kg_enrich. Publish the traversal recipe.",
+        "green_brief": "Verify every hop in the evidence chain is backed by a real graph edge or a cited passage — no fabricated links. Produce a provenance report on the final answer.",
+    },
+]
+
 # Unified new scenario pack for router
 AI_OPS_SCENARIOS = {
     "ace_showdown":           ACE_SHOWDOWN_SCENARIOS,
     "readiness_gauntlet":     READINESS_GAUNTLET_SCENARIOS,
     "governance_challenge":   GOVERNANCE_CHALLENGE_SCENARIOS,
     "docgen_race":            DOCGEN_RACE_SCENARIOS,
+    "cortex_gauntlet":        CORTEX_GAUNTLET_SCENARIOS,
+    "dic_document_sprint":    DIC_DOCUMENT_SPRINT_SCENARIOS,
+    "ndc_topology_challenge": NDC_TOPOLOGY_CHALLENGE_SCENARIOS,
+    "observability_fire_drill": OBSERVABILITY_FIRE_DRILL_SCENARIOS,
+    "foundry_zero_to_one":    FOUNDRY_ZERO_TO_ONE_SCENARIOS,
+    "graphrag_hunt":          GRAPHRAG_HUNT_SCENARIOS,
 }
 
 # Ontology mappings for the Knowledge Graph ontology bridge

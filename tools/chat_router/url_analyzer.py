@@ -1,8 +1,15 @@
 # CUI // SP-CTI
 """URL content analyzer for the /analyze slash command.
 
-Fetches URL content (web pages or GitHub repos/files), truncates to a
-token-safe window, then runs an LLM analysis pass shaped by canvas_type.
+Fetches URL content (web pages or GitHub repos/files) and runs an LLM analysis
+pass shaped by canvas_type.
+
+Everything outbound goes through ``tools/http/fetch_extract.py``: the central
+HTTP client (mTLS, proxy, retry/backoff from ``args/http_client.yaml``), the
+two-pass ``page_extract`` filter, and an injection scan before any of it reaches
+a model.  Web pages are *relevance*-selected against the canvas lens rather than
+cut at a character offset — the old ``[:7000]`` kept whatever sat at the top of
+the HTML and dropped the answer.
 
 Public API
 ----------
@@ -13,12 +20,13 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.error
-import urllib.request
 from typing import Optional
 
-_MAX_CONTENT = 7000  # characters sent to LLM
-_TIMEOUT = 12        # seconds per HTTP request
+# The GitHub path assembles a composite document (listing + README + samples)
+# from many small fetches, so page_extract has nothing to rank; it still needs a
+# budget. Web pages do not — pass 2 decides what survives.
+_MAX_GITHUB_CONTENT = 7000  # characters of assembled GitHub context sent to LLM
+_GITHUB_FETCH_BYTES = _MAX_GITHUB_CONTENT * 5  # read cap per GitHub sub-fetch
 
 # ---------------------------------------------------------------------------
 # HTTP helpers
@@ -27,23 +35,27 @@ _TIMEOUT = 12        # seconds per HTTP request
 _HEADERS = {"User-Agent": "ICDev-Analyzer/1.0", "Accept": "*/*"}
 
 
-def _fetch(url: str, extra_headers: Optional[dict] = None) -> str:
-    headers = {**_HEADERS, **(extra_headers or {})}
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        raw = resp.read(_MAX_CONTENT * 5)
-        charset = resp.headers.get_content_charset() or "utf-8"
-        return raw.decode(charset, errors="replace")
+def _fetch(url: str, extra_headers: Optional[dict] = None, limit: Optional[int] = None) -> str:
+    """Fetch raw body text via the central HTTP client.
 
+    *limit* defaults to ``fetch.max_bytes`` from ``args/http_client.yaml`` (2 MiB).
+    Only the GitHub sub-fetches pass the tighter ``_GITHUB_FETCH_BYTES`` budget:
+    applying it to a web page would reinstate the positional cut this task removed
+    one layer down — pass 2 can only rank blocks that were actually read.
 
-def _strip_html(html: str) -> str:
-    text = re.sub(r"<style[^>]*>.*?</style>", " ", html, flags=re.DOTALL | re.I)
-    text = re.sub(r"<script[^>]*>.*?</script>", " ", text, flags=re.DOTALL | re.I)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"&[a-z#0-9]+;", " ", text)
-    text = re.sub(r"[ \t]{4,}", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    Raises on transport failure so the callers' try/except error paths (which
+    surface the message to the user) keep working.
+    """
+    from tools.http.fetch_extract import fetch_raw
+
+    page = fetch_raw(
+        url,
+        headers={**_HEADERS, **(extra_headers or {})},
+        limit=limit,
+    )
+    if not page.ok:
+        raise RuntimeError(page.error or "fetch failed")
+    return page.raw_text
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +97,7 @@ def _fetch_github(info: dict) -> str:
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={ref}"
     entries: list[dict] = []
     try:
-        raw = _fetch(api_url, _gh_api_headers())
+        raw = _fetch(api_url, _gh_api_headers(), limit=_GITHUB_FETCH_BYTES)
         parsed = json.loads(raw)
         if isinstance(parsed, list):
             entries = parsed
@@ -112,7 +124,7 @@ def _fetch_github(info: dict) -> str:
     for rp in readme_candidates:
         try:
             raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{rp}"
-            content = _fetch(raw_url)
+            content = _fetch(raw_url, limit=_GITHUB_FETCH_BYTES)
             parts.append(f"## README\n{content[:2500]}\n")
             break
         except Exception:
@@ -140,7 +152,7 @@ def _fetch_github(info: dict) -> str:
             f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}/{entry['name']}"
         )
         try:
-            snippet = _fetch(dl_url)[:1400]
+            snippet = _fetch(dl_url, limit=_GITHUB_FETCH_BYTES)[:1400]
             parts.append(f"## {entry['name']}\n```\n{snippet}\n```\n")
             fetched += 1
         except Exception:
@@ -153,24 +165,45 @@ def _fetch_github(info: dict) -> str:
 # Generic URL fetcher
 # ---------------------------------------------------------------------------
 
-def fetch_content(url: str) -> tuple[str, str]:
-    """Return (content_text, source_type). source_type: 'github' | 'web' | 'error'."""
+def fetch_content(url: str, query: Optional[str] = None) -> tuple[str, str]:
+    """Return (content_text, source_type). source_type: 'github' | 'web' | 'error'.
+
+    HTML goes through the two-pass ``page_extract`` filter and an injection scan
+    (``extract_page``): pass 1 prunes site chrome, and when *query* is supplied
+    pass 2 keeps the blocks that actually answer it — wherever they sit on the
+    page.  There is deliberately no positional character cut on that path.
+    """
     info = _parse_github(url)
     if info:
         try:
-            return _fetch_github(info)[:_MAX_CONTENT], "github"
+            assembled = _fetch_github(info)[:_MAX_GITHUB_CONTENT]
         except Exception as exc:
             return f"[GitHub fetch error: {exc}]", "error"
+        # Assembled from third-party repo content — scan before it reaches a model.
+        from tools.http.fetch_extract import scan_or_drop
+
+        scanned, _findings, blocked = scan_or_drop(assembled, source=url)
+        if blocked:
+            return "[Content blocked: prompt-injection detected in fetched repository content]", "error"
+        return scanned, "github"
 
     try:
         raw = _fetch(url)
-        if re.search(r"<html", raw[:300], re.I) or "<!doctype" in raw[:300].lower():
-            content = _strip_html(raw)
-        else:
-            content = raw
-        return content[:_MAX_CONTENT], "web"
     except Exception as exc:
         return f"[Fetch error: {exc}]", "error"
+
+    from tools.http.fetch_extract import extract_page
+
+    is_html = bool(re.search(r"<html", raw[:300], re.I)) or "<!doctype" in raw[:300].lower()
+    page = extract_page(
+        raw,
+        url=url,
+        query=query,
+        content_type="text/html" if is_html else "text/plain",
+    )
+    if page.blocked:
+        return "[Content blocked: prompt-injection detected in fetched page]", "error"
+    return page.text, "web"
 
 
 # ---------------------------------------------------------------------------
@@ -230,12 +263,15 @@ def analyze(url: str, canvas_type: str = "intake") -> dict:
     -------
     {reply: str, url: str, source_type: str, error: str | None}
     """
-    content, source_type = fetch_content(url)
+    # The canvas lens doubles as the retrieval query: it is the closest thing we
+    # have to "what the reader is looking for", so pass 2 ranks blocks against it
+    # instead of keeping whatever happened to fall inside the first 7000 chars.
+    lens = _CANVAS_LENS.get(canvas_type.lower(), _DEFAULT_LENS)
+
+    content, source_type = fetch_content(url, query=lens)
 
     if source_type == "error":
         return {"reply": content, "url": url, "source_type": "error", "error": content}
-
-    lens = _CANVAS_LENS.get(canvas_type.lower(), _DEFAULT_LENS)
 
     prompt = (
         "You are a senior technical architect performing a code and architecture review.\n\n"

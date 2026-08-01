@@ -41,6 +41,9 @@ from tools.db.storage import get_connection  # noqa: E402
 
 fathomdesk_api = Blueprint("fathomdesk_api", __name__)
 
+from tools.logging.icdev_logger import get_logger
+_logger = get_logger("icdev.fathomdesk.blueprint")
+
 _MAX_LIMIT = 200
 
 
@@ -129,15 +132,21 @@ def api_macro_intelligence():
             "fetched_at": ctx.get("fetched_at"),
         })
     except Exception as exc:
+        # nav-plat-04: a data outage must NOT masquerade as a benign NEUTRAL
+        # regime. Log it and return an explicit error state (HTTP 503) with
+        # null badges so no consumer renders NEUTRAL for missing data.
+        _logger.exception("macro/intelligence fetch failed: %s", exc)
         return jsonify({
-            "qeqt_phase": "NEUTRAL",
-            "credit_stress": "NEUTRAL",
-            "rotation_signal": "UNKNOWN",
+            "status": "error",
+            "detail": str(exc),
+            "qeqt_phase": None,
+            "credit_stress": None,
+            "rotation_signal": None,
             "macro_score": None,
             "summary": "",
             "fetched_at": None,
             "error": str(exc),
-        }), 200
+        }), 503
 
 
 @fathomdesk_api.route("/fathomdesk/api/reflex-observations", methods=["GET"])

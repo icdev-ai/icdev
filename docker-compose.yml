@@ -889,6 +889,65 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  # ====================================================================
+  # LLM Proxy (LiteLLM) — OPT-IN, OFF BY DEFAULT (lpx-proxy-02)
+  # ====================================================================
+  # Virtual-key / budget / spend proxy for cloud-egress cohort use cases
+  # (forge_academy, ai_gameday). Selected per ADR
+  # docs/features/lpx-proxy-01-adr-llm-proxy-selection.md.
+  #
+  # Behind the `llm-proxy` compose profile, so it does NOT start with a plain
+  # `docker compose up`. Enable explicitly:
+  #     docker compose --profile llm-proxy up -d litellm-proxy
+  # The client side stays gated by ICDEV_LLM_PROXY_ENABLED (default false),
+  # wired in lpx-proxy-03. CUI/air-gap baselines never enable this profile.
+  #
+  # SUPPLY CHAIN: pin `image:` by digest (@sha256:...) and record it in the SBOM
+  # before enabling in any real deployment (ADR consequence). Never ships in the
+  # air-gapped/CUI baseline.
+  litellm-proxy:
+    profiles: ["llm-proxy"]
+    image: ghcr.io/berriai/litellm-non_root:main-stable
+    container_name: icdev-litellm-proxy
+    depends_on:
+      icdev-postgres:
+        condition: service_healthy
+    ports:
+      # Bind to loopback only — not exposed off-host by default.
+      - "127.0.0.1:4000:4000"
+    environment:
+      # Real provider keys — supplied from .env, NEVER committed.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Admin/master key for the proxy management API.
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set when enabling the llm-proxy profile}
+      # Reuse ICDEV PostgreSQL for proxy metadata (no new datastore).
+      LITELLM_DATABASE_URL: postgresql://${ICDEV_PG_USER:-icdev}:${ICDEV_PG_PASSWORD}@icdev-postgres:5432/${ICDEV_PG_DB:-icdev}
+    volumes:
+      - ./config/llm_proxy_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    networks:
+      - icdev-net
+    healthcheck:
+      # LiteLLM is Python-based; probe liveliness without assuming curl exists.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\" || exit 1"]
+      <<: *healthcheck-defaults
+    logging: *default-logging
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
 # ======================================================================
 # Networks
 # ======================================================================

@@ -36,6 +36,7 @@ REGISTRY: List[ReflexEntry] = [
     # ── CORE ─────────────────────────────────────────────────────────────────
     ReflexEntry("research",          CORE,      1.0,  "Autonomous research and knowledge synthesis"),
     ReflexEntry("scout",             CORE,      2.0,  "Scan for new tasks and surface opportunities"),
+    ReflexEntry("doc_modernization_sweep", DOMAIN, 24.0, "Nightly document modernization: EOL/defacto evidence refresh, stale-doc scan, TRUST redlines, kanban rollups"),
     ReflexEntry("ingest",            CORE,      1.0,  "Ingest external data into the knowledge graph"),
     ReflexEntry("learn",             CORE,      6.0,  "Consolidate memory and update embeddings"),
     ReflexEntry("heal",              CORE,      4.0,  "Self-healing: detect and remediate drift"),
@@ -44,6 +45,7 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("canvas_indexer",    CORE,      3.0,  "Re-index canvas components into awareness graph"),
     ReflexEntry("self_monitor",      CORE,      0.5,  "Project internal health snapshots into operator alerts + failure_log (/monitoring)"),
     ReflexEntry("integrity_monitor", CORE,      6.0,  "SIPA self-assessment of ICDEV tools/ — open a card per NEW unauthorized capability vs baseline"),
+    ReflexEntry("harness",           CORE,      6.0,  "Eval-harness metrics/degradation sweep — check_gates() → degradation cards; co-learning ECHO artifacts when ICDEV_HARNESS_COLEARN enabled"),
 
     # ── STRATEGOS ─────────────────────────────────────────────────────────────
     ReflexEntry("strategos.osint_harvester", STRATEGOS, 4.0,
@@ -90,7 +92,12 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("fathomdesk_news_patterns", SUPPORT, 4.0, "FathomDesk news pattern detection"),
     ReflexEntry("fathomdesk_correlation_monitor", SUPPORT, 4.0, "FathomDesk cross-asset correlation"),
     ReflexEntry("bdc_isa_expiry",     SUPPORT, 24.0, "BDC ISA expiry tracking"),
+    ReflexEntry("coherence_sweep",    SUPPORT, 6.0,
+                "Full-tier coherence sweep on main — runs the whole-app checks the "
+                "per-task fast-tier gate defers, and refreshes its baseline"),
+    ReflexEntry("freshness_guardian", SUPPORT, 1.0,  "DDC freshness quality sweep → dd_freshness_alerts/dd_quality_runs"),
     ReflexEntry("cato_monitor",       SUPPORT, 6.0,  "cATO compliance monitoring"),
+    ReflexEntry("sdc_control_expiry", SUPPORT, 4.0,  "SDC security control-expiry sweep — IQR anomaly-thresholded review-date alerts"),
     ReflexEntry("cato_twin",               SUPPORT, 6.0,  "cATO digital twin sync"),
     ReflexEntry("wf_feedback_aggregation", SUPPORT, 6.0,
                 "HITL feedback aggregation → wf_feedback_insights per canvas/template/type"),
@@ -128,6 +135,18 @@ REGISTRY: List[ReflexEntry] = [
                 "PMA: nightly credential expiry scan and SPOF dependency detection"),
     ReflexEntry("pma_int_gap_monitor",       DOMAIN, 168.0,
                 "PMA: weekly INT gap persistence scan; seeds collection requirements and compliance risks"),
+    # Observability retention (obx-trc-05)
+    ReflexEntry("observability_retention",   SUPPORT, 24.0,
+                "Observability retention: archive-then-prune otel_spans/prov_*/shap_attributions "
+                "(append-only → cold *_archive twin) so list_traces/trace_stats stay fast"),
+    # ODC MITRE coverage drift (obx-cov-02)
+    ReflexEntry("odc_coverage_refresh",      SUPPORT, 6.0,
+                "ODC coverage refresh: scheduled MITRE ATT&CK coverage recompute per design; "
+                "flag >15pt coverage drops as od_audit drift events + suggested kanban cards"),
+    # twx-cov-02 — cross-canvas twin freshness
+    ReflexEntry("twin_freshness_sweep",      SUPPORT, 6.0,
+                "Twin Core: observer-driven cross-canvas twin freshness sweep; publishes "
+                "twin.snapshot.stale for twins with stale/absent snapshots (fills AADC/Mission/residual gap)"),
 ]
 
 # Quick lookup: name → entry

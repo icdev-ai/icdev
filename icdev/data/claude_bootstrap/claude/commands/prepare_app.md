@@ -20,7 +20,7 @@ DASHBOARD_PORT: 5000
 
 3. **Check if dashboard is already running**:
    ```bash
-   python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
+   python -c "import urllib.request; urllib.request.urlopen('http://localhost:5050/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
    ```
 
 4. **If NOT_RUNNING — start the dashboard**:
@@ -33,7 +33,7 @@ DASHBOARD_PORT: 5000
 
 5. **Verify dashboard is healthy**:
    ```bash
-   python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:5000/health', timeout=5); print(r.read().decode())" 2>/dev/null || echo "WARNING: Dashboard health check failed"
+   python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:5050/health', timeout=5); print(r.read().decode())" 2>/dev/null || echo "WARNING: Dashboard health check failed"
    ```
 
 6. **Verify SaaS portal** (if testing SaaS pages):

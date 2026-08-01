@@ -36,16 +36,18 @@ Categories:
     testing (6)
     installer (4)
     misc (8)
-    llmops (10)
+    llmops (13)
     agent_topology (3)
     sre (8)
     canvas (8)
     system_graph (3)
     intelligence (3)
     integrity (2)
-    nova (8)
+    nova (9)
+    pulse (1)
+    cortex (8)
 
-Total: 278 tools, 6 resources
+Total: 444 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -3660,6 +3662,25 @@ TOOL_REGISTRY = {
     # ============================================================
     # CLOUD (5 tools)
     # ============================================================
+    "rfi_demand_scan": {
+        "category": "govcon",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_rfi_demand_scan",
+        "description": "RFI capability-gap demand signals: list cross-RFI unmet-capability demand (mode='list', default) or re-scan open gaps and emit atomic SUGGESTED kanban build tasks (mode='scan').",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["list", "scan"],
+                    "default": "list",
+                    "description": "list = read demand signals; scan = emit SUGGESTED tasks for eligible open gaps",
+                },
+                "limit": {"type": "integer", "default": 50, "description": "max signals to return (mode=list)"},
+                "min_priority": {"type": "number", "description": "override the priority threshold for task emission (mode=scan)"},
+            },
+        },
+    },
     "csp_monitor_scan": {
         "category": "cloud",
         "module": "tools.mcp.gap_handlers",
@@ -4893,7 +4914,6 @@ TOOL_REGISTRY = {
                 "top_k": {"type": "integer", "description": "Number of results to return (default 5)", "default": 5},
                 "source_type": {"type": "string", "description": "Filter by source type (optional)"},
                 "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant isolation"},
-                "child_id": {"type": "string", "description": "Child app ID for federated queries"},
             },
             "required": ["query"],
         },
@@ -5036,6 +5056,80 @@ TOOL_REGISTRY = {
                 "context": {"type": "string", "description": "Optional context passage"},
             },
             "required": ["query"],
+        },
+    },
+    # ── Browser agent tools (oss-browse-03) ────────────────────────────────
+    # Every navigation is allowlist-gated and every action budgeted + audited by
+    # tools/browser/scope.py; these entries add no policy of their own.
+    "browser_navigate": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_navigate",
+        "description": "Navigate an audited, scope-limited browser to a URL and return the page as indexed interactive elements. Refused unless the host is on the allowlist in args/browser_scope.yaml (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL to open. Must clear the domain and scheme allowlist."},
+                "run_id": {"type": "string", "description": "Correlation id stamped on every audit row."},
+            },
+            "required": ["url"],
+        },
+    },
+    "browser_read_state": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_read_state",
+        "description": "Return the current page as indexed interactive elements so a model can act via click(14) instead of inventing a CSS selector (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "screenshot": {"type": "boolean", "default": False, "description": "Also capture a PNG."},
+                "run_id": {"type": "string"},
+            },
+        },
+    },
+    "browser_click": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_click",
+        "description": "Click the element carrying the given index from the latest browser_read_state (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "description": "Element index from the latest read_state."},
+                "run_id": {"type": "string"},
+            },
+            "required": ["index"],
+        },
+    },
+    "browser_type": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_type",
+        "description": "Type text into the element at the given index. Credentials are written as <secret>NAME</secret> and resolved at the driver, never appearing in the prompt or audit row (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "text": {"type": "string", "description": "Text to type. May contain <secret>NAME</secret> placeholders."},
+                "clear": {"type": "boolean", "default": True},
+                "enter": {"type": "boolean", "default": False},
+                "run_id": {"type": "string"},
+            },
+            "required": ["index", "text"],
+        },
+    },
+    "browser_screenshot": {
+        "category": "browser",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_browser_screenshot",
+        "description": "Capture a screenshot of the current page under playwright/screenshots/ (oss-browse-03).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Filename stem."},
+                "run_id": {"type": "string"},
+            },
         },
     },
     "sandbox_execute": {
@@ -5636,6 +5730,55 @@ TOOL_REGISTRY = {
             "required": ["model"],
         },
     },
+    "proxy_key_issue": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_proxy_key_issue",
+        "description": "Issue an LLM-proxy virtual key (lpx-keys-01). Returns the key exactly once; only a SHA-256 hash is stored. The master/admin key is never logged or returned.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "alias": {"type": "string", "description": "Human-readable label"},
+                "scope_type": {"type": "string", "enum": ["tenant", "team", "guild", "user"], "default": "tenant"},
+                "scope_ref": {"type": "string", "description": "Id within the scope (team_id, guild_id, user)"},
+                "session_id": {"type": "string", "description": "gameday ttx session id for team keys"},
+                "max_budget_usd": {"type": "number", "description": "Spend cap in USD"},
+                "budget_window": {"type": "string", "enum": ["exercise", "day", "month", "none"], "default": "none"},
+                "rpm_limit": {"type": "integer", "description": "Requests-per-minute ceiling"},
+                "tpm_limit": {"type": "integer", "description": "Tokens-per-minute ceiling"},
+                "expires_at": {"type": "string", "description": "ISO-8601 expiry"},
+                "tenant_id": {"type": "string"},
+                "classification": {"type": "string"},
+                "created_by": {"type": "string"},
+            },
+        },
+    },
+    "proxy_key_list": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_proxy_key_list",
+        "description": "List issued LLM-proxy virtual keys (metadata only — never the key or its hash).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "scope_type": {"type": "string", "enum": ["tenant", "team", "guild", "user"]},
+                "scope_ref": {"type": "string"},
+                "session_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["active", "revoked", "rotated", "expired"]},
+            },
+        },
+    },
+    "proxy_key_show": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_proxy_key_show",
+        "description": "Show one LLM-proxy virtual key by id (metadata only — never the key or its hash).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"key_id": {"type": "string", "description": "Key id"}},
+            "required": ["key_id"],
+        },
+    },
     # ============================================================
     # AGENT TOPOLOGY (3 tools — Phase 70, AIOps/LLMOps Ecosystem Adaptation)
     # ============================================================
@@ -5804,6 +5947,50 @@ TOOL_REGISTRY = {
     # ============================================================
     # REDACTION & DATA PROTECTION (Phase 70 — D-RDT-1)
     # ============================================================
+    "databridge_fetch": {
+        "category": "databridge",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_databridge_fetch",
+        "description": (
+            "Read from an external SaaS connector (Splunk, ServiceNow, GitHub, ...) through "
+            "the agent access broker. READ-ONLY: the broker has no write path. Every call is "
+            "authorized per-agent against args/databridge_agent_access.yaml (deny-all by "
+            "default), refused outright in air-gap mode, has free-text filter values redacted "
+            "fail-closed before egress, and writes an audit row whether allowed or denied. "
+            "Call databridge_sources first to see what this agent may reach rather than "
+            "probing -- a denial is returned as a result, not an error."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "connector": {"type": "string", "description": "Registered connector name, e.g. 'github', 'servicenow_itsm'"},
+                "table": {"type": "string", "description": "Table/collection to read; must be in the connector's grant"},
+                "query": {"type": "string", "description": "Optional free-text search. Redacted fail-closed before it leaves."},
+                "filters": {"type": "object", "description": "Optional structured filters. String values are redacted."},
+                "limit": {"type": "integer", "description": "Max rows (default 200, hard cap 1000)"},
+                "agent_id": {"type": "string", "description": "Calling agent's role_id, for authorization and audit"},
+                "classification": {"type": "string", "description": "Sensitivity of the query content (default UNCLASSIFIED)"},
+            },
+            "required": ["connector", "table"],
+        },
+    },
+    "databridge_sources": {
+        "category": "databridge",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_databridge_sources",
+        "description": (
+            "List external connectors and tables the calling agent is permitted to read. "
+            "Use this before databridge_fetch: discovering your own reach is preferable to "
+            "probing, which is indistinguishable from an attack in the audit trail."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "Calling agent's role_id"},
+            },
+            "required": [],
+        },
+    },
     "redaction_detect": {
         "category": "redaction",
         "module": "tools.mcp.gap_handlers",
@@ -6148,8 +6335,8 @@ TOOL_REGISTRY = {
     },
     "canvas_link_design": {
         "category": "canvas",
-        "module": "tools.canvas.orchestrator",
-        "handler": "link_design",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_canvas_link_design",
         "description": "Link a canvas design to a project. canvas_key: idc/ndc/sdc/bdc/pdc/odc/ddc/qdc/mdc.",
         "input_schema": {
             "type": "object",
@@ -6163,8 +6350,8 @@ TOOL_REGISTRY = {
     },
     "canvas_unlink_design": {
         "category": "canvas",
-        "module": "tools.canvas.orchestrator",
-        "handler": "unlink_design",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_canvas_unlink_design",
         "description": "Unlink a canvas design from a project.",
         "input_schema": {
             "type": "object",
@@ -6179,7 +6366,13 @@ TOOL_REGISTRY = {
         "category": "canvas",
         "module": "tools.canvas.orchestrator",
         "handler": "get_compliance_summary",
-        "description": "Aggregate compliance scores across all canvases linked to a project.",
+        # cnr-cc-02(c): NAME-COLLISION NOTE — this is the canvas *project-design*
+        # tool (tools.canvas.orchestrator), scoped to one project_id and the
+        # canvases linked to it. It is NOT the platform-wide compliance posture
+        # dashboard at /canvas-compliance (tools/canvas_compliance/ +
+        # tools/canvas_compliance/posture.py::compute_canvas_posture). Kept as-is
+        # by design; the description disambiguates the two rather than renaming.
+        "description": "Aggregate compliance scores across the canvases linked to a specific canvas PROJECT (project-design orchestrator). Distinct from the platform-wide Canvas Posture dashboard at /canvas-compliance.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -6203,8 +6396,8 @@ TOOL_REGISTRY = {
     },
     "canvas_kg_rebuild": {
         "category": "canvas",
-        "module": "tools.canvas.kg_builder",
-        "handler": "rebuild_canvas_kg",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_canvas_kg_rebuild",
         "description": "Rebuild the knowledge graph for a specific canvas design. Extracts nodes/edges and writes to unified KG.",
         "input_schema": {
             "type": "object",
@@ -6219,7 +6412,10 @@ TOOL_REGISTRY = {
         "category": "canvas",
         "module": "tools.canvas.orchestrator",
         "handler": "compute_readiness",
-        "description": "Gate check: verify canvas project readiness meets thresholds for ATO/deploy.",
+        # cnr-cc-02(c): NAME-COLLISION NOTE — operates on a canvas PROJECT
+        # (project-design orchestrator), NOT the platform-wide Canvas Posture
+        # dashboard at /canvas-compliance. Kept as-is by design.
+        "description": "Gate check: verify a canvas PROJECT's readiness meets thresholds for ATO/deploy (project-design orchestrator). Distinct from the platform-wide Canvas Posture dashboard at /canvas-compliance.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -6307,8 +6503,8 @@ TOOL_REGISTRY = {
     },
     "mc_net_ai_assist": {
         "category": "migration",
-        "module": "tools.migration_canvas.network_migration",
-        "handler": "ai_assist",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_mc_net_ai_assist",
         "description": "AI migration assistant — answers engineer questions with session context (BGP drain, optic compatibility, rollback steps, etc.). Saves conversation to mc_net_ai_sessions audit trail.",
         "input_schema": {
             "type": "object",
@@ -6493,7 +6689,7 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
-    # ANVIL CO-WORKER ENGINE (ACE) — 2 tools
+    # ANVIL CO-WORKER ENGINE (ACE) — 3 tools
     # ============================================================
     "ace_launch": {
         "category": "ace",
@@ -6635,6 +6831,69 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
+    # DOCMOD — Document Modernization Engine (3 tools)
+    # ============================================================
+    "docmod_scan": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_scan",
+        "description": (
+            "Scan DIC documents for stale content: EOL hardware/software, deprecated "
+            "technology (TLS 1.1, telnet, MD5...), superseded standards. Deterministic "
+            "verdicts (catalog/EOL/rulebook evidence, no LLM). Incremental — unchanged "
+            "documents are skipped. Returns scan-run summary with findings_new/resolved."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "Scan one document (omit for a corpus/collection sweep)"},
+                "collection_id": {"type": "string", "description": "Scan one collection (omit with doc_id absent = whole corpus)"},
+                "force": {"type": "boolean", "description": "Ignore the incremental evidence-hash skip (default false)"},
+            },
+            "required": [],
+        },
+    },
+    "docmod_findings": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_findings",
+        "description": (
+            "List Document Modernization findings (latest state per append-only "
+            "supersede chain). Filter by doc_id, state (open/redline_drafted/accepted/"
+            "rejected/resolved/superseded/stale) and finding_type (eol_hardware, "
+            "eol_software, deprecated_tech, superseded_standard, defacto_divergence, "
+            "catalog_gap...). Returns finding rows with evidence and recommendations."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "Filter to one document"},
+                "state": {"type": "string", "description": "Filter by lifecycle state (e.g. 'open')"},
+                "finding_type": {"type": "string", "description": "Filter by finding type"},
+            },
+            "required": [],
+        },
+    },
+    "docmod_redline": {
+        "category": "docmod",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_docmod_redline",
+        "description": (
+            "Draft a TRUST-gated redline (cited replacement text) for one open "
+            "modernization finding. The LLM words prose around deterministic evidence "
+            "only; hallucinated citations or out-of-candidate replacements are blocked; "
+            "low confidence abstains. Returns {status: drafted|abstained|blocked, "
+            "suggestion_id, confidence, band, reason}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "finding_id": {"type": "string", "description": "Open docmod finding to draft for"},
+            },
+            "required": ["finding_id"],
+        },
+    },
+    # ============================================================
     # NOVA — Autonomous Self-Learning Digital Coworker (5 tools)
     # ============================================================
     "nova_get_trust_score": {
@@ -6731,8 +6990,8 @@ TOOL_REGISTRY = {
     # ============================================================
     "nova_analyze_patterns": {
         "category": "nova",
-        "module": "tools.nova.skill_generator",
-        "handler": "analyze_patterns",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_analyze_patterns",
         "description": (
             "Scan session history for repeated command patterns that suggest a missing "
             "ICDEV™ skill. Returns list of {pattern, count, category, example} dicts "
@@ -6748,8 +7007,8 @@ TOOL_REGISTRY = {
     },
     "nova_generate_skill": {
         "category": "nova",
-        "module": "tools.nova.skill_generator",
-        "handler": "generate_skill_spec",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_generate_skill",
         "description": (
             "Generate an ICDEV™ skill specification markdown for a given command pattern. "
             "Uses scanner-tier LLM when available; falls back to structured template. "
@@ -6768,8 +7027,8 @@ TOOL_REGISTRY = {
     },
     "nova_list_skill_queue": {
         "category": "nova",
-        "module": "tools.nova.skill_generator",
-        "handler": "list_queued",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_list_skill_queue",
         "description": (
             "List pending auto-generated skill specs in agent_improvement_artifacts "
             "awaiting Continuous Harness SELA evaluation (adapt-hermes-04)."
@@ -6778,6 +7037,430 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {
                 "limit": {"type": "integer", "default": 20, "description": "Max entries to return"},
+            },
+        },
+    },
+    "ace_ensure_sme": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_ensure_sme",
+        "description": (
+            "Ensure a TEAM-CAPABLE subject-matter expert exists for a domain, creating one "
+            "only if the existing catalog does not already cover it. Unlike ace_persona_query "
+            "-- which yields an advisory-only SOUL.md persona that can answer a question but "
+            "can never be staffed onto a team -- this produces BOTH the persona identity and "
+            "the executable role YAML, so the returned role_id can be passed straight to "
+            "ace_launch's role_ids. Reuses a near-match from the ~90-role catalog rather than "
+            "minting a duplicate. All security fields (trust_tier, tool_permissions, "
+            "folder_access, icdev_tools) come from hand-authored capability bundles, never "
+            "from the model; generated roles are trust_tier 'red' so the human confidence gate "
+            "reviews their first run. Primary use case is cross-repo callers (idea_lab, compass)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain_description": {"type": "string", "description": "Free-text description of the expertise needed, e.g. 'maritime hull and cargo underwriting'"},
+                "capability_bundle": {"type": "string", "description": "Optional: advisory (default, read-only) | analyst | builder. Escalation beyond advisory is a deliberate human choice."},
+                "allow_reuse": {"type": "boolean", "description": "Reuse a sufficiently similar existing role instead of generating (default true)"},
+            },
+            "required": ["domain_description"],
+        },
+    },
+    "ace_persona_query": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_persona_query",
+        "description": (
+            "Get a one-shot, persona-informed answer from a specific ICDEV domain expert "
+            "(e.g. architect, devops_engineer, ai_developer), grounded in that role's SOUL.md "
+            "identity. Synchronous, single LLM call -- NOT the async multi-role ACE team launch. "
+            "role_id is optional if domain_description is given: with no known role_id, a persona "
+            "for that domain is generated on the fly (or reused if already generated for that "
+            "domain) via tools.ace.persona_generator, instead of returning no consultation at all. "
+            "The response's role_id reports which persona actually answered. Primary use case is "
+            "cross-repo callers (e.g. idea_lab) consulting an ACE persona."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE role id, e.g. 'architect', 'devops_engineer', 'ai_developer'. Optional if domain_description is given."},
+                "question": {"type": "string", "description": "The question to ask the persona"},
+                "context": {"type": "string", "description": "Optional additional context"},
+                "domain_description": {"type": "string", "description": "Free-text domain description used to generate (or reuse) a persona when role_id is omitted/unknown"},
+            },
+            "required": ["question"],
+        },
+    },
+    "council_query": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_council_query",
+        "description": (
+            "Pressure-test a high-stakes question or decision through an LLM Council: 5 fixed-"
+            "perspective advisors (Contrarian, First Principles Thinker, Expansionist, Outsider, "
+            "Executor) respond independently and in parallel, anonymously peer-review each "
+            "other's responses, and a chairman synthesizes a structured verdict (where the "
+            "council agrees, where it clashes, blind spots peer review caught, a direct "
+            "recommendation, and one concrete next step). Adapted from Karpathy's LLM Council "
+            "methodology, distinct from Chain of Debate (no debate-to-a-winner; independent "
+            "single-pass analysis from fixed cognitive lenses). Primary use case is cross-repo "
+            "callers (e.g. idea_lab) pressure-testing a validated idea before committing to it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The high-stakes question/decision to bring to the council"},
+                "context": {"type": "string", "description": "Optional additional context (e.g. the idea's Q&A answers, scores)"},
+            },
+            "required": ["question"],
+        },
+    },
+    # ============================================================
+    # COMPASS — Reverse bridge to a standalone Compass backend (2 tools)
+    # ============================================================
+    "compass_lcat_lookup": {
+        "category": "compass",
+        "module": "tools.integrations.compass_mcp_handlers",
+        "handler": "handle_compass_lcat_lookup",
+        "description": (
+            "Look up the best-matching BLS SOC labor category for a task description or "
+            "resume via a running Compass backend (C:\\AI\\standalone\\compass -- LCAT/staffing, "
+            "document analysis, rate-card automation, AI-assisted writing for GovCon teams). "
+            "Compass is optional and separately run; returns an error dict (not raised) if it "
+            "isn't configured/reachable. Reverse direction of Compass's own bridge into ICDEV "
+            "(dic_search/dic_ingest/ace_persona_query/council_query)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Task description or resume text to map to a labor category"},
+            },
+            "required": ["text"],
+        },
+    },
+    "compass_staffing_summary": {
+        "category": "compass",
+        "module": "tools.integrations.compass_mcp_handlers",
+        "handler": "handle_compass_staffing_summary",
+        "description": (
+            "Fetch a running Compass backend's current staffing matrix (personnel vs. resume-"
+            "matched LCAT compliance, mismatch/unresolved counts). Compass is optional and "
+            "separately run; returns an error dict (not raised) if it isn't configured/reachable."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    # ============================================================
+    # PULSE — Writing Quality (WriteGuard) (1 tool)
+    # ============================================================
+    "writeguard_analyze": {
+        "category": "pulse",
+        "module": "tools.pulse.writeguard",
+        "handler": "handle_writeguard_analyze",
+        "description": (
+            "Run WriteGuard's full deterministic writing-quality check (grammar, readability, "
+            "tone, plagiarism, AI-content detection, style, structure, composite scores) on "
+            "Markdown/text. No LLM calls. Primary use case is cross-repo callers (e.g. idea_lab) "
+            "gating generated reports/specs."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"text": {"type": "string", "description": "Markdown or plain text to analyze"}},
+            "required": ["text"],
+        },
+    },
+    # ============================================================
+    # CORTEX — Unified AI Facade (ctx-expose-01, 8 tools)
+    # ============================================================
+    # Programmable MCP surface of the ICDEV Cortex pattern: one unified layer
+    # over LLMRouter / RAG / KG / DIC / IQE / ACE with an enforced TRUST
+    # (governance) pipeline. Handlers are thin one-liners into tools/cortex/api.
+    # Every tool exposes optional tenant_id/classification/domain/user_id
+    # (mapped to CortexContext) for RLS + read-down.
+    "cortex_search": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_search",
+        "description": (
+            "Unified Cortex search across all retrieval backends (rag / graph / dic / kb) with "
+            "agentic strategy routing + CRAG corrective loop. Returns normalized CortexSearchResults "
+            "(score 0-1, per-result citation + routing metadata)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language search query"},
+                "top_k": {"type": "integer", "description": "Results per backend (default 5)", "default": 5},
+                "strategy": {
+                    "type": "string",
+                    "description": "auto | rag | graph | dic | kb | all (auto classifies + routes)",
+                    "default": "auto",
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope (intersects backends)"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["query"],
+        },
+    },
+    "cortex_ask": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_ask",
+        "description": (
+            "Answer a natural-language data question through the Cortex Analyst (IQE primary, "
+            "NL->SQL fallback) with a shared injection/SELECT-only safety screen. Returns a "
+            "CortexResult with row data, executed IQE/SQL, analyst citations, and TRUST labels."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "Free-form data question"},
+                "mode": {"type": "string", "description": "auto | iqe | nlq", "default": "auto"},
+                "canvas": {"type": "string", "description": "Restrict to one canvas's collections"},
+                "collections": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Explicit collection names (bypasses resolution)",
+                },
+                "summarize": {
+                    "type": "boolean",
+                    "description": "Replace deterministic row summary with cited LLM prose",
+                    "default": False,
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["question"],
+        },
+    },
+    "cortex_complete": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_complete",
+        "description": (
+            "Free-form LLM completion via the config-routed Cortex chain, governed end to end "
+            "(injection screen, input/output redaction, provenance, audit). Returns a CortexResult "
+            "with provider/model/cost/latency accounting and the GovernanceReport."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "User prompt text"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt"},
+                "max_tokens": {"type": "integer", "description": "Max output tokens (optional)"},
+                "temperature": {"type": "number", "description": "Sampling temperature (optional)"},
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (cost attribution / RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["prompt"],
+        },
+    },
+    "cortex_reason": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_reason",
+        "description": (
+            "Multi-step reasoning via the router's chain orchestration, governed end to end. "
+            "mode selects the strategy: 'cot' (chain of thought), 'debate' (proposer/critic rounds), "
+            "'council' (fixed-perspective advisors + chairman synthesis). Returns a CortexResult with "
+            "provider/model/cost/latency accounting, metadata.reason_mode, and the GovernanceReport."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Reasoning prompt text"},
+                "mode": {
+                    "type": "string",
+                    "description": "Reasoning strategy: cot | debate | council (default cot)",
+                    "default": "cot",
+                },
+                "system_prompt": {"type": "string", "description": "Optional system prompt"},
+                "max_tokens": {"type": "integer", "description": "Max output tokens (optional)"},
+                "temperature": {"type": "number", "description": "Sampling temperature (optional)"},
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (cost attribution / RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["prompt"],
+        },
+    },
+    "cortex_classify": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_classify",
+        "description": (
+            "Classify text into exactly one of the supplied labels via the Cortex chain, degrading "
+            "to deterministic query-classifier heuristics when the router is unavailable. Returns a "
+            "CortexResult whose text is the chosen label."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Text to classify"},
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Candidate labels (exactly one is chosen)",
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["text", "labels"],
+        },
+    },
+    "cortex_extract": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_extract",
+        "description": (
+            "Extract structured data from text as a single JSON object conforming to the supplied "
+            "JSON schema (native structured output when the provider supports it, fenced-JSON parse "
+            "otherwise). Returns a CortexResult whose text is the extracted JSON."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Source text to extract from"},
+                "schema": {"type": "object", "description": "JSON schema the output must conform to"},
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["text", "schema"],
+        },
+    },
+    "cortex_govern": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_govern",
+        "description": (
+            "Run the enforced Cortex TRUST chain standalone over already-produced text: gateway "
+            "pre-check, input/output redaction, citation + content grounding against the supplied "
+            "sources, provenance, and audit. Returns the GovernanceReport."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Drafted text to govern"},
+                "sources": {
+                    "type": ["integer", "array"],
+                    "description": "Grounding sources: an int source count, or a list of id strings/dicts",
+                    "items": {"type": ["string", "object"]},
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["text"],
+        },
+    },
+    "cortex_agent_launch": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_agent_launch",
+        "description": (
+            "Run a goal through the multi-agent stack, governed end to end. mode='team' (or 'auto' "
+            "with roles) launches a non-blocking ACE run and returns its instance_id; mode='single' "
+            "(or 'auto' without roles) runs a single agent-loop and returns its final content. "
+            "Returns a CortexResult."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string", "description": "The goal / problem statement for the agent(s)"},
+                "roles": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "ACE role IDs for a team launch (implies mode=team under auto)",
+                },
+                "mode": {"type": "string", "description": "auto | team | single", "default": "auto"},
+                "trigger_source": {"type": "string", "description": "Audit trigger source label"},
+                "trigger_ref": {"type": "string", "description": "Audit trigger reference"},
+                "webhook_url": {"type": "string", "description": "Optional completion webhook (team mode)"},
+                "llm_function": {
+                    "type": "string",
+                    "description": "Routing function for the single-agent loop (default code_generation)",
+                    "default": "code_generation",
+                },
+                "max_iterations": {
+                    "type": "integer",
+                    "description": "Max single-agent loop iterations (default 12)",
+                    "default": 12,
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID (RLS + cost attribution)"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope"},
+                "user_id": {"type": "string", "description": "Caller user ID (cost attribution / RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["goal"],
+        },
+    },
+    # ============================================================
+    # PIPELINE DESIGN CANVAS (PDC) (3 tools)
+    # ============================================================
+    "pdc_analyze": {
+        "category": "infra",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pdc_analyze",
+        "description": "Detect CI/CD pipeline architectural anti-patterns (missing scanners/signing/gates, insecure ordering) in a Pipeline Design Canvas graph. Accepts a pipeline_id (loaded from pipeline_canvas.db) or an inline graph.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline_id": {"type": "string", "description": "UUID of a stored PDC pipeline"},
+                "graph": {"type": "object", "description": "Inline pipeline graph {nodes, edges} (overrides pipeline_id)"},
+            },
+        },
+    },
+    "pdc_validate": {
+        "category": "infra",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pdc_validate",
+        "description": "Generate a deploy bundle from a PDC pipeline and validate the IaC through the layered validator (syntax → policy → security). Accepts a pipeline_id or an inline graph plus target CSP.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline_id": {"type": "string", "description": "UUID of a stored PDC pipeline"},
+                "graph": {"type": "object", "description": "Inline pipeline graph {nodes, edges} (overrides pipeline_id)"},
+                "name": {"type": "string", "description": "Pipeline name (used for bundle labeling)"},
+                "target_csp": {"type": "string", "description": "Target cloud (aws/azure/gcp/auto)", "default": "auto"},
+                "max_layer": {"type": "integer", "description": "Highest validation layer to run (1-5)", "default": 3},
+            },
+        },
+    },
+    "pdc_export": {
+        "category": "infra",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pdc_export",
+        "description": "Export a PDC pipeline graph to a target CI/CD format (gitlab_ci, github_actions, jenkinsfile, tekton, azure_pipelines). Accepts a pipeline_id or an inline graph.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pipeline_id": {"type": "string", "description": "UUID of a stored PDC pipeline"},
+                "graph": {"type": "object", "description": "Inline pipeline graph {nodes, edges} (overrides pipeline_id)"},
+                "name": {"type": "string", "description": "Pipeline name"},
+                "format": {"type": "string", "description": "Export format", "default": "gitlab_ci"},
             },
         },
     },
@@ -6990,11 +7673,11 @@ RESOURCE_REGISTRY = {
         "category": "ontology",
         "module": "tools.mcp.ontology_server",
         "handler": "handle_ontology_query",
-        "description": "Query the unified ontology graph with a SPARQL-like natural language query.",
+        "description": "Keyword/pattern search over the unified ontology graph. Heuristic term matching over a small set of hard-coded query shapes — NOT a SPARQL evaluator.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Natural language SPARQL-like query"},
+                "query": {"type": "string", "description": "Natural-language query (keyword/pattern matched, not SPARQL)"},
                 "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
             },
             "required": ["query"],
@@ -7089,6 +7772,26 @@ RESOURCE_REGISTRY = {
                 "system_prompt": {"type": "string", "description": "Optional system prompt"},
                 "num_debaters": {"type": "integer", "default": 3, "description": "Number of debaters"},
                 "debate_rounds": {"type": "integer", "default": 2, "description": "Debate rounds"},
+            },
+        },
+    },
+    "divergence_invoke": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_divergence_invoke",
+        "description": (
+            "Invoke Divergence: a single isolated generative fan-out that returns a raw "
+            "pool of candidate ideas, optionally scored by the separate critic "
+            "(novelty/viability/fit + advisory trap flags). OPT-IN per function."
+        ),
+        "input_schema": {
+            "type": "object",
+            "required": ["function", "prompt"],
+            "properties": {
+                "function": {"type": "string", "description": "ICDEV function name (must be opted-in to divergence)"},
+                "prompt": {"type": "string", "description": "The problem to widen the option space on"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt / context"},
+                "score": {"type": "boolean", "default": False, "description": "Also run the critic to score + trap-flag the pool"},
             },
         },
     },
@@ -7341,7 +8044,7 @@ RESOURCE_REGISTRY = {
         "category": "dsoc",
         "module": "tools.dsoc_canvas.rtbh_manager",
         "handler": "trigger_rtbh",
-        "description": "Trigger RTBH (Remotely Triggered Black Hole) routing for a target prefix to null-route attack traffic.",
+        "description": "Record an RTBH (Remotely Triggered Black Hole) null-route for a target prefix (RECORD-ONLY / SIMULATION — does not push to live routers; generates apply-ready config for human review). Requires MCP authorization (deny-by-default): supply mcp_role.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -7349,6 +8052,7 @@ RESOURCE_REGISTRY = {
                 "trigger_reason":        {"type": "string", "enum": ["volumetric_attack","syn_flood","udp_flood","icmp_flood","amplification","spoofed_traffic","manual","policy"]},
                 "triggered_by":          {"type": "string", "default": "system"},
                 "auto_withdraw_minutes": {"type": "integer", "default": 60},
+                "mcp_role":              {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default)"},
             },
             "required": ["prefix", "trigger_reason"],
         },
@@ -7357,11 +8061,12 @@ RESOURCE_REGISTRY = {
         "category": "dsoc",
         "module": "tools.dsoc_canvas.flowspec_engine",
         "handler": "activate_rule",
-        "description": "Activate a BGP flowspec rule by ID to rate-limit or drop matching traffic.",
+        "description": "Activate a BGP flowspec rule by ID to rate-limit or drop matching traffic (RECORD-ONLY / SIMULATION — does not push to live routers; generates apply-ready IOS-XR/JunOS config for human review). Requires MCP authorization (deny-by-default): supply mcp_role.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "rule_id": {"type": "integer"},
+                "mcp_role": {"type": "string", "description": "RBAC role for MCP authorization (deny-by-default)"},
             },
             "required": ["rule_id"],
         },

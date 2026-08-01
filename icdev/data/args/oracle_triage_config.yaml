@@ -12,7 +12,16 @@ orphan_min_refs: 1
 # ── Anomaly detection — confidence-weighted thresholds ───────────────────────
 # Oracle predictions arrive with a confidence score in [0, 1].
 # Low-confidence predictions are treated as potentially anomalous and require
-# stronger evidence before being promoted.
+# stronger evidence before being promoted. These are STATIC thresholds; a human
+# sets them deliberately.
+#
+# NOTE: awareness-lens confidence is a per-rule CONSTANT (gap::orphan_db_table is
+# always 0.85, etc.), not a per-prediction estimate. An earlier "adaptive" mode
+# recomputed these as mean ± 1 std over recent confidences and was removed: the
+# mean of a bag of per-rule constants is a popularity contest among unrelated
+# rules, not a distribution. A real per-rule evidence bar needs observed OUTCOME
+# accuracy (see tools/genesis/harness/calibration_report.py), not claimed
+# confidence.
 anomaly_detection:
   # Predictions with confidence < low_confidence_threshold are considered
   # anomalous: the orphan verifier applies a higher min_refs requirement
@@ -26,8 +35,3 @@ anomaly_detection:
   # Predictions with confidence >= high_confidence_threshold bypass the orphan
   # refs check and are promoted directly (Oracle is trusted at this level).
   high_confidence_threshold: 0.85
-
-  # Minimum number of historical confidence scores required to activate adaptive
-  # threshold computation (mean ± 1 std, clamped to static bounds above).
-  # Falls back to static thresholds when fewer samples are available.
-  min_history_for_adaptive: 10

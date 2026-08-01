@@ -1,0 +1,10 @@
+{
+  "id": "266",
+  "name": "proposal_key_personnel",
+  "description": "Bid-side person->LCAT registry with mandatory evidence (prem-pstaff-01)",
+  "created_at": "2026-07-13",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

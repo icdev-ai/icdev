@@ -99,7 +99,12 @@ def mem_db():
             created_at TEXT, updated_at TEXT
         );
     """)
-    return _NoCloseConn(conn)
+    # Wrap in StorageConnection so functions-under-test that author PG-native %s
+    # placeholders (network_intelligence uses the NC get_connection() helper) have
+    # them translated to ? for this SQLite backend — a raw sqlite3 conn rejects %s.
+    from tools.db.storage import StorageConnection
+
+    return _NoCloseConn(StorageConnection(conn, "sqlite"))
 
 
 @pytest.fixture

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -30,16 +31,18 @@ _EXPORT_DIR = _ROOT / ".tmp" / "rfi_exports"
 
 # ── Default sections when parser produces no questionnaire parts ──────────────
 
-_DEFAULT_SECTIONS = [
+_QUESTIONNAIRE_DEFAULT_SECTIONS = [
     ("part1", "1.1", "Entity Data",             "Part 1", "Provide company name, contact info, CAGE code, and SAM.gov UEI."),
     ("part1", "1.2", "Business Size",           "Part 1", "Identify business size and socioeconomic status for the primary NAICS code."),
     ("part1", "1.3", "NDC Status",              "Part 1", "Do you qualify as a Nontraditional Defense Contractor per 10 U.S.C. 3014?"),
     ("part1", "1.4", "Foreign Interest (FOCI)", "Part 1", "Is the entity or any parent company foreign-owned, controlled, or influenced?"),
     ("part1", "1.5", "Security Clearances",     "Part 1", "Do personnel hold active clearances? Specify clearance levels available."),
     ("part2", "2.1", "Current TRL",             "Part 2", "Identify the Technology Readiness Level of your proposed solution."),
-    ("part2", "2.2", "Statefulness & Cold-Start","Part 2", "Is the orchestration stateless or stateful? How is state synchronized? How does the orchestrator handle cold-start of new processing resources?"),
+    ("part2", "2.2", "Statefulness",            "Part 2", "Is the orchestration stateless or stateful? How is state synchronized across a distributed architecture without introducing latency?"),
+    ("part2", "2.3", "Cold-Start/Scaling",      "Part 2", "How does the orchestrator handle cold-start of new processing resources? Can it dynamically trigger spin-up of new containerized processing nodes?"),
     ("part2", "2.4", "Technical Approach",      "Part 2", "Describe your approach to meeting the objectives. What modifications would be required?"),
-    ("part2", "2.5", "Commerciality & Cybersecurity","Part 2", "Is the solution a Commercial Product per FAR 2.101? Describe cybersecurity posture and supply chain risk."),
+    ("part2", "2.5", "Commerciality",           "Part 2", "Is the solution a Commercial Product per FAR 2.101? If not, what percentage is developmental?"),
+    ("part2", "2.6", "Cybersecurity & Supply Chain", "Part 2", "Describe cybersecurity posture (NIST SP 800-171, CMMC level) and NDAA Section 889 supply chain risk."),
     ("part2", "2.7", "Mission-Specific Questions","Part 2", "Address latency at scale, multi-constraint logic, dynamic priority injection, failure recovery, and cost tracking."),
     ("part3", "3.1", "Timeline",                "Part 3", "Estimated time from award to delivery of first working prototype."),
     ("part3", "3.2", "Key Risk Areas",          "Part 3", "Identify the top two technical or schedule risks."),
@@ -48,9 +51,24 @@ _DEFAULT_SECTIONS = [
     ("part4", "4.2", "ROM Cost Estimate",       "Part 4", "Rough Order of Magnitude cost estimate. Break down by hardware, software, labor, ODC."),
     ("part4", "4.3", "Teaming / Cost Share",    "Part 4", "NDC teaming plan or 1/3 cost-share per 10 U.S.C. 4022."),
     ("part5", "5.1", "Industry Insights",       "Part 5", "What did the Government miss? What technical or programmatic considerations should be added?"),
+]
+
+# Part 6 — pre-submission questions TO the Government (RFI Q&A window).
+# Not part of the exported response document; exported separately for
+# ARC/email submission before the questions deadline.
+_PART6_SECTIONS = [
+    ("part6", "6.1", "Gap & Omission Questions",     "Part 6", "Questions surfacing what the RFI leaves out — intentionally or unintentionally (data characteristics, integration environment, accreditation path, GFE/GFI, evaluation criteria, follow-on vehicle)."),
+    ("part6", "6.2", "Intent & Goal Clarification",  "Part 6", "Questions that clarify the customer's underlying intention and mission goals, so we can determine whether and how our solution fits."),
+    ("part6", "6.3", "Strategic Leverage Questions", "Part 6", "Questions whose answers sharpen our capability roadmap and competitive positioning for the anticipated solicitation."),
+    ("part6", "6.4", "RFI Clarifications",           "Part 6", "Questions resolving ambiguities or conflicts within the RFI text itself (format, scope wording, classification handling, submission mechanics)."),
+]
+
+_APPENDIX_SECTIONS = [
     ("appendix", "A", "Architecture Overview",  "Appendix", "Technical architecture — Intelligence Layer, Execution Layer, and cloud-native deployment."),
     ("appendix", "B", "Adaptive Learning Loop", "Appendix", "Learning loop — ECHO, SOUL, TRUST, SELA components and feedback latency benchmarks."),
 ]
+
+_DEFAULT_SECTIONS = _QUESTIONNAIRE_DEFAULT_SECTIONS + _PART6_SECTIONS + _APPENDIX_SECTIONS
 
 # ── Section generation prompts ────────────────────────────────────────────────
 
@@ -61,9 +79,11 @@ _SECTION_PROMPTS = {
     "1.4": "Generate Part 1.4 FOCI disclosure for {entity_name}. Confirm no foreign ownership, control, or influence.",
     "1.5": "Generate Part 1.5 security clearances for {entity_name}. Clearances available: {clearances}. Include SCIF capability statement.",
     "2.1": "Generate Part 2.1 TRL assessment for {entity_name} addressing: {rfi_title}. Use Hybrid TRL 6: core components TRL 8 (commercially deployed), NSA integration layer TRL 5-6. Include a table mapping component to TRL with evidence.",
-    "2.2": "Generate Part 2.2/2.3 statefulness and cold-start response for {entity_name}. Explain stateful-light architecture: routing decisions are stateless per object; resource-availability sidecar maintains eventually-consistent view via gossip protocol (100ms intervals); policy store is GitOps hot-reload (atomic swap, zero restart). Cold-start: KEDA event-driven autoscaling + pre-warm pools + graceful degradation to best-effort with provenance flag. {hitl_context}",
+    "2.2": "Generate Part 2.2 statefulness response for {entity_name}. Explain stateful-light architecture: routing decisions are stateless per object; resource-availability sidecar maintains eventually-consistent view via gossip protocol (100ms intervals); policy store is GitOps hot-reload (atomic swap, zero restart); no synchronization latency on the per-object decision path. {hitl_context}",
+    "2.3": "Generate Part 2.3 cold-start and scaling response for {entity_name}. Cold-start: KEDA event-driven autoscaling triggered by orchestrator surge detection + pre-warm pools for premium tiers + graceful degradation to best-effort with provenance flag while new containerized processing nodes spin up. Include the surge-detection → spin-up → warm-ready flow. {hitl_context}",
     "2.4": "Generate Part 2.4 technical approach for {entity_name}'s response to RFI {rfi_number}. Describe the three-tier governed orchestration: Rule Engine (<100µs, 90% of volume) → CoD (<15ms, 8%) → CoT (<2s, 2%). Map to objectives: {objectives_list}. Include an architecture diagram as a Mermaid flowchart inside a ```mermaid fenced code block (graph TD or flowchart TD syntax) — do not use ASCII art. Emphasize intelligence layer (async, policy timescale) vs execution layer (per-object timescale). {hitl_context}",
-    "2.5": "Generate Part 2.5/2.6 commerciality and cybersecurity for {entity_name}. Confirm commercial product per FAR 2.101, ~70% commercial/30% developmental. Cybersecurity table: CMMC Level 2, NIST SP 800-171, CycloneDX SBOM, container hardening, NDAA §889 supply chain compliance. {hitl_context}",
+    "2.5": "Generate Part 2.5 commerciality response for {entity_name}. Confirm commercial product per FAR 2.101, ~70% commercial/30% developmental; identify which components are commercially deployed today versus developmental for this mission. {hitl_context}",
+    "2.6": "Generate Part 2.6 cybersecurity and supply chain response for {entity_name}. Cybersecurity table: CMMC Level 2, NIST SP 800-171, CycloneDX SBOM, container hardening, secure SDLC. State NDAA Section 889 supply chain compliance and any known supply chain risks (none if applicable). {hitl_context}",
     "2.7": "Generate Part 2.7 mission-specific Q&A for {entity_name}. Cover: (1) Latency benchmarks (Python prototype ~2ms, production C/Rust target <50µs, O(log N) scaling); (2) Multi-constraint logic (secondary pool → queue → CoD degradation → guaranteed retry); (3) Dynamic priority injection (REST API + YAML hot-reload, <1s propagation, atomic rule-tree swap); (4) Failure recovery (circuit breaker, dead-letter queue, W3C PROV-AGENT provenance); (5) Cost tracking (per-routing-decision cost ledger, cost_usd + duration_ms per step). {hitl_context}",
     "3.1": "Generate Part 3.1 project timeline for {entity_name}: M1-2 environment setup + test data integration; M3 core prototype (three-tier stack + HITL + XAI dashboard); M4 integration testing (latency benchmarks, priority injection, failure recovery); M5 adaptive learning (NOVA feedback loop + Bayesian tuning); M6 prototype demo. Present as a table. {hitl_context}",
     "3.2": "Generate Part 3.2 key risks for {entity_name}. Risk 1: Latency validation in customer environment (mitigation: sidecar co-located with processing resources, validate by Month 2). Risk 2: Mission metrics API dependency (mitigation: YAML static rules as fallback; live dynamic injection as Phase 2). {hitl_context}",
@@ -72,6 +92,10 @@ _SECTION_PROMPTS = {
     "4.2": "Generate Part 4.2 ROM cost estimate for {entity_name}. Table: Labor ~$1.2M (6 engineers x 6 months, blended $200K/yr), Software/Cloud ~$75K, Hardware (GPU dev cluster) ~$150K, ODC ~$50K, ROM Total ~$1.475M (±30%). Annual O&M: ~$400K/year. Annual licensing: ~$250K/year. {hitl_context}",
     "4.3": "Generate Part 4.3 teaming/cost share for {entity_name}. {ndc_status}. Option A — NDC Teaming (Preferred): identify NDC partner at solicitation stage, >1/3 technical effort on novel AI/ML core components. Option B — IR&D Cost Share: ~$490K against $1.475M ROM from existing IR&D commitments per 10 U.S.C. 4022. {hitl_context}",
     "5.1": "Generate Part 5 industry insights for {entity_name}'s response to {rfi_title}. Provide 4 recommendations the Government missed: (1) Data provenance/routing lineage — recommend adding as a required objective; (2) Federated learning for sensitive routing feedback — modify Objective F; (3) Multi-classification routing scope — clarify whether orchestrator must span ILs; (4) Human-machine teaming escalation — recommend adding analyst override objective. Each recommendation should include specific proposed solicitation language. {hitl_context}",
+    "6.1": "You are preparing pre-submission questions to the Contracting Officer for {rfi_title} ({rfi_number}), due before the Q&A deadline. Identify what the RFI leaves out — intentionally or unintentionally. Consider: unstated data characteristics (volume mix, formats, classification levels), the existing integration environment and its constraints, security accreditation path (ATO/cATO expectations), government-furnished equipment/information/APIs, how responses will be evaluated, and the anticipated follow-on acquisition vehicle. RFI objectives for context: {objectives_list}. Generate 4-6 numbered questions. For each: one sentence of context citing the specific RFI section it concerns, then a professionally worded question. All questions must be unclassified and safe for the Government's consolidated public Q&A publication. {hitl_context}",
+    "6.2": "You are preparing pre-submission questions to the Contracting Officer for {rfi_title} ({rfi_number}). Generate questions that clarify the customer's underlying intention and mission goals so {entity_name} can determine whether {solution_name} can solution the need — and shape the response if so. Probe: what mission outcomes define success for the orchestration layer; how 'premium' vs 'best-effort' processing is decided today and who owns that policy; the real latency/throughput envelope versus aspirational figures; whether the Government intends to own the routing policy or expects vendor-managed learning; and where the boundary sits between this orchestration layer and the future internally-engineered architecture. RFI objectives: {objectives_list}. Generate 4-6 numbered questions, each with one sentence of context then the question. Unclassified, suitable for public Q&A. {hitl_context}",
+    "6.3": "You are preparing pre-submission questions to the Contracting Officer for {rfi_title} ({rfi_number}). Generate strategic-leverage questions for {entity_name}: questions whose ANSWERS improve our capability roadmap and competitive positioning regardless of whether this RFI leads to award. Probe: the expected prototype-to-production transition path under 10 U.S.C. 4022 (OT follow-on production potential); the Government's appetite for modular/severable components versus an integrated platform; which capability gaps the Government weights highest among objectives ({objectives_list}); teaming expectations and NDC participation preferences; and timeline to any anticipated solicitation. Generate 4-6 numbered questions with one sentence of context each. Flag any question we should submit as PROPRIETARY (individual response) rather than public — the Government asks that proprietary questions be minimal. {hitl_context}",
+    "6.4": "You are preparing pre-submission questions to the Contracting Officer for {rfi_title} ({rfi_number}). Generate questions that resolve ambiguities or conflicts within the RFI text itself. Consider: page-limit mechanics (what counts against the limit, appendix rules, cover page exclusions), whether graphics/tables count toward font requirements, the openness to alternative NAICS codes, how classified integration details will be handled with qualified respondents, ROM cost format expectations given commercial pricing models, and file naming/portal submission mechanics. Reference the section under question: {question_text}. Generate 3-5 numbered questions, each with one sentence of context citing the RFI section, then the question. Unclassified, suitable for public Q&A. {hitl_context}",
     "A": "Generate Appendix A architecture overview for {entity_name}'s FORGE framework. Intelligence Layer (policy timescale): NOVA learning, XAI engine (AgentSHAP + W3C PROV-AGENT), HITL override API, RTM traceability. Execution Layer (object timescale): Rule Engine (<50µs compiled), CoD engine (ThreadPoolExecutor, 3 debaters, <15ms), CoT engine (reason→critic→synthesize, async audit, <2s). For the AWS GovCloud/C2S deployment diagram, output EXACTLY this format and nothing else for the diagram (fill in real node labels, keep the fence markers verbatim, do not draw any box-and-line/ASCII art):\n```mermaid\nflowchart TD\n    A[Node] --> B[Node]\n```\n{hitl_context}",
     "B": "Generate Appendix B adaptive learning loop for {entity_name}'s NOVA system. ECHO: ingests mission outcome signals tagged to routing decisions, append-only feedback store, no sensitive content stored. SOUL: Bayesian policy update, hourly cadence, outputs candidate artifact (not direct deployment). TRUST: confidence scoring, KL-divergence limit, auto-deploy above threshold, HITL gate below threshold. SELA: 1-2% traffic probe to non-standard tiers, results feed ECHO. Learning cycle: 6-12 hours standard, <5 minutes emergency. {hitl_context}",
 }
@@ -128,12 +152,19 @@ def _seed_sections(session_id, parsed_data):
             key = (p.get("part", ""), p.get("item_number", ""))
             if key in seen:
                 continue
+            # Only questionnaire parts — headings from other RFI sections
+            # (submission instructions, Q&A) must not become response sections.
+            if not re.match(r"^Part\s+\d+$", p.get("part", ""), re.IGNORECASE):
+                continue
             seen.add(key)
             part_key = p.get("part", "unknown").lower().replace(" ", "")
             item = p.get("item_number", "?")
             title = p.get("topic", f"Section {item}")
             question = p.get("question", "")
             rows.append((part_key, item, title, p.get("part", ""), question))
+        # Part 6 (questions to the Government) and the technical appendix are
+        # workbench-native parts, always present regardless of parse results.
+        rows += [(s[0], s[1], s[2], s[3], s[4]) for s in _PART6_SECTIONS + _APPENDIX_SECTIONS]
     else:
         rows = [(s[0], s[1], s[2], s[3], s[4]) for s in _DEFAULT_SECTIONS]
 
@@ -262,7 +293,65 @@ def apply_hitl(section_id, action, comment=""):
     _recalculate_session_progress(section_id)
     if action in ("approve", "accept"):
         threading.Thread(target=_ace_reviewer_pass_background, args=(section_id,), daemon=True).start()
-    return get_section(section_id)
+        # Approved prose becomes evidence for the next pursuit. Backgrounded because
+        # indexing embeds the content, and Accept must stay instant. promote_rfi_section
+        # is idempotent and never raises, so a failure here cannot lose the approval.
+        threading.Thread(target=_promote_evidence_background, args=(section_id,), daemon=True).start()
+    result = get_section(section_id)
+    if result and action in ("approve", "accept"):
+        from tools.govcon.rfi_grounding import find_placeholders
+        tokens = find_placeholders(result.get("content") or result.get("ai_draft") or "")
+        if tokens:
+            result["placeholder_warnings"] = tokens
+    return result
+
+
+def accept_all_drafted(session_id):
+    """Bulk-accept every drafted section (ai_draft_ready or hitl_approved)
+    as final. Pending sections (no draft yet) and explicitly rejected
+    sections are left untouched. Skips the per-section ACE reviewer pass —
+    bulk acceptance is a deliberate human shortcut, not a review trigger."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT id FROM rfi_workbench_sections WHERE session_id=%s AND status IN ('ai_draft_ready','hitl_approved')",
+        (session_id,),
+    ).fetchall()
+    ids = [list(r)[0] if not hasattr(r, "keys") else r["id"] for r in rows]
+    for sec_id in ids:
+        db.execute(
+            "UPDATE rfi_workbench_sections SET hitl_action='accept', status='accepted', updated_at=%s WHERE id=%s",
+            (_now(), sec_id),
+        )
+    db.commit()
+    if ids:
+        _recalculate_session_progress(ids[0])
+        # Bulk accept is the common path; without this the flywheel would only turn
+        # for sections approved one at a time. promote_rfi_section skips anything
+        # still holding [VERIFY], so a shortcut cannot smuggle unproven claims in.
+        for sec_id in ids:
+            threading.Thread(
+                target=_promote_evidence_background, args=(sec_id,), daemon=True
+            ).start()
+
+    # Non-blocking warnings: unresolved placeholders + hallucinated RFI
+    # citations in what was just accepted. The hard block is enforced at
+    # export (placeholder_guard / citation_guard); here we surface so a
+    # reviewer sees issues before they reach the export gate (trust-cite-03).
+    from tools.govcon.rfi_grounding import find_placeholders
+    session = get_session(session_id)
+    parsed = (session or {}).get("parsed_data") or {}
+    accepted = [s for s in get_sections(session_id) if s["id"] in set(ids)]
+    warnings = []
+    for sec in accepted:
+        tokens = find_placeholders(sec.get("content") or sec.get("ai_draft") or "")
+        if tokens:
+            warnings.append({"item_number": sec.get("item_number"), "placeholders": tokens})
+    citation_warnings = _reference_findings(accepted, parsed)
+    return {
+        "accepted": len(ids),
+        "placeholder_warnings": warnings,
+        "citation_warnings": citation_warnings,
+    }
 
 
 def _recalculate_session_progress(section_id):
@@ -368,24 +457,73 @@ def generate_section_content(section_id, profile_name, parsed_data):
             style_parts.append(compliance_notes[:300].strip())
         prompt += "\n\n[Style Requirements]\n" + "\n".join(style_parts)
 
+    # Inject the capture strategy so every part of the response argues one message
+    # rather than reading as six separately-authored documents. Returns "" for
+    # administrative sections (Part 1) and the ROM cost table (4.2), where
+    # positioning does not belong. Every section — including generate_all_sections —
+    # funnels through here, so this single insertion covers the whole response.
+    from tools.govcon.capture_strategy import build_strategy_block, resolve_strategy
+
+    strategy = resolve_strategy(session_id=section.get("session_id", ""))
+    strategy_block = build_strategy_block(strategy, item)
+    if strategy_block:
+        prompt += "\n\n" + strategy_block
+
+    # Ground the model in the RFI's real structure so it cannot invent
+    # section numbers ("Section IV.B") or unsourced claims.
+    from tools.govcon.rfi_grounding import (
+        build_ground_truth_block, substitute_profile_facts, validate_references,
+    )
+    ground_block = build_ground_truth_block(parsed_data)
+    if ground_block:
+        prompt += "\n\n" + ground_block
+
     session_id = section.get("session_id", "")
 
-    # Phase B: inject weighted source context (uploads, KG, RAG, engines)
+    # Phase B: inject weighted source context (uploads, KG, RAG, engines).
+    # sources_used is persisted (trust-cite-03) so the evidence behind a
+    # section is traceable in the export/Sources panel, not dropped here.
+    sources_used: list = []
     try:
         from tools.govcon.rfi_engine_runner import assemble_weighted_prompt_context
         topic = f"{section['title']} {section.get('question_text', '')[:200]}"
         engine_ctx = assemble_weighted_prompt_context(session_id, section_id, topic)
         if engine_ctx.get("context"):
             prompt += "\n\n[Source Context — weighted from enabled engines]\n" + engine_ctx["context"]
+            sources_used = list(engine_ctx.get("sources_used") or [])
             logger.debug(
                 "Engine context assembled: sources=%s chars=%d",
-                engine_ctx.get("sources_used"), engine_ctx.get("total_chars", 0),
+                sources_used, engine_ctx.get("total_chars", 0),
             )
     except Exception as exc:
         logger.warning("Engine context assembly failed (non-fatal): %s", exc)
 
     role_key = f"{session_id}:rfi_writer" if session_id else "rfi_writer"
-    draft = _call_llm(prompt, section["title"], item, role_key=role_key, llm_function="rfi_writer_drafting")
+    draft = _generate_draft(prompt, section, item, role_key)
+
+    # Deterministic anti-hallucination post-pass: substitute identity facts
+    # the LLM should never generate, then validate every RFI citation. One
+    # corrective retry with the specific errors as feedback.
+    draft, substitutions = substitute_profile_facts(draft, profile, parsed_data)
+    ref_check = validate_references(draft, parsed_data)
+    if not ref_check["valid"]:
+        errs = "; ".join(f"{r['ref']} ({r['reason']})" for r in ref_check["invalid_refs"][:8])
+        retry_prompt = (
+            prompt
+            + "\n\n[CITATION ERRORS IN PREVIOUS DRAFT — FIX THESE]\n"
+            + f"Your previous draft cited references that do not exist in the RFI: {errs}. "
+            + "Rewrite the section citing only the structure in [RFI GROUND TRUTH]."
+        )
+        retry = _call_llm(retry_prompt, section["title"], item, role_key=role_key, llm_function="rfi_writer_drafting")
+        retry, retry_subs = substitute_profile_facts(retry, profile, parsed_data)
+        retry_check = validate_references(retry, parsed_data)
+        if len(retry_check["invalid_refs"]) < len(ref_check["invalid_refs"]):
+            draft, ref_check = retry, retry_check
+            substitutions += retry_subs
+        logger.info(
+            "Citation retry for %s: %d invalid refs remain",
+            item, len(ref_check["invalid_refs"]),
+        )
 
     # Run deterministic markdown validator — attach as transient field
     try:
@@ -394,13 +532,37 @@ def generate_section_content(section_id, profile_name, parsed_data):
     except Exception as exc:
         logger.warning("Markdown validator failed: %s", exc)
         md_validation = {"valid": True, "issues": []}
+    md_validation["grounding"] = {
+        "substitutions": substitutions,
+        "invalid_references": ref_check["invalid_refs"],
+        "references_checked": ref_check["checked"],
+    }
+    # halluc-01: non-blocking confabulation assessment (fabricated citations,
+    # internal contradictions, hedging) surfaced to the reviewer/WriteGuard.
+    try:
+        from tools.security.confabulation_detector import assess as _confab_assess
+        md_validation["confabulation"] = _confab_assess(draft)
+    except Exception:
+        pass
 
     db = get_db()
-    db.execute(
-        "UPDATE rfi_workbench_sections SET ai_draft=%s, content=%s, status='ai_draft_ready', generation_count=generation_count+1, updated_at=%s WHERE id=%s",
-        (draft, draft, _now(), section_id),
-    )
-    db.commit()
+    # Persist sources_json alongside the draft. Falls back to the pre-249
+    # column set if migration 249 hasn't run yet (completeness gate #6).
+    try:
+        db.execute(
+            "UPDATE rfi_workbench_sections SET ai_draft=%s, content=%s, sources_json=%s, "
+            "status='ai_draft_ready', generation_count=generation_count+1, updated_at=%s WHERE id=%s",
+            (draft, draft, json.dumps(sources_used), _now(), section_id),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        db.execute(
+            "UPDATE rfi_workbench_sections SET ai_draft=%s, content=%s, "
+            "status='ai_draft_ready', generation_count=generation_count+1, updated_at=%s WHERE id=%s",
+            (draft, draft, _now(), section_id),
+        )
+        db.commit()
 
     # Kick off coverage check in background
     threading.Thread(target=_check_coverage_background, args=(section_id,), daemon=True).start()
@@ -466,34 +628,78 @@ def _get_router():
     return _ROUTER
 
 
+# Judgment-heavy sections where multi-perspective debate materially improves
+# quality: technical approach, mission Q&A, industry insights, questions to Gov.
+_COD_ITEMS = {"2.4", "2.7", "5.1", "6.1", "6.2", "6.3", "6.4"}
+
+
+def _cod_enabled() -> bool:
+    return os.environ.get("ICDEV_RFI_COD_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+
+
+def _generate_draft(prompt, section, item_number, role_key):
+    """Route generation: Chain of Debate for judgment sections (debaters +
+    judge synthesis reduces single-model confabulation), single-shot for
+    factual/boilerplate sections. Any CoD failure falls back to single-shot."""
+    if item_number in _COD_ITEMS and _cod_enabled() and role_key not in _role_blocked:
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+            from tools.llm.router import LLMRequest
+            orch = ChainOrchestrator(router=_get_router())
+            req = LLMRequest(
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"You are an expert GovCon proposal writer for a defense/IC contractor. "
+                        f"Write the '{section['title']}' (Item {item_number}) section of an RFI response. "
+                        f"Be specific, professional, and avoid vague claims. UNCLASSIFIED content only. "
+                        f"Format as clean markdown. Keep to ≤400 words unless the section requires detail.\n\n"
+                        f"{prompt}"
+                    ),
+                }],
+                max_tokens=900,
+            )
+            result = orch.invoke_chain_of_debate("rfi_writer_drafting", req)
+            if result and getattr(result, "content", "").strip():
+                _track_llm_success(role_key)
+                logger.info("CoD draft for %s via %s", item_number, ",".join(result.models_used or []))
+                return result.content
+        except Exception as exc:
+            logger.warning("CoD generation failed for %s (%s) — falling back to single-shot", item_number, exc)
+    return _call_llm(prompt, section["title"], item_number, role_key=role_key, llm_function="rfi_writer_drafting")
+
+
 def _call_llm(prompt, section_title, item_number, role_key: str = "rfi_writer", llm_function: str = "rfi_writer_drafting"):
     if role_key in _role_blocked:
         logger.warning("Skipping LLM call — role '%s' is auto-blocked", role_key)
         return _template_fallback(section_title, item_number, prompt)
     try:
-        from tools.llm.router import LLMRequest
-        router = _get_router()
-        req = LLMRequest(
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"You are an expert GovCon proposal writer for a defense/IC contractor. "
-                    f"Write the '{section_title}' (Item {item_number}) section of an RFI response. "
-                    f"Be specific, professional, and avoid vague claims. Use concrete numbers and built capabilities. "
-                    f"Format as clean markdown with bold headers and tables where appropriate. "
-                    f"UNCLASSIFIED content only. Keep to ≤400 words unless the section requires detail.\n\n"
-                    f"{prompt}"
-                ),
-            }],
+        from tools.cortex import api as cortex_api
+        from tools.cortex.schemas import CortexContext
+
+        content = (
+            f"You are an expert GovCon proposal writer for a defense/IC contractor. "
+            f"Write the '{section_title}' (Item {item_number}) section of an RFI response. "
+            f"Be specific, professional, and avoid vague claims. Use concrete numbers and built capabilities. "
+            f"Format as clean markdown with bold headers and tables where appropriate. "
+            f"UNCLASSIFIED content only. Keep to ≤400 words unless the section requires detail.\n\n"
+            f"{prompt}"
+        )
+        # Adoption wave 2: route RFI drafting through the GOVERNED cortex.complete.
+        # RFI responses are CUI compliance artifacts — this adds egress redaction,
+        # provenance, an append-only audit row, and per-tenant budget attribution
+        # the raw router.invoke never applied. The llm_function routing is preserved,
+        # and a governance block / any failure degrades to _template_fallback.
+        cx = cortex_api.complete(
+            content,
+            function=llm_function,
+            ctx=CortexContext(
+                classification="CUI", domain="proposal", agent_id=f"rfi:{role_key}"
+            ),
             max_tokens=900,
         )
-        response = router.invoke(llm_function, req)
         _track_llm_success(role_key)
-        if hasattr(response, "content"):
-            return response.content
-        if isinstance(response, dict):
-            return response.get("content", response.get("text", str(response)))
-        return str(response)
+        return cx.text or _template_fallback(section_title, item_number, prompt)
     except Exception as exc:
         _track_llm_failure(role_key)
         logger.warning("LLM generation failed for section %s: %s — using fallback", item_number, exc)
@@ -669,7 +875,89 @@ def override_aggregation_guard(session_id: str, comment: str = "", resolved_by: 
 
 # ── Export ────────────────────────────────────────────────────────────────────
 
-def assemble_and_export(session_id, export_format="docx"):
+class PlaceholderGateBlocked(Exception):
+    """Raised when unresolved [PLACEHOLDER] tokens remain in content that is
+    about to leave the workbench. findings: [{item_number, placeholders[]}]"""
+
+    def __init__(self, findings):
+        self.findings = findings
+        super().__init__(f"Unresolved placeholders in {len(findings)} section(s)")
+
+
+class ReferenceGateBlocked(Exception):
+    """Raised when a section cites an RFI reference (Section/Part/Item/Objective)
+    that does not exist in the parsed RFI structure — a hallucinated citation
+    (trust-cite-03). findings: [{item_number, invalid_refs:[{ref,reason}]}]"""
+
+    def __init__(self, findings):
+        self.findings = findings
+        super().__init__(f"Invalid citations in {len(findings)} section(s)")
+
+
+def _section_source_labels(sec: dict) -> list[str]:
+    """Human-readable source keys persisted for a section (trust-cite-03).
+
+    Reads sources_json (list of engine source keys). Returns [] when the
+    column is absent/empty so pre-249 sessions render unchanged.
+    """
+    raw = sec.get("sources_json")
+    if not raw:
+        return []
+    try:
+        vals = raw if isinstance(raw, list) else json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    return [str(v) for v in vals if v]
+
+
+def _reference_findings(sections, parsed):
+    """Per-section invalid-citation findings via rfi_grounding.validate_references.
+
+    Empty list == every citation resolves to real RFI structure. Sections with
+    no content and abstained/pending sections contribute nothing.
+    """
+    from tools.govcon.rfi_grounding import validate_references
+    findings = []
+    for sec in sections:
+        content = sec.get("content") or sec.get("ai_draft") or ""
+        if not content:
+            continue
+        check = validate_references(content, parsed or {})
+        if not check.get("valid", True) and check.get("invalid_refs"):
+            findings.append({
+                "item_number": sec.get("item_number"),
+                "invalid_refs": check["invalid_refs"],
+            })
+    return findings
+
+
+def _check_reference_gate(sections, parsed, force=False):
+    """Block export while any section cites a non-existent RFI reference
+    (gate=citation_guard). force=True bypasses after human review."""
+    if force:
+        return
+    findings = _reference_findings(sections, parsed)
+    if findings:
+        raise ReferenceGateBlocked(findings)
+
+
+def _check_placeholder_gate(sections, force=False):
+    """Block export while [BRACKETED] tokens (incl. [VERIFY]) remain in any
+    section that will be exported. force=True bypasses after human review."""
+    if force:
+        return
+    from tools.govcon.rfi_grounding import find_placeholders
+    findings = []
+    for sec in sections:
+        content = sec.get("content") or sec.get("ai_draft") or ""
+        tokens = find_placeholders(content)
+        if tokens:
+            findings.append({"item_number": sec.get("item_number"), "placeholders": tokens})
+    if findings:
+        raise PlaceholderGateBlocked(findings)
+
+
+def assemble_and_export(session_id, export_format="docx", force_placeholders=False, force_references=False):
     session = get_session(session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
@@ -677,6 +965,10 @@ def assemble_and_export(session_id, export_format="docx"):
     check_aggregation_guard(session_id)
 
     sections = get_sections(session_id)
+    _exportable = [s for s in sections if s.get("part") != "part6"]
+    _check_placeholder_gate(_exportable, force=force_placeholders)
+    # trust-cite-03: hallucinated RFI citations block export (was advisory).
+    _check_reference_gate(_exportable, session.get("parsed_data") or {}, force=force_references)
     profile = _load_profile(session.get("profile_name", "own_company"))
     parsed = session.get("parsed_data") or {}
 
@@ -716,7 +1008,54 @@ def assemble_and_export(session_id, export_format="docx"):
     return str(_EXPORT_DIR / f"{base_name}.docx")
 
 
+def export_questions(session_id, force_placeholders=False):
+    """Export Part 6 (questions to the Government) as a standalone markdown
+    file formatted for ARC/email submission during the RFI Q&A window."""
+    session = get_session(session_id)
+    if not session:
+        raise ValueError(f"Session {session_id} not found")
+
+    sections = [s for s in get_sections(session_id) if s.get("part") == "part6"]
+    if not sections:
+        raise ValueError("No Part 6 (Questions for the Government) sections in this session")
+    _check_placeholder_gate(sections, force=force_placeholders)
+
+    profile = _load_profile(session.get("profile_name", "own_company"))
+    parsed = session.get("parsed_data") or {}
+    submission = parsed.get("submission_requirements") or {}
+    entity = profile.get("entity_name", "Organization")
+    rfi_num = session.get("rfi_number", "RFI-UNKNOWN")
+    rfi_title = session.get("rfi_title", "")
+
+    lines = [
+        f"# Questions — {rfi_title} ({rfi_num})",
+        "",
+        f"**From:** {entity}",
+        f"**To:** {parsed.get('poc_name', '')} <{parsed.get('poc_email', '')}>".strip(),
+        f"**Subject:** RFI Question – {rfi_title} – {entity}",
+    ]
+    q_due = submission.get("questions_due_date") or parsed.get("questions_due_date")
+    if q_due:
+        lines.append(f"**Questions due:** {q_due}")
+    lines += ["", "---", ""]
+    for sec in sections:
+        content = sec.get("content") or sec.get("ai_draft")
+        if not content:
+            continue
+        lines += [f"## {sec['item_number']} {sec['title']}", "", content, ""]
+
+    _EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    entity_slug = entity.replace(" ", "_").replace(".", "")
+    path = _EXPORT_DIR / f"{entity_slug}_{rfi_num.replace('/', '-')}_Questions.md"
+    path.write_text("\n".join(lines), encoding="utf-8")
+    _record_export(session_id, "questions", str(path))
+    return str(path)
+
+
 def _build_markdown(session, sections, profile, parsed):
+    # Part 6 (questions to the Government) is submitted separately during the
+    # Q&A window — never part of the exported response document.
+    sections = [s for s in sections if s.get("part") != "part6"]
     entity = profile.get("entity_name", "Organization")
     rfi_num = session.get("rfi_number", "RFI-UNKNOWN")
     rfi_title = session.get("rfi_title", "AI/ML Orchestration")
@@ -747,6 +1086,12 @@ def _build_markdown(session, sections, profile, parsed):
         lines.append("")
         lines.append(content)
         lines.append("")
+        # trust-cite-03: surface the evidence this section was drafted from so
+        # claims are traceable to their source instead of being dropped.
+        src_labels = _section_source_labels(sec)
+        if src_labels:
+            lines.append(f"*Sources: {', '.join(src_labels)}*")
+            lines.append("")
 
     lines += ["", "---", "", "> UNCLASSIFIED//FOUO", ""]
     annex = build_compliance_annex(sections)
@@ -809,11 +1154,29 @@ def build_compliance_annex(sections: list) -> dict:
 
     overall_cov = round((covered_total + partial_total * 0.5) / total_reqs * 100) if total_reqs else 0
     overall_wg = round(sum(wg_scores) / len(wg_scores), 1) if wg_scores else None
+
+    # Capability-gap demand signals raised by THIS session's requirements
+    # (tools/govcon/rfi_demand.py). Best-effort; JSON refs filtered in Python (no
+    # json_extract at runtime). Absent table / disabled feature -> empty list.
+    demand_signals = []
+    try:
+        session_id = next((s.get("session_id") for s in sections if s.get("session_id")), None)
+        if session_id:
+            from tools.govcon.rfi_demand import list_demand_signals
+
+            demand_signals = [
+                s for s in list_demand_signals(limit=200)
+                if any(str(ref).startswith(str(session_id)) for ref in (s.get("rfi_refs") or []))
+            ]
+    except Exception:
+        pass
+
     return {
         "coverage": coverage_rows,
         "quality": quality_rows,
         "overall_coverage_pct": overall_cov,
         "overall_wg_score": overall_wg,
+        "demand_signals": demand_signals,
     }
 
 
@@ -847,6 +1210,26 @@ def _build_compliance_annex_md(annex: dict) -> str:
         passed = "✓" if r["passed"] else "✗" if r["wg_score"] is not None else "—"
         lines.append(f"| {r['title']} | {wg} | {style} | {passed} |")
     lines.append("")
+
+    # Capability-gap demand signals (unmet requirements captured for the roadmap).
+    demand = annex.get("demand_signals") or []
+    if demand:
+        lines += ["### Capability Gaps → Demand Signals", ""]
+        lines.append(
+            "Requirements this RFI surfaced that ICDEV cannot yet fully satisfy. "
+            "Each has been logged as a demand signal and queued as SUGGESTED build "
+            "task(s) to close the gap for future opportunities."
+        )
+        lines.append("")
+        lines.append("| Capability Need | Domain | Priority | High Demand |")
+        lines.append("|-----------------|--------|----------|-------------|")
+        for s in demand:
+            need = (s.get("capability_need") or "")[:80].replace("|", "/")
+            prio = s.get("priority")
+            prio_s = f"{prio:.2f}" if isinstance(prio, (int, float)) else "—"
+            high = "▲" if s.get("is_high_demand") else ""
+            lines.append(f"| {need} | {s.get('domain', '')} | {prio_s} | {high} |")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -874,7 +1257,7 @@ def list_profiles():
             data = yaml.safe_load(f)
         return list(data.get("profiles", {}).keys())
     except Exception:
-        return ["own_company", "peraton"]
+        return ["own_company"]
 
 
 # ── Requirements layer ────────────────────────────────────────────────────────
@@ -1108,6 +1491,16 @@ def _check_coverage_background(section_id: str):
         check_requirement_coverage(section_id)
     except Exception as exc:
         logger.warning("Background coverage check failed for section %s: %s", section_id, exc)
+    # Capability-gap demand loop: once coverage is judged, surface any requirement that
+    # is BOTH a capability-catalog miss (grade N) AND uncovered/partial as a demand
+    # signal -> SUGGESTED kanban card. Guarded + fail-soft so it never breaks drafting.
+    try:
+        from tools.govcon import rfi_demand
+
+        if rfi_demand.is_enabled():
+            rfi_demand.process_section(section_id)
+    except Exception as exc:
+        logger.warning("RFI demand-gap detection failed for section %s: %s", section_id, exc)
 
 
 # ── ACE Editor one-pass review (item 8) ──────────────────────────────────────
@@ -1239,16 +1632,45 @@ def run_ace_reviewer_pass(section_id: str) -> dict:
     reqs = get_requirements(section_id)
     req_list = "\n".join(f"  [{r['id'][:8]}] {r['text']}" for r in reqs) if reqs else "None extracted."
 
+    # Deterministic grounding evidence for the evaluator: the RFI's real
+    # structure plus any invalid citations / unresolved placeholders found
+    # by the regex validators (ground truth the LLM judge can't invent).
+    grounding_note = ""
+    parsed_data = {}
+    try:
+        from tools.govcon.rfi_grounding import (
+            build_ground_truth_block, find_placeholders, validate_references,
+        )
+        sess = get_session(section.get("session_id", ""))
+        parsed_data = (sess or {}).get("parsed_data") or {}
+        ref_check = validate_references(content, parsed_data)
+        tokens = find_placeholders(content)
+        findings = []
+        if ref_check["invalid_refs"]:
+            findings.append("Invalid citations detected: " + "; ".join(
+                f"{r['ref']} ({r['reason']})" for r in ref_check["invalid_refs"][:6]))
+        if tokens:
+            findings.append("Unresolved placeholders: " + ", ".join(tokens[:10]))
+        gt = build_ground_truth_block(parsed_data)
+        grounding_note = (
+            ("\nDeterministic validator findings (treat as fact):\n" + "\n".join(findings) + "\n" if findings else "")
+            + (f"\n{gt}\n" if gt else "")
+        )
+    except Exception as exc:
+        logger.debug("Grounding context for reviewer unavailable: %s", exc)
+
     prompt = (
         f"You are a Government contracting officer evaluating an RFI response section.\n"
         f"Section: {section.get('item_number')} — {section.get('title')}\n\n"
-        f"Content:\n{content[:2000]}\n\n"
+        f"Content:\n{content[:2000]}\n"
+        f"{grounding_note}\n"
         f"Requirements this section must address:\n{req_list}\n\n"
         f"Evaluate from the Government's perspective:\n"
         f"1. Does it directly answer what was asked, or does it sell instead of answer?\n"
         f"2. Are technical claims specific and verifiable, or vague and aspirational?\n"
-        f"3. Are there any red flags (unsupported assertions, missing data, compliance gaps)?\n"
-        f"4. How would you score this section 1-5 for technical merit?\n\n"
+        f"3. Does every RFI reference (section/item/objective) actually exist per the ground truth above?\n"
+        f"4. Are there any red flags (unsupported assertions, missing data, compliance gaps)?\n"
+        f"5. How would you score this section 1-5 for technical merit?\n\n"
         f"Return ONLY a JSON object:\n"
         f'{{"issues": [{{"type": "evaluator_concern", "message": "...", "suggestion": "..."}}], '
         f'"evaluator_score": 3, "overall": "pass", '
@@ -1280,6 +1702,37 @@ def run_ace_reviewer_pass(section_id: str) -> dict:
 
         feedback["source"] = "reviewer"
         feedback["reviewed_at"] = _now()
+
+        # Deterministic validator findings become first-class evaluator
+        # issues — regex facts, not LLM opinions.
+        try:
+            from tools.govcon.rfi_grounding import find_placeholders, validate_references
+            det_refs = validate_references(content, parsed_data)
+            for r in det_refs["invalid_refs"]:
+                feedback.setdefault("issues", []).append({
+                    "type": "invalid_citation",
+                    "message": f"{r['ref']}: {r['reason']}",
+                    "suggestion": "Cite only sections/items/objectives that exist in the RFI.",
+                })
+            for tok in find_placeholders(content):
+                feedback.setdefault("issues", []).append({
+                    "type": "unresolved_placeholder",
+                    "message": f"Placeholder {tok} remains in the content",
+                    "suggestion": "Replace with the real value from the company profile.",
+                })
+            if det_refs["invalid_refs"] and feedback.get("overall") == "pass":
+                feedback["overall"] = "warn"
+        except Exception as exc:
+            logger.debug("Deterministic reviewer findings failed: %s", exc)
+
+        # Optional confabulation heuristics (Phase 48 detector) — advisory.
+        try:
+            from tools.security.confabulation_detector import check_output
+            confab = check_output(section.get("session_id", "rfi"), content)
+            if isinstance(confab, dict) and not confab.get("error"):
+                feedback["confabulation"] = confab
+        except Exception as exc:
+            logger.debug("Confabulation check unavailable: %s", exc)
 
         # Optional, off-by-default: an independent Council pressure-test via
         # idea_lab's Specialist (tools/govcon/specialist_consult.py), additive
@@ -1334,6 +1787,37 @@ def _ace_reviewer_pass_background(section_id: str) -> None:
         logger.warning("ACE Reviewer background error for %s: %s", section_id, exc)
 
 
+def _promote_evidence_background(section_id: str) -> None:
+    """Index an approved section into the evidence corpus. Never raises."""
+    try:
+        from tools.govcon.evidence_corpus import promote_rfi_section
+
+        result = promote_rfi_section(section_id)
+        logger.info(
+            "Evidence promotion for section %s: %s (%s)",
+            section_id, result["status"], result.get("reason") or f"{result['chunks']} chunks",
+        )
+    except Exception as exc:
+        logger.warning("Evidence promotion background error for %s: %s", section_id, exc)
+
+
+def get_section_evidence_status(section_id: str) -> dict:
+    """Whether this section is indexed as reusable evidence — drives the 'Reusable' chip."""
+    try:
+        from tools.db.storage import get_connection
+        from tools.govcon.evidence_corpus import RFI_SOURCE_TYPE
+
+        row = get_connection().execute(
+            "SELECT COUNT(*) AS cnt FROM rag_chunks WHERE source_type = %s AND source_id = %s",
+            (RFI_SOURCE_TYPE, section_id),
+        ).fetchone()
+        chunks = int(dict(row)["cnt"]) if row else 0
+        return {"indexed": chunks > 0, "chunks": chunks}
+    except Exception as exc:
+        logger.warning("Could not read evidence status for %s: %s", section_id, exc)
+        return {"indexed": False, "chunks": 0}
+
+
 # ── Cross-section consistency check (item 3) ─────────────────────────────────
 
 def check_cross_section_consistency(session_id: str, skip_llm: bool = False) -> dict:
@@ -1381,6 +1865,13 @@ def check_cross_section_consistency(session_id: str, skip_llm: bool = False) -> 
             "message": f"[VERIFY] placeholders remain in accepted sections: {', '.join(verify_secs)}",
             "severity": "error",
         })
+
+    # 2b. Numeric claim conflicts (ROM totals, prototype timeline months)
+    try:
+        from tools.govcon.rfi_grounding import check_numeric_claims
+        conflicts.extend(check_numeric_claims(accepted))
+    except Exception as exc:
+        logger.debug("Numeric claim check failed: %s", exc)
 
     # 3. LLM semantic pass (cap at 12 sections to stay within token budget)
     router = _get_router()

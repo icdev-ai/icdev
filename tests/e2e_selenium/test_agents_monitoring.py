@@ -8,7 +8,7 @@ Ported from .claude/commands/e2e/agents_monitoring.md,
 tests/e2e/agents_page.spec.ts, and tests/e2e/monitoring_page.spec.ts.
 
 Prerequisites:
-  - Flask dashboard running on http://localhost:5000
+  - Flask dashboard running on http://localhost:5050
   - Database initialised with agent registry data
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from tools.browser.driver_manager import get_driver  # noqa: E402
 from tests.e2e_selenium.pages.base import BasePage  # noqa: E402
 
-BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000")
+BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050")
 CUI_BANNER = "CUI // SP-CTI"
 
 CORE_AGENTS = [

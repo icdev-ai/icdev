@@ -20,10 +20,19 @@ def client(tmp_path):
     except ImportError as exc:
         pytest.skip(f"wf blueprint not importable: {exc}")
 
-    from flask import Flask
+    from flask import Flask, g, request
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.config["SECRET_KEY"] = "test-secret"
+
+    @app.before_request
+    def _fake_auth():
+        # Simulate the dashboard auth middleware: an X-Test-Role header stands in
+        # for a logged-in user so @require_role on the instance-mutation routes
+        # sees g.current_user. Absent header == anonymous (g.current_user unset).
+        role = request.headers.get("X-Test-Role")
+        if role:
+            g.current_user = {"id": "u-test", "role": role, "tenant_id": "t-test"}
 
     bp = create_wf_blueprint()
     app.register_blueprint(bp, url_prefix="/api/v1/wf")
@@ -169,7 +178,7 @@ class TestInstanceRoutes:
                 "/api/v1/wf/instances/wfi-001/approve",
                 json={"decision": "approve", "rating": 5, "submitted_by": "user-1"},
                 content_type="application/json",
-                **_AUTH,
+                headers={"X-Dev-User": "test-user", "X-Test-Role": "pm"},
             )
             assert resp.status_code in (200, 201, 400, 404)
 
@@ -181,7 +190,7 @@ class TestInstanceRoutes:
                 "/api/v1/wf/instances/wfi-001/kickback",
                 json={"kickback_reason": "Incomplete spec", "submitted_by": "user-1"},
                 content_type="application/json",
-                **_AUTH,
+                headers={"X-Dev-User": "test-user", "X-Test-Role": "pm"},
             )
             assert resp.status_code in (200, 201, 400, 404)
 

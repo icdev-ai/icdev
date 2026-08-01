@@ -28,10 +28,14 @@ import argparse
 import json
 import os
 import sys
+import threading
 import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.response_drafter")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -54,17 +58,82 @@ def _now():
 def _audit(conn, action, details="", actor="response_drafter"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.response_draft", actor, action, details, "govcon"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.response_draft", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _compute_quality_score(confidence_score: float, best_coverage: float) -> float:
     """Composite quality score: 60% confidence + 40% capability coverage."""
     return float(round(confidence_score * 0.6 + best_coverage * 0.4, 4))
+
+
+def unresolved_placeholders(draft_row):
+    """Unresolved [PLACEHOLDER] tokens for a proposal_section_drafts row.
+
+    Re-scans draft_content (source of truth — covers drafts stored before
+    metadata.placeholder_tokens existed); falls back to the tokens recorded
+    by draft_response() if the scanner is unavailable.
+    """
+    d = dict(draft_row)
+    try:
+        from tools.quality.content_grounding import find_placeholders
+        return find_placeholders(d.get("draft_content") or "")
+    except Exception:
+        try:
+            meta = json.loads(d.get("metadata") or "{}")
+            return list(meta.get("placeholder_tokens") or [])
+        except (ValueError, TypeError):
+            return []
+
+
+def citation_findings(draft_row):
+    """Citation defects for a proposal_section_drafts row (trust-cite-02).
+
+    Returns citation_gate findings — one per issue — for the draft's content
+    validated against the knowledge blocks it was built from. Citations are
+    REQUIRED only when the draft was LLM-generated from at least one knowledge
+    block (a template/air-gap draft with no KB has no per-claim sourcing to
+    enforce); a citation to an id outside the block set is ALWAYS flagged as a
+    hallucinated citation. Empty list == gate passes.
+    """
+    d = dict(draft_row)
+    try:
+        from tools.quality.citation_grounding import citation_gate
+    except Exception:
+        return []
+    try:
+        kb_ids = json.loads(d.get("knowledge_block_ids") or "[]")
+    except (ValueError, TypeError):
+        kb_ids = []
+    allowed = [str(k) for k in kb_ids if k]
+    method = d.get("draft_method") or ""
+    require = bool(allowed) and method != "template"
+    section = {
+        "item_number": d.get("shall_statement_id") or d.get("id") or "?",
+        "content": d.get("draft_content") or "",
+        "allowed_sources": allowed,
+    }
+    return citation_gate([section], require_citations=require)
+
+
+def _redaction_fail_closed() -> bool:
+    """True when args/redaction_config.yaml sets fail_closed (trust-mask-01).
+
+    Defaults to False (fail-open) — including when the config can't be read —
+    so behavior is unchanged unless an operator explicitly opts in.
+    """
+    try:
+        import yaml
+
+        cfg_path = _ROOT / "args" / "redaction_config.yaml"
+        with open(cfg_path, encoding="utf-8") as f:
+            return bool((yaml.safe_load(f) or {}).get("fail_closed", False))
+    except Exception:
+        return False
 
 
 def _load_config():
@@ -77,10 +146,109 @@ def _load_config():
         return {}
 
 
+# ── Solicitation grounding (ground-prop-02) ───────────────────────────────────
+
+# parse_solicitation() re-reads the PDF/DOCX; cache per document path so a
+# --draft-all run parses each solicitation once.
+_PARSED_SOLICITATION_CACHE: dict = {}
+
+
+def _load_parsed_solicitation(conn, shall_row):
+    """Resolve and parse the solicitation document behind a shall statement.
+
+    Follows proposal_opportunity_id (or the SAM.gov link) to
+    proposal_opportunities.rfp_document_path and runs solicitation_parser on
+    it. Returns the parsed dict, or None when no document is on file or
+    parsing fails — drafting proceeds ungrounded (air-gap safe).
+    """
+    s = dict(shall_row)
+    prop_opp_id = s.get("proposal_opportunity_id")
+    sam_opp_id = s.get("sam_opportunity_id")
+    try:
+        row = None
+        if prop_opp_id:
+            row = conn.execute(
+                "SELECT rfp_document_path FROM proposal_opportunities WHERE id = %s",
+                (prop_opp_id,),
+            ).fetchone()
+        if not row and sam_opp_id:
+            row = conn.execute(
+                "SELECT rfp_document_path FROM proposal_opportunities "
+                "WHERE sam_gov_opportunity_id = %s OR id = "
+                "(SELECT proposal_opportunity_id FROM sam_gov_opportunities WHERE id = %s)",
+                (sam_opp_id, sam_opp_id),
+            ).fetchone()
+        doc_path = dict(row).get("rfp_document_path") if row else None
+        if not doc_path or not Path(doc_path).exists():
+            return None
+        if doc_path in _PARSED_SOLICITATION_CACHE:
+            return _PARSED_SOLICITATION_CACHE[doc_path]
+        from tools.govcon.solicitation_parser import parse_solicitation
+
+        parsed = parse_solicitation(doc_path)
+        _PARSED_SOLICITATION_CACHE[doc_path] = parsed
+        return parsed
+    except Exception as exc:
+        print(f"Warning: solicitation grounding unavailable: {exc}", file=sys.stderr)
+        return None
+
+
 # ── LLM drafting ──────────────────────────────────────────────────────
 
 
-def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
+def _build_draft_prompt(
+    shall_text,
+    cap_descriptions,
+    kb_content,
+    domain,
+    product_context,
+    ground_truth_block="",
+    strategy_block="",
+):
+    """Assemble the qwen3 worker prompt.
+
+    When a parsed-solicitation ground-truth block is available it is injected
+    as a hard citation constraint (ground-prop-02): the model sees the real
+    section/factor/CLIN structure instead of inventing one.
+
+    The capture-strategy block carries the company win themes so every drafted
+    section argues one message instead of being written in isolation.
+    """
+    grounding_section = f"{ground_truth_block}\n\n" if ground_truth_block else ""
+    strategy_section = f"{strategy_block}\n\n" if strategy_block else ""
+    grounding_rule = (
+        "- Cite ONLY the sections, instructions, volumes, factors, and CLINs "
+        "listed in the SOLICITATION GROUND TRUTH block\n"
+        if ground_truth_block
+        else ""
+    )
+    return (
+        f"{grounding_section}"
+        f"{strategy_section}"
+        f"Draft a concise proposal response (~400 words) to this requirement:\n\n"
+        f"REQUIREMENT: {shall_text}\n\n"
+        f"DOMAIN: {domain}\n"
+        f"{product_context}\n"
+        f"OUR CAPABILITIES:\n{cap_descriptions}\n\n"
+        f"SUPPORTING EVIDENCE:\n{kb_content}\n\n"
+        f"INSTRUCTIONS:\n"
+        f"{grounding_rule}"
+        f"- Write in third person ('The Contractor shall...' or 'Our approach...')\n"
+        f"- Reference specific tools and frameworks by name\n"
+        f"- Include NIST 800-53 control references where applicable\n"
+        f"- Be specific about HOW we implement, not just WHAT\n"
+        f"- Include measurable outcomes or metrics where possible\n"
+        f"- Mention automation and repeatability\n"
+        f"- Keep to ~400 words, use bullet points for clarity\n"
+        f"- For every factual claim, cite the supporting evidence inline using "
+        f"[source: <id>] with an id shown in SUPPORTING EVIDENCE above. Do NOT "
+        f"cite an id that is not listed, and omit a claim rather than invent one.\n"
+    )
+
+
+def _try_llm_draft(
+    shall_text, capabilities, knowledge_blocks, domain, parsed_solicitation=None, opportunity_id=""
+):
     """Attempt two-tier LLM draft via tools.llm.router.
 
     Returns (draft_text, method) or (None, None) if unavailable.
@@ -90,16 +258,32 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
     Sanitizer runs as defense-in-depth even for local routing.
     """
     try:
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-
-        router = LLMRouter()
+        # Cortex adoption: proposal drafting routes through the GOVERNED
+        # cortex.complete facade (see the LLM call below), matching the sibling
+        # RFI workbench — provenance + audit + egress redaction + budget
+        # attribution + the proposal domain lens instead of a raw router.invoke.
+        from tools.cortex import api as cortex_api
+        from tools.cortex.schemas import CortexContext
 
         # Build prompt for qwen3 worker
         cap_descriptions = "\n".join(f"- {c['capability_name']}: {c.get('evidence', '')}" for c in capabilities[:3])
+        # Label each knowledge block with its id so the model can cite it inline
+        # via [source: <id>]. The same ids are persisted as knowledge_block_ids,
+        # so the citation gate can validate the draft against them (trust-cite-02).
         kb_content = "\n".join(
-            f"- {kb.get('title', '')}: {(kb.get('content', '') or '')[:200]}" for kb in knowledge_blocks[:3]
+            f"- [source: {kb.get('id', '?')}] {kb.get('title', '')}: {(kb.get('content', '') or '')[:200]}"
+            for kb in knowledge_blocks[:3]
         )
+
+        # Solicitation ground-truth constraint (ground-prop-02)
+        ground_truth_block = ""
+        if parsed_solicitation:
+            try:
+                from tools.govcon.solicitation_grounding import build_ground_truth_block
+
+                ground_truth_block = build_ground_truth_block(parsed_solicitation)
+            except Exception:
+                ground_truth_block = ""
 
         # Check for product-level context
         product_key = _detect_product_template(shall_text, domain)
@@ -121,21 +305,27 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
                 "closes the Shipley lifecycle from proposal to contract delivery.\n"
             )
 
-        prompt = (
-            f"Draft a concise proposal response (~400 words) to this requirement:\n\n"
-            f"REQUIREMENT: {shall_text}\n\n"
-            f"DOMAIN: {domain}\n"
-            f"{product_context}\n"
-            f"OUR CAPABILITIES:\n{cap_descriptions}\n\n"
-            f"SUPPORTING EVIDENCE:\n{kb_content}\n\n"
-            f"INSTRUCTIONS:\n"
-            f"- Write in third person ('The Contractor shall...' or 'Our approach...')\n"
-            f"- Reference specific tools and frameworks by name\n"
-            f"- Include NIST 800-53 control references where applicable\n"
-            f"- Be specific about HOW we implement, not just WHAT\n"
-            f"- Include measurable outcomes or metrics where possible\n"
-            f"- Mention automation and repeatability\n"
-            f"- Keep to ~400 words, use bullet points for clarity\n"
+        # Capture strategy — the same win themes the RFI workbench injects, so an RFI
+        # response and the proposal that follows it argue one message. resolve_strategy
+        # accepts a SAM solicitation number as well as a proposal_opportunities.id.
+        strategy_block = ""
+        try:
+            from tools.govcon.capture_strategy import MODE_FULL, build_strategy_block, resolve_strategy
+
+            strategy_block = build_strategy_block(
+                resolve_strategy(opportunity_id=opportunity_id), mode=MODE_FULL
+            )
+        except Exception as exc:
+            print(f"Warning: capture strategy unavailable: {exc}", file=sys.stderr)
+
+        prompt = _build_draft_prompt(
+            shall_text,
+            cap_descriptions,
+            kb_content,
+            domain,
+            product_context,
+            ground_truth_block,
+            strategy_block,
         )
 
         # Phase 70: Sanitize prompt before LLM invocation (defense-in-depth)
@@ -152,15 +342,30 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
                 is_local_only=True,  # Routes to Ollama — skip_for_local honored
             )
         except ImportError:
-            pass  # Redaction module not installed — proceed unsanitized
+            # trust-mask-01: honor redaction.fail_closed here too. Default
+            # (fail-open) proceeds unsanitized as before; fail-closed aborts.
+            # The central router gate (_pre_invoke_redaction) is the primary
+            # enforcement — this is defense-in-depth on the pre-LLM prompt.
+            if _redaction_fail_closed():
+                raise RuntimeError(
+                    "Redaction module unavailable and redaction.fail_closed is "
+                    "enabled — proposal draft LLM call blocked."
+                )
+            # Redaction module not installed — proceed unsanitized (fail-open)
 
-        request = LLMRequest(
-            messages=[{"role": "user", "content": prompt}],
+        # Governed facade: the "proposal_drafting" routing function (local-only
+        # per llm_config.yaml) is preserved; domain="proposal" applies the
+        # capture-manager lens persona. On failure, fall through to the template
+        # draft (the except below), exactly as before.
+        cx = cortex_api.complete(
+            prompt,
+            function="proposal_drafting",
+            ctx=CortexContext(
+                classification="CUI", domain="proposal", agent_id="proposal-drafter"
+            ),
         )
-        response = router.invoke("proposal_drafting", request)
-
-        if response and response.content:
-            return response.content, "two_tier_llm"
+        if cx and cx.text:
+            return cx.text, "two_tier_llm"
 
     except Exception as exc:
         print(f"Warning: LLM draft failed: {exc}", file=sys.stderr)
@@ -516,9 +721,62 @@ def draft_response(shall_id):
     cfg = _load_config().get("response_drafting", {})
     cfg.get("confidence_threshold", 0.70)
 
-    draft_text, method = _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain)
+    # Ground drafting against the real solicitation structure when the
+    # opportunity has a parsed document on file (ground-prop-02).
+    parsed_solicitation = _load_parsed_solicitation(conn, s)
+
+    draft_text, method = _try_llm_draft(
+        shall_text,
+        capabilities,
+        knowledge_blocks,
+        domain,
+        parsed_solicitation=parsed_solicitation,
+        opportunity_id=opp_id,
+    )
     if not draft_text:
         draft_text, method = _template_draft(shall_text, capabilities, knowledge_blocks, domain)
+
+    # Deterministic anti-hallucination check: unresolved [PLACEHOLDER] tokens
+    # in the draft are recorded so reviewers/WriteGuard can flag them before
+    # the section is promoted.
+    try:
+        from tools.quality.content_grounding import find_placeholders
+        placeholder_tokens = find_placeholders(draft_text)
+    except Exception:
+        placeholder_tokens = []
+
+    # Citation validation: does the draft cite only the knowledge blocks it was
+    # built from? Recorded at draft time for reviewer visibility; enforced as a
+    # blocking gate on approve_draft (trust-cite-02).
+    try:
+        from tools.quality.citation_grounding import validate_citations
+        _kb_ids_for_cite = [kb.get("id", "") for kb in knowledge_blocks[:3] if kb.get("id")]
+        citation_report = validate_citations(draft_text, _kb_ids_for_cite)
+    except Exception:
+        citation_report = None
+
+    # halluc-01: non-blocking confabulation assessment recorded for reviewer
+    # visibility (fabricated citations / contradictions / hedging).
+    try:
+        from tools.security.confabulation_detector import assess as _confab_assess
+        confab_report = _confab_assess(draft_text)
+    except Exception:
+        confab_report = None
+
+    # Citation validation against the parsed solicitation (ground-prop-02):
+    # any Section/Factor/Volume/CLIN reference that doesn't exist in the
+    # document is recorded for reviewers/WriteGuard (invalid_citation).
+    invalid_references = []
+    citations_checked = 0
+    if parsed_solicitation:
+        try:
+            from tools.govcon.solicitation_grounding import validate_references
+
+            ref_check = validate_references(draft_text, parsed_solicitation)
+            invalid_references = ref_check["invalid_refs"]
+            citations_checked = ref_check["checked"]
+        except Exception as exc:
+            print(f"Warning: citation validation failed: {exc}", file=sys.stderr)
 
     # Compute confidence
     best_coverage = capabilities[0]["score"] if capabilities else 0
@@ -571,6 +829,14 @@ def draft_response(shall_id):
                     "capability_count": len(capabilities),
                     "kb_count": len(knowledge_blocks),
                     "best_coverage": best_coverage,
+                    **({"placeholder_tokens": placeholder_tokens} if placeholder_tokens else {}),
+                    **({"citation_report": citation_report} if citation_report else {}),
+                    **({"confabulation": confab_report} if confab_report else {}),
+                    **(
+                        {"citations_checked": citations_checked, "invalid_references": invalid_references}
+                        if parsed_solicitation
+                        else {}
+                    ),
                     **({"specialist_consult": specialist_consult_result} if specialist_consult_result else {}),
                 }
             ),
@@ -590,6 +856,12 @@ def draft_response(shall_id):
         "capabilities_matched": len(capabilities),
         "kb_blocks_used": len(knowledge_blocks),
         "draft_length": len(draft_text),
+        "placeholder_tokens": placeholder_tokens,
+        "citation_report": citation_report,
+        "confabulation": confab_report,
+        "grounded": bool(parsed_solicitation),
+        "citations_checked": citations_checked,
+        "invalid_references": invalid_references,
     }
 
 
@@ -647,11 +919,18 @@ def list_drafts(opportunity_id=None, status=None):
     }
 
 
-def approve_draft(draft_id, reviewer="human", notes=""):
+def approve_draft(draft_id, reviewer="human", notes="", force_placeholders=False, force_citations=False):
     """Approve a draft for inclusion in proposal.
 
     Changes status from 'draft' to 'approved'.
     Approved drafts can be pushed to proposal_sections via the proposal API.
+
+    Promotion is blocked while unresolved [PLACEHOLDER] tokens remain in the
+    draft (gate=placeholder_guard, mirroring the RFI export gate), or while the
+    draft has citation defects — missing citations on grounded content or a
+    citation to a source it was not built from (gate=citation_guard,
+    trust-cite-02). force_placeholders / force_citations bypass the respective
+    gate after human review and write an explicit audit trail entry.
     """
     conn = _get_db()
 
@@ -666,9 +945,49 @@ def approve_draft(draft_id, reviewer="human", notes=""):
         conn.close()
         return {"status": "error", "message": f"Draft status is '{draft['status']}', expected 'draft' or 'reviewed'"}
 
+    d = dict(draft)
+
+    # Placeholder gate (ground-prop-03)
+    placeholder_tokens = unresolved_placeholders(d)
+    if placeholder_tokens and not force_placeholders:
+        conn.close()
+        return {
+            "status": "blocked",
+            "gate": "placeholder_guard",
+            "message": "Unresolved [PLACEHOLDER] tokens remain — resolve or pass force_placeholders=True",
+            "placeholder_tokens": placeholder_tokens,
+            "draft_id": draft_id,
+        }
+    if placeholder_tokens:
+        _audit(
+            conn,
+            "placeholder_guard_override",
+            f"Draft {draft_id} promoted by {reviewer} despite {len(placeholder_tokens)} "
+            f"unresolved placeholder token(s): {', '.join(placeholder_tokens)}",
+        )
+
+    # Citation gate (trust-cite-02) — mirrors placeholder_guard semantics.
+    citation_issues = citation_findings(d)
+    if citation_issues and not force_citations:
+        conn.close()
+        return {
+            "status": "blocked",
+            "gate": "citation_guard",
+            "message": "Draft has citation defects — add [source: <id>] citations or "
+                       "pass force_citations=True after review",
+            "citation_findings": citation_issues,
+            "draft_id": draft_id,
+        }
+    if citation_issues:
+        _audit(
+            conn,
+            "citation_guard_override",
+            f"Draft {draft_id} promoted by {reviewer} despite {len(citation_issues)} "
+            f"citation defect(s): {json.dumps(citation_issues)}",
+        )
+
     # Create new approved record (append-only: new row, not update)
     approved_id = str(uuid.uuid4())
-    d = dict(draft)
     conn.execute(
         "INSERT INTO proposal_section_drafts "
         "(id, opportunity_id, shall_statement_id, capability_ids, knowledge_block_ids, "
@@ -694,6 +1013,16 @@ def approve_draft(draft_id, reviewer="human", notes=""):
                     "original_draft_id": draft_id,
                     "reviewer": reviewer,
                     "approved_at": _now(),
+                    **(
+                        {"placeholder_guard_override": placeholder_tokens}
+                        if placeholder_tokens
+                        else {}
+                    ),
+                    **(
+                        {"citation_guard_override": citation_issues}
+                        if citation_issues
+                        else {}
+                    ),
                 }
             ),
         ),
@@ -702,12 +1031,29 @@ def approve_draft(draft_id, reviewer="human", notes=""):
     conn.commit()
     conn.close()
 
+    # Approved prose becomes reusable evidence for the next pursuit. Backgrounded so
+    # approval stays responsive; promote_proposal_draft is idempotent, never raises,
+    # and declines drafts that were force-approved past a gate.
+    threading.Thread(
+        target=_promote_evidence_background, args=(approved_id,), daemon=True
+    ).start()
+
     return {
         "status": "ok",
         "approved_draft_id": approved_id,
         "original_draft_id": draft_id,
         "reviewer": reviewer,
     }
+
+
+def _promote_evidence_background(approved_draft_id):
+    """Index an approved proposal draft into the evidence corpus. Never raises."""
+    try:
+        from tools.govcon.evidence_corpus import promote_proposal_draft
+
+        promote_proposal_draft(approved_draft_id)
+    except Exception as exc:
+        print(f"Warning: evidence promotion failed: {exc}", file=sys.stderr)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
@@ -728,6 +1074,16 @@ def main():
     parser.add_argument("--reviewer", default="human", help="Reviewer name")
     parser.add_argument("--notes", default="", help="Reviewer notes")
     parser.add_argument("--status", help="Filter by draft status")
+    parser.add_argument(
+        "--force-placeholders",
+        action="store_true",
+        help="Approve despite unresolved [PLACEHOLDER] tokens (audited override)",
+    )
+    parser.add_argument(
+        "--force-citations",
+        action="store_true",
+        help="Approve despite citation defects (audited override)",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
 
     args = parser.parse_args()
@@ -753,7 +1109,13 @@ def main():
         if not args.draft_id:
             print("Error: --draft-id required", file=sys.stderr)
             sys.exit(1)
-        result = approve_draft(args.draft_id, reviewer=args.reviewer, notes=args.notes)
+        result = approve_draft(
+            args.draft_id,
+            reviewer=args.reviewer,
+            notes=args.notes,
+            force_placeholders=args.force_placeholders,
+            force_citations=args.force_citations,
+        )
 
     print(json.dumps(result, indent=2, default=str))
 

@@ -21,6 +21,12 @@
   </div>
 </div>
 {% else %}
+{% if hyperglass_invalid %}
+<div class="alert alert-warning py-2 mb-3">
+  <strong>HYPERGLASS_URL is set but invalid</strong> — it must be a well-formed
+  <code>http(s)://</code> URL to be embedded. Ignoring it and showing ad-hoc lookups instead.
+</div>
+{% endif %}
 <div class="card mb-4">
   <div class="card-body">
     <h5 class="card-title">Quick BGP Lookup</h5>

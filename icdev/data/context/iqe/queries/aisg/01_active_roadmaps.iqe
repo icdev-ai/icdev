@@ -1,0 +1,7 @@
+# Intent: List active AI-skills-gap roadmaps so leadership can see which
+#         enablement initiatives are currently in flight.
+# Expected: rows from aisg.roadmaps where status == "active".
+
+foreach r in aisg.roadmaps
+  where r.status == "active"
+  select r.id, r.name, r.roadmap_type, r.status, r.created_at

@@ -54,8 +54,11 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 from tools.daemon.base import generate_id, utcnow_iso  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.color_review_simulator")
 
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
@@ -117,21 +120,17 @@ def _audit(conn, action: str, details: str = "", actor: str = "color_review_simu
     """Append-only audit trail entry (NIST AU, D6)."""
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (generate_id("aud"), _now(), "govcon.color_review", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _table_exists(conn, table_name: str) -> bool:
-    """Check if a table exists in the database."""
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
-        (table_name,),
-    ).fetchone()
-    return row is not None
+    """Check if a table exists in the database (backend-aware, translation-independent)."""
+    return table_exists(conn, table_name)
 
 
 def _count_syllables(word: str) -> int:
@@ -393,7 +392,7 @@ def _run_persuasiveness_critic(opportunity_id: str, sections: List[Dict]) -> Lis
                 win_themes.append(entry)
             elif entry["theme_type"] == "discriminator":
                 discriminators.append(entry)
-            elif entry["theme_type"] == "ghost":
+            elif entry["theme_type"] == "ghost_strategy":
                 ghosts.append(entry)
 
     if not win_themes and not discriminators:
@@ -864,7 +863,7 @@ def _run_strategy_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict
     if _table_exists(conn, "pg_win_themes"):
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM pg_win_themes "
-            "WHERE opportunity_id = %s AND theme_type = 'ghost' AND status = 'active'",
+            "WHERE opportunity_id = %s AND theme_type = 'ghost_strategy' AND status = 'active'",
             (opportunity_id,),
         ).fetchone()
         ghost_count = row["cnt"] if row else 0
@@ -1172,8 +1171,11 @@ def simulate_review(
                 )
                 stored_ids.append(finding_id)
                 finding["id"] = finding_id
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "simulate_review: best-effort INSERT into pg_review_findings failed (non-blocking): %s",
+                    exc,
+                )
 
         _audit(
             conn,

@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """Genesis reflex: poll in-flight cross-connect orders and alarm on delayed deliveries."""
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 
 import os
 import statistics

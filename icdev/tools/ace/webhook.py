@@ -81,7 +81,7 @@ def _log_attempt(
             conn.execute(
                 "INSERT INTO ace_webhook_log"
                 " (instance_id, url, status_code, response, attempt_count, last_attempted_at, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (instance_id, url, status_code, response, attempt_count, last_attempted_at, now),
             )
             conn.commit()

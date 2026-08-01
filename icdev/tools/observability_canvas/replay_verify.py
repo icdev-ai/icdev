@@ -41,8 +41,24 @@ def _get_conn():
     return get_connection()
 
 
+# od_ttp_coverage is owned by init_db.SCHEMA and (re)created on every
+# _get_conn() → init_db() call. The DDL below is a defensive fallback for DBs
+# that predate that SCHEMA entry; it is materialized at most once per process
+# (this flag) instead of on every verify_path() call.
+_schema_ensured = False
+
+
 def _ensure_coverage_schema(conn) -> None:
-    """Create od_ttp_coverage if it doesn't exist yet (idempotent)."""
+    """Materialize od_ttp_coverage once per process as a defensive fallback.
+
+    Schema creation is owned by ``init_db`` (od_ttp_coverage is in its SCHEMA).
+    This runs its DDL only the first time it is called per process — gated by the
+    module-level ``_schema_ensured`` flag — so verify_path() no longer re-issues
+    CREATE TABLE / CREATE INDEX on every invocation.
+    """
+    global _schema_ensured
+    if _schema_ensured:
+        return
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS od_ttp_coverage (
@@ -65,6 +81,7 @@ def _ensure_coverage_schema(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_od_ttp_cov_state ON od_ttp_coverage(state)"
     )
     conn.commit()
+    _schema_ensured = True
 
 
 # ── Coverage signals ──────────────────────────────────────────────────────────

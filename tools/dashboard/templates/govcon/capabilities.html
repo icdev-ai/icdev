@@ -102,6 +102,46 @@
     </table>
   </div>
 
+  <!-- RFI Capability-Gap Demand Signals -->
+  <h2 style="margin-top:1.5rem;">RFI Demand Signals
+    <span style="font-weight:normal;font-size:0.85rem;color:var(--text-secondary);">(unmet RFI requirements &rarr; SUGGESTED build tasks)</span>
+  </h2>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Capability Need</th>
+          <th style="text-align:left;padding:0.5rem;">Domain</th>
+          <th style="text-align:right;padding:0.5rem;">RFIs</th>
+          <th style="text-align:center;padding:0.5rem;">Best Coverage</th>
+          <th style="text-align:right;padding:0.5rem;">Priority</th>
+          <th style="text-align:center;padding:0.5rem;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in rfi_demand_signals %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ s.capability_need }}">
+            {% if s.is_high_demand %}<span title="High demand" style="color:#d32f2f;">&#9650;</span> {% endif %}{{ s.capability_need[:70] }}{% if s.capability_need|length > 70 %}...{% endif %}
+          </td>
+          <td style="padding:0.5rem;">
+            <span style="padding:2px 8px;border-radius:10px;font-size:0.8rem;background:var(--bg-secondary);border:1px solid var(--border-color);">{{ s.domain }}</span>
+          </td>
+          <td style="padding:0.5rem;text-align:right;">{{ s.frequency }}</td>
+          <td style="padding:0.5rem;text-align:center;color:#d32f2f;font-weight:600;">{{ (s.best_coverage * 100)|round|int }}%</td>
+          <td style="padding:0.5rem;text-align:right;font-weight:600;">{{ s.priority|round(2) }}</td>
+          <td style="padding:0.5rem;text-align:center;">
+            <span style="padding:2px 8px;border-radius:10px;font-size:0.8rem;background:var(--bg-secondary);border:1px solid var(--border-color);">{{ s.status }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not rfi_demand_signals %}
+        <tr><td colspan="6" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No RFI demand signals yet &mdash; they appear as RFI responses surface unmet requirements.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
   <!-- Enhancement Recommendations -->
   <h2 style="margin-top:1.5rem;">Enhancement Recommendations</h2>
   <div class="table-container">

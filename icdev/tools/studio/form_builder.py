@@ -695,10 +695,83 @@ def delete_form(form_id: str) -> dict:
 # ── Submissions ───────────────────────────────────────────────────────
 
 
+def _validate_submission(fields: list[dict], data: dict) -> list[str]:
+    """Validate submitted *data* against the form's field definitions.
+
+    Returns a list of human-readable error strings (empty == valid). Enforces
+    required fields (present + non-empty) and per-type shape for values that
+    are supplied. Extra keys not in the schema are ignored (lenient).
+    """
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        return ["Submission data must be an object."]
+
+    def _empty(v) -> bool:
+        return v is None or v == "" or v == [] or v == {}
+
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        fid = field.get("id")
+        if not fid:
+            continue
+        label = field.get("label") or fid
+        ftype = field.get("type", "text")
+        present = fid in data
+        value = data.get(fid)
+
+        if field.get("required") and (not present or _empty(value)):
+            errors.append(f"'{label}' is required.")
+            continue
+
+        # Only shape-check values that were actually supplied and non-empty.
+        if not present or _empty(value):
+            continue
+
+        if ftype == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                try:
+                    float(value)
+                except (TypeError, ValueError):
+                    errors.append(f"'{label}' must be a number.")
+        elif ftype == "email":
+            if not isinstance(value, str) or "@" not in value or "." not in value.split("@")[-1]:
+                errors.append(f"'{label}' must be a valid email address.")
+        elif ftype == "checkbox":
+            if not isinstance(value, bool) and value not in ("true", "false", "on", "off", 0, 1, "0", "1"):
+                errors.append(f"'{label}' must be a boolean.")
+        elif ftype == "select":
+            opts = field.get("options") or []
+            if opts and value not in opts:
+                errors.append(f"'{label}' must be one of the allowed options.")
+        elif ftype == "multiselect":
+            opts = field.get("options") or []
+            if not isinstance(value, list):
+                errors.append(f"'{label}' must be a list of selections.")
+            elif opts and any(v not in opts for v in value):
+                errors.append(f"'{label}' contains a value that is not an allowed option.")
+
+    return errors
+
+
 def submit_form(form_id: str, data: dict, *, submitted_by: str = "user") -> dict:
     form = get_form(form_id)
     if not form:
         return {"status": "error", "error": "Form not found"}
+
+    # Server-side validation against the stored form schema.
+    try:
+        schema = json.loads(form.get("schema_json", "{}") or "{}")
+        fields = schema.get("_fields", []) or []
+    except (ValueError, TypeError):
+        fields = []
+    validation_errors = _validate_submission(fields, data)
+    if validation_errors:
+        return {
+            "status": "error",
+            "error": "Submission failed validation",
+            "validation_errors": validation_errors,
+        }
 
     sub_id = _new_id("sub")
     conn = get_connection()

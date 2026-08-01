@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.procurement_vehicles")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -150,8 +153,8 @@ def _audit(action: str, details: str, project_id: str = "") -> None:
                  "procurement_vehicles", details, "CUI", _now()),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _validate_create(

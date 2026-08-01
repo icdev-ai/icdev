@@ -1,0 +1,100 @@
+# Tech Writer standards-reference whitelist (ground-tw-04)
+# Deterministic list of known standard identifiers used by
+# tools/document_intelligence/tech_writing_assist.py::validate_standards_references
+# to flag unknown or malformed citations in References sections.
+
+nist_sp_800:
+  # Known NIST SP 800-series publication numbers (suffix after "800-").
+  # Letter suffixes (e.g. 53A) are separate entries.
+  - "12"
+  - "18"
+  - "30"
+  - "34"
+  - "37"
+  - "39"
+  - "40"
+  - "41"
+  - "44"
+  - "47"
+  - "50"
+  - "53"
+  - "53A"
+  - "53B"
+  - "60"
+  - "61"
+  - "63"
+  - "63A"
+  - "63B"
+  - "63C"
+  - "82"
+  - "86"
+  - "88"
+  - "92"
+  - "94"
+  - "95"
+  - "115"
+  - "122"
+  - "124"
+  - "128"
+  - "137"
+  - "144"
+  - "145"
+  - "146"
+  - "150"
+  - "153"
+  - "160"
+  - "161"
+  - "162"
+  - "171"
+  - "171A"
+  - "172"
+  - "172A"
+  - "181"
+  - "184"
+  - "190"
+  - "193"
+  - "204"
+  - "207"
+  - "207A"
+  - "208"
+  - "218"
+
+cmmc:
+  levels: [1, 2, 3]
+  # CMMC practice-ID domains (e.g. AC.L2-3.1.1)
+  domains:
+    - AC
+    - AT
+    - AU
+    - CA
+    - CM
+    - IA
+    - IR
+    - MA
+    - MP
+    - PE
+    - PS
+    - RA
+    - SC
+    - SI
+
+fedramp:
+  baselines:
+    - low
+    - moderate
+    - high
+    - li-saas
+
+stig:
+  # DISA SRG identifier families: SRG-<FAMILY>-<6 digits>
+  srg_families:
+    - APP
+    - NET
+    - OS
+    - GPOS
+    - CTR
+    - VOIP
+    - UEM
+  # STIG vulnerability IDs: V-<5-6 digits>; rule IDs: SV-<digits>r<digits>_rule
+  v_id_digits_min: 5
+  v_id_digits_max: 6

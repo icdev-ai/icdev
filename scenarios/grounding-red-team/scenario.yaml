@@ -1,0 +1,125 @@
+# CUI // SP-CTI
+name: Operation FALSE WITNESS — Grounding Red Team
+slug: grounding-red-team
+version: '1.0'
+session_mode: live
+duration_minutes: 120
+max_teams: 8
+classification: CUI // SP-CTI
+description: 'A red-vs-blue exercise on the integrity of citation grounding itself. The red team attacks
+  the
+
+  grounding and provenance layer — prompt-injected source documents, spoofed citations that point
+
+  at real-but-irrelevant passages — while the blue team defends the promote/export gates using
+
+  provenance verification and the TRUST citation guard. Over 120 minutes the attacks escalate from
+
+  a single injected source to a contested export the teams must adjudicate. Every detection and
+
+  verification is scored evidence.'
+roles:
+- id: red_grounding_attacker
+  label: Red — Grounding Attacker
+  icon: 🎭
+  color: '#ef4444'
+  description: Crafts prompt-injected sources and spoofed citations to defeat grounding.
+  academy_missions:
+  - threat-modeling
+  - prompt-injection
+  persona_template: personas/red_grounding_attacker.yaml
+- id: blue_grounding_defender
+  label: Blue — Grounding Defender
+  icon: 🛡️
+  color: '#3b82f6'
+  description: Defends the promote/export gate with provenance and citation verification.
+  academy_missions:
+  - trust-grounding
+  - cyber-defense
+  persona_template: personas/blue_grounding_defender.yaml
+- id: provenance_auditor
+  label: Green — Provenance Auditor
+  icon: ⚖️
+  color: '#22c55e'
+  description: Adjudicates contested exports and owns the audit record.
+  academy_missions:
+  - compliance-fundamentals
+  - data-provenance
+  persona_template: personas/provenance_auditor.yaml
+injects:
+- id: inject-01-prompt-injected-source
+  title: 'Red Move: A Source Document Carries Hidden Instructions'
+  at_minute: 15
+  sequence: 1
+  body_path: injects/inject-01-prompt-injected-source.yaml
+  ai_tools_allowed:
+  - dic.search
+  - knowledge.search
+  scoring:
+    base_pts: 125
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/injection_detection.yaml
+- id: inject-02-citation-spoofing
+  title: 'Red Move: Citations That Point at Real-but-Wrong Passages'
+  at_minute: 40
+  sequence: 2
+  body_path: injects/inject-02-citation-spoofing.yaml
+  ai_tools_allowed:
+  - dic.search
+  - cortex.govern
+  scoring:
+    base_pts: 175
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/citation_verification.yaml
+  depends_on: inject-01-prompt-injected-source
+- id: inject-03-gate-defense
+  title: 'Blue Stand: Defend the Promote/Export Gate Under a Forced Override'
+  at_minute: 70
+  sequence: 3
+  body_path: injects/inject-03-gate-defense.yaml
+  ai_tools_allowed:
+  - cortex.govern
+  - knowledge.search
+  scoring:
+    base_pts: 200
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/gate_defense.yaml
+  depends_on: inject-02-citation-spoofing
+- id: inject-04-adjudication
+  title: 'Adjudicate: Contested Export Goes to the Provenance Auditor'
+  at_minute: 95
+  sequence: 4
+  body_path: injects/inject-04-adjudication.yaml
+  ai_tools_allowed:
+  - cortex.govern
+  scoring:
+    base_pts: 150
+    receipt_bonus_per_call: 50
+    max_receipt_bonus: 150
+    time_bonus: true
+    receipt_gate: true
+    finetune_required: false
+    rubric: rubrics/adjudication.yaml
+  depends_on: inject-03-gate-defense
+ribbons:
+- id: injection_slayer
+  label: 🗡️ Injection Slayer
+  description: 'Blue: detected the prompt-injected source fastest with evidence'
+- id: master_forger
+  label: 🎭 Master Forger
+  description: 'Red: crafted the most convincing citation spoof that still got caught'
+- id: clean_gate
+  label: 🚪 Clean Gate
+  description: Held the export gate with zero unaudited overrides

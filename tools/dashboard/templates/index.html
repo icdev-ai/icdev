@@ -60,17 +60,39 @@
             <option value="github_actions,ollama_local">&#9881;&#65039; GitHub Actions &#8594; Ollama (air-gap)</option>
             <option value="ollama_local">&#129433; Ollama Local only</option>
         </select>
+        {# Build model: which model the RUNNER builds with. Live — no restart.
+           Choosing a model the Claude CLI cannot serve drops claude_cli from the
+           executor chain, so the choice actually takes effect. #}
+        <select id="kanban-build-model" onchange="setBuildModel(this.value)"
+                title="Model the kanban runner builds with. Non-Claude models route to the LLM executor."
+                style="font-size:12px; padding:4px 8px; background:var(--bg-code,#0d1b30); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; cursor:pointer;">
+            <option value="">&#129518; Model: default (config routing)</option>
+        </select>
+        {# Manual Build: promote + track as normal, but DO NOT auto-dispatch.
+           Not the same as Pause Scheduler — pausing freezes the whole cycle and a
+           hand-build becomes invisible to the board. This keeps the board as the
+           record, so an interrupted build can be picked up where it stopped. #}
+        <label id="manualBuildLabel" title="Promote and track tasks as normal, but do not auto-dispatch — you build from the CLI. Progress still shows on the project cards, so an interrupted build resumes where it stopped."
+               style="display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:6px 10px; border:1px solid var(--border); border-radius:4px; cursor:pointer; user-select:none;">
+            <input type="checkbox" id="manualBuildToggle" onchange="setManualBuild(this.checked)" style="cursor:pointer;">
+            <span>&#128104;&#8205;&#128187; Manual Build</span>
+        </label>
         <button class="btn" id="schedToggleBtn" onclick="toggleKanbanScheduler()" title="Pause/resume the kanban scheduler" style="padding:6px 12px; font-size:13px;">&#x23f8; Pause Scheduler</button>
         <button class="btn" id="refresh-btn" onclick="refreshDashboard()" title="Refresh now" style="padding:6px 12px; font-size:13px;">&#x21bb; Refresh</button>
         <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
     </div>
 </div>
 <div class="kanban-board" id="kanban-board">
+    {# 'blocked' is a DERIVED bucket: task_pipeline.js folds ci_failed /
+       merge_conflict / changes_requested / failed / token_exhausted /
+       validating into it. It is not a storable status — never a move target. #}
     {% set columns = [
         ("suggested", "Suggested"),
         ("backlog", "Backlog"),
         ("scheduled", "Scheduled"),
         ("in_progress", "In Progress"),
+        ("pr_opened", "Awaiting Merge"),
+        ("blocked", "Blocked"),
         ("done", "Done")
     ] %}
     {% for status_key, status_label in columns %}
@@ -79,7 +101,14 @@
             <h3>{{ status_label }}</h3>
             <span class="kanban-column-count">0</span>
             {% if status_key == "suggested" %}
-            <button class="btn btn-sm" id="btn-promote-all" onclick="promoteAllSuggested()" title="Promote all suggested cards to backlog" style="margin-left:auto; padding:4px 12px; font-size:12px; font-weight:600; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer; display:none; letter-spacing:0.3px;">&#x2714; Promote All</button>
+            <select id="promote-all-gate" style="margin-left:auto; font-size:11px; padding:3px 6px; background:var(--bg-code); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); cursor:pointer;">
+                <option value="" selected>All suggested</option>
+                <option value="value10">Value ≥ 1.0</option>
+                <option value="value08">Value ≥ 0.8</option>
+                <option value="conf95">Confidence ≥ 90%</option>
+                <option value="conf70">Confidence ≥ 70%</option>
+            </select>
+            <button class="btn btn-sm" id="btn-promote-all" onclick="promoteAllSuggested()" title="Promote filtered suggested cards to backlog" style="padding:4px 12px; font-size:12px; font-weight:600; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer; display:none; letter-spacing:0.3px;">↑ Promote</button>
             {% endif %}
         </div>
         <div class="kanban-column-body">
@@ -155,6 +184,10 @@
                 </div>
             </div>
         </div>
+        <div id="task-lifecycle-section" style="display:none; margin:0 20px 8px; border-top:1px solid var(--border); padding-top:12px;">
+            <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px;">Delivery Pipeline</label>
+            <div id="task-lifecycle-body"></div>
+        </div>
         <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
             <button class="btn" onclick="closeTaskModal()">Cancel</button>
             <button class="btn btn-primary" onclick="saveTask()">Save</button>
@@ -182,6 +215,7 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/task_pipeline.js') }}"></script>
 <script>
 function _isoToLocal(iso) {
     if (!iso) return '';
@@ -214,6 +248,7 @@ function openAddTaskModal() {
     document.getElementById('task-priority').value = 'medium';
     document.getElementById('task-status').value = 'backlog';
     document.getElementById('task-scheduled-at').value = '';
+    var _lc = document.getElementById('task-lifecycle-section'); if (_lc) _lc.style.display = 'none';
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -226,6 +261,8 @@ function openEditTaskModal(task) {
     document.getElementById('task-priority').value = task.priority;
     document.getElementById('task-status').value = task.status;
     document.getElementById('task-scheduled-at').value = _isoToLocal(task.scheduled_at);
+    document.getElementById('task-lifecycle-section').style.display = 'block';
+    renderLifecycle(task.id);
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -297,19 +334,36 @@ function refreshKanbanTasks() {
 }
 
 function promoteAllSuggested() {
-    if (!confirm('Promote ALL suggested cards to backlog?')) return;
+    var gate = document.getElementById('promote-all-gate');
+    var preset = gate ? gate.value : '';
+    var payload = {};
+    var label = 'all suggested';
+    switch (preset) {
+        case 'value10': payload.min_value = 1.0; label = 'value ≥ 1.0'; break;
+        case 'value08': payload.min_value = 0.8; label = 'value ≥ 0.8'; break;
+        case 'conf95':  payload.min_confidence = 0.95; label = 'confidence ≥ 90%'; break;
+        case 'conf70':  payload.min_confidence = 0.70; label = 'confidence ≥ 70%'; break;
+    }
+    if (!confirm('Promote ' + label + ' cards to backlog?')) return;
     var btn = document.getElementById('btn-promote-all');
     if (btn) { btn.disabled = true; btn.textContent = 'Promoting...'; }
-    fetch('/api/kanban/tasks/promote-all', { method: 'POST' })
+    fetch('/api/kanban/tasks/promote-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (btn) { btn.disabled = false; btn.textContent = '\u2714 Promote All'; }
+            if (btn) { btn.disabled = false; btn.textContent = '↑ Promote'; }
             if (data.error) { alert('Error: ' + data.error); return; }
+            var msg = 'Promoted ' + (data.promoted || 0) + ' cards';
+            if (data.filtered) msg += ' (' + data.filtered + ' filtered by gate)';
+            alert(msg);
             refreshKanbanTasks();
         })
         .catch(function() {
-            if (btn) { btn.disabled = false; btn.textContent = '\u2714 Promote All'; }
-            alert('Promote all failed');
+            if (btn) { btn.disabled = false; btn.textContent = '↑ Promote'; }
+            alert('Promote failed');
         });
 }
 
@@ -409,300 +463,7 @@ function bulkMoveSuggested(newStatus, actionLabel) {
 function bulkPromoteSuggested() { bulkMoveSuggested('backlog', 'Promote to backlog'); }
 function bulkDismissSuggested() { bulkMoveSuggested('done',    'Dismiss'); }
 
-// kv-viz-02: live counters for in_progress cards
-var _kvIntervals = {};
-function _clearKvIntervals() {
-    Object.keys(_kvIntervals).forEach(function(id) { clearInterval(_kvIntervals[id]); });
-    _kvIntervals = {};
-}
-function _setupKvCounters(boardEl) {
-    boardEl.querySelectorAll('[data-kv-started]').forEach(function(sentinel) {
-        var taskId = sentinel.getAttribute('data-kv-task-id');
-        var startedAt = sentinel.getAttribute('data-kv-started');
-        var barEl = document.getElementById('kv-bar-' + taskId);
-        var textEl = document.getElementById('kv-tif-' + taskId);
-        if (!textEl || !startedAt) return;
-        var startMs = new Date(startedAt).getTime();
-        function tick() {
-            var elapsed = (Date.now() - startMs) / 1000;
-            var mins = Math.floor(elapsed / 60);
-            var secs = Math.floor(elapsed % 60);
-            textEl.textContent = 'Running ' + mins + 'm ' + secs + 's';
-            if (barEl) {
-                var pct = Math.min(100, (elapsed / 900) * 100);
-                barEl.style.width = pct + '%';
-                barEl.style.background = pct >= 85 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#22c55e';
-            }
-        }
-        tick();
-        _kvIntervals[taskId] = setInterval(tick, 1000);
-    });
-}
 
-function renderTaskKanban(tasks) {
-    var board = document.getElementById('kanban-board');
-    if (!board) return;
-    _clearKvIntervals();
-
-    var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
-    tasks.forEach(function(t) {
-        var s = t.status || 'backlog';
-        if (s === 'decomposed' || s === 'needs_decomposition') s = 'done';
-        if (columns[s]) columns[s].push(t);
-        else columns.backlog.push(t);
-    });
-
-    var priorityColors = { critical: '#ef4444', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
-    var typeIcons = { build: '\u{1F528}', run: '\u25B6', fix: '\u{1F41B}', research: '\u{1F50D}', deploy: '\u{1F680}', test: '\u2705', chore: '\u{1F9F9}' };
-    var nextStatus = { backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
-    var prevStatus = { scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
-
-    // Confidence label derived from priority (Oracle maps confidence → priority on insert)
-    var confidenceLabel = { critical: '≥90%', high: '75–89%', medium: '55–74%', low: '<55%' };
-    var executorLabels = {
-        claude_cli:     { icon: '🤖', label: 'Claude',     color: '#7c3aed' },
-        ollama_local:   { icon: '💻', label: 'Local',      color: '#0891b2' },
-        gitlab:         { icon: '🦊', label: 'GitLab',     color: '#e24304' },
-        github_actions: { icon: '⚙️', label: 'GH Actions', color: '#2ea043' }
-    };
-    var llmModeIcons  = { claude: '🧠', ollama: '💻', none: '⚙️' };
-    var llmModeTitles = { claude: 'LLM: Claude', ollama: 'LLM: Ollama (local)', none: 'No LLM' };
-
-    board.querySelectorAll('.kanban-column').forEach(function(colEl) {
-        var status = colEl.getAttribute('data-status');
-        if (!columns[status]) return;
-        var items = columns[status];
-
-        var countEl = colEl.querySelector('.kanban-column-count');
-        if (countEl) countEl.textContent = items.length;
-
-        // Show/hide the Promote All button based on suggested card count
-        if (status === 'suggested') {
-            var promBtn = document.getElementById('btn-promote-all');
-            if (promBtn) promBtn.style.display = items.length > 0 ? 'inline-block' : 'none';
-        }
-
-        var bodyEl = colEl.querySelector('.kanban-column-body');
-        if (!bodyEl) return;
-
-        if (items.length === 0) {
-            bodyEl.innerHTML = '<div class="kanban-empty">No tasks</div>';
-            return;
-        }
-
-        var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
-
-        // Suggested-lane toolbar: sort dropdown + bulk select preset +
-        // bulk promote/dismiss buttons. Rendered BEFORE the card list so
-        // it stays at the top of the column. Not rendered for any other
-        // status — the toolbar only makes sense for Oracle-backed
-        // suggestions that want triage.
-        var toolbarHtml = '';
-        if (status === 'suggested') {
-            var selectedCount = _selectedTaskIds.size;
-            // Build the dynamic "Rule: <name> (<count>)" preset options
-            // from whatever rules are currently present in the Suggested
-            // lane. Sorted by count DESC so the noisiest rules surface
-            // first — operators usually want to dismiss those in bulk.
-            var ruleCounts = {};
-            items.forEach(function(t) {
-                var r = t.oracle_lens || '(none)';
-                ruleCounts[r] = (ruleCounts[r] || 0) + 1;
-            });
-            var ruleList = Object.keys(ruleCounts).map(function(r) {
-                return { rule: r, count: ruleCounts[r] };
-            }).sort(function(a, b) { return b.count - a.count; });
-            var ruleOptionsHtml = ruleList.map(function(r) {
-                return '<option value="rule::' + esc(r.rule) + '">Rule: ' + esc(r.rule) + ' (' + r.count + ')</option>';
-            }).join('');
-            toolbarHtml =
-                '<div id="suggested-bulk-bar" style="padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">'
-                + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
-                + '<label style="font-size:11px; color:var(--text-dim); min-width:42px;">Sort:</label>'
-                + '<select onchange="onSuggestedSortChange(this.value)" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
-                + '<option value="value"' + (_suggestedSort==='value'?' selected':'') + '>Value (default)</option>'
-                + '<option value="confidence"' + (_suggestedSort==='confidence'?' selected':'') + '>Confidence</option>'
-                + '<option value="priority"' + (_suggestedSort==='priority'?' selected':'') + '>Priority (critical→low)</option>'
-                + '<option value="created_at"' + (_suggestedSort==='created_at'?' selected':'') + '>Newest first</option>'
-                + '</select>'
-                + '</div>'
-                + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
-                + '<label style="font-size:11px; color:var(--text-dim); min-width:42px;">Select:</label>'
-                + '<select onchange="applySuggestedSelectPreset(this.value); this.value=\'\'" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
-                + '<option value="">Choose threshold…</option>'
-                + '<option value="all">All</option>'
-                + '<optgroup label="By confidence">'
-                + '<option value="conf95">Confidence ≥ 95%</option>'
-                + '<option value="conf90">Confidence ≥ 90%</option>'
-                + '</optgroup>'
-                + '<optgroup label="By value">'
-                + '<option value="value10">Value ≥ 1.0  (real work)</option>'
-                + '<option value="value08">Value ≥ 0.8</option>'
-                + '<option value="value_lo">Value < 0.6  (noise → dismiss)</option>'
-                + '</optgroup>'
-                + '<optgroup label="By priority">'
-                + '<option value="pri_crit">Priority: CRITICAL</option>'
-                + '<option value="pri_high">Priority: HIGH</option>'
-                + '<option value="pri_med">Priority: MEDIUM</option>'
-                + '<option value="pri_low">Priority: LOW</option>'
-                + '</optgroup>'
-                + (ruleOptionsHtml ? '<optgroup label="By rule (live counts)">' + ruleOptionsHtml + '</optgroup>' : '')
-                + '<option value="none">None</option>'
-                + '</select>'
-                + '</div>'
-                + '<div style="display:flex; gap:6px;">'
-                + '<button class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:4px 6px;" onclick="bulkPromoteSuggested()" title="Promote selected to backlog">\u2191 Promote <span data-bulk-count>' + selectedCount + '</span></button>'
-                + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:4px 6px; color:#ef4444;" onclick="bulkDismissSuggested()" title="Dismiss selected (marks oracle_prediction dismissed)">\u2715 Dismiss <span data-bulk-count>' + selectedCount + '</span></button>'
-                + '</div>'
-                + '</div>';
-        }
-
-        bodyEl.innerHTML = toolbarHtml + items.map(function(t) {
-            var icon = typeIcons[t.task_type] || '';
-            var pColor = priorityColors[t.priority] || '#6b7280';
-
-            if (status === 'suggested') {
-                // Prefer exact confidence from oracle_predictions JOIN, fall back to priority-range
-                var confLabel;
-                if (t.oracle_confidence != null) {
-                    confLabel = Math.round(t.oracle_confidence * 100) + '%';
-                } else {
-                    confLabel = confidenceLabel[t.priority] || '';
-                }
-                // Prefer proposed_action from oracle JOIN; fall back to description parse
-                var proposedAction = t.oracle_proposed_action || '';
-                if (!proposedAction && t.description) {
-                    var match = t.description.match(/\*\*Proposed action:\*\*\s*(.+?)(\n|$)/);
-                    if (match) proposedAction = match[1].trim();
-                }
-                var lensLabel = t.oracle_lens ? ' \u00B7 ' + esc(t.oracle_lens) : '';
-                // Value score + duplicate count surfaced on every card
-                // so operators can see the bulk-select rationale at a
-                // glance. Value comes from tools/awareness/value_scorer.py.
-                var valueLabel = (t.oracle_value != null && !isNaN(t.oracle_value))
-                    ? ' \u00B7 value ' + Number(t.oracle_value).toFixed(2)
-                    : '';
-                var dupLabel = (t.oracle_dup_count && t.oracle_dup_count > 1)
-                    ? ' \u00B7 \u00D7' + t.oracle_dup_count
-                    : '';
-                var checked = _selectedTaskIds.has(t.id) ? ' checked' : '';
-
-                return '<div class="kanban-card" style="border-left:3px solid #8b5cf6; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
-                    + '<div style="display:flex; gap:6px; align-items:flex-start;">'
-                    + '<input type="checkbox" class="suggested-checkbox"' + checked + ' onclick="toggleTaskSelected(\'' + t.id + '\', event)" style="margin-top:3px; cursor:pointer;">'
-                    + '<div style="flex:1; min-width:0;">'
-                    + '<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap;">'
-                    + '<span style="font-size:11px; background:#8b5cf620; color:#8b5cf6; border-radius:4px; padding:1px 6px; font-weight:600;">\uD83D\uDD2E Oracle</span>'
-                    + (confLabel ? '<span style="font-size:11px; color:var(--text-dim);">conf ' + confLabel + valueLabel + dupLabel + lensLabel + '</span>' : '')
-                    + '</div>'
-                    + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
-                    + (proposedAction ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px; font-style:italic;">' + esc(proposedAction) + '</div>' : '')
-                    + '<div class="kanban-card-meta" style="margin-top:6px;">'
-                    + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
-                    + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
-                    + '</div>'
-                    + '<div style="display:flex; gap:6px; margin-top:8px;">'
-                    + '<button class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:4px 8px;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'backlog\')" title="Promote to Backlog">\u2191 Promote</button>'
-                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:4px 8px; color:#6b7280;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'done\')" title="Dismiss">\u2715 Dismiss</button>'
-                    + '</div>'
-                    + '</div>'
-                    + '</div>'
-                    + '</div>';
-            }
-
-            var arrows = '';
-            if (prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">◀</button>';
-            if (nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">▶</button>';
-
-            var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">' + '\u{1F4C5}' + ' ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
-
-            // Native task dependency badge
-            var blockedBadge = '';
-            var blockedStyle = '';
-            if (t.is_blocked) {
-                var depTitle = t.depends_on_title || t.depends_on_task_id || 'unknown';
-                var depStatus = t.depends_on_status || 'unknown';
-                var tooltip = 'Blocked by ' + depTitle + ' (status: ' + depStatus + ', id: ' + (t.depends_on_task_id || '?') + ')';
-                blockedBadge = '<div style="margin-top:4px;"><span class="badge" title="' + esc(tooltip) + '" style="background:#f59e0b20; color:#f59e0b; font-size:10px;">🔒 blocked by ' + esc(depTitle.length > 28 ? depTitle.slice(0, 28) + '…' : depTitle) + '</span></div>';
-                blockedStyle = ' opacity:0.55;';
-            }
-
-            // Executor badge
-            var execInfo = executorLabels[t.executor_type] || executorLabels['claude_cli'];
-            var execBadge = '<span class="badge" style="background:' + execInfo.color + '20;color:' + execInfo.color + ';font-size:10px;" title="Executor: ' + execInfo.label + '">'
-                + execInfo.icon + ' ' + execInfo.label + '</span>';
-
-            // Execution ID line
-            var execIdLine = '';
-            if (t.execution_id) {
-                var execUrl = t.executor_url || null;
-                if (execUrl) {
-                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">'
-                        + '🔗 <a href="' + esc(execUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:var(--text-dim);text-decoration:underline;">' + esc(t.execution_id) + '</a></div>';
-                } else {
-                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px;">🆔 ' + esc(t.execution_id) + '</div>';
-                }
-            }
-
-            // LLM mode badge inferred from executor_type
-            var llmMode = (t.executor_type === 'claude_cli') ? 'claude' : (t.executor_type === 'ollama_local' ? 'ollama' : 'none');
-            var llmBadge = '<span title="' + (llmModeTitles[llmMode] || '') + '" style="font-size:11px; cursor:default;">' + (llmModeIcons[llmMode] || '') + '</span>';
-
-            // OPT-62: mid-run message injection button (in_progress only)
-            var msgBtn = '';
-            if (status === 'in_progress') {
-                msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">💬</button>';
-            }
-
-            // kv-viz-02: attempt badge + reaper bar + TIF counter + last-killed line
-            var attemptBadge = '';
-            var reaperBar = '';
-            var tifLine = '';
-            var lastKilledLine = '';
-            if (status === 'in_progress') {
-                var ac = t.attempt_count || 0;
-                if (ac > 1) {
-                    var abColor = ac >= 4 ? '#ef4444' : '#f59e0b';
-                    attemptBadge = '<span class="badge" style="background:' + abColor + '20;color:' + abColor + ';font-size:10px;" title="Dispatched ' + ac + ' times">Attempt ' + ac + '</span>';
-                }
-                if (t.current_attempt_started_at) {
-                    reaperBar = '<div style="margin:4px 0 2px 0;background:var(--bg-code);border-radius:2px;height:3px;overflow:hidden;" title="Reaper kills at 15m with no subprocess heartbeat">'
-                        + '<div id="kv-bar-' + esc(t.id) + '" style="height:100%;width:0%;background:#22c55e;"></div></div>';
-                    tifLine = '<div id="kv-tif-' + esc(t.id) + '" style="font-size:11px;color:var(--text-dim);margin-top:2px;">Running 0m 0s</div>'
-                        + '<span data-kv-started="' + esc(t.current_attempt_started_at) + '" data-kv-task-id="' + esc(t.id) + '" style="display:none;"></span>';
-                }
-                if (t.last_reaped_reason) {
-                    var reason = String(t.last_reaped_reason);
-                    var shortReason = reason.length > 80 ? reason.substring(0, 80) + '…' : reason;
-                    lastKilledLine = '<div style="font-size:10px;color:var(--text-dim);margin-top:2px;font-style:italic;" title="' + esc(reason) + '">Last killed: ' + esc(shortReason) + '</div>';
-                }
-            }
-
-            var snapAttr = JSON.stringify(t).replace(/"/g, '&quot;');
-            return '<div class="kanban-card" data-task-id="' + esc(t.id) + '" data-status="' + esc(status) + '" data-snapshot="' + snapAttr + '" style="border-left:3px solid ' + pColor + '; cursor:pointer;' + blockedStyle + '" onclick="openEditTaskModal(' + snapAttr + ')">'
-                + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
-                + reaperBar
-                + '<div class="kanban-card-meta">'
-                + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
-                + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
-                + execBadge
-                + llmBadge
-                + attemptBadge
-                + '</div>'
-                + blockedBadge
-                + tifLine
-                + lastKilledLine
-                + schedLine
-                + execIdLine
-                + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
-                + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
-                + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">✕</button>'
-                + '</div>'
-                + '</div>';
-        }).join('');
-    });
-    _setupKvCounters(board);
-}
 
 // OPT-62: mid-run message injection
 var _kanbanMsgTargetId = null;
@@ -784,6 +545,116 @@ window.setNotifyChannel = function(channelId) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ channel: channelId })
     }).catch(function() {});
+};
+
+// ── Manual Build ──────────────────────────────────────────────────────────────
+// Checked: the scheduler still PROMOTES backlog tasks and the board still tracks
+// progress — it simply does not dispatch an agent. You build from the CLI, and the
+// project card is still the record, so an interrupted build resumes where it stopped.
+// Unchecked (the default): automatic build, exactly as before.
+function _buildFlash(msg) {
+    var el = document.getElementById('auto-refresh-countdown');
+    if (!el) return;
+    var old = el.textContent;
+    el.textContent = msg;
+    setTimeout(function() { el.textContent = old; }, 2500);
+}
+
+function _paintManualBuild(manual) {
+    var cb = document.getElementById('manualBuildToggle');
+    var label = document.getElementById('manualBuildLabel');
+    if (cb) cb.checked = !!manual;
+    if (label) {
+        label.style.borderColor = manual ? '#f59e0b' : 'var(--border)';
+        label.style.color = manual ? '#f59e0b' : '';
+    }
+}
+
+window.setManualBuild = function(checked) {
+    fetch('/api/kanban/build-mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({manual: !!checked}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        _paintManualBuild(data.manual);
+        _buildFlash(data.manual
+            ? 'Manual Build ON — tasks promote and track, but you build them'
+            : 'Manual Build OFF — automatic build resumed');
+    })
+    .catch(function() {
+        _buildFlash('Manual Build toggle failed — reverting to the actual scheduler mode');
+        if (window.loadBuildMode) window.loadBuildMode();
+    });
+};
+
+window.loadBuildMode = function() {
+    fetch('/api/kanban/build-mode')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { _paintManualBuild(data.manual); })
+        .catch(function() {});
+};
+
+// ── Build model ───────────────────────────────────────────────────────────────
+window.setBuildModel = function(value) {
+    fetch('/api/kanban/build-model', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({model: value || null}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        // Repaint from the SERVER's answer, never from what we optimistically sent. A
+        // dropdown showing a model the runner is not using is the exact failure these
+        // switches exist to prevent — a control that lies about its own state.
+        var sel = document.getElementById('kanban-build-model');
+        if (sel) sel.value = data.model || '';
+        if (data.error) {
+            alert('Model selection failed: ' + data.error);
+            if (window.loadBuildModel) window.loadBuildModel();
+            return;
+        }
+        if (!data.model) { _buildFlash('Model: back to config routing'); return; }
+        var r = data.resolved || {};
+        // Say it plainly: a non-Claude model means the Claude CLI is out of the chain
+        // for this build. That is the choice taking effect, not a side effect.
+        _buildFlash(r.cli_capable
+            ? ('Model: ' + data.model + ' (Claude CLI)')
+            : ('Model: ' + data.model + ' — Claude CLI dropped, using LLM executor'));
+    })
+    .catch(function() {
+        // The POST never landed, so the runner's model is whatever it was. Resync the
+        // control to the server rather than leaving it showing a choice that did nothing.
+        _buildFlash('Model selection failed — reverting to the model the runner is using');
+        if (window.loadBuildModel) window.loadBuildModel();
+    });
+};
+
+window.loadBuildModel = function() {
+    fetch('/api/kanban/build-model')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById('kanban-build-model');
+            if (!sel) return;
+            var current = data.model || '';
+            // Rebuild from scratch: a resync must not append a second copy of every model.
+            while (sel.options.length > 1) sel.remove(1);
+            (data.available || []).forEach(function(m) {
+                var o = document.createElement('option');
+                o.value = m.name;
+                o.textContent = (m.cli_capable ? '\u{1F9E0} ' : '\u{1F5A5}️ ')
+                    + m.name + ' (' + m.provider + ')';
+                sel.appendChild(o);
+            });
+            // A stale override (model renamed out of llm_config) shows as default rather
+            // than as a selection that would fail at dispatch.
+            sel.value = data.stale ? '' : current;
+            if (data.stale) {
+                _buildFlash('Selected model is no longer in llm_config — using default');
+            }
+        })
+        .catch(function() {});
 };
 
 window.setExecutorChain = function(value) {
@@ -986,12 +857,21 @@ document.addEventListener('DOMContentLoaded', function() {
             Loading…
         </div>
     </div>
-    <!-- Cache Savings tile -->
+    <!-- LLM Prompt Cache tile (provider prompt/context-cache token economics) -->
     <div class="card" style="padding: 20px;">
-        <div class="card-label">Cache Savings
-            <span class="help-icon" title="LLM response and context cache hit rate, token savings, cost avoided">?</span>
+        <div class="card-label">LLM Prompt Cache
+            <span class="help-icon" title="Provider prompt/context-cache economics from llm_response_cache: hit rate, tokens read from cache, cost avoided. Distinct from the Cortex facade response cache.">?</span>
         </div>
         <div id="tile-cache" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+    <!-- Cortex Governance tile (governed AI facade: usage, block rate, spend) -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Cortex Governance
+            <span class="help-icon" title="Governed AI facade over the last 24h (from cortex_audit): calls, block rate, redactions, spend, and facade cache hits. Not the LLM prompt cache.">?</span>
+        </div>
+        <div id="tile-cortex" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
             Loading…
         </div>
     </div>
@@ -1185,6 +1065,56 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('DOMContentLoaded', renderCacheTile);
     window.renderCacheTile = renderCacheTile;
 })();
+
+// Cortex Governance tile renderer (governed AI facade — usage/block/spend)
+(function () {
+    function renderCortexTile() {
+        fetch('/cortex/api/metrics/tile').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-cortex');
+            if (!el) return;
+            // Three distinct states. "idle" and "unavailable" used to render
+            // identically, so a blank tile could mean either "governance is
+            // quiet" or "the audit table is gone".
+            if (d.status === 'unavailable' || (!d.available && d.status !== 'idle')) {
+                el.innerHTML = '<div style="color:#ef4444;font-size:12px;font-weight:600;">Metrics unavailable</div>'
+                    + '<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">The cortex_audit trail could not be read. This is a fault, not an idle system.</div>'
+                    + '<div style="margin-top:8px;"><a href="/cortex/metrics" class="btn" style="font-size:11px;padding:3px 10px;">Diagnose</a></div>';
+                return;
+            }
+            if ((d.calls || 0) === 0) {
+                var since = d.last_call_at
+                    ? 'Last governed call: ' + String(d.last_call_at).slice(0, 16).replace('T', ' ') + '.'
+                    : 'No governed calls recorded yet.';
+                el.innerHTML = '<div style="color:var(--text-primary);font-size:12px;">Idle &mdash; no governed Cortex calls in the last '
+                    + (d.window_hours || 24) + 'h.</div>'
+                    + '<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">' + since + '</div>'
+                    + '<div style="margin-top:8px;display:flex;gap:6px;">'
+                    + '<a href="/cortex/metrics" class="btn" style="font-size:11px;padding:3px 10px;">Open metrics</a>'
+                    + '<a href="/cortex/metrics?hours=720" class="btn" style="font-size:11px;padding:3px 10px;">Last 30 days</a>'
+                    + '</div>';
+                return;
+            }
+            // Governance-first: block rate is the headline health signal.
+            var blockColor = (d.block_rate_pct <= 1) ? '#22c55e' : (d.block_rate_pct <= 10) ? '#f59e0b' : '#ef4444';
+            el.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+                + '<div><div style="font-size:20px;font-weight:700;color:var(--text-primary);">' + (d.calls || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Calls (24h)</div></div>'
+                + '<div><div style="font-size:20px;font-weight:700;color:' + blockColor + ';">' + (d.block_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Block Rate</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:#f59e0b;">$' + (d.cost_usd || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Spend (USD)</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.redactions || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Redactions</div></div>'
+                + '</div>'
+                + '<div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;">' + (d.blocked || 0) + ' blocked &middot; ' + (d.cache_hits || 0) + ' facade cache hits</div>'
+                + '<div style="margin-top:4px;"><a href="/cortex/metrics" class="btn" style="font-size:11px;padding:3px 10px;">View metrics</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-cortex');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Cortex metrics unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderCortexTile);
+    window.renderCortexTile = renderCortexTile;
+})();
 </script>
 
 <!-- Remediation History Timeline (collapsed by default) -->
@@ -1292,6 +1222,14 @@ function refreshRemediationHistory() {
 })();
 
 document.addEventListener('DOMContentLoaded', function() { refreshRemediationHistory(); });
+
+// Both switches are cross-process state (a sentinel file the scheduler reads), not
+// browser state — so paint them from the server on every load. A checkbox that shows
+// "off" while the scheduler is in Manual Build is worse than no checkbox.
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.loadBuildMode) window.loadBuildMode();
+    if (window.loadBuildModel) window.loadBuildModel();
+});
 </script>
 
 <!-- Recent Activity & Findings (collapsed by default) -->

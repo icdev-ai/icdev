@@ -35,14 +35,16 @@ from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
+import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -126,6 +128,113 @@ def _parse_pr_url(text: Optional[str]) -> Optional[str]:
     return match.group(0) if match else None
 
 
+
+def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> bool:
+    """Write the task's status. The watcher is the ONLY component that knows when
+    a PR actually merged, so it is the right owner of the pr_opened -> done edge.
+
+    Previously it recorded 'done' in the audit trail and never touched
+    kanban_tasks — the board could not tell an open PR from a finished one.
+    Never raises: a status-write failure must not stall the watch loop.
+    """
+    try:
+        conn = get_conn()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pr_watcher: no DB connection to set %s -> %s: %s",
+                       task_id, status, exc)
+        return False
+    try:
+        conn.execute(
+            "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
+            (status, datetime.now(timezone.utc).isoformat(), task_id),
+        )
+        try:
+            conn.execute(
+                "INSERT INTO kanban_status_transitions "
+                "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                ("kst-" + uuid.uuid4().hex[:12], task_id, "pr_opened", status,
+                 "pr_watcher", reason[:200],
+                 datetime.now(timezone.utc).isoformat()),
+            )
+        except Exception as _exc:  # noqa: BLE001 — audit row is best-effort
+            logger.warning(
+                "_set_task_status: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s",
+                _exc,
+            )
+        conn.commit()
+        logger.info("pr_watcher: %s -> %s (%s)", task_id, status, reason)
+
+        # Harness co-learning: this is a TERMINAL transition, so the harness
+        # needs the outcome here. _move_task() in the kanban reflex carries the
+        # same hook, but under the PR flow it deliberately does NOT mark the
+        # task done — the work is not finished until the PR merges, and this
+        # watcher owns that edge. The result was that every task completing
+        # through the PR flow (the primary build path) recorded a codegen
+        # decision at dispatch and then never an outcome: harness_eval filled
+        # with rows whose actual_outcome stayed NULL, and compute_metrics
+        # derived precision/recall/ECE from the small minority of tasks that
+        # failed outright. Best-effort — a telemetry write must never stall the
+        # watch loop or undo a committed status change.
+        if status in ("done", "token_exhausted", "failed"):
+            try:
+                from tools.genesis.harness.eval_harness import record_outcome
+
+                record_outcome(task_id, "resolved" if status == "done" else "failed")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "pr_watcher: harness record_outcome skipped for %s: %s",
+                    task_id, exc,
+                )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pr_watcher: failed to set %s -> %s: %s", task_id, status, exc)
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+def _enforced_done_ok(get_connection, task_id: str) -> Tuple[bool, str]:
+    """Enforced done-gate for auto-merge (Governed Delivery Pipeline).
+
+    Under ``KANBAN_PIPELINE_ENFORCE``, a kanban PR may auto-merge only after the
+    task's ICDEV done-verification (conformance + code-quality/coherence/tests,
+    recorded in ``kanban_verifications``) has PASSED — CI green alone is not
+    enough. This closes the gap where a conformance failure could still be
+    merged (a PR can go CI-green while ``review_passed`` is false).
+
+    Returns ``(ok, reason)``. Enforcement OFF → always ``ok`` (no new blocker,
+    behavior unchanged). **Fail-closed** under enforcement: a missing, failed, or
+    unreadable verification holds the merge (the watcher retries next cycle).
+    """
+    if os.environ.get("KANBAN_PIPELINE_ENFORCE", "0").strip().lower() not in ("1", "true", "yes"):
+        return True, "enforcement off"
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT result, review_passed FROM kanban_verifications "
+            "WHERE task_id = %s ORDER BY verified_at DESC LIMIT 1",
+            (task_id,),
+        )
+        row = cur.fetchone()
+    except Exception as exc:  # noqa: BLE001 — hold the merge, don't merge blind
+        return False, f"enforced gate: verification unreadable, holding ({exc})"
+    if not row:
+        return False, "enforced gate: awaiting ICDEV done-verification"
+    result = str((row["result"] if isinstance(row, dict) else row[0]) or "").lower()
+    review_passed = row["review_passed"] if isinstance(row, dict) else row[1]
+    if result == "failed":
+        return False, "enforced gate: ICDEV verification result=failed (e.g. conformance)"
+    if review_passed == 0:  # int 0 or bool False — conformance failed (None = not judged, allowed)
+        return False, "enforced gate: conformance review_passed=false"
+    if result in ("pass", "passed", "bypassed"):
+        return True, f"enforced gate passed (result={result})"
+    return False, f"enforced gate: verification not yet passed (result={result or 'pending'})"
+
+
 def list_pr_tasks(
     get_connection,
     task_id: Optional[str] = None,
@@ -148,7 +257,12 @@ def list_pr_tasks(
             rows = conn.execute(
                 "SELECT id, title, description, status, executor_url "
                 "FROM kanban_tasks WHERE status IN "
-                "('in_progress', 'scheduled')"
+                # 'pr_opened' is the state a task sits in from the moment its PR
+                # is opened until it merges — it is THE state this watcher exists
+                # to service. Omitting it meant the watcher lost sight of a task
+                # the instant it had a PR.
+                "('in_progress', 'scheduled', 'pr_opened', "
+                " 'ci_failed', 'merge_conflict', 'changes_requested')"
             ).fetchall()
     finally:
         try:
@@ -181,10 +295,71 @@ def list_pr_tasks(
 # ────────────────────────────────────────────────────────────────────────────
 
 
+# Coordination / union-merged files that MANY task branches legitimately co-edit
+# (manifest shards, append-only-table registry, nav/registry configs, conftest
+# schema). Two PRs touching these is normal, not a collision — exclude them from
+# the sibling-conflict check so it only fires on genuine same-source-file races
+# (e.g. two branches each creating a different tools/cortex/blueprint.py). See the
+# merge-conflict-hotspots prevention notes.
+_ADDITIVE_PATH_MARKERS = (
+    "tools/manifest/",
+    "tools/manifest.md",
+    ".claude/hooks/pre_tool_use.py",
+    "tools/dashboard/templates/base.html",
+    ".claude/commands/start.md",
+    "args/component_registry.yaml",
+    "args/projects.yaml",
+    "args/genesis_config.yaml",
+    "tests/conftest.py",
+    "docs/reference/commands.md",
+)
+
+
+def _is_additive_path(path: str) -> bool:
+    """True when `path` is a union-merged coordination file (not a collision risk)."""
+    p = (path or "").replace("\\", "/")
+    return any(marker in p for marker in _ADDITIVE_PATH_MARKERS)
+
+
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,"
-    "headRefName,updatedAt,number,url"
+    "headRefName,baseRefName,updatedAt,number,url"
 )
+
+
+def repo_default_branch(*, runner=None, gh_bin: str = "gh") -> str:
+    """Resolve the repository's default branch name.
+
+    Tries `gh repo view --json defaultBranchRef`, then
+    `git symbolic-ref refs/remotes/origin/HEAD`, then falls back to
+    "main". Pass `runner` in tests to avoid hitting the real CLIs.
+    """
+    if runner is None:
+        runner = subprocess.run
+    try:
+        proc = runner(
+            [gh_bin, "repo", "view", "--json", "defaultBranchRef"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+        if proc.returncode == 0:
+            ref = json.loads(proc.stdout or "{}").get("defaultBranchRef") or {}
+            name = (ref.get("name") or "").strip()
+            if name:
+                return name
+    except Exception:
+        pass
+    try:
+        proc = runner(
+            ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip().removeprefix("origin/")
+    except Exception:
+        pass
+    return "main"
 
 
 def fetch_pr_state(
@@ -335,6 +510,8 @@ class PRWatcher:
         fetch_state=None,
         fetch_logs=None,
         auto_merge_runner=None,
+        default_branch_resolver=None,
+        pr_list_runner=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -345,6 +522,11 @@ class PRWatcher:
         self._fetch_state = fetch_state or fetch_pr_state
         self._fetch_logs = fetch_logs or fetch_ci_logs
         self._auto_merge_runner = auto_merge_runner or subprocess.run
+        self._pr_list_runner = pr_list_runner or subprocess.run
+        self._default_branch_resolver = (
+            default_branch_resolver or repo_default_branch
+        )
+        self._default_branch_cache: Optional[str] = None
 
     # ── helpers ─────────────────────────────────────────────────────
 
@@ -375,6 +557,65 @@ class PRWatcher:
         except Exception as exc:
             logger.warning("pr_watcher: queue_message import failed: %s", exc)
             return False
+
+    def _open_pr_files(self) -> Dict[str, set]:
+        """Map every open PR's url -> set of changed file paths (single gh call).
+
+        Best-effort: returns {} if gh is unavailable / errors, so the sibling
+        check degrades to a no-op rather than blocking the watcher.
+        """
+        try:
+            proc = self._pr_list_runner(
+                ["gh", "pr", "list", "--state", "open", "--json", "url,files",
+                 "--limit", "200"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+            )
+            if getattr(proc, "returncode", 1) != 0:
+                return {}
+            data = json.loads(proc.stdout or "[]")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: open-PR file listing failed: %s", exc)
+            return {}
+        out: Dict[str, set] = {}
+        for pr in data:
+            url = pr.get("url")
+            if not url:
+                continue
+            out[url] = {f.get("path", "") for f in (pr.get("files") or []) if f.get("path")}
+        return out
+
+    def _sibling_conflicts(self, candidate_url: str, file_map: Dict[str, set]) -> Dict[str, set]:
+        """Return {other_pr_url: shared_integrity_files} for OPEN PRs that touch a
+        non-additive file the candidate PR also touches.
+
+        Additive/coordination files (manifest shards, APPEND_ONLY_TABLES,
+        component_registry, etc. — see _ADDITIVE_PATH_MARKERS) are union-merged and
+        excluded, so only genuine same-source-file collisions (two branches editing
+        the same blueprint.py / module / migration) are flagged.
+        """
+        cand = {f for f in file_map.get(candidate_url, set()) if not _is_additive_path(f)}
+        if not cand:
+            return {}
+        conflicts: Dict[str, set] = {}
+        for url, files in file_map.items():
+            if url == candidate_url:
+                continue
+            shared = cand & {f for f in files if not _is_additive_path(f)}
+            if shared:
+                conflicts[url] = shared
+        return conflicts
+
+    def _default_branch(self) -> str:
+        if self._default_branch_cache is None:
+            try:
+                self._default_branch_cache = self._default_branch_resolver()
+            except Exception as exc:
+                logger.warning(
+                    "pr_watcher: default-branch resolution failed: %s", exc
+                )
+                self._default_branch_cache = "main"
+        return self._default_branch_cache
 
     def _auto_merge(self, pr_url: str) -> bool:
         if self.dry_run:
@@ -485,6 +726,14 @@ class PRWatcher:
         require_approval = bool(
             self.config.get("auto_merge_require_approval", True)
         )
+        # Sibling-file-conflict map (kph): fetch every open PR's changed files ONCE
+        # per cycle so the DONE path can flag a merge candidate that races another
+        # open PR on the same source file (the "two different blueprint.py" class).
+        sibling_map = (
+            self._open_pr_files()
+            if self.config.get("sibling_conflict_check", True)
+            else {}
+        )
 
         for task in tasks:
             report.tasks_checked += 1
@@ -527,7 +776,110 @@ class PRWatcher:
                         action=action_label, reason=reason,
                         resume_cycle=cycle,
                     )
+                    # THE MERGE IS THE COMPLETION. Only this watcher knows the PR
+                    # actually landed, so only it can close the loop. Until now it
+                    # recorded 'done' in the audit trail and left kanban_tasks
+                    # untouched, so the board could not tell an open PR from a
+                    # finished one. CI-green-but-not-merged stays in pr_opened.
+                    if merged and task.get("status") in (
+                        "pr_opened", "in_progress", "ci_failed",
+                        "merge_conflict", "changes_requested",
+                    ):
+                        _set_task_status(
+                            get_conn, task["id"], "done",
+                            reason=f"PR merged: {pr_url}",
+                        )
                 else:
+                    # Enforced done-gate (Governed Delivery Pipeline): under
+                    # KANBAN_PIPELINE_ENFORCE, hold the merge until the task's
+                    # ICDEV verification (conformance + gates) has PASSED — CI
+                    # green alone is not enough.
+                    gate_ok, gate_reason = _enforced_done_ok(get_conn, task["id"])
+                    if not gate_ok:
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done",
+                            action="wait",
+                            reason=gate_reason,
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+                    # Base-branch guard (incident 2026-07-08, PR #114):
+                    # never auto-merge a PR whose base is not the repo
+                    # default branch — merging into a feature branch
+                    # strands the change off-main. Unknown base is
+                    # treated as unsafe.
+                    base_ref = (state.get("baseRefName") or "").strip()
+                    default_branch = self._default_branch()
+                    if base_ref != default_branch:
+                        logger.warning(
+                            "pr_watcher: refusing auto-merge for %s — "
+                            "PR base '%s' is not the default branch '%s'",
+                            pr_url, base_ref or "<unknown>", default_branch,
+                        )
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done",
+                            action="wait",
+                            reason=(
+                                f"refusing auto-merge: PR base "
+                                f"'{base_ref or '<unknown>'}' is not the "
+                                f"default branch '{default_branch}'"
+                            ),
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+                    # Sibling-file-conflict guard (kph): another open PR edits the
+                    # same source file(s) — merging both races on one path (the
+                    # "two different blueprint.py" collision that stranded Cortex).
+                    # Union-merged coordination files are excluded. Warn + audit
+                    # always; HOLD (serialize the merge) only when
+                    # hold_on_sibling_conflict is set, so a legitimate shared edit
+                    # is not blocked by default.
+                    sib = self._sibling_conflicts(pr_url, sibling_map) if sibling_map else {}
+                    if sib:
+                        detail = "; ".join(
+                            f"{u} [{', '.join(sorted(fs))}]" for u, fs in sib.items()
+                        )
+                        logger.warning(
+                            "pr_watcher: %s shares source file(s) with %d open PR(s): %s",
+                            pr_url, len(sib), detail,
+                        )
+                        self._audit(WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done",
+                            action="sibling_conflict_warn",
+                            reason=f"shares source file(s) with open PR(s): {detail}",
+                            resume_cycle=cycle,
+                        ))
+                        # Lessons-Learned (kph): a sibling source-file race is a
+                        # systemic pipeline signal — record it so recurrence +
+                        # remediation fire (classified as SIBLING_FILE_CONFLICT).
+                        # A "wait"/"warn" action never reaches the task-failure
+                        # lesson hook, so emit it explicitly here.
+                        try:
+                            from tools.workflow.lesson_learned import (
+                                analyze_task, write_lesson,
+                            )
+                            write_lesson(analyze_task(
+                                task["id"], outcome="sibling_file_conflict"))
+                        except Exception as _ll_exc:  # noqa: BLE001
+                            logger.debug(
+                                "pr_watcher: sibling lesson hook failed: %s", _ll_exc)
+                        if self.config.get("hold_on_sibling_conflict", False):
+                            action = WatcherAction(
+                                task_id=task["id"], pr_url=pr_url,
+                                classification="done", action="wait",
+                                reason=f"held: sibling file conflict with {len(sib)} open PR(s)",
+                                resume_cycle=cycle,
+                            )
+                            report.actions.append(action)
+                            self._audit(action)
+                            continue
                     approved_ok = (
                         not require_approval
                         or ec.is_approved_and_passing(state)
@@ -641,6 +993,17 @@ class PRWatcher:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # Load .env so KANBAN_PIPELINE_ENFORCE (and API keys) are set even when the
+    # daemon is started outside a shell that exported them — mirrors
+    # kanban_scheduler. Without this the enforced done-gate goes inert on a bare
+    # restart, silently reverting to CI-only auto-merge.
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(ROOT / ".env")
+    except ImportError:
+        pass
+
     ap = argparse.ArgumentParser(
         description="OPT-70 autonomous PR watcher"
     )

@@ -16,7 +16,8 @@ Integration:
     tools.db.storage.StorageCursor.set_security_context(ctx)
 
 Public API:
-    inject_row_predicate(sql, tenant_id, classification) -> (sql, params)
+    inject_row_predicate(sql, tenant_id, classification)
+        -> (sql, extra_params, n_params_before)
     generate_rls_policy(table, predicate_expr, roles) -> DDL string
     apply_tenant_rls(conn, table) -> None
 """
@@ -95,6 +96,40 @@ def _depth0_skeleton(sql: str) -> str:
         out.append(ch if depth == 0 else " ")
         i += 1
     return "".join(out)
+
+
+#: Table-name prefixes that identify a database SYSTEM CATALOG rather than an
+#: application table. These carry no `tenant_id`/`classification` columns, so
+#: injecting a row predicate into a query against one does not restrict
+#: anything — it makes the statement invalid.
+#:
+#: This is not a hypothetical. `PgVectorStore._has_pgvector()` probes
+#: `SELECT 1 FROM pg_extension WHERE extname = 'vector'`. With a security
+#: context attached, that became
+#: `... WHERE (classification IS NULL OR classification IN (...)) AND extname = ...`,
+#: which raises UndefinedColumn on pg_extension. The probe's caller read the
+#: failure as "pgvector is unavailable", so vector retrieval silently returned
+#: nothing for EVERY authenticated request while working perfectly from a script
+#: (no Flask context -> no RLS -> no injection). Nothing logged an error.
+#: No trailing dots: `_RE_FROM_TABLE` captures `\w+`, which stops at the schema
+#: separator, so a qualified `information_schema.columns` is seen here as the
+#: bare token `information_schema`. `pg_catalog.pg_tables` is already covered by
+#: the `pg_` prefix.
+_SYSTEM_TABLE_PREFIXES = ("pg_", "information_schema", "sqlite_")
+
+
+def _is_system_table(sql: str) -> bool:
+    """True when the outer query's primary FROM target is a system catalog.
+
+    Deliberately reads the OUTER primary table only (via the depth-0 skeleton),
+    so a catalog lookup nested inside a query over an application table cannot
+    exempt that query from row security.
+    """
+    m = _RE_FROM_TABLE.search(_depth0_skeleton(sql))
+    if not m:
+        return False
+    table = (m.group(1) or "").lower()
+    return any(table.startswith(p) for p in _SYSTEM_TABLE_PREFIXES)
 
 
 def _primary_alias(sql: str) -> str | None:
@@ -210,6 +245,13 @@ def inject_row_predicate(
         - For UPDATE/DELETE n_params_before is set to len(existing_params)
           (i.e. append), since SET params precede all WHERE params.
     """
+    # A system catalog has no tenant/classification columns. Injecting here
+    # cannot restrict anything — it only produces an invalid statement, and the
+    # caller usually reads the resulting error as "capability unavailable"
+    # rather than "query malformed". See _SYSTEM_TABLE_PREFIXES.
+    if _is_system_table(sql):
+        return sql, (), 0
+
     extra_clauses: list[str] = []
     extra_params: list[Any] = []
 
@@ -445,17 +487,19 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.test:
-        sql1, params1 = inject_row_predicate(
+        sql1, params1, n_before1 = inject_row_predicate(
             "SELECT * FROM projects WHERE status = ?", "tenant_a", "CUI"
         )
-        sql2, params2 = inject_row_predicate(
+        sql2, params2, n_before2 = inject_row_predicate(
             "SELECT * FROM projects", "tenant_a", classifications={"CUI", "SECRET"}
         )
         results = {
             "where_injected": sql1,
             "where_params": params1,
+            "where_n_before": n_before1,
             "no_where_injected": sql2,
             "no_where_params": params2,
+            "no_where_n_before": n_before2,
         }
         print(json.dumps(results, indent=2) if args.json else str(results))
 

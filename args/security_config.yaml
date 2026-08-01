@@ -176,7 +176,45 @@ abac_policies:
       - PATCH
     decision: Deny
 
-  # --- Proposal draft write policies (approve/reject/rewrite) ---
+  # --- Proposal draft REVIEW policies (approve/reject in api/govcon.py) ---
+  # Separation of duties: reviewing/privileged roles decide; a section_writer
+  # never self-approves/rejects their own draft.
+
+  - name: proposal_draft_review_privileged
+    subject:
+      role:
+        operator: in
+        values:
+          - capture_mgr
+          - proposal_mgr
+          - pm
+          - reviewer
+          - tenant_admin
+          - admin
+    resource:
+      type: proposal_draft
+    action:
+      - approve
+      - reject
+    decision: Permit
+
+  # Renamed from proposal_draft_writer_deny_unassigned. The WRITE family below
+  # needs that name for its own section_writer deny, and two rules cannot share
+  # one name; no test references this one, so it is the safe side to rename.
+  - name: proposal_draft_review_deny_unassigned
+    subject:
+      role: section_writer
+    resource:
+      type: proposal_draft
+    action:
+      - approve
+      - reject
+    decision: Deny
+
+  # --- Proposal draft WRITE policies (POST rewrite-save in api/govcon.py) ---
+  # Disjoint from the review family above: those govern who DECIDES on a draft,
+  # these govern who may CHANGE one. Before prop-sec-01 only approve/reject were
+  # governed, so the write path was reachable by any authenticated role.
 
   - name: proposal_draft_privileged_write
     subject:
@@ -337,22 +375,58 @@ column_policies:
     columns:
       theme_statement: redact
       supporting_evidence: "null"
+      target_eval_factor: "null"
       ghost_competitor: "null"
   - table: pg_win_themes
     role: co
     columns:
       theme_statement: redact
       supporting_evidence: "null"
+      target_eval_factor: "null"
       ghost_competitor: "null"
+  - table: pg_win_loss_records
+    role: reviewer
+    columns:
+      competitor_strengths: "null"
+  - table: pg_win_loss_records
+    role: co
+    columns:
+      competitor_strengths: "null"
+  - table: proposal_blackhat_assessments
+    role: reviewer
+    columns:
+      price_estimate_low: "null"
+      price_estimate_high: "null"
+      win_strategy: "null"
+      differentiators: "null"
+      strengths: "null"
+      weaknesses: "null"
+      risk_factors: "null"
+  - table: proposal_blackhat_assessments
+    role: co
+    columns:
+      price_estimate_low: "null"
+      price_estimate_high: "null"
+      win_strategy: "null"
+      differentiators: "null"
+      strengths: "null"
+      weaknesses: "null"
+      risk_factors: "null"
+  # pg_competitor_awards feeds the price-to-win computation. award_amount is
+  # deliberately NOT masked here: rate_benchmarker.ptw_analysis() aggregates it
+  # server-side, and masking it to NULL at the DB layer would not hide the answer
+  # — it would make ptw_analysis silently return "no award amounts" with a bogus
+  # recommendation. The derived PTW figures are withheld from these roles at the
+  # response layer instead (see _mask_ptw_analysis in dashboard/api/proposals.py),
+  # matching the pg_cost_volumes ptw_estimate_* policy above. labor_categories is
+  # read by no computation, so it is masked here.
   - table: pg_competitor_awards
     role: reviewer
     columns:
-      award_amount: "null"
       labor_categories: "null"
   - table: pg_competitor_awards
     role: co
     columns:
-      award_amount: "null"
       labor_categories: "null"
 
 # ---------------------------------------------------------------------------

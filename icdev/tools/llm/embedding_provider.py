@@ -15,6 +15,16 @@ from tools.llm.provider import EmbeddingProvider
 
 logger = get_logger("icdev.llm.embedding")
 
+#: Seconds an AVAILABILITY PROBE may take before a provider counts as
+#: unavailable. Applies only to probes — real embedding calls keep the SDK's
+#: defaults, since a large batch legitimately takes longer than this.
+#:
+#: Kept short on purpose: the probe's entire job is to decide whether to fall
+#: through to the next provider in the chain, and every second spent failing is
+#: a second the caller waits for an embedding a LOCAL provider could already
+#: have returned.
+_PROBE_TIMEOUT_SECONDS = float(os.environ.get("ICDEV_EMBED_PROBE_TIMEOUT", "5"))
+
 try:
     import openai as openai_sdk
 
@@ -99,12 +109,29 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         return [item.embedding for item in sorted_data]
 
     def check_availability(self) -> bool:
-        """Check if embedding endpoint is reachable."""
+        """Check if embedding endpoint is reachable.
+
+        Probes with a SHORT timeout and no retries, using a throwaway client so
+        the real embedding client keeps the SDK's generous defaults for genuine
+        work (large batches legitimately take a while).
+
+        This matters most where the endpoint is unreachable rather than merely
+        unauthorized. The OpenAI SDK defaults to a 600s timeout with retries, so
+        on an air-gapped host a probe of api.openai.com could stall the caller
+        for minutes before the chain ever reached the local provider — turning a
+        working local fallback into an apparent hang.
+        """
         if not HAS_OPENAI:
             return False
         try:
-            client = self._get_client()
-            client.embeddings.create(input="test", model=self._model_id)
+            kwargs = {
+                "base_url": self._base_url,
+                "api_key": self._api_key or "not-needed",
+                "timeout": _PROBE_TIMEOUT_SECONDS,
+                "max_retries": 0,
+            }
+            probe_client = openai_sdk.OpenAI(**kwargs)
+            probe_client.embeddings.create(input="test", model=self._model_id)
             return True
         except Exception:
             return False

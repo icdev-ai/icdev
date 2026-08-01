@@ -72,7 +72,21 @@ def _embedding_to_pg_vector(embedding: List[float]) -> str:
 
 
 def _blob_to_embedding(blob: bytes) -> List[float]:
-    """Deserialize packed float32 BLOB to float list."""
+    """Deserialize a packed embedding BLOB to a float list.
+
+    Header-aware (rce-quant-01): blobs written by SQLiteVectorStore carry a
+    magic + dtype byte selecting float16/float32; blobs without the magic are
+    read as legacy raw float32. Kept in sync with
+    tools/rag/sqlite_vector_store._blob_to_embedding.
+    """
+    magic = b"RVQ1"
+    char_to_dtype = {"f": "float32", "e": "float16"}
+    if len(blob) >= 5 and blob[:4] == magic:
+        char = chr(blob[4])
+        if char in char_to_dtype:
+            payload = blob[5:]
+            n = len(payload) // struct.calcsize(char)
+            return list(struct.unpack(f"{n}{char}", payload))
     n = len(blob) // 4
     return list(struct.unpack(f"{n}f", blob))
 

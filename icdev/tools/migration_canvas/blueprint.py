@@ -61,6 +61,22 @@ def create_migration_blueprint():
         logger.info("Migration Canvas disabled (ICDEV_MIGRATION_CANVAS_ENABLED=%s)", enabled)
         return None
 
+    # Security: warn loudly if authentication is being bypassed outside CI/E2E.
+    # ICDEV_AUTH_BYPASS short-circuits @mdc_login_required — safe only in
+    # automated test/CI runs, never in a production or shared deployment.
+    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+        _ci = any(
+            os.environ.get(v)
+            for v in ("CI", "GITHUB_ACTIONS", "ICDEV_E2E", "PYTEST_CURRENT_TEST")
+        )
+        if not _ci:
+            logger.warning(
+                "SECURITY: ICDEV_AUTH_BYPASS is set but no CI/E2E marker "
+                "(CI / GITHUB_ACTIONS / ICDEV_E2E / PYTEST_CURRENT_TEST) was "
+                "detected — Migration Canvas authentication is DISABLED. "
+                "Unset ICDEV_AUTH_BYPASS outside automated test runs."
+            )
+
     try:
         from tools.migration_canvas.db.init_db import init_db
         init_db()
@@ -109,8 +125,8 @@ def create_migration_blueprint():
                     "INSERT INTO mc_audit (design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into mc_audit failed (non-blocking): %s", exc)
         # Bridge to main icdev.db audit_trail for compliance chain
         try:
             from tools.db.storage import get_connection as _icdev_conn
@@ -130,8 +146,8 @@ def create_migration_blueprint():
                         now_isoformat(),
                     ),
                 )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
     def _notify(title: str, body: str, severity: str = "info"):
         """Fire-and-forget notification — never raises."""
@@ -152,15 +168,29 @@ def create_migration_blueprint():
     @mdc_login_required
     def mc_index():
         """Migration Design Canvas dashboard — list designs + recent assessments."""
+        # Bound the designs list — previously unbounded, so a large table would
+        # load every row on each page hit. Paginate via ?page=&per_page=.
+        try:
+            page = max(int(request.args.get("page", 1)), 1)
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            per_page = min(max(int(request.args.get("per_page", 50)), 1), 200)
+        except (TypeError, ValueError):
+            per_page = 50
+        offset = (page - 1) * per_page
+
         with get_connection() as conn:
-            designs = [
-                _row_to_dict(r)
-                for r in conn.execute(
-                    "SELECT id, name, description, migration_type, classification, "
-                    "created_at, updated_at "
-                    "FROM migration_designs ORDER BY updated_at DESC"
-                ).fetchall()
-            ]
+            # Fetch per_page+1 to detect a next page without a second COUNT
+            # round-trip; the three reads below all share this one connection.
+            design_rows = conn.execute(
+                "SELECT id, name, description, migration_type, classification, "
+                "created_at, updated_at "
+                "FROM migration_designs ORDER BY updated_at DESC LIMIT %s OFFSET %s",
+                (per_page + 1, offset),
+            ).fetchall()
+            has_next = len(design_rows) > per_page
+            designs = [_row_to_dict(r) for r in design_rows[:per_page]]
             recent_assessments = [
                 _row_to_dict(r)
                 for r in conn.execute(
@@ -174,7 +204,8 @@ def create_migration_blueprint():
             templates = [
                 _row_to_dict(r)
                 for r in conn.execute(
-                    "SELECT id, name, category, description, tags FROM mc_templates ORDER BY category, name"
+                    "SELECT id, name, category, description, tags "
+                    "FROM mc_templates ORDER BY category, name LIMIT 200"
                 ).fetchall()
             ]
         return render_template(
@@ -183,6 +214,10 @@ def create_migration_blueprint():
             recent_assessments=recent_assessments,
             templates=templates,
             migration_types=MIGRATION_TYPES,
+            page=page,
+            per_page=per_page,
+            has_next=has_next,
+            has_prev=page > 1,
         )
 
     @bp.route("/canvas/<design_id>")
@@ -900,7 +935,7 @@ def create_migration_blueprint():
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
-        set_clause = ", ".join(f"{k}=?" for k in fields)
+        set_clause = ", ".join(f"{k}=%s" for k in fields)
         with get_connection() as conn:
             conn.execute(
                 f"UPDATE mc_net_sessions SET {set_clause}, updated_at=%s WHERE id=%s",  # nosec B608
@@ -992,29 +1027,32 @@ def create_migration_blueprint():
         import tempfile
         import os as _os
 
-        # Accept either multipart file upload or base64 JSON
-        if request.files.get("file"):
-            f = request.files["file"]
-            suffix = _os.path.splitext(f.filename or "diagram.png")[1].lower() or ".png"
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                f.save(tmp.name)
-                tmp_path = tmp.name
-            topology_name = request.form.get("name", f"migration-{sid}-import")
-            cleanup = True
-        else:
-            data = request.get_json(force=True, silent=True) or {}
-            if not data.get("content"):
-                return jsonify({"error": "Provide a file upload or base64 content"}), 400
-            import base64 as _b64
-            suffix = {"png":".png","jpg":".jpg","jpeg":".jpg","pdf":".pdf",
-                      "drawio":".drawio","vsdx":".vsdx"}.get(data.get("format","png"), ".png")
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(_b64.b64decode(data["content"]))
-                tmp_path = tmp.name
-            topology_name = data.get("name", f"migration-{sid}-import")
-            cleanup = True
-
+        # Create the temp file and run ingest inside one try/finally so the
+        # delete=False temp file is always unlinked — even if the write/save
+        # itself fails. tmp_path is assigned right after creation (before the
+        # write) so a mid-write failure still leaves it set for cleanup.
+        tmp_path: str | None = None
         try:
+            # Accept either multipart file upload or base64 JSON
+            if request.files.get("file"):
+                f = request.files["file"]
+                suffix = _os.path.splitext(f.filename or "diagram.png")[1].lower() or ".png"
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    tmp_path = tmp.name
+                    f.save(tmp.name)
+                topology_name = request.form.get("name", f"migration-{sid}-import")
+            else:
+                data = request.get_json(force=True, silent=True) or {}
+                if not data.get("content"):
+                    return jsonify({"error": "Provide a file upload or base64 content"}), 400
+                import base64 as _b64
+                suffix = {"png":".png","jpg":".jpg","jpeg":".jpg","pdf":".pdf",
+                          "drawio":".drawio","vsdx":".vsdx"}.get(data.get("format","png"), ".png")
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    tmp_path = tmp.name
+                    tmp.write(_b64.b64decode(data["content"]))
+                topology_name = data.get("name", f"migration-{sid}-import")
+
             # Call NDC ingest pipeline
             from tools.network.network_ingester import ingest_diagram
             topology = ingest_diagram(tmp_path, project_id=None, topology_name=topology_name)
@@ -1022,10 +1060,10 @@ def create_migration_blueprint():
             logger.warning("Diagram ingest failed: %s", exc)
             topology = {"nodes": [], "edges": [], "error": str(exc)}
         finally:
-            if cleanup:
+            if tmp_path:
                 try:
                     _os.unlink(tmp_path)
-                except Exception:
+                except OSError:
                     pass
 
         nodes = topology.get("nodes") or []
@@ -1495,7 +1533,7 @@ def create_migration_blueprint():
         with get_connection() as conn:
             existing = conn.execute("SELECT id FROM mc_net_erb_metadata WHERE session_id=%s", (sid,)).fetchone()
             if existing:
-                set_clause = ", ".join(f"{k}=?" for k in fields)
+                set_clause = ", ".join(f"{k}=%s" for k in fields)
                 conn.execute(
                     f"UPDATE mc_net_erb_metadata SET {set_clause}, updated_at=%s WHERE session_id=%s",  # nosec B608
                     list(fields.values()) + [now_isoformat(), sid],
@@ -1506,7 +1544,7 @@ def create_migration_blueprint():
                 fields["created_at"] = now_isoformat()
                 fields["updated_at"] = now_isoformat()
                 cols = ", ".join(fields.keys())
-                placeholders = ", ".join("?" * len(fields))
+                placeholders = ", ".join(["%s"] * len(fields))
                 conn.execute(f"INSERT INTO mc_net_erb_metadata ({cols}) VALUES ({placeholders})", list(fields.values()))  # nosec B608
             conn.commit()
 
@@ -2184,7 +2222,7 @@ def create_migration_blueprint():
             if not updates:
                 return jsonify({"error": "no valid fields"}), 400
             updates["updated_at"] = _sm._now()
-            set_clause = ", ".join(f"{k}=?" for k in updates)
+            set_clause = ", ".join(f"{k}=%s" for k in updates)
             vals = list(updates.values()) + [sid]
             conn = get_connection()
             conn.execute(f"UPDATE mc_srv_sessions SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
@@ -2811,6 +2849,7 @@ def create_migration_blueprint():
             return jsonify({"error": str(exc)}), 500
 
     @bp.route("/api/server-migration/guidance/<int:step>", methods=["GET"])
+    @mdc_login_required
     def mc_srv_api_guidance(step):
         from tools.migration_canvas.dossier_advisor import get_guidance_for_step
         migration_type = request.args.get("type")
@@ -2906,6 +2945,102 @@ def create_migration_blueprint():
         try:
             graph = _wp.build_graph(sid)
             return jsonify(graph)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Wave Backout / Recovery Section (crx-mig-01 gap #2) ───────────────────
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/backout", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_wave_backout_get(sid, wid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            section = _wp.get_backout_section(sid, wid)
+            if section is None:
+                # Return the template default (not yet persisted) for editing.
+                waves = {w["id"]: w for w in _wp.get_waves(sid)}
+                section = _wp.generate_backout_section(waves.get(wid, {"id": wid}))
+                section["approved"] = False
+                section["persisted"] = False
+            else:
+                section["persisted"] = True
+            return jsonify(section)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/backout", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_wave_backout_post(sid, wid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            section = _wp.upsert_backout_section(sid, wid, body or None)
+            return jsonify({"ok": True, "backout": section})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/backout/approve", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_wave_backout_approve(sid, wid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            body = request.get_json(silent=True) or {}
+            section = _wp.approve_backout_section(sid, wid, body.get("user", ""))
+            if section is None:
+                return jsonify({"error": "No backout section to approve"}), 404
+            return jsonify({"ok": True, "backout": section})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Post-Migration Workload Validation + Wave Close Gate (crx-mig-01 gap #3) ─
+
+    try:
+        from tools.migration_canvas import workload_validator as _wv
+    except Exception as _wv_exc:  # noqa: BLE001
+        logger.warning("workload_validator import failed: %s", _wv_exc)
+        _wv = None  # type: ignore
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/validate", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_wave_validate(sid, wid):
+        if _wv is None:
+            return jsonify({"error": "workload_validator module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            workload = body.get("workload", body)
+            result = _wv.run_workload_validation(sid, wid, workload)
+            return jsonify({"ok": True, "validation": result})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/validation-status", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_wave_validation_status(sid, wid):
+        if _wv is None:
+            return jsonify({"error": "workload_validator module unavailable"}), 503
+        try:
+            return jsonify(_wv.wave_validation_status(sid, wid))
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>/close", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_wave_close(sid, wid):
+        if _wv is None:
+            return jsonify({"error": "workload_validator module unavailable"}), 503
+        try:
+            body = request.get_json(silent=True) or {}
+            result = _wv.close_wave(
+                sid, wid,
+                user=body.get("user", ""),
+                force=bool(body.get("force", False)),
+                override_reason=body.get("override_reason", ""),
+            )
+            code = 200 if result.get("ok") else 409
+            return jsonify(result), code
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -3148,13 +3283,13 @@ def create_migration_blueprint():
             sql = "SELECT * FROM mc_app_inventory WHERE 1=1"
             params: list = []
             if session_id:
-                sql += " AND session_id=?"
+                sql += " AND session_id=%s"
                 params.append(session_id)
             if criticality:
-                sql += " AND criticality=?"
+                sql += " AND criticality=%s"
                 params.append(criticality)
             if environment:
-                sql += " AND environment=?"
+                sql += " AND environment=%s"
                 params.append(environment)
             sql += " ORDER BY created_at DESC"
             rows = [dict(r) for r in db.execute(sql, params).fetchall()]
@@ -3231,7 +3366,7 @@ def create_migration_blueprint():
         if not updates:
             return jsonify({"error": "No valid fields to update"}), 400
         updates["updated_at"] = now_isoformat()
-        set_clause = ", ".join(f"{k}=?" for k in updates)
+        set_clause = ", ".join(f"{k}=%s" for k in updates)
         vals = list(updates.values()) + [app_id]
         with get_connection() as db:
             db.execute(f"UPDATE mc_app_inventory SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
@@ -3554,7 +3689,7 @@ def create_migration_blueprint():
             updates["started_at"] = now
         elif status in ("done", "failed"):
             updates["completed_at"] = now
-        set_clause = ", ".join(f"{k}=?" for k in updates)
+        set_clause = ", ".join(f"{k}=%s" for k in updates)
         vals = list(updates.values()) + [dm_id]
         with get_connection() as db:
             db.execute(f"UPDATE mc_data_migration SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded updates dict; values parameterized

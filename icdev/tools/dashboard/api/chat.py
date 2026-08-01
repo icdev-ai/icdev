@@ -13,6 +13,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+logger = get_logger("icdev.dashboard.api.chat")
+
 # ---------------------------------------------------------------------------
 # Path setup
 # ---------------------------------------------------------------------------
@@ -297,8 +299,8 @@ def _uc_init_table(conn):
         canvas_seeds TEXT DEFAULT NULL,
         workflow_steps TEXT DEFAULT NULL
     )""")
-    # Idempotent column migrations for existing tables
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(use_case_overrides)").fetchall()}
+    # Idempotent column migrations for existing tables (backend-aware probe)
+    from tools.db.storage import column_exists
     for col_def in [
         ("classification",          "TEXT DEFAULT NULL"),
         ("fast_track",              "INTEGER DEFAULT 0"),
@@ -313,7 +315,7 @@ def _uc_init_table(conn):
         ("canvas_seeds",            "TEXT DEFAULT NULL"),
         ("workflow_steps",          "TEXT DEFAULT NULL"),
     ]:
-        if col_def[0] not in existing:
+        if not column_exists(conn, "use_case_overrides", col_def[0]):
             try:
                 conn.execute(f"ALTER TABLE use_case_overrides ADD COLUMN {col_def[0]} {col_def[1]}")
             except Exception:
@@ -1004,8 +1006,12 @@ def activate_chain(chain_id):
                             "validated",
                         ))
                     conn.commit()
-            except Exception:
-                pass  # requirement seeding is best-effort
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # requirement seeding is best-effort
+                logger.warning(
+                    "activate_chain: best-effort INSERT into intake_requirements failed (non-blocking): %s",
+                    _exc,
+                )
 
         # Seed canvas artifacts
         uc_ids = []

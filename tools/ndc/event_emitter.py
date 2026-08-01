@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_canvas_connection
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,17 +30,24 @@ def _emit(event_type: str, payload: dict[str, Any],
     """Insert one row into canvas_events. Returns True on success, False on failure."""
     try:
         event_id = f"ce-{uuid.uuid4().hex[:16]}"
+        # canvas_events (migration 039) has no tenant_id/classification
+        # columns; carry the security context inside payload_json and use
+        # the RLS-disabled canvas connection (mirrors tools/canvas/event_bus.py,
+        # PR #720) so get_connection()'s predicate injection can't raise
+        # UndefinedColumn on PostgreSQL.
+        payload = {**payload, "_security_context":
+                   {"tenant_id": tenant_id, "clearance": classification}}
         payload_json = json.dumps(payload)
-        with get_connection() as conn:
+        with get_canvas_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO canvas_events
                     (id, source_canvas, target_canvas, event_type,
-                     payload_json, created_at, tenant_id, classification)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     payload_json, created_at, consumed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, NULL)
                 """,
                 (event_id, _SOURCE, _TARGET, event_type,
-                 payload_json, _now(), tenant_id, classification),
+                 payload_json, _now()),
             )
             conn.commit()
         logger.debug("ndc_event_emitter: emitted %s (%s)", event_type, event_id)

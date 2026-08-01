@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}ICDEV™ — Proposal Genesis{% endblock %}
 {% block content %}
+{% include "includes/_degraded_banner.html" %}
 
 <h1>Proposal Genesis — Autonomous Capture Pipeline</h1>
 
@@ -230,13 +231,15 @@
                     <th>Agency</th>
                     <th>NAICS</th>
                     <th>Status</th>
+                    <th>Phase</th>
                     <th>Win Strategy</th>
                     <th>Teaming Strategy</th>
                     <th>Updated</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="pg-capture-plans-tbody">
-                <tr><td colspan="7" style="text-align:center; color:var(--text-dim);">Click Refresh to load capture plans</td></tr>
+                <tr><td colspan="9" style="text-align:center; color:var(--text-dim);">Click Refresh to load capture plans</td></tr>
             </tbody>
         </table>
     </div>
@@ -667,6 +670,7 @@
 .badge-red { background: #ef444420; color: #ef4444; }
 .badge-gray { background: #6b728020; color: #6b7280; }
 .badge-blue { background: #3b82f620; color: #3b82f6; }
+.badge-purple { background: #8b5cf620; color: #8b5cf6; }
 .btn-sm { padding: 4px 12px; font-size: 12px; }
 .btn-warning { background: #f59e0b; color: #000; }
 .btn-warning:hover { background: #d97706; }
@@ -769,24 +773,86 @@ function pgRunPipeline() {
 }
 
 /* ── Capture Plans (Phase B) ─────────────────────────────────── */
+const PG_CAPTURE_PHASE_LABELS = {qualify: 'Qualify', pursue: 'Pursue', capture: 'Capture', bid: 'Bid/No-Bid', proposal: 'Proposal'};
+
 function pgLoadCapturePlans() {
     fetch('/api/proposal-genesis/capture-plans?limit=30')
         .then(r => r.json())
         .then(data => {
             const tbody = document.getElementById('pg-capture-plans-tbody');
             if (!data.plans || data.plans.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-dim);">No capture plans yet</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--text-dim);">No capture plans yet</td></tr>';
                 return;
             }
-            tbody.innerHTML = data.plans.map(p => `<tr>
+            tbody.innerHTML = data.plans.map(p => {
+                const phase = p.current_phase || 'qualify';
+                const phaseLabel = PG_CAPTURE_PHASE_LABELS[phase] || phase;
+                return `<tr>
                 <td>${p.opportunity_title || p.opportunity_id || '—'}</td>
                 <td>${p.agency || '—'}</td>
                 <td>${p.naics_code || '—'}</td>
                 <td><span class="badge badge-blue">${(p.status || 'draft').toUpperCase()}</span></td>
+                <td><span class="badge badge-purple" title="Shipley phase-gate lifecycle">${phaseLabel}</span></td>
                 <td style="max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${p.win_strategy || ''}">${p.win_strategy || '—'}</td>
                 <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${p.teaming_strategy || ''}">${p.teaming_strategy || '—'}</td>
                 <td>${(p.updated_at || '').substring(0, 16)}</td>
-            </tr>`).join('');
+                <td>
+                    <button class="btn btn-sm" onclick="pgViewCaptureGates('${p.id}')">Gates</button>
+                    <button class="btn btn-sm btn-primary" onclick="pgAdvanceCapturePlan('${p.id}', '${phase}')">Advance</button>
+                </td>
+            </tr>`;
+            }).join('');
+        });
+}
+
+/* Advance a capture plan through its phase gate (qualify -> pursue -> capture -> bid -> proposal),
+   or mark hold/no_bid/return -- append-only audit trail via pg_capture_gate_decisions. */
+function pgAdvanceCapturePlan(planId, currentPhase) {
+    const decision = prompt(
+        `Current phase: ${PG_CAPTURE_PHASE_LABELS[currentPhase] || currentPhase}\n` +
+        `Gate decision (advance / hold / no_bid / return):`,
+        'advance'
+    );
+    if (!decision || !['advance', 'hold', 'no_bid', 'return'].includes(decision.trim())) {
+        if (decision !== null) alert('Decision must be one of: advance, hold, no_bid, return');
+        return;
+    }
+    const rationale = prompt('Rationale for this gate decision (required for the audit trail):', '');
+    if (rationale === null || rationale.trim() === '') {
+        alert('Rationale is required.');
+        return;
+    }
+    fetch(`/api/proposal-genesis/capture-plans/${planId}/advance`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({decision: decision.trim(), rationale: rationale.trim(), decided_by: 'dashboard_user'})
+    })
+        .then(r => r.json().then(data => ({ok: r.ok, data})))
+        .then(({ok, data}) => {
+            if (!ok) {
+                alert('Gate decision failed: ' + (data.error || 'unknown error'));
+                return;
+            }
+            pgLoadCapturePlans();
+        });
+}
+
+/* Gate-decision audit history for one capture plan. */
+function pgViewCaptureGates(planId) {
+    fetch(`/api/proposal-genesis/capture-plans/${planId}/gates`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert('Could not load gate history: ' + data.error);
+                return;
+            }
+            const lines = data.gates.map(g =>
+                `${(g.created_at || '').substring(0, 16)}  ${g.from_phase} -> ${g.to_phase}  [${g.decision}]  by ${g.decided_by || 'unknown'}\n  ${g.rationale || ''}`
+            );
+            alert(
+                `Capture Plan Gate History\nCurrent phase: ${data.phase_label}\n\n` +
+                (lines.length ? lines.join('\n\n') : 'No gate decisions recorded yet.')
+            );
         });
 }
 

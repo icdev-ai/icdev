@@ -10,6 +10,7 @@ from tools.security.security_context import (
     clear_security_context,
     from_request,
     _get_clearance_order,
+    _extract_from_flask_g,
     classifications_dominated_by,
 )
 
@@ -19,7 +20,13 @@ class TestClassificationsDominatedBy:
     never higher ones. Guards the RLS predicate (classification IN <set>)."""
 
     def test_read_down_only(self):
-        assert classifications_dominated_by("CUI") == {"PUBLIC", "CUI"}
+        # Asserted as an invariant, not a literal set: the ladder gains labels
+        # over time (UNCLASSIFIED was added at order 0 alongside PUBLIC), and a
+        # hardcoded equality turns every such addition into a false failure.
+        # What must hold is that the set is exactly the labels at or below CUI.
+        s = classifications_dominated_by("CUI")
+        assert {"PUBLIC", "UNCLASSIFIED", "CUI"} <= s
+        assert all(_get_clearance_order(lbl) <= _get_clearance_order("CUI") for lbl in s)
 
     def test_secret_reads_down_not_up(self):
         s = classifications_dominated_by("SECRET")
@@ -143,3 +150,97 @@ class TestFromRequest:
         ctx = from_request(FakeRequest())
         assert ctx.user_id == ""
         assert ctx.clearance_level == 1  # CUI default
+
+
+class TestExtractFromFlaskG:
+    """_extract_from_flask_g derives SecurityContext from g.current_user
+    (dashboard_users row shape: role/clearance_level/compartments), the
+    dict written by tools.dashboard.auth._auth_before_request (prop-sec-02).
+
+    Regression coverage for two bugs found while wiring g.security_context
+    into the real auth flow: (1) this function read user["classification"]
+    instead of the actual dashboard_users column user["clearance_level"],
+    so every authenticated user always got CUI-tier clearance regardless of
+    their real clearance_level; (2) it did `set(user["compartments"])`
+    directly on the raw JSON-encoded string dashboard_users.compartments
+    stores (e.g. '["COI_FINANCE"]'), which iterates the string's
+    characters instead of parsing it as JSON.
+    """
+
+    def _app(self):
+        from flask import Flask
+        return Flask(__name__)
+
+    def test_reads_clearance_level_not_classification_key(self):
+        app = self._app()
+        with app.test_request_context():
+            from flask import g
+            g.current_user = {"id": "u1", "role": "admin", "clearance_level": "SECRET", "compartments": "[]"}
+            ctx = _extract_from_flask_g()
+            assert ctx.clearance_level == 3  # SECRET
+
+    def test_ignores_stale_classification_key_when_clearance_level_present(self):
+        """A user dict that (incorrectly) also carries a 'classification' key
+        must not let that override the real clearance_level column."""
+        app = self._app()
+        with app.test_request_context():
+            from flask import g
+            g.current_user = {
+                "id": "u1", "role": "admin",
+                "clearance_level": "SECRET", "classification": "CUI",
+                "compartments": "[]",
+            }
+            ctx = _extract_from_flask_g()
+            assert ctx.clearance_level == 3  # SECRET, not the stale CUI classification key
+
+    def test_parses_json_encoded_compartments_string(self):
+        app = self._app()
+        with app.test_request_context():
+            from flask import g
+            g.current_user = {
+                "id": "u1", "role": "admin", "clearance_level": "SECRET",
+                "compartments": '["COI_FINANCE", "LAC_DC_EAST"]',
+            }
+            ctx = _extract_from_flask_g()
+            assert ctx.compartments == frozenset({"COI_FINANCE", "LAC_DC_EAST"})
+
+    def test_empty_compartments_string_yields_empty_set(self):
+        app = self._app()
+        with app.test_request_context():
+            from flask import g
+            g.current_user = {"id": "u1", "role": "admin", "clearance_level": "CUI", "compartments": "[]"}
+            ctx = _extract_from_flask_g()
+            assert ctx.compartments == frozenset()
+
+    def test_malformed_compartments_json_degrades_to_empty_set(self):
+        app = self._app()
+        with app.test_request_context():
+            from flask import g
+            g.current_user = {"id": "u1", "role": "admin", "clearance_level": "CUI", "compartments": "not json"}
+            ctx = _extract_from_flask_g()
+            assert ctx.compartments == frozenset()
+
+    def test_already_list_compartments_still_works(self):
+        """Backward-compat: some callers may already pass a real list
+        (not the raw DB string) -- must not break on isinstance(str) check."""
+        app = self._app()
+        with app.test_request_context():
+            from flask import g
+            g.current_user = {"id": "u1", "role": "admin", "clearance_level": "CUI", "compartments": ["COI_FINANCE"]}
+            ctx = _extract_from_flask_g()
+            assert ctx.compartments == frozenset({"COI_FINANCE"})
+
+    def test_no_current_user_returns_none(self):
+        app = self._app()
+        with app.test_request_context():
+            ctx = _extract_from_flask_g()
+            assert ctx is None or ctx.clearance_level == 1  # CUI default, no crash
+
+    def test_attaches_to_flask_g(self):
+        app = self._app()
+        with app.test_request_context():
+            from flask import g
+            g.current_user = {"id": "u1", "role": "admin", "clearance_level": "SECRET", "compartments": "[]"}
+            _extract_from_flask_g()
+            assert isinstance(g.security_context, SecurityContext)
+            assert g.security_context.clearance_level == 3

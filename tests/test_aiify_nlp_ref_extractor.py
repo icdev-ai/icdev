@@ -177,7 +177,7 @@ class TestRunScanNlpRefIntegration:
 
         captured_profile: list = []
 
-        def fake_insert(conn, sql, params, id_col="id"):
+        def fake_insert(conn, sql, params, id_col="id", commit=True):
             if "aiify_scans" in sql and "INSERT" in sql:
                 # language_profile is 3rd positional param
                 captured_profile.append(params[2])
@@ -192,7 +192,6 @@ class TestRunScanNlpRefIntegration:
             "pillar_scores": {}, "overall_readiness_score": 0.0, "icdev_checks": {},
         }))
         monkeypatch.setattr(eng, "_insert", fake_insert)
-        monkeypatch.setattr(eng, "_exec", MagicMock())
         monkeypatch.setattr(eng, "get_connection", MagicMock(return_value=MagicMock(
             __enter__=MagicMock(), __exit__=MagicMock(), close=MagicMock(),
         )))
@@ -224,7 +223,6 @@ class TestRunScanNlpRefIntegration:
             "pillar_scores": {}, "overall_readiness_score": 0.0, "icdev_checks": {},
         }))
         monkeypatch.setattr(eng, "_insert", MagicMock(return_value=1))
-        monkeypatch.setattr(eng, "_exec", MagicMock())
         monkeypatch.setattr(eng, "get_connection", MagicMock(return_value=MagicMock(
             __enter__=MagicMock(), __exit__=MagicMock(), close=MagicMock(),
         )))

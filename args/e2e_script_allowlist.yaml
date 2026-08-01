@@ -1,0 +1,91 @@
+# CUI // SP-CTI
+# E2E standalone Selenium script allowlist (oxf-e2e-01).
+#
+# `allowlist` — scripts that import cleanly (subprocess exec, PYTHONPATH=repo
+#   root, 15s timeout). Executed by `tools/testing/e2e_runner.py --driver
+#   selenium --run-all --include-scripts` via run_selenium_script.
+# `excluded` — scripts that fail an import probe; kept out with a reason. This
+#   is the remediation backlog (see docs/testing/e2e-script-inventory.md).
+#
+# Regenerate the inventory before editing; do NOT hand-promote a script into
+# `allowlist` without confirming it imports cleanly.
+allowlist:
+  - e2e_alert_test
+  - e2e_bdc_lifecycle
+  - e2e_boundary_cato
+  - e2e_canvas_kg
+  - e2e_canvas_orchestration
+  - e2e_chat_hitl_kanban_lifecycle
+  - e2e_clawhub
+  - e2e_cloud_migration_security
+  - e2e_components_map
+  - e2e_confluence_widget
+  - e2e_cpmp_cor
+  - e2e_data_lineage
+  - e2e_ddc_lifecycle
+  - e2e_ddc_sops
+  - e2e_devops_twin
+  - e2e_election_phase_widget
+  - e2e_exec_quality_widget
+  - e2e_fathomdesk
+  - e2e_fathomdesk_modal
+  - e2e_fathomdesk_trap
+  - e2e_fedramp-20x
+  - e2e_govcon_proposals_cpmp
+  - e2e_home_autonomy_panel
+  - e2e_home_projects_in_flight
+  - e2e_idc_lifecycle
+  - e2e_infra_emit
+  - e2e_infra_twin
+  - e2e_intake_requirements
+  - e2e_kanban_bulk_promote
+  - e2e_kanban_depends_on
+  - e2e_kanban_depends_on_full_lifecycle
+  - e2e_mission_canvas
+  - e2e_ndc_path_reachability
+  - e2e_ndc_sops
+  - e2e_ndc_twin_tfw
+  - e2e_network_arb_erb
+  - e2e_network_canvas
+  - e2e_network_collect
+  - e2e_network_extended
+  - e2e_network_geo
+  - e2e_network_import
+  - e2e_network_innovation
+  - e2e_network_nl_query
+  - e2e_network_p1
+  - e2e_network_p1_rulebook
+  - e2e_network_p2
+  - e2e_network_p2_patterns
+  - e2e_network_p3
+  - e2e_network_p345
+  - e2e_network_peering_capacity
+  - e2e_network_phase_a
+  - e2e_network_phase_b
+  - e2e_network_phase_c
+  - e2e_network_profiles
+  - e2e_network_projects
+  - e2e_network_refresh
+  - e2e_network_routing
+  - e2e_network_whatif
+  - e2e_observability_mitre
+  - e2e_odc_lifecycle
+  - e2e_oracle_insights_widget
+  - e2e_prop_vv02_iqe_smoke
+  - e2e_prop_vv02_role_and_new_surfaces
+  - e2e_proposals_reviews_dashboard
+  - e2e_rfi_canvas
+  - e2e_route_coverage_gaps
+  - e2e_simulation
+  - e2e_simulation_chat
+  - e2e_writeguard
+
+excluded:
+  e2e_dual_track_lifecycle: "sqlite3.OperationalError: no such table: topologies"
+  e2e_full_lifecycle_complex: "sqlite3.OperationalError: no such table: topologies"
+  e2e_killswitch_widget: "ModuleNotFoundError: No module named 'tools.trading.risk'"
+  e2e_ndc_full_lifecycle: "sqlite3.OperationalError: no such table: topologies"
+  e2e_ui_full_coverage: "AttributeError: 'NoneType' object has no attribute '__dict__'. Did you mean: '__dir__'?"
+  e2e_ui_navigation: "AttributeError: 'NoneType' object has no attribute '__dict__'. Did you mean: '__dir__'?"
+  e2e_zta_lac_deny_assertions: "exit 1"
+

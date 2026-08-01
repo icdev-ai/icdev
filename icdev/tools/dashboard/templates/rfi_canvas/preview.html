@@ -114,6 +114,8 @@
       {% else %}
         <div class="pv-empty">Content pending — not yet generated.</div>
       {% endif %}
+      {% set sources = sec.source_labels %}
+      {% include "includes/_sources_panel.html" %}
     </div>
   {% endfor %}
 

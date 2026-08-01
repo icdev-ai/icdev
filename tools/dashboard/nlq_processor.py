@@ -11,11 +11,14 @@ from __future__ import annotations
 import json
 import re
 import time
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, list_tables
 from pathlib import Path
 from typing import Optional
 
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.nlq_processor")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -49,12 +52,10 @@ def extract_schema(db_path: Path = None) -> dict:
     conn = get_connection(db_path=str(path))
     schema = {}
 
-    tables = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    ).fetchall()
+    # Backend-aware table enumeration (works on PostgreSQL and SQLite)
+    tables = list_tables(conn)
 
-    for table_row in tables:
-        table_name = table_row["name"]
+    for table_name in tables:
         columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
         row_count = conn.execute(f"SELECT COUNT(*) as cnt FROM {table_name}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
 
@@ -92,8 +93,15 @@ def validate_sql(sql: str) -> tuple:
     return True, None
 
 
-def generate_sql_via_bedrock(query: str, schema: dict) -> Optional[str]:
-    """Generate SQL from natural language using Amazon Bedrock."""
+def generate_sql_via_bedrock(query: str, schema: dict, exclude_model_ids=None) -> Optional[str]:
+    """Generate SQL from natural language via the vendor-agnostic LLM router.
+
+    (Legacy name: this no longer calls Amazon Bedrock directly — routing is
+    governed by ``args/llm_config.yaml``.) ``exclude_model_ids`` is forwarded to
+    ``LLMRouter.invoke`` so an air-gapped caller (e.g. Cortex Analyst with
+    ``context.air_gap``) can force local-only resolution for this call, matching
+    ``cortex.api._invoke``. Dashboard callers pass nothing and are unaffected.
+    """
     try:
         # Load few-shot examples
         examples_path = BASE_DIR / "context" / "dashboard" / "nlq_examples.json"
@@ -138,14 +146,17 @@ SQL:"""
         from tools.llm.provider import LLMRequest
 
         router = get_router()
-        llm_resp = router.invoke(
-            "nlq_sql",
-            LLMRequest(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=500,
-                temperature=0.0,
-            ),
+        _req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+            temperature=0.0,
         )
+        # Forward air-gap exclusions when provided (omit the kwarg otherwise so
+        # plain dashboard calls stay signature-compatible — mirrors _invoke).
+        if exclude_model_ids:
+            llm_resp = router.invoke("nlq_sql", _req, exclude_model_ids=exclude_model_ids)
+        else:
+            llm_resp = router.invoke("nlq_sql", _req)
         sql = llm_resp.content.strip()
 
         # Clean up: remove markdown code blocks if present
@@ -278,8 +289,9 @@ def log_nlq_query(
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Best-effort logging
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best-effort logging
+        logger.warning("log_nlq_query: best-effort INSERT into nlq_queries failed (non-blocking): %s", exc)
 
 
 def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:

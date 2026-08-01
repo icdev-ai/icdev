@@ -31,12 +31,22 @@ from tools.slides.constants import (
     SOURCE_TYPES, DEFAULT_THEME, DEFAULT_DECK_TYPE, DEFAULT_TONE,
     DEFAULT_CITATION_STYLE, DEFAULT_OUTPUT_FORMATS,
     AUDIENCE_MODES, AUDIENCE_MODE_HINTS, PITCH_TEMPLATES,
+    DECK_READY_STATUSES,
 )
 from tools.slides.db.init_db import get_connection, init_db
 from tools.logging.icdev_logger import get_logger
 from tools.db.storage import sql_placeholder
+from tools.dashboard.auth import require_role
 
 logger = get_logger(__name__)
+
+# Costly (LLM generation) and destructive (edit/delete/upload) slide operations
+# are gated to authoring roles. Global dashboard auth (register_dashboard_auth)
+# already requires a logged-in user for every route; require_role stacks a role
+# check on top so viewers cannot trigger LLM spend or mutate/delete decks.
+# Read-only routes (index/detail/present, status polling, IQE query) and the
+# deterministic asset-smoke E2E probe stay open to any authenticated user.
+_SLIDES_WRITE_ROLES = ("admin", "pm", "developer")
 
 slides_bp = Blueprint(
     "slides",
@@ -298,6 +308,7 @@ def template_detail(template_id: int):
 # ── API Routes ───────────────────────────────────────────────────────────────
 
 @slides_bp.route("/api/generate", methods=["POST"])
+@require_role(*_SLIDES_WRITE_ROLES)
 def api_generate():
     """Trigger deck generation asynchronously. Returns deck_id immediately; poll /api/<id>/status."""
     data = request.get_json(silent=True) or {}
@@ -368,11 +379,13 @@ def api_deck_status(deck_id: int):
         "graphics":   "Generating images…",
         "building":   "Building PPTX & exports…",
         "completed":  "Complete!",
+        "degraded":   "Complete — degraded (partial fallback content)",
+        "template":   "Complete — template (canned outline, LLM unavailable)",
         "failed":     "Generation failed",
         "auto":       "Complete (auto-generated)",
     }
     label = _PHASE_LABELS.get(status, status.replace("_", " ").title())
-    done = status in ("completed", "auto", "failed")
+    done = status in ("completed", "degraded", "template", "auto", "failed")
 
     return jsonify({
         "deck_id": deck_id,
@@ -380,11 +393,13 @@ def api_deck_status(deck_id: int):
         "phase_label": label,
         "done": done,
         "slide_count": slide_count,
+        "degraded": status in ("degraded", "template"),
         "error": status == "failed",
     })
 
 
 @slides_bp.route("/api/<int:deck_id>/revise", methods=["POST"])
+@require_role(*_SLIDES_WRITE_ROLES)
 def api_revise(deck_id: int):
     """Revise a single slide based on feedback."""
     data = request.get_json(silent=True) or {}
@@ -447,8 +462,12 @@ def api_revise(deck_id: int):
 def _serve_file(deck_id: int, column: str, mime: str, ext: str) -> Any:
     conn = _conn()
     try:
+        # Degraded/template decks are honestly flagged but still downloadable —
+        # gate on any ready status, not just plain "completed".
+        ready = ", ".join(f"'{s}'" for s in DECK_READY_STATUSES)
         row = conn.execute(
-            f"SELECT title, {column} FROM slides_decks WHERE deck_id = {_ph(conn)} AND status = 'completed'",
+            f"SELECT title, {column} FROM slides_decks "
+            f"WHERE deck_id = {_ph(conn)} AND status IN ({ready})",
             (deck_id,),
         ).fetchone()
     finally:
@@ -490,6 +509,7 @@ def api_download_html(deck_id: int):
 
 
 @slides_bp.route("/api/<int:deck_id>/regenerate-slide", methods=["POST"])
+@require_role(*_SLIDES_WRITE_ROLES)
 def api_regenerate_slide(deck_id: int):
     """Regenerate a single slide with optional tone/theme change."""
     data = request.get_json(silent=True) or {}
@@ -555,6 +575,7 @@ def api_regenerate_slide(deck_id: int):
 
 
 @slides_bp.route("/api/<int:deck_id>/slides/<int:slide_id>", methods=["PUT"])
+@require_role(*_SLIDES_WRITE_ROLES)
 def api_update_slide(deck_id: int, slide_id: int):
     """Inline slide editor — update a slide's content, type, and speaker notes."""
     data = request.get_json(silent=True) or {}
@@ -625,6 +646,7 @@ def api_update_slide(deck_id: int, slide_id: int):
 
 
 @slides_bp.route("/api/<int:deck_id>/slides/<int:slide_id>", methods=["DELETE"])
+@require_role(*_SLIDES_WRITE_ROLES)
 def api_delete_slide(deck_id: int, slide_id: int):
     """Delete a single slide from a deck."""
     conn = _conn()
@@ -686,6 +708,7 @@ def api_asset_smoke():
 
 
 @slides_bp.route("/api/templates/upload", methods=["POST"])
+@require_role(*_SLIDES_WRITE_ROLES)
 def api_upload_template():
     """Upload a .pptx template, inspect its shape map, and persist it.
 
@@ -732,6 +755,7 @@ def api_upload_template():
 
 
 @slides_bp.route("/api/templates/<int:template_id>/fill", methods=["POST"])
+@require_role(*_SLIDES_WRITE_ROLES)
 def api_fill_template(template_id: int):
     """Fill selected slides of an uploaded template and register the result as a deck."""
     data = request.get_json(silent=True) or {}

@@ -184,7 +184,10 @@ components:
     template: tools/dashboard/templates/boundary_canvas/canvas.html
     blueprint: true
     constants: tools/boundary_canvas/constants.py
-    db_migration: tools/boundary_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/boundary_canvas/db/init_db.py
+    # (there is no db/migrations dir). cATO twin tables are provided by the shared
+    # migrations tools/db/migrations/027_compliance_snapshots + 027_compliance_twin_schema.
+    db_migration: tools/boundary_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/boundary/
@@ -193,6 +196,13 @@ components:
   cli_name: pipeline
   display_name: Pipeline Design Canvas
   description: CI/CD pipeline management, worktree isolation, GitLab integration.
+  # Flag story (pdx-ops-01): ICDEV_PDC_ENABLED is the primary registry-side gate
+  # (default off). ICDEV_PIPELINE_ENABLED is a secondary/legacy flag also flipped
+  # by icdev enable/disable. NOTE: the blueprint factory (tools/pipeline/blueprint.py)
+  # currently defaults ICDEV_PIPELINE_ENABLED to true independently of this registry
+  # gate — that factory-side divergence is deliberately deferred to task pdx-fix-03
+  # (do not edit blueprint.py here). Enable in production via a core profile
+  # (args/core_profiles.yaml: government / saas-il4) or `icdev enable pipeline`.
   env_flag: ICDEV_PDC_ENABLED
   extra_env_flags:
   - ICDEV_PIPELINE_ENABLED
@@ -250,7 +260,11 @@ components:
     template: tools/dashboard/templates/observability_canvas/index.html
     blueprint: true
     constants: tools/observability_canvas/constants.py
-    db_migration: tools/observability_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/observability_canvas/db/init_db.py
+    # (there is no db/migrations dir). Point at the init_db module so the completeness
+    # checker (tools/config/component_registry.py db_migration probe) verifies a path
+    # that actually exists, mirroring the boundary_canvas (bdc) convention.
+    db_migration: tools/observability_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/observability/
@@ -312,10 +326,38 @@ components:
     template: tools/dashboard/templates/qdc_canvas/index.html
     blueprint: true
     constants: tools/qdc_canvas/constants.py
-    db_migration: tools/qdc_canvas/db/migrations
+    db_migration: tools/qdc_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/qdc/
+- key: twin_observatory
+  kind: canvas
+  cli_name: twin-observatory
+  display_name: Twin Observatory
+  description: Cross-canvas digital-twin health grid + drift event stream (twx-obs-01).
+  env_flag: ICDEV_TWIN_OBSERVATORY_ENABLED
+  default_enabled: false
+  module: tools.twin_observatory.blueprint
+  blueprint_attr: twin_observatory_bp
+  url_prefix: /twin-observatory
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Twin Observatory
+  iqe:
+    adapter_module: tools.iqe.adapters.twin_observatory
+    collections:
+    - twin_observatory.twins
+    - twin_observatory.events
+  completeness:
+    template: tools/dashboard/templates/twin_observatory/index.html
+    blueprint: true
+    constants: tools/twin_observatory/constants.py
+    db_migration: null
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/twin_observatory/
 - key: mdc
   kind: canvas
   cli_name: migration
@@ -343,7 +385,7 @@ components:
     template: tools/dashboard/templates/migration_canvas/canvas.html
     blueprint: true
     constants: tools/migration_canvas/constants.py
-    db_migration: tools/migration_canvas/db/migrations
+    db_migration: tools/migration_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/migration/
@@ -389,7 +431,13 @@ components:
   blueprint_attr: aadc_bp
   url_prefix: /agentic-ai
   min_il: IL4
-  default_roles: []
+  # penta-aadc-01: seed canvas-access default_roles so tenant provisioning
+  # (canvas_access.seed_tenant_defaults) auto-grants read access to the roles
+  # that operate this canvas, instead of the prior deny-all posture ([]).
+  default_roles:
+  - developer
+  - compliance_officer
+  - isso
   nav:
     section: Canvases
     label: Agentic AI
@@ -404,7 +452,9 @@ components:
     template: tools/dashboard/templates/agentic_ai_canvas/analytics.html
     blueprint: true
     constants: tools/agentic_ai_canvas/constants.py
-    db_migration: tools/agentic_ai_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/agentic_ai_canvas/db/init_db.py
+    # (there is no db/migrations dir); point at the real initializer, matching aimc.
+    db_migration: tools/agentic_ai_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/aadc/
@@ -418,8 +468,14 @@ components:
   blueprint_attr: create_aiml_blueprint
   url_prefix: /ai-ml
   min_il: IL4
+  # penta-aimc-03: seed read access for operator roles so canvas access grants
+  # exist when ICDEV_ENFORCE_CANVAS_ACCESS is on. Mutating routes are additionally
+  # hard-gated with @require_role in tools/aiml_canvas/blueprint.py.
   default_roles:
+  - admin
+  - pm
   - developer
+  - isso
   nav:
     section: Canvases
     label: AI/ML
@@ -435,7 +491,11 @@ components:
     template: tools/dashboard/templates/aiml_canvas/canvas.html
     blueprint: true
     constants: tools/aiml_canvas/constants.py
-    db_migration: tools/aiml_canvas/db/migrations
+    # Canvas tables are created imperatively by tools/aiml_canvas/db/init_db.py
+    # (there is no db/migrations dir). Point at the init_db module so the completeness
+    # checker (tools/config/component_registry.py db_migration probe) verifies a path
+    # that actually exists, mirroring the boundary_canvas (bdc) / observability (odc) convention.
+    db_migration: tools/aiml_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/aimc/
@@ -453,6 +513,11 @@ components:
   nav:
     section: Canvases
     label: Operations
+    # cnr-nav-01: explicit landing link — url_prefix is '' so without this the
+    # normalizer emitted href '/' (dumped users back on the home dashboard).
+    links:
+    - label: Operations
+      href: /ops
   iqe:
     adapter_module: tools.iqe.adapters.ohc
     collections:
@@ -470,25 +535,6 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/ohc/
-- key: iop
-  kind: canvas
-  display_name: Info Ops Canvas
-  description: Information operations canvas.
-  env_flag: ICDEV_INFO_OPS_ENABLED
-  default_enabled: false
-  module: tools.info_ops.blueprint
-  blueprint_attr: create_info_ops_blueprint
-  url_prefix: /info-ops
-  min_il: IL4
-  default_roles: []
-  nav:
-    section: Canvases
-    label: Info Ops
-  completeness:
-    template: tools/dashboard/templates/info_ops/index.html
-    blueprint: true
-    constants: tools/info_ops/constants.py
-    nav_link: true
 - key: mission_canvas
   kind: canvas
   display_name: Mission Control Canvas
@@ -518,7 +564,7 @@ components:
     template: tools/dashboard/templates/mission_canvas/index.html
     blueprint: true
     constants: tools/mission_canvas/constants.py
-    db_migration: tools/mission_canvas/db/migrations
+    db_migration: tools/mission_canvas/db/init_db.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/mission_canvas/
@@ -536,6 +582,10 @@ components:
   nav:
     section: Canvases
     label: NOC Operations
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: NOC Operations
+      href: /noc
   iqe:
     adapter_module: tools.iqe.adapters.nocc
     collections:
@@ -567,6 +617,10 @@ components:
   nav:
     section: Canvases
     label: Peering Management
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: Peering Management
+      href: /pmc
   iqe:
     adapter_module: tools.iqe.adapters.pmc
     collections:
@@ -582,7 +636,10 @@ components:
     db_migration: tools/pmc_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/pmc/
+    # Loaded seed queries live in the pmc_canvas/ dir (matches the template dir
+    # and is the dir the dashboard /iqe loader globs); the bare pmc/ dir held an
+    # unread seed.yaml and was removed (cvx-nav-02).
+    seed_queries: context/iqe/queries/pmc_canvas/
 - key: ccc
   kind: canvas
   display_name: Cloud Capacity & Circuits Canvas
@@ -597,6 +654,10 @@ components:
   nav:
     section: Canvases
     label: Circuit & Capacity
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: Circuit & Capacity
+      href: /ccc
   iqe:
     adapter_module: tools.iqe.adapters.ccc
     collections:
@@ -613,7 +674,9 @@ components:
     db_migration: tools/ccc_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/ccc/
+    # Loaded seed queries live in ccc_canvas/ (dashboard /iqe globs .iqe there);
+    # the bare ccc/ dir held an unread seed.yaml and was removed (cvx-nav-02).
+    seed_queries: context/iqe/queries/ccc_canvas/
 - key: dsoc
   kind: canvas
   display_name: DDoS Security Ops Canvas
@@ -660,7 +723,9 @@ components:
     db_migration: tools/dsoc_canvas/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/dsoc/
+    # Loaded seed queries live in dsoc_canvas/ (dashboard /iqe globs .iqe there);
+    # the bare dsoc/ dir held an unread seed.yaml and was removed (cvx-nav-02).
+    seed_queries: context/iqe/queries/dsoc_canvas/
 - key: aiify
   kind: canvas
   display_name: AI-ify
@@ -671,7 +736,14 @@ components:
   blueprint_attr: aiify_bp
   url_prefix: /ai-ify
   min_il: IL4
-  default_roles: []
+  # penta-aiify-02: seed read access for operator roles so canvas access grants
+  # exist when ICDEV_ENFORCE_CANVAS_ACCESS is on. Mutating/expensive routes are
+  # additionally hard-gated with @require_role in tools/aiify/blueprint.py.
+  default_roles:
+  - admin
+  - pm
+  - developer
+  - isso
   nav:
     section: Canvases
     label: AI-ify
@@ -689,13 +761,18 @@ components:
     - aiify.roadmaps
     - aiify.posture
   completeness:
-    template: tools/dashboard/templates/ai-ify/page.html
+    # Template dir on disk is 'aiify' (not 'ai-ify'); the URL slug '/ai-ify' is
+    # set by url_prefix + nav hrefs above, independent of the template dir name.
+    # Pointing completeness.template at the real dir lets the registry-nav alias
+    # (_load_registry_nav_dirs) key this canvas as 'aiify', matching the page.html
+    # glob, so the 8-component nav-link check resolves without a whitelist entry.
+    template: tools/dashboard/templates/aiify/page.html
     blueprint: true
     constants: tools/aiify/constants.py
     db_migration: tools/aiify/db/migrations
     iqe_adapter: true
     nav_link: true
-    seed_queries: context/iqe/queries/ai-ify/
+    seed_queries: context/iqe/queries/aiify/
 - key: aiify_compat
   kind: canvas
   display_name: AI-ify Compatibility
@@ -706,13 +783,56 @@ components:
   blueprint_attr: aiify_compat_bp
   url_prefix: ''
   min_il: IL4
-  default_roles: []
-  nav:
-    section: Canvases
-    label: AI-ify
+  # penta-aiify-02: mirror the aiify canvas operator roles onto the compat alias.
+  default_roles:
+  - admin
+  - pm
+  - developer
+  - isso
+  # cnr-nav-01: no nav section. This is a legacy 301-redirect alias
+  # (/ai-augmentation → /ai-ify/); completeness declares nav_link: false and the
+  # real `aiify` canvas already provides the "AI-ify" sidebar link (/ai-ify/).
+  # Previously the empty-links + url_prefix '' normalizer emitted a duplicate
+  # "AI-ify" entry pointing at '/'.
+  nav: {}
   completeness:
     blueprint: true
     nav_link: false
+- key: cortex
+  kind: canvas
+  display_name: Cortex
+  description: 'Unified AI layer — one governed facade over RAG, KG, documents, and keyword search (complete/classify/extract/search/ask/govern/agent).'
+  env_flag: ICDEV_CORTEX_ENABLED
+  default_enabled: false
+  module: tools.cortex.blueprint
+  blueprint_attr: cortex_bp
+  url_prefix: /cortex
+  min_il: IL4
+  default_roles:
+  - researcher
+  - intelligence_analyst
+  - writer
+  nav:
+    section: Canvases
+    label: Cortex
+    links:
+    - label: 🧠 Cortex
+      href: /cortex/
+      style: color:#a78bfa;
+  iqe:
+    adapter_module: tools.iqe.adapters.cortex
+    collections:
+    - cortex.chat_sessions
+    - cortex.audit
+    - cortex.search_history
+  completeness:
+    template: tools/dashboard/templates/cortex/index.html
+    blueprint: true
+    constants: tools/cortex/constants.py
+    db_migration: tools/cortex/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/cortex/
 - key: dic
   kind: canvas
   display_name: Document Intelligence Canvas
@@ -733,32 +853,50 @@ components:
   nav:
     section: Canvases
     label: Document Intelligence
+    # Ordered by the four jobs a user actually does, matching _PAGE_GROUPS in
+    # tools/document_intelligence/blueprint.py: get documents in, ask questions
+    # of them, author from them, then govern what comes out. The sidebar was a
+    # flat list in a different order from the index tiles, so the two navs
+    # disagreed on both membership and sequence — the index already grouped its
+    # tiles ("14 undifferentiated sibling tiles give no clue what to do first")
+    # while the sidebar ignored that entirely.
+    #
+    # base.html renders links flat, so the grouping is expressed as order rather
+    # than headings — no template change, and the registry stays the single
+    # source of truth per the CLAUDE.md registry rule.
     links:
     - label: DIC Overview
       href: /document-intelligence/
       style: color:#7ab3f0;
+    # 1 · Ingest & organize
     - label: Collections
       href: /document-intelligence/collections
-    - label: Search & Chat
-      href: /document-intelligence/search
-    - label: Analytics
-      href: /document-intelligence/analytics
-    - label: HITL Review
-      href: /document-intelligence/review
-    - label: AI-Assist
-      href: /document-intelligence/generate
-    - label: ACOIC
-      href: /document-intelligence/acoic
-    - label: Freshness
-      href: /document-intelligence/freshness
-    - label: Explorer
-      href: /document-intelligence/explorer
-    - label: Handoff
-      href: /document-intelligence/handoff
     - label: 📓 Notebook
       href: /document-intelligence/notebook
+    - label: Handoff
+      href: /document-intelligence/handoff
+    # 2 · Explore & search
+    - label: Search & Chat
+      href: /document-intelligence/search
+    - label: Explorer
+      href: /document-intelligence/explorer
+    - label: Analytics
+      href: /document-intelligence/analytics
+    # 3 · Author & generate
     - label: ✍️ Tech Writer
       href: /document-intelligence/techwriter
+    - label: AI-Assist
+      href: /document-intelligence/generate
+    # Templates had a tile but no sidebar entry — reachable from the index only.
+    - label: Templates
+      href: /document-intelligence/templates
+    # 4 · Govern & review
+    - label: HITL Review
+      href: /document-intelligence/review
+    - label: Freshness
+      href: /document-intelligence/freshness
+    - label: DocDrift
+      href: /document-intelligence/docdrift
   iqe:
     adapter_module: tools.iqe.adapters.dic
     collections:
@@ -865,6 +1003,12 @@ components:
   nav:
     section: Build
     label: AI Enablement
+    # cnr-nav-01: the aisg blueprint registers no root index (url_prefix ''); its
+    # entry point is the AI Launchpad Wizard at /ai-wizard. Without an explicit
+    # link the normalizer emitted href '/'.
+    links:
+    - label: AI Enablement
+      href: /ai-wizard
   iqe:
     adapter_module: tools.iqe.adapters.aisg
     collections:
@@ -892,6 +1036,10 @@ components:
   nav:
     section: Security
     label: SIPA
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: SIPA
+      href: /integrity
   iqe:
     adapter_module: tools.iqe.adapters.integrity
     collections:
@@ -920,6 +1068,10 @@ components:
   nav:
     section: Build
     label: Foundry
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: Foundry
+      href: /foundry
   iqe:
     adapter_module: tools.iqe.adapters.foundry
     collections:
@@ -947,6 +1099,10 @@ components:
   nav:
     section: Security
     label: Logs
+    # cnr-nav-01: explicit landing link (url_prefix '' → would otherwise be '/').
+    links:
+    - label: Logs
+      href: /logs
   iqe:
     adapter_module: tools.iqe.adapters.logs
     collections:
@@ -961,6 +1117,23 @@ components:
   # ═══════════════════════════════════════════════════════════════════════════
   # Child / Application Modules
   # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Child-app completeness: of the 8 canvas completeness components (cvx-gen-02),
+  # only the ones meaningful for a self-contained child app are declared here.
+  # The forge_validator FORGE-13 gate runs the full 8-point validator only on
+  # `kind: canvas` components; these child_app blocks are documentary metadata of
+  # which components each app actually ships.
+  #   1. page_template — CANVAS-ONLY: the dashboard canvas template dir
+  #        (tools/dashboard/templates/<key>/page.html). Child apps template under
+  #        their own package, so this point is N/A and is intentionally omitted.
+  #   2. icdev_mirror  — CANVAS-ONLY: mirror of point 1. N/A, omitted.
+  #   3. blueprint     — applies -> `blueprint: true`
+  #   4. backing_module— applies -> `backing_module: true`
+  #   5. constants     — applies when the app ships constants.py -> `constants: <path>`
+  #   6. db_migration  — child apps carry an app-local db.py rather than a
+  #        tools/db migration dir, declared here as `db_module: <path>`
+  #   7. nav_link      — applies -> `nav_link: true`
+  #   8. iqe           — applies when an IQE adapter is registered -> `iqe_adapter: true`
 - key: hitl_workflow
   kind: child_app
   display_name: HITL Workflow
@@ -975,8 +1148,17 @@ components:
   nav:
     section: Ops
     label: HITL
+    # cnr-nav-01: the registry url_prefix is '' but create_wf_page_blueprint mounts
+    # its own url_prefix '/workflow', so the landing page is /workflow/ (app.py
+    # registers as-is when the blueprint declares its own prefix). Without this
+    # explicit link the normalizer emitted href '/'.
+    links:
+    - label: HITL
+      href: /workflow/
   completeness:
     blueprint: true
+    backing_module: true
+    constants: tools/workflow_hitl/constants.py
     nav_link: true
 - key: forge_academy
   kind: child_app
@@ -986,14 +1168,27 @@ components:
   default_enabled: false
   module: apps.forge_academy.blueprint
   blueprint_attr: academy_bp
-  url_prefix: /forge-academy
+  # Routes are hardcoded to /academy in the blueprint (registered without a
+  # url_prefix), so the registry prefix and nav link must match /academy or the
+  # derived nav link 404s. A 301 redirect from the legacy /forge-academy paths
+  # lives in the blueprint for stale bookmarks. (penta-aca-01)
+  url_prefix: /academy
   min_il: IL2
   default_roles: []
   nav:
-    section: Learn
+    # nav.section names the top-level dropdown (nav_tree.sections is keyed by it,
+    # see base.html "nav_tree.sections.get('Canvases')"). FORGE Academy renders in
+    # the Platforms dropdown under the hardcoded "Training" sub-label. (gdx-doc-02)
+    section: Platforms
     label: FORGE Academy
+    links:
+      - label: Dashboard
+        href: /academy
   completeness:
     blueprint: true
+    backing_module: true
+    constants: apps/forge_academy/constants.py
+    db_module: apps/forge_academy/db.py
     nav_link: true
 - key: gameday
   kind: child_app
@@ -1007,10 +1202,15 @@ components:
   min_il: IL4
   default_roles: []
   nav:
-    section: Learn
+    # Renders in the Platforms dropdown under the "Training" sub-label, alongside
+    # FORGE Academy — base.html:469. (gdx-doc-02)
+    section: Platforms
     label: AI GameDay
   completeness:
     blueprint: true
+    backing_module: true
+    constants: apps/ai_gameday/constants.py
+    db_module: apps/ai_gameday/db.py
     nav_link: true
 - key: innovation
   kind: child_app
@@ -1035,11 +1235,39 @@ components:
     - innovation.pilots
   completeness:
     blueprint: true
+    backing_module: true
+    db_module: apps/innovation/db.py
+    iqe_adapter: true
     nav_link: true
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Core Extensions (registered separately in dashboard/app.py; IQE only here)
   # ═══════════════════════════════════════════════════════════════════════════
+- key: standards_catalog
+  kind: core_extension
+  cli_name: standards-catalog
+  display_name: Standards Catalog
+  description: Central, canvas-independent curated standards catalog (approved/deprecated/retired
+    per domain) powering Document Modernization findings and redlines. Network hardware
+    entries appear read-only via the nc_hardware_profiles adapter.
+  env_flag: ICDEV_STANDARDS_CATALOG_ENABLED
+  default_enabled: true
+  module: tools.doc_modernization.blueprint
+  blueprint_attr: docmod_bp
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Platform
+    label: Standards Catalog
+    links:
+    - label: Standards Catalog
+      href: /standards-catalog
+  iqe:
+    adapter_module: tools.iqe.adapters.standards_catalog
+    collections:
+    - standards_catalog.entries
+    - standards_catalog.audit
 - key: forecast
   kind: core_extension
   display_name: TimesFM Forecasting
@@ -1183,6 +1411,12 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
+  nav:
+    section: Intelligence
+    label: Awareness
+    links:
+    - label: AI Observatory
+      href: /ai-observatory
   iqe:
     adapter_module: tools.iqe.adapters.ai_observatory
     collections:
@@ -1212,6 +1446,12 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
+  nav:
+    section: Ops
+    label: Monitor
+    links:
+    - label: Cache Savings
+      href: /cache-savings
   iqe:
     adapter_module: tools.iqe.adapters.cache_savings
     collections:
@@ -1265,6 +1505,12 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
+  # Registry-declared prerequisite (pkg-setup-02): the SDC demo runner and its
+  # route are served by the Security Design Canvas blueprint
+  # (tools/security_canvas/blueprint.py) — it cannot function unless `sdc` is on.
+  # Consumed by the `icdev setup` TUI to warn/offer when a prerequisite is off.
+  depends_on:
+  - sdc
   iqe:
     adapter_module: tools.iqe.adapters.sdc_demo
     collections:
@@ -1319,9 +1565,10 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
-  nav:
-    section: Intelligence
-    label: RAG
+  # cnr-nav-01: RAG is a cross-canvas feature toggle, not a page. It has no
+  # landing route, so it declares no nav section (the empty-links + url_prefix ''
+  # normalizer previously rendered a dead sidebar link to '/').
+  nav: {}
 - key: rfi_canvas
   kind: canvas
   cli_name: rfi
@@ -1342,6 +1589,12 @@ components:
     links:
     - label: RFI Workbench
       href: /rfi/
+      enabled: true
+    - label: Capture Strategy
+      href: /capture/strategy
+      enabled: true
+    - label: Evidence Library
+      href: /capture/evidence
       enabled: true
   iqe:
     adapter_module: tools.iqe.adapters.rfi_canvas
@@ -1376,6 +1629,24 @@ components:
     - govcon.awards
     - govcon.blackhat
     - govcon.competitors
+    - govcon.requirements
+- key: proposals
+  kind: feature
+  display_name: Proposals
+  description: 'Proposal writing lifecycle: opportunities, volumes, sections, compliance matrix, color-team reviews. Shares GovCon''s enablement flag (routes registered together in _register_govcon_pages).'
+  env_flag: ICDEV_GOVCON_ENABLED
+  default_enabled: false
+  url_prefix: /proposals
+  min_il: IL4
+  default_roles: []
+  nav: {}
+  iqe:
+    adapter_module: tools.iqe.adapters.proposals
+    collections:
+    - proposals.opportunities
+    - proposals.sections
+    - proposals.compliance
+    - proposals.reviews
 - key: finetune
   kind: feature
   display_name: Fine-Tuning Pipeline
@@ -1410,9 +1681,9 @@ components:
   url_prefix: ''
   min_il: IL2
   default_roles: []
-  nav:
-    section: System
-    label: CUI Banner
+  # cnr-nav-01: banner render toggle, not a page — no nav section (previously
+  # rendered a dead '/' sidebar link).
+  nav: {}
 - key: byok
   kind: feature
   display_name: Bring Your Own Key
@@ -1422,9 +1693,9 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
-  nav:
-    section: System
-    label: BYOK
+  # cnr-nav-01: tenant key-isolation feature toggle, not a page — no nav section
+  # (previously rendered a dead '/' sidebar link).
+  nav: {}
 - key: two_tier_llm
   kind: feature
   cli_name: two-tier-llm
@@ -1435,9 +1706,9 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
-  nav:
-    section: System
-    label: Two-Tier LLM
+  # cnr-nav-01: LLM routing feature toggle, not a page — no nav section
+  # (previously rendered a dead '/' sidebar link).
+  nav: {}
 - key: admin_console
   kind: core_extension
   cli_name: admin-console
@@ -1596,6 +1867,7 @@ components:
   completeness:
     template: tools/dashboard/templates/canvas_health/page.html
     blueprint: true
+    constants: tools/canvas_health/constants.py
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/canvas_health/
@@ -1673,3 +1945,94 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/second_brain/
+
+# ═══════════════════════════════════════════════════════════════════════════
+# IQE / AI-brief path → canvas map (cvx-nav-01)
+# ═══════════════════════════════════════════════════════════════════════════
+# Single source of truth for the client-side canvas detector. Replaces the two
+# divergent hardcoded PATH_CANVAS copies in:
+#   - tools/dashboard/templates/base.html            (IQE mini-bar)
+#   - tools/dashboard/templates/includes/ai_brief_banner.html (AI-brief banner)
+# Consumed via ComponentRegistry.get_iqe_path_canvas() and injected once into
+# base.html as window.__ICDEV_PATH_CANVAS__.
+#
+# Ordering is authoritative — entries are tested top-to-bottom, first match wins
+# (loose ^prefix match, mirroring the legacy behaviour):
+#   - More specific paths precede shorter ones (/migration-canvas/projects
+#     before /migration-canvas; /monitoring/forecast before /monitoring).
+#   - /coworkers → cwk precedes /coworker → ace — the documented cwk/ace
+#     collision resolution (longest path first).
+#   - Broad regex catch-alls (^/ai-, ai-view) come AFTER their specific paths.
+# Entry forms:
+#   {path: "/x", canvas: "key"}       -> loose "^/x" prefix match
+#   {regex: "^/x|^/y", canvas: "key"} -> verbatim JS/Python regex source
+# Canvases with a url_prefix + IQE adapter are auto-appended by the accessor,
+# so most new canvases need NO edit here.
+iqe_path_canvas:
+# twx-obs-01: explicit entry ABOVE the ndc "^/twin" regex — first-match-wins, so
+# without this /twin-observatory would incorrectly resolve to the ndc canvas.
+- {path: /twin-observatory, canvas: twin_observatory}
+- {regex: "^/network|^/twin", canvas: ndc}
+- {path: /zta, canvas: zta}
+- {path: /security, canvas: sdc}
+- {path: /devops, canvas: pdc}
+- {path: /data, canvas: ddc}
+- {path: /infra, canvas: idc}
+- {path: /observability, canvas: odc}
+- {path: /boundary, canvas: bdc}
+- {regex: "^/simulate/chat.*canvas=cam", canvas: cam}
+- {path: /migration-canvas/projects, canvas: cam}
+- {path: /migration-canvas, canvas: mc}
+- {path: /agentic-ai, canvas: aadc}
+- {path: /ai-ml, canvas: aimc}
+- {path: /ops, canvas: ohc}
+- {path: /govlift, canvas: govlift}
+- {path: /kanban, canvas: kanban}
+- {path: /compliance, canvas: compliance}
+- {path: /agents, canvas: agents}
+- {path: /projects, canvas: projects}
+- {path: /ai-observatory, canvas: ai_observatory}
+- {path: /ontology, canvas: ontology}
+- {path: /cache-savings, canvas: cache_savings}
+- {path: /strategos, canvas: strategos}
+- {regex: "^/supply.chain", canvas: supply_chain}
+- {path: /noc, canvas: nocc}
+- {path: /pmc, canvas: pmc}
+- {path: /ccc, canvas: ccc}
+- {path: /dsoc, canvas: dsoc}
+- {path: /ai-ify, canvas: aiify}
+- {path: /cortex, canvas: cortex}
+- {path: /document-intelligence, canvas: dic}
+- {path: /integrity, canvas: integrity}
+- {path: /logs, canvas: logs}
+- {path: /demo-runner, canvas: demo_runner}
+- {path: /innovation, canvas: innovation}
+- {path: /mission-canvas, canvas: mission_canvas}
+- {path: /canvas-compliance, canvas: canvas_compliance}
+# Fine-grained GovCon keys so the AI-brief banner keeps its distinct briefs;
+# IQE dispatch resolves each via its own adapter (cpmp_deliverables aliases the
+# cpmp adapter in app.py — see _CANVAS_MAP supplement).
+- {path: /proposals, canvas: proposals}
+- {path: /govcon, canvas: govcon}
+- {path: /cpmp/deliverables, canvas: cpmp_deliverables}
+- {path: /cpmp, canvas: cpmp}
+- {path: /slides, canvas: slides}
+# cvx-nav-01: /coworkers (cwk) MUST precede /coworker (ace) — collision rule
+- {path: /coworkers, canvas: cwk}
+- {path: /coworker, canvas: ace}
+- {path: /foundry, canvas: foundry}
+- {regex: "^/ai-|^/dashboard/.*-view", canvas: aisg}
+- {path: /dat, canvas: dat}
+- {path: /mcip, canvas: dat}
+- {path: /updates, canvas: updates}
+- {path: /docgen, canvas: docgen}
+- {path: /monitoring/forecast, canvas: forecast}
+- {path: /monitoring, canvas: logs}
+- {path: /me, canvas: second_brain}
+- {path: /bi_dashboard, canvas: bi_dashboard}
+# cvx-nav-01: previously-missing registered canvases
+- {path: /quality, canvas: qdc}
+- {path: /rfi, canvas: rfi_canvas}
+- {path: /capture, canvas: rfi_canvas}
+- {path: /workflow-canvas, canvas: wfc}
+- {path: /health/canvases, canvas: canvas_health}

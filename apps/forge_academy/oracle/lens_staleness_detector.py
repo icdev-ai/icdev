@@ -52,12 +52,12 @@ class LensStalenesssDetector(BaseLens):
             LEFT JOIN fa_mission_progress mp
               ON mp.mission_id = m.id
              AND mp.status = 'completed'
-             AND mp.updated_at >= ?
-            WHERE m.created_at <= ?
+             AND mp.completed_at >= %s
+            WHERE m.created_at <= %s
               AND m.is_active = 1
               AND (m.status IS NULL OR m.status = 'active')
             GROUP BY m.id
-            HAVING recent_completions < ?
+            HAVING recent_completions < %s
             ORDER BY m.created_at ASC
             LIMIT 30
             """,
@@ -70,7 +70,7 @@ class LensStalenesssDetector(BaseLens):
             SELECT id, slug, title, tier, topic, created_at, updated_at
             FROM fa_missions
             WHERE status = 'draft'
-              AND created_at <= ?
+              AND created_at <= %s
             ORDER BY created_at ASC
             LIMIT 20
             """,

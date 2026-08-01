@@ -184,9 +184,9 @@
       <table class="sc-table" id="tbl-isa">
         <thead><tr>
           <th>Partner System</th><th>Org</th><th>Type</th><th>Status</th>
-          <th>Signed</th><th>Expires</th><th>Next Review</th><th>POC</th>
+          <th>Signed</th><th>Expires</th><th>Next Review</th><th>POC</th><th>Boundary</th>
         </tr></thead>
-        <tbody><tr><td class="empty" colspan="8"><div class="sc-loading">Loading…</div></td></tr></tbody>
+        <tbody><tr><td class="empty" colspan="9"><div class="sc-loading">Loading…</div></td></tr></tbody>
       </table>
     </div>
   </div>
@@ -350,8 +350,14 @@
     _isaLoaded = true;
     fetch('/api/supply_chain/isa-agreements').then(function(r){return r.json();}).then(function(rows){
       document.getElementById('isa-count').textContent = rows.length + ' agreement(s)';
-      if (!rows.length) { setTbody('tbl-isa','<tr><td class="empty" colspan="8">No ISA agreements on record</td></tr>'); return; }
+      if (!rows.length) { setTbody('tbl-isa','<tr><td class="empty" colspan="9">No ISA agreements on record</td></tr>'); return; }
       var html = rows.map(function(a){
+        // Cross-link: render a "related" backlink to the Boundary Canvas ISA
+        // tracker only when a matching bd_isa_tracker row exists (nav only).
+        var boundaryCell = a.boundary_match
+          ? '<a href="/boundary/isa-tracker" title="Related Boundary Canvas ISA — View in Boundary Canvas" '
+            + 'style="color:#9c27b0;text-decoration:none;font-weight:600;">related &rarr;</a>'
+          : '<span style="color:#8b949e">—</span>';
         return '<tr><td><strong>' + esc(a.partner_system) + '</strong></td>'
           + '<td>' + esc(a.partner_org||'—') + '</td>'
           + '<td>' + esc((a.agreement_type||'').toUpperCase()) + '</td>'
@@ -360,10 +366,11 @@
           + '<td>' + fmtDate(a.expiry_date) + '</td>'
           + '<td>' + fmtDate(a.next_review_date) + '</td>'
           + '<td>' + esc(a.poc_name||'—') + '</td>'
+          + '<td>' + boundaryCell + '</td>'
           + '</tr>';
       }).join('');
       setTbody('tbl-isa', html);
-    }).catch(function(){ setTbody('tbl-isa','<tr><td class="empty" colspan="8">Error loading agreements</td></tr>'); });
+    }).catch(function(){ setTbody('tbl-isa','<tr><td class="empty" colspan="9">Error loading agreements</td></tr>'); });
   }
 
   // ── SBOM ──────────────────────────────────────────────────────────────────
@@ -403,8 +410,25 @@
     else if (name === 'sbom')   loadSBOM();
   };
 
-  // auto-load first tab
-  loadVendors();
+  // Deep-link: open a specific tab when arriving via #hash (e.g. the
+  // Boundary Canvas "View in Supply Chain" link points at #isa).
+  function _openTabFromHash() {
+    var h = (window.location.hash || '').replace(/^#(panel-)?/, '');
+    var known = { vendors:1, scrm:1, cve:1, isa:1, sbom:1 };
+    if (!known[h]) return false;
+    var buttons = document.querySelectorAll('.sc-tab');
+    for (var i = 0; i < buttons.length; i++) {
+      if ((buttons[i].getAttribute('onclick') || '').indexOf("'" + h + "'") !== -1) {
+        window.scShowTab(h, buttons[i]);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // auto-load first tab (unless a hash deep-links elsewhere)
+  if (!_openTabFromHash()) loadVendors();
+  window.addEventListener('hashchange', _openTabFromHash);
 })();
 </script>
 {% endblock %}

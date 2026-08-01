@@ -214,7 +214,7 @@ def _load_component_nodes(
     parsed properties dict.
     """
     if entity_types:
-        placeholders = ",".join(["?"] * len(entity_types))
+        placeholders = ",".join(["%s"] * len(entity_types))
         rows = conn.execute(
             f"SELECT id, label, entity_type, properties FROM kg_nodes "
             f"WHERE graph_id = %s AND entity_type IN ({placeholders})",  # nosec B608

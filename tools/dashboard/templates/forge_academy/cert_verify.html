@@ -25,6 +25,7 @@
   word-break:break-all;
 }
 </style>
+{% include "forge_academy/partials/_chrome_clearance.html" %}
 {% endblock %}
 
 {% block content %}
@@ -55,6 +56,86 @@
       <div class="verify-label">Verification Token</div>
       <div class="verify-token">{{ result.token }}</div>
     </div>
+
+    {# aca-int-07 part 2: what was actually demonstrated. Until now this page could
+       only repeat the label back, because issue_certificate discarded every detail
+       check_cert_eligibility had computed. This is the snapshot taken at issue time,
+       not a fresh computation — a certificate is a statement about a moment. #}
+    {% set ev = result.evidence | default([]) %}
+    {% if ev %}
+    {% set gates = ev | selectattr('evidence_type', 'equalto', 'gate') | list %}
+    {% set missions = ev | selectattr('evidence_type', 'equalto', 'mission') | list %}
+    {% set steps = ev | selectattr('evidence_type', 'equalto', 'step') | list %}
+
+    <div class="verify-field" style="margin-top:1.5rem;">
+      <div class="verify-label">Evidence recorded at issue</div>
+      <div class="verify-value" style="font-size:.8rem;">
+        {{ gates|length }} requirement{{ '' if gates|length == 1 else 's' }},
+        {{ missions|length }} mission{{ '' if missions|length == 1 else 's' }},
+        {{ steps|length }} verified step{{ '' if steps|length == 1 else 's' }}
+      </div>
+    </div>
+
+    {% if gates %}
+    <div style="margin-top:1rem;text-align:left;">
+      <div class="verify-label" style="margin-bottom:.4rem;">Requirements met</div>
+      {% for g in gates %}
+      <div style="font-size:.8rem;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.06);">
+        <strong>{{ g.label }}</strong>
+        {% if g.detail %}<span style="opacity:.75;"> — {{ g.detail }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if missions %}
+    <div style="margin-top:1rem;text-align:left;">
+      <div class="verify-label" style="margin-bottom:.4rem;">Missions completed</div>
+      {% for m in missions %}
+      <div style="font-size:.8rem;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.06);">
+        {{ m.label }}
+        <span style="opacity:.7;">— {{ m.detail }}</span>
+        {% if m.demonstrated_at %}
+        <span style="opacity:.55;float:right;">{{ m.demonstrated_at[:10] }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if steps %}
+    <div style="margin-top:1rem;text-align:left;">
+      <div class="verify-label" style="margin-bottom:.4rem;">
+        Verified step submissions
+      </div>
+      {% for s in steps %}
+      <div style="font-size:.78rem;padding:.3rem 0;border-bottom:1px solid rgba(255,255,255,.06);">
+        {{ s.label }}
+        <span style="opacity:.7;">— {{ s.detail }}</span>
+        {% if s.score is not none %}
+        <span style="opacity:.7;">, scored {{ s.score }}</span>
+        {% endif %}
+        {% if s.demonstrated_at %}
+        <span style="opacity:.55;float:right;">{{ s.demonstrated_at[:10] }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    {# Say so rather than rendering an empty section that reads as "nothing required".
+       Certificates issued before migration 317 carry no evidence and cannot be given
+       any honestly — reconstructing it after the fact is the defect, not the fix. #}
+    <div class="verify-field" style="margin-top:1.5rem;">
+      <div class="verify-label">Evidence</div>
+      <div class="verify-value" style="font-size:.8rem;opacity:.75;">
+        This certificate was issued before evidence was recorded, so the work behind
+        it cannot be shown here.
+      </div>
+    </div>
+    {% endif %}
+
     <div style="margin-top:1.5rem;">
       <a href="/academy" style="color:var(--fa-blue);font-size:.85rem;text-decoration:none;">
         ← FORGE Academy

@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Dashboard API: Provenance verification endpoints.
+"""Dashboard API: GovChain / blockchain provenance verification endpoints.
 
-GET  /api/provenance?project_id=<id>        — list registry entries with trust scores
-GET  /api/provenance/graph?project_id=<id>   — DAG nodes/edges for visualization
-POST /api/provenance/verify                   — verify a specific registry entry
+Mounted at /api/govchain-provenance to keep the W3C PROV-AGENT lineage surface
+(tools/dashboard/api/traces.py::provenance_api, /api/provenance/*) distinct from
+this blockchain-anchoring surface. The two previously shared /api/provenance and
+had colliding Python variable names; registration order decided which won.
+
+GET  /api/govchain-provenance?project_id=<id>        — list registry entries with trust scores
+GET  /api/govchain-provenance/graph?project_id=<id>   — DAG nodes/edges for visualization
+POST /api/govchain-provenance/verify                   — verify a specific registry entry
+GET  /api/govchain-provenance/blockchain-status        — GovChain queue depth and anchor stats
 """
 
 import sys
@@ -16,9 +22,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 
-provenance_api = Blueprint("blockchain_provenance_api", __name__, url_prefix="/api/provenance")
+govchain_provenance_api = Blueprint(
+    "govchain_provenance_api", __name__, url_prefix="/api/govchain-provenance"
+)
+# Backward-compat alias for existing importers of the old variable name.
+provenance_api = govchain_provenance_api
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -28,30 +38,13 @@ def _get_db():
 
 
 def _table_exists(conn, table_name):
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-        return row[0] > 0
-    except Exception:
-        try:
-            conn.execute("ROLLBACK")
-        except Exception:
-            pass
-        try:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name=%s",
-                (table_name,),
-            ).fetchone()
-            return row[0] > 0
-        except Exception:
-            return False
+    """Check if a table exists (works for both SQLite and PostgreSQL)."""
+    return table_exists(conn, table_name)
 
 
 @provenance_api.route("", methods=["GET"])
 def list_provenance():
-    """GET /api/provenance?project_id=<id>"""
+    """GET /api/govchain-provenance?project_id=<id>"""
     project_id = request.args.get("project_id", "")
     if not project_id:
         return jsonify({"error": "project_id required"}), 400
@@ -107,7 +100,7 @@ def list_provenance():
 
 @provenance_api.route("/graph", methods=["GET"])
 def provenance_graph():
-    """GET /api/provenance/graph?project_id=<id> — DAG for D3/Cytoscape"""
+    """GET /api/govchain-provenance/graph?project_id=<id> — DAG for D3/Cytoscape"""
     project_id = request.args.get("project_id", "")
     if not project_id:
         return jsonify({"error": "project_id required"}), 400
@@ -185,7 +178,7 @@ def provenance_graph():
 
 @provenance_api.route("/verify", methods=["POST"])
 def verify_entry():
-    """POST /api/provenance/verify — verify a registry entry
+    """POST /api/govchain-provenance/verify — verify a registry entry
 
     Body: {"registry_id": "scr-..."}
     """
@@ -205,7 +198,7 @@ def verify_entry():
 
 @provenance_api.route("/blockchain-status", methods=["GET"])
 def blockchain_status():
-    """GET /api/provenance/blockchain-status — GovChain queue depth and anchor stats."""
+    """GET /api/govchain-provenance/blockchain-status — GovChain queue depth and anchor stats."""
     conn = _get_db()
     try:
         result = {

@@ -26,6 +26,29 @@ Additional BMAD-adapted quality checks:
   9. Database    — tools/db/ with init script
   10. ANVIL      — goals/build_app.md (ANVIL workflow present)
 
+Hardening checks (cvx-gen-01 — prevent broken child apps passing --gate):
+  FORGE-03c  — anti-hallucination grounding modules present AND carry the
+               current API (content_grounding.ground_content,
+               citation_grounding.classify_confidence). A stale pre-
+               ``ground_content`` snapshot FAILS, not just an absent file.
+  FORGE-11   — coherence checker MISSING (no tools/workflow/coherence_checker.py)
+               is an explicit FAIL, not a silent pass. tools/workflow is always
+               shipped by DIRECTORY_TREE, so absence means a stale/incomplete child.
+  FORGE-12   — banned DB patterns: sqlite3.connect() outside db/init_db.py/tests
+               FAILS; bare '?' SQLite-dialect placeholders in runtime files WARN.
+
+Completeness gate (cvx-gen-02 — generated canvases must ship all 8 components):
+  FORGE-13   — 8-component completeness gate for every canvas the child declares.
+               Reuses tools.config.component_registry.validate_canvas_completeness
+               (the same validator the parent coherence checker runs — no 8-point
+               logic duplicated), loading the CHILD's own
+               args/component_registry.yaml and pointing repo_root at the child
+               tree. A generated canvas missing a component — template in either
+               tree, blueprint route, backing module, constants, DB migration, nav
+               link, or IQE integration — FAILS. No registry / no canvases = pass
+               (nothing to validate); a missing parent validator SKIPS (pass) so a
+               stale toolchain never false-fails an otherwise-good child.
+
 Decision D44: Flag-based backward compatibility (--gate for CI/CD blocking).
 Pattern: Follows claude_dir_validator.py declarative check registry.
 
@@ -41,6 +64,7 @@ Exit codes: 0 = all checks pass, 1 = at least one check failed
 import argparse
 import dataclasses
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -363,6 +387,60 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
                 message="FORGE Layer 3 (Tools) empty: no Python scripts in tools/",
             )
         )
+
+    # trust-cite-05: anti-hallucination grounding must ship with every child app
+    # so generated apps cite sources / gate placeholders like the parent does.
+    # FORGE-03c also enforces API-FRESHNESS: presence alone let a stale pre-
+    # `ground_content` snapshot pass. The modules must carry their canonical
+    # public API — ground_content() and classify_confidence() — or the child is
+    # running an outdated grounding copy that silently no-ops.
+    grounding = ["tools/quality/content_grounding.py", "tools/quality/citation_grounding.py"]
+    missing_grounding = [g for g in grounding if not (project_dir / g).is_file()]
+    # Canonical public symbols that must exist in each grounding module.
+    api_markers = {
+        "tools/quality/content_grounding.py": "def ground_content(",
+        "tools/quality/citation_grounding.py": "def classify_confidence(",
+    }
+    stale_grounding: List[str] = []
+    if not missing_grounding:
+        for rel, marker in api_markers.items():
+            try:
+                text = (project_dir / rel).read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                text = ""
+            if marker not in text:
+                stale_grounding.append(f"{rel} (missing '{marker.rstrip('(')}')")
+    if missing_grounding:
+        _g_status = "fail"
+        _g_actual = f"missing: {', '.join(missing_grounding)}"
+        _g_fix = ("Ensure 'tools/quality' is in DIRECTORY_TREE so the shared "
+                  "grounding modules are copied into the child app")
+        _g_msg = f"Grounding modules missing: {', '.join(missing_grounding)}"
+    elif stale_grounding:
+        _g_status = "fail"
+        _g_actual = f"present but stale API: {', '.join(stale_grounding)}"
+        _g_fix = ("Re-copy the current tools/quality grounding modules — the child "
+                  "carries a pre-`ground_content` snapshot missing the canonical API")
+        _g_msg = ("Grounding modules present but stale (missing current API): "
+                  f"{', '.join(stale_grounding)}")
+    else:
+        _g_status = "pass"
+        _g_actual = "present with current API (ground_content, classify_confidence)"
+        _g_fix = ""
+        _g_msg = "Grounding: content + citation grounding modules present with current API"
+    checks.append(
+        GotchaCheck(
+            check_id="FORGE-03c",
+            check_name="Anti-hallucination grounding modules present and current",
+            layer="tools",
+            status=_g_status,
+            expected="tools/quality/{content_grounding.py::ground_content, "
+                     "citation_grounding.py::classify_confidence}",
+            actual=_g_actual,
+            fix_suggestion=_g_fix,
+            message=_g_msg,
+        )
+    )
 
     return checks
 
@@ -971,8 +1049,31 @@ def _check_child_app_templates(project_dir: Path) -> List[GotchaCheck]:
 
 
 def _check_coherence(project_dir: Path) -> List[GotchaCheck]:
-    """Check Meta: FORGE-11 — Implementation coherence validation."""
+    """Check Meta: FORGE-11 — Implementation coherence validation.
+
+    tools/workflow is always shipped by DIRECTORY_TREE, so a child MISSING the
+    coherence_checker module is stale/incomplete — that is an explicit FAIL, not
+    a silent pass. Previously an ImportError here recorded a pass, letting broken
+    child apps that lack tools/workflow entirely skip coherence validation
+    completely.
+    """
     checks = []
+    checker_path = project_dir / "tools" / "workflow" / "coherence_checker.py"
+    if not checker_path.is_file():
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-11",
+                check_name="Coherence Validation",
+                layer="meta",
+                status="fail",
+                expected="tools/workflow/coherence_checker.py present (shipped by DIRECTORY_TREE)",
+                actual="tools/workflow/coherence_checker.py not found",
+                fix_suggestion="Ensure 'tools/workflow' is in DIRECTORY_TREE so the coherence "
+                               "checker is copied into the child; regenerate with child_app_generator.py",
+                message="Coherence checker missing — child app is stale/incomplete (no tools/workflow)",
+            )
+        )
+        return checks
     try:
         # Import checker relative to the project being validated
         saved_path = list(sys.path)
@@ -1027,6 +1128,235 @@ def _check_coherence(project_dir: Path) -> List[GotchaCheck]:
     return checks
 
 
+# Banned-pattern regexes for FORGE-12 (grep-level, no AST — kept fast).
+_SQLITE_CONNECT_RE = re.compile(r"sqlite3\.connect\s*\(")
+_BARE_Q_RE = re.compile(r"(=\s*\?|VALUES\s*\(\s*\?)")
+
+
+def _check_db_patterns(project_dir: Path) -> List[GotchaCheck]:
+    """Check Meta: FORGE-12 — banned DB access patterns in child tools/.
+
+    PostgreSQL is the primary backend. A raw ``sqlite3.connect()`` outside
+    ``db/init_db.py`` and tests bypasses ``get_connection()``/RLS (writes become
+    invisible to the dashboard), and bare ``?`` placeholders are SQLite-dialect
+    that break on PostgreSQL. Scan is grep-level (no AST) to stay fast.
+
+    Severity (first iteration): ``sqlite3.connect()`` -> FAIL; bare ``?`` -> WARN.
+    """
+    checks: List[GotchaCheck] = []
+    tools_dir = project_dir / "tools"
+    if not tools_dir.is_dir():
+        # tools/ absence is already reported by FORGE-03; nothing to scan.
+        return checks
+
+    sqlite_hits: List[str] = []
+    placeholder_hits: List[str] = []
+    for py in tools_dir.rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        rel = py.relative_to(project_dir).as_posix()
+        name = py.name
+        is_test = ("tests" in py.parts) or name.startswith("test_") or name.endswith("_test.py")
+        is_db_init = py.parent.name == "db" and name.startswith("init")
+        try:
+            text = py.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        if _SQLITE_CONNECT_RE.search(text) and not is_test and not is_db_init:
+            sqlite_hits.append(rel)
+        if not is_test and _BARE_Q_RE.search(text):
+            placeholder_hits.append(rel)
+
+    # FORGE-12: raw sqlite3.connect() outside db/init_db.py + tests -> FAIL
+    checks.append(
+        GotchaCheck(
+            check_id="FORGE-12",
+            check_name="No banned sqlite3.connect() in runtime tools",
+            layer="meta",
+            status="fail" if sqlite_hits else "pass",
+            expected="sqlite3.connect( only in tools/db/init_db.py or tests",
+            actual=(f"{len(sqlite_hits)} offending file(s): {', '.join(sqlite_hits[:5])}"
+                    if sqlite_hits else "none"),
+            fix_suggestion="Use get_connection()/get_canvas_connection() from tools.db.storage; "
+                           "confine sqlite3.connect() to db/init_db.py",
+            message=(f"Banned sqlite3.connect() in runtime files: {', '.join(sqlite_hits[:5])}"
+                     if sqlite_hits else "No banned sqlite3.connect() in runtime tools/"),
+        )
+    )
+
+    # FORGE-12a: bare '?' SQLite-dialect placeholders in runtime files -> WARN
+    checks.append(
+        GotchaCheck(
+            check_id="FORGE-12a",
+            check_name="No SQLite-dialect '?' placeholders in runtime tools",
+            layer="meta",
+            status="warn" if placeholder_hits else "pass",
+            expected="PG-style %s placeholders (bare '?' is SQLite-only)",
+            actual=(f"{len(placeholder_hits)} file(s): {', '.join(placeholder_hits[:5])}"
+                    if placeholder_hits else "none"),
+            fix_suggestion="Author PostgreSQL-native SQL with %s placeholders; the ?->%s "
+                           "translator is an init-only fallback, not load-bearing at runtime",
+            message=(f"SQLite-dialect '?' placeholders in runtime files (warning): "
+                     f"{', '.join(placeholder_hits[:5])}"
+                     if placeholder_hits else "No bare '?' placeholders in runtime tools/"),
+        )
+    )
+
+    return checks
+
+
+def _check_canvas_completeness(project_dir: Path) -> List[GotchaCheck]:
+    """Check Completeness: FORGE-13 — 8-component gate on the child's canvases.
+
+    Scaffolded/generated child apps and canvases never used to run through the
+    8-component dashboard-page completeness gate; it lived only in the parent's
+    ``tools/workflow/coherence_checker.py`` and generated child trees could not
+    invoke it locally. This check closes that gap by REUSING the canonical
+    validator ``tools.config.component_registry.validate_canvas_completeness``
+    (the exact function the parent coherence checker's ``check_canvas_completeness``
+    calls) rather than duplicating the 8-point logic.
+
+    It loads the CHILD's own ``args/component_registry.yaml``, iterates every
+    ``kind: canvas`` component, and validates each against the child tree
+    (``repo_root=project_dir``). A canvas missing any *required* component —
+    template in both trees, blueprint route, backing module, constants, DB
+    migration (when declared), nav link, or IQE integration (when an adapter is
+    declared) — is an explicit FAIL.
+
+    Non-failure exits:
+      * no ``args/component_registry.yaml``  -> pass (skipped, nothing to validate)
+      * registry present but no canvases     -> pass (nothing to validate)
+      * parent validator unimportable        -> pass (skipped; never false-fail a
+                                                 good child on a stale toolchain)
+    """
+    checks: List[GotchaCheck] = []
+    registry_path = project_dir / "args" / "component_registry.yaml"
+    if not registry_path.is_file():
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-13",
+                check_name="Canvas completeness gate",
+                layer="meta",
+                status="pass",
+                expected="args/component_registry.yaml (optional)",
+                actual="Not present (skipped)",
+                fix_suggestion="",
+                message="Canvas completeness skipped: no args/component_registry.yaml to validate",
+            )
+        )
+        return checks
+
+    try:
+        from tools.config.component_registry import (
+            ComponentRegistry,
+            validate_canvas_completeness,
+        )
+    except Exception as exc:  # pragma: no cover - defensive; parent toolchain absent
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-13",
+                check_name="Canvas completeness gate",
+                layer="meta",
+                status="pass",
+                expected="tools.config.component_registry validator importable",
+                actual=f"Skipped (validator unavailable): {exc}",
+                fix_suggestion="",
+                message=f"Canvas completeness skipped: {exc}",
+            )
+        )
+        return checks
+
+    try:
+        registry = ComponentRegistry(registry_path=registry_path)
+        canvases = registry.list_all(kind="canvas")
+    except Exception as exc:
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-13",
+                check_name="Canvas completeness gate",
+                layer="meta",
+                status="fail",
+                expected="Child component_registry.yaml loads and lists canvases",
+                actual=f"Registry load error: {exc}",
+                fix_suggestion="Fix args/component_registry.yaml so it parses and declares canvases",
+                message=f"Canvas completeness validator failed to load child registry: {exc}",
+            )
+        )
+        return checks
+
+    if not canvases:
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-13",
+                check_name="Canvas completeness gate",
+                layer="meta",
+                status="pass",
+                expected="At least one kind:canvas component (optional)",
+                actual="0 canvases declared",
+                fix_suggestion="",
+                message="Canvas completeness skipped: registry declares no canvases",
+            )
+        )
+        return checks
+
+    for comp in canvases:
+        try:
+            report = validate_canvas_completeness(
+                comp.key, registry=registry, repo_root=project_dir
+            )
+        except Exception as exc:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-13-{comp.key}",
+                    check_name=f"Canvas completeness ({comp.key})",
+                    layer="meta",
+                    status="fail",
+                    expected="8-component completeness gate runs without error",
+                    actual=f"Validator error: {exc}",
+                    fix_suggestion="Investigate the completeness validator failure for this canvas",
+                    message=f"Canvas '{comp.key}' completeness validation raised: {exc}",
+                )
+            )
+            continue
+
+        # `required` is False for components the registry never declared (e.g. a
+        # canvas with no DB migration); only surface required-but-absent gaps.
+        missing = [
+            f"{item.point} ({item.path or item.message})"
+            for item in report.items
+            if item.required and not item.present
+        ]
+        if missing:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-13-{comp.key}",
+                    check_name=f"Canvas completeness ({comp.key})",
+                    layer="meta",
+                    status="fail",
+                    expected="All 8 required components present for the canvas",
+                    actual=f"{len(missing)} missing: {', '.join(missing[:6])}",
+                    fix_suggestion="Ship all 8 components (template in both trees, route, module, "
+                                   "constants, migration, nav link, IQE) before generating the canvas",
+                    message=f"Canvas '{comp.key}' incomplete: {', '.join(missing[:6])}",
+                )
+            )
+        else:
+            checks.append(
+                GotchaCheck(
+                    check_id=f"FORGE-13-{comp.key}",
+                    check_name=f"Canvas completeness ({comp.key})",
+                    layer="meta",
+                    status="pass",
+                    expected="All 8 required components present for the canvas",
+                    actual="Complete",
+                    fix_suggestion="",
+                    message=f"Canvas '{comp.key}' passes the 8-component completeness gate",
+                )
+            )
+
+    return checks
+
+
 # ---------------------------------------------------------------------------
 # Check registry
 # ---------------------------------------------------------------------------
@@ -1043,6 +1373,8 @@ CHECK_REGISTRY = {
     "database": _check_database,
     "anvil": _check_atlas,
     "coherence": _check_coherence,
+    "db_patterns": _check_db_patterns,
+    "canvas_completeness": _check_canvas_completeness,
     "child_app_templates": _check_child_app_templates,
 }
 

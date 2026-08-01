@@ -14,7 +14,7 @@ handles missing/invalid entries gracefully.
 
 from __future__ import annotations
 
-import contextlib
+import re
 import sqlite3
 
 import pytest
@@ -39,7 +39,6 @@ _EXPECTED_CANVAS_DEFS = [
     ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
     ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
     ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
-    ("iop", "ICDEV_INFO_OPS_ENABLED", "tools.info_ops.blueprint", "create_info_ops_blueprint"),
     ("mission_canvas", "ICDEV_MISSION_CANVAS_ENABLED", "tools.mission_canvas.blueprint", "create_mission_canvas_blueprint"),
     ("nocc", "ICDEV_NOCC_ENABLED", "tools.noc_canvas.blueprint", "create_noc_canvas_blueprint"),
     ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
@@ -78,7 +77,6 @@ _EXPECTED_CANVAS_ROUTES = {
     "mdc": "/migration-canvas",
     "aimc": "/ai-ml",
     "ohc": "",
-    "iop": "/info-ops",
     "mission_canvas": "/mission-canvas",
     "nocc": "",
     "pmc": "",
@@ -200,8 +198,15 @@ def test_registry_has_all_legacy_app_defs(registry):
 
 
 def test_registry_default_enabled_matches_legacy(registry):
-    """The set of default-enabled canvases matches _CANVAS_DEFAULTS_TRUE."""
-    assert registry.get_default_enabled_flags() == _EXPECTED_CANVAS_DEFAULTS_TRUE
+    """Every canvas that was default-enabled under _CANVAS_DEFAULTS_TRUE still is.
+
+    Superset, not equality: canvases added after the registry migration may also be
+    default-enabled. Pinning exact equality made every new canvas fail this test,
+    which is a snapshot of a completed migration, not a policy on future canvases.
+    """
+    enabled = registry.get_default_enabled_flags()
+    regressed = _EXPECTED_CANVAS_DEFAULTS_TRUE - set(enabled)
+    assert not regressed, f"canvases silently default-disabled since migration: {sorted(regressed)}"
 
 
 def test_registry_url_prefixes_match_legacy_routes(registry):
@@ -216,13 +221,19 @@ def test_registry_url_prefixes_match_legacy_routes(registry):
 
 
 def test_registry_iqe_mapping_matches_legacy_subset(registry):
-    """Registry IQE mapping contains expected legacy entries."""
+    """Registry IQE mapping still contains every legacy entry.
+
+    Subset, not equality: a canvas may register additional collections over time
+    (ndc has gained eight since this snapshot). The guarantee worth pinning is that
+    no legacy collection was dropped in the move off the hardcoded _CANVAS_MAP.
+    """
     iqe_map = registry.get_iqe_mapping()
     for key, (expected_module, expected_collections) in _EXPECTED_IQE_MAP_SUBSET.items():
         assert key in iqe_map, f"missing IQE mapping for {key}"
         module, collections = iqe_map[key]
         assert module == expected_module
-        assert collections == expected_collections
+        dropped = set(expected_collections) - set(collections)
+        assert not dropped, f"{key} dropped legacy IQE collections: {sorted(dropped)}"
 
 
 def test_registry_cli_toggles_match_legacy(registry):
@@ -241,18 +252,64 @@ def test_registry_cli_descriptions_present(registry):
         assert descriptions[name]
 
 
+def test_every_registry_env_flag_is_cli_reachable(registry):
+    """Drift guard (pkg-reg-01): every env flag declared in the registry —
+    primary ``env_flag`` and any ``extra_env_flags`` — must be reachable from
+    `icdev enable/disable` via get_cli_toggles().
+
+    This is the test that stops the 21-flag gap (core_extension / child_app
+    env flags with no CLI path) from returning. It names the offending flags,
+    not a bare count, so a failure points straight at the component.
+    """
+    all_flags: set[str] = set()
+    for c in registry.list_all():
+        if c.env_flag:
+            all_flags.add(c.env_flag)
+        all_flags.update(c.extra_env_flags)
+
+    reachable: set[str] = set()
+    for flags in registry.get_cli_toggles().values():
+        reachable.update(flags)
+
+    unreachable = sorted(all_flags - reachable)
+    assert not unreachable, (
+        "registry env flags with NO CLI path (add them to the CLI surface "
+        f"or give them an env_flag-less kind): {unreachable}"
+    )
+
+
+def test_cli_enable_toggles_are_registry_derived():
+    """tools/cli/enable.py must derive TOGGLES from the registry, not a literal
+    dict — the anti-drift guarantee CLAUDE.md requires."""
+    from tools.cli import enable as enable_mod
+
+    assert enable_mod.TOGGLES == enable_mod._REGISTRY.get_cli_toggles()
+    # Every toggle the CLI exposes resolves to a non-empty flag list.
+    for name, flags in enable_mod.TOGGLES.items():
+        assert flags, f"toggle {name} has no env flags"
+
+
 # ---------------------------------------------------------------------------
 # Loader behavior tests
 # ---------------------------------------------------------------------------
 
 
 def test_registry_counts(registry):
-    """Expected high-level counts."""
-    assert len(registry.list_all(kind="canvas")) == 28
-    assert len(registry.list_all(kind="child_app")) == 4
-    assert len(registry.list_all(kind="feature")) == 8
-    assert len(registry.list_all(kind="core_extension")) == 15  # +admin_console
-    assert len(registry) == 55  # +admin_console
+    """No component kind lost members since the registry migration.
+
+    Lower bounds rather than exact counts: the registry is meant to grow, and an
+    exact assertion turns "someone added a canvas" into a test failure. The counts
+    below are the Phase-0 migration snapshot and must never regress.
+    """
+    assert len(registry.list_all(kind="canvas")) >= 28
+    assert len(registry.list_all(kind="child_app")) >= 4
+    assert len(registry.list_all(kind="feature")) >= 8
+    assert len(registry.list_all(kind="core_extension")) >= 15
+    assert len(registry) >= 55
+    # Every canvas the legacy _CANVAS_DEFS knew about is still registered.
+    keys = {c.key for c in registry.list_all(kind="canvas")}
+    legacy = {k for k, _, _, _ in _EXPECTED_CANVAS_DEFS}
+    assert legacy <= keys, f"canvases dropped from the registry: {sorted(legacy - keys)}"
 
 
 def test_component_enablement_uses_primary_env_flag(registry):
@@ -299,6 +356,7 @@ def test_get_blueprint_returns_none_for_missing_module(registry):
         blueprint_attr="bp",
         url_prefix="/fake",
         min_il="IL2",
+        min_tier="community",  # required field added to Component after this test was written
         default_roles=[],
         nav={},
         iqe={},
@@ -361,17 +419,72 @@ def test_nav_context_links_have_required_keys(registry):
 
 
 def test_nav_context_default_dashboard_for_components_without_links(registry):
-    """A component with no explicit nav.links falls back to a Dashboard link."""
-    # The rag feature toggle has nav metadata but no explicit links.
+    """A component with a non-empty url_prefix but no explicit nav.links falls
+    back to a single "Dashboard" link pointing at that url_prefix."""
+    # finetune declares a nav section and url_prefix (/finetune) but no links.
     ctx = registry.get_nav_context()
-    rag = None
+    finetune = None
     for section in ctx["sections"].values():
         for group in section["groups"]:
             for item in group["items"]:
-                if item["key"] == "rag":
-                    rag = item
-    assert rag is not None
-    assert rag["links"][0]["label"] == "Dashboard"
+                if item["key"] == "finetune":
+                    finetune = item
+    assert finetune is not None
+    assert finetune["links"][0]["label"] == "Dashboard"
+    assert finetune["links"][0]["href"] == "/finetune/"
+
+
+def test_nav_context_no_component_links_to_bare_root(registry):
+    """cnr-nav-01: no sidebar item may link to bare '/' (the home dashboard).
+
+    Regression guard for the "Operations / NOC Operations take me back to the
+    main dashboard" bug: components with url_prefix '' and a nav section but no
+    explicit links used to fall back to href '/'.
+    """
+    ctx = registry.get_nav_context()
+    offenders = []
+    for section in ctx["sections"].values():
+        for group in section["groups"]:
+            for item in group["items"]:
+                for link in item["links"]:
+                    if link["href"] == "/":
+                        offenders.append(item["key"])
+    assert not offenders, f"components link to bare '/': {offenders}"
+
+
+def test_normalize_nav_links_explicit_links_pass_through():
+    """Explicitly declared links are sanitized and returned unchanged in href."""
+    nav = {
+        "links": [
+            {"label": "Operations", "href": "/ops"},
+            {"label": "Details", "href": "/ops/details", "style": "color:#f00;"},
+        ]
+    }
+    out = ComponentRegistry._normalize_nav_links(nav, "")
+    assert [(l_["label"], l_["href"]) for l_ in out] == [
+        ("Operations", "/ops"),
+        ("Details", "/ops/details"),
+    ]
+    assert out[1]["style"] == "color:#f00;"
+
+
+def test_normalize_nav_links_empty_prefix_no_links_yields_no_link():
+    """cnr-nav-01: empty url_prefix + no declared links must NOT yield href '/'."""
+    out = ComponentRegistry._normalize_nav_links({}, "")
+    assert out == []
+    # Also when nav has a section/label but still no links.
+    out2 = ComponentRegistry._normalize_nav_links(
+        {"section": "Canvases", "label": "Operations"}, ""
+    )
+    assert out2 == []
+
+
+def test_normalize_nav_links_nonempty_prefix_no_links_gets_dashboard():
+    """A component with a real url_prefix but no links still gets a Dashboard link."""
+    out = ComponentRegistry._normalize_nav_links({}, "/finetune")
+    assert len(out) == 1
+    assert out[0]["label"] == "Dashboard"
+    assert out[0]["href"] == "/finetune/"
 
 
 # ---------------------------------------------------------------------------
@@ -379,12 +492,50 @@ def test_nav_context_default_dashboard_for_components_without_links(registry):
 # ---------------------------------------------------------------------------
 
 
+class _FakeConn:
+    """A SQLite connection that behaves like tools/db/storage.py's wrapper.
+
+    Two behaviours matter and a raw sqlite3.Connection has neither:
+
+    * Runtime SQL is authored for PostgreSQL, so it uses %s placeholders. The real
+      wrapper rewrites them via translate_sql(..., backend="sqlite").
+    * The real context manager commits on clean exit and rolls back on error.
+      contextlib.closing merely closes.
+
+    Without both, every `with get_connection() as conn: conn.execute(INSERT ...)`
+    under test either raised (and was swallowed by the caller's except) or was
+    rolled back, so tenant overrides and audit rows never persisted.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=None):
+        from tools.db.storage import translate_sql
+
+        return self._conn.execute(translate_sql(sql, backend="sqlite"), params or ())
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+        self._conn.close()
+        return False
+
+
 def _sqlite_conn_factory(db_path):
     """Return a get_connection-style factory bound to a SQLite file."""
     def _factory():
         conn = sqlite3.connect(str(db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        return contextlib.closing(conn)
+        return _FakeConn(conn)
     return _factory
 
 
@@ -502,14 +653,13 @@ def test_validate_canvas_completeness_non_canvas(registry):
     assert any(item.point == "registered" and "not canvas" in item.message for item in report.items)
 
 
-def test_validate_canvas_completeness_info_ops_reports_items(registry):
-    """info_ops is a real canvas; the validator runs and reports per-point findings."""
-    report = registry.validate_canvas_completeness("iop")
+def test_validate_canvas_completeness_real_canvas_reports_items(registry):
+    """A real canvas (mdc): the validator runs and reports per-point findings."""
+    report = registry.validate_canvas_completeness("mdc")
     points = {item.point: item for item in report.items}
     assert "page_template" in points
     assert "blueprint_route" in points
     assert "nav_link" in points
-    # info_ops uses index.html; the validator finds it via the legacy-name fallback scan.
     assert points["page_template"].present is True
 
 
@@ -601,3 +751,192 @@ def test_validate_canvas_completeness_synthetic_canvas_passes(tmp_path, monkeypa
     for item in report.items:
         if item.required:
             assert item.present, f"{item.point}: {item.message}"
+
+
+# ---------------------------------------------------------------------------
+# get_iqe_path_canvas() — registry-derived PATH_CANVAS (cvx-nav-01)
+# ---------------------------------------------------------------------------
+
+# Canvas keys used by the detector that are registered in app.py rather than in
+# component_registry.yaml (app-only IQE adapters / ai-brief-only renderers).
+# `canvas_compliance` is the Canvas Posture page: an @app.route in app.py with a
+# template but no blueprint and no IQE adapter — unlike `canvas_health`, which is
+# a full registered component. Added to PATH_CANVAS by cnr-cc-02 without a
+# matching entry here, which is what this guard is for.
+_PATH_CANVAS_APP_ONLY_KEYS = {
+    "updates",
+    "zta",
+    "dat",
+    "cpmp_deliverables",
+    "canvas_compliance",
+}
+
+# Previously missing from the hardcoded PATH_CANVAS arrays — the whole point of
+# cvx-nav-01. These must all appear in the registry-derived map.
+_PATH_CANVAS_TARGETS = {"qdc", "cortex", "rfi_canvas", "wfc", "canvas_health", "cwk"}
+
+
+def _first_match(entries, path):
+    """Mirror the JS detector: first entry whose regex matches wins."""
+    for src, canvas in entries:
+        if re.search(src, path):
+            return canvas
+    return "ndc"
+
+
+def test_get_iqe_path_canvas_returns_ordered_pairs(registry):
+    entries = registry.get_iqe_path_canvas()
+    assert isinstance(entries, list) and entries
+    for item in entries:
+        assert isinstance(item, tuple) and len(item) == 2
+        src, canvas = item
+        assert isinstance(src, str) and src.startswith("^")
+        assert isinstance(canvas, str) and canvas
+
+
+def test_get_iqe_path_canvas_includes_previously_missing_canvases(registry):
+    """All seven canvases missing from the legacy hardcoded arrays are present."""
+    canvases = {c for _, c in registry.get_iqe_path_canvas()}
+    missing = _PATH_CANVAS_TARGETS - canvases
+    assert not missing, f"registry-derived PATH_CANVAS still missing: {sorted(missing)}"
+
+
+def test_get_iqe_path_canvas_regex_sources_compile(registry):
+    """Every emitted regex source is a valid pattern (Python == JS here)."""
+    for src, _canvas in registry.get_iqe_path_canvas():
+        re.compile(src)  # raises on malformed pattern
+
+
+def test_get_iqe_path_canvas_cwk_ace_collision_rule(registry):
+    """The documented collision rule: /coworkers → cwk resolves before
+    /coworker → ace (longest path first), and each routes deterministically."""
+    entries = registry.get_iqe_path_canvas()
+    keys = [c for _, c in entries]
+    assert keys.index("cwk") < keys.index("ace"), "cwk must precede ace"
+    assert _first_match(entries, "/coworkers") == "cwk"
+    assert _first_match(entries, "/coworkers/123") == "cwk"
+    assert _first_match(entries, "/coworker") == "ace"
+    assert _first_match(entries, "/coworker/launch") == "ace"
+
+
+def test_get_iqe_path_canvas_specific_before_broad(registry):
+    """More specific paths must win over broader ones and regex catch-alls."""
+    entries = registry.get_iqe_path_canvas()
+    cases = {
+        "/ai-ml/foo": "aimc",
+        "/ai-observatory": "ai_observatory",
+        "/ai-security": "aisg",          # broad ^/ai- catch-all
+        "/migration-canvas/projects": "cam",
+        "/migration-canvas": "mc",
+        "/monitoring/forecast": "forecast",
+        "/monitoring": "logs",
+        "/quality": "qdc",
+        "/workflow-canvas": "wfc",
+        "/health/canvases": "canvas_health",
+        "/rfi/list": "rfi_canvas",
+        "/network": "ndc",
+        "/twin": "ndc",
+    }
+    for path, expected in cases.items():
+        assert _first_match(entries, path) == expected, path
+
+
+def test_get_iqe_path_canvas_keys_are_registered_or_app_known(registry):
+    """Guard against typos: every canvas key is either a registered component
+    or a known app-registered detector key."""
+    valid = {c.key for c in registry} | _PATH_CANVAS_APP_ONLY_KEYS
+    unknown = {c for _, c in registry.get_iqe_path_canvas() if c not in valid}
+    assert not unknown, f"unknown canvas keys in PATH_CANVAS: {sorted(unknown)}"
+
+
+def test_get_iqe_path_canvas_auto_appends_new_canvas(tmp_path):
+    """A canvas with a url_prefix + IQE adapter is auto-appended even when it is
+    not listed explicitly in the iqe_path_canvas block."""
+    import yaml as _yaml
+
+    registry_yaml = tmp_path / "component_registry.yaml"
+    registry_yaml.write_text(
+        _yaml.safe_dump(
+            {
+                "components": [
+                    {
+                        "key": "zeta",
+                        "kind": "canvas",
+                        "display_name": "Zeta Canvas",
+                        "env_flag": "ICDEV_ZETA_ENABLED",
+                        "module": "tools.zeta.blueprint",
+                        "blueprint_attr": "zeta_bp",
+                        "url_prefix": "/zeta",
+                        "iqe": {
+                            "adapter_module": "tools.iqe.adapters.zeta",
+                            "collections": ["zeta.things"],
+                        },
+                    }
+                ],
+                "iqe_path_canvas": [
+                    {"path": "/other", "canvas": "other"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    reg = ComponentRegistry(registry_path=registry_yaml, env={})
+    entries = reg.get_iqe_path_canvas()
+    canvases = {c for _, c in entries}
+    assert "zeta" in canvases, "canvas with url_prefix + IQE adapter must auto-append"
+    assert _first_match(entries, "/zeta/x") == "zeta"
+
+
+# ---------------------------------------------------------------------------
+# Packaged-wheel registry discovery (regression: 1.2.37/1.2.38)
+# ---------------------------------------------------------------------------
+
+def test_find_repo_root_discovers_packaged_data_args_layout(tmp_path, monkeypatch):
+    """A pip-installed wheel ships the registry under ``icdev/data/args/``.
+
+    Regression for 1.2.37/1.2.38, where ``_find_repo_root`` probed only
+    ``<parent>/args/`` and so resolved zero components after ``pip install``:
+    ``icdev status`` crashed and ``icdev list`` came back empty.
+    """
+    import importlib
+
+    mod = importlib.import_module("tools.config.component_registry")
+
+    # Mimic the wheel layout: <site-packages>/icdev/{data/args,tools/config}
+    pkg = tmp_path / "icdev"
+    (pkg / "data" / "args").mkdir(parents=True)
+    (pkg / "tools" / "config").mkdir(parents=True)
+    registry = pkg / "data" / "args" / "component_registry.yaml"
+    registry.write_text("components: []\n", encoding="utf-8")
+    module_file = pkg / "tools" / "config" / "component_registry.py"
+    module_file.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(mod, "__file__", str(module_file))
+    base, found = mod._find_repo_root()
+
+    assert found == registry, "packaged data/args layout must be discovered"
+    assert base == pkg
+
+
+def test_find_repo_root_prefers_source_args_layout(tmp_path, monkeypatch):
+    """The source checkout's ``<root>/args/`` still wins when both exist."""
+    import importlib
+
+    mod = importlib.import_module("tools.config.component_registry")
+
+    root = tmp_path / "repo"
+    (root / "args").mkdir(parents=True)
+    (root / "data" / "args").mkdir(parents=True)
+    (root / "tools" / "config").mkdir(parents=True)
+    src = root / "args" / "component_registry.yaml"
+    src.write_text("components: []\n", encoding="utf-8")
+    (root / "data" / "args" / "component_registry.yaml").write_text(
+        "components: []\n", encoding="utf-8"
+    )
+    module_file = root / "tools" / "config" / "component_registry.py"
+    module_file.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(mod, "__file__", str(module_file))
+    _base, found = mod._find_repo_root()
+
+    assert found == src, "source args/ layout must take precedence"

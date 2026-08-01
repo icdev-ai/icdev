@@ -23,6 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.proposal_genesis.reflexes.train")
 
 
 def _utcnow_iso() -> str:
@@ -349,8 +352,12 @@ def _store_pair(pair: Dict, dataset_id: Optional[str] = None) -> bool:
                         now,
                     ),
                 )
-            except Exception:
-                pass  # ft_dataset_examples may not exist
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # ft_dataset_examples may not exist
+                logger.warning(
+                    "_store_pair: best-effort INSERT into ft_dataset_examples failed (non-blocking): %s",
+                    exc,
+                )
 
         conn.commit()
         return True
@@ -381,8 +388,8 @@ def _audit_train(event_type: str, details: Dict, success: bool) -> None:
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit_train: best-effort INSERT into pg_proposal_genesis_audit failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

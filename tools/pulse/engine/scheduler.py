@@ -617,6 +617,10 @@ def _build_result(ctx: dict) -> dict:
         "judge_composite": post_data.get("judge_composite", 0),
         "judge_combined": post_data.get("judge_combined", 0),
     }
+    exports = ctx.get("exports") or {}
+    if isinstance(exports, dict) and exports.get("blocked"):
+        result["publish_blocked"] = True
+        result["publish_block_reason"] = exports.get("reason", "")
     if not quality.get("passed", False) and rewrite_data:
         result["rewrite_needed"] = True
         if rewrite_data.get("findings"):
@@ -719,7 +723,7 @@ def post_processing(
                 progress_callback("publish")
             except Exception:
                 pass
-        exports = export_both(post_id)
+        exports = _publish_stage(run_id, post_id, post_data)
         if mark_used:
             mark_cluster_used(cluster.get("id", ""))
 
@@ -765,6 +769,41 @@ def post_processing(
             },
         )
         return {"run_id": run_id, "status": "failed", "stage": "error", "error": str(e)}
+
+
+def _publish_stage(run_id: str, post_id: str, post_data: dict) -> dict:
+    """Automated publish/export stage, gated on the LLM-judge verdict (nav-intel-09).
+
+    Fail-closed, mirroring ``publish_all_approved`` in the WordPress/Hostinger
+    publishers: a RED verdict — or a judge that errored / never ran (no verdict
+    on record) — skips the publish stage entirely and logs the reason. Any
+    other color (green/yellow/purple/blue) proceeds to export.
+    """
+    from tools.pulse.publish_gate import evaluate_publish_gate
+
+    gate = evaluate_publish_gate(post_data)
+    if gate["blocked"]:
+        logger.warning(
+            "[%s] Auto-publish SKIPPED for post %s — %s (verdict: %s)",
+            run_id,
+            post_id,
+            gate["reason"],
+            gate["verdict"] or "absent",
+        )
+        return {
+            "skipped": True,
+            "blocked": True,
+            "post_id": post_id,
+            "verdict": gate["verdict"],
+            "reason": gate["reason"],
+        }
+    logger.info(
+        "[%s] Publish gate cleared (verdict: %s) — exporting post %s",
+        run_id,
+        gate["verdict"],
+        post_id,
+    )
+    return export_both(post_id)
 
 
 def _run_llm_judge(run_id: str, post_id: str, body: str, quality: dict) -> dict | None:

@@ -355,7 +355,6 @@ reflexes:
       - "Northrop Grumman"
       - "General Dynamics"
       - "CACI"
-      - "Peraton"
       - "GovDash"
       - "GovSignals"
     velocity_threshold_zscore: 2.0    # Alert on hiring spikes > 2 std devs

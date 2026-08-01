@@ -132,6 +132,17 @@ def api_generate_all_cancel(session_id):
     return jsonify({"ok": True})
 
 
+@rfi_canvas_bp.route("/api/rfi/<session_id>/accept-all", methods=["POST"])
+def api_accept_all(session_id):
+    """Bulk-accept every drafted section as final (skips pending/rejected)."""
+    try:
+        result = wb.accept_all_drafted(session_id)
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        logger.exception("Accept-all error for session %s", session_id)
+        return jsonify({"error": str(exc)}), 500
+
+
 @rfi_canvas_bp.route("/api/rfi/<session_id>/readiness")
 def api_readiness(session_id):
     return jsonify(wb.get_session_readiness(session_id))
@@ -188,11 +199,44 @@ def api_save(session_id, section_id):
 
 @rfi_canvas_bp.route("/api/rfi/<session_id>/export/<fmt>", methods=["POST"])
 def api_export(session_id, fmt):
-    if fmt not in ("docx", "md"):
-        return jsonify({"error": "Supported formats: docx, md"}), 400
+    if fmt not in ("docx", "md", "questions"):
+        return jsonify({"error": "Supported formats: docx, md, questions"}), 400
+    _body = request.get_json(silent=True) or {}
+    force = bool(_body.get("force_placeholders"))
+    force_refs = bool(_body.get("force_references"))
     try:
-        path = wb.assemble_and_export(session_id, fmt)
+        if fmt == "questions":
+            # Part 6 questions to the Government — separate ARC/email
+            # submission, never part of the response document.
+            path = wb.export_questions(session_id, force_placeholders=force)
+        else:
+            path = wb.assemble_and_export(
+                session_id, fmt, force_placeholders=force, force_references=force_refs
+            )
         return jsonify({"ok": True, "path": path, "download_url": f"/api/rfi/{session_id}/download/{fmt}"})
+    except wb.ReferenceGateBlocked as exc:
+        return (
+            jsonify(
+                {
+                    "error": "Citation gate: section(s) cite RFI references that do not "
+                             "exist — fix the citations or force",
+                    "gate": "citation_guard",
+                    "findings": exc.findings,
+                }
+            ),
+            409,
+        )
+    except wb.PlaceholderGateBlocked as exc:
+        return (
+            jsonify(
+                {
+                    "error": "Placeholder gate: unresolved [PLACEHOLDER] tokens remain — resolve or force",
+                    "gate": "placeholder_guard",
+                    "findings": exc.findings,
+                }
+            ),
+            409,
+        )
     except wb.AggregationGuardBlocked as exc:
         return (
             jsonify(
@@ -432,7 +476,13 @@ def rfi_preview(session_id):
     session = wb.get_session(session_id)
     if not session:
         abort(404)
-    sections = wb.get_sections(session_id)
+    # Preview mirrors the exported response document — Part 6 (questions to
+    # the Government) is submitted separately and excluded here too.
+    sections = [s for s in wb.get_sections(session_id) if s.get("part") != "part6"]
+    # trust-cite-03: expose the evidence each section was drafted from as a
+    # rendered Sources list (parsed from sources_json here so the template stays simple).
+    for s in sections:
+        s["source_labels"] = wb._section_source_labels(s)
     profile = wb._load_profile(session.get("profile_name", "own_company"))
     annex = wb.build_compliance_annex(sections)
     return render_template(
@@ -623,3 +673,158 @@ def api_iqe_query():
         return jsonify({"results": results, "count": len(results)})
     except Exception as exc:
         return jsonify({"error": str(exc), "results": []}), 500
+
+
+# ── Capture strategy + evidence library ───────────────────────────────────────
+#
+# These live on the RFI canvas blueprint rather than in a canvas of their own:
+# the strategy and the evidence corpus are shared by /rfi and /proposals, and the
+# workflow (Set Strategy -> Attach Evidence -> Generate -> Approve) reads as one
+# loop only if the user never leaves it.
+
+_ALLOWED_EVIDENCE_EXT = {".pdf", ".docx", ".doc", ".txt", ".md"}
+_EVIDENCE_UPLOAD_DIR = _ROOT / ".tmp" / "govcon_evidence"
+_EVIDENCE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@rfi_canvas_bp.route("/capture/strategy")
+def capture_strategy_page():
+    from tools.govcon.capture_strategy import get_company_strategy
+
+    return render_template("rfi_canvas/strategy.html", strategy=get_company_strategy())
+
+
+@rfi_canvas_bp.route("/capture/evidence")
+def capture_evidence_page():
+    return render_template("rfi_canvas/evidence.html")
+
+
+@rfi_canvas_bp.route("/api/capture/strategy")
+def api_get_capture_strategy():
+    from tools.govcon.capture_strategy import get_company_strategy
+
+    try:
+        return jsonify(get_company_strategy())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/capture/strategy", methods=["PUT"])
+def api_save_capture_strategy():
+    from tools.govcon.capture_strategy import save_company_strategy
+
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify(save_company_strategy(data, actor=request.remote_addr or "dashboard"))
+    except Exception as exc:
+        logger.warning("Could not save capture strategy: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@rfi_canvas_bp.route("/api/capture/strategy/style-check", methods=["POST"])
+def api_capture_strategy_style_check():
+    """Check a theme statement against the company style guide as the user types.
+
+    A theme containing a banned phrase would otherwise be injected verbatim into
+    every narrative prompt, which is exactly the puffery forbidden_phrases exists
+    to suppress. Catching it here is cheaper than catching it in the draft.
+    """
+    from tools.govcon.rfi_style_engine import check_style_compliance, get_company_style_guide
+
+    text = (request.get_json(force=True) or {}).get("text", "")
+    try:
+        guide = dict(get_company_style_guide())
+        # Only phrase policy applies to a theme statement; headings/classification
+        # markings are properties of a rendered section, not of a one-line claim.
+        guide.pop("required_headings", None)
+        result = check_style_compliance(text, guide)
+        result["findings"] = [f for f in result["findings"] if f["type"] == "forbidden_phrase"]
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "findings": []}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/theme-coverage")
+def api_theme_coverage(session_id):
+    """Advisory theme x part coverage. Never blocks; answers 'is my message uniform?'"""
+    from tools.govcon.capture_strategy import policy_for, resolve_strategy, theme_coverage
+
+    try:
+        strategy = resolve_strategy(session_id=session_id)
+        sections = wb.get_sections(session_id)
+        report = theme_coverage(sections, strategy)
+        report["sections"] = [
+            {
+                "item_number": s.get("item_number"),
+                "title": s.get("title"),
+                "policy": policy_for(s.get("item_number", "")),
+            }
+            for s in sections
+        ]
+        report["themes"] = [
+            {"id": f"win_themes:{i}", "statement": t.get("statement", "")}
+            for i, t in enumerate(strategy.get("win_themes") or [])
+        ]
+        return jsonify(report)
+    except Exception as exc:
+        logger.warning("theme-coverage failed for %s: %s", session_id, exc)
+        return jsonify({"error": str(exc), "findings": [], "matrix": {}}), 500
+
+
+@rfi_canvas_bp.route("/api/rfi/<session_id>/sections/<section_id>/provenance")
+def api_section_provenance(section_id, session_id):
+    """The evidence behind a generated section.
+
+    sources_json has been persisted since migration 249 and shown nowhere. A writer
+    who can see why the model said something can trust or correct it.
+    """
+    try:
+        section = wb.get_section(section_id) or {}
+        return jsonify(
+            {
+                "sources": wb._section_source_labels(section),
+                "evidence": wb.get_section_evidence_status(section_id),
+            }
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc), "sources": []}), 500
+
+
+@rfi_canvas_bp.route("/api/capture/evidence")
+def api_list_evidence():
+    from tools.govcon.evidence_corpus import corpus_stats, list_corpus
+
+    try:
+        return jsonify({"items": list_corpus(), "stats": corpus_stats()})
+    except Exception as exc:
+        logger.warning("Could not list evidence corpus: %s", exc)
+        return jsonify({"error": str(exc), "items": [], "stats": {}}), 500
+
+
+@rfi_canvas_bp.route("/api/capture/evidence/upload", methods=["POST"])
+def api_upload_evidence():
+    """Upload a prior submission. Hashes first so a duplicate is reported, not re-ingested."""
+    from tools.govcon.evidence_corpus import ingest_upload
+
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"error": "no file"}), 400
+    if Path(upload.filename).suffix.lower() not in _ALLOWED_EVIDENCE_EXT:
+        return jsonify({"error": f"unsupported type; allowed: {sorted(_ALLOWED_EVIDENCE_EXT)}"}), 400
+
+    dest = _EVIDENCE_UPLOAD_DIR / Path(upload.filename).name
+    upload.save(dest)
+    try:
+        result = ingest_upload(
+            str(dest),
+            title=request.form.get("title") or Path(upload.filename).stem,
+            doc_type=request.form.get("doc_type", "proposal"),
+            outcome=request.form.get("outcome", "unknown"),
+            solicitation_number=request.form.get("solicitation_number", ""),
+            uploaded_by=request.remote_addr or "",
+        )
+        status = 409 if result.get("status") == "duplicate" else 200
+        return jsonify(result), status
+    except Exception as exc:
+        logger.warning("Evidence upload failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500

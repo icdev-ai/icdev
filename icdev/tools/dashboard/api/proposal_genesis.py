@@ -49,6 +49,33 @@ def _get_db():
     return _PGCompatConn(conn)
 
 
+def _mac_filter_by_classification(rows):
+    """Bell-LaPadula no-read-up filter (prop-sec-02).
+
+    Win/loss records and lessons (pg_win_loss_records/pg_win_loss_lessons)
+    are genuinely SECRET-capable competitive intelligence — why we won or
+    lost against a named competitor, our own weaknesses — but classify
+    per-row (classification column, default CUI), not per-endpoint. A
+    blanket @require_clearance("SECRET") on the whole route would hide the
+    (usually CUI) majority of records from ordinary capture/proposal roles;
+    filtering per-row here matches the pattern already used in
+    tools/dashboard/api/proposals.py's _mac_filter().
+
+    No-op (returns rows unchanged) when g.security_context is unset
+    (system/unauthenticated context) — same compatibility fallback as
+    classification_enforcer.can_read(None).
+    """
+    try:
+        from flask import g
+        ctx = getattr(g, "security_context", None)
+    except RuntimeError:
+        ctx = None
+    if ctx is None:
+        return rows
+    from tools.security.classification_enforcer import can_read
+    return [r for r in rows if can_read(r.get("classification") or "CUI", ctx)]
+
+
 def _run_daemon_cmd(args_list, timeout=30):
     """Run proposal_genesis daemon CLI and parse JSON output."""
     try:
@@ -125,6 +152,7 @@ _ALLOWED_REFLEXES = [
 
 
 @proposal_genesis_api.route("/reflex/<name>", methods=["POST"])
+@require_role("admin", "pm")
 def api_pg_run_reflex(name):
     """POST /api/proposal-genesis/reflex/<name> — Run a single reflex."""
     if name not in _ALLOWED_REFLEXES:
@@ -136,6 +164,7 @@ def api_pg_run_reflex(name):
 
 
 @proposal_genesis_api.route("/run-reflex", methods=["POST"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_run_reflex_by_body():
     """POST /api/proposal-genesis/run-reflex — Run a reflex via JSON body {"reflex": "name"}."""
     body = request.get_json(force=True, silent=True) or {}
@@ -151,6 +180,7 @@ def api_pg_run_reflex_by_body():
 
 
 @proposal_genesis_api.route("/pipeline", methods=["POST"])
+@require_role("admin", "pm")
 def api_pg_run_pipeline():
     """POST /api/proposal-genesis/pipeline — Run discover->extract->map->draft->polish."""
     data, err = _run_daemon_cmd(["--pipeline", "--json"], timeout=600)
@@ -677,6 +707,7 @@ def api_pg_engagement_scores():
 
 
 @proposal_genesis_api.route("/crm-accounts", methods=["POST"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_create_account():
     """POST /api/proposal-genesis/crm-accounts — Create a CRM account."""
     from tools.proposal_genesis.reflexes.engage import create_account
@@ -700,6 +731,7 @@ def api_pg_create_account():
 
 
 @proposal_genesis_api.route("/crm-accounts/<account_id>", methods=["PUT"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_update_account(account_id):
     """PUT /api/proposal-genesis/crm-accounts/<id> — Update a CRM account."""
     from tools.proposal_genesis.reflexes.engage import update_account
@@ -735,6 +767,7 @@ def api_pg_get_contact(contact_id):
 
 
 @proposal_genesis_api.route("/crm-contacts", methods=["POST"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_create_contact():
     """POST /api/proposal-genesis/crm-contacts — Create a CRM contact."""
     from tools.proposal_genesis.reflexes.engage import create_contact
@@ -760,6 +793,7 @@ def api_pg_create_contact():
 
 
 @proposal_genesis_api.route("/crm-contacts/<contact_id>", methods=["PUT"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_update_contact(contact_id):
     """PUT /api/proposal-genesis/crm-contacts/<id> — Update a CRM contact."""
     from tools.proposal_genesis.reflexes.engage import update_contact
@@ -770,6 +804,7 @@ def api_pg_update_contact(contact_id):
 
 
 @proposal_genesis_api.route("/crm-contacts/<contact_id>", methods=["DELETE"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_delete_contact(contact_id):
     """DELETE /api/proposal-genesis/crm-contacts/<id> — Delete a CRM contact."""
     from tools.proposal_genesis.reflexes.engage import delete_contact
@@ -782,6 +817,7 @@ def api_pg_delete_contact(contact_id):
 
 
 @proposal_genesis_api.route("/crm-interactions", methods=["POST"])
+@require_role("admin", "pm", "bd", "capture_mgr")
 def api_pg_log_interaction():
     """POST /api/proposal-genesis/crm-interactions — Log a manual interaction."""
     from tools.proposal_genesis.reflexes.engage import log_manual_interaction
@@ -1015,7 +1051,7 @@ def api_pg_win_loss_records():
         rows = conn.execute(
             "SELECT wl.id, wl.opportunity_id, wl.outcome, wl.competitor_name, "
             "wl.competitor_strengths, wl.our_strengths, wl.our_weaknesses, "
-            "wl.lessons_learned, wl.created_at, "
+            "wl.lessons_learned, wl.created_at, wl.classification, "
             "o.title AS opportunity_title, o.agency "
             "FROM pg_win_loss_records wl "
             "LEFT JOIN sam_gov_opportunities o ON o.id = wl.opportunity_id "
@@ -1030,6 +1066,7 @@ def api_pg_win_loss_records():
             except Exception:
                 rec["lessons_parsed"] = []
             records.append(rec)
+        records = _mac_filter_by_classification(records)
         return jsonify({"records": records, "count": len(records)})
     except Exception as exc:
         return jsonify({"records": [], "count": 0, "note": str(exc)})
@@ -1049,7 +1086,7 @@ def api_pg_win_loss_lessons():
     try:
         query = (
             "SELECT l.id, l.win_loss_id, l.category, l.lesson, "
-            "l.actionable, l.applied, l.created_at, "
+            "l.actionable, l.applied, l.created_at, l.classification, "
             "wl.outcome, wl.opportunity_id, "
             "o.title AS opportunity_title, o.agency "
             "FROM pg_win_loss_lessons l "
@@ -1063,7 +1100,7 @@ def api_pg_win_loss_lessons():
         query += "ORDER BY l.created_at DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(query, params).fetchall()
-        lessons = [dict(r) for r in rows]
+        lessons = _mac_filter_by_classification([dict(r) for r in rows])
         return jsonify({"lessons": lessons, "count": len(lessons)})
     except Exception as exc:
         return jsonify({"lessons": [], "count": 0, "note": str(exc)})

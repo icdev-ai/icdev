@@ -29,10 +29,22 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
 
 logger = get_logger(__name__)
 
 writeguard_api = Blueprint("writeguard_api", __name__, url_prefix="/api/writeguard")
+
+# nav-intel-06: WriteGuard content-management mutations (glossary / taxonomy /
+# style-profile create-update-delete) write shared, cross-user configuration
+# that steers every subsequent analysis, so they are restricted to an
+# admin/pm content-manager role (401 anon / 403 wrong role). Reads (GET) and the
+# interactive per-user analysis tools (analyze / rewrite / export / classify /
+# style-match / diff / standards / stride / parallel / precedents / word-limits)
+# stay open to any authenticated user — they take input text per request and do
+# not mutate shared configuration. The /analyze best-effort history write is
+# per-request activity logging, not shared config, so it does not gate the tool.
+_WG_CRUD_ROLES = ("admin", "pm")
 
 # ---------------------------------------------------------------------------
 # Text extraction helpers
@@ -280,6 +292,7 @@ def list_glossary():
 
 
 @writeguard_api.route("/glossary", methods=["POST"])
+@require_role(*_WG_CRUD_ROLES)
 def create_glossary():
     """POST /api/writeguard/glossary — Create a glossary entry."""
     data = request.get_json(silent=True) or {}
@@ -337,6 +350,7 @@ def get_glossary_entry(entry_id):
 
 
 @writeguard_api.route("/glossary/<entry_id>", methods=["PUT"])
+@require_role(*_WG_CRUD_ROLES)
 def update_glossary_entry(entry_id):
     data = request.get_json(silent=True) or {}
     conn = get_connection()
@@ -372,6 +386,7 @@ def update_glossary_entry(entry_id):
 
 
 @writeguard_api.route("/glossary/<entry_id>", methods=["DELETE"])
+@require_role(*_WG_CRUD_ROLES)
 def delete_glossary_entry(entry_id):
     conn = get_connection()
     try:
@@ -408,6 +423,7 @@ def list_taxonomy():
 
 
 @writeguard_api.route("/taxonomy", methods=["POST"])
+@require_role(*_WG_CRUD_ROLES)
 def create_taxonomy():
     data = request.get_json(silent=True) or {}
     opp_id = data.get("opportunity_id", "").strip()
@@ -454,6 +470,7 @@ def get_taxonomy_entry(entry_id):
 
 
 @writeguard_api.route("/taxonomy/<entry_id>", methods=["PUT"])
+@require_role(*_WG_CRUD_ROLES)
 def update_taxonomy_entry(entry_id):
     data = request.get_json(silent=True) or {}
     conn = get_connection()
@@ -481,6 +498,7 @@ def update_taxonomy_entry(entry_id):
 
 
 @writeguard_api.route("/taxonomy/<entry_id>", methods=["DELETE"])
+@require_role(*_WG_CRUD_ROLES)
 def delete_taxonomy_entry(entry_id):
     conn = get_connection()
     try:
@@ -1471,6 +1489,7 @@ def word_limits():
 # WG 10b — Style Profile CRUD
 # ---------------------------------------------------------------------------
 @writeguard_api.route("/profile", methods=["POST"])
+@require_role(*_WG_CRUD_ROLES)
 def create_profile():
     """Extract and save a style profile from sample text.
 
@@ -1610,6 +1629,7 @@ def get_profile(profile_id: str):
 
 
 @writeguard_api.route("/profiles/<profile_id>", methods=["DELETE"])
+@require_role(*_WG_CRUD_ROLES)
 def delete_profile(profile_id: str):
     """Soft-delete a style profile."""
     try:

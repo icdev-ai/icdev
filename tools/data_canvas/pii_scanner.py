@@ -204,7 +204,7 @@ def scan_profile(
             stats.setdefault("row_count", row_count)
             result = check_column(col_name, stats, tbl_cls)
             if result:
-                result["table"] = tbl.get("table_name", "?")
+                result["table"] = tbl.get("name", "?")
                 findings.append(result)
 
     risk_levels = [_RISK_ORDER.get(f["severity"], 0) for f in findings]
@@ -257,28 +257,26 @@ def save_pii_scan(result: dict, design_id: str | None = None) -> str:
     now = datetime.now(timezone.utc).isoformat()
     payload = json.dumps(result)
 
+    # dd_pii_scans is a canvas table (no classification/tenant_id columns), so use
+    # get_canvas_connection() — get_connection() would attach the global RLS
+    # predicate and raise UndefinedColumn on every query.
     try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
-    except Exception:
-        return run_id  # storage unavailable — scan result not persisted
+        from tools.db.storage import get_canvas_connection
+        conn = get_canvas_connection()
+    except Exception as exc:
+        # storage unavailable — scan result not persisted
+        print(f"[pii_scanner] save_pii_scan: storage unavailable: {exc}", file=sys.stderr)
+        return run_id
 
     try:
-        try:
-            conn.execute(
-                "INSERT INTO dd_pii_scans (scan_id, design_id, overall_risk, findings_json, scanned_at) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                (run_id, design_id, result.get("overall_risk", "none"), payload, now),
-            )
-        except Exception:
-            conn.execute(
-                "INSERT INTO dd_pii_scans (scan_id, design_id, overall_risk, findings_json, scanned_at) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                (run_id, design_id, result.get("overall_risk", "none"), payload, now),
-            )
+        conn.execute(
+            "INSERT INTO dd_pii_scans (scan_id, design_id, overall_risk, findings_json, scanned_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (run_id, design_id, result.get("overall_risk", "none"), payload, now),
+        )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[pii_scanner] save_pii_scan: write failed: {exc}", file=sys.stderr)
     finally:
         conn.close()
 

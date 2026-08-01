@@ -1207,38 +1207,81 @@ def _prediction_id(rule_id: str, subject: str) -> str:
     return f"op-gap-{h[:16]}"
 
 
-def _prediction_already_open(conn: Any, pred_id: str) -> bool:
-    """Return True when a prediction with this stable ID already exists
-    and has NOT been resolved (outcome is pending/null/empty).  When the
-    outcome is 'dismissed' we also skip — the operator explicitly
-    dismissed it and we respect that signal."""
+# Outcomes that mean "this prediction is still open": card_writer may yet
+# promote it. Anything else (promoted:*, dismissed*) is a closed row we must not
+# touch — it either already minted a kanban card or the operator dismissed it.
+_OPEN_OUTCOMES = frozenset({"", "pending"})
+
+
+def _existing_prediction_state(conn: Any, pred_id: str) -> Optional[Dict[str, Any]]:
+    """Return the current (outcome, confidence, severity) for this stable ID, or
+    None when no row exists yet. Used to decide insert vs. refresh vs. skip."""
     try:
         row = conn.execute(
-            "SELECT outcome FROM oracle_predictions WHERE id = %s LIMIT 1",
+            "SELECT outcome, confidence, severity FROM oracle_predictions "
+            "WHERE id = %s LIMIT 1",
             (pred_id,),
         ).fetchone()
-        if row is None:
-            return False  # doesn't exist yet — safe to insert
-        # Any existing row (pending, promoted, dismissed) → skip re-insert.
-        # 'pending'     → still open, card_writer will promote it
-        # 'promoted:*'  → already a kanban card
-        # 'dismissed'   → operator dismissed it, respect the signal
-        return True
     except Exception:
-        return False
+        return None
+    if row is None:
+        return None
+    if hasattr(row, "keys"):
+        return dict(row)
+    return {"outcome": row[0], "confidence": row[1], "severity": row[2]}
 
 
 def _write_gap_prediction(
     conn: Any, finding: Dict[str, Any], rule_config: Dict[str, Any]
 ) -> Optional[str]:
     pred_id = _prediction_id(finding["rule_id"], finding["subject"])
+    new_confidence = float(rule_config["confidence"])
+    new_severity = rule_config["severity"]
 
-    # Idempotency guard: if this (rule, subject) pair already has an open
-    # prediction, return the existing ID without touching the DB.  This
-    # prevents the timestamp-based ID churn that previously caused every
-    # 3-hour awareness cycle to mint N new prediction rows → N new kanban
-    # cards for the same finding.
-    if _prediction_already_open(conn, pred_id):
+    # Idempotency + tombstone guard. The ID is content-addressable on
+    # (rule, subject) with the timestamp excluded, so repeated cycles reuse the
+    # same row instead of minting fresh IDs (which caused kanban card churn).
+    #
+    # But confidence and severity are per-rule CONSTANTS read from
+    # awareness_config.yaml at write time, and the old guard skipped the row
+    # entirely whenever it already existed. So editing a rule's confidence in the
+    # config never reached rows already written: a subject first seen at 0.50
+    # stayed pinned at 0.50 forever, and raising the rule to 0.90 would never
+    # promote it — the stale value silently suppressed the finding. Refresh
+    # still-open rows in place so the persisted confidence tracks the config.
+    state = _existing_prediction_state(conn, pred_id)
+    if state is not None:
+        outcome = (state.get("outcome") or "").strip().lower()
+        if outcome not in _OPEN_OUTCOMES:
+            # promoted:* / dismissed* — a card exists or the operator ruled.
+            # Never rewrite: that is the churn/override the guard exists to stop.
+            return pred_id
+        stored_conf = state.get("confidence")
+        stored_sev = state.get("severity")
+        conf_changed = stored_conf is None or abs(float(stored_conf) - new_confidence) > 1e-6
+        sev_changed = stored_sev != new_severity
+        if not (conf_changed or sev_changed):
+            return pred_id  # nothing to do — same constants as last cycle
+        text = (
+            f"Gap detected: {finding['rule_id']} on {finding['subject']}. "
+            f"{rule_config.get('description', '')}"
+        )
+        try:
+            # created_at is intentionally NOT touched — refreshing the constant
+            # must not re-age the finding or reset its horizon.
+            conn.execute(
+                "UPDATE oracle_predictions "
+                "SET confidence = %s, severity = %s, prediction_text = %s "
+                "WHERE id = %s",
+                (new_confidence, new_severity, text, pred_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            LOG.warning("gap prediction refresh failed: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return pred_id
 
     now = datetime.now(timezone.utc).isoformat()

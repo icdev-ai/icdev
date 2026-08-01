@@ -18,22 +18,25 @@ ACE_MISSION_SLUGS = (
     "m-ace-capstone",
 )
 
+# fa_mission_progress keys missions by mission_id (there is no mission_slug
+# column); join through fa_missions to resolve tier / slug. (penta-fix-02)
 _TIER2_COMPLETE_SQL = """
     SELECT DISTINCT fp.user_id, u.username, u.display_name
     FROM fa_mission_progress fp
-    JOIN fa_missions fm ON fm.slug = fp.mission_slug
+    JOIN fa_missions fm ON fm.id = fp.mission_id
     JOIN fa_users u ON u.id = fp.user_id
     WHERE fm.tier = 2
       AND fp.status = 'completed'
     GROUP BY fp.user_id, u.username, u.display_name
-    HAVING COUNT(DISTINCT fp.mission_slug) >= 3
+    HAVING COUNT(DISTINCT fp.mission_id) >= 3
 """
 
 _ACE_STARTED_SQL = """
-    SELECT DISTINCT user_id
-    FROM fa_mission_progress
-    WHERE mission_slug IN ({placeholders})
-      AND status IN ('in_progress', 'completed')
+    SELECT DISTINCT fp.user_id
+    FROM fa_mission_progress fp
+    JOIN fa_missions fm ON fm.id = fp.mission_id
+    WHERE fm.slug IN ({placeholders})
+      AND fp.status IN ('in_progress', 'completed')
 """
 
 
@@ -49,7 +52,7 @@ class ACESkillGapLens(BaseLens):
         if not tier2_rows:
             return {"gap_users": []}
 
-        placeholders = ",".join("?" * len(ACE_MISSION_SLUGS))
+        placeholders = ",".join("%s" for _ in ACE_MISSION_SLUGS)
         ace_started = {
             row[0]
             for row in conn.execute(

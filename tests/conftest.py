@@ -11,15 +11,96 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# Force SQLite backend for tests (override .env PostgreSQL setting — same as main conftest)
-os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
-os.environ["NOCC_STORAGE_BACKEND"] = "sqlite"
-os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
-os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
-os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
+# tests/ itself, so the guard registry is one module object shared by this
+# conftest and the tests that cover it (pytest loads conftest under its own
+# module name, so `tests.conftest` would be a distinct copy). Matches the
+# existing `from _sql_compat import ...` convention in this directory.
+if str(Path(__file__).parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).parent))
+
+import _txn_guard  # noqa: E402  (needs the sys.path entry above)
+
+# Force SQLite backend for tests (override .env PostgreSQL setting — same as main
+# conftest) UNLESS the opt-in ICDEV_PYTEST_PG flag is set. The dedicated CI
+# "test-pg" tier (.github/workflows/icdev-ci.yml) sets ICDEV_PYTEST_PG=1 +
+# ICDEV_STORAGE_BACKEND=postgresql and runs a CURATED allowlist
+# (tests/pg_tier_allowlist.txt) against a live PostgreSQL service so PG-native
+# `%s` / portability bugs fail LOUDLY — on SQLite they are silently masked by
+# translate_sql. Default (flag absent) preserves the SQLite-forced behaviour for
+# the whole normal suite.
+_PYTEST_PG = os.environ.get("ICDEV_PYTEST_PG", "").lower() in ("1", "true", "yes")
+if _PYTEST_PG:
+    os.environ.setdefault("ICDEV_STORAGE_BACKEND", "postgresql")
+    # FAIL-CLOSED: without this, get_connection() silently falls back to SQLite
+    # when PG is unreachable — the PG tier would go green while testing NOTHING on
+    # PG (the exact false-confidence trap this tier exists to prevent). No-fallback
+    # makes an unreachable/misconfigured PG raise loudly.
+    os.environ["ICDEV_PG_NO_FALLBACK"] = "1"
+else:
+    os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
+    os.environ["NOCC_STORAGE_BACKEND"] = "sqlite"
+    os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
+    os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
+    os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
+
+# cnr-plat-01 / cnr-plat-03: keep the two new fail-closed-by-default platform
+# gates (CSRF on cookie-authed mutating APIs; canvas access enforcement) OPT-OUT
+# during the test suite so the many existing dashboard/canvas tests that use
+# logged-in sessions (session_transaction) or unauthenticated test clients keep
+# passing; the dedicated cnr-plat tests re-enable them per-test via
+# monkeypatch.setenv. An explicit env value still wins.
+os.environ.setdefault("ICDEV_CSRF_ENFORCE", "0")
+os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL DEFAULT 'unknown',
+    connector_name TEXT NOT NULL DEFAULT '',
+    table_name TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL DEFAULT 'denied' CHECK(decision IN ('allowed','denied')),
+    reason TEXT NOT NULL DEFAULT '',
+    rows_returned INTEGER DEFAULT 0,
+    redactions_applied INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS web_fetch_provenance (
+    id TEXT PRIMARY KEY,
+    citation_id TEXT,
+    requested_url TEXT NOT NULL,
+    final_url TEXT,
+    http_status INTEGER,
+    content_hash TEXT NOT NULL,
+    content_type TEXT,
+    content_length INTEGER,
+    etag TEXT,
+    last_modified TEXT,
+    fetched_at TEXT NOT NULL,
+    fetcher TEXT,
+    classification TEXT DEFAULT 'CUI',
+    project_id TEXT,
+    tenant_id TEXT DEFAULT '',
+    metadata TEXT DEFAULT '{}'
+);
+
+-- Dashboard auth: the before_request hook validates session user_id against
+-- dashboard_users; route tests set session["user_id"]="test-admin".
+CREATE TABLE IF NOT EXISTS dashboard_users (
+    id TEXT PRIMARY KEY, email TEXT UNIQUE, display_name TEXT,
+    role TEXT DEFAULT 'admin', status TEXT DEFAULT 'active',
+    created_by TEXT, created_at TIMESTAMP, updated_at TIMESTAMP
+);
+INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role)
+VALUES ('test-admin', 'admin@test.local', 'Test Admin', 'admin');
+CREATE TABLE IF NOT EXISTS dashboard_api_keys (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, key_hash TEXT NOT NULL,
+    key_prefix TEXT NOT NULL, label TEXT, status TEXT NOT NULL DEFAULT 'active',
+    last_used_at TIMESTAMP, expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, revoked_at TIMESTAMP, revoked_by TEXT
+);
 CREATE TABLE IF NOT EXISTS studio_workflows (
     workflow_id   TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
@@ -30,7 +111,9 @@ CREATE TABLE IF NOT EXISTS studio_workflows (
     created_by    TEXT,
     version       INTEGER DEFAULT 1,
     created_at    TEXT,
-    updated_at    TEXT
+    updated_at    TEXT,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id      TEXT
 );
 CREATE TABLE IF NOT EXISTS studio_workflow_runs (
     run_id         TEXT PRIMARY KEY,
@@ -41,7 +124,10 @@ CREATE TABLE IF NOT EXISTS studio_workflow_runs (
     completed_at   TEXT,
     triggered_by   TEXT,
     project_id     TEXT DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id      TEXT,
     summary_json   TEXT,
+    inputs_json    TEXT,
     FOREIGN KEY (workflow_id) REFERENCES studio_workflows(workflow_id)
 );
 CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
@@ -55,9 +141,81 @@ CREATE TABLE IF NOT EXISTS studio_workflow_run_steps (
     stdout       TEXT DEFAULT '',
     stderr       TEXT DEFAULT '',
     duration_ms  INTEGER DEFAULT 0,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id    TEXT,
     started_at   TEXT,
     completed_at TEXT,
     FOREIGN KEY (run_id) REFERENCES studio_workflow_runs(run_id)
+);
+CREATE TABLE IF NOT EXISTS studio_run_memory (
+    run_id     TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, key)
+);
+CREATE TABLE IF NOT EXISTS studio_event_sources (
+    source_id   TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    config_json TEXT,
+    enabled     INTEGER DEFAULT 1,
+    max_il      TEXT DEFAULT 'IL2',
+    created_by  TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id   TEXT
+);
+CREATE TABLE IF NOT EXISTS studio_workflow_triggers (
+    trigger_id        TEXT PRIMARY KEY,
+    source_id         TEXT NOT NULL,
+    workflow_id       TEXT NOT NULL,
+    event_type        TEXT,
+    filter_json       TEXT,
+    input_mapping_json TEXT,
+    enabled           INTEGER DEFAULT 1,
+    workflow_il       TEXT DEFAULT 'IL6',
+    project_id        TEXT DEFAULT 'default',
+    created_at        TEXT DEFAULT (datetime('now')),
+    classification    TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id         TEXT
+);
+CREATE TABLE IF NOT EXISTS studio_trigger_events (
+    event_id     TEXT PRIMARY KEY,
+    source_id    TEXT,
+    trigger_id   TEXT,
+    event_type   TEXT,
+    payload_json TEXT,
+    matched      INTEGER DEFAULT 0,
+    run_id       TEXT,
+    reason       TEXT,
+    workflow_id  TEXT,
+    outcome      TEXT,
+    classification TEXT,
+    idempotency_key TEXT UNIQUE,
+    envelope_id  TEXT,
+    received_at  TEXT DEFAULT (datetime('now')),
+    tenant_id    TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_studio_trigger_events_idem
+    ON studio_trigger_events (idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS studio_mcp_dispatch_audit (
+    audit_id       TEXT PRIMARY KEY,
+    run_id         TEXT,
+    step_id        TEXT,
+    tool           TEXT NOT NULL,
+    params_sha256  TEXT NOT NULL,
+    principal_id   TEXT,
+    tenant_id      TEXT,
+    caller_il      TEXT,
+    caller_roles   TEXT,
+    caller_source  TEXT,
+    decision       TEXT NOT NULL
+                   CHECK(decision IN ('allowed','refused','pending_approval')),
+    reason         TEXT NOT NULL,
+    detail         TEXT,
+    classification TEXT NOT NULL,
+    recorded_at    TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kanban_tasks (
     id                    TEXT PRIMARY KEY,
@@ -66,6 +224,7 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     task_type             TEXT DEFAULT 'build',
     priority              TEXT DEFAULT 'high',
     status                TEXT DEFAULT 'backlog',
+    project_id            TEXT DEFAULT 'default',
     scheduled_at          TEXT,
     created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at            TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -79,13 +238,17 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     last_failure_reason   TEXT,
     last_failure_at       TEXT,
     dispatch_source       TEXT DEFAULT 'unknown',
+    trace_id              TEXT,
+    span_id               TEXT,
     hitl_stage            TEXT,
     start_date            TEXT,
     target_date           TEXT,
     files_changed         INTEGER DEFAULT 0,
     lines_added           INTEGER DEFAULT 0,
     lines_removed         INTEGER DEFAULT 0,
-    completed_via_bypass  INTEGER DEFAULT 0
+    completed_via_bypass  INTEGER DEFAULT 0,
+    due_date              TEXT,
+    sla_hours             INTEGER
 );
 CREATE TABLE IF NOT EXISTS kanban_task_deps (
     task_id         TEXT NOT NULL,
@@ -104,6 +267,78 @@ CREATE TABLE IF NOT EXISTS kanban_executions (
     output      TEXT,
     error       TEXT,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS proposal_section_drafts (
+    id             TEXT PRIMARY KEY,
+    opportunity_id TEXT,
+    draft_content  TEXT,
+    tenant_id      TEXT DEFAULT 'default',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS proposal_opportunities (
+    id                   TEXT PRIMARY KEY,
+    solicitation_number  TEXT,
+    title                TEXT,
+    agency               TEXT,
+    naics_code           TEXT,
+    status               TEXT DEFAULT 'open',
+    created_at           TEXT,
+    updated_at           TEXT,
+    tenant_id            TEXT DEFAULT 'default',
+    classification       TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS pg_cost_volumes (
+    id                    TEXT PRIMARY KEY,
+    opportunity_id        TEXT NOT NULL,
+    contract_type         TEXT,
+    pricing_strategy      TEXT,
+    total_evaluated_price REAL,
+    direct_labor_cost     REAL,
+    fringe_rate           REAL,
+    overhead_rate         REAL,
+    g_and_a_rate          REAL,
+    fee_rate              REAL,
+    subcontractor_cost    REAL,
+    odc_cost              REAL,
+    ptw_estimate_low      REAL,
+    ptw_estimate_high     REAL,
+    calc_benchmark_median REAL,
+    status                TEXT,
+    created_at            TEXT,
+    updated_at            TEXT,
+    tenant_id             TEXT DEFAULT 'default',
+    classification        TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS pg_lcat_allocations (
+    id                TEXT PRIMARY KEY,
+    cost_volume_id    TEXT NOT NULL,
+    task_description  TEXT NOT NULL,
+    labor_category    TEXT NOT NULL,
+    bls_soc_code      TEXT,
+    fte_count         REAL,
+    hourly_rate       REAL,
+    annual_cost       REAL,
+    basis_of_estimate TEXT,
+    created_at        TEXT,
+    tenant_id         TEXT DEFAULT 'default',
+    classification    TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS proposal_key_personnel (
+    id                    TEXT PRIMARY KEY,
+    opportunity_id        TEXT NOT NULL,
+    person_ref            TEXT NOT NULL,
+    name                  TEXT NOT NULL,
+    proposed_lcat         TEXT NOT NULL,
+    qualification_verdict TEXT NOT NULL CHECK(qualification_verdict IN ('qualified', 'gap', 'exceeds')),
+    evidence_json         TEXT NOT NULL CHECK(evidence_json <> '' AND evidence_json <> '[]'),
+    source                TEXT CHECK(source IS NULL OR source IN ('compass', 'manual', 'resume_match', 'scraped')),
+    key_person            INTEGER NOT NULL DEFAULT 0,
+    gaps_json             TEXT NOT NULL DEFAULT '[]',
+    tenant_id             TEXT NOT NULL DEFAULT 'default',
+    classification        TEXT NOT NULL DEFAULT 'CUI',
+    created_at            TIMESTAMP,
+    updated_at            TIMESTAMP,
+    UNIQUE (opportunity_id, person_ref)
 );
 CREATE TABLE IF NOT EXISTS kanban_verifications (
     id                    TEXT PRIMARY KEY,
@@ -129,6 +364,10 @@ CREATE TABLE IF NOT EXISTS kanban_verifications (
     e2e_passed            INTEGER,
     e2e_errors            TEXT,
     companion_synced      INTEGER,
+    review_passed         INTEGER,
+    review_findings       TEXT,
+    pytest_ran            INTEGER DEFAULT 0,
+    dispatch_source       TEXT DEFAULT 'unknown',
     created_at            TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS kanban_status_transitions (
@@ -139,6 +378,18 @@ CREATE TABLE IF NOT EXISTS kanban_status_transitions (
     actor        TEXT,
     reason       TEXT,
     recorded_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+-- Continuous Harness eval table (mirrors tools/db/schema/pg_consolidated.sql).
+CREATE TABLE IF NOT EXISTS harness_eval (
+    id             TEXT PRIMARY KEY,
+    task_id        TEXT NOT NULL DEFAULT '',
+    reflex         TEXT NOT NULL,
+    decision       TEXT NOT NULL,
+    confidence     REAL,
+    metadata_json  TEXT DEFAULT '{}',
+    actual_outcome TEXT,
+    resolved_at    TEXT,
+    created_at     TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -211,6 +462,22 @@ CREATE TABLE IF NOT EXISTS component_audit_log (
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_event ON component_audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_component ON component_audit_log(component_key);
 CREATE INDEX IF NOT EXISTS idx_component_audit_log_recorded_at ON component_audit_log(recorded_at);
+CREATE TABLE IF NOT EXISTS constitutional_audit_log (
+    id TEXT PRIMARY KEY,
+    artifact_type TEXT DEFAULT '',
+    rule_id TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'warn',
+    verdict TEXT NOT NULL,
+    offending_span TEXT DEFAULT '',
+    rationale TEXT DEFAULT '',
+    revised INTEGER DEFAULT 0,
+    vocabulary_version TEXT DEFAULT 'const-1.0',
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_constitutional_audit_rule ON constitutional_audit_log(rule_id, verdict);
+CREATE INDEX IF NOT EXISTS idx_constitutional_audit_recorded_at ON constitutional_audit_log(recorded_at);
 CREATE TABLE IF NOT EXISTS abac_decisions (
     id TEXT PRIMARY KEY,
     user_id TEXT,
@@ -296,6 +563,26 @@ CREATE TABLE IF NOT EXISTS canvas_ai_decisions (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS canvas_kg_nodes (
+    id            TEXT PRIMARY KEY,
+    canvas        TEXT NOT NULL,
+    design_id     TEXT NOT NULL,
+    node_id       TEXT NOT NULL,
+    node_type     TEXT,
+    label         TEXT,
+    metadata_json TEXT,
+    updated_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS canvas_kg_edges (
+    id            TEXT PRIMARY KEY,
+    canvas        TEXT NOT NULL,
+    design_id     TEXT NOT NULL,
+    source_id     TEXT NOT NULL,
+    target_id     TEXT NOT NULL,
+    edge_type     TEXT,
+    metadata_json TEXT,
+    updated_at    TEXT
+);
 CREATE TABLE IF NOT EXISTS cpmp_contracts (
     id TEXT PRIMARY KEY,
     contract_number TEXT NOT NULL DEFAULT '',
@@ -326,6 +613,9 @@ CREATE TABLE IF NOT EXISTS cpmp_contracts (
     updated_at TEXT DEFAULT (datetime('now')),
     created_by TEXT,
     classification TEXT DEFAULT 'CUI',
+    compartments TEXT NOT NULL DEFAULT '[]',
+    pop_base_end TEXT,
+    option_years INTEGER DEFAULT 0,
     tenant_id TEXT
 );
 CREATE TABLE IF NOT EXISTS cpmp_clins (
@@ -794,6 +1084,16 @@ CREATE TABLE IF NOT EXISTS dic_handoff_items (
     classification  TEXT    DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_handoff_items_session ON dic_handoff_items(session_id);
+CREATE TABLE IF NOT EXISTS dic_collections (
+    collection_id   TEXT    PRIMARY KEY,
+    name            TEXT    NOT NULL DEFAULT '',
+    description     TEXT    DEFAULT '',
+    owner_id        TEXT    DEFAULT '',
+    retention_days  INTEGER DEFAULT 90,
+    classification  TEXT    DEFAULT 'CUI',
+    tenant_id       TEXT    DEFAULT 'default',
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS dic_doc_freshness (
     doc_id          TEXT    PRIMARY KEY,
     collection_id   TEXT    NOT NULL DEFAULT 'default',
@@ -802,11 +1102,27 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
     source_event    TEXT    DEFAULT '',
     score           REAL    DEFAULT 0.0,
     updated_at      TEXT    DEFAULT (datetime('now')),
+    last_notified_at TEXT,
     tenant_id       TEXT    DEFAULT 'default',
     classification  TEXT    DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_tenant ON dic_doc_freshness(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_collection ON dic_doc_freshness(collection_id);
+CREATE TABLE IF NOT EXISTS dic_cross_references (
+    id              TEXT    PRIMARY KEY,
+    source_doc_id   TEXT    NOT NULL,
+    source_section  TEXT    DEFAULT '',
+    target_doc_ref  TEXT    NOT NULL,
+    target_doc_id   TEXT,
+    target_section  TEXT    DEFAULT '',
+    ref_text        TEXT    DEFAULT '',
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI',
+    extracted_at    TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_source ON dic_cross_references(source_doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_target ON dic_cross_references(target_doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_tenant ON dic_cross_references(tenant_id);
 CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL DEFAULT 'Untitled Mapping',
@@ -854,6 +1170,439 @@ CREATE TABLE IF NOT EXISTS dd_mapping_transforms (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     tenant_id       TEXT NOT NULL DEFAULT 'default',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Data Canvas: core designs, nodes, edges, snapshots ────────────────────────
+CREATE TABLE IF NOT EXISTS data_designs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_templates (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    category      TEXT,
+    description   TEXT,
+    graph_json    TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    tags          TEXT DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS dd_snippets (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    category    TEXT,
+    description TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    tags        TEXT DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS dd_assessments (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    assessment_type TEXT NOT NULL,
+    findings_json   TEXT DEFAULT '[]',
+    score           REAL DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id       TEXT,
+    user            TEXT,
+    action          TEXT NOT NULL,
+    detail          TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_versions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    version_number  INTEGER NOT NULL,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    change_summary  TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS dd_lineage (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    source_node_id  TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    lineage_type    TEXT DEFAULT 'flow',
+    column_name     TEXT DEFAULT '',
+    transform_desc  TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS data_nodes (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    node_type       TEXT NOT NULL DEFAULT 'table',
+    label           TEXT DEFAULT '',
+    x               REAL DEFAULT 0,
+    y               REAL DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    properties_json TEXT DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS data_edges (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    source_node_id  TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    edge_type       TEXT DEFAULT '',
+    label           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS data_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    label           TEXT DEFAULT '',
+    table_count     INTEGER DEFAULT 0,
+    edge_count      INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Data Canvas: runbooks & SOPs ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ddc_runbooks (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    category            TEXT DEFAULT 'general',
+    severity            TEXT DEFAULT 'medium',
+    description         TEXT DEFAULT '',
+    trigger_condition   TEXT DEFAULT '',
+    steps_json          TEXT DEFAULT '[]',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    status              TEXT DEFAULT 'active',
+    linked_design_id    TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ddc_runbook_executions (
+    id              TEXT PRIMARY KEY,
+    runbook_id      TEXT,
+    triggered_by    TEXT DEFAULT '',
+    status          TEXT DEFAULT 'in_progress',
+    notes           TEXT DEFAULT '',
+    started_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT DEFAULT NULL
+);
+CREATE TABLE IF NOT EXISTS ddc_sops (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    category            TEXT DEFAULT 'general',
+    description         TEXT DEFAULT '',
+    purpose             TEXT DEFAULT '',
+    scope               TEXT DEFAULT '',
+    steps_json          TEXT DEFAULT '[]',
+    references_json     TEXT DEFAULT '[]',
+    version             TEXT DEFAULT '1.0',
+    status              TEXT DEFAULT 'draft',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    linked_design_id    TEXT,
+    owner               TEXT DEFAULT '',
+    reviewer            TEXT DEFAULT '',
+    approver            TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ddc_sop_approvals (
+    id          TEXT PRIMARY KEY,
+    sop_id      TEXT,
+    reviewer    TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    comment     TEXT DEFAULT '',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Data Canvas: explore / query / quality ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_explore_sessions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    user            TEXT DEFAULT '',
+    db_conn_json    TEXT DEFAULT '{}',
+    status          TEXT DEFAULT 'completed',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_explore_profiles (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    session_id      TEXT,
+    db_conn_json    TEXT DEFAULT '{}',
+    profile_json    TEXT DEFAULT '{}',
+    table_count     INTEGER DEFAULT 0,
+    anomaly_json    TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_anomaly_runs (
+    id              TEXT PRIMARY KEY,
+    profile_id      TEXT,
+    findings_json   TEXT,
+    overall_risk    TEXT,
+    classification  TEXT,
+    created_at      TEXT
+);
+CREATE TABLE IF NOT EXISTS dd_query_history (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    user            TEXT DEFAULT '',
+    sql_text        TEXT NOT NULL,
+    db_conn_json    TEXT DEFAULT '{}',
+    row_count       INTEGER DEFAULT 0,
+    exec_ms         INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_quality_rules (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    name            TEXT NOT NULL,
+    table_name      TEXT NOT NULL,
+    column_name     TEXT DEFAULT '',
+    check_type      TEXT NOT NULL,
+    threshold       REAL DEFAULT 90.0,
+    params_json     TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_quality_runs (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT,
+    db_conn_json    TEXT DEFAULT '{}',
+    passed          INTEGER DEFAULT 0,
+    actual_value    REAL DEFAULT 0.0,
+    threshold       REAL DEFAULT 0.0,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_freshness_alerts (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT NOT NULL,
+    design_id       TEXT,
+    db_conn_json    TEXT,
+    last_checked    TEXT,
+    passed          INTEGER,
+    actual_max_value TEXT,
+    cutoff_value    TEXT,
+    detail          TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT
+);
+
+-- ── Data Mesh foundation ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dm_domains (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    steward         TEXT DEFAULT '',
+    bounded_context TEXT DEFAULT '',
+    maturity_level  INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    status          TEXT DEFAULT 'active',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_data_products (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    owner           TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    availability_sla REAL DEFAULT 99.9,
+    latency_sla_ms  INTEGER DEFAULT 500,
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_contracts (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    title           TEXT NOT NULL,
+    version         TEXT DEFAULT '1.0.0',
+    schema_json     TEXT DEFAULT '{}',
+    sla_json        TEXT DEFAULT '{}',
+    quality_rules_json TEXT DEFAULT '[]',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_input_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'cdc',
+    schema_json     TEXT DEFAULT '{}',
+    source_system   TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_output_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    name            TEXT NOT NULL,
+    port_type       TEXT DEFAULT 'api',
+    schema_json     TEXT DEFAULT '{}',
+    endpoint        TEXT DEFAULT '',
+    sla_json        TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    name            TEXT NOT NULL,
+    port_type       TEXT NOT NULL DEFAULT 'input',
+    transport_type  TEXT DEFAULT 'api',
+    schema_json     TEXT DEFAULT '{}',
+    endpoint        TEXT DEFAULT '',
+    source_system   TEXT DEFAULT '',
+    sla_json        TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_domain_maturity (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    maturity_level  INTEGER NOT NULL DEFAULT 0,
+    scores_json     TEXT DEFAULT '{}',
+    assessed_by     TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_governance_policies (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    policy_type     TEXT DEFAULT 'opa',
+    rules_json      TEXT DEFAULT '[]',
+    applies_to      TEXT DEFAULT 'all',
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_catalog_entries (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    catalog_name    TEXT NOT NULL,
+    tags_json       TEXT DEFAULT '[]',
+    metadata_json   TEXT DEFAULT '{}',
+    lineage_json    TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain_id       TEXT,
+    product_id      TEXT,
+    user            TEXT DEFAULT '',
+    action          TEXT NOT NULL,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_opa_policies (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT,
+    name            TEXT NOT NULL,
+    rego_text       TEXT DEFAULT '',
+    policy_path     TEXT DEFAULT 'datamesh/allow',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_policy_audit_log (
+    id              TEXT PRIMARY KEY,
+    policy_id       TEXT,
+    user            TEXT DEFAULT 'system',
+    resource        TEXT DEFAULT '{}',
+    decision        INTEGER DEFAULT 0,
+    reason          TEXT DEFAULT '',
+    method          TEXT DEFAULT 'local',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_csp_sync_log (
+    id              TEXT PRIMARY KEY,
+    provider        TEXT NOT NULL,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    operation       TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    synced_count    INTEGER DEFAULT 0,
+    error_detail    TEXT DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dm_product_slas (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    sla_type        TEXT NOT NULL,
+    target_value    REAL NOT NULL,
+    unit            TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_product_subscriptions (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT,
+    subscriber_team TEXT NOT NULL,
+    purpose         TEXT DEFAULT '',
+    approved        INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_data_contracts (
+    id              TEXT PRIMARY KEY,
+    domain_id       TEXT DEFAULT '',
+    product_id      TEXT DEFAULT '',
+    name            TEXT NOT NULL,
+    contract_yaml   TEXT DEFAULT '',
+    version         TEXT DEFAULT '1.0.0',
+    status          TEXT DEFAULT 'draft',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dm_contract_test_runs (
+    id              TEXT PRIMARY KEY,
+    contract_id     TEXT,
+    passed          INTEGER DEFAULT 0,
+    error_count     INTEGER DEFAULT 0,
+    warnings        INTEGER DEFAULT 0,
+    result_json     TEXT DEFAULT '{}',
+    method          TEXT DEFAULT 'internal',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Data Canvas: PII scanner ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_pii_scans (
+    scan_id         TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL DEFAULT '',
+    overall_risk    TEXT NOT NULL DEFAULT 'none',
+    findings_json   TEXT NOT NULL DEFAULT '[]',
+    scanned_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS zig_pillars (
@@ -914,6 +1663,17 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     complete_activities INTEGER DEFAULT 0,
     assessment_run_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS zig_targets (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    system_type     TEXT DEFAULT 'general',
+    classification  TEXT DEFAULT 'CUI',
+    status          TEXT DEFAULT 'active',
+    pillar_focus    TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS slides_decks (
     deck_id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1546,6 +2306,8 @@ CREATE TABLE IF NOT EXISTS idr_sessions (
     last_source_hash TEXT,
     source_hash_checked_at TEXT,
     final_doc_text  TEXT,
+    dic_doc_id      TEXT,
+    source_dic_doc_id TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -1604,6 +2366,15 @@ CREATE TABLE IF NOT EXISTS idr_artifacts (
     tenant_id       TEXT,
     flagged_sections TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_publish_audit (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    gate        TEXT NOT NULL,
+    reviewer    TEXT,
+    findings    TEXT,
+    tenant_id   TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- PNA: Predictive Network Analytics (migration 222)
@@ -1846,6 +2617,1063 @@ CREATE TABLE IF NOT EXISTS document_aggregation_findings (
     resolution_comment      TEXT,
     created_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS docmod_scan_runs (
+    run_id          TEXT PRIMARY KEY,
+    scope_type      TEXT NOT NULL DEFAULT 'all'
+                        CHECK (scope_type IN ('all','collection','doc')),
+    scope_id        TEXT,
+    pack_ids        TEXT DEFAULT '[]',
+    evidence_hash   TEXT,
+    docs_scanned    INTEGER NOT NULL DEFAULT 0,
+    findings_new    INTEGER NOT NULL DEFAULT 0,
+    findings_resolved INTEGER NOT NULL DEFAULT 0,
+    started_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    finished_at     TIMESTAMP,
+    triggered_by    TEXT NOT NULL DEFAULT 'manual'
+                        CHECK (triggered_by IN ('manual','reflex','daemon','api')),
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS docmod_findings (
+    finding_id      TEXT PRIMARY KEY,
+    run_id          TEXT NOT NULL REFERENCES docmod_scan_runs(run_id),
+    doc_id          TEXT NOT NULL,
+    version_id      TEXT,
+    chunk_link_id   TEXT,
+    section_heading TEXT,
+    page            INTEGER,
+    pack_id         TEXT NOT NULL,
+    entity_label    TEXT NOT NULL,
+    entity_type     TEXT NOT NULL,
+    finding_type    TEXT NOT NULL,
+    currency_verdict TEXT NOT NULL DEFAULT 'unknown'
+                        CHECK (currency_verdict IN ('current','deprecated','eol','retired','divergent','unknown')),
+    severity        TEXT NOT NULL DEFAULT 'medium'
+                        CHECK (severity IN ('critical','high','medium','low','info')),
+    rationale       TEXT,
+    evidence_json   TEXT DEFAULT '[]',
+    recommended_replacement TEXT,
+    replacement_evidence_json TEXT DEFAULT '[]',
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    state           TEXT NOT NULL DEFAULT 'open'
+                        CHECK (state IN ('open','redline_drafted','accepted','rejected','resolved','superseded','stale')),
+    redline_suggestion_id TEXT,
+    prediction_id   TEXT,
+    dedupe_key      TEXT NOT NULL,
+    supersedes_id   TEXT REFERENCES docmod_findings(finding_id),
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_docmod_findings_doc    ON docmod_findings(doc_id, state);
+CREATE INDEX IF NOT EXISTS idx_docmod_findings_dedupe ON docmod_findings(dedupe_key);
+CREATE TABLE IF NOT EXISTS docmod_eol_products (
+    id              TEXT PRIMARY KEY,
+    product         TEXT NOT NULL,
+    cycle           TEXT NOT NULL,
+    eol_date        TEXT,
+    eos_date        TEXT,
+    latest_version  TEXT,
+    lts             INTEGER NOT NULL DEFAULT 0,
+    source          TEXT NOT NULL DEFAULT 'endoflife.date'
+                        CHECK (source IN ('endoflife.date','seed','manual')),
+    synced_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    UNIQUE (product, cycle)
+);
+CREATE TABLE IF NOT EXISTS docmod_nist_pubs (
+    id              TEXT PRIMARY KEY,
+    pub_id          TEXT NOT NULL,
+    latest_revision TEXT,
+    revision_num    INTEGER,
+    title           TEXT,
+    url             TEXT,
+    published_date  TEXT,
+    source          TEXT NOT NULL DEFAULT 'nist.gov'
+                        CHECK (source IN ('nist.gov','seed','manual')),
+    synced_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    UNIQUE (pub_id)
+);
+CREATE TABLE IF NOT EXISTS docmod_defacto_standards (
+    id              TEXT PRIMARY KEY,
+    domain          TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    vendor          TEXT,
+    product         TEXT NOT NULL,
+    version         TEXT,
+    deploy_count    INTEGER NOT NULL DEFAULT 0,
+    weighted_score  REAL NOT NULL DEFAULT 0.0,
+    share_pct       REAL NOT NULL DEFAULT 0.0,
+    computed_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS docmod_doc_scan_state (
+    doc_id             TEXT PRIMARY KEY,
+    last_version_id    TEXT,
+    last_evidence_hash TEXT,
+    last_scanned_at    TIMESTAMP,
+    open_findings      INTEGER NOT NULL DEFAULT 0,
+    tenant_id          TEXT,
+    classification     TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS docmod_catalog_entries (
+    entry_id        TEXT PRIMARY KEY,
+    domain          TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    vendor          TEXT,
+    product         TEXT NOT NULL,
+    model_family    TEXT,
+    version         TEXT,
+    status          TEXT NOT NULL DEFAULT 'approved'
+                        CHECK (status IN ('approved','deprecated','retired')),
+    eol_date        TEXT,
+    eos_date        TEXT,
+    replacement_entry_id TEXT REFERENCES docmod_catalog_entries(entry_id),
+    metadata_json   TEXT DEFAULT '{}',
+    tags_json       TEXT DEFAULT '[]',
+    source          TEXT NOT NULL DEFAULT 'manual'
+                        CHECK (source IN ('manual','imported','promoted_from_defacto')),
+    is_builtin      INTEGER NOT NULL DEFAULT 0,
+    created_by      TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    UNIQUE (domain, category, vendor, product, version)
+);
+CREATE TABLE IF NOT EXISTS docmod_catalog_audit (
+    id              TEXT PRIMARY KEY,
+    entry_id        TEXT NOT NULL,
+    event_type      TEXT NOT NULL,
+    actor           TEXT NOT NULL DEFAULT 'system',
+    details         TEXT DEFAULT '{}',
+    recorded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS dic_claims (
+    claim_id        TEXT PRIMARY KEY,
+    doc_id          TEXT NOT NULL,
+    version_id      TEXT NOT NULL,
+    section         TEXT,
+    chunk_link_id   TEXT,
+    page            INTEGER,
+    claim_text      TEXT NOT NULL,
+    anchor_start    INTEGER NOT NULL,
+    anchor_end      INTEGER NOT NULL,
+    subject_label   TEXT NOT NULL,
+    subject_type    TEXT,
+    predicate       TEXT NOT NULL,
+    object_label    TEXT,
+    object_type     TEXT,
+    pack_domain     TEXT,
+    linked_evidence_ids TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending_review'
+                    CHECK (status IN ('pending_review','active','invalidated','superseded')),
+    supersedes_id   TEXT,
+    dedupe_key      TEXT,
+    prov_model      TEXT,
+    prov_prompt_version TEXT,
+    extracted_at    TEXT NOT NULL,
+    confidence      REAL DEFAULT 1.0,
+    tenant_id       TEXT DEFAULT 'default',
+    classification  TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_claims_tenant   ON dic_claims(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dic_claims_doc      ON dic_claims(doc_id, version_id);
+CREATE INDEX IF NOT EXISTS idx_dic_claims_subject  ON dic_claims(subject_label);
+CREATE INDEX IF NOT EXISTS idx_dic_claims_dedupe   ON dic_claims(dedupe_key);
+CREATE TABLE IF NOT EXISTS cortex_sessions (
+    id              TEXT PRIMARY KEY,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    user_id         TEXT,
+    domain          TEXT,
+    air_gap         INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'active',
+    metadata_json   TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_sessions_tenant ON cortex_sessions(tenant_id);
+CREATE TABLE IF NOT EXISTS cortex_audit (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    function        TEXT NOT NULL DEFAULT 'cortex',
+    agent_id        TEXT,
+    user_id         TEXT,
+    gates_json      TEXT,
+    outcome         TEXT NOT NULL DEFAULT 'pass'
+        CHECK (outcome IN ('pass', 'warn', 'fail', 'blocked')),
+    blocked         INTEGER NOT NULL DEFAULT 0,
+    provenance_id   TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_audit_session ON cortex_audit(session_id);
+CREATE INDEX IF NOT EXISTS idx_cortex_audit_tenant ON cortex_audit(tenant_id);
+
+-- Cortex service keys (migration 265) — external-caller auth for the Cortex
+-- REST/MCP surface. No classification column on purpose (verified pre-RLS).
+CREATE TABLE IF NOT EXISTS cortex_service_keys (
+    id                       TEXT PRIMARY KEY,
+    label                    TEXT NOT NULL,
+    key_hash                 TEXT NOT NULL UNIQUE,
+    key_prefix               TEXT,
+    tenant_id                TEXT NOT NULL DEFAULT 'default',
+    classification_ceiling   TEXT NOT NULL DEFAULT 'CUI',
+    scopes                   TEXT,
+    status                   TEXT NOT NULL DEFAULT 'active',
+    created_by               TEXT,
+    created_at               TEXT DEFAULT CURRENT_TIMESTAMP,
+    last_used_at             TEXT,
+    revoked_at               TEXT,
+    revoked_by               TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cortex_service_keys_tenant ON cortex_service_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cortex_service_keys_status ON cortex_service_keys(status);
+
+-- Cortex canvas (chat) tables — distinct from the governance cortex_sessions/cortex_audit.
+CREATE TABLE IF NOT EXISTS cortex_chat_sessions (
+    session_id      TEXT PRIMARY KEY,
+    user_id         TEXT DEFAULT '',
+    mode            TEXT DEFAULT 'ask',
+    domain          TEXT DEFAULT 'general',
+    title           TEXT DEFAULT '',
+    status          TEXT DEFAULT 'active',
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS cortex_messages (
+    message_id      TEXT PRIMARY KEY,
+    session_id      TEXT DEFAULT '',
+    turn_number     INTEGER DEFAULT 0,
+    role            TEXT DEFAULT 'user',
+    content         TEXT DEFAULT '',
+    facade          TEXT DEFAULT '',
+    grounded        INTEGER DEFAULT 0,
+    confidence      TEXT DEFAULT '',
+    citations       TEXT DEFAULT '',
+    governance      TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS cortex_search_history (
+    query_id        TEXT PRIMARY KEY,
+    session_id      TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    mode            TEXT DEFAULT 'search',
+    domain          TEXT DEFAULT 'general',
+    query_text      TEXT DEFAULT '',
+    strategy        TEXT DEFAULT '',
+    result_count    INTEGER DEFAULT 0,
+    grounded        INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT DEFAULT 'default',
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ace_step_audit_log (
+    id          TEXT    PRIMARY KEY,
+    step_id     TEXT    NOT NULL,
+    tool        TEXT    NOT NULL,
+    trust_tier  TEXT    NOT NULL,
+    success     INTEGER NOT NULL,
+    skipped     INTEGER NOT NULL DEFAULT 0,
+    error       TEXT,
+    duration_ms REAL,
+    created_at  TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ace_webhook_log (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id       TEXT NOT NULL DEFAULT '',
+    url               TEXT NOT NULL DEFAULT '',
+    status_code       INTEGER,
+    response          TEXT,
+    attempt_count     INTEGER NOT NULL DEFAULT 0,
+    last_attempted_at TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+-- Observability tables (mirror tools/db/init_icdev_db.py). These carry a
+-- classification column but intentionally NO tenant_id column — the traces API
+-- must bypass RLS predicate injection when querying them (see obx-trc-03).
+CREATE TABLE IF NOT EXISTS otel_spans (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    parent_span_id TEXT,
+    name TEXT NOT NULL,
+    kind TEXT DEFAULT 'INTERNAL',
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    duration_ms INTEGER DEFAULT 0,
+    status_code TEXT DEFAULT 'UNSET',
+    status_message TEXT,
+    attributes TEXT,
+    events TEXT,
+    agent_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS shap_attributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    shapley_value REAL NOT NULL,
+    coalition_size INTEGER,
+    confidence_low REAL,
+    confidence_high REAL,
+    outcome_metric TEXT DEFAULT 'success',
+    outcome_value REAL,
+    analysis_params TEXT,
+    agent_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Observability Design Canvas (ODC) — twin snapshot round-trip + projections.
+CREATE TABLE IF NOT EXISTS observability_designs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    template_id     TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS od_assessments (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    assessment_type TEXT NOT NULL,
+    findings_json   TEXT DEFAULT '[]',
+    score           REAL DEFAULT 0,
+    grade           TEXT DEFAULT 'F',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    label           TEXT NOT NULL DEFAULT '',
+    service_count   INTEGER NOT NULL DEFAULT 0,
+    coverage_score  REAL NOT NULL DEFAULT 0.0,
+    coverage_basis  TEXT NOT NULL DEFAULT 'no_assessment',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+-- QDC + AADC digital twins (twx-cov-01). Snapshots use PDC dedup/retention
+-- (NOT append-only); simulations persist the pass/warn/fail verdict.
+CREATE TABLE IF NOT EXISTS qdc_twin_snapshots (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    label       TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count  INTEGER DEFAULT 0,
+    edge_count  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS qdc_simulations (
+    id                TEXT PRIMARY KEY,
+    design_id         TEXT NOT NULL,
+    baseline_snap_id  TEXT,
+    delta_graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict           TEXT NOT NULL DEFAULT 'unknown',
+    findings_json     TEXT DEFAULT '[]',
+    diff_json         TEXT DEFAULT '{}',
+    created_by        TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS aadc_twin_snapshots (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    label       TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count  INTEGER DEFAULT 0,
+    edge_count  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS aadc_simulations (
+    id                TEXT PRIMARY KEY,
+    design_id         TEXT NOT NULL,
+    baseline_snap_id  TEXT,
+    delta_graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict           TEXT NOT NULL DEFAULT 'unknown',
+    findings_json     TEXT DEFAULT '[]',
+    diff_json         TEXT DEFAULT '{}',
+    created_by        TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+-- AIML digital twin (twx-cov-02 wave-2).
+CREATE TABLE IF NOT EXISTS aiml_twin_snapshots (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL,
+    label       TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count  INTEGER DEFAULT 0,
+    edge_count  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS aiml_simulations (
+    id                TEXT PRIMARY KEY,
+    design_id         TEXT NOT NULL,
+    baseline_snap_id  TEXT,
+    delta_graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict           TEXT NOT NULL DEFAULT 'unknown',
+    findings_json     TEXT DEFAULT '[]',
+    diff_json         TEXT DEFAULT '{}',
+    created_by        TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+-- Observability trace / provenance / XAI tables (obx-trc-05 retention target).
+-- Columns mirror tools/db/schema/pg_consolidated.sql. All five are append-only
+-- by design/NIST AU; the observability_retention reflex archives-then-prunes.
+CREATE TABLE IF NOT EXISTS otel_spans (
+    id              TEXT PRIMARY KEY,
+    trace_id        TEXT NOT NULL,
+    parent_span_id  TEXT,
+    name            TEXT NOT NULL,
+    kind            TEXT DEFAULT 'INTERNAL',
+    start_time      TEXT NOT NULL,
+    end_time        TEXT,
+    duration_ms     INTEGER DEFAULT 0,
+    status_code     TEXT DEFAULT 'UNSET',
+    status_message  TEXT,
+    attributes      TEXT,
+    events          TEXT,
+    agent_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS prov_entities (
+    id              TEXT PRIMARY KEY,
+    entity_type     TEXT NOT NULL,
+    label           TEXT,
+    content_hash    TEXT,
+    content         TEXT,
+    attributes      TEXT,
+    trace_id        TEXT,
+    span_id         TEXT,
+    agent_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS prov_activities (
+    id              TEXT PRIMARY KEY,
+    activity_type   TEXT NOT NULL,
+    label           TEXT,
+    start_time      TEXT,
+    end_time        TEXT,
+    attributes      TEXT,
+    trace_id        TEXT,
+    span_id         TEXT,
+    agent_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS prov_relations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    relation_type   TEXT NOT NULL,
+    subject_id      TEXT NOT NULL,
+    object_id       TEXT NOT NULL,
+    attributes      TEXT,
+    trace_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS shap_attributions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id        TEXT NOT NULL,
+    tool_name       TEXT NOT NULL,
+    shapley_value   REAL NOT NULL,
+    coalition_size  INTEGER,
+    confidence_low  REAL,
+    confidence_high REAL,
+    outcome_metric  TEXT DEFAULT 'success',
+    outcome_value   REAL,
+    analysis_params TEXT,
+    agent_id        TEXT,
+    project_id      TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    analyzed_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+-- AI GameDay League (gd_ai_*) tables — mirrors tools/db/schema/pg_consolidated.sql
+CREATE TABLE IF NOT EXISTS gd_ai_tournaments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    scenario_pack TEXT NOT NULL DEFAULT 'cyber_adversarial',
+    status TEXT NOT NULL DEFAULT 'pending',
+    round_count INTEGER NOT NULL DEFAULT 5,
+    round_duration_minutes INTEGER NOT NULL DEFAULT 60,
+    current_round INTEGER NOT NULL DEFAULT 0,
+    config_json TEXT NOT NULL DEFAULT '{}',
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS gd_ai_teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#6c6c80',
+    total_score INTEGER NOT NULL DEFAULT 0,
+    rounds_won INTEGER NOT NULL DEFAULT 0,
+    artifacts_suggested INTEGER NOT NULL DEFAULT 0,
+    training_pairs_contributed INTEGER NOT NULL DEFAULT 0,
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (tournament_id, team_key)
+);
+CREATE TABLE IF NOT EXISTS gd_ai_rounds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    round_num INTEGER NOT NULL,
+    scenario_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending',
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (tournament_id, round_num)
+);
+CREATE TABLE IF NOT EXISTS gd_ai_artifacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    member_role TEXT NOT NULL,
+    artifact_type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tokens_used INTEGER NOT NULL DEFAULT 0,
+    model_used TEXT NOT NULL DEFAULT '',
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS gd_ai_judge_evals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    quality_score REAL NOT NULL DEFAULT 0.0,
+    innovation_score REAL NOT NULL DEFAULT 0.0,
+    ethics_score REAL NOT NULL DEFAULT 1.0,
+    adversarial_score REAL NOT NULL DEFAULT 0.0,
+    compliance_score REAL NOT NULL DEFAULT 1.0,
+    total_score INTEGER NOT NULL DEFAULT 0,
+    routed_to_suggested INTEGER NOT NULL DEFAULT 0,
+    training_pairs_extracted INTEGER NOT NULL DEFAULT 0,
+    ethics_blocked INTEGER NOT NULL DEFAULT 0,
+    judge_notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (round_id, team_id)
+);
+CREATE TABLE IF NOT EXISTS gd_ai_llmops_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    round_id INTEGER,
+    team_key TEXT NOT NULL,
+    member_role TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS gd_ai_training_pairs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    member_role TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    completion TEXT NOT NULL,
+    quality_score REAL NOT NULL DEFAULT 0.0,
+    ft_dataset_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS gd_ai_leaderboard (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_key TEXT NOT NULL,
+    rank INTEGER,
+    total_score INTEGER NOT NULL DEFAULT 0,
+    rounds_won INTEGER NOT NULL DEFAULT 0,
+    artifacts_suggested INTEGER NOT NULL DEFAULT 0,
+    training_pairs_contributed INTEGER NOT NULL DEFAULT 0,
+    avg_ethics_score REAL NOT NULL DEFAULT 1.0,
+    avg_innovation_score REAL NOT NULL DEFAULT 0.0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    game_key TEXT NOT NULL DEFAULT 'gameday',
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE (tournament_id, team_id)
+);
+-- AI GameDay (TTX) tables — canonical DDL mirrors apps/ai_gameday/db.py::_DDL
+CREATE TABLE IF NOT EXISTS ttx_sessions (
+    session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario_slug TEXT NOT NULL,
+    session_mode TEXT NOT NULL DEFAULT 'live',
+    state TEXT NOT NULL DEFAULT 'pending',
+    facilitator_name TEXT,
+    join_code TEXT NOT NULL UNIQUE,
+    duration_minutes INTEGER NOT NULL DEFAULT 120,
+    max_teams INTEGER NOT NULL DEFAULT 8,
+    started_at TEXT,
+    ended_at TEXT,
+    config_json TEXT DEFAULT '{}',
+    ontology_tags_json TEXT DEFAULT '{}',
+    tenant_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_teams (
+    team_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    team_name TEXT NOT NULL,
+    join_code TEXT NOT NULL UNIQUE,
+    total_score INTEGER NOT NULL DEFAULT 0,
+    rank_pos INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_team_members (
+    member_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    player_name TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    persona_json TEXT DEFAULT '{}',
+    joined_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_injects (
+    inject_id TEXT PRIMARY KEY,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    slug TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body_md TEXT,
+    at_minute INTEGER,
+    sequence_num INTEGER,
+    depends_on_slug TEXT,
+    state TEXT NOT NULL DEFAULT 'pending',
+    config_json TEXT DEFAULT '{}',
+    ontology_tags_json TEXT DEFAULT '{}',
+    dispatched_at TEXT,
+    closed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_responses (
+    response_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    inject_id TEXT NOT NULL REFERENCES ttx_injects(inject_id),
+    response_text TEXT,
+    ai_receipts_json TEXT DEFAULT '[]',
+    submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    time_taken_s REAL
+);
+CREATE TABLE IF NOT EXISTS ttx_scores (
+    score_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_id INTEGER NOT NULL REFERENCES ttx_responses(response_id),
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    inject_id TEXT NOT NULL REFERENCES ttx_injects(inject_id),
+    receipt_pts INTEGER NOT NULL DEFAULT 0,
+    receipt_count INTEGER NOT NULL DEFAULT 0,
+    judge_pts INTEGER NOT NULL DEFAULT 0,
+    time_bonus_pts INTEGER NOT NULL DEFAULT 0,
+    total_pts INTEGER NOT NULL DEFAULT 0,
+    judge_rationale_json TEXT DEFAULT '{}',
+    judged_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_api_log (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    tool_slug TEXT NOT NULL,
+    endpoint TEXT,
+    call_id TEXT NOT NULL UNIQUE,
+    result_hash TEXT,
+    token_count INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
+    called_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_leaderboard (
+    lb_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    team_id INTEGER NOT NULL REFERENCES ttx_teams(team_id),
+    rank_pos INTEGER NOT NULL DEFAULT 0,
+    total_score INTEGER NOT NULL DEFAULT 0,
+    receipt_pts INTEGER NOT NULL DEFAULT 0,
+    judge_pts INTEGER NOT NULL DEFAULT 0,
+    time_bonus_pts INTEGER NOT NULL DEFAULT 0,
+    computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (session_id, team_id)
+);
+CREATE TABLE IF NOT EXISTS ttx_scenarios (
+    scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    yaml_content TEXT NOT NULL,
+    created_by TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ttx_inject_templates (
+    template_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    inject_type TEXT NOT NULL DEFAULT 'custom',
+    body_md TEXT,
+    rubric_json TEXT DEFAULT '{}',
+    ai_tools_json TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- LPX (LLM proxy) virtual-key storage (lpx-keys-01). Only a SHA-256 hash of the
+-- issued key is stored, never plaintext. tenant_id + classification present so it
+-- works with the global RLS predicate via get_connection().
+CREATE TABLE IF NOT EXISTS llm_proxy_keys (
+    key_id          TEXT PRIMARY KEY,
+    key_hash        TEXT NOT NULL UNIQUE,
+    key_prefix      TEXT NOT NULL,
+    alias           TEXT,
+    scope_type      TEXT NOT NULL DEFAULT 'tenant',
+    scope_ref       TEXT,
+    session_id      TEXT,
+    max_budget_usd  REAL,
+    budget_window   TEXT NOT NULL DEFAULT 'none',
+    rpm_limit       INTEGER,
+    tpm_limit       INTEGER,
+    status          TEXT NOT NULL DEFAULT 'active',
+    expires_at      TEXT,
+    litellm_synced  INTEGER NOT NULL DEFAULT 0,
+    rotated_from    TEXT,
+    tenant_id       TEXT,
+    classification  TEXT,
+    created_by      TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT
+);
+-- LPX key lifecycle audit (lpx-keys-03, NIST AU). APPEND-ONLY — see
+-- APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py. Never UPDATE/DELETE.
+CREATE TABLE IF NOT EXISTS llm_proxy_key_audit (
+    audit_id       TEXT PRIMARY KEY,
+    key_id         TEXT NOT NULL,
+    action         TEXT NOT NULL,
+    actor          TEXT,
+    detail         TEXT,
+    tenant_id      TEXT,
+    classification TEXT,
+    recorded_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- LPX per-team RPM/TPM rate ceilings + rolling usage (lpx-teams-01). Sibling of
+-- ttx_api_log: gameday-scoped, no tenant_id/classification (get_connection with
+-- no security context). Minute-bucket windows.
+CREATE TABLE IF NOT EXISTS llm_proxy_team_limits (
+    session_id   INTEGER NOT NULL,
+    team_id      INTEGER NOT NULL,
+    rpm_limit    INTEGER NOT NULL,
+    tpm_limit    INTEGER NOT NULL,
+    team_count   INTEGER,
+    burst_factor REAL,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (session_id, team_id)
+);
+CREATE TABLE IF NOT EXISTS llm_proxy_team_usage (
+    session_id     INTEGER NOT NULL,
+    team_id        INTEGER NOT NULL,
+    window_minute  INTEGER NOT NULL,
+    request_count  INTEGER NOT NULL DEFAULT 0,
+    token_count    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (session_id, team_id, window_minute)
+);
+-- LPX per-key spend ledger (lpx-keys-02). Budgets wire onto existing grouping
+-- units via the key's scope; deny is scoped to a single key/window.
+CREATE TABLE IF NOT EXISTS llm_proxy_spend (
+    spend_id       TEXT PRIMARY KEY,
+    key_id         TEXT NOT NULL,
+    scope_type     TEXT NOT NULL DEFAULT 'tenant',
+    scope_ref      TEXT,
+    session_id     TEXT,
+    window_key     TEXT NOT NULL DEFAULT 'none',
+    input_tokens   INTEGER NOT NULL DEFAULT 0,
+    output_tokens  INTEGER NOT NULL DEFAULT 0,
+    cost_usd       REAL NOT NULL DEFAULT 0.0,
+    tenant_id      TEXT,
+    classification TEXT,
+    recorded_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- AIMC (AI/ML Canvas) — model inventory + deployment-readiness check state.
+-- Tenant-less canvas tables (classification, no tenant_id); read via
+-- get_canvas_connection (RLS disabled). Mirrors tools/aimc/db/init_db.py.
+CREATE TABLE IF NOT EXISTS aimc_models (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL,
+    metric_key      TEXT NOT NULL,
+    metric_value    TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS aimc_deployment (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL,
+    check_key       TEXT NOT NULL,
+    check_value     TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
+-- sag-mem-01: standalone-agent per-user profile memory (migration 287).
+CREATE TABLE IF NOT EXISTS sag_user_profiles (
+    user_id          TEXT NOT NULL,
+    tenant_id        TEXT DEFAULT '',
+    classification   TEXT DEFAULT 'CUI',
+    preferences_json TEXT DEFAULT '{}',
+    facts_json       TEXT DEFAULT '[]',
+    updated_at       TEXT,
+    PRIMARY KEY (user_id, tenant_id)
+);
+
+CREATE TABLE IF NOT EXISTS remote_agent_sessions (
+    id               TEXT PRIMARY KEY,
+    channel          TEXT NOT NULL,
+    chat_id          TEXT NOT NULL,
+    icdev_user_id    TEXT,
+    tenant_id        TEXT DEFAULT '',
+    context_id       TEXT NOT NULL,
+    created_at       TEXT,
+    last_activity_at TEXT,
+    UNIQUE (channel, chat_id)
+);
+-- twx-fed-03: high-side compatibility report snapshots (migration 289).
+CREATE TABLE IF NOT EXISTS twin_compat_reports (
+    id             TEXT PRIMARY KEY,
+    target_id      TEXT NOT NULL,
+    source_canvas  TEXT,
+    target_preset  TEXT,
+    verdict        TEXT,
+    blocker_count  INTEGER NOT NULL DEFAULT 0,
+    content_hash   TEXT NOT NULL,
+    report_json    TEXT NOT NULL,
+    tenant_id      TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS divergence_idea_scores (
+    id                 TEXT PRIMARY KEY,
+    trace_id           TEXT NOT NULL,
+    function           TEXT NOT NULL,
+    idea_index         INTEGER NOT NULL,
+    frame              TEXT DEFAULT '',
+    idea_text          TEXT NOT NULL,
+    novelty            TEXT DEFAULT 'unknown',
+    viability          TEXT DEFAULT 'unknown',
+    fit                TEXT DEFAULT 'unknown',
+    composite          REAL DEFAULT 0.0,
+    rationale          TEXT DEFAULT '',
+    trap_flag          TEXT DEFAULT 'clear',
+    trap_level         REAL DEFAULT 0.0,
+    is_trap            INTEGER DEFAULT 0,
+    trap_rationale     TEXT DEFAULT '',
+    vocabulary_version TEXT DEFAULT '',
+    tenant_id          TEXT NOT NULL DEFAULT 'default',
+    classification     TEXT NOT NULL DEFAULT 'CUI',
+    created_at         TEXT
+);
+CREATE TABLE IF NOT EXISTS dynamic_findings (
+    id                 TEXT PRIMARY KEY,
+    finding_key        TEXT NOT NULL,
+    detector           TEXT NOT NULL DEFAULT '',
+    title              TEXT NOT NULL DEFAULT '',
+    severity           TEXT NOT NULL DEFAULT 'medium',
+    target             TEXT NOT NULL DEFAULT '',
+    status             TEXT NOT NULL DEFAULT 'unconfirmed',
+    reproduction       TEXT DEFAULT '',
+    discriminating     INTEGER NOT NULL DEFAULT 0,
+    last_outcome       TEXT NOT NULL DEFAULT '',
+    last_replayed_at   TEXT,
+    tenant_id          TEXT NOT NULL DEFAULT 'default',
+    classification     TEXT NOT NULL DEFAULT 'CUI',
+    created_at         TEXT,
+    updated_at         TEXT
+);
+CREATE TABLE IF NOT EXISTS finding_replay_attempts (
+    id                 TEXT PRIMARY KEY,
+    finding_id         TEXT NOT NULL,
+    finding_key        TEXT NOT NULL DEFAULT '',
+    outcome            TEXT NOT NULL DEFAULT 'error',
+    target             TEXT NOT NULL DEFAULT '',
+    purpose            TEXT NOT NULL DEFAULT 'confirm',
+    predicate_json     TEXT DEFAULT '',
+    observations_json  TEXT DEFAULT '',
+    detail             TEXT DEFAULT '',
+    duration_ms        INTEGER NOT NULL DEFAULT 0,
+    tenant_id          TEXT NOT NULL DEFAULT 'default',
+    classification     TEXT NOT NULL DEFAULT 'CUI',
+    created_at         TEXT
+);
+
+-- FORGE Academy XP provenance (aca-int-07, migration 315). Append-only: one row per
+-- award, naming what earned it, so a rank can be traced to demonstrated work rather
+-- than asserted. is_attendance separates XP for showing up from XP for doing
+-- something, because rank is computed from the latter.
+-- What a certificate was issued against (aca-int-07, migration 317). Snapshotted at
+-- issue time: a certificate is a statement about a moment, and recomputing on the
+-- verify page would let the claim drift with the data underneath it.
+CREATE TABLE IF NOT EXISTS fa_certificate_evidence (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    cert_id         INTEGER NOT NULL,
+    user_id         INTEGER NOT NULL,
+    evidence_type   TEXT    NOT NULL,
+    ref_id          INTEGER,
+    label           TEXT    NOT NULL,
+    detail          TEXT,
+    demonstrated_at TEXT,
+    score           INTEGER,
+    classification  TEXT    DEFAULT 'CUI',
+    tenant_id       TEXT,
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS fa_xp_ledger (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    xp_delta       INTEGER NOT NULL,
+    reason         TEXT    NOT NULL,
+    source_type    TEXT,
+    source_id      INTEGER,
+    is_attendance  INTEGER NOT NULL DEFAULT 0,
+    verified       INTEGER NOT NULL DEFAULT 1,
+    note           TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')),
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT);
+
+-- The instructor workflow (aca-trn-04, migration 323). An assignment targets one
+-- learner or a cohort (a role token, or 'all'); cohort membership is resolved at
+-- read time rather than frozen here, so a learner who enrols into the role
+-- afterwards inherits the assignment.
+CREATE TABLE IF NOT EXISTS fa_assignments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_type TEXT    NOT NULL DEFAULT 'mission',
+    mission_id      INTEGER,
+    track_key       TEXT,
+    target_type     TEXT    NOT NULL DEFAULT 'learner',
+    target_user_id  INTEGER,
+    target_role     TEXT,
+    due_at          TEXT,
+    note            TEXT,
+    assigned_by     TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'open',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One human verdict. override_score writes fa_mission_progress.score and never
+-- moves XP; prior_score records what it replaced so the change is reversible by
+-- inspection.
+CREATE TABLE IF NOT EXISTS fa_instructor_reviews (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    mission_id      INTEGER,
+    step_id         INTEGER,
+    assignment_id   INTEGER,
+    verdict         TEXT    NOT NULL,
+    override_score  INTEGER,
+    prior_score     INTEGER,
+    comment         TEXT,
+    reviewer        TEXT    NOT NULL,
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). A grade override that cannot be
+-- attributed to a person is indistinguishable from a bug in the grader.
+CREATE TABLE IF NOT EXISTS fa_instructor_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    action          TEXT    NOT NULL,
+    actor           TEXT    NOT NULL,
+    actor_role      TEXT,
+    subject_type    TEXT,
+    subject_id      TEXT,
+    detail_json     TEXT    DEFAULT '{}',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+-- The assessment model (aca-trn-01, migration 324). classify_step runs on every
+-- mission page render, so these have to exist wherever a step row does: a query
+-- against a missing table inside an open transaction aborts that transaction on
+-- PostgreSQL, which is why fa_xp_ledger above is declared here too.
+CREATE TABLE IF NOT EXISTS fa_assessment_items (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id        INTEGER NOT NULL,
+    item_key       TEXT    NOT NULL,
+    prompt         TEXT    NOT NULL,
+    options_json   TEXT    NOT NULL DEFAULT '[]',
+    -- Server-only. Never selected into a client payload.
+    correct_index  INTEGER NOT NULL DEFAULT 0,
+    explanation    TEXT,
+    difficulty     TEXT    DEFAULT 'core',
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id, item_key));
+
+-- Append-only (registered in APPEND_ONLY_TABLES). served_json records which items
+-- were drawn and the permutation mapping displayed option positions back to the
+-- authored ones — without it the indices a client posts are meaningless.
+CREATE TABLE IF NOT EXISTS fa_step_attempts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    step_id        INTEGER NOT NULL,
+    kind           TEXT    NOT NULL DEFAULT 'attempt',
+    attempt_num    INTEGER NOT NULL DEFAULT 1,
+    policy         TEXT    NOT NULL DEFAULT 'practice',
+    served_json    TEXT    NOT NULL DEFAULT '[]',
+    answers_json   TEXT,
+    score_pct      INTEGER,
+    passed         INTEGER,
+    closed_at      TEXT,
+    reason         TEXT,
+    actor          TEXT,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS fa_step_assessment_policy (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id            INTEGER NOT NULL,
+    policy             TEXT    NOT NULL DEFAULT 'practice',
+    -- NULL means "use the constant", so raising a threshold moves every step that
+    -- never asked for something different.
+    items_per_attempt  INTEGER,
+    pass_threshold_pct INTEGER,
+    max_attempts       INTEGER,
+    updated_at         TEXT,
+    created_at         TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id));
 """
 
 
@@ -1859,6 +3687,42 @@ def icdev_db(tmp_path):
     conn.commit()
     conn.close()
     return db_path
+
+
+@pytest.fixture
+def bom_db(tmp_path, monkeypatch):
+    """SQLite DB with the BOM Evidence Engine tables (migration 267).
+
+    Built by running tools.bom.db.init_db.SCHEMA_PG rather than by pasting the
+    DDL in here. That is deliberate: the CHECK constraints are derived from the
+    tuples in tools/bom/constants.py, and a hand-copied schema in the test
+    harness is exactly how a test starts passing against a table shape that no
+    longer exists in production.
+
+    Goes through storage.get_connection() (not raw sqlite3) so DML in tests hits
+    the same %s->? translation the real code does — a test that talks straight to
+    sqlite3 can pass while the production query it is meant to be guarding is
+    broken.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "bom_test.db"))
+    from tools.bom.db.init_db import init_db
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    init_db(conn)
+    try:
+        yield conn
+    finally:
+        # Close the write transaction the tests leave open. This fixture was
+        # written before the transaction-leak guard landed on main, and a bare
+        # `yield conn` left one open per test — 53 of them, all reported as
+        # "Transaction leak" rather than as anything to do with BOM.
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
 
 
 @pytest.fixture
@@ -1911,3 +3775,204 @@ def pmc_db(tmp_path, monkeypatch):
     conn = get_connection()
     yield conn
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Transaction-leak guard (tsh-leak-01)
+#
+# A test that runs an INSERT/UPDATE/DELETE and never commits or rolls back
+# leaves SQLite's implicit BEGIN open on that connection. The test itself
+# passes; the damage lands on whichever *later* test touches the same file and
+# blocks on the write lock, or reads rows a prior test never committed. The
+# failure is then attributed to the innocent test, which is why these are so
+# expensive to chase.
+#
+# The guard closes that gap by attributing the leak to the test that caused it:
+# every sqlite3 connection opened during the session is tracked, and at each
+# test's teardown any connection still reporting `in_transaction` fails that
+# test by name. Leaked transactions are rolled back before failing so a single
+# leak produces a single failure instead of cascading into the rest of the run.
+#
+# Escape hatches (both narrow, both deliberate):
+#   * ICDEV_TXN_LEAK_GUARD=0            — disable the guard for a whole run.
+#   * @pytest.mark.allow_open_transaction — a test that *intends* to hand an open
+#     transaction to something outside its own scope.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session", autouse=True)
+def _sqlite_connection_tracker():
+    """Wrap sqlite3.connect for the session so every connection is tracked."""
+    if _txn_guard.GUARD_DISABLED:
+        yield
+        return
+
+    real_connect = sqlite3.connect
+
+    def _tracking_connect(*args, **kwargs):
+        return _txn_guard.track(real_connect(*args, **kwargs))
+
+    sqlite3.connect = _tracking_connect
+    try:
+        yield
+    finally:
+        sqlite3.connect = real_connect
+        _txn_guard.reset()
+
+
+@pytest.fixture(autouse=True)
+def assert_no_leaked_transaction(request, _sqlite_connection_tracker):
+    """Fail the test that leaves a write transaction open, naming it."""
+    # Only connections opened by this test are the test's responsibility.
+    _txn_guard.reset()
+
+    yield
+
+    if _txn_guard.GUARD_DISABLED or request.node.get_closest_marker(
+        "allow_open_transaction"
+    ):
+        _txn_guard.reset()
+        return
+
+    leaked = _txn_guard.open_write_transactions()
+    if not leaked:
+        _txn_guard.reset()
+        return
+
+    # Report WHERE each leaked connection was opened. Naming only the test that
+    # finished blames the wrong one whenever a background thread opens the
+    # connection mid-test — which is how a pure HTTP test that touches no
+    # database at all came to be reported as leaking.
+    #
+    # Read the origins BEFORE reset(): reset() clears the origin registry, so
+    # describing the connections afterwards reports "(origin not recorded)" for
+    # every one of them and the diagnostic is silently a no-op.
+    origins = chr(10).join(_txn_guard.describe_origin(c) for c in leaked)
+
+    # Roll back first: without this every subsequent test in the run would see
+    # the same open transaction and fail, burying the real culprit.
+    for conn in leaked:
+        try:
+            conn.rollback()
+        except sqlite3.Error:  # pragma: no cover - connection died mid-teardown
+            pass
+    _txn_guard.reset()
+
+    pytest.fail(
+        f"Transaction leak: {request.node.nodeid} finished with "
+        f"{len(leaked)} SQLite connection(s) holding an uncommitted write "
+        f"transaction. Commit, roll back, or close the connection before the "
+        f"test ends (the guard rolled them back so later tests are unaffected). "
+        f"If the open transaction is intentional, mark the test with "
+        f"@pytest.mark.allow_open_transaction.{chr(10)}{chr(10)}"
+        f"Opened at:{chr(10)}{origins}",
+        pytrace=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# No live LLM calls during tests
+# ---------------------------------------------------------------------------
+#
+# The suite could hang indefinitely and abort naming an unrelated file. Root
+# cause: `chat_response` and friends resolve to `claude-cli` via CLILLMProvider
+# with supports_thinking=True, so any test reaching an un-mocked
+# `router.invoke(...)` SPAWNS A SUBPROCESS and waits on a thinking-mode model.
+# Nothing prevented that.
+#
+# It explains the symptoms exactly: each suite passes alone, because its own
+# mocks cover the paths it exercises; combined runs hang, because a path one
+# suite never reaches is reached after another suite has primed the state. And
+# because pytest-timeout's only method on Windows is `thread`, it kills the
+# interpreter rather than failing one test, so the report blames whatever
+# happened to be collected nearby.
+#
+# The guard patches LLMProvider.invoke / invoke_streaming — the single abstract
+# chokepoint EVERY provider implements. Patching there rather than LLMRouter
+# matters: a test that already mocks the router is untouched, while one that
+# falls through to a real provider fails immediately with a named error instead
+# of hanging the run.
+#
+# Escape hatches, in order of preference:
+#   @pytest.mark.live            a test that genuinely needs a real model
+#   ICDEV_ALLOW_LIVE_LLM=1       a deliberate live run of the whole suite
+
+
+class LiveLLMCallInTest(RuntimeError):
+    """Raised when a test reaches a real LLM provider.
+
+    Not a failure of the model — a failure to mock. The message names the
+    provider and model so the offending call site is obvious.
+    """
+
+
+def _live_llm_allowed(request) -> bool:
+    if os.environ.get("ICDEV_ALLOW_LIVE_LLM", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return request.node.get_closest_marker("live") is not None
+
+
+@pytest.fixture(autouse=True)
+def _no_live_llm_calls(request, monkeypatch):
+    """Fail fast instead of hanging when a test reaches a real provider."""
+    if _live_llm_allowed(request):
+        return
+
+    try:
+        from tools.llm.provider import LLMProvider
+    except Exception:  # noqa: BLE001 — provider layer optional in some checkouts
+        return
+
+    def _refuse(self, req, model_id="", model_config=None, *a, **k):
+        raise LiveLLMCallInTest(
+            f"Test reached a LIVE LLM provider "
+            f"({type(self).__name__} / {model_id or 'unknown model'}). "
+            "Mock the router or the provider for this path. If the test genuinely "
+            "needs a real model, mark it @pytest.mark.live; to run the whole suite "
+            "against live models set ICDEV_ALLOW_LIVE_LLM=1.\n"
+            "Left un-mocked this spawns a thinking-mode CLI subprocess and hangs "
+            "the run, which pytest-timeout resolves by killing the interpreter and "
+            "blaming an unrelated file."
+        )
+
+    monkeypatch.setattr(LLMProvider, "invoke", _refuse, raising=False)
+    monkeypatch.setattr(LLMProvider, "invoke_streaming", _refuse, raising=False)
+
+
+# ---------------------------------------------------------------------------
+# No chat agent loops surviving a test
+# ---------------------------------------------------------------------------
+#
+# ChatManager.create_context spawns a daemon thread per context and only
+# close_context stops one -- and even that never joins. A test that creates a
+# context and does not close it leaves a loop polling on a 0.1s sleep for the
+# rest of the session, writing task rows, message rows and budget usage while
+# LATER tests run.
+#
+# The damage is misattribution rather than noise: work from an abandoned thread
+# lands during whichever test is executing, and a transaction it holds blocks
+# DDL on other connections until the busy timeout expires. That is the same
+# cross-test interference behind the suite hang, reached by another route.
+#
+# Guarded on sys.modules so this costs nothing for the vast majority of tests
+# that never touch chat: importing chat_manager here would drag the dashboard
+# import graph into every test in the suite.
+
+
+@pytest.fixture(autouse=True)
+def _stop_chat_agent_loops():
+    """Stop any chat agent loops a test leaves running."""
+    yield
+
+    module = sys.modules.get("tools.dashboard.chat_manager")
+    if module is None:
+        return
+
+    manager = getattr(module, "chat_manager", None)
+    shutdown = getattr(manager, "shutdown", None)
+    if shutdown is None:
+        return
+
+    try:
+        shutdown(timeout=2.0)
+    except Exception:  # noqa: BLE001 — teardown must never fail a passing test
+        pass

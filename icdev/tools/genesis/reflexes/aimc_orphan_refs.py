@@ -12,8 +12,9 @@ Falls back to deterministic rule (any orphan → suggest) if LLM unavailable.
 
 COOLDOWN_HOURS = 4 (enforced by Genesis daemon).
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import sys
@@ -43,12 +44,23 @@ try:
 except ImportError:
     _main_conn = None  # type: ignore[assignment]
 
+# Fallback model node types if constants import fails — the real AIMC "models"
+# palette group (model-llm / model-vlm / model-embedding / …). The prior values
+# ({"foundation-model", "model", "llm-node", "model-node"}) never matched any
+# real node type, so the reflex could never find an orphan.
+_FALLBACK_MODEL_NODE_TYPES = frozenset({
+    "model-llm", "model-vlm", "model-embedding", "model-reranker",
+    "model-classifier", "model-code", "model-judge",
+})
+
 try:
-    from tools.aiml_canvas.constants import FOUNDATION_MODELS
+    from tools.aiml_canvas.constants import AIMC_MODEL_NODE_TYPES, FOUNDATION_MODELS
     _CATALOG_IDS: frozenset = frozenset(fm["id"] for fm in FOUNDATION_MODELS)
+    _MODEL_NODE_TYPES = frozenset(AIMC_MODEL_NODE_TYPES) or _FALLBACK_MODEL_NODE_TYPES
 except ImportError:
     FOUNDATION_MODELS = []
     _CATALOG_IDS = frozenset()
+    _MODEL_NODE_TYPES = _FALLBACK_MODEL_NODE_TYPES
 
 try:
     from icdev.tools.llm.router import LLMRouter as _LLMRouter
@@ -61,9 +73,6 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_MODEL_NODE_TYPES = frozenset({"foundation-model", "model", "llm-node", "model-node"})
-
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

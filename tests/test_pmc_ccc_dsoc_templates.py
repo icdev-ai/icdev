@@ -68,18 +68,26 @@ def test_dsoc_iqe_adapter_exists():
 
 
 # ── Seed queries ──────────────────────────────────────────────────────────────
+#
+# cvx-nav-02: the loaded seed queries live in the `<key>_canvas/*.iqe` dirs —
+# those are what the dashboard /iqe loader globs and what the template dir is
+# named. The bare `<key>/seed.yaml` dirs were an unread duplicate (no runtime
+# consumer; every collection they named is already covered by a `.iqe` file) and
+# were removed. These tests now assert the loaded dir is populated AND that the
+# orphan bare dir is gone, so the drift cannot silently reappear.
 
 def _count_seed_queries(canvas_key: str) -> int:
-    import yaml
-    seed = REPO / f"context/iqe/queries/{canvas_key}/seed.yaml"
-    if not seed.exists():
+    """Count loaded .iqe seed queries in the canvas's `<key>_canvas/` dir."""
+    seed_dir = REPO / f"context/iqe/queries/{canvas_key}_canvas"
+    if not seed_dir.is_dir():
         return 0
-    data = yaml.safe_load(seed.read_text(encoding="utf-8"))
-    return len(data.get("queries", []))
+    return len(list(seed_dir.glob("*.iqe")))
 
 
 def test_pmc_seed_queries_exist():
-    assert (REPO / "context/iqe/queries/pmc/seed.yaml").exists()
+    assert (REPO / "context/iqe/queries/pmc_canvas").is_dir()
+    assert not (REPO / "context/iqe/queries/pmc").exists(), \
+        "orphan bare pmc/ seed dir must stay removed (cvx-nav-02)"
 
 
 def test_pmc_seed_queries_min_three():
@@ -87,7 +95,9 @@ def test_pmc_seed_queries_min_three():
 
 
 def test_ccc_seed_queries_exist():
-    assert (REPO / "context/iqe/queries/ccc/seed.yaml").exists()
+    assert (REPO / "context/iqe/queries/ccc_canvas").is_dir()
+    assert not (REPO / "context/iqe/queries/ccc").exists(), \
+        "orphan bare ccc/ seed dir must stay removed (cvx-nav-02)"
 
 
 def test_ccc_seed_queries_min_three():
@@ -95,7 +105,9 @@ def test_ccc_seed_queries_min_three():
 
 
 def test_dsoc_seed_queries_exist():
-    assert (REPO / "context/iqe/queries/dsoc/seed.yaml").exists()
+    assert (REPO / "context/iqe/queries/dsoc_canvas").is_dir()
+    assert not (REPO / "context/iqe/queries/dsoc").exists(), \
+        "orphan bare dsoc/ seed dir must stay removed (cvx-nav-02)"
 
 
 def test_dsoc_seed_queries_min_three():

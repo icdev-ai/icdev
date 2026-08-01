@@ -1,7 +1,13 @@
+# CUI // SP-CTI
 """Model Scanner — AIMC Workflow Step 1.
 
 Scans ML model inventory and reports governance/MLOps gaps.
 Outputs JSON with artifact paths to stdout.
+
+Reads the tenant-less ``aimc_models`` table via ``get_canvas_connection`` (RLS
+disabled) — matching the connection policy documented in ``db/init_db.py``.  On a
+read failure or an empty inventory the scanner returns an explicit ``no-data``
+result instead of fabricating demo inventory values.
 """
 import argparse
 import json
@@ -15,19 +21,6 @@ sys.path.insert(0, str(_ROOT))
 
 _ARTIFACTS_DIR = _ROOT / "data" / "studio_artifacts" / "aimc"
 
-_DEFAULT_INVENTORY = {
-    "model_count": 4,
-    "frameworks": ["PyTorch", "sklearn"],
-    "deployment_targets": ["SageMaker", "Lambda"],
-    "drift_detection_enabled": False,
-    "model_registry_present": False,
-    "ab_testing_enabled": False,
-    "monitoring_enabled": False,
-    "rollback_capability": False,
-    "model_card_present": False,
-    "bias_testing_done": False,
-}
-
 _MLOPS_CONTROLS = [
     ("model_registry_present", "Model Registry", "Central registry tracking all model versions and metadata"),
     ("ab_testing_enabled", "A/B Testing", "Controlled traffic splitting for model comparison"),
@@ -38,39 +31,73 @@ _MLOPS_CONTROLS = [
     ("bias_testing_done", "Bias Testing", "Automated fairness and bias evaluation"),
 ]
 
+# Honest baseline: a control is "not present" until the loaded inventory proves
+# otherwise.  This is NOT fabricated data — it is the absence-implies-gap default
+# applied only after real rows have been read from the DB.
+_CONTROL_KEYS = [c[0] for c in _MLOPS_CONTROLS]
+
+
+def _load_inventory_rows(project_id: str):
+    """Fetch raw inventory rows via the canvas (RLS-disabled) connection."""
+    from tools.db.storage import get_canvas_connection
+    with get_canvas_connection("AIMC_DB_URL") as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT metric_key, metric_value FROM aimc_models "
+            "WHERE project_id = %s ORDER BY created_at DESC LIMIT 30",
+            (project_id,),
+        )
+        return cur.fetchall()
+
 
 def scan_models(project_id: str) -> dict:
-    """Load ML model inventory from DB; fall back to defaults if absent."""
-    inv = dict(_DEFAULT_INVENTORY)
+    """Load ML model inventory from DB via the canvas (RLS-disabled) connection.
+
+    Returns a ``status: success`` result when real inventory rows exist, or a
+    ``status: no-data`` result on read failure / empty inventory.  Never returns
+    fabricated demo values.
+    """
     try:
         from tools.aimc.db.init_db import init_db as _init_aimc_db
         _init_aimc_db()
     except Exception:
         pass
+
     try:
-        from tools.db.storage import get_connection
-        with get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT metric_key, metric_value FROM aimc_models WHERE project_id = %s ORDER BY created_at DESC LIMIT 30",
-                (project_id,),
-            )
-            rows = cur.fetchall()
-            if rows:
-                for row in rows:
-                    key, val = row[0], row[1]
-                    bool_keys = {c[0] for c in _MLOPS_CONTROLS}
-                    if key in bool_keys:
-                        inv[key] = str(val).lower() in ("1", "true", "yes")
-                    elif key == "model_count":
-                        try:
-                            inv[key] = int(float(val))
-                        except (TypeError, ValueError):
-                            pass
-                    else:
-                        inv[key] = val
-    except Exception:
-        pass  # table may not exist — use defaults
+        rows = _load_inventory_rows(project_id)
+    except Exception as exc:
+        return {
+            "status": "no-data",
+            "reason": "read-error",
+            "detail": str(exc),
+            "project_id": project_id,
+        }
+
+    if not rows:
+        return {
+            "status": "no-data",
+            "reason": "empty-inventory",
+            "detail": "No aimc_models rows for this project — inventory not recorded.",
+            "project_id": project_id,
+        }
+
+    inv = {key: False for key in _CONTROL_KEYS}
+    inv["model_count"] = 0
+    inv["frameworks"] = []
+    inv["deployment_targets"] = []
+
+    bool_keys = set(_CONTROL_KEYS)
+    for row in rows:
+        key, val = row[0], row[1]
+        if key in bool_keys:
+            inv[key] = str(val).lower() in ("1", "true", "yes")
+        elif key == "model_count":
+            try:
+                inv[key] = int(float(val))
+            except (TypeError, ValueError):
+                pass
+        else:
+            inv[key] = val
 
     missing_controls = []
     for key, label, desc in _MLOPS_CONTROLS:
@@ -90,6 +117,7 @@ def scan_models(project_id: str) -> dict:
         deployment_targets = [deployment_targets]
 
     return {
+        "status": "success",
         "inventory": inv,
         "frameworks": frameworks,
         "deployment_targets": deployment_targets,
@@ -101,10 +129,28 @@ def scan_models(project_id: str) -> dict:
 
 def build_report(result: dict) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    project_id = result.get("project_id", "unknown")
+
+    if result.get("status") == "no-data":
+        return "\n".join([
+            "# ML Model Scan Report — AIMC",
+            f"**Generated:** {ts}  ",
+            f"**Project:** {project_id}  ",
+            "**Model Governance Score:** N/A (no inventory recorded)",
+            "",
+            "## No Data",
+            "",
+            f"No ML model inventory is recorded for project `{project_id}` "
+            f"(reason: {result.get('reason', 'unknown')}).",
+            "",
+            "No governance score or MLOps control assessment can be produced until "
+            "model inventory metrics are written to `aimc_models`. This report "
+            "intentionally reports no data rather than placeholder values.",
+        ])
+
     inv = result["inventory"]
     missing = result["missing_controls"]
     score = result["governance_score"]
-    project_id = result["project_id"]
 
     score_label = "MATURE" if score >= 80 else ("DEVELOPING" if score >= 50 else "INITIAL")
 
@@ -162,15 +208,25 @@ def main():
         fpath = _ARTIFACTS_DIR / fname
         fpath.write_text(report_md, encoding="utf-8")
 
-        output = {
-            "status": "success",
-            "governance_score": result["governance_score"],
-            "model_count": result["inventory"].get("model_count", 0),
-            "missing_controls": len(result["missing_controls"]),
-            "artifacts": [
-                {"name": "Model Scan Report", "path": fpath.relative_to(_ROOT).as_posix(), "type": "md"},
-            ],
-        }
+        artifacts = [
+            {"name": "Model Scan Report", "path": fpath.relative_to(_ROOT).as_posix(), "type": "md"},
+        ]
+
+        if result.get("status") == "no-data":
+            output = {
+                "status": "no-data",
+                "reason": result.get("reason"),
+                "project_id": result.get("project_id"),
+                "artifacts": artifacts,
+            }
+        else:
+            output = {
+                "status": "success",
+                "governance_score": result["governance_score"],
+                "model_count": result["inventory"].get("model_count", 0),
+                "missing_controls": len(result["missing_controls"]),
+                "artifacts": artifacts,
+            }
         print(json.dumps(output))
         sys.exit(0)
     except Exception as exc:

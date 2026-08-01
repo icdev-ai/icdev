@@ -12,8 +12,49 @@ import json
 import os
 import sys
 import uuid
+import re as _re_cksites
 from datetime import datetime, timezone
 from pathlib import Path
+
+from icdev.tools.network.db.constants import (  # noqa: F401
+    _check,
+    ACTION_TYPES,
+    ALERT_ACTIONS,
+    APPLICATION_TYPES,
+    APPROVAL_STATUS,
+    AUDIT_ACTIONS,
+    CLASSIFICATIONS,
+    CVE_DATA_SOURCES,
+    DOC_SOURCES,
+    DOC_TYPES,
+    DOMAIN_TYPES,
+    EXCEPTION_TYPES,
+    EXPOSURE_TYPES,
+    FINDING_DATA_SOURCES,
+    FINDING_STATUS,
+    FLOW_CLASSIFICATIONS,
+    HITL_STATUS,
+    ICON_TYPES,
+    IMPACT_LEVELS,
+    INGEST_CHANNELS,
+    INGEST_RUN_STATUS,
+    INGEST_STATUS,
+    LINK_EVENT_TYPES,
+    NQE_SOURCES,
+    NQE_SOURCES_STATIC,
+    PARTNER_TYPES,
+    PATCH_STATUS,
+    PEER_STATUS,
+    PERSONA_IDS,
+    RECURRENCES,
+    REMEDIATION_STATUS,
+    RESULT_STATUS,
+    RISK_LEVELS,
+    SEVERITY_HML,
+    SEVERITY_LEVELS,
+    SIMULATION_STATUS,
+    TRENDS,
+)
 
 # When integrated into ICDEV, DB lives in data/ directory
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]  # tools/network/db -> ICDev root
@@ -35,6 +76,11 @@ def get_connection():
 
     For PostgreSQL, uses ICDEV's StorageConnection wrapper which
     auto-translates SQLite SQL to PostgreSQL (? → %s, PRAGMA → no-op, etc.)
+
+    cvx-sql-03: this is the canvas-connection pattern — it already disables RLS
+    by clearing the security context below (see the annotated call). It is NOT renamed to
+    get_canvas_connection() because that helper targets the shared icdev DB on PG,
+    which would break this canvas's dedicated NC_PG_DATABASE=network_canvas contract.
     """
     if _NC_BACKEND == "postgresql":
         try:
@@ -44,19 +90,89 @@ def get_connection():
             conn = _icdev_conn(db_path=os.environ.get("NC_PG_DATABASE", "network_canvas"))
             # Canvas tables have no tenant_id/classification columns — disable
             # RLS so the global row-level predicate does not raise UndefinedColumn.
-            conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification cols
+            conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification columns; RLS predicate would raise UndefinedColumn (ndc program)
             return conn
         except ImportError:
             pass  # Fall through to SQLite
-    # SQLite (default)
+    # SQLite fallback (backup / air-gap). Wrap in StorageConnection so NC callers'
+    # PG-native %s placeholders translate to ? on the SQLite path too.
     import sqlite3 as _sqlite3
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = _sqlite3.connect(str(DB_PATH))
     conn.row_factory = _sqlite3.Row
-    return conn
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except ImportError:
+        return conn
 
 
-SCHEMA = """
+
+# ---------------------------------------------------------------------------
+# CHECK-constraint derivation (cvx-sql-04)
+# ---------------------------------------------------------------------------
+# Every string-valued CHECK constraint in the schema below is a marker
+# (@@CK<n>@@) rendered from a Python constant, so the SQL can never silently
+# drift from the enum. _CHECK_SITES is ordered to match the markers in
+# _SCHEMA_TEMPLATE; the value-set parity test asserts the rendered SQL matches
+# these constants exactly.
+_CHECK_SITES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("partner_type", PARTNER_TYPES),
+    ("status", PEER_STATUS),
+    ("classification", CLASSIFICATIONS),
+    ("impact_level", IMPACT_LEVELS),
+    ("doc_type", DOC_TYPES),
+    ("status", INGEST_STATUS),
+    ("channel", INGEST_CHANNELS),
+    ("status", INGEST_RUN_STATUS),
+    ("app_type", APPLICATION_TYPES),
+    ("classification", FLOW_CLASSIFICATIONS),
+    ("domain_type", DOMAIN_TYPES),
+    ("action_type", ACTION_TYPES),
+    ("persona_id", PERSONA_IDS),
+    ("icon_type", ICON_TYPES),
+    ("doc_source", DOC_SOURCES),
+    ("severity", SEVERITY_LEVELS),
+    ("data_source", FINDING_DATA_SOURCES),
+    ("hitl_status", HITL_STATUS),
+    ("status", FINDING_STATUS),
+    ("severity", SEVERITY_LEVELS),
+    ("status", REMEDIATION_STATUS),
+    ("exception_type", EXCEPTION_TYPES),
+    ("risk_level", RISK_LEVELS),
+    ("status", APPROVAL_STATUS),
+    ("result", RESULT_STATUS),
+    ("severity", SEVERITY_HML),
+    ("action", ALERT_ACTIONS),
+    ("data_source", CVE_DATA_SOURCES),
+    ("action", AUDIT_ACTIONS),
+    ("trend", TRENDS),
+    ("exposure_type", EXPOSURE_TYPES),
+    ("nqe_source", NQE_SOURCES),
+    ("status", PATCH_STATUS),
+    ("recurrence", RECURRENCES),
+    ("simulation_status", SIMULATION_STATUS),
+    ("risk_tier", RISK_LEVELS),
+    ("nqe_source", NQE_SOURCES_STATIC),
+    ("event_type", LINK_EVENT_TYPES),
+    ("flap_risk", RISK_LEVELS),
+    ("risk_tier", RISK_LEVELS),
+    ("risk_tier", RISK_LEVELS),
+    ("risk_tier", RISK_LEVELS),
+    ("vendor_risk_rating", RISK_LEVELS),
+)
+
+
+def _render_schema(template: str) -> str:
+    """Substitute @@CK<n>@@ markers with CHECK clauses derived from constants."""
+    out = template
+    for i, (col, values) in enumerate(_CHECK_SITES, start=1):
+        out = out.replace(f"@@CK{i}@@", _check(col, values))
+    return out
+
+
+_SCHEMA_TEMPLATE = """
 CREATE TABLE IF NOT EXISTS topologies (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -742,14 +858,14 @@ CREATE TABLE IF NOT EXISTS nc_partners (
     id               TEXT PRIMARY KEY,
     name             TEXT NOT NULL,
     partner_type     TEXT NOT NULL DEFAULT 'isp'
-                         CHECK(partner_type IN ('isp','carrier','cloud','content','enterprise','ix')),
+                         @@CK1@@,
     asn              INTEGER,
     noc_email        TEXT DEFAULT '',
     noc_phone        TEXT DEFAULT '',
     legal_entity     TEXT DEFAULT '',
     contract_manager TEXT DEFAULT '',
     status           TEXT NOT NULL DEFAULT 'active'
-                         CHECK(status IN ('active','suspended','terminated')),
+                         @@CK2@@,
     notes            TEXT DEFAULT '',
     classification   TEXT DEFAULT 'CUI',
     created_at       TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -1227,9 +1343,9 @@ CREATE TABLE IF NOT EXISTS nc_migration_phases (
     dependencies TEXT DEFAULT '[]',       -- JSON array of predecessor phase IDs
     status      TEXT DEFAULT 'planned',   -- planned, in_progress, completed, rolled_back
     classification TEXT DEFAULT 'CUI'
-        CHECK(classification IN ('PUBLIC','CUI','SECRET','TS')),
+        @@CK3@@,
     impact_level TEXT DEFAULT 'IL4'
-        CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
+        @@CK4@@,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1527,8 +1643,7 @@ CREATE TABLE IF NOT EXISTS nc_documents (
     file_hash       TEXT NOT NULL,
     file_size_bytes INTEGER DEFAULT 0,
     doc_type        TEXT DEFAULT 'general'
-        CHECK(doc_type IN ('runbook','sop','as_built','change_request',
-                           'ip_plan','design_doc','general')),
+        @@CK5@@,
     extracted_text  TEXT DEFAULT '',
     page_count      INTEGER DEFAULT 0,
     provider_used   TEXT DEFAULT '',
@@ -1536,7 +1651,7 @@ CREATE TABLE IF NOT EXISTS nc_documents (
     project_id      TEXT DEFAULT 'default',
     classification  TEXT DEFAULT 'CUI // SP-CTI',
     status          TEXT DEFAULT 'pending'
-        CHECK(status IN ('pending','ingested','failed')),
+        @@CK6@@,
     error           TEXT,
     ingested_at     TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
@@ -1546,13 +1661,13 @@ CREATE TABLE IF NOT EXISTS nc_documents (
 CREATE TABLE IF NOT EXISTS nc_ingestion_log (
     id              TEXT PRIMARY KEY,
     channel         TEXT NOT NULL
-        CHECK(channel IN ('api','upload','folder_watch','nms_pull')),
+        @@CK7@@,
     file_name       TEXT,
     file_type       TEXT,
     file_hash       TEXT,
     source_adapter  TEXT,
     status          TEXT DEFAULT 'started'
-        CHECK(status IN ('started','completed','failed')),
+        @@CK8@@,
     result_json     TEXT DEFAULT '{}',
     error           TEXT,
     topology_id     TEXT,
@@ -1700,14 +1815,11 @@ CREATE TABLE IF NOT EXISTS nc_traffic_flows (
     topology_id         TEXT NOT NULL,
     name                TEXT NOT NULL,
     description         TEXT DEFAULT '',
-    source_zone         TEXT NOT NULL,
-    destination_zone    TEXT NOT NULL,
-    application_type    TEXT NOT NULL CHECK(application_type IN
-                            ('sso_saml','sso_oauth','api_rest','rdp','ssh','https_web',
-                             'ipsec_tunnel','bgp','dns','custom')),
+    src_zone            TEXT NOT NULL,
+    dst_zone            TEXT NOT NULL,
+    app_type            TEXT NOT NULL @@CK9@@,
     protocols           TEXT DEFAULT '[]',
-    classification      TEXT DEFAULT 'NIPR' CHECK(classification IN
-                            ('NIPR','SIPR','IL2','IL4','IL5','IL6')),
+    classification      TEXT DEFAULT 'NIPR' @@CK10@@,
     path_nodes          TEXT DEFAULT '[]',
     phase_id            TEXT REFERENCES nc_migration_phases(id),
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -1720,10 +1832,7 @@ CREATE TABLE IF NOT EXISTS nc_security_domain_policies (
     id              TEXT PRIMARY KEY,
     topology_id     TEXT NOT NULL,
     node_id         TEXT NOT NULL,
-    domain_type     TEXT NOT NULL CHECK(domain_type IN
-                        ('on_prem','nipr','sipr','bcap_vdms','bcap_vdss',
-                         'csp_il2','csp_il4','csp_il5','csp_il6',
-                         'internet','inter_csp','dmz','custom')),
+    domain_type     TEXT NOT NULL @@CK11@@,
     domain_label    TEXT DEFAULT '',
     security_policy TEXT DEFAULT '{}',
     routing_policy  TEXT DEFAULT '{}',
@@ -1742,11 +1851,7 @@ CREATE TABLE IF NOT EXISTS nc_flow_walkthrough_steps (
     step_number     INTEGER NOT NULL,
     node_id         TEXT DEFAULT '',
     node_label      TEXT DEFAULT '',
-    action_type     TEXT NOT NULL CHECK(action_type IN
-                        ('originate','route_lookup','security_inspect','encrypt_vpn',
-                         'decrypt_vpn','tls_inspect','authenticate','authorize',
-                         'load_balance','failover_check','dns_resolve','nat_translate',
-                         'deliver','custom')),
+    action_type     TEXT NOT NULL @@CK12@@,
     security_detail TEXT DEFAULT '{}',
     network_detail  TEXT DEFAULT '{}',
     narrative       TEXT DEFAULT '',
@@ -1759,8 +1864,7 @@ CREATE INDEX IF NOT EXISTS idx_nc_fws_flow ON nc_flow_walkthrough_steps(flow_id)
 CREATE TABLE IF NOT EXISTS nc_step_persona_responses (
     id          TEXT PRIMARY KEY,
     step_id     TEXT NOT NULL REFERENCES nc_flow_walkthrough_steps(id) ON DELETE CASCADE,
-    persona_id  TEXT NOT NULL CHECK(persona_id IN
-                    ('seceng','neteng','cloudarch','compofficer','appdev','missionowner','ciso')),
+    persona_id  TEXT NOT NULL @@CK13@@,
     narrative   TEXT DEFAULT '',
     detail_json TEXT DEFAULT '{}',
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -1788,7 +1892,7 @@ CREATE TABLE IF NOT EXISTS nc_stencil_shapes (
     name_u       TEXT DEFAULT '',       -- internal/universal name (NameU in Visio)
     category     TEXT DEFAULT '',
     icon_data    TEXT,                  -- base64-encoded PNG or SVG bytes (may be NULL for text-only fallback)
-    icon_type    TEXT DEFAULT 'png' CHECK(icon_type IN ('png','svg','emf','none')),
+    icon_type    TEXT DEFAULT 'png' @@CK14@@,
     metadata_json TEXT DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_nc_ss_library ON nc_stencil_shapes(library_id);
@@ -1883,7 +1987,7 @@ CREATE TABLE IF NOT EXISTS nc_phase_documents (
     phase_id        TEXT REFERENCES nc_migration_phases(id) ON DELETE CASCADE,
     project_id      TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
     doc_source      TEXT NOT NULL
-        CHECK(doc_source IN ('document','runbook','sop','external')),
+        @@CK15@@,
     doc_id          TEXT NOT NULL,   -- FK into nc_documents / ndc_runbooks / ndc_sops
     doc_title       TEXT,
     doc_type        TEXT,            -- mirrors type from source table for quick display
@@ -1900,21 +2004,21 @@ CREATE TABLE IF NOT EXISTS nc_advisories (
     cve_id          TEXT NOT NULL,
     vendor          TEXT NOT NULL DEFAULT '',
     severity        TEXT NOT NULL DEFAULT 'medium'
-                        CHECK(severity IN ('critical','high','medium','low','informational')),
+                        @@CK16@@,
     published_date  TEXT,
     total_devices   INTEGER DEFAULT 0,
     impacted_devices INTEGER DEFAULT 0,
     remediation_pct REAL DEFAULT 0.0,
     data_source     TEXT DEFAULT 'manual'
-                        CHECK(data_source IN ('nqe','manual','nvd','vendor')),
+                        @@CK17@@,
     hitl_status     TEXT DEFAULT 'pending'
-                        CHECK(hitl_status IN ('pending','approved','rejected')),
+                        @@CK18@@,
     hitl_approved_by TEXT,
     hitl_approved_at TEXT,
     description     TEXT,
     remediation_guidance TEXT,
     status          TEXT DEFAULT 'open'
-                        CHECK(status IN ('open','in-progress','mitigated','excepted','verified')),
+                        @@CK19@@,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -1931,12 +2035,12 @@ CREATE TABLE IF NOT EXISTS nc_poam_items (
     weakness        TEXT,
     control_id      TEXT,
     severity        TEXT DEFAULT 'medium'
-                        CHECK(severity IN ('critical','high','medium','low','informational')),
+                        @@CK20@@,
     affected_assets_json TEXT DEFAULT '[]',
     scheduled_completion TEXT,
     actual_completion    TEXT,
     status          TEXT DEFAULT 'open'
-                        CHECK(status IN ('open','in-progress','completed','delayed','cancelled')),
+                        @@CK21@@,
     twin_validated  INTEGER DEFAULT 0,
     responsible_party TEXT,
     milestones_json TEXT DEFAULT '[]',
@@ -1953,9 +2057,9 @@ CREATE TABLE IF NOT EXISTS nc_exceptions (
     device_id       TEXT,
     device_name     TEXT NOT NULL DEFAULT '',
     exception_type  TEXT NOT NULL DEFAULT 'risk-acceptance'
-                        CHECK(exception_type IN ('risk-acceptance','temporary-deviation','operational-necessity','vendor-constraint')),
+                        @@CK22@@,
     risk_level      TEXT DEFAULT 'medium'
-                        CHECK(risk_level IN ('critical','high','medium','low')),
+                        @@CK23@@,
     justification   TEXT,
     expiry_date     TEXT,
     isso_approved   INTEGER DEFAULT 0,
@@ -1968,7 +2072,7 @@ CREATE TABLE IF NOT EXISTS nc_exceptions (
     ao_approved_by  TEXT,
     ao_approved_at  TEXT,
     status          TEXT DEFAULT 'pending'
-                        CHECK(status IN ('pending','isso-approved','issm-approved','fully-approved','rejected','expired')),
+                        @@CK24@@,
     advisory_id     TEXT REFERENCES nc_advisories(id),
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
@@ -1985,7 +2089,7 @@ CREATE TABLE IF NOT EXISTS nc_remediation_actions (
     performed_by    TEXT,
     notes           TEXT,
     result          TEXT DEFAULT 'pending'
-                        CHECK(result IN ('pending','success','failed','skipped')),
+                        @@CK25@@,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_nc_remediation_advisory ON nc_remediation_actions(advisory_id);
@@ -1996,9 +2100,9 @@ CREATE TABLE IF NOT EXISTS nc_conflict_resolutions (
     conflict_type   TEXT NOT NULL,
     detail          TEXT NOT NULL,
     severity        TEXT NOT NULL DEFAULT 'medium'
-                        CHECK(severity IN ('high','medium','low')),
+                        @@CK26@@,
     action          TEXT NOT NULL DEFAULT 'acknowledged'
-                        CHECK(action IN ('acknowledged','resolved')),
+                        @@CK27@@,
     note            TEXT DEFAULT '',
     resolved_by     TEXT DEFAULT '',
     resolved_at     TEXT DEFAULT CURRENT_TIMESTAMP
@@ -2018,7 +2122,7 @@ CREATE TABLE IF NOT EXISTS nc_advisory_assessments (
     network_id                  TEXT,
     fwd_snapshot_id             TEXT,
     data_source                 TEXT NOT NULL DEFAULT 'icdev-internal'
-                                    CHECK(data_source IN ('fwd-live','icdev-internal')),
+                                    @@CK28@@,
     nql_total                   TEXT,
     nql_impacted                TEXT,
     nql_ai_generated            TEXT,
@@ -2059,11 +2163,7 @@ CREATE TABLE IF NOT EXISTS nc_nqe_audit_log (
     session_id          TEXT,
     user_session        TEXT,
     action              TEXT NOT NULL
-                            CHECK(action IN (
-                                'translate','explain','run','assess','approve',
-                                'export','upload','simulate',
-                                'predict','triage_score','triage_approve','plan_create'
-                            )),
+                            @@CK29@@,
     input_text          TEXT,
     nql_generated       TEXT,
     fwd_snapshot_id     TEXT,
@@ -2092,7 +2192,7 @@ CREATE TABLE IF NOT EXISTS nc_vuln_predictions (
     risk_score_composite    REAL NOT NULL CHECK(risk_score_composite BETWEEN 0.0 AND 1.0),
     risk_score_30d          REAL NOT NULL CHECK(risk_score_30d BETWEEN 0.0 AND 1.0),
     risk_score_90d          REAL NOT NULL CHECK(risk_score_90d BETWEEN 0.0 AND 1.0),
-    trend                   TEXT NOT NULL CHECK(trend IN ('rising','stable','declining')),
+    trend                   TEXT NOT NULL @@CK30@@,
     confidence              REAL NOT NULL CHECK(confidence BETWEEN 0.0 AND 1.0),
     cvss_base               REAL,
     exploit_weight          REAL,
@@ -2118,13 +2218,13 @@ CREATE TABLE IF NOT EXISTS nc_attack_surface (
     cve_id          TEXT NOT NULL,
     advisory_id     TEXT,
     exposure_type   TEXT NOT NULL DEFAULT 'unknown'
-                        CHECK(exposure_type IN ('network','local','combined','unknown')),
+                        @@CK31@@,
     reachable       INTEGER NOT NULL DEFAULT 0 CHECK(reachable IN (0,1)),
     bgp_exposed     INTEGER NOT NULL DEFAULT 0 CHECK(bgp_exposed IN (0,1)),
     criticality     INTEGER NOT NULL DEFAULT 3 CHECK(criticality BETWEEN 1 AND 5),
     surface_score   REAL NOT NULL CHECK(surface_score BETWEEN 0.0 AND 1.0),
     nqe_source      TEXT NOT NULL DEFAULT 'local_mapping'
-                        CHECK(nqe_source IN ('nqe_api','local_mapping','local_heuristic','llm_translation')),
+                        @@CK32@@,
     nessus_scan_id  TEXT,
     assessed_at     TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
@@ -2147,7 +2247,7 @@ CREATE TABLE IF NOT EXISTS nc_triage_queue (
     rank                    INTEGER,
     rationale_json          TEXT,
     status                  TEXT NOT NULL DEFAULT 'pending'
-                                CHECK(status IN ('pending','approved','deferred','scheduled')),
+                                @@CK33@@,
     auto_approved           INTEGER NOT NULL DEFAULT 0 CHECK(auto_approved IN (0,1)),
     approved_by             TEXT,
     approved_at             TEXT,
@@ -2167,7 +2267,7 @@ CREATE TABLE IF NOT EXISTS nc_maintenance_windows (
     label               TEXT,
     start_utc           TEXT NOT NULL,
     end_utc             TEXT NOT NULL,
-    recurrence          TEXT CHECK(recurrence IN ('none','weekly','biweekly','monthly')),
+    recurrence          TEXT @@CK34@@,
     blackout_days_json  TEXT DEFAULT '[]',
     active              INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -2188,7 +2288,7 @@ CREATE TABLE IF NOT EXISTS nc_patch_plans (
     maintenance_window_id   TEXT,
     blast_radius_json       TEXT,
     simulation_status       TEXT DEFAULT 'pending'
-                                CHECK(simulation_status IN ('pending','pass','warn','fail','skipped')),
+                                @@CK35@@,
     risk_reduction          REAL,
     approved_by             TEXT,
     created_at              TEXT DEFAULT CURRENT_TIMESTAMP
@@ -2213,9 +2313,9 @@ CREATE TABLE IF NOT EXISTS nc_eol_predictions (
     active_cve_count    INTEGER NOT NULL DEFAULT 0,
     risk_score          REAL NOT NULL CHECK(risk_score BETWEEN 0.0 AND 1.0),
     risk_tier           TEXT NOT NULL DEFAULT 'medium'
-                            CHECK(risk_tier IN ('critical','high','medium','low')),
+                            @@CK36@@,
     nqe_source          TEXT NOT NULL DEFAULT 'local_mapping'
-                            CHECK(nqe_source IN ('nqe_api','local_mapping','local_heuristic','static_registry')),
+                            @@CK37@@,
     model_version       TEXT NOT NULL DEFAULT '1.0',
     predicted_at        TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP
@@ -2232,7 +2332,7 @@ CREATE TABLE IF NOT EXISTS nc_bgp_events (
     device_name TEXT NOT NULL,
     peer_ip     TEXT NOT NULL,
     peer_asn    INTEGER,
-    event_type  TEXT NOT NULL CHECK(event_type IN ('up','down','flap','reset','timeout')),
+    event_type  TEXT NOT NULL @@CK38@@,
     event_at    TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -2251,7 +2351,7 @@ CREATE TABLE IF NOT EXISTS nc_bgp_predictions (
     flap_count_24h       INTEGER NOT NULL DEFAULT 0,
     flap_count_7d        INTEGER NOT NULL DEFAULT 0,
     flap_risk            TEXT NOT NULL DEFAULT 'low'
-                             CHECK(flap_risk IN ('critical','high','medium','low')),
+                             @@CK39@@,
     route_count          INTEGER,
     session_state        TEXT,
     predicted_outage_hrs REAL,
@@ -2279,7 +2379,7 @@ CREATE TABLE IF NOT EXISTS nc_compliance_drift (
     days_to_failure           INTEGER,
     risk_score                REAL NOT NULL CHECK(risk_score BETWEEN 0.0 AND 1.0),
     risk_tier                 TEXT NOT NULL DEFAULT 'medium'
-                                  CHECK(risk_tier IN ('critical','high','medium','low')),
+                                  @@CK40@@,
     assessed_at               TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at                TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -2302,7 +2402,7 @@ CREATE TABLE IF NOT EXISTS nc_capacity_predictions (
     confidence          REAL NOT NULL CHECK(confidence BETWEEN 0.0 AND 1.0),
     risk_score          REAL NOT NULL CHECK(risk_score BETWEEN 0.0 AND 1.0),
     risk_tier           TEXT NOT NULL DEFAULT 'low'
-                            CHECK(risk_tier IN ('critical','high','medium','low')),
+                            @@CK41@@,
     nqe_source          TEXT NOT NULL DEFAULT 'local_mapping',
     model_version       TEXT NOT NULL DEFAULT '1.0',
     predicted_at        TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -2325,7 +2425,7 @@ CREATE TABLE IF NOT EXISTS nc_change_risk (
     device_criticality           INTEGER NOT NULL DEFAULT 3 CHECK(device_criticality BETWEEN 1 AND 5),
     risk_factors_json            TEXT,
     risk_tier                    TEXT NOT NULL DEFAULT 'medium'
-                                     CHECK(risk_tier IN ('critical','high','medium','low')),
+                                     @@CK42@@,
     simulation_verdict           TEXT,
     model_version                TEXT NOT NULL DEFAULT '1.0',
     predicted_at                 TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -2347,7 +2447,7 @@ CREATE TABLE IF NOT EXISTS nc_supply_chain_risk (
     high_cve_count        INTEGER NOT NULL DEFAULT 0,
     risk_score            REAL NOT NULL CHECK(risk_score BETWEEN 0.0 AND 1.0),
     vendor_risk_rating    TEXT NOT NULL DEFAULT 'medium'
-                              CHECK(vendor_risk_rating IN ('critical','high','medium','low')),
+                              @@CK43@@,
     top_cves_json         TEXT,
     nqe_device_sample_json TEXT,
     model_version         TEXT NOT NULL DEFAULT '1.0',
@@ -2357,7 +2457,125 @@ CREATE TABLE IF NOT EXISTS nc_supply_chain_risk (
 CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_vendor ON nc_supply_chain_risk(vendor, assessed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_score  ON nc_supply_chain_risk(risk_score DESC);
 CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_kev    ON nc_supply_chain_risk(kev_count DESC);
+
+-- ── Config Review Assistant ─────────────────────────────────────────────────
+-- These two tables were read by tools/iqe/adapters/ndc.py and by the
+-- /network/config-review page, and referenced by migration 211's comments, but
+-- had no DDL anywhere: only the test fixture created them. init_db therefore
+-- never made them, so the feature could not persist a review.
+--
+-- config_text_hash, not config_text: a device configuration is sensitive and
+-- the review only needs to detect that the same config was submitted again.
+CREATE TABLE IF NOT EXISTS nc_config_reviews (
+    id                TEXT PRIMARY KEY,
+    title             TEXT,
+    vendor            TEXT,
+    role_key          TEXT,
+    answers_json      TEXT DEFAULT '{}',
+    config_text_hash  TEXT,
+    status            TEXT DEFAULT 'pending',
+    result_json       TEXT DEFAULT '{}',
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_config_reviews_created ON nc_config_reviews(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS nc_config_review_findings (
+    id                    TEXT PRIMARY KEY,
+    review_id             TEXT REFERENCES nc_config_reviews(id) ON DELETE CASCADE,
+    category              TEXT,
+    severity              TEXT,
+    title                 TEXT,
+    detail                TEXT,
+    remediation           TEXT,
+    sample_config_snippet TEXT,
+    references_json       TEXT DEFAULT '[]',
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_config_review_findings_review ON nc_config_review_findings(review_id);
 """
+
+SCHEMA = _render_schema(_SCHEMA_TEMPLATE)
+
+
+# ---------------------------------------------------------------------------
+# Constraint repair (PostgreSQL only) — generalized pattern-setter
+# ---------------------------------------------------------------------------
+# CREATE TABLE IF NOT EXISTS never repairs a CHECK on a pre-existing table, so a
+# live PostgreSQL database whose <table>_<col>_check drifted from these Python
+# constants keeps raising CheckViolation on every write (the drift class that
+# broke ACE live). repair_check_constraints() re-derives each string CHECK from
+# the rendered SCHEMA and rewrites it in place when it has drifted. Data-driven
+# from SCHEMA itself, so it stays in sync automatically as constants change.
+_QUOTED_RE = _re_cksites.compile(r"'([^']*)'")
+
+
+def _iter_string_checks(schema: str):
+    """Yield (table, column, frozenset(values)) for each string CHECK(col IN ...)."""
+    table = None
+    for m in _re_cksites.finditer(
+        r"CREATE TABLE IF NOT EXISTS (\w+)|CHECK\((\w+) IN \(([^)]*)\)\)", schema
+    ):
+        if m.group(1):
+            table = m.group(1)
+        elif table is not None:
+            vals = _QUOTED_RE.findall(m.group(3))
+            if vals:  # skip boolean IN (0,1)
+                yield table, m.group(2), frozenset(vals)
+
+
+def repair_check_constraints(conn) -> dict:
+    """Rewrite drifted string CHECK constraints from the Python constants.
+
+    PostgreSQL only; a no-op on SQLite (the harness recreates tables from
+    SCHEMA, so the constraint is always fresh there). Best-effort and
+    idempotent: a second call after a repair reports "ok" for every constraint.
+    Returns a ``{constraint_name: action}`` map (ok / repaired / added /
+    skipped:<reason>).
+    """
+    from icdev.tools.db.storage import is_pg
+
+    results: dict = {}
+    if not is_pg(conn):
+        return {"_backend": "skipped:sqlite"}
+
+    for table, col, expected in _iter_string_checks(SCHEMA):
+        cname = f"{table}_{col}_check"
+        try:
+            row = conn.execute(
+                "SELECT pg_get_constraintdef(c.oid) "
+                "FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid "
+                "WHERE t.relname = %s AND c.conname = %s",
+                (table, cname),
+            ).fetchone()
+        except Exception as exc:
+            results[cname] = f"skipped:{type(exc).__name__}"
+            continue
+
+        current = frozenset(_QUOTED_RE.findall(row[0])) if row else None
+        if current == expected:
+            results[cname] = "ok"
+            continue
+
+        joined = ", ".join(f"'{v}'" for v in sorted(expected))
+        try:
+            if row is not None:
+                conn.execute(f"ALTER TABLE {table} DROP CONSTRAINT {cname}")
+            conn.execute(
+                f"ALTER TABLE {table} ADD CONSTRAINT {cname} "
+                f"CHECK ({col} IN ({joined}))"
+            )
+            conn.commit()
+            results[cname] = "repaired" if row is not None else "added"
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            results[cname] = f"skipped:{type(exc).__name__}"
+
+    return results
+
 
 # ── Template seeds ────────────────────────────────────────────────────────────
 
@@ -14419,7 +14637,15 @@ def init_db():
                 conn.commit()
             except Exception:
                 pass  # triggers may already exist
-            print("[init_db] Schema created (PostgreSQL)")
+            # Repair any string CHECK constraints on pre-existing PG tables that
+            # have drifted from the Python constants (CREATE TABLE IF NOT EXISTS
+            # can't fix a constraint on a table that already exists). No-op on
+            # fresh installs where every constraint was just derived. Best-effort.
+            try:
+                repair_check_constraints(conn)
+            except Exception:
+                pass
+            print("[init_db] Schema created (PostgreSQL)", file=sys.stderr)
         else:
             # SQLite: executescript for all-at-once
             conn.executescript(SCHEMA)
@@ -14440,7 +14666,7 @@ def init_db():
             except Exception:
                 pass
             conn.commit()
-            print(f"[init_db] Schema created at {DB_PATH}")
+            print(f"[init_db] Schema created at {DB_PATH}", file=sys.stderr)
 
         # Migration: add columns to existing tables if missing
         _migrations = [
@@ -14456,9 +14682,9 @@ def init_db():
             # NetBox integration tables (added via schema above; migrations cover pre-existing DBs)
             # TFW-01: Traffic flow walkthrough tables — new columns on existing tables
             ("nc_traffic_flows", "description", "TEXT DEFAULT ''"),
-            ("nc_traffic_flows", "source_zone", "TEXT DEFAULT ''"),
-            ("nc_traffic_flows", "destination_zone", "TEXT DEFAULT ''"),
-            ("nc_traffic_flows", "application_type", "TEXT DEFAULT 'custom'"),
+            ("nc_traffic_flows", "src_zone", "TEXT DEFAULT ''"),
+            ("nc_traffic_flows", "dst_zone", "TEXT DEFAULT ''"),
+            ("nc_traffic_flows", "app_type", "TEXT DEFAULT 'custom'"),
             ("nc_traffic_flows", "protocols", "TEXT DEFAULT '[]'"),
             ("nc_traffic_flows", "path_nodes", "TEXT DEFAULT '[]'"),
             ("nc_traffic_flows", "updated_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
@@ -14492,9 +14718,28 @@ def init_db():
                 try:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
                     conn.commit()
-                    print(f"[init_db] Migrated: added {col} to {table}")
+                    print(f"[init_db] Migrated: added {col} to {table}", file=sys.stderr)
                 except Exception:
                     pass  # Column might already exist with different syntax
+
+        # ndc-fix-03: guarantee the UNIQUE index that backs
+        # save_consolidation()'s ON CONFLICT(topo_id) upsert. Fresh installs get
+        # it from the column-level UNIQUE in the CREATE TABLE above; this
+        # retrofits pre-existing databases created before that constraint
+        # shipped, so the upsert can never silently no-op. A UNIQUE index is a
+        # valid ON CONFLICT arbiter in both SQLite and PostgreSQL, and
+        # CREATE UNIQUE INDEX IF NOT EXISTS is idempotent on both backends.
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_consolidation_topo_id "
+                "ON nc_consolidation_analysis(topo_id)"
+            )
+            conn.commit()
+        except Exception:
+            # Missing table (not yet created) or duplicate topo_id rows on a
+            # legacy DB — best-effort; the column-level UNIQUE still covers
+            # fresh installs.
+            pass
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()
@@ -14502,7 +14747,7 @@ def init_db():
         count = cur.fetchone()[0]
         added = 0
         for t in TEMPLATES:
-            cur.execute("SELECT 1 FROM nc_templates WHERE id=?", (t["id"],))
+            cur.execute("SELECT 1 FROM nc_templates WHERE id=%s", (t["id"],))
             if not cur.fetchone():
                 conn.execute(
                     "INSERT INTO nc_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
@@ -14511,9 +14756,9 @@ def init_db():
                 added += 1
         if added:
             conn.commit()
-            print(f"[init_db] Seeded {added} new templates (total: {count + added}).")
+            print(f"[init_db] Seeded {added} new templates (total: {count + added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {count} templates up to date.")
+            print(f"[init_db] All {count} templates up to date.", file=sys.stderr)
 
         # Seed enclave snippets (upsert — inserts new snippets even if some already exist)
         snip_count = conn.execute("SELECT COUNT(*) FROM nc_enclave_snippets").fetchone()[0]
@@ -14541,9 +14786,9 @@ def init_db():
                 snip_added += 1
         if snip_added:
             conn.commit()
-            print(f"[init_db] Seeded {snip_added} new enclave snippets (total: {snip_count + snip_added}).")
+            print(f"[init_db] Seeded {snip_added} new enclave snippets (total: {snip_count + snip_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {snip_count} enclave snippets up to date.")
+            print(f"[init_db] All {snip_count} enclave snippets up to date.", file=sys.stderr)
 
         # Seed template docs (SOP / Runbook markdown from docs/network/sops/)
         sops_dir = _ICDEV_ROOT / "docs" / "network" / "sops"
@@ -14586,10 +14831,10 @@ def init_db():
                     doc_added += 1
             if doc_added:
                 conn.commit()
-                print(f"[init_db] Seeded {doc_added} template docs.")
+                print(f"[init_db] Seeded {doc_added} template docs.", file=sys.stderr)
             else:
                 existing = conn.execute("SELECT COUNT(*) FROM nc_template_docs").fetchone()[0]
-                print(f"[init_db] All {existing} template docs up to date.")
+                print(f"[init_db] All {existing} template docs up to date.", file=sys.stderr)
 
         # Seed default admin user (password: admin — MUST change on first login)
         import hashlib
@@ -14602,7 +14847,7 @@ def init_db():
                 ("usr-admin", "admin", "Administrator", pw_hash, "admin"),
             )
             conn.commit()
-            print("[init_db] Default admin user created (username: admin, password: admin).")
+            print("[init_db] Default admin user created (username: admin, password: admin).", file=sys.stderr)
 
         # Seed review boards (ARB, ERB, CCB)
         board_count = conn.execute("SELECT COUNT(*) FROM nc_review_boards").fetchone()[0]
@@ -14662,7 +14907,7 @@ def init_db():
                     b,
                 )
             conn.commit()
-            print("[init_db] Seeded 3 review boards (ARB, ERB, CCB).")
+            print("[init_db] Seeded 3 review boards (ARB, ERB, CCB).", file=sys.stderr)
 
         # Seed design patterns
         pattern_count = conn.execute("SELECT COUNT(*) FROM nc_design_patterns").fetchone()[0]
@@ -14858,7 +15103,7 @@ def init_db():
                     p,
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_patterns)} design patterns.")
+            print(f"[init_db] Seeded {len(_patterns)} design patterns.", file=sys.stderr)
 
         # Seed device profiles
         prof_count = conn.execute("SELECT COUNT(*) FROM nc_device_profiles").fetchone()[0]
@@ -15157,7 +15402,7 @@ def init_db():
                     p,
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_profiles)} device profiles.")
+            print(f"[init_db] Seeded {len(_profiles)} device profiles.", file=sys.stderr)
 
         # ── Seed hardware profiles ────────────────────────────────────────
         hw_count = conn.execute("SELECT COUNT(*) FROM nc_hardware_profiles").fetchone()[0]
@@ -15263,7 +15508,7 @@ def init_db():
                     p,
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_hw_profiles)} hardware profiles.")
+            print(f"[init_db] Seeded {len(_hw_profiles)} hardware profiles.", file=sys.stderr)
 
         # ── Seed naming conventions ─────────────────────────────────────
         nc_count = conn.execute("SELECT COUNT(*) FROM nc_naming_conventions").fetchone()[0]
@@ -15310,7 +15555,7 @@ def init_db():
                     c,
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_conventions)} naming conventions.")
+            print(f"[init_db] Seeded {len(_conventions)} naming conventions.", file=sys.stderr)
 
         # ── Seed NDC SOPs ──────────────────────────────────────────────
         sop_count = conn.execute("SELECT COUNT(*) FROM ndc_sops").fetchone()[0]
@@ -15482,7 +15727,7 @@ def init_db():
                     (f"log-seed-{s['sop_id']}", s["sop_id"], _now_iso),
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_sops)} NDC SOPs.")
+            print(f"[init_db] Seeded {len(_sops)} NDC SOPs.", file=sys.stderr)
 
         # ── Auto-seed full SOP library if approved count is low ────────────
         approved_count = conn.execute(
@@ -15493,9 +15738,9 @@ def init_db():
                 from tools.network.seed_sops import seed as _seed_sops
                 result = _seed_sops(status="approved")
                 if result["seeded"] > 0:
-                    print(f"[init_db] Auto-seeded {result['seeded']} approved SOPs via seed_sops.")
+                    print(f"[init_db] Auto-seeded {result['seeded']} approved SOPs via seed_sops.", file=sys.stderr)
             except Exception as _e:
-                print(f"[init_db] seed_sops auto-seed skipped: {_e}")
+                print(f"[init_db] seed_sops auto-seed skipped: {_e}", file=sys.stderr)
 
         # ── Auto-seed demo migration projects if none exist ────────────────
         migration_count = conn.execute(
@@ -15505,16 +15750,16 @@ def init_db():
             try:
                 from tools.network.seed_migration_demo import seed_demo_migrations
                 seed_demo_migrations()
-                print("[init_db] Auto-seeded demo migration projects.")
+                print("[init_db] Auto-seeded demo migration projects.", file=sys.stderr)
             except Exception as _e:
-                print(f"[init_db] demo migration seed skipped: {_e}")
+                print(f"[init_db] demo migration seed skipped: {_e}", file=sys.stderr)
 
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",
             ("INIT", "database", f"Schema initialized at {datetime.now(timezone.utc).isoformat()}"),
         )
         conn.commit()
-        print("[init_db] Done.")
+        print("[init_db] Done.", file=sys.stderr)
     finally:
         conn.close()
 

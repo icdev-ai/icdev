@@ -250,14 +250,11 @@ def detect_anomalies(
 # ── Persistence helpers ───────────────────────────────────────────────────────
 
 def _get_conn():
-    try:
-        from tools.db.storage import get_connection
-        return get_connection()
-    except Exception:
-        import sqlite3
-        from pathlib import Path
-        db = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
-        return sqlite3.connect(str(db))
+    # Canvas tables (dd_*) have no classification/tenant_id columns, so the
+    # global RLS predicate attached by get_connection() would raise
+    # UndefinedColumn. Use the canvas connection instead.
+    from tools.db.storage import get_canvas_connection
+    return get_canvas_connection()
 
 
 def save_anomaly_run(
@@ -277,32 +274,18 @@ def save_anomaly_run(
 
     conn = _get_conn()
     try:
-        try:
-            conn.execute(
-                "INSERT INTO dd_anomaly_runs "
-                "(run_id, profile_id, overall_risk, findings_json, classification, run_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (run_id, profile_id, result.get("overall_risk", "none"), payload, classification, now),
-            )
-        except Exception:
-            conn.execute(
-                "INSERT INTO dd_anomaly_runs "
-                "(run_id, profile_id, overall_risk, findings_json, classification, run_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (run_id, profile_id, result.get("overall_risk", "none"), payload, classification, now),
-            )
+        conn.execute(
+            "INSERT INTO dd_anomaly_runs "
+            "(run_id, profile_id, overall_risk, findings_json, classification, run_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (run_id, profile_id, result.get("overall_risk", "none"), payload, classification, now),
+        )
 
         if profile_id:
-            try:
-                conn.execute(
-                    "UPDATE dd_explore_profiles SET anomaly_json = %s WHERE profile_id = %s",
-                    (payload, profile_id),
-                )
-            except Exception:
-                conn.execute(
-                    "UPDATE dd_explore_profiles SET anomaly_json = %s WHERE profile_id = %s",
-                    (payload, profile_id),
-                )
+            conn.execute(
+                "UPDATE dd_explore_profiles SET anomaly_json = ? WHERE profile_id = ?",
+                (payload, profile_id),
+            )
 
         conn.commit()
     finally:
@@ -315,18 +298,11 @@ def get_latest_run(profile_id: str) -> dict | None:
     """Return the most recent anomaly run dict for a given profile_id, or None."""
     conn = _get_conn()
     try:
-        try:
-            row = conn.execute(
-                "SELECT findings_json, overall_risk, classification, run_at FROM dd_anomaly_runs "
-                "WHERE profile_id = %s ORDER BY run_at DESC LIMIT 1",
-                (profile_id,),
-            ).fetchone()
-        except Exception:
-            row = conn.execute(
-                "SELECT findings_json, overall_risk, classification, run_at FROM dd_anomaly_runs "
-                "WHERE profile_id = %s ORDER BY run_at DESC LIMIT 1",
-                (profile_id,),
-            ).fetchone()
+        row = conn.execute(
+            "SELECT findings_json, overall_risk, classification, run_at FROM dd_anomaly_runs "
+            "WHERE profile_id = ? ORDER BY run_at DESC LIMIT 1",
+            (profile_id,),
+        ).fetchone()
     finally:
         conn.close()
 

@@ -66,7 +66,7 @@ import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from tools.logging.icdev_logger import get_logger
+from icdev.tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.llm.agent_loop")
 
@@ -270,6 +270,11 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["memory_top_k"] = int(mem_cfg["top_k"])
         if "tier" in mem_cfg:
             defaults["memory_tier"] = str(mem_cfg["tier"])
+        rubric_cfg = raw.get("agent_loop", {}).get("rubric", {})
+        if "max_grading_iterations" in rubric_cfg:
+            defaults["max_grading_iterations"] = int(rubric_cfg["max_grading_iterations"])
+        if "grader_max_tokens" in rubric_cfg:
+            defaults["grader_max_tokens"] = int(rubric_cfg["grader_max_tokens"])
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
@@ -284,7 +289,7 @@ def _retrieve_memory_context(user_prompt: str, top_k: int, tier: str) -> str:
     if not user_prompt or top_k <= 0:
         return ""
     try:
-        from tools.memory.hybrid_search import search as _mem_search
+        from icdev.tools.memory.hybrid_search import search as _mem_search
         results = _mem_search(user_prompt, limit=top_k, tier=tier or "episodic|semantic")
         if not results:
             return ""
@@ -479,6 +484,97 @@ def _build_read_only_set(tools: list[dict[str, Any]]) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
+# Continuous Harness feed — record a codegen decision per loop run
+# ---------------------------------------------------------------------------
+
+
+def _codegen_confidence(
+    *, result: "AgentLoopResult", rubric_verdict: str | None = None
+) -> float:
+    """Confidence that this codegen run's task ultimately *resolves* (0.0–1.0).
+
+    Used as the calibratable probability fed to ``harness_eval`` so ECE can be
+    computed against the eventual ``actual_outcome``. When a rubric verdict is
+    available it dominates (``satisfied`` → high); otherwise a cleanly completed
+    loop gets a moderate-high prior and a truncated/errored one a low prior.
+    """
+    if rubric_verdict is not None:
+        return {
+            RubricVerdict.satisfied: 0.9,            # satisfied -> high
+            RubricVerdict.needs_revision: 0.5,
+            RubricVerdict.max_iterations_reached: 0.4,
+            RubricVerdict.failed: 0.2,
+            RubricVerdict.grader_error: 0.3,
+        }.get(rubric_verdict, 0.5)
+    return 0.7 if result.done else 0.3
+
+
+def _record_codegen_decision(
+    *,
+    harness_task_id: str | None,
+    session_id: str,
+    llm_function: str,
+    result: "AgentLoopResult",
+    rubric_verdict: str | None = None,
+    grading_attempts: int | None = None,
+) -> None:
+    """Record ONE ``harness_eval`` decision row for a code-generation run.
+
+    Fires at loop completion so the kanban reflex's ``record_outcome()`` (called
+    on task status transitions) finally attaches a real outcome to a real
+    decision row — previously codegen runs recorded nothing, so outcome updates
+    silently no-oped and the precision/ECE gates computed over an empty set.
+
+    ``task_id`` is the caller-supplied ``harness_task_id`` (a kanban task id when
+    dispatched by the runner) or, failing that, the loop's ``session_id`` so a
+    row always lands. ``reflex`` is always ``"codegen"``. Fully non-fatal and
+    lazy-imported: a missing table / DB never breaks the agent loop.
+    """
+    task_id = harness_task_id or session_id
+    if not task_id:
+        return
+    try:
+        from tools.genesis.harness.eval_harness import record_decision
+    except Exception as exc:  # noqa: BLE001 — recording must never break the loop
+        logger.warning("agent_loop: could not import record_decision: %s", exc)
+        return
+
+    # Predicted outcome: the final rubric verdict when graded, else "done" for a
+    # cleanly completed loop or the failure subtype (error_max_turns, …).
+    if rubric_verdict is not None:
+        decision = rubric_verdict
+    else:
+        decision = "done" if result.done else (result.result_subtype or "incomplete")
+
+    metadata: dict[str, Any] = {
+        "llm_function": llm_function,
+        "session_id": session_id,
+        "result_subtype": result.result_subtype,
+        "done": result.done,
+        "truncated": result.truncated,
+        "turns": result.turns,
+        "total_input_tokens": result.total_input_tokens,
+        "total_output_tokens": result.total_output_tokens,
+        "total_cost_usd": result.total_cost_usd,
+    }
+    if rubric_verdict is not None:
+        metadata["rubric_verdict"] = rubric_verdict
+    if grading_attempts is not None:
+        metadata["grading_attempts"] = grading_attempts
+
+    try:
+        record_decision(
+            task_id=task_id,
+            reflex="codegen",
+            decision=decision,
+            confidence=_codegen_confidence(result=result, rubric_verdict=rubric_verdict),
+            metadata=metadata,
+        )
+    except Exception as exc:  # noqa: BLE001 — recording must never break the loop
+        logger.warning("agent_loop: record_decision(codegen) failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -519,6 +615,9 @@ def run_agent_loop(
     tenant_id: str = "",
     user_id: str = "",
     sanitize_tool_results: bool = True,
+    initial_messages: list[dict[str, Any]] | None = None,
+    harness_task_id: str | None = None,
+    _record_harness_decision: bool = True,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
@@ -592,6 +691,21 @@ def run_agent_loop(
             ``ResultSubtype.error_consecutive_tool_failures``. ``None`` disables
             this guard. Default 3. Loaded from
             ``args/llm_config.yaml`` ``agent_loop.budgets.max_consecutive_errors``.
+        initial_messages: Pre-built message history to start from, taking
+            precedence over both ``resume_session_id`` and ``user_prompt``-based
+            seeding. Used by :func:`run_agent_loop_with_rubric` to resume a
+            transcript with grader feedback appended; also usable directly by
+            callers that maintain their own message history.
+        harness_task_id: Optional Continuous-Harness task id to key the recorded
+            ``harness_eval`` decision on. When the runner dispatches a kanban
+            task, pass its task id so the kanban reflex's later ``record_outcome``
+            attaches to this decision. When ``None`` the loop's own
+            ``session_id`` is used so a decision row still lands (see
+            ``_record_codegen_decision``).
+        _record_harness_decision: Private flag. When ``True`` (default), a single
+            ``reflex="codegen"`` decision is recorded at loop completion.
+            :func:`run_agent_loop_with_rubric` sets it ``False`` for its inner
+            loops and records ONE decision itself, reflecting the final grade.
 
     Returns:
         :class:`AgentLoopResult`.
@@ -600,7 +714,7 @@ def run_agent_loop(
         AgentLoopUnsupported: resolved provider cannot do native tool use.
     """
     # Lazy import to avoid import cycles at module load.
-    from tools.llm.provider import LLMRequest
+    from icdev.tools.llm.provider import LLMRequest
 
     _check_tool_support(router, llm_function)
 
@@ -638,7 +752,7 @@ def run_agent_loop(
         memory_tier = budget_defaults.get("memory_tier", "episodic|semantic")
 
     # Inject retrieved memory into system_prompt before the first turn.
-    if memory_enabled and not resume_session_id:
+    if memory_enabled and not resume_session_id and initial_messages is None:
         _mem_ctx = _retrieve_memory_context(user_prompt, memory_top_k, memory_tier)
         if _mem_ctx:
             system_prompt = system_prompt + "\n\n" + _mem_ctx
@@ -657,7 +771,9 @@ def run_agent_loop(
     # found or the DB is unavailable.
     messages: list[dict[str, Any]]
     _checkpoint_start_turn = 0
-    if resume_session_id:
+    if initial_messages is not None:
+        messages = list(initial_messages)
+    elif resume_session_id:
         # Try new session_store checkpoint first (richer: turn_number + cost tracking).
         _ckpt_data = None
         try:
@@ -1130,7 +1246,7 @@ def run_agent_loop(
                     f"Return ONLY a valid JSON object matching: {schema_hint}"
                 )
                 messages.append({"role": "user", "content": correction})
-                from tools.llm.provider import LLMRequest  # already imported above
+                from icdev.tools.llm.provider import LLMRequest  # already imported above
                 req = LLMRequest(
                     system_prompt=system_prompt,
                     messages=messages,
@@ -1182,6 +1298,18 @@ def run_agent_loop(
             _del_ckpt(session_id)
         except Exception:
             pass  # non-fatal
+
+    # Continuous Harness feed — record a codegen decision on ALL exit paths
+    # (success, truncated, budget, stall, error) so kanban outcomes can attach.
+    # Suppressed for run_agent_loop_with_rubric's inner loops (it records once
+    # itself, reflecting the final grade).
+    if _record_harness_decision:
+        _record_codegen_decision(
+            harness_task_id=harness_task_id,
+            session_id=session_id,
+            llm_function=llm_function,
+            result=result,
+        )
 
     # Fire on_stop hook regardless of exit reason.
     if on_stop is not None:
@@ -1364,3 +1492,334 @@ def run_staged_agent_loop(
 
     staged.done = len(staged.stages_failed) == 0 and len(staged.stages_completed) == len(stages)
     return staged
+
+
+# ---------------------------------------------------------------------------
+# Rubric-gated self-iteration — declare "what done looks like", loop until a
+# grader agrees. Adapted from deepagents' RubricMiddleware pattern.
+# ---------------------------------------------------------------------------
+
+
+class RubricVerdict:
+    """String constants for :attr:`RubricGrade.verdict`.
+
+    ``satisfied`` / ``needs_revision`` / ``failed`` are emitted by the grader
+    LLM call. ``max_iterations_reached`` and ``grader_error`` are synthesized
+    by :func:`run_agent_loop_with_rubric` itself — the grader cannot emit them.
+    """
+
+    satisfied = "satisfied"
+    """Every rubric criterion is met — the loop stops here."""
+
+    needs_revision = "needs_revision"
+    """At least one criterion fails; ``feedback`` explains what to fix."""
+
+    failed = "failed"
+    """The rubric is malformed or impossible to evaluate against the response."""
+
+    max_iterations_reached = "max_iterations_reached"
+    """``needs_revision`` fired on the final allowed attempt; the loop stops
+    with the agent's last response intact rather than looping forever."""
+
+    grader_error = "grader_error"
+    """The grader call itself failed (bad JSON, provider error, timeout)."""
+
+
+RUBRIC_GRADER_SYSTEM_PROMPT = """You are a strict grader evaluating whether an agent's response satisfies a rubric.
+
+You will be shown the rubric and the agent's final response. Judge ONLY against the rubric criteria — do not
+reward style, verbosity, or effort that isn't called for by the rubric.
+
+Return ONLY a JSON object with exactly these two fields, no other text:
+
+{"verdict": "satisfied" | "needs_revision" | "failed", "feedback": "<concise, actionable feedback>"}
+
+- "satisfied": every rubric criterion is met. "feedback" may be a short confirmation.
+- "needs_revision": at least one criterion is not met. "feedback" MUST say exactly what to fix so the
+  agent can act on it directly.
+- "failed": the rubric itself is unmeetable or malformed given the response, or you genuinely cannot
+  evaluate it. Use this sparingly — prefer "needs_revision" whenever a fix is describable."""
+
+_RUBRIC_OUTPUT_SCHEMA: dict[str, Any] = {
+    "required": ["verdict", "feedback"],
+    "properties": {
+        "verdict": {"type": "string"},
+        "feedback": {"type": "string"},
+    },
+}
+
+
+@dataclass
+class RubricGrade:
+    """One grading round's verdict from :func:`run_agent_loop_with_rubric`."""
+
+    verdict: str = ""
+    feedback: str = ""
+    raw_response: str = ""
+
+
+@dataclass
+class RubricLoopResult:
+    """Outcome of :func:`run_agent_loop_with_rubric`."""
+
+    result: AgentLoopResult = field(default_factory=AgentLoopResult)
+    """The underlying agent loop's result from the final (or only) attempt."""
+
+    satisfied: bool = False
+    """True only if a grading round returned :attr:`RubricVerdict.satisfied`."""
+
+    grades: list[RubricGrade] = field(default_factory=list)
+    """One entry per grading round attempted, in order."""
+
+    grading_attempts: int = 0
+    """Number of grading rounds actually run (0 if the agent loop never completed)."""
+
+
+def _grade_against_rubric(
+    router: Any,
+    *,
+    rubric: str,
+    final_content: str,
+    llm_function: str,
+    max_tokens: int,
+    effort: str,
+) -> RubricGrade:
+    """Single grader LLM call: judge *final_content* against *rubric*.
+
+    Not itself an agent loop — one plain, tool-free ``router.invoke`` call with
+    a JSON-only system prompt, validated against :data:`_RUBRIC_OUTPUT_SCHEMA`.
+    """
+    from icdev.tools.llm.provider import LLMRequest
+
+    grader_user_prompt = (
+        f"## Rubric\n{rubric}\n\n## Agent's final response\n{final_content or '(empty response)'}"
+    )
+    request = LLMRequest(
+        system_prompt=RUBRIC_GRADER_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": grader_user_prompt}],
+        tools=[],
+        max_tokens=max_tokens,
+        temperature=0.0,
+        effort=effort,
+    )
+    try:
+        response = router.invoke(llm_function, request)
+        raw = getattr(response, "content", "") or ""
+        parsed = json.loads(raw)
+        _validate_output_schema(parsed, _RUBRIC_OUTPUT_SCHEMA)
+        verdict = str(parsed.get("verdict", "")).strip().lower()
+        if verdict not in (RubricVerdict.satisfied, RubricVerdict.needs_revision, RubricVerdict.failed):
+            raise ValueError(f"Ungraded/unrecognized verdict: {verdict!r}")
+        return RubricGrade(verdict=verdict, feedback=str(parsed.get("feedback", "")), raw_response=raw)
+    except Exception as exc:  # noqa: BLE001 — any grader failure degrades to grader_error
+        logger.warning("agent_loop: rubric grading failed: %s", exc)
+        return RubricGrade(verdict=RubricVerdict.grader_error, feedback=str(exc))
+
+
+def _invoke_pluggable_grader(
+    grader: Callable[[AgentLoopResult], RubricGrade],
+    result: AgentLoopResult,
+) -> RubricGrade:
+    """Call a pluggable, code-based grader, degrading failures to grader_error.
+
+    Mirrors the failure contract of :func:`_grade_against_rubric`: the rubric
+    loop must never crash because a caller's grader raised or returned garbage.
+    The grader inspects real state (build/test/gate results) instead of judging
+    text with a model, so it is fully LLM-agnostic — it never touches the router.
+    """
+    try:
+        grade = grader(result)
+        if not isinstance(grade, RubricGrade):
+            raise TypeError(
+                f"grader returned {type(grade).__name__}, expected RubricGrade"
+            )
+        verdict = str(grade.verdict).strip().lower()
+        if verdict not in (
+            RubricVerdict.satisfied,
+            RubricVerdict.needs_revision,
+            RubricVerdict.failed,
+        ):
+            raise ValueError(f"grader returned unrecognized verdict: {grade.verdict!r}")
+        grade.verdict = verdict
+        return grade
+    except Exception as exc:  # noqa: BLE001 — any grader failure degrades to grader_error
+        logger.warning("agent_loop: pluggable grader failed: %s", exc)
+        return RubricGrade(verdict=RubricVerdict.grader_error, feedback=str(exc))
+
+
+def run_agent_loop_with_rubric(
+    router: Any,
+    *,
+    rubric: str | None = None,
+    grader: Callable[[AgentLoopResult], RubricGrade] | None = None,
+    max_grading_iterations: int | None = None,
+    grader_llm_function: str | None = None,
+    grader_max_tokens: int | None = None,
+    on_grade: Callable[[int, RubricGrade], None] | None = None,
+    harness_task_id: str | None = None,
+    **kwargs: Any,
+) -> RubricLoopResult:
+    """Run :func:`run_agent_loop` and grade its output against *rubric*.
+
+    LLM-agnostic: this primitive never constructs an LLM client and never
+    assumes a provider. It routes every model call through the injected
+    ``router`` by FUNCTION NAME (``llm_function`` / ``grader_llm_function``),
+    which ``args/llm_config.yaml`` maps to whatever provider is configured
+    (Claude / Kimi / Ollama / …, with air-gap fallback chains). Pass a custom
+    ``grader`` for a code-based rubric (e.g. the delivery-pipeline gates); it
+    is plain Python and touches no model at all.
+
+    Declares "what done looks like" up front instead of trusting the agent's
+    own judgment that it is finished. Each round:
+
+      1. Run (or resume) the agent loop.
+      2. If it did not complete cleanly (``result.done is False`` — truncated,
+         budget-capped, errored), stop immediately. Grading a partial or
+         failed response is not meaningful.
+      3. A separate, tool-free grader LLM call judges ``result.final_content``
+         against *rubric* and returns ``satisfied`` / ``needs_revision`` / ``failed``.
+      4. On ``needs_revision``, the grader's feedback is appended to the
+         transcript as a user message and the agent loop resumes from that
+         point (via ``initial_messages``) with a fresh turn budget — it does
+         not restart from ``user_prompt``.
+
+    Grading stops on ``satisfied``, ``failed``, ``grader_error``, or after
+    ``max_grading_iterations`` rounds — whichever comes first. The agent's
+    last response is always preserved in the returned result, even when the
+    grader never reaches ``satisfied``.
+
+    Args:
+        router: An ``LLMRouter`` instance.
+        rubric: Free-text description of what a satisfactory response looks
+            like. Passed verbatim to the LLM grader. Provide EITHER ``rubric``
+            OR ``grader`` — not both, and not neither.
+        grader: Optional pluggable, code-based grader
+            ``callback(AgentLoopResult) -> RubricGrade``. When supplied it
+            REPLACES the LLM rubric grader: no ``router`` call is made for
+            grading, so verdicts come from real state (build/test/gate results)
+            rather than a model judging text. Must return a :class:`RubricGrade`
+            whose verdict is ``satisfied`` / ``needs_revision`` / ``failed``;
+            any exception or bad return degrades to ``grader_error`` (loop
+            stops). ``needs_revision`` feedback is injected verbatim and the
+            agent loop resumes to fix it, exactly as with an LLM rubric.
+        max_grading_iterations: Max grade-then-revise rounds before giving up.
+            Loaded from ``args/llm_config.yaml``
+            ``agent_loop.rubric.max_grading_iterations`` when not set
+            explicitly; falls back to 3.
+        grader_llm_function: Router function key for the grader call. Defaults
+            to the same ``llm_function`` used for the agent loop.
+        grader_max_tokens: Max output tokens for the grader's JSON response.
+            Loaded from ``args/llm_config.yaml``
+            ``agent_loop.rubric.grader_max_tokens`` when not set explicitly;
+            falls back to 1024.
+        on_grade: Optional ``callback(attempt, RubricGrade)`` fired after each
+            grading round (for audit/observability).
+        harness_task_id: Optional Continuous-Harness task id. Exactly ONE
+            ``reflex="codegen"`` ``harness_eval`` decision is recorded for the
+            whole rubric run (reflecting the FINAL grade), not one per grading
+            round — inner :func:`run_agent_loop` calls have their own recording
+            suppressed via ``_record_harness_decision=False``.
+        **kwargs: Forwarded to :func:`run_agent_loop` (``system_prompt``,
+            ``user_prompt``, ``tools``, ``tool_handlers``, etc.). Must not
+            include ``initial_messages`` — it is managed internally.
+
+    Returns:
+        :class:`RubricLoopResult`.
+
+    Raises:
+        ValueError: ``initial_messages`` was passed in ``kwargs``.
+    """
+    if "initial_messages" in kwargs:
+        raise ValueError(
+            "run_agent_loop_with_rubric manages initial_messages internally; "
+            "do not pass it explicitly."
+        )
+    if grader is not None and rubric is not None:
+        raise ValueError(
+            "run_agent_loop_with_rubric: pass either 'rubric' (LLM grader) or "
+            "'grader' (code grader), not both."
+        )
+    if grader is None and rubric is None:
+        raise ValueError(
+            "run_agent_loop_with_rubric: exactly one of 'rubric' or 'grader' "
+            "is required."
+        )
+
+    budget_defaults = _load_budget_defaults()
+    if max_grading_iterations is None:
+        max_grading_iterations = budget_defaults.get("max_grading_iterations", 3)
+    if grader_max_tokens is None:
+        grader_max_tokens = budget_defaults.get("grader_max_tokens", 1024)
+
+    agent_llm_function = kwargs.get("llm_function", "code_generation")
+    effective_grader_function = grader_llm_function or agent_llm_function
+    effort = kwargs.get("effort", "medium")
+
+    loop_result = RubricLoopResult()
+    prior_messages: list[dict[str, Any]] | None = None
+
+    for attempt in range(1, max_grading_iterations + 1):
+        call_kwargs = dict(kwargs)
+        if prior_messages is not None:
+            call_kwargs["initial_messages"] = prior_messages
+        # Suppress per-round recording — one decision is recorded post-loop
+        # reflecting the FINAL grade (not one row per grading round).
+        call_kwargs["_record_harness_decision"] = False
+
+        result = run_agent_loop(router, **call_kwargs)
+        loop_result.result = result
+
+        if not result.done:
+            break  # agent loop itself didn't complete cleanly — nothing to grade
+
+        if grader is not None:
+            grade = _invoke_pluggable_grader(grader, result)
+        else:
+            grade = _grade_against_rubric(
+                router,
+                rubric=rubric,
+                final_content=result.final_content,
+                llm_function=effective_grader_function,
+                max_tokens=grader_max_tokens,
+                effort=effort,
+            )
+        loop_result.grades.append(grade)
+        loop_result.grading_attempts = attempt
+        if on_grade is not None:
+            try:
+                on_grade(attempt, grade)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("run_agent_loop_with_rubric: on_grade raised: %s", exc)
+
+        if grade.verdict == RubricVerdict.satisfied:
+            loop_result.satisfied = True
+            break
+        if grade.verdict in (RubricVerdict.failed, RubricVerdict.grader_error):
+            break
+        if attempt >= max_grading_iterations:
+            grade.verdict = RubricVerdict.max_iterations_reached
+            break
+
+        # needs_revision — inject feedback and resume from the current transcript.
+        prior_messages = list(result.messages) + [{
+            "role": "user",
+            "content": (
+                f"[Rubric grader] Your response needs revision:\n{grade.feedback}\n\n"
+                "Please address this feedback and provide an updated final response."
+            ),
+        }]
+
+    # Continuous Harness feed — record exactly ONE codegen decision for the whole
+    # rubric run, reflecting the FINAL grade (or the underlying result when the
+    # agent loop never completed and no grade was produced).
+    final_verdict = loop_result.grades[-1].verdict if loop_result.grades else None
+    _record_codegen_decision(
+        harness_task_id=harness_task_id,
+        session_id=loop_result.result.session_id,
+        llm_function=agent_llm_function,
+        result=loop_result.result,
+        rubric_verdict=final_verdict,
+        grading_attempts=loop_result.grading_attempts,
+    )
+
+    return loop_result

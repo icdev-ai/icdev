@@ -35,6 +35,9 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.batch")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -142,8 +145,9 @@ def _persist_run(run: dict) -> None:
                 ),
             )
         conn.commit()
-    except Exception:
-        pass  # Best-effort persist
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best-effort persist
+        logger.warning("_persist_run: best-effort INSERT into batch_runs failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

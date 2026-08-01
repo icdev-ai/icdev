@@ -8,13 +8,24 @@ when available.
 
 from datetime import datetime, timezone
 
+from tools.logging.icdev_logger import get_logger
 from tools.security_canvas.db.init_db import get_connection
 from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
 from tools.security_canvas.zig_phase_tracker import get_all_phases_status, compute_fy2027_readiness
 
+logger = get_logger("icdev.security_canvas.zig_assessor")
+
 
 def _try_zta_bridge(pillar_slug: str) -> float:
-    """Try to pull existing ZTA maturity score for the pillar as a signal."""
+    """Try to pull existing ZTA maturity score for the pillar as a signal.
+
+    Degrades to None (pure ZIG score) when the ZTA scorer is unavailable or
+    errors — the bridge is an enrichment signal and must never break a ZIG
+    assessment. Two failure modes are distinguished: an ImportError means the
+    accessor symbol is missing (dead-bridge regression — logged at debug), while
+    any error from the accessor itself is logged as a warning so real breakage
+    surfaces instead of being silently swallowed.
+    """
     zta_map = {
         "user": "user_identity",
         "device": "device",
@@ -26,13 +37,29 @@ def _try_zta_bridge(pillar_slug: str) -> float:
     }
     try:
         from tools.devsecops.zta_maturity_scorer import get_latest_score
-        zta_key = zta_map.get(pillar_slug)
-        if zta_key:
-            score_data = get_latest_score()
-            if score_data and zta_key in score_data.get("pillar_scores", {}):
-                return float(score_data["pillar_scores"][zta_key])
+    except ImportError:
+        logger.debug(
+            "ZTA bridge unavailable: tools.devsecops.zta_maturity_scorer."
+            "get_latest_score not importable; using pure ZIG score for pillar '%s'",
+            pillar_slug,
+        )
+        return None
+
+    zta_key = zta_map.get(pillar_slug)
+    if not zta_key:
+        return None
+    try:
+        score_data = get_latest_score()
     except Exception:
-        pass
+        logger.warning(
+            "ZTA bridge accessor get_latest_score() failed for pillar '%s'; "
+            "degrading to pure ZIG score",
+            pillar_slug,
+            exc_info=True,
+        )
+        return None
+    if score_data and zta_key in score_data.get("pillar_scores", {}):
+        return float(score_data["pillar_scores"][zta_key])
     return None
 
 
@@ -44,7 +71,7 @@ def _identify_gaps(pillar_scores: list) -> list:
         for ps in pillar_scores:
             caps = conn.execute(
                 "SELECT id, title, phase, maturity_level, implementation_status, description "
-                "FROM zig_capabilities WHERE pillar_slug=%s AND implementation_status IN ('not_started','planned')"
+                "FROM zig_capabilities WHERE pillar_slug=? AND implementation_status IN ('not_started','planned')"
                 "ORDER BY CASE phase WHEN 'discovery' THEN 1 WHEN 'phase1' THEN 2 ELSE 3 END",
                 (ps["slug"],),
             ).fetchall()
@@ -66,18 +93,22 @@ def _identify_gaps(pillar_scores: list) -> list:
         conn.close()
 
 
-def _persist_scores(pillar_scores: list):
-    """Persist pillar scores to zig_maturity_scores (one row per pillar per run)."""
+def _persist_scores(pillar_scores: list, target_id: str = "icdev-self"):
+    """Persist pillar scores to zig_maturity_scores (one row per pillar per run).
+
+    Rows are tagged with ``target_id`` so per-target assessment history stays
+    separable — zig_portfolio._latest_scores_for_target reads back by target.
+    """
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     try:
         for ps in pillar_scores:
             conn.execute(
                 "INSERT INTO zig_maturity_scores "
-                "(pillar_slug, score, maturity_level, capability_count, activity_count, "
-                "complete_activities, assessment_run_at, created_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                (ps["slug"], ps["score"], ps["maturity_level"],
+                "(pillar_slug, target_id, score, maturity_level, capability_count, "
+                "activity_count, complete_activities, assessment_run_at, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (ps["slug"], target_id, ps["score"], ps["maturity_level"],
                  ps.get("capability_count", 0), ps.get("activity_count", 0),
                  ps.get("complete_activities", 0), now, now),
             )
@@ -107,7 +138,7 @@ def reconcile_capability_status() -> int:
         ).fetchall()
         for cap in caps:
             acts = conn.execute(
-                "SELECT id FROM zig_activities WHERE capability_id=%s", (cap["id"],)
+                "SELECT id FROM zig_activities WHERE capability_id=?", (cap["id"],)
             ).fetchall()
             if not acts:
                 continue
@@ -127,7 +158,7 @@ def reconcile_capability_status() -> int:
                 new_status = "in_progress"
             if new_status != cap["implementation_status"]:
                 conn.execute(
-                    "UPDATE zig_capabilities SET implementation_status=%s WHERE id=%s",
+                    "UPDATE zig_capabilities SET implementation_status=? WHERE id=?",
                     (new_status, cap["id"]),
                 )
                 changed += 1
@@ -137,8 +168,13 @@ def reconcile_capability_status() -> int:
     return changed
 
 
-def run_zig_assessment() -> dict:
-    """Run full ZIG assessment across all 7 pillars.
+def run_zig_assessment(target_id: str = "icdev-self") -> dict:
+    """Run full ZIG assessment across all 7 pillars for one target.
+
+    ``target_id`` scopes the activity-completion signal and the persisted
+    zig_maturity_scores rows; capability reconciliation stays platform-wide.
+    Defaults to 'icdev-self' so the global /api/zig/assess route and the seven
+    pillar orchestrators keep their existing no-arg call semantics.
 
     Returns:
         {
@@ -153,7 +189,7 @@ def run_zig_assessment() -> dict:
     # Keep capability status in sync with activity completion before scoring
     reconcile_capability_status()
 
-    pillar_scores = score_all_pillars()
+    pillar_scores = score_all_pillars(target_id=target_id)
 
     # Attempt ZTA bridge enrichment for pillars with no activity data yet
     for ps in pillar_scores:
@@ -167,7 +203,7 @@ def run_zig_assessment() -> dict:
     phases = get_all_phases_status()
     fy2027 = compute_fy2027_readiness(phases)
 
-    _persist_scores(pillar_scores)
+    _persist_scores(pillar_scores, target_id=target_id)
 
     return {
         "pillar_scores": pillar_scores,
@@ -175,6 +211,7 @@ def run_zig_assessment() -> dict:
         "gaps": gaps,
         "phases": phases,
         "fy2027": fy2027,
+        "target_id": target_id,
         "assessed_at": datetime.now(timezone.utc).isoformat(),
         "top_gaps": gaps[:10],
     }

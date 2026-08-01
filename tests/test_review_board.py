@@ -224,9 +224,13 @@ class TestReviewBoardDaemon:
         _create_review_board_db(db_path).close()
 
         def _make_conn():
+            # Wrapped in StorageConnection so the daemon's PG-native %s SQL
+            # is translated for SQLite (same pattern as tests/test_cato_twin.py).
+            from tools.db.storage import StorageConnection
+
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
-            return c
+            return StorageConnection(c, "sqlite")
 
         with patch("tools.review_board.daemon.get_connection", side_effect=_make_conn):
             from tools.review_board.daemon import ReviewBoardDaemon
@@ -259,9 +263,13 @@ class TestReviewBoardDaemon:
         _create_review_board_db(db_path).close()
 
         def _make_conn():
+            # Wrapped in StorageConnection so the daemon's PG-native %s SQL
+            # is translated for SQLite (same pattern as tests/test_cato_twin.py).
+            from tools.db.storage import StorageConnection
+
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
-            return c
+            return StorageConnection(c, "sqlite")
 
         with patch("tools.review_board.daemon.get_connection", side_effect=_make_conn):
             from tools.review_board.daemon import ReviewBoardDaemon

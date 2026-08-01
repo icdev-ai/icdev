@@ -1,0 +1,7 @@
+# Intent: Show per-function cache hit rate and avoided LLM calls so operators
+#         can see which function groups benefit most from response caching.
+# Expected: rows from cache.stats with recorded hits.
+
+foreach f in cache.stats
+  where f.total_hits > 0
+  select f.function, f.total_entries, f.total_hits, f.hit_rate_pct, f.avoided_calls

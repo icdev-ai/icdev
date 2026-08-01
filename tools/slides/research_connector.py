@@ -108,9 +108,12 @@ def _llm_research(query: str, airgap: bool) -> dict[str, Any]:
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
     except Exception:
+        # Honesty: the LLM is unavailable — do NOT fabricate a research summary
+        # or invent citations. Signal degradation so the deck can flag it.
         return {
-            "summary": f"Research summary for {query}.",
+            "summary": "",
             "sources": [],
+            "degraded": True,
         }
 
     system = (
@@ -152,9 +155,12 @@ def _llm_research(query: str, airgap: bool) -> dict[str, Any]:
             for s in parsed.get("sources", [])
             if isinstance(s, dict)
         ]
-        return {"summary": summary or f"Research summary for {query}.", "sources": sources}
+        # A real summary is honest content; an empty one means the model
+        # returned nothing usable — flag it rather than inventing text.
+        return {"summary": summary, "sources": sources, "degraded": not summary}
     except Exception:
-        return {"summary": f"Research summary for {query}.", "sources": []}
+        # Parse/generation failure — do not fabricate a summary.
+        return {"summary": "", "sources": [], "degraded": True}
 
 
 def _kg_search(query: str, top_k: int = 5) -> list[dict[str, str]]:
@@ -219,7 +225,12 @@ def research_topic(
         if sources:
             # Build a short summary from source snippets so the engine can cite it
             summary = " ".join(s.get("snippet", "") for s in sources[:5])
-            result = {"summary": summary, "sources": sources, "citation_style": citation_style}
+            result = {
+                "summary": summary,
+                "sources": sources,
+                "citation_style": citation_style,
+                "degraded": False,
+            }
             if cache_ttl:
                 _CACHE[cache_key] = result
             return result
@@ -240,6 +251,7 @@ def research_topic(
         "summary": llm_result.get("summary", ""),
         "sources": llm_result.get("sources", []),
         "citation_style": citation_style,
+        "degraded": bool(llm_result.get("degraded", False)),
     }
     if cache_ttl:
         _CACHE[cache_key] = result

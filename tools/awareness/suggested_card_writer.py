@@ -241,7 +241,7 @@ def _extract_rule_subject(pred: Dict[str, Any]) -> str:
 def _load_existing_subjects(conn: Any) -> set:
     """Load all (rule, subject) pairs that already have open (non-done) cards."""
     try:
-        placeholders = ",".join("?" * len(OPEN_STATUSES))
+        placeholders = ",".join(["%s"] * len(OPEN_STATUSES))
         rows = conn.execute(
             f"SELECT kt.title, op.prediction_type, op.subject_id "
             f"FROM kanban_tasks kt "
@@ -407,7 +407,7 @@ def _find_open_card(
     "Open" means status IN OPEN_STATUSES (backlog/scheduled/in_progress/suggested).
     Checks prediction_id first, then falls back to exact title match.
     """
-    placeholders = ",".join("?" * len(OPEN_STATUSES))
+    placeholders = ",".join(["%s"] * len(OPEN_STATUSES))
     try:
         row = conn.execute(
             f"SELECT id, title, status FROM kanban_tasks "

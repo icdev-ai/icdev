@@ -493,7 +493,7 @@ def handle_free_text(content: str, session_id: str = "") -> dict:
             return handle_deprecated(mentioned_techs[0])
         llm_response = _call_llm_with_migration_context(content, session_id)
         if llm_response:
-            return {"reply": llm_response, "mode": "cam"}
+            return _cam_llm_reply(llm_response)
 
     # Refactor / modernize intent — run for specific tech, or status+components for general
     if is_refactor_q:
@@ -512,7 +512,7 @@ def handle_free_text(content: str, session_id: str = "") -> dict:
             return handle_coa(mentioned_techs[0], session_id=session_id)
         llm_response = _call_llm_with_migration_context(content, session_id)
         if llm_response:
-            return {"reply": llm_response, "mode": "cam"}
+            return _cam_llm_reply(llm_response)
 
     # General migration question with tech mention → COA
     if is_migration_q and mentioned_techs:
@@ -525,7 +525,7 @@ def handle_free_text(content: str, session_id: str = "") -> dict:
     # Anything else → LLM with migration context
     llm_response = _call_llm_with_migration_context(content, session_id)
     if llm_response:
-        return {"reply": llm_response, "mode": "cam"}
+        return _cam_llm_reply(llm_response)
 
     # Final fallback
     if mentioned_techs:
@@ -664,7 +664,7 @@ def _auto_modernize(original_content: str, session_id: str = "") -> dict:
     if not parts:
         # No inventory yet — fall back to LLM or onboarding prompt
         if llm_reply:
-            return {"reply": llm_reply, "mode": "cam"}
+            return _cam_llm_reply(llm_reply)
         return {
             "reply": (
                 "No migration inventory found yet. To get started:\n\n"
@@ -675,7 +675,7 @@ def _auto_modernize(original_content: str, session_id: str = "") -> dict:
             "mode": "cam",
         }
 
-    return {"reply": "\n\n---\n\n".join(parts), "mode": "cam"}
+    return _cam_llm_reply("\n\n---\n\n".join(parts))
 
 
 def _get_active_project_id(session_id: str = "") -> str | None:
@@ -692,6 +692,22 @@ def _get_active_project_id(session_id: str = "") -> str | None:
         return row[0] if row else None
     except Exception:
         return None
+
+
+def _cam_llm_reply(text: str) -> dict:
+    """Build a 'cam' chat reply dict with a grounding verdict attached.
+
+    TRUST invariant: LLM-drafted migration guidance must carry validated
+    citations or a grounding-warning flag (see tools.migration_canvas.grounding,
+    built on tools.quality.citation_grounding).
+    """
+    reply: dict = {"reply": text, "mode": "cam"}
+    try:
+        from tools.migration_canvas.grounding import assess_response
+        reply["grounding"] = assess_response(text, method="cam_chat")
+    except Exception:  # pragma: no cover - grounding is best-effort
+        reply["grounding"] = {}
+    return reply
 
 
 def _call_llm_with_migration_context(content: str, session_id: str = "", chain_mode: str = "") -> str | None:

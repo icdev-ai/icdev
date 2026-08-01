@@ -95,7 +95,7 @@ An agentic reflex loop continuously monitors new AI-ify scans and queues fresh o
 
 | Target Adopter | Customer Champion | Potential Value | Sector BD Champion |
 |---|---|---|---|
-| DoD ACAT II/III PMOs (C2, logistics, supply chain) | DISA, Army PEO EIS | $50–200M/yr modernization cost avoidance | Peraton GSMO / ENAC |
-| NAVAIR / AFLCMC sustainment programs | PEO AVN, AFLCMC/HB | $20–80M/yr per program | Peraton Defense |
-| IC mission system owners (NRO, NGA, NSA) | IC CTO / CISO offices | Classified — high strategic value | Peraton IC Group |
-| Civilian agencies (IRS, SSA legacy COBOL) | GSA, OMB tech leads | $30–100M/yr | Peraton Federal Civilian |
+| DoD ACAT II/III PMOs (C2, logistics, supply chain) | DISA, Army PEO EIS | $50–200M/yr modernization cost avoidance | Defense/IT services BU |
+| NAVAIR / AFLCMC sustainment programs | PEO AVN, AFLCMC/HB | $20–80M/yr per program | Defense BU |
+| IC mission system owners (NRO, NGA, NSA) | IC CTO / CISO offices | Classified — high strategic value | Intelligence BU |
+| Civilian agencies (IRS, SSA legacy COBOL) | GSA, OMB tech leads | $30–100M/yr | Federal civilian BU |

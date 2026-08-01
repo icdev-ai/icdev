@@ -133,9 +133,25 @@ DECK_STATUSES: list[str] = [
     "generating", # Phase 3: writing slide content
     "graphics",   # Phase 4: generating images
     "building",   # Phase 5: assembling PPTX/exports
-    "completed",  # PPTX ready for download
+    "completed",  # PPTX ready for download — real LLM content end-to-end
+    "degraded",   # PPTX ready, but some slides/research fell back (honesty flag)
+    "template",   # PPTX ready, but the outline itself is a canned static fallback
     "failed",     # Pipeline error
     "auto",       # Genesis daemon auto-generated
+]
+
+# Deck statuses that still yield a downloadable/presentable artifact.
+# Degraded/template decks are honestly flagged but remain usable.
+DECK_READY_STATUSES: list[str] = ["completed", "degraded", "template", "auto"]
+
+# ── Slide content provenance ─────────────────────────────────────────────────
+# Tracks how each slide's content was produced so degraded decks are never
+# silently reported as fully generated (wave honesty standard).
+PROVENANCE_LLM        = "llm"          # Real LLM-generated content
+PROVENANCE_FALLBACK   = "fallback"     # LLM unavailable/failed → canned content
+PROVENANCE_STRUCTURAL = "structural"   # Intentionally templated title/outro slide
+SLIDE_PROVENANCES: list[str] = [
+    PROVENANCE_LLM, PROVENANCE_FALLBACK, PROVENANCE_STRUCTURAL,
 ]
 
 # ── DB CHECK Constraint strings (derive from Python constants above) ──────────
@@ -320,7 +336,7 @@ PALETTE_BOLD_NEON = {
 }
 
 # Investment pitch — dark navy + gold primary + teal/cyan secondary + purple tertiary
-# Matches the Peraton-style pitch aesthetic with multi-accent AI tech color system
+# Defense-primes pitch aesthetic with a multi-accent AI tech color system
 PALETTE_INVESTMENT_DECK = {
     "bg":      (0x0A, 0x16, 0x28),   # #0A1628 deep navy
     "accent":  (0xD4, 0xA0, 0x17),   # #D4A017 gold (primary)

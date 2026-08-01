@@ -3,15 +3,21 @@
 Boundary Design Canvas — DB initializer
 Creates schema and seeds 5 canonical boundary design templates.
 
-Dual-backend: SQLite (default) or PostgreSQL.
-Set BDC_STORAGE_BACKEND=postgresql + BDC_PG_* env vars to use PostgreSQL.
-SQLite is the default for dev, air-gap, and single-user deployments.
-PostgreSQL is recommended for production multi-user/global deployments.
+Dual-backend: PostgreSQL (default/primary) or SQLite (init-only fallback).
+BDC_STORAGE_BACKEND defaults to ``postgresql``; set BDC_STORAGE_BACKEND=sqlite
+to pin the per-canvas SQLite file (``boundary_canvas.db``) for dev, air-gap,
+and single-user deployments. PostgreSQL is used for production
+multi-user/global deployments.
+
+The SQLite connection is wrapped in ICDEV's translating StorageConnection so
+that runtime SQL written with PG-native ``%s`` placeholders is translated to
+SQLite ``?`` — a RAW ``sqlite3.connect`` would raise ProgrammingError on ``%s``.
 """
 
 import json
 import os
 import sqlite3
+import sys
 from pathlib import Path
 
 # When integrated into ICDEV, DB lives in data/ directory
@@ -44,12 +50,21 @@ def get_connection():
             return conn
         except ImportError:
             pass  # Fall through to SQLite
-    # SQLite (default) — per-canvas DB, distinct from icdev.db
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    # SQLite (init-only fallback) — per-canvas DB, distinct from icdev.db.
+    # Wrap the raw sqlite3 connection in ICDEV's StorageConnection so runtime
+    # SQL written with PG-native %s placeholders is translated to ? on this
+    # path. A raw sqlite3 connection does NOT translate %s and would raise
+    # sqlite3.ProgrammingError on every %s query.
+    raw = sqlite3.connect(str(DB_PATH))
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA journal_mode=WAL")
+    raw.execute("PRAGMA foreign_keys=ON")
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(raw, "sqlite")
+    except ImportError:
+        return raw
 
 
 SCHEMA = """
@@ -1646,7 +1661,7 @@ def init_db():
                 conn.commit()
             except Exception:
                 pass
-            print("[init_db] BDC schema created (PostgreSQL)")
+            print("[init_db] BDC schema created (PostgreSQL)", file=sys.stderr)
         else:
             # SQLite: executescript for all-at-once
             conn.executescript(SCHEMA)
@@ -1667,7 +1682,7 @@ def init_db():
             except Exception:
                 pass
             conn.commit()
-            print(f"[init_db] BDC schema created at {DB_PATH}")
+            print(f"[init_db] BDC schema created at {DB_PATH}", file=sys.stderr)
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()
@@ -1684,9 +1699,9 @@ def init_db():
                 added += 1
         if added:
             conn.commit()
-            print(f"[init_db] BDC seeded {added} new templates (total: {count + added}).")
+            print(f"[init_db] BDC seeded {added} new templates (total: {count + added}).", file=sys.stderr)
         else:
-            print(f"[init_db] BDC all {count} templates up to date.")
+            print(f"[init_db] BDC all {count} templates up to date.", file=sys.stderr)
 
         # Seed snippets (upsert)
         cur.execute("SELECT COUNT(*) FROM bd_snippets")
@@ -1702,9 +1717,9 @@ def init_db():
                 snp_added += 1
         if snp_added:
             conn.commit()
-            print(f"[init_db] BDC seeded {snp_added} new snippets (total: {snp_count + snp_added}).")
+            print(f"[init_db] BDC seeded {snp_added} new snippets (total: {snp_count + snp_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] BDC all {snp_count} snippets up to date.")
+            print(f"[init_db] BDC all {snp_count} snippets up to date.", file=sys.stderr)
 
         # ── Seed runbooks ──────────────────────────────────────────────────
         cur.execute("SELECT COUNT(*) FROM bdc_runbooks")
@@ -1731,17 +1746,17 @@ def init_db():
                 rb_added += 1
         if rb_added:
             conn.commit()
-            print(f"[init_db] BDC seeded {rb_added} new runbooks (total: {rb_count + rb_added}).")
+            print(f"[init_db] BDC seeded {rb_added} new runbooks (total: {rb_count + rb_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] BDC all {rb_count} runbooks up to date.")
+            print(f"[init_db] BDC all {rb_count} runbooks up to date.", file=sys.stderr)
 
         # ── Seed SOPs ──────────────────────────────────────────────────────
         try:
             from tools.boundary_canvas.sops import seed_sops
             seed_sops()
-            print("[init_db] BDC SOPs seeded.")
+            print("[init_db] BDC SOPs seeded.", file=sys.stderr)
         except Exception as _e:
-            print(f"[init_db] BDC SOP seed skipped: {_e}")
+            print(f"[init_db] BDC SOP seed skipped: {_e}", file=sys.stderr)
 
     finally:
         conn.close()

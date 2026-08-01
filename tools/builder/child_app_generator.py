@@ -23,7 +23,7 @@ import shutil
 import subprocess
 import sys
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, list_tables
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -242,6 +242,7 @@ DIRECTORY_TREE = [
     "tools/mcp",
     "tools/builder",
     "tools/security",  # D-EPSEC-7: security is always-on, not conditional
+    "tools/quality",  # trust-cite-05: anti-hallucination grounding (content + citation) is always-on
     "tools/workflow",  # Coherence engine — implementation drift detection
     "tools/llm",
     "tools/compat",
@@ -262,6 +263,20 @@ DIRECTORY_TREE = [
     "docker",
     "features/steps",
     "tests",
+]
+
+# cvx-gen-04: Always-on TRUST / framework directories that must be RE-INHERITED
+# into already-materialized child apps. Child apps snapshot DIRECTORY_TREE at
+# generation time and never re-sync, so parent-side upgrades (e.g. the semantic
+# grounding `ground_content` in tools/quality/content_grounding.py — trust-cite-05,
+# and coherence-engine drift detection in tools/workflow — wf-intg) never reach
+# them. `refresh_trust_modules()` re-copies these dirs on demand. Every entry
+# MUST also appear in DIRECTORY_TREE (always-on) and MUST NOT be a PARENT_ONLY_DIR.
+TRUST_REFRESH_DIRS = [
+    "tools/quality",   # trust-cite-05: content + citation grounding (ground_content)
+    "tools/workflow",  # wf-intg: coherence engine / implementation-drift detection
+    "tools/builder",   # shared builder infra (safe tools only; GENERATION_TOOLS excluded)
+    "tools/dx",        # LLM-agnostic companion + fundamental DX infra
 ]
 
 # Conditional directories — only created when capability is enabled
@@ -288,6 +303,23 @@ CONDITIONAL_DIRS = {
         "tools/simulation",
         "tools/integration",
         "context/requirements",
+    ],
+    # SME co-worker teams (sme-*). Conditional rather than always-on: ACE is a
+    # large subsystem (execution engine, ~90 role YAMLs, its own canvas DB), and
+    # a child app that never spawns co-workers should not carry it. Apps that DO
+    # want chat-native SME teams request this capability and inherit the whole
+    # stack — engine, role catalog, capability bundles, and the chat trigger.
+    #
+    # The action-card renderer itself needs no entry here: it lives under
+    # tools/dashboard/templates/includes/, which the "dashboard" capability
+    # already copies, so any child app with a dashboard renders cards already.
+    "coworker": [
+        "tools/ace",
+        "tools/ace/db",
+        "tools/ace/roles",
+        "tools/chat",
+        "args/ace",
+        "args/ace/roles",
     ],
     "devsecops_zta": ["tools/devsecops", "context/devsecops"],
     "observability": [
@@ -744,6 +776,136 @@ def step_02_copy_and_adapt_tools(child_root: Path, blueprint: dict, icdev_root: 
 
 
 # ---------------------------------------------------------------------------
+# TRUST re-inheritance refresh (cvx-gen-04)
+# ---------------------------------------------------------------------------
+
+
+def _content_signature(path: Path) -> Tuple[bool, Any]:
+    """Return (is_binary, comparable_content) for a file.
+
+    Text files are newline-normalized (LF) so a child written with CRLF on
+    Windows does not falsely diff against an LF parent. Binary files compare
+    by raw bytes.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+        return False, text.replace("\r\n", "\n").replace("\r", "\n")
+    except (UnicodeDecodeError, ValueError):
+        return True, path.read_bytes()
+
+
+def refresh_trust_modules(
+    app_dir,
+    icdev_root=None,
+    dirs: Optional[List[str]] = None,
+    dry_run: bool = True,
+) -> dict:
+    """Re-inherit always-on TRUST / framework modules into an existing child app.
+
+    Generated child apps snapshot the always-on ``DIRECTORY_TREE`` dirs at
+    generation time and never re-sync. This re-copies ``TRUST_REFRESH_DIRS``
+    (tools/quality, tools/workflow, tools/builder, tools/dx) from the current
+    parent repo into the target child, so parent-side upgrades (e.g.
+    ``ground_content`` in tools/quality/content_grounding.py) reach materialized
+    apps.
+
+    Args:
+        app_dir: Path to the existing child app root.
+        icdev_root: Parent ICDEV™ repo root (default: this repo, ``BASE_DIR``).
+        dirs: Override the set of dirs to refresh (default: ``TRUST_REFRESH_DIRS``).
+        dry_run: When True (default), produce a DIFF REPORT only and write
+            nothing (HITL confirmation gate). Pass ``dry_run=False`` (CLI
+            ``--apply``) to write the changes.
+
+    Returns:
+        dict report with ``added`` / ``updated`` file lists, ``unchanged_count``,
+        ``skipped`` dir reasons, ``would_change`` count, ``applied`` flag.
+    """
+    app_root = Path(app_dir).resolve()
+    parent_root = Path(icdev_root).resolve() if icdev_root else BASE_DIR
+    refresh_dirs = list(dirs) if dirs is not None else list(TRUST_REFRESH_DIRS)
+
+    if not app_root.exists() or not app_root.is_dir():
+        return {
+            "status": "error",
+            "error": f"child app dir not found: {app_root}",
+            "app_dir": str(app_root),
+        }
+
+    added: List[str] = []
+    updated: List[str] = []
+    unchanged = 0
+    skipped: List[dict] = []
+
+    for rel_dir in refresh_dirs:
+        rel_dir = rel_dir.replace("\\", "/").rstrip("/")
+        # Guard: never refresh parent-only directories (test invariant).
+        if any(rel_dir == d or rel_dir.startswith(d + "/") for d in PARENT_ONLY_DIRS):
+            skipped.append({"dir": rel_dir, "reason": "parent_only"})
+            continue
+
+        src_dir = parent_root / rel_dir
+        if not src_dir.exists() or not src_dir.is_dir():
+            skipped.append({"dir": rel_dir, "reason": "missing_in_parent"})
+            continue
+
+        # tools/builder: only ever ship SAFE tools — never generation tools (D28).
+        exclude = GENERATION_TOOLS if (rel_dir == "tools/builder" or rel_dir.startswith("tools/builder/")) else set()
+
+        for src_file in sorted(src_dir.rglob("*")):
+            if not src_file.is_file():
+                continue
+            if src_file.name in exclude:
+                continue
+            if src_file.suffix == ".pyc" or "__pycache__" in str(src_file):
+                continue
+
+            rel = src_file.relative_to(parent_root)
+            rel_str = str(rel).replace("\\", "/")
+            dest_file = app_root / rel
+
+            if not dest_file.exists():
+                added.append(rel_str)
+                if not dry_run:
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
+                continue
+
+            src_bin, src_content = _content_signature(src_file)
+            dst_bin, dst_content = _content_signature(dest_file)
+            if src_bin != dst_bin or src_content != dst_content:
+                updated.append(rel_str)
+                if not dry_run:
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dest_file)
+            else:
+                unchanged += 1
+
+    would_change = len(added) + len(updated)
+    logger.info(
+        "refresh_trust_modules: %s — %d added, %d updated, %d unchanged (dry_run=%s)",
+        app_root,
+        len(added),
+        len(updated),
+        unchanged,
+        dry_run,
+    )
+    return {
+        "status": "success",
+        "dry_run": dry_run,
+        "applied": (not dry_run) and would_change > 0,
+        "app_dir": str(app_root),
+        "icdev_root": str(parent_root),
+        "dirs": refresh_dirs,
+        "added": sorted(added),
+        "updated": sorted(updated),
+        "unchanged_count": unchanged,
+        "skipped": skipped,
+        "would_change": would_change,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Step 3: Agent Infrastructure
 # ---------------------------------------------------------------------------
 
@@ -949,7 +1111,7 @@ def _generate_mcp_stubs(mcp_dir: Path, agents: list, app_name: str, blueprint: d
             f"import sys\n"
             f"import logging\n"
             f"\n"
-            f'logger = get_logger("{app_name}.mcp.{server_name}")\n'
+            f'logger = logging.getLogger("{app_name}.mcp.{server_name}")\n'
             f"\n"
             f"\n"
             f"def handle_request(request: dict) -> dict:\n"
@@ -1121,12 +1283,16 @@ def _generate_dashboard_stub(child_root: Path, blueprint: dict) -> bool:
         f"Customize routes and pages for your domain.\n"
         f'"""\n'
         f"\n"
-        f"import sqlite3\n"
-        f"from pathlib import Path\n"
+        f"import os\n"
+        f"\n"
         f"from flask import Flask, jsonify\n"
         f"\n"
-        f"DB_PATH = str(Path(__file__).resolve().parent.parent.parent\n"
-        f'              / "data" / "{app_name}.db")\n'
+        f"# NOTE: These pages are minimal placeholders and perform no DB access.\n"
+        f"# When you add data-backed routes, import get_connection from the\n"
+        f"# vendored storage layer (PostgreSQL-primary, RLS-aware) rather than\n"
+        f"# opening a raw sqlite3 connection:\n"
+        f"#     from tools.db.storage import get_connection\n"
+        f"#     conn = get_connection()\n"
         f"\n"
         f"\n"
         f"def _layout(title: str, body: str) -> str:\n"
@@ -1638,11 +1804,18 @@ def step_05_db_init_script(child_root: Path, blueprint: dict) -> dict:
         '        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"\n'
         "    )\n"
         "    conn.commit()\n"
-        "    tables = [\n"
-        "        r[0] for r in conn.execute(\n"
-        "            \"SELECT name FROM sqlite_master WHERE type='table'\"\n"
-        "        ).fetchall()\n"
-        "    ]\n"
+        "    # Backend-aware table listing: prefer the vendored ICDEV helper\n"
+        "    # (works on PostgreSQL and SQLite); fall back to a direct catalog\n"
+        "    # probe only when running standalone (no vendored storage layer).\n"
+        "    try:\n"
+        "        from tools.db.storage import list_tables\n"
+        "        tables = list_tables(conn)\n"
+        "    except Exception:\n"
+        "        tables = [\n"
+        "            r[0] for r in conn.execute(\n"
+        "                \"SELECT name FROM sqlite_master WHERE type='table'\"\n"
+        "            ).fetchall()\n"
+        "        ]\n"
         f'    print(f"{app_name} database initialized at {{db_path}}")\n'
         '    _names = ", ".join(sorted(tables))\n'
         '    print(f"Tables created ({len(tables)}): {_names}")\n'
@@ -1700,7 +1873,7 @@ def step_06_goals_and_hardprompts(child_root: Path, blueprint: dict, icdev_root:
     for goal_name in goals_config:
         filename = goal_files.get(goal_name)
         if filename:
-            src = icdev_root / "goals" / filename
+            src = _forge_dir(icdev_root, "goals") / filename
             if src.exists():
                 shutil.copy2(src, goals_dir / filename)
                 copied += 1
@@ -1866,7 +2039,7 @@ def _validate_child_ontology(child_root: Path, blueprint: dict, icdev_root: Path
         errors.append("app.ttl missing owl:imports (parent ontology link)")
     else:
         # Verify parent ontology file exists (in parent project)
-        parent_ttl = icdev_root / "args" / "ontology" / "icdev_core.ttl"
+        parent_ttl = _forge_dir(icdev_root, "args") / "ontology" / "icdev_core.ttl"
         if not parent_ttl.exists():
             warnings.append(f"Parent ontology not found at {parent_ttl}")
 
@@ -1906,7 +2079,7 @@ def _inherit_ontology_security_tags(blueprint: dict, icdev_root: Path) -> dict:
 
     Returns updated blueprint snippet with inherited tags.
     """
-    parent_ttl = icdev_root / "args" / "ontology" / "icdev_core.ttl"
+    parent_ttl = _forge_dir(icdev_root, "args") / "ontology" / "icdev_core.ttl"
     inherited_tags = []
 
     if parent_ttl.exists():
@@ -2005,7 +2178,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
             logger.debug("Args file not found: %s", src)
 
     # --- Context files ---
-    ctx_src = icdev_root / "context"
+    ctx_src = _forge_dir(icdev_root, "context")
     ctx_dest = child_root / "context"
 
     # Always copy: context/languages/
@@ -2089,7 +2262,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
 
     if mosa_enabled:
         # Copy MOSA config
-        mosa_cfg_src = icdev_root / "args" / "mosa_config.yaml"
+        mosa_cfg_src = _forge_dir(icdev_root, "args") / "mosa_config.yaml"
         mosa_cfg_dest = child_root / "args" / "mosa_config.yaml"
         if mosa_cfg_src.exists():
             if _copy_and_adapt_file(mosa_cfg_src, mosa_cfg_dest, [], blueprint):
@@ -2103,7 +2276,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
 
         # Copy MOSA catalog and crosswalk
         for mosa_file in ("mosa_framework.json", "mosa_crosswalk.json"):
-            src = icdev_root / "context" / "compliance" / mosa_file
+            src = _forge_dir(icdev_root, "context") / "compliance" / mosa_file
             dest = child_root / "context" / "compliance" / mosa_file
             if src.exists():
                 if _copy_and_adapt_file(src, dest, [], blueprint):
@@ -2177,7 +2350,7 @@ from urllib.request import Request, urlopen
 PARENT_URL = os.environ.get("ICDEV_PARENT_CALLBACK_URL", "{default_url}")
 AUTH_METHOD = "{auth_method}"
 
-logger = get_logger("{app_name}.a2a_callback")
+logger = logging.getLogger("{app_name}.a2a_callback")
 
 
 def call_parent(method: str, params: dict = None, timeout: int = 30) -> dict:
@@ -2676,7 +2849,7 @@ def step_09c_claude_code_config(
         files_copied.append(".claude/settings.json")
 
     # --- file_access_tiers.yaml ---
-    tiers_src = icdev_root / "args" / "file_access_tiers.yaml"
+    tiers_src = _forge_dir(icdev_root, "args") / "file_access_tiers.yaml"
     if tiers_src.exists():
         tiers_dst = child_root / "args" / "file_access_tiers.yaml"
         tiers_dst.parent.mkdir(parents=True, exist_ok=True)
@@ -3452,7 +3625,8 @@ def step_16_db_execution(child_root: Path, blueprint: dict) -> dict:
         if db_path.exists():
 
             conn = get_connection(str(db_path))
-            tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            # Backend-aware table listing (pgrt-sweep-06) — no sqlite_master/translation reliance.
+            tables = list_tables(conn)
             conn.close()
 
             logger.info(
@@ -3560,6 +3734,27 @@ def step_17_agent_card_validation(
 # MAIN ORCHESTRATOR
 # ============================================================
 
+
+
+def _forge_dir(icdev_root: Path, layer: str) -> Path:
+    """Locate a FORGE layer under EITHER repo layout.
+
+    A source checkout keeps the layers at the root (`<root>/goals`); the wheel
+    installs them as package data (`<root>/data/goals`). This function probes the
+    packaged location first and falls back to the source one.
+
+    Without it, `generate_child_app` run from `pip install icdev` resolved
+    `_forge_dir(icdev_root, "goals")` against `site-packages/icdev/goals`, which does not
+    exist — so every goal lookup missed and the generated child app came out
+    with ZERO goals and ZERO hardprompts. It still "succeeded": a skeleton with
+    no FORGE Goals layer, which is the part that makes a generated app a system
+    that can build systems. Same defect class as the 1.2.39 component-registry
+    fix, which probed only the source layout.
+    """
+    packaged = icdev_root / "data" / layer
+    if packaged.is_dir():
+        return packaged
+    return icdev_root / layer
 
 def generate_child_app(
     blueprint: dict,
@@ -3738,9 +3933,21 @@ def main():
             "--source-path ./src --auto-detect --json"
         ),
     )
-    parser.add_argument("--blueprint", required=True, help="Path to blueprint JSON file")
-    parser.add_argument("--project-path", required=True, help="Parent directory for the child app")
-    parser.add_argument("--name", required=True, help="Child application name")
+    parser.add_argument("--blueprint", help="Path to blueprint JSON file (required unless --refresh-trust)")
+    parser.add_argument("--project-path", help="Parent directory for the child app (required unless --refresh-trust)")
+    parser.add_argument("--name", help="Child application name (required unless --refresh-trust)")
+    parser.add_argument(
+        "--refresh-trust",
+        metavar="APP_DIR",
+        help="Re-inherit always-on TRUST/framework modules (tools/quality, tools/workflow, "
+        "tools/builder, tools/dx) into an EXISTING child app at APP_DIR. Prints a DIFF REPORT "
+        "and writes nothing by default (HITL gate); pass --apply to write.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="With --refresh-trust: write the changes (default is a dry-run diff report).",
+    )
     parser.add_argument("--source-path", help="Source directory to scan for zero-config language/framework detection")
     parser.add_argument(
         "--auto-detect",
@@ -3773,6 +3980,47 @@ def main():
         level=level,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
+
+    # cvx-gen-04: TRUST re-inheritance mode (does not generate a new app).
+    if args.refresh_trust:
+        icdev_root = Path(args.icdev_root) if args.icdev_root else BASE_DIR
+        result = refresh_trust_modules(
+            args.refresh_trust,
+            icdev_root=icdev_root,
+            dry_run=not args.apply,
+        )
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            if result.get("status") != "success":
+                print(f"ERROR: {result.get('error')}")
+            else:
+                mode = "APPLIED" if result["applied"] else ("DRY-RUN (no changes written)" if result["dry_run"] else "NO CHANGES")
+                print(f"\n{'=' * 60}")
+                print("TRUST Re-Inheritance Refresh")
+                print(f"{'=' * 60}")
+                print(f"Child app:  {result['app_dir']}")
+                print(f"Parent:     {result['icdev_root']}")
+                print(f"Dirs:       {', '.join(result['dirs'])}")
+                print(f"Mode:       {mode}")
+                print(f"Would add:     {len(result['added'])}")
+                print(f"Would update:  {len(result['updated'])}")
+                print(f"Unchanged:     {result['unchanged_count']}")
+                for f in result["added"]:
+                    print(f"  [ADD]    {f}")
+                for f in result["updated"]:
+                    print(f"  [UPDATE] {f}")
+                if result["skipped"]:
+                    for s in result["skipped"]:
+                        print(f"  [SKIP]   {s['dir']} ({s['reason']})")
+                if result["dry_run"] and result["would_change"]:
+                    print("\nRe-run with --apply to write these changes (HITL confirmation).")
+        sys.exit(0 if result.get("status") == "success" else 1)
+
+    # Generation mode requires the core args.
+    missing = [n for n, v in (("--blueprint", args.blueprint), ("--project-path", args.project_path), ("--name", args.name)) if not v]
+    if missing:
+        parser.error(f"the following arguments are required: {', '.join(missing)}")
 
     # Load blueprint
     bp_path = Path(args.blueprint)

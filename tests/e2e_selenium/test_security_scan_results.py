@@ -6,7 +6,7 @@ including monitoring page health indicators and audit trail entries.
 Ported from .claude/commands/e2e/security_scan_results.md.
 
 Prerequisites:
-  - Flask dashboard running on http://localhost:5000
+  - Flask dashboard running on http://localhost:5050
   - At least one project with security scan results
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from tools.browser.driver_manager import get_driver  # noqa: E402
 from tests.e2e_selenium.pages.base import BasePage  # noqa: E402
 
-BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000")
+BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050")
 CUI_BANNER = "CUI // SP-CTI"
 
 

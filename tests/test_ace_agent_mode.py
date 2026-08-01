@@ -75,7 +75,7 @@ class _ScriptedRouter:
         )
 
 
-def _agent_role(*, agent_tools=None, max_iterations=12, trust_tier="green"):
+def _agent_role(*, agent_tools=None, max_iterations=12, trust_tier="green", rubric=""):
     return types.SimpleNamespace(
         role_id="agent_developer",
         display_name="Agent Developer",
@@ -92,6 +92,7 @@ def _agent_role(*, agent_tools=None, max_iterations=12, trust_tier="green"):
         icdev_tools=[],
         genesis_reflex="",
         llm_function="code_generation",
+        rubric=rubric,
     )
 
 
@@ -299,6 +300,104 @@ class TestCoWorkerAgentMode:
         thread._run_inner()
         assert called["agent"] is False
         assert record, "step-mode executor ran at least one step"
+
+
+# ---------------------------------------------------------------------------
+# Opt-in real-time rubric gating (hcx-rt-05)
+# ---------------------------------------------------------------------------
+
+
+class TestCoWorkerAgentRubric:
+    """A role with ``rubric: pipeline`` routes agent mode through
+    ``run_agent_loop_with_rubric``; a role without it uses the plain loop."""
+
+    def _wire(self, monkeypatch, scoped_root, *, rubric):
+        import importlib
+
+        import icdev.tools.ace.coworker_thread as _cwt
+        import icdev.tools.ace.trust_calibrator as _tc
+        import icdev.tools.llm.agent_loop as _al
+
+        # High trust → skip the pre-loop HITL confidence gate.
+        monkeypatch.setattr(_tc, "get_trust_score", lambda role_id: 0.75)
+
+        # LLMRouter() must construct but the loop itself is stubbed, so the
+        # scripted router is never actually driven.
+        router = _ScriptedRouter([])
+        for _modname in ("tools.llm.router", "icdev.tools.llm.router"):
+            _m = importlib.import_module(_modname)
+            monkeypatch.setattr(_m, "LLMRouter", lambda: router, raising=False)
+
+        # Capture grader construction (prove conformance is off + task ref).
+        captured = {"grader_kwargs": {}, "rubric": 0, "plain": 0,
+                    "harness_task_id": None}
+
+        def _fake_make_grader(**kwargs):
+            captured["grader_kwargs"].update(kwargs)
+            return lambda result=None: None
+
+        for _modname in ("tools.workflow.pipeline_grader",
+                         "icdev.tools.workflow.pipeline_grader"):
+            _m = importlib.import_module(_modname)
+            monkeypatch.setattr(_m, "make_pipeline_grader", _fake_make_grader)
+
+        def _fake_rubric(_router, *, grader, harness_task_id=None, **kwargs):
+            captured["rubric"] += 1
+            captured["harness_task_id"] = harness_task_id
+            return types.SimpleNamespace(
+                result=AgentLoopResult(done=True), satisfied=True,
+                grading_attempts=1,
+            )
+
+        def _fake_plain(*_a, **_k):
+            captured["plain"] += 1
+            return AgentLoopResult(done=True)
+
+        # agent_loop is a shim re-export, so tools.llm.agent_loop IS the icdev
+        # module the coworker imports from — one patch covers both.
+        monkeypatch.setattr(_al, "run_agent_loop_with_rubric", _fake_rubric)
+        monkeypatch.setattr(_al, "run_agent_loop", _fake_plain)
+
+        role = _agent_role(rubric=rubric)
+
+        class _Loader:
+            def __init__(self, *a, **k):
+                pass
+
+            def get_role(self, role_id):
+                return role
+
+        monkeypatch.setattr(_cwt, "RoleLoader", _Loader)
+
+        from icdev.tools.ace.coworker_thread import CoWorkerThread
+        bus = MagicMock()
+        bus.poll_inbox.return_value = []
+        thread = CoWorkerThread(
+            spec=_spec(scoped_root),
+            instance_id="ace-rubric-inst",
+            message_bus=bus,
+            trust_kernel=MagicMock(),
+        )
+        thread._run_inner()
+        return captured
+
+    def test_rubric_pipeline_routes_through_rubric_loop(self, ace_db, scoped_root, monkeypatch):
+        captured = self._wire(monkeypatch, scoped_root, rubric="pipeline")
+        assert captured["rubric"] == 1
+        assert captured["plain"] == 0
+        # Conformance is skipped (no kanban acceptance criteria for an ACE role);
+        # E2E is off; the grader is keyed on the run instance id.
+        assert captured["grader_kwargs"].get("run_conformance") is False
+        assert captured["grader_kwargs"].get("run_e2e") is False
+        assert captured["grader_kwargs"].get("task_id") == "ace-rubric-inst"
+        # harness_task_id semantics preserved: one decision keyed on the instance.
+        assert captured["harness_task_id"] == "ace-rubric-inst"
+
+    def test_no_rubric_uses_plain_loop(self, ace_db, scoped_root, monkeypatch):
+        captured = self._wire(monkeypatch, scoped_root, rubric="")
+        assert captured["plain"] == 1
+        assert captured["rubric"] == 0
+        assert captured["grader_kwargs"] == {}
 
 
 # ---------------------------------------------------------------------------

@@ -266,8 +266,8 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
                 logger.warning("aadc.workflow: loop_engine insert: %s", le)
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("launch_to_kanban: best-effort INSERT into workflow_loops failed (non-blocking): %s", _exc)
 
         # Seed Kanban tasks — deterministic IDs prevent duplicates
         task_ids: list[str] = []
@@ -318,12 +318,16 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
                     (ll_id, design_id, loop_id, "plan", _now()),
                 )
                 conn.commit()
-            except Exception:
-                pass  # already exists — idempotent
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # already exists — idempotent
+                logger.warning(
+                    "launch_to_kanban: best-effort INSERT into aadc_loop_links failed (non-blocking): %s",
+                    _exc,
+                )
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("launch_to_kanban: best-effort INSERT into aadc_loop_links failed (non-blocking): %s", _exc)
 
         return {
             "loop_id": loop_id,

@@ -554,6 +554,35 @@ def list_cached(db_path=None, naics_filter=None, notice_type_filter=None, active
     return {"opportunities": opps, "count": len(opps)}
 
 
+def list_forecast_notices(db_path=None, limit=20):
+    """List cached advance-notice ("forecast") opportunities.
+
+    SAM.gov's Opportunities API v2 has no distinct "Forecast" notice type
+    (agency forecast lists like DoD's APFS are separate, non-public-API
+    systems). Presolicitation notices ('p') are the closest advance-warning
+    equivalent available through this API — they signal an upcoming
+    solicitation before the RFP itself is posted — so this treats notice_type
+    'p' as the forecast feed (prop-cap-14).
+
+    Returns:
+        Dict with keys: notices (list), count.
+    """
+    try:
+        conn = _get_db(db_path)
+    except FileNotFoundError as e:
+        return {"error": str(e), "notices": []}
+
+    rows = conn.execute(
+        "SELECT * FROM sam_gov_opportunities WHERE notice_type = %s AND active = %s "
+        "ORDER BY posted_date DESC LIMIT %s",
+        ("p", "true", limit),
+    ).fetchall()
+    conn.close()
+
+    notices = [dict(r) for r in rows]
+    return {"notices": notices, "count": len(notices)}
+
+
 def get_history(db_path=None, days=30):
     """Get scan history and statistics over a time period.
 

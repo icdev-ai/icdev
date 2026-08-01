@@ -27,6 +27,10 @@ if str(BASE_DIR) not in sys.path:
 import os
 os.environ.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
 
+# RadarEngine authors %s placeholders for PostgreSQL and expects the connection
+# handed back by get_connection to rewrite them; bare sqlite3 does not.
+from _sql_compat import connect as _tconnect  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Minimal in-memory DB with tech_radar tables + innovation_signals
@@ -238,9 +242,7 @@ def test_run_dry_run_does_not_write(tmp_path):
     conn.close()
 
     def _open_conn():
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        return _tconnect(db_path)
 
     with (
         patch("tools.db.storage.get_connection", side_effect=_open_conn),
@@ -287,9 +289,7 @@ def test_run_full_cycle_persists_ring_change(tmp_path):
     conn.close()
 
     def _open_conn():
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return c
+        return _tconnect(db_path)
 
     with (
         patch("tools.db.storage.get_connection", side_effect=_open_conn),

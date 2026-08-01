@@ -331,6 +331,30 @@ def require_canvas_access(canvas_name: str, min_level: str = "read"):
     return decorator
 
 
+def _canvas_access_enforced() -> bool:
+    """Return True if unauthenticated canvas access should be blocked.
+
+    cnr-plat-03: enforcement is now the DEFAULT (fail-closed). Precedence:
+
+      1. Explicit ``ICDEV_ENFORCE_CANVAS_ACCESS`` wins when set (backward
+         compatible — ``true`` forces enforce, ``false`` forces open).
+      2. Otherwise open (allow unauthenticated) only when an explicit dev/CI
+         opt-out is present: ``ICDEV_CANVAS_ACCESS_OPEN=true`` (dev) or
+         ``ICDEV_AUTH_BYPASS`` (CI/E2E).
+      3. Otherwise enforce (fail-closed).
+    """
+    explicit = os.environ.get("ICDEV_ENFORCE_CANVAS_ACCESS")
+    if explicit is not None and explicit != "":
+        return explicit.strip().lower() in ("true", "1", "yes", "on")
+    open_access = os.environ.get("ICDEV_CANVAS_ACCESS_OPEN", "").strip().lower() in (
+        "true", "1", "yes", "on",
+    )
+    bypass = os.environ.get("ICDEV_AUTH_BYPASS", "").strip().lower() in (
+        "true", "1", "yes", "on",
+    )
+    return not (open_access or bypass)
+
+
 def guard_component_access(
     component_key: str,
     min_il: str,
@@ -338,7 +362,8 @@ def guard_component_access(
     """Return a Flask ``before_request`` guard for a component blueprint.
 
     Enforces, in order:
-      1. Authentication context (unless ``ICDEV_ENFORCE_CANVAS_ACCESS`` is off).
+      1. Authentication context (fail-closed by default — see
+         ``_canvas_access_enforced``).
       2. Minimum impact level (``min_il``) vs the user's ``impact_level``.
       3. Explicit canvas access grant (seeded from component ``default_roles``).
 
@@ -346,9 +371,13 @@ def guard_component_access(
 
         bp.before_request(guard_component_access("dic", "IL4", ["researcher"]))
 
-    The guard is designed to be backward-compatible: in local-dev mode without
-    an authenticated user it silently allows the request. Set
-    ``ICDEV_ENFORCE_CANVAS_ACCESS=true`` to hard-fail unauthenticated requests.
+    cnr-plat-03: enforcement is fail-closed by DEFAULT. An unauthenticated
+    request (no principal) is redirected to login (browser) or 401'd (API/JSON)
+    unless an explicit opt-out is set: ``ICDEV_CANVAS_ACCESS_OPEN=true`` (dev) or
+    ``ICDEV_AUTH_BYPASS`` (CI/E2E). The legacy ``ICDEV_ENFORCE_CANVAS_ACCESS``
+    still works both ways when set. An authenticated principal that lacks a
+    tenant (e.g. a platform admin) is allowed through the tenant-scoped grant
+    checks, preserving prior behavior for those users.
     """
 
     def _guard():
@@ -383,19 +412,20 @@ def guard_component_access(
             getattr(g, "tenant_id", None) or user.get("tenant_id", "") or ""
         )
 
-        enforce = os.environ.get("ICDEV_ENFORCE_CANVAS_ACCESS", "").lower() in (
-            "true",
-            "1",
-            "yes",
-        )
-        if not user_id or not tenant_id:
+        enforce = _canvas_access_enforced()
+        # Truly unauthenticated (no principal at all): fail closed by default.
+        if not user_id:
             if enforce:
                 logger.warning(
                     "Canvas access denied (unauthenticated): %s %s",
                     component_key,
                     request.path,
                 )
-                abort(403)
+                return _canvas_unauth_response(component_key)
+            return
+        # Authenticated principal without a tenant (e.g. platform admin) — skip
+        # the tenant-scoped grant checks and allow, preserving prior behavior.
+        if not tenant_id:
             return
 
         if not _has_sufficient_il(min_il, user.get("impact_level", "")):
@@ -439,6 +469,39 @@ def guard_component_access(
             abort(403)
 
     return _guard
+
+
+def _canvas_unauth_response(component_key: str):
+    """Response for an unauthenticated canvas request (cnr-plat-03).
+
+    JSON/API callers get a 401; browser requests are redirected to the login
+    page. Returned (not raised) so it short-circuits the Flask before_request.
+    """
+    try:
+        from flask import request, jsonify, redirect, url_for
+    except ImportError:
+        return None
+    if request.is_json or request.path.startswith("/api/") or "application/json" in request.headers.get("Accept", ""):
+        return (
+            jsonify({
+                "error": "Authentication required",
+                "code": "CANVAS_AUTH_REQUIRED",
+                "canvas": component_key,
+            }),
+            401,
+        )
+    try:
+        return redirect(url_for("login_page"))
+    except Exception:
+        # No login route registered (e.g. isolated blueprint tests) — 401.
+        return (
+            jsonify({
+                "error": "Authentication required",
+                "code": "CANVAS_AUTH_REQUIRED",
+                "canvas": component_key,
+            }),
+            401,
+        )
 
 
 def _deny_response(canvas_name: str) -> None:

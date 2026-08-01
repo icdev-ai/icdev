@@ -66,7 +66,7 @@ def _open_connection(conn_params: dict):
     # SQLite (default)
     import sqlite3
     path = conn_params.get("path") or conn_params.get("database") or ":memory:"
-    conn = sqlite3.connect(str(path), timeout=10)
+    conn = sqlite3.connect(str(path), timeout=10)  # pg-ok: profiles user-provided SQLite data sources, not ICDEV storage
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only=ON")
     return conn, "sqlite"
@@ -106,6 +106,9 @@ def list_tables(conn_params: dict) -> dict:
 
 def _get_table_list(conn, db_kind: str) -> list[str]:
     if db_kind == "sqlite":
+        # pg-portability: sqlite-only path — profiles arbitrary EXTERNAL user
+        # databases over a raw driver connection keyed by db_kind, not the ICDEV
+        # storage backend; the PG branch below is the information_schema equivalent.
         cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         return [r[0] for r in cur.fetchall()]
     if db_kind == "postgresql":
@@ -126,6 +129,8 @@ def _get_table_list(conn, db_kind: str) -> list[str]:
 def _get_column_info(conn, db_kind: str, table: str) -> list[dict]:
     """Return [{name, type_str}] for each column in table."""
     if db_kind == "sqlite":
+        # pg-portability: sqlite-only path — external DB profiling keyed by db_kind
+        # (the PG branch below uses information_schema.columns).
         cur = conn.execute(f"PRAGMA table_info({_ident(table)})")  # nosec B608
         cols = [{"name": r[1], "type_str": r[2] or ""} for r in cur.fetchall()]
         if not cols and table in ("sqlite_master", "sqlite_schema"):
@@ -215,9 +220,11 @@ def _fetch_top_values(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> list[
             f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT %s", (limit,),
         )
     else:
+        # sqlite3 and duckdb use the qmark paramstyle ("?"), not "%s".
+        # Passing "%s" here raises (swallowed upstream), silently emptying top_values.
         cur = ctx.conn.execute(
             f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "  # nosec B608
-            f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT %s", (limit,),
+            f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT ?", (limit,),
         )
     return [{"value": str(r[0]), "count": r[1]} for r in cur.fetchall()]
 
@@ -374,7 +381,7 @@ def main() -> None:
         for tbl in result.get("tables", []):
             row_count = tbl.get("row_count", 0)
             col_count = len(tbl.get("columns", []))
-            print(f"  {tbl.get('table_name','?'):40s}  rows={row_count:>8,}  cols={col_count}")
+            print(f"  {tbl.get('name','?'):40s}  rows={row_count:>8,}  cols={col_count}")
 
 
 if __name__ == "__main__":

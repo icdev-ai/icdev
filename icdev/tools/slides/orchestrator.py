@@ -129,10 +129,16 @@ def plan_outline(
     enable_rich_diagrams: bool = False,
     audience_mode: str | None = None,
     output_language: str = "English",
-) -> list[str]:
+    return_provenance: bool = False,
+) -> list[str] | tuple[list[str], bool]:
     """Call LLM to produce a slide title outline.
 
     Falls back to a static outline if LLM is unavailable.
+
+    When ``return_provenance`` is True, returns ``(titles, used_fallback)``
+    where ``used_fallback`` is True if the canned static outline was returned
+    (LLM unavailable/failed). Default False preserves the plain-list return so
+    existing callers are unaffected.
     """
     # Build content summary for LLM
     is_general = deck_type == "general_presentation"
@@ -203,12 +209,14 @@ def plan_outline(
         raw = response.content or ""
         titles = _parse_titles(raw)
         if len(titles) >= 2:
-            return titles[:max_slides]
+            titles = titles[:max_slides]
+            return (titles, False) if return_provenance else titles
     except Exception:
         pass
 
-    # Static fallback outline
-    return _static_outline(deck_type, deck_title, min_slides, occasion, target_audience, tone)
+    # Static fallback outline — canned structure, flagged as such.
+    fallback = _static_outline(deck_type, deck_title, min_slides, occasion, target_audience, tone)
+    return (fallback, True) if return_provenance else fallback
 
 
 def _static_outline(

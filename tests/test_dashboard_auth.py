@@ -8,6 +8,7 @@ logging, RBAC matrix, require_role decorator, bootstrap_admin, and
 register_dashboard_auth.
 """
 
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -357,9 +358,33 @@ class TestRBACMatrix:
         assert auth.RBAC_MATRIX["admin"] == {"admin"}
 
     def test_all_matrix_entries_have_valid_roles(self, auth):
-        valid_roles = {"admin", "pm", "developer", "isso", "co", "cor"}
+        """Every role in RBAC_MATRIX must be storable in dashboard_users.role
+        (auth.VALID_DASHBOARD_ROLES, single source of truth) -- a role that's
+        RBAC-gateable but can never actually be assigned to a user is a
+        latent bug (dashboard-users-role-check-constraint)."""
         for page, roles in auth.RBAC_MATRIX.items():
-            assert roles.issubset(valid_roles), f"Page '{page}' has invalid roles: {roles - valid_roles}"
+            assert roles.issubset(auth.VALID_DASHBOARD_ROLES), (
+                f"Page '{page}' has roles not in VALID_DASHBOARD_ROLES: "
+                f"{roles - auth.VALID_DASHBOARD_ROLES}"
+            )
+
+    def test_valid_dashboard_roles_matches_check_constraint(self, auth, tmp_db):
+        """auth.VALID_DASHBOARD_ROLES must match the live
+        dashboard_users.role CHECK constraint exactly -- every role in the
+        constant must be insertable, and no role outside it should be."""
+        conn = sqlite3.connect(str(tmp_db))
+        for role in auth.VALID_DASHBOARD_ROLES:
+            conn.execute(
+                "INSERT INTO dashboard_users (id, email, display_name, role) VALUES (?, ?, ?, ?)",
+                (f"u-{role}", f"{role}@example.mil", role, role),
+            )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO dashboard_users (id, email, display_name, role) VALUES (?, ?, ?, ?)",
+                ("u-bogus", "bogus@example.mil", "Bogus", "not_a_real_role"),
+            )
+        conn.close()
 
 
 # ===================================================================
@@ -488,3 +513,177 @@ class TestRegisterDashboardAuth:
         assert "key_prefix" in keys[0]
         assert "label" in keys[0]
         assert "status" in keys[0]
+
+
+# ===================================================================
+# 9. Bell-LaPadula MAC subject attributes (prop-sec-02)
+# ===================================================================
+
+
+class TestCreateUserClearanceCompartments:
+    def test_defaults_to_cui_no_compartments(self, auth, tmp_db):
+        user = auth.create_user("default@example.mil", "Default")
+        assert user["clearance_level"] == "CUI"
+        conn = sqlite3.connect(str(tmp_db))
+        row = conn.execute(
+            "SELECT clearance_level, compartments FROM dashboard_users WHERE id = ?", (user["id"],)
+        ).fetchone()
+        conn.close()
+        assert row[0] == "CUI"
+        assert row[1] == "[]"
+
+    def test_explicit_clearance_and_compartments_persisted(self, auth, tmp_db):
+        user = auth.create_user(
+            "cleared@example.mil", "Cleared", role="admin",
+            clearance_level="SECRET", compartments=["COI_FINANCE", "LAC_DC_EAST"],
+        )
+        conn = sqlite3.connect(str(tmp_db))
+        row = conn.execute(
+            "SELECT clearance_level, compartments FROM dashboard_users WHERE id = ?", (user["id"],)
+        ).fetchone()
+        conn.close()
+        assert row[0] == "SECRET"
+        assert json.loads(row[1]) == ["COI_FINANCE", "LAC_DC_EAST"]
+
+
+class TestValidateApiKeyReturnsClearance:
+    def test_validate_api_key_includes_clearance_and_compartments(self, auth):
+        user = auth.create_user(
+            "apikey-cleared@example.mil", "APIKeyCleared",
+            clearance_level="SECRET", compartments=["COI_FINANCE"],
+        )
+        key_info = auth.create_api_key_for_user(user["id"])
+        result = auth.validate_api_key(key_info["raw_key"])
+        assert result is not None
+        assert result["clearance_level"] == "SECRET"
+        assert json.loads(result["compartments"]) == ["COI_FINANCE"]
+
+
+class TestSecurityContextWiredIntoAuthFlow:
+    """End-to-end: authenticating via the real before_request hook
+    (register_dashboard_auth -> _auth_before_request -> _attach_security_context)
+    must populate g.security_context from the authenticated user's real
+    clearance_level/compartments -- not leave it unset (prop-sec-02 root
+    cause: MAC helpers across proposals.py/cpmp.py and the
+    @require_clearance/@require_compartment decorators all silently no-op
+    when g.security_context is None, regardless of the user's actual
+    clearance)."""
+
+    @pytest.fixture()
+    def sec_ctx_app(self, auth):
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+
+        @app.route("/whoami")
+        def whoami():
+            from flask import g
+            ctx = getattr(g, "security_context", None)
+            if ctx is None:
+                return {"security_context": None}
+            return {
+                "security_context": {
+                    "clearance_level": ctx.clearance_level,
+                    "compartments": sorted(ctx.compartments),
+                }
+            }
+
+        auth.register_dashboard_auth(app)
+        return app
+
+    def test_secret_user_gets_secret_security_context(self, auth, sec_ctx_app):
+        user = auth.create_user(
+            "whoami-secret@example.mil", "WhoamiSecret", role="admin",
+            clearance_level="SECRET", compartments=["COI_FINANCE"],
+        )
+        key_info = auth.create_api_key_for_user(user["id"])
+        with sec_ctx_app.test_client() as client:
+            resp = client.get("/whoami", headers={"Authorization": f"Bearer {key_info['raw_key']}"})
+            data = resp.get_json()
+            assert data["security_context"] is not None
+            assert data["security_context"]["clearance_level"] == 3  # SECRET
+            assert data["security_context"]["compartments"] == ["COI_FINANCE"]
+
+    def test_default_cui_user_gets_cui_security_context(self, auth, sec_ctx_app):
+        user = auth.create_user("whoami-cui@example.mil", "WhoamiCui")
+        key_info = auth.create_api_key_for_user(user["id"])
+        with sec_ctx_app.test_client() as client:
+            resp = client.get("/whoami", headers={"Authorization": f"Bearer {key_info['raw_key']}"})
+            data = resp.get_json()
+            assert data["security_context"]["clearance_level"] == 1  # CUI
+            assert data["security_context"]["compartments"] == []
+
+    def test_session_login_also_gets_security_context(self, auth, sec_ctx_app, tmp_db):
+        """The session-cookie auth path (get_user_by_id) must also populate
+        g.security_context, not just the API-key path."""
+        user = auth.create_user(
+            "session-secret@example.mil", "SessionSecret",
+            clearance_level="SECRET", compartments=[],
+        )
+        with sec_ctx_app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user["id"]
+            resp = client.get("/whoami")
+            data = resp.get_json()
+            assert data["security_context"]["clearance_level"] == 3  # SECRET
+
+
+# ===================================================================
+# 15. nav-sec-01: .env API key must be PRESENTED; no-credential
+#     auto-login is gated behind an explicit dev opt-in flag.
+# ===================================================================
+
+# A correctly-formatted (icdev_dash_ prefixed) env key so bootstrap_env_user's
+# terminal validate_api_key() accepts it.
+_ENV_KEY = "icdev_dash_" + "ab" * 32
+_WRONG_KEY = "icdev_dash_" + "cd" * 32
+
+
+class TestEnvKeyAutoLoginBypass:
+    """Regression tests for the nav-sec-01 P0 auth bypass: ICDEV_DASHBOARD_API_KEY
+    merely being SET in the environment used to bootstrap/log-in the admin env
+    user for ANY request that reached the auto-login block -- even one that
+    presented no credential at all. Combined with _auto_provision_env_key()
+    writing exactly such a key to .env on first install, the dashboard treated
+    all traffic as admin out of the box.
+    """
+
+    def test_env_key_set_but_anonymous_is_unauthenticated(self, auth, flask_app, monkeypatch):
+        """Env key configured, dev-autologin OFF, NO credential presented ->
+        the request must NOT be authenticated (this is the bypass itself)."""
+        monkeypatch.setenv("ICDEV_DASHBOARD_API_KEY", _ENV_KEY)
+        monkeypatch.delenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", raising=False)
+        with flask_app.test_client() as client:
+            # /api/ path -> hook aborts 401 rather than redirecting.
+            resp = client.get("/api/anything")
+            assert resp.status_code == 401
+
+    def test_env_key_presented_authenticates(self, auth, flask_app, monkeypatch):
+        """Presenting the correct env key (constant-time match) bootstraps the
+        DB entry and authenticates the request."""
+        monkeypatch.setenv("ICDEV_DASHBOARD_API_KEY", _ENV_KEY)
+        monkeypatch.delenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", raising=False)
+        with flask_app.test_client() as client:
+            resp = client.get("/", headers={"Authorization": f"Bearer {_ENV_KEY}"})
+            assert resp.status_code == 200
+            assert b"home" in resp.data
+
+    def test_wrong_key_presented_gets_401(self, auth, flask_app, monkeypatch):
+        """A presented key that does NOT equal the env key is rejected."""
+        monkeypatch.setenv("ICDEV_DASHBOARD_API_KEY", _ENV_KEY)
+        monkeypatch.delenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", raising=False)
+        with flask_app.test_client() as client:
+            resp = client.get(
+                "/api/anything",
+                headers={"Authorization": f"Bearer {_WRONG_KEY}"},
+            )
+            assert resp.status_code == 401
+
+    def test_dev_autologin_flag_restores_anonymous_login(self, auth, flask_app, monkeypatch):
+        """Legacy no-credential auto-login is preserved ONLY behind the explicit
+        ICDEV_DASHBOARD_DEV_AUTOLOGIN opt-in."""
+        monkeypatch.setenv("ICDEV_DASHBOARD_API_KEY", _ENV_KEY)
+        monkeypatch.setenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", "true")
+        with flask_app.test_client() as client:
+            resp = client.get("/")
+            assert resp.status_code == 200
+            assert b"home" in resp.data

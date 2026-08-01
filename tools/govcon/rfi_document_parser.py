@@ -163,17 +163,33 @@ def _extract_objectives(text: str) -> list[dict]:
     return objectives
 
 
+def _questionnaire_region(text: str) -> str:
+    """Slice text to the vendor questionnaire section so that submission
+    instructions (5.x) and Q&A instructions (6.x) headings are not mistaken
+    for questionnaire items."""
+    start_m = re.search(r"Request Information", text, re.IGNORECASE)
+    end_m = re.search(r"Submission Instructions", text, re.IGNORECASE)
+    start = start_m.start() if start_m else 0
+    end = end_m.start() if end_m and end_m.start() > start else len(text)
+    return text[start:end]
+
+
 def _extract_questionnaire_parts(text: str) -> list[dict]:
     """Extract Part N / item N.M / topic / question table rows."""
     parts = []
+    region = _questionnaire_region(text)
 
     # Find table-like question sections: "N.M   Topic   Question text"
     item_pattern = re.compile(
         r"(\d\.\d)\s{2,}([^\n]{3,50})\s{2,}(.+?)(?=\n\d\.\d|\nPart \d|\Z)",
         re.DOTALL,
     )
-    for m in item_pattern.finditer(text):
+    seen = set()
+    for m in item_pattern.finditer(region):
         item_num = m.group(1)
+        if item_num in seen:
+            continue
+        seen.add(item_num)
         topic = m.group(2).strip()
         question = m.group(3).replace("\n", " ").strip()
         # Derive part number from item (e.g. "2.3" → Part 2)
@@ -188,19 +204,154 @@ def _extract_questionnaire_parts(text: str) -> list[dict]:
     return parts
 
 
+def _extract_questionnaire_pdf_layout(path: Path) -> list[dict]:
+    """Extract questionnaire rows from a PDF using word coordinates.
+
+    Borderless questionnaire tables render each row y-aligned: the item
+    number (e.g. "2.3"), its topic, and the first line of its question share
+    the same top coordinate in fixed columns. Plain-text extraction scrambles
+    those columns, so this walks words line-by-line instead:
+      - a line whose first word matches N.M at the item-column anchor starts
+        a new item;
+      - lines starting left of the topic column (part labels, body text,
+        page furniture) are skipped;
+      - remaining words go to topic or question by their x position.
+    Returns [] when pdfplumber is unavailable or no table is detected, so
+    callers can fall back to the text-regex path.
+    """
+    try:
+        import pdfplumber
+    except ImportError:
+        return []
+
+    from collections import Counter
+
+    item_re = re.compile(r"^\d{1,2}\.\d{1,2}$")
+    stop_re = re.compile(r"^\d\s+Submission Instructions", re.IGNORECASE)
+
+    try:
+        with pdfplumber.open(str(path)) as pdf:
+            pages_words = [p.extract_words() for p in pdf.pages]
+    except Exception as exc:
+        logger.warning("pdfplumber extraction failed: %s", exc)
+        return []
+
+    anchors = [
+        round(w["x0"])
+        for words in pages_words
+        for w in words
+        if item_re.match(w["text"])
+    ]
+    if not anchors:
+        return []
+    anchor = Counter(anchors).most_common(1)[0][0]
+    topic_min = anchor + 15
+    question_min = anchor + 140
+
+    items: list[dict] = []
+    current: dict | None = None
+    stopped = False
+
+    for words in pages_words:
+        if stopped:
+            break
+        lines: dict[int, list] = {}
+        for w in words:
+            lines.setdefault(round(w["top"] / 3), []).append(w)
+        for key in sorted(lines):
+            line_words = sorted(lines[key], key=lambda w: w["x0"])
+            line_text = " ".join(w["text"] for w in line_words)
+            if "UNCLASSIFIED" in line_text:
+                continue
+            if stop_re.match(line_text):
+                stopped = True
+                break
+            # The item word may not lead the line: a part's first row starts
+            # with the part label in the leftmost column ("Part 1: … 1.1 …").
+            item_idx = next(
+                (i for i, w in enumerate(line_words)
+                 if item_re.match(w["text"]) and abs(w["x0"] - anchor) <= 6),
+                None,
+            )
+            if item_idx is not None:
+                if current:
+                    items.append(current)
+                current = {"item_number": line_words[item_idx]["text"], "_topic": [], "_question": []}
+                line_words = line_words[item_idx + 1:]
+            else:
+                # Drop part-label-column words but keep the row's topic/question
+                # words — continuation lines often share y with the part label.
+                line_words = [w for w in line_words if w["x0"] >= topic_min]
+            if current is None or not line_words:
+                continue
+            for w in line_words:
+                if w["x0"] < topic_min:
+                    continue
+                bucket = "_topic" if w["x0"] < question_min else "_question"
+                current[bucket].append(w["text"])
+    if current:
+        items.append(current)
+
+    parts = []
+    seen = set()
+    for it in items:
+        num = it["item_number"]
+        if num in seen:
+            continue
+        seen.add(num)
+        parts.append({
+            "part": f"Part {num.split('.')[0]}",
+            "item_number": num,
+            "topic": " ".join(it["_topic"]).strip() or f"Section {num}",
+            "question": " ".join(it["_question"]).strip()[:1000],
+        })
+    return parts
+
+
+_DOC_SECTION_RE = re.compile(r"^\s*(\d)\s{1,4}([A-Z][^\n]{3,80}?)\s*$", re.MULTILINE)
+
+
+def _extract_document_sections(text: str) -> list[dict]:
+    """Extract the RFI's top-level numbered section headings
+    (e.g. "1 Introduction & Disclaimer" … "6 Questions regarding the RFI").
+    Only an ascending run starting at 1 is accepted, which filters out
+    stray numbered lines in body text."""
+    sections = []
+    expected = 1
+    for m in _DOC_SECTION_RE.finditer(text):
+        num = int(m.group(1))
+        if num != expected:
+            continue
+        title = m.group(2).strip()
+        # Headings that wrap onto a second line end mid-phrase (e.g.
+        # "Request Information (Company Profile /") — join the next line.
+        if title.endswith(("/", "(", "&", "-")):
+            tail = text[m.end():m.end() + 120].strip().splitlines()
+            if tail:
+                title = f"{title} {tail[0].strip()}"
+        sections.append({"number": num, "title": title})
+        expected += 1
+    return sections
+
+
 def _extract_submission_requirements(text: str) -> dict:
     """Extract page limits, format, file naming, and deadline."""
     req = {}
 
-    page_match = _PAGE_LIMIT_RE.search(text)
+    page_match = re.search(
+        r"limited to (?:a total of )?(\d+)[\s-]*page[s]?", text, re.IGNORECASE
+    ) or _PAGE_LIMIT_RE.search(text)
     req["max_pages"] = int(page_match.group(1)) if page_match else None
 
     # Appendix pages
     appendix_match = re.search(r"(\d+)[\s-]*page[s]?\s*(?:technical\s+)?appendix", text, re.IGNORECASE)
     req["max_appendix_pages"] = int(appendix_match.group(1)) if appendix_match else None
 
-    # Font size
-    font_match = re.search(r"(\d+)[\s-]*point", text, re.IGNORECASE)
+    # Font size — require font context so e.g. "…00358\nPoint of Contact" can't match
+    font_match = re.search(
+        r"(?:minimum\s+)?(\d{1,2})[\s-]*point\s*(?:font|type|Times|Arial|Calibri)",
+        text, re.IGNORECASE,
+    )
     req["font_size_pt"] = int(font_match.group(1)) if font_match else 11
 
     # File naming convention
@@ -211,13 +362,18 @@ def _extract_submission_requirements(text: str) -> dict:
     portal_match = re.search(r"(?:Submit|via|through)\s+([A-Z]+\s+portal)", text, re.IGNORECASE)
     req["submission_portal"] = portal_match.group(1).strip() if portal_match else ""
 
-    # Due date
-    req["due_date"] = _find_first(_DUE_DATE_RE, text)
+    # Due date — allow an intervening time-of-day ("no later than 11:59 PM ET on 10 August 2026")
+    due_match = re.search(
+        r"(?:no later than|deadline)[^\n]{0,40}?(\d{1,2}\s+\w+\s+\d{4}|\w+ \d{1,2},\s*\d{4})",
+        text, re.IGNORECASE,
+    )
+    req["due_date"] = due_match.group(1).strip() if due_match else _find_first(_DUE_DATE_RE, text)
 
-    # Questions due date
+    # Questions due date — tolerate portal/email text between "submitted" and the date
     q_match = re.search(
-        r"[Qq]uestion[s]?\s+(?:must\s+be\s+)?submitted[^\d]*(\d{1,2}[:/]\d{1,2}[:/]\d{4}|\w+ \d{1,2},\s*\d{4})",
-        text,
+        r"[Qq]uestion[s]?\s+(?:must\s+be\s+)?submitted.{0,220}?by[^\n]{0,30}?"
+        r"(\d{1,2}\s+\w+\s+\d{4}|\w+ \d{1,2},\s*\d{4})",
+        text, re.DOTALL,
     )
     req["questions_due_date"] = q_match.group(1).strip() if q_match else ""
 
@@ -242,7 +398,14 @@ def parse_rfi(file_path: str) -> dict:
     poc_email = _find_first(_POC_EMAIL_RE, text)
     poc_name = _find_first(_POC_NAME_RE, text)
     objectives = _extract_objectives(text)
-    questionnaire_parts = _extract_questionnaire_parts(text)
+    document_sections = _extract_document_sections(text)
+    # PDFs: coordinate-based table extraction is authoritative (plain-text
+    # extraction scrambles the borderless questionnaire table's columns).
+    questionnaire_parts = []
+    if path.suffix.lower() == ".pdf":
+        questionnaire_parts = _extract_questionnaire_pdf_layout(path)
+    if len(questionnaire_parts) < 3:
+        questionnaire_parts = _extract_questionnaire_parts(text) or questionnaire_parts
     submission = _extract_submission_requirements(text)
 
     # Build title — prefer "AI/ML" or "Name of RFI:" line; avoid FOUO markers
@@ -266,6 +429,7 @@ def parse_rfi(file_path: str) -> dict:
         "due_date": submission.get("due_date", ""),
         "questions_due_date": submission.get("questions_due_date", ""),
         "objectives": objectives,
+        "document_sections": document_sections,
         "questionnaire_parts": questionnaire_parts,
         "submission_requirements": submission,
         "raw_text_length": len(text),
@@ -281,6 +445,10 @@ def parse_rfi(file_path: str) -> dict:
         },
     )
     return result
+
+
+# Alias — rfi_canvas_blueprint.py imports this name.
+parse_rfi_document = parse_rfi
 
 
 def main() -> None:

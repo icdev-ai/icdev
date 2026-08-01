@@ -162,13 +162,17 @@ class Executor:
             return lv == rv
         if op == "!=":
             return lv != rv
-        if op == ">":
-            return lv > rv
-        if op == "<":
-            return lv < rv
-        if op == ">=":
-            return lv >= rv
-        if op == "<=":
+        if op in (">", "<", ">=", "<="):
+            # SQL NULL semantics: a comparison against a missing/NULL operand
+            # is neither true nor false, so it never matches a WHERE clause.
+            if lv is None or rv is None:
+                return False
+            if op == ">":
+                return lv > rv
+            if op == "<":
+                return lv < rv
+            if op == ">=":
+                return lv >= rv
             return lv <= rv
         if op == "contains":
             return rv in lv if lv is not None else False
@@ -265,6 +269,11 @@ _default = Executor()
 def register_collection(name: str, adapter_fn: Callable[..., list[dict]]) -> None:
     """Register *adapter_fn* on the module-level default Executor."""
     _default.register_collection(name, adapter_fn)
+
+
+def list_collections() -> list[str]:
+    """Return the names of all collections registered on the default Executor."""
+    return sorted(_default._registry)
 
 
 def execute_query(ast: ForeachNode, conn: Any) -> list[dict]:

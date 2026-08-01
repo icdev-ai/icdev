@@ -16,7 +16,7 @@ import json
 import sys
 import time
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -76,9 +76,9 @@ class CSPHealthChecker:
         """Record health check status to cloud_provider_status table."""
         try:
             conn = get_connection(db_path=str(self._db_path))
-            # Check if table exists (migration 007 may not have run yet)
-            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'")
-            if not cursor.fetchone():
+            # Check if table exists (migration 007 may not have run yet).
+            # Backend-aware probe — works on PG + SQLite without translate_sql.
+            if not table_exists(conn, "cloud_provider_status"):
                 logger.debug("cloud_provider_status table not found — skipping history recording")
                 conn.close()
                 return
@@ -173,9 +173,8 @@ class CSPHealthChecker:
         """Get status history from cloud_provider_status table."""
         try:
             conn = get_connection(db_path=str(self._db_path))
-            # Check if table exists
-            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'")
-            if not cursor.fetchone():
+            # Backend-aware probe — works on PG + SQLite without translate_sql.
+            if not table_exists(conn, "cloud_provider_status"):
                 conn.close()
                 return []
 

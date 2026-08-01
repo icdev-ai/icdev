@@ -73,8 +73,13 @@ def generate_mop(rfc: dict, context: str = "") -> dict:
     steps = None
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
-        raw = router.complete(prompt, function="narrative_generation", max_tokens=1500)
+        resp = router.invoke(
+            "narrative_generation",
+            LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=1500),
+        )
+        raw = resp.content or ""
         # Extract JSON array from response
         start = raw.find("[")
         end = raw.rfind("]") + 1

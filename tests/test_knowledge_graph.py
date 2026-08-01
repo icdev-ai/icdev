@@ -72,11 +72,21 @@ CREATE TABLE IF NOT EXISTS kg_ontology (
 
 @pytest.fixture
 def kg_db():
-    """Create an in-memory SQLite DB with KG schema."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(KG_SCHEMA)
-    return conn
+    """Create an in-memory SQLite DB with KG schema, wrapped like production.
+
+    Returns the same ``StorageConnection`` wrapper that production ``_get_db()``
+    returns, so runtime psycopg2-native ``%s`` placeholders are translated to
+    ``?`` for the SQLite backend. A raw ``sqlite3`` connection rejects the KG
+    modules' ``%s`` SQL with "near \"%\": syntax error", which previously made
+    these tests pass or fail by accident depending on which placeholder style a
+    given query happened to use.
+    """
+    from tools.db.storage import StorageConnection
+
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    raw.executescript(KG_SCHEMA)
+    return StorageConnection(raw, "sqlite")
 
 
 def _populate_graph(conn, graph_id="kg-test001", project_id="test-proj"):
@@ -358,6 +368,68 @@ class TestGraphRAGRetrieve:
 
                 result = retrieve("", project_id="test-proj")
                 assert result.get("status") in ("ok", "error")
+
+
+class TestGraphRAGEmbeddingProvider:
+    """Tier B: query embeddings go through get_embedding_provider() (never a
+    hardcoded Ollama endpoint) and degrade to keyword-only when unavailable."""
+
+    def test_embedding_to_pg_vector_format(self):
+        from tools.knowledge_graph.graph_rag import _embedding_to_pg_vector
+
+        assert _embedding_to_pg_vector([0.1, -0.2, 0.333333]) == "[0.100000,-0.200000,0.333333]"
+        assert _embedding_to_pg_vector([]) == "[]"
+
+    def test_embed_query_uses_configured_provider(self):
+        """_embed_query returns the configured provider's vector — no hardcoded model."""
+        from unittest.mock import MagicMock
+
+        import tools.knowledge_graph.graph_rag as gr
+
+        provider = MagicMock()
+        provider.embed.return_value = [0.1, 0.2, 0.3]
+        with patch("tools.llm.get_embedding_provider", return_value=provider):
+            assert gr._embed_query("zero trust") == [0.1, 0.2, 0.3]
+        provider.embed.assert_called_once_with("zero trust")
+
+    def test_embed_query_degrades_when_provider_unavailable(self):
+        """No embedding provider (raises LLMUnavailableError) → None, not a crash."""
+        import tools.knowledge_graph.graph_rag as gr
+
+        def _raise():
+            raise RuntimeError("ICDEV_NO_LLM — embedding provider disabled")
+
+        with patch("tools.llm.get_embedding_provider", side_effect=_raise):
+            assert gr._embed_query("anything") is None
+
+    def test_semantic_candidates_sqlite_python_cosine(self, kg_db):
+        """On SQLite _semantic_candidates ranks via Python cosine over the BLOBs."""
+        import struct
+
+        from tools.knowledge_graph.graph_rag import _semantic_candidates
+
+        kg_db.execute("INSERT INTO kg_graphs (id, project_id, name) VALUES ('g1','p1','G')")
+        near = struct.pack("3f", 1.0, 0.0, 0.0)
+        far = struct.pack("3f", 0.0, 1.0, 0.0)
+        kg_db.execute(
+            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, embedding) "
+            "VALUES ('n_near','g1','Near','t', %s)",
+            (near,),
+        )
+        kg_db.execute(
+            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, embedding) "
+            "VALUES ('n_far','g1','Far','t', %s)",
+            (far,),
+        )
+        kg_db.commit()
+
+        q_vec = [1.0, 0.0, 0.0]
+        q_blob = struct.pack("3f", *q_vec)
+        out = _semantic_candidates(kg_db, ["g1"], "%s", q_vec, q_blob, 10)
+
+        assert [d["id"] for _, d in out][0] == "n_near"  # aligned vector ranks first
+        assert out[0][0] > out[-1][0]
+        assert all("embedding" not in d for _, d in out)  # raw column stripped
 
 
 class TestGraphRAGOntologyAwareness:
@@ -647,8 +719,13 @@ class TestGraphHopReRankSimulatedDBMove:
 
         from tools.knowledge_graph.graph_rag import expand_bm25_top_k
 
-        # Real in-memory DB so the graph-scope query succeeds
-        real_conn = sqlite3.connect(":memory:")
+        # Real in-memory DB wrapped like production, so the graph-scope query
+        # (SELECT ... WHERE id = %s) translates %s -> ? and succeeds; the
+        # simulated move must fire on the *edge* query, not on a placeholder
+        # syntax error in the scope query.
+        from tools.db.storage import StorageConnection
+
+        real_conn = StorageConnection(sqlite3.connect(":memory:"), "sqlite")
         real_conn.row_factory = sqlite3.Row
         real_conn.executescript(KG_SCHEMA)
         real_conn.execute(
@@ -671,10 +748,20 @@ class TestGraphHopReRankSimulatedDBMove:
             def close(self):
                 real_conn.close()
 
-        with patch("tools.knowledge_graph.graph_rag._get_db", return_value=_DBMovedWrapper()):
-            with patch("tools.knowledge_graph.graph_rag._ensure_tables"):
-                with caplog.at_level(logging.ERROR, logger="icdev.knowledge_graph.graph_rag"):
-                    result = expand_bm25_top_k(["n1", "n2"], graph_id="g1")
+        # icdev_logger deliberately sets propagate=False on its loggers (avoids
+        # double-logging in production), so caplog — whose handler lives on the
+        # root logger — cannot see the module's error record. Force propagation
+        # for the duration so the "backlog signal" log is observable, then restore.
+        kg_logger = logging.getLogger("icdev.knowledge_graph.graph_rag")
+        _prev_propagate = kg_logger.propagate
+        kg_logger.propagate = True
+        try:
+            with patch("tools.knowledge_graph.graph_rag._get_db", return_value=_DBMovedWrapper()):
+                with patch("tools.knowledge_graph.graph_rag._ensure_tables"):
+                    with caplog.at_level(logging.ERROR, logger="icdev.knowledge_graph.graph_rag"):
+                        result = expand_bm25_top_k(["n1", "n2"], graph_id="g1")
+        finally:
+            kg_logger.propagate = _prev_propagate
 
         # Fallback: structured error dict returned instead of raising to caller
         assert result["status"] == "error"

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% set active = "strait_crossing" %}
+{% set static_reference = true %}
 {% block title %}Strait Crossing Analysis — GeoSIGINT{% endblock %}
 
 {% block head %}
@@ -24,6 +25,7 @@ table.intercept-table td { padding:.35rem .5rem; border-bottom:1px solid #1f2937
 {% endblock %}
 
 {% block content %}
+{% include "_geosigint_reference_badge.html" %}
 <div class="page-header page-header--compact">
     <h1>Strait Crossing Analysis</h1>
     <span style="font-size:.8rem;color:#6b7280">Xiamen → Danshui Corridor · Radar Thresholds · Intercept Windows · ROCAF Response</span>

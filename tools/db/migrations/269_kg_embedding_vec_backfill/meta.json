@@ -1,0 +1,7 @@
+{
+  "id": "269_kg_embedding_vec_backfill",
+  "description": "Backfill kg_nodes.embedding_vec from the legacy packed-float32 embedding BLOB so graph_rag's pgvector <=> semantic search covers pre-existing graphs",
+  "created": "2026-07-17",
+  "targets": ["icdev.db"],
+  "adrs": []
+}

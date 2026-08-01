@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     citations      JSONB DEFAULT '[]',
     image_path     TEXT,
     image_prompt   TEXT,
+    provenance     TEXT DEFAULT 'llm',
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -143,6 +144,7 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     mermaid_code         TEXT,
     three_scene_config   TEXT,
     excalidraw_elements  TEXT,
+    provenance           TEXT DEFAULT 'llm',
     created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

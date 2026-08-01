@@ -68,11 +68,21 @@ def summary(since: str | None = None) -> dict:
         """
         phantoms = [dict(r) for r in conn.execute(phantom_sql).fetchall()]
 
-        return {
+        result = {
             "verifications_by_source": verif,
             "tasks_by_source": tasks,
             "phantom_by_source": phantoms,
         }
+
+        # crx-kan-01: surface SLA (overdue/at-risk) + cycle-time / throughput on
+        # the board summary. Guarded so a metrics hiccup never breaks the summary.
+        try:
+            from tools.kanban.metrics import board_metrics
+            result.update(board_metrics(conn=conn))
+        except Exception:
+            pass
+
+        return result
     finally:
         conn.close()
 

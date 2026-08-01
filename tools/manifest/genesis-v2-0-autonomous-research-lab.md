@@ -8,7 +8,7 @@
 
 | Tool | Path | Purpose |
 |------|------|---------|
-| daemon | `tools/genesis/daemon.py` | Always-on daemon: 14 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase |
+| daemon | `tools/genesis/daemon.py` | Always-on daemon: 14 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase. Per-reflex config surface (crx-gen-03): `reflexes.<name>.depends_on: [names]` orders a reflex after its dependencies within a cycle (best-effort intra-cycle topo-sort in `DaemonBase.run_due_reflexes` via `topological_reflex_order`; not-due deps ignored; cycle-safe); `reflexes.<name>.max_execution_seconds` (alias: `timeout_seconds`; default `defaults.reflex_timeout_seconds`) is the hard watchdog cap enforced in `run_reflex_impl` — a breach becomes a `genesis_audit` failure row and counts toward the circuit breaker |
 | promoter | `tools/genesis/promoter.py` | Knowledge Bridge: GKP export/import, dedup, auto-promote, human review gateway (D-GEN-4) |
 | feedback_collector | `tools/genesis/feedback_collector.py` | Pull v1.x telemetry (failures, quality, coverage, heals) for v2.0 consumption (D-GEN-11) |
 | reporter | `tools/genesis/reporter.py` | Weekly autonomous markdown report: reflex activity, promotions, circuit breakers (D-GEN-12) |
@@ -21,6 +21,7 @@
 | research | GREEN | every 6h | Scrape NIST/CISA/OWASP feeds, export GKP research signals |
 | scout | GREEN | daily 07:00 | Monitor 16 GitHub repos (autoresearch, trivy, ollama, etc.), intel briefs |
 | audit | GREEN | daily 06:00 | Self-scan: code quality + SAST via existing tools |
+| coherence_sweep | GREEN | every 6h | Full-tier coherence sweep on main — runs the whole-app checks the per-task fast-tier gate defers, and refreshes the baseline that gate diffs against |
 | awareness | GREEN | every 3h | Internal self-observation cycle: component graph refresh, health probe, drift detection, gap detection, kanban card promotion |
 | self_monitor | GREEN | every 30m | Project Internal Awareness health snapshots into operator alerts + failure_log so /monitoring reflects real platform health |
 | report | GREEN | weekly Sun 20:00 | Generate weekly status report with promotions/circuit breakers |
@@ -44,6 +45,7 @@
 | Research Reflex | tools/genesis/reflexes/research.py | Scrape NIST/CISA/OWASP feeds, export GKP research signals | config dict | GKP signals |
 | Scout Reflex | tools/genesis/reflexes/scout.py | Monitor GitHub repos for new tools/CVEs, produce intel briefs | config dict | Intel briefs |
 | Audit Reflex | tools/genesis/reflexes/audit.py | Self-scan: code quality + SAST via existing tools | config dict | Audit findings |
+| Coherence Sweep Reflex | tools/genesis/reflexes/coherence_sweep.py | Full-tier coherence sweep on the main checkout: runs all 49 checks (including the whole-app heavies `blueprint_imports`, `openapi_parity`, `llm_router_api` that the per-task fast-tier gate defers) and refreshes the cached `.tmp/coherence_baseline_full_<sha>.json` the gate diffs new failures against. GREEN tier — read-only, no `--fix`. CLI: `python tools/genesis/reflexes/coherence_sweep.py`; ctx accepts `dry_run` and `cwd` | config dict | {failing_checks, failed_count, warned_count, total_checks, elapsed_sec} |
 | Awareness Reflex | tools/genesis/reflexes/awareness.py | Internal self-observation: component graph refresh, health probe, drift, gap, kanban card promotion | config dict | Awareness report |
 | Self-Monitor Reflex | tools/genesis/reflexes/self_monitor.py | Projection layer: reads latest awareness_component_health snapshots, refreshes the cheap http_head probe live, then writes aggregated rows to `alerts` (one per failing category, deduped + auto-resolved) and `failure_log` (one per failing component, deduped) so the operator-facing /monitoring page reflects real platform health. GREEN tier. CLI: `--json [--no-refresh] [--min-fail N]` | config dict | {alerts_opened, alerts_updated, alerts_resolved, alerts_firing, failures_logged} |
 | Report Reflex | tools/genesis/reflexes/report.py | Weekly status report with reflex activity, promotions, circuit breakers | config dict | Markdown report |
@@ -63,4 +65,5 @@
 | Quality Reflex | tools/genesis/reflexes/quality.py | Self-Learning QA/QC: QDC gates, trend tracking, auto-fix lint/deprecation, GKP improvement proposals | config dict | Quality report |
 | Synthesize Reflex | tools/genesis/reflexes/synthesize.py | Auto-generate FORGE goal drafts from telemetry patterns; stages as GKP for human review. YELLOW, confidence 0.55 (D-SYN-1) | config dict | GKP goal drafts |
 | Cost Optimizer Reflex | tools/genesis/reflexes/cost_optimizer.py | Weekly LLM token spend audit; Haiku-eligible task detection; bloated prompt flagging. Hard rule: never flags Risk or Execution agents. GREEN tier, weekly cadence (168h) | config dict | recommendations_generated count |
+| daemon | `tools/genesis/daemon.py` | Always-on daemon: 14 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase |
 

@@ -107,6 +107,18 @@ capability_mapping:
   # below 0.40 = N (non-compliant / gap)
 
 # =========================================================================
+# RFI Capability-Gap Demand Loop (rfidem-)
+# Turns unmet RFI requirements into demand signals -> atomic SUGGESTED kanban tasks.
+# =========================================================================
+rfi_demand:
+  enabled: true                       # env ICDEV_RFI_DEMAND_ENABLED overrides
+  gap_grade: N                        # capability-catalog grade that counts as a gap
+  min_priority_for_task: 0.6          # priority = frequency * (1 - best_coverage)
+  high_demand_frequency: 3            # frequency at which is_high_demand flips on
+  decompose_route: proposal_drafting  # LLMRouter function for atomic decomposition
+  max_tasks_per_gap: 8                # cap atomic cards emitted per gap
+
+# =========================================================================
 # Response Drafting (D365 — two-tier LLM)
 # =========================================================================
 response_drafting:

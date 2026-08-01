@@ -7,14 +7,24 @@ deepagents' subagent spawner, but implemented on top of
 tools.llm.router.LLMRouter so it works with any configured provider
 (Anthropic, Bedrock, Vertex, Ollama, etc.).
 
-Subagents are stateless: they receive a prompt, return a response,
-then terminate. No shared memory with the parent. This is deliberate —
-parallel subagent runs don't race on shared state.
+Two levels are offered:
+
+- :func:`spawn_subagent` — a *stateless single LLM call* (no tools, no session).
+  Cheapest; use when the sub-task is pure reasoning/generation.
+- :func:`delegate_task` / :func:`delegate_batch` (sag-del-01) — *true delegation*
+  to an isolated **child SAG runtime** (own session + restricted toolset +
+  inherited budget caps + timeout), able to use tools and run a full agent loop.
+  These wrap :mod:`tools.agent_runtime.delegation`; see it for the depth /
+  re-delegation policy.
+
+Subagents never share in-process state with the parent — parallel runs don't
+race — which is deliberate.
 """
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import time
+from typing import Any
 
 logger = get_logger("icdev.agent_toolkit.subagent")
 
@@ -102,3 +112,29 @@ def spawn_subagent(
         )
 
     return result
+
+
+def delegate_task(goal: str, **kwargs: Any) -> dict:
+    """Delegate a sub-task to an isolated child SAG runtime (sag-del-01).
+
+    Unlike :func:`spawn_subagent` (a single stateless LLM call), this spawns a
+    full child agent — its own session, a restricted toolset (``toolsets=[...]``
+    bundle names), inherited budget caps, a wall-clock ``timeout`` (default 5 min),
+    and a ``role`` (``"leaf"`` cannot re-delegate; ``"orchestrator"`` may, bounded
+    depth 2). Returns a structured summary dict and never raises. See
+    :func:`tools.agent_runtime.delegation.delegate_task` for the full contract.
+    """
+    from tools.agent_runtime.delegation import delegate_task as _delegate
+
+    return _delegate(goal, **kwargs)
+
+
+def delegate_batch(tasks: list[dict], **kwargs: Any) -> list[dict]:
+    """Delegate several sub-tasks in parallel via isolated child runtimes.
+
+    Thin wrapper over :func:`tools.agent_runtime.delegation.delegate_batch`;
+    ``tasks`` is a list of :func:`delegate_task` kwargs dicts (each with ``goal``).
+    """
+    from tools.agent_runtime.delegation import delegate_batch as _batch
+
+    return _batch(tasks, **kwargs)

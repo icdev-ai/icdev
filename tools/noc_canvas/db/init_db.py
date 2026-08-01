@@ -10,6 +10,7 @@ Default backend: PostgreSQL. Set NOCC_STORAGE_BACKEND=sqlite to override.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -32,7 +33,10 @@ def get_connection():
             from tools.db.storage import get_canvas_connection
             return get_canvas_connection("NOCC_PG_DATABASE")
         except Exception as exc:
-            print(f"[nocc-db] PostgreSQL unavailable ({exc}), falling back to SQLite")
+            print(
+                f"[nocc-db] PostgreSQL unavailable ({exc}), falling back to SQLite",
+                file=sys.stderr,
+            )
     import sqlite3 as _sqlite3
     conn = _sqlite3.connect(str(_SQLITE_PATH))
     conn.row_factory = _sqlite3.Row
@@ -145,7 +149,7 @@ CREATE TABLE IF NOT EXISTS noc_mops (
     rfc_id         TEXT REFERENCES noc_rfcs(id),
     steps_json     JSONB NOT NULL DEFAULT '[]',
     generated_by   TEXT DEFAULT 'manual'
-                       CHECK(generated_by IN ('manual','ai')),
+                       CHECK(generated_by IN ('manual','ai','ai_template')),
     ai_prompt      TEXT DEFAULT '',
     classification TEXT DEFAULT 'CUI',
     created_at     TIMESTAMPTZ DEFAULT NOW(),
@@ -377,9 +381,9 @@ def init_db(conn=None) -> None:
             for stmt in [s.strip() for s in schema.split(";") if s.strip()]:
                 cur.execute(stmt)
             _conn.commit()
-        print("[nocc-db] Schema initialized OK")
+        print("[nocc-db] Schema initialized OK", file=sys.stderr)
     except Exception as exc:
-        print(f"[nocc-db] Schema init error: {exc}")
+        print(f"[nocc-db] Schema init error: {exc}", file=sys.stderr)
         raise
     finally:
         if owned:

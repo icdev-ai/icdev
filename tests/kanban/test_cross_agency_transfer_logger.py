@@ -23,6 +23,21 @@ os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _storage_conn(db_path):
+    """Connect the way production does, via tools.db.storage.
+
+    Patching get_connection with a RAW sqlite3 connection is the bug this
+    replaces: runtime SQL is authored for PostgreSQL (%s placeholders, per
+    CLAUDE.md) and the storage wrapper is what translates them to SQLite's ?.
+    A raw sqlite3 connection turns every %s into `near "%": syntax error`,
+    which the loggers swallow -- so they silently returned "" and the tests
+    failed on an empty event id rather than on the real error.
+    """
+    from tools.db.storage import get_connection as _real_get_connection
+
+    return _real_get_connection(db_path=str(db_path))
+
+
 def _make_db(tmp_path):
     """Return a sqlite3 connection backed by a temp file with the required tables."""
     from tests.conftest import MINIMAL_ICDEV_SCHEMA
@@ -72,7 +87,7 @@ def test_log_initiated_inserts_initiated_row(tmp_path):
     logger = CrossAgencyTransferLogger()
     with patch(
         "tools.audit.cross_agency_transfer_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_initiated(
             transfer_id="xfr-001",
@@ -109,7 +124,7 @@ def test_log_completed_inserts_completed_row(tmp_path):
     logger = CrossAgencyTransferLogger()
     with patch(
         "tools.audit.cross_agency_transfer_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_completed(
             transfer_id="xfr-002",
@@ -145,7 +160,7 @@ def test_log_failed_inserts_failed_row(tmp_path):
     logger = CrossAgencyTransferLogger()
     with patch(
         "tools.audit.cross_agency_transfer_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_failed(
             transfer_id="xfr-003",
@@ -179,7 +194,7 @@ def test_log_rejected_inserts_rejected_row(tmp_path):
     logger = CrossAgencyTransferLogger()
     with patch(
         "tools.audit.cross_agency_transfer_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_rejected(
             transfer_id="xfr-004",
@@ -226,8 +241,21 @@ def test_no_update_or_delete_issued(tmp_path):
         def close(self):
             return self._real.close()
 
-    real_conn = sqlite3.connect(str(db_path))
-    real_conn.row_factory = sqlite3.Row
+        def __getattr__(self, name):
+            # Proxy everything else to the wrapped StorageConnection. Without
+            # this, storage.table_exists() -> _introspect_raw() looks up
+            # ``_conn``, does not find it on the recorder, and falls back to
+            # the recorder itself; the subsequent raw.cursor() then raises
+            # AttributeError, which table_exists swallows and reports as
+            # "table missing". _insert() would skip the INSERT entirely, and
+            # the AU-9 "no UPDATE/DELETE" assertions below would pass
+            # vacuously against an empty statement log.
+            return getattr(self._real, name)
+
+    # Wrap the STORAGE connection, not a raw sqlite3 one -- the recorder must sit
+    # in front of the same translating wrapper production uses, or the %s
+    # placeholders never translate and nothing is ever executed to record.
+    real_conn = _storage_conn(db_path)
     recording_conn = _RecordingConn(real_conn)
 
     logger = CrossAgencyTransferLogger()
@@ -338,7 +366,7 @@ def test_au2_all_required_fields_present(tmp_path):
     logger = CrossAgencyTransferLogger()
     with patch(
         "tools.audit.cross_agency_transfer_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_initiated(
             transfer_id="xfr-au2-01",
@@ -379,7 +407,7 @@ def test_au2_dual_write_to_audit_trail(tmp_path):
     logger = CrossAgencyTransferLogger()
     with patch(
         "tools.audit.cross_agency_transfer_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_completed(
             transfer_id="xfr-au2-dual",
@@ -433,8 +461,21 @@ def test_au9_no_update_or_delete_issued(tmp_path):
         def close(self):
             return self._real.close()
 
-    real_conn = sqlite3.connect(str(db_path))
-    real_conn.row_factory = sqlite3.Row
+        def __getattr__(self, name):
+            # Proxy everything else to the wrapped StorageConnection. Without
+            # this, storage.table_exists() -> _introspect_raw() looks up
+            # ``_conn``, does not find it on the recorder, and falls back to
+            # the recorder itself; the subsequent raw.cursor() then raises
+            # AttributeError, which table_exists swallows and reports as
+            # "table missing". _insert() would skip the INSERT entirely, and
+            # the AU-9 "no UPDATE/DELETE" assertions below would pass
+            # vacuously against an empty statement log.
+            return getattr(self._real, name)
+
+    # Wrap the STORAGE connection, not a raw sqlite3 one -- the recorder must sit
+    # in front of the same translating wrapper production uses, or the %s
+    # placeholders never translate and nothing is ever executed to record.
+    real_conn = _storage_conn(db_path)
     recording_conn = _RecordingConn(real_conn)
 
     logger = CrossAgencyTransferLogger()
@@ -475,7 +516,7 @@ def test_lifecycle_initiated_to_completed(tmp_path):
     logger = CrossAgencyTransferLogger()
     with patch(
         "tools.audit.cross_agency_transfer_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         eid1 = logger.log_initiated(
             "xfr-life-01", "DHS", "FBI", "threat_intel", "analyst-1", project_id="proj-life"

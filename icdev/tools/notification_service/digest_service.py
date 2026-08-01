@@ -80,6 +80,42 @@ _DIGEST_NARRATIVE_SYSTEM_PROMPT = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Per-user digest gating (crx-not-01)
+#
+# Extends this digest service (rather than forking it) to honour the per-user
+# notification preferences added in tools/notifications/preferences.py: a user
+# only receives a scheduled digest when they have opted in, and never during
+# their quiet hours. The check is best-effort — if the preferences layer is
+# unavailable the digest ships (deterministic delivery stays authoritative).
+# ---------------------------------------------------------------------------
+
+
+def should_deliver_digest(
+    user_id: str,
+    tenant_id: str | None = None,
+    now=None,
+    default: bool = True,
+) -> bool:
+    """Return True when a scheduled digest should be delivered to ``user_id``.
+
+    Consults tools.notifications.preferences: the user must have opted into
+    digest mode (``wants_digest``) and must not currently be in quiet hours.
+    Returns ``default`` if the preferences layer cannot be consulted so callers
+    that pass a bare recipient string keep working unchanged.
+    """
+    try:
+        from tools.notifications import preferences as _prefs
+
+        if not _prefs.wants_digest(user_id, tenant_id):
+            return False
+        if _prefs.in_quiet_hours(_prefs.get_preferences(user_id, tenant_id), now):
+            return False
+        return True
+    except Exception:
+        return default
+
+
 def _ai_digest_narrative(digest_kind: str, facts: dict) -> str | None:
     """Synthesize an optional LLM narrative for a rendered digest.
 

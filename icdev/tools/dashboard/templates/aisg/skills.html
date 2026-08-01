@@ -8,6 +8,12 @@
     <p class="page-subtitle">Assess your team's AI maturity, identify gaps, and get personalized learning recommendations.</p>
 </div>
 
+{% if data_source_error %}
+<div class="skills-empty" style="border-color:var(--warning,#f59e0b);margin-bottom:16px;">
+    Live skills data unavailable — no assessment could be loaded. No sample data is shown.
+</div>
+{% endif %}
+
 <!-- Maturity Badge Section -->
 <div class="skills-hero" id="skills-maturity-section">
     <div class="maturity-badge-block">
@@ -17,7 +23,10 @@
             <span class="badge {{ maturity_badge_class }}" id="maturity-badge" style="font-size:1.4rem;padding:10px 20px;">
                 {{ maturity_label }}
             </span>
-            <div class="maturity-score-text">Score: {{ maturity_score }}/5 (avg {{ avg_level }} across {{ total_skills }} domains)</div>
+            <div class="maturity-score-text">
+                {% if maturity_score is not none %}Score: {{ maturity_score }}/5 (avg {{ avg_level }} across {{ total_skills }} domains)
+                {% else %}No skill assessment data yet — add skills to see a maturity score.{% endif %}
+            </div>
         </div>
     </div>
     <div class="maturity-cta">
@@ -33,6 +42,8 @@
         <h3>Skill Domains</h3>
         <div class="skills-list">
             {% for s in skill_domains %}
+            {% set cur = s.current_level or 0 %}
+            {% set tgt = s.target_level or 0 %}
             <div class="skill-item">
                 <div class="skill-meta">
                     <div class="skill-name">{{ s.name }}</div>
@@ -40,20 +51,22 @@
                 </div>
                 <div class="skill-levels">
                     <div class="skill-bar-wrap">
-                        <div class="skill-bar-current" style="width:{{ s.current_level / 5 * 100 }}%;"></div>
-                        <div class="skill-bar-target" style="width:{{ s.target_level / 5 * 100 }}%;"></div>
+                        <div class="skill-bar-current" style="width:{{ cur / 5 * 100 }}%;"></div>
+                        <div class="skill-bar-target" style="width:{{ tgt / 5 * 100 }}%;"></div>
                     </div>
                     <div class="skill-level-text">
-                        <span style="color:var(--accent);">{{ s.current_level }}/5</span>
-                        <span style="color:var(--text-dim);font-size:0.75rem;"> → target: {{ s.target_level }}/5</span>
+                        <span style="color:var(--accent);">{% if s.current_level is not none %}{{ s.current_level }}/5{% else %}not assessed{% endif %}</span>
+                        {% if s.target_level is not none %}<span style="color:var(--text-dim);font-size:0.75rem;"> → target: {{ s.target_level }}/5</span>{% endif %}
                         {% if s.gap > 0 %}
                         <span class="badge badge-warning" style="font-size:0.72rem;margin-left:6px;">Gap: {{ s.gap }}</span>
-                        {% else %}
+                        {% elif s.current_level is not none and s.target_level is not none %}
                         <span class="badge badge-success" style="font-size:0.72rem;margin-left:6px;">On Target</span>
                         {% endif %}
                     </div>
                 </div>
             </div>
+            {% else %}
+            <div class="skills-empty">No skill assessment data yet. Add skills to track maturity and gaps.</div>
             {% endfor %}
         </div>
     </div>
@@ -72,6 +85,8 @@
                 <div class="rec-action">{{ r.action }}</div>
                 <a href="{{ r.link }}" class="btn btn-sm" style="margin-top:8px;font-size:0.78rem;">Start →</a>
             </div>
+            {% else %}
+            <div class="skills-empty">No recommendations — assessment data required.</div>
             {% endfor %}
         </div>
 
@@ -87,8 +102,10 @@
                     <div style="font-size:0.78rem;color:var(--text-dim);">{{ m.track }}</div>
                     {% endif %}
                 </div>
-                <span class="badge badge-info" style="margin-left:auto;font-size:0.72rem;">{{ m.maturity }}</span>
+                {% if m.maturity %}<span class="badge badge-info" style="margin-left:auto;font-size:0.72rem;">{{ m.maturity }}</span>{% endif %}
             </div>
+            {% else %}
+            <div class="skills-empty">No team activity recorded yet.</div>
             {% endfor %}
         </div>
     </div>
@@ -132,6 +149,7 @@
 .team-member-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
 .team-member-row:last-child { border-bottom: none; }
 .team-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; flex-shrink: 0; }
+.skills-empty { padding: 20px; text-align: center; color: var(--text-dim); font-size: 0.86rem; background: var(--bg-elevated, rgba(255,255,255,0.03)); border: 1px dashed var(--border); border-radius: 8px; }
 @media (max-width: 900px) { .skills-row { grid-template-columns: 1fr; } .skill-meta { width: 160px; } }
 </style>
 {% endblock %}

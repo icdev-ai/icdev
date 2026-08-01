@@ -80,6 +80,7 @@
   padding:1.2rem; display:flex; gap:1.5rem; flex-wrap:wrap; align-items:center;
 }
 </style>
+{% include "forge_academy/partials/_chrome_clearance.html" %}
 {% endblock %}
 
 {% block content %}
@@ -93,9 +94,18 @@
   <div class="fa-section">
     <h2>Current Status</h2>
     <div class="fa-current-stats">
+      {# aca-ux-07: this said "Total Earned". Since aca-int-07 "earned" means
+         is_attendance=0 — the 250 that buys rank — while this figure is the running
+         total that includes 1565 XP of daily logins. Naming the total "earned" is
+         the exact confusion that made the rank change look like a bug. #}
       <div>
         <div style="font-size:1.3rem;font-weight:800;color:var(--fa-gold);">{{ fa_user.xp|default(0) }} XP</div>
-        <div style="font-size:.68rem;color:var(--text-secondary);text-transform:uppercase;">Total Earned</div>
+        <div style="font-size:.68rem;color:var(--text-secondary);text-transform:uppercase;">Total XP</div>
+      </div>
+      <div>
+        <div style="font-size:1.3rem;font-weight:800;color:var(--fa-cyan);">{{ level_ctx.earned_xp|default(0) }} XP</div>
+        <div style="font-size:.68rem;color:var(--text-secondary);text-transform:uppercase;"
+             title="XP from graded work. Daily-login attendance counts toward your total but not toward rank.">Earned &mdash; sets rank</div>
       </div>
       {% if level_ctx and level_ctx.level %}
       <div>

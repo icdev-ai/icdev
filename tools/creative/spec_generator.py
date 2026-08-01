@@ -649,7 +649,7 @@ def _build_sources_list(pain_point, db_path=None):
 # =========================================================================
 # SPEC GENERATION
 # =========================================================================
-def generate_spec(feature_gap_id, db_path=None):
+def generate_spec(feature_gap_id, db_path=None, divergence=None):
     """Generate a full feature specification from a feature gap.
 
     Reads the feature gap and its associated pain point from the database,
@@ -659,6 +659,12 @@ def generate_spec(feature_gap_id, db_path=None):
     Args:
         feature_gap_id: The feature gap identifier.
         db_path: Optional database path override.
+        divergence: Optional opt-in divergence context (dvg-wire-01) produced by
+            tools.creative.divergence_branch.run_divergence_branch. When present
+            and ``ran`` is true, the surviving candidate-direction clusters are
+            appended to the spec and the divergence ``trace_id`` is persisted in
+            the spec metadata so provenance is recoverable. Ignored (default
+            template path) when None or ``ran`` is false.
 
     Returns:
         dict with spec_id, title, composite_score, estimated_effort, status.
@@ -782,6 +788,19 @@ def generate_spec(feature_gap_id, db_path=None):
                 "{spec_content}", spec_content
             )
 
+        # Opt-in divergence branch (dvg-wire-01): carry surviving candidate
+        # solution-direction clusters into the spec instead of shipping only the
+        # single template-filled answer. Default template path is untouched when
+        # no divergence context ran.
+        divergence_meta = None
+        if divergence and divergence.get("ran") and divergence.get("section_markdown"):
+            spec_content = spec_content + "\n\n---\n\n" + divergence["section_markdown"]
+            divergence_meta = {
+                "trace_id": divergence.get("trace_id"),
+                "cluster_count": len(divergence.get("clusters", [])),
+                "trap_count": divergence.get("trap_count", 0),
+            }
+
         # Store in creative_specs
         spec_id = _spec_id()
         now = now_iso()
@@ -807,6 +826,7 @@ def generate_spec(feature_gap_id, db_path=None):
                         "score_breakdown": score_breakdown,
                         "signal_count": len(signal_ids),
                         "category": category,
+                        **({"divergence": divergence_meta} if divergence_meta else {}),
                     }
                 ),
                 now,
@@ -844,7 +864,7 @@ def generate_spec(feature_gap_id, db_path=None):
         conn.close()
 
 
-def generate_all_eligible(db_path=None):
+def generate_all_eligible(db_path=None, divergence=None):
     """Generate specs for all eligible feature gaps.
 
     Queries feature gaps where status='identified', checks that the associated
@@ -853,10 +873,16 @@ def generate_all_eligible(db_path=None):
 
     Args:
         db_path: Optional database path override.
+        divergence: Optional opt-in divergence context (dvg-wire-01) scoped to a
+            single top-ranked pain point (carries ``pain_point_id``). The gap
+            whose pain point matches receives the surviving candidate-direction
+            clusters; all other gaps use the unchanged deterministic template
+            path. None (default) => every gap uses the template path.
 
     Returns:
         dict with generated, skipped_low_score, skipped_budget counts.
     """
+    div_pain_point_id = divergence.get("pain_point_id") if (divergence and divergence.get("ran")) else None
     config = _load_config()
     thresholds = config.get("scoring", {}).get("thresholds", {})
     auto_spec_threshold = thresholds.get("auto_spec", 0.75)
@@ -928,8 +954,10 @@ def generate_all_eligible(db_path=None):
             )
             continue
 
-        # Generate spec
-        result = generate_spec(gap["id"], db_path)
+        # Generate spec. The opt-in divergence context (if any) applies only to
+        # the gap tied to the top-ranked pain point it was generated for.
+        gap_divergence = divergence if (div_pain_point_id and gap.get("pain_point_id") == div_pain_point_id) else None
+        result = generate_spec(gap["id"], db_path, divergence=gap_divergence)
         if "error" in result:
             results.append(
                 {

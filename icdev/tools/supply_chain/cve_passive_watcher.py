@@ -343,7 +343,7 @@ def watch_scan(project_id, since_id=None, db_path=None, auto_triage=True, ato_on
             since_id = _get_high_watermark(conn, project_id)
 
         # Build IN clause for ATO event types
-        placeholders = ",".join("?" * len(ATO_EVENT_TYPES))
+        placeholders = ",".join(["%s"] * len(ATO_EVENT_TYPES))
         audit_rows = conn.execute(
             f"""SELECT id, project_id, event_type, actor, action, details, created_at
                 FROM audit_trail
@@ -570,7 +570,7 @@ def get_status(project_id, db_path=None):
         # Also get the total audit entries scanned (regardless of CVE content)
         total_audit_entries = conn.execute(
             "SELECT COUNT(*) FROM audit_trail WHERE event_type IN ({})".format(
-                ",".join("?" * len(ATO_EVENT_TYPES))
+                ",".join(["%s"] * len(ATO_EVENT_TYPES))
             ),
             list(ATO_EVENT_TYPES),
         ).fetchone()[0]

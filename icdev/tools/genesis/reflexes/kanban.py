@@ -21,10 +21,11 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = get_logger(__name__)
 
@@ -39,6 +40,81 @@ PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
 WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
 
 
+# ---------------------------------------------------------------------------
+# Repo-aware dispatch (ked-core-01)
+#
+# Every git/gh call below used to run with cwd=BASE_DIR. For an ICDev task that
+# is right. For an EXTERNAL-repo task (compass / idea_lab, per
+# args/kanban_external_repos.yaml) it is wrong in the most expensive way: the
+# done-gate asks ICDEV whether COMPASS's work landed, the answer is always no,
+# and the task churns forever. That is why _dispatch_task simply PARKED every
+# external task — and why the entire Premium Suite had to be driven by hand.
+#
+# These three helpers resolve, per task, WHICH repo it builds in. A task that
+# matches no prefix — or any failure to resolve at all — returns the ICDev
+# default, so an absent/empty registry is a complete no-op and every existing
+# task behaves byte-identically.
+# ---------------------------------------------------------------------------
+def _manual_build() -> bool:
+    """True when Manual Build is on: promote and track, but do not dispatch.
+
+    Never raises, and fails to AUTOMATIC on any error. An unreadable flag file must
+    not silently stop every build on the board — "nothing happened and nobody noticed"
+    is the failure mode worth engineering against here.
+    """
+    try:
+        from tools.kanban.build_mode import is_manual
+
+        return is_manual()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("build-mode check failed (defaulting to automatic): %s", exc)
+        return False
+
+
+def _task_repo_target(task_id: str):
+    """The RepoTarget for a task, or None if resolution failed (-> ICDev)."""
+    try:
+        from tools.kanban.repo_registry import resolve_task_repo
+
+        return resolve_task_repo(task_id)
+    except Exception as exc:  # noqa: BLE001 — resolution must never break dispatch
+        logger.debug("repo resolve failed for %s (defaulting to ICDev): %s", task_id, exc)
+        return None
+
+
+def _task_repo_root(task_id: str) -> Path:
+    """The on-disk repo root a task builds in. BASE_DIR (ICDev) unless external."""
+    target = _task_repo_target(task_id)
+    if target is not None and target.is_external and target.root is not None:
+        return Path(target.root)
+    return BASE_DIR
+
+
+def _task_base_branch(task_id: str) -> str:
+    """The branch a task builds off, in ITS repo. compass's main is not ICDev's."""
+    target = _task_repo_target(task_id)
+    if target is not None and target.is_external and target.root is not None:
+        return target.base_branch or "main"
+    return _default_branch()
+
+
+def _task_worktree_path(task_id: str) -> Path:
+    """Where the task's worktree lives.
+
+    ICDev tasks keep the historical location (.tmp/worktrees/<id>). An EXTERNAL
+    task's worktree goes in the system temp dir — never inside either repo. A
+    compass worktree nested under ICDev's tree would show up in ICDev's git
+    status and in every tree-scoped gate that walks the checkout, which is the
+    same confusion of repos this whole change exists to remove.
+    """
+    target = _task_repo_target(task_id)
+    if target is not None and target.is_external and target.root is not None:
+        import tempfile
+
+        return Path(tempfile.gettempdir()) / "icdev-kanban" / target.name / task_id
+    return WORKTREE_BASE / task_id
+
+
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -48,11 +124,36 @@ def _ensure_prompt_dir():
 
 
 def _count_in_progress() -> int:
-    """Count how many tasks are currently in_progress."""
+    """Count tasks currently in_progress that represent REAL work.
+
+    Manual-mode gates are excluded. A gate is a sentinel, not work: per
+    ``tools/kanban/gates.py`` it is held ``in_progress`` FOREVER by design, so
+    counting it consumed a dispatch slot that nothing was ever going to release.
+    ``_get_due_tasks`` already filters gates out of dispatch via the same
+    predicate; counting them here contradicted that and throttled the pipeline
+    in proportion to how many cards were gated.
+
+    Concretely, with the default ``MAX_IN_PROGRESS=3`` and two gates held,
+    ``available_slots`` was 1 instead of 3, and a single running task drove it to
+    0 — where ``_get_due_tasks`` returns ``[]`` and the scheduler logs
+    "idle (no due tasks)" while due, dependency-satisfied tasks sit in
+    ``scheduled``. Three gates would have stopped dispatch outright.
+
+    Imported locally because ``_is_manual_gate`` is bound further down this
+    module; ``tools.kanban.gates`` imports nothing, so this is cheap.
+    """
+    from tools.kanban.gates import is_manual_gate
+
     conn = get_connection()
     try:
-        row = conn.execute("SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'in_progress'").fetchone()
-        return dict(row).get("cnt", 0)
+        rows = conn.execute(
+            "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
+        ).fetchall()
+        return sum(
+            1
+            for r in (dict(x) for x in rows)
+            if not is_manual_gate(r.get("id"), r.get("title"))
+        )
     finally:
         conn.close()
 
@@ -133,9 +234,20 @@ MAX_AUTO_REVIVE = _int_env("KANBAN_MAX_AUTO_REVIVE", 2)
 QUARANTINE_REVIVE_COOLDOWN_MIN = _int_env("KANBAN_REVIVE_COOLDOWN_MIN", 30)
 # Max seconds a Claude CLI subprocess can run before being killed.
 # Override via KANBAN_MAX_EXECUTION_SECONDS / _SCAN / _PYTEST env vars.
-MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 900)
-MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1200)
-MAX_EXECUTION_SECONDS_PYTEST = _int_env("KANBAN_MAX_EXECUTION_SECONDS_PYTEST", 2400)
+# 900s was too tight by a hair, not by an order of magnitude: recorded failures
+# include "TIMEOUT after 902s (max 900s)" and "911s (max 900s)" — tasks killed
+# with ~0.2-1.2% of their work left. 1800s gives real headroom without letting a
+# wedged task hold one of only MAX_IN_PROGRESS slots for long.
+#
+# The ladder MUST stay monotonic (default <= scan <= pytest). _EXTENDED_TIMEOUT_
+# PATTERNS routes `codelens|coherence|companion` to SCAN and `pytest|e2e|...` to
+# PYTEST, so a tier below the default would SHORTEN those tasks' budgets — which
+# is exactly what happened when the default was raised on its own.
+MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 1800)
+MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1800)
+# Full-suite tasks legitimately run past an hour; they should still set
+# max_runtime_seconds explicitly rather than lean on this ceiling.
+MAX_EXECUTION_SECONDS_PYTEST = _int_env("KANBAN_MAX_EXECUTION_SECONDS_PYTEST", 3600)
 # Minimum remaining budget required to start post-process operations (guard-budget).
 # Override via KANBAN_VERIFICATION_MIN_BUDGET_SECONDS / _REMEDIATION / _SELF_DEBUG env vars.
 VERIFICATION_MIN_BUDGET_SECONDS = _int_env("KANBAN_VERIFICATION_MIN_BUDGET_SECONDS", 30)
@@ -146,7 +258,14 @@ SELF_DEBUG_MIN_BUDGET_SECONDS = _int_env("KANBAN_SELF_DEBUG_MIN_BUDGET_SECONDS",
 MAX_TIMEOUT_RETRIES = _int_env("KANBAN_MAX_TIMEOUT_RETRIES", 3)
 # Failures before a task is flagged for decomposition.
 # Override via KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION env var.
-_MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT = _int_env("KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION", 1)
+# 3, not 1. At 1 a single failure split a task into 3-5 LLM-generated children,
+# which meant the retry-with-coaching path (_get_retry_coaching) could never run
+# — the task was decomposed before it was ever retried — and the coaching text
+# the agent is shown said "after 3 failures", which was a lie. Most first
+# failures on this board were harness artifacts (reaping/timeout), so we were
+# splitting healthy tasks in response to noise; measured, decomposition children
+# fail ~3x more often than undecomposed tasks.
+_MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT = _int_env("KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION", 3)
 # Minimum claude output length (chars) to be considered non-trivial.
 # Override via KANBAN_MIN_OUTPUT_LENGTH env var.
 MIN_OUTPUT_LENGTH = _int_env("KANBAN_MIN_OUTPUT_LENGTH", 200)
@@ -156,6 +275,10 @@ PHANTOM_RATIO_THRESHOLD = _float_env("KANBAN_PHANTOM_RATIO_THRESHOLD", 0.5)
 # Scan-only task minimum run duration before accepting as successful.
 # Override via KANBAN_SCAN_MIN_RUN_SECONDS env var.
 SCAN_MIN_RUN_SECONDS = _int_env("KANBAN_SCAN_MIN_RUN_SECONDS", 60)
+# A single task's diff should never approach this. Past it, the base ref is
+# almost certainly wrong and the gates degrade to silent passes rather than
+# failing — so refuse to run them. Override via KANBAN_MAX_CHANGED_FILES.
+_MAX_CHANGED_FILES_FOR_GATES = _int_env("KANBAN_MAX_CHANGED_FILES", 500)
 
 # Task ID patterns that get extended timeouts (regex, case-insensitive).
 # Order matters: first match wins.
@@ -201,11 +324,14 @@ def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 2
                 "  AND execution_seconds IS NOT NULL "
                 "  AND execution_seconds > 0 "
             )
+            # %s, not ? — this is runtime SQL against PostgreSQL (the primary
+            # backend). The bare ? here relied on translate_sql's init-fallback
+            # rewrite, which warns and is explicitly not load-bearing.
             params: list = []
             if task_type:
-                query += "  AND task_type = ? "
+                query += "  AND task_type = %s "
                 params.append(task_type)
-            query += "ORDER BY updated_at DESC LIMIT ?"
+            query += "ORDER BY updated_at DESC LIMIT %s"
             params.append(window)
             rows = conn.execute(query, params).fetchall()
         finally:
@@ -408,9 +534,15 @@ def _get_task_timeout(task_id: str) -> int:
         m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
         if m:
             return min(3600, int(m.group(1)))  # cap at 1 hour
-        # NLP fallback: understand natural language timeout hints
+        # NLP fallback: understand natural language timeout hints.
+        #
+        # This may only RAISE the budget, never lower it. It is an LLM reading
+        # free text, and a misread was setting the build's kill timer: a task
+        # died with "TIMEOUT after 60s (max 60s)" because the extractor returned
+        # the clamp floor. A model's guess about prose must not be able to kill
+        # a build faster than the tier default would.
         nlp_secs = _nlp_extract_timeout_hint(desc)
-        if nlp_secs is not None:
+        if nlp_secs is not None and nlp_secs > MAX_EXECUTION_SECONDS:
             return nlp_secs
         # PYTEST-level: try adaptive ceiling first, then fall back to static
         _pytest_kw = ("pytest", "regression", "full test", "test suite",
@@ -440,14 +572,24 @@ def _get_task_timeout(task_id: str) -> int:
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
 
-# Patterns that indicate Claude CLI hit a token/rate limit (case-insensitive)
+# Patterns that indicate the worker hit a token/rate/quota/capacity limit or was
+# interrupted (case-insensitive). PROVIDER-AGNOSTIC: the dispatch model may be
+# Claude (CLI), Kimi/Moonshot (cloud), or Ollama (local), and can SWAP between
+# them mid-task when credits are exhausted — so detection must not rely on any
+# single provider's phrasing. The authoritative done-gate is the git/origin
+# merge-verify check in _move_task, not this text scan; this only decides whether
+# an interrupted task parks at token_exhausted (retry) vs follows the fail path.
 TOKEN_EXHAUSTION_PATTERNS = [
+    # Generic rate/quota/limit (Claude, OpenAI/Kimi, most cloud providers)
     r"rate\s*limit",
+    r"rate_limit",
     r"token\s*limit",
     r"usage\s*limit",
     r"quota\s*exceeded",
+    r"insufficient_quota",
+    r"\bquota\b",
     r"too\s*many\s*requests",
-    r"429",
+    r"\b429\b",
     r"exceeded.*(?:daily|hourly|monthly)\s*(?:limit|quota|cap)",
     r"out\s*of\s*(?:tokens|credits)",
     r"billing.*limit",
@@ -459,6 +601,17 @@ TOKEN_EXHAUSTION_PATTERNS = [
     r"hit\s*your\s*limit",
     r"you'?ve\s*hit\s*your\s*limit",
     r"session\s+limit",
+    # Context-window exhaustion (any provider)
+    r"context\s*(?:length|window)",
+    r"maximum\s*context",
+    r"context.*exceeded",
+    # Ollama / local-model failures (credit-exhaustion fallback to local can fail)
+    r"connection\s*refused",
+    r"failed\s*to\s*connect\s*to\s*ollama",
+    r"model\s*not\s*found",
+    r"out\s*of\s*memory",
+    r"\boom\b",
+    r"cuda.*out\s*of\s*memory",
 ]
 _TOKEN_RE = re.compile("|".join(TOKEN_EXHAUSTION_PATTERNS), re.IGNORECASE)
 
@@ -469,10 +622,27 @@ TOKEN_MAX_RETRY_COUNT = 60  # Give up after ~5 hours of retries
 
 
 def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optional[str]]:
-    """Check if Claude CLI output indicates token/rate-limit exhaustion.
+    """Check if a worker was token/rate/quota-exhausted or interrupted mid-task.
+
+    PROVIDER-AGNOSTIC: the worker may be Claude, Kimi/Moonshot, or Ollama and can
+    swap providers mid-task on credit exhaustion, so this must not depend on any
+    single provider's phrasing (see TOKEN_EXHAUSTION_PATTERNS). Detection here only
+    routes an interrupted task to token_exhausted (park + retry, branch preserved)
+    rather than 'done' — the authoritative done-gate is the git/origin merge-verify
+    check in _move_task, which is independent of the worker's model entirely.
 
     Returns (is_exhausted, estimated_reset_info).
     """
+    # Signal-kill / abnormal termination is a strong provider-independent
+    # "interrupted mid-task" signal (OOM killer = 137, SIGTERM = 143, negative =
+    # killed by signal on POSIX). Treat as exhaustion so the task parks and
+    # retries with its branch preserved rather than being scored as a clean
+    # failure. Plain exit code 1/2 is NOT treated as exhaustion here — that would
+    # mislabel genuine task failures; the merge-verify gate already prevents any
+    # of those from reaching 'done'.
+    if exit_code is not None and (exit_code < 0 or exit_code >= 128):
+        return True, None
+
     if not output:
         return False, None
 
@@ -490,8 +660,6 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
         reset_hint = reset_match.group(1).strip() if reset_match else None
         return True, reset_hint
 
-    # Exit code 1 with very short output is suspicious but not conclusive
-    # Exit code 2 is often used for rate limits by some CLI tools
     return False, None
 
 
@@ -770,17 +938,68 @@ def _default_branch() -> str:
     return "main"
 
 
+_default_base_ref_cache: Optional[str] = None
+
+
+def _default_base_ref(repo_root: Optional[Path] = None) -> str:
+    """Ref to diff a task branch against — ``origin/<default>``, not the local ref.
+
+    Task branches are cut from ``origin/<default>`` (see _create_worktree), but
+    the changed-file set was being computed against the LOCAL branch name. The
+    shared checkout's local ``main`` drifts behind origin as other sessions
+    merge — measured 86 commits / 244 files behind — so every task's "changed
+    files" list picked up hundreds of files it never touched. That inflates the
+    diff handed to the conformance reviewer, wastes bandit-delta work, records
+    nonsense in files_changed (observed up to 11,118 files for one task), and
+    overflows the argv budget in validated_commit._coherence_cmd, which
+    silently degrades the fast coherence tier back to the slow full tier.
+
+    Falls back to the bare local name when no remote-tracking ref exists, so a
+    detached or origin-less checkout still works.
+    """
+    global _default_base_ref_cache
+    if _default_base_ref_cache:
+        return _default_base_ref_cache
+
+    branch = _default_branch()
+    candidate = f"origin/{branch}"
+    try:
+        import subprocess as _sp
+
+        r = _sp.run(
+            ["git", "rev-parse", "--verify", "--quiet", candidate],
+            capture_output=True, text=True,
+            cwd=str(repo_root or BASE_DIR), timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            _default_base_ref_cache = candidate
+            return candidate
+    except Exception as exc:
+        logger.debug("kanban: could not verify %s, using local ref: %s", candidate, exc)
+    _default_base_ref_cache = branch
+    return branch
+
+
 def _create_worktree(task_id: str) -> Optional[str]:
     """Create an isolated git worktree for a kanban task.
 
     Returns the worktree path on success, None on failure.
     Falls back to BASE_DIR if git worktree is unavailable.
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
-    WORKTREE_BASE.mkdir(parents=True, exist_ok=True)
     branch_name = f"kanban/{task_id}"
-    worktree_path = WORKTREE_BASE / task_id
+    worktree_path = _task_worktree_path(task_id)
+    # Make the PARENT of the resolved path, not WORKTREE_BASE. An external task's
+    # worktree lives under the system temp dir, and mkdir'ing ICDev's .tmp/worktrees
+    # left that parent missing — so `git worktree add` created the BRANCH and then
+    # failed on the directory, and the task was parked as "worktree creation failed".
+    # Caught by the first real compass dispatch; the unit tests never made a worktree.
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
     if worktree_path.exists():
         # Validate it's a real git worktree, not an orphan empty dir left over
@@ -788,16 +1007,16 @@ def _create_worktree(task_id: str) -> Optional[str]:
         # an empty cwd and coherence checks to fail (no tools/manifest.md).
         listed = _sp.run(
             ["git", "worktree", "list", "--porcelain"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
         if str(worktree_path).replace("\\", "/") in listed.stdout.replace("\\", "/"):
             return str(worktree_path)
         logger.warning("Orphan worktree dir at %s — removing and recreating", worktree_path)
         import shutil
         shutil.rmtree(worktree_path, ignore_errors=True)
-        _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+        _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                 capture_output=True, text=True, timeout=10)
-        _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+        _sp.run(["git", "branch", "-D", branch_name], cwd=str(_repo_root),
                 capture_output=True, text=True, timeout=10)
     else:
         # worktree_path doesn't exist but branch may still exist from a prior
@@ -808,23 +1027,23 @@ def _create_worktree(task_id: str) -> Optional[str]:
         # subsequent dispatch into BASE_DIR — causing the coherence loop.
         _stale = _sp.run(
             ["git", "rev-parse", "--verify", branch_name],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
         if _stale.returncode == 0:
             logger.warning(
                 "Stale branch %s found without worktree dir — pruning before recreate",
                 branch_name,
             )
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+            _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
-            _del = _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+            _del = _sp.run(["git", "branch", "-D", branch_name], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             if _del.returncode != 0:
                 # On Windows a branch checked out in a (now-pruned) worktree may
                 # resist `git branch -D`. Force-delete via the low-level ref path.
                 _sp.run(
                     ["git", "update-ref", "-d", f"refs/heads/{branch_name}"],
-                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                    cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
                 )
                 logger.info("Stale branch %s deleted via update-ref fallback", branch_name)
 
@@ -832,20 +1051,24 @@ def _create_worktree(task_id: str) -> Optional[str]:
     # prefer origin/main so tasks build on the latest pushed state even when
     # the local main branch hasn't been updated (e.g. after a detached-
     # worktree merge).  Falls back to the local default branch.
+    # NOTE (done-hardening #5): each task branches off origin/main here — NOT off
+    # a sibling task's branch — so branches don't stack and merges can't land out
+    # of dependency order. Dependency ordering itself is enforced by the
+    # parent-done guard in _move_task, so no extra gate is needed here.
     base_check = _sp.run(
-        ["git", "rev-parse", "--verify", f"origin/{_default_branch()}"],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+        ["git", "rev-parse", "--verify", f"origin/{_base_branch}"],
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=5,
     )
     if base_check.returncode == 0:
-        base = f"origin/{_default_branch()}"
+        base = f"origin/{_base_branch}"
     else:
-        base = _default_branch()
+        base = _base_branch
 
     try:
         # Create a new branch from the chosen base for this task
         result = _sp.run(
             ["git", "worktree", "add", "-b", branch_name, str(worktree_path), base],
-            cwd=str(BASE_DIR),
+            cwd=str(_repo_root),
             capture_output=True,
             text=True,
             timeout=30,
@@ -859,7 +1082,7 @@ def _create_worktree(task_id: str) -> Optional[str]:
             # the next dispatch starts clean rather than hitting the orphan path.
             import shutil as _shutil
             _shutil.rmtree(worktree_path, ignore_errors=True)
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+            _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             return None
         # Verify the worktree was actually registered: git populates a .git
@@ -872,14 +1095,26 @@ def _create_worktree(task_id: str) -> Optional[str]:
             )
             import shutil as _shutil
             _shutil.rmtree(worktree_path, ignore_errors=True)
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+            _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             return None
         # Verify structural completeness: tools/manifest.md must exist in the
         # worktree. A partial Windows checkout (rmtree file-lock failures) can
         # leave an empty dir with only .git; coherence then fails on every
         # dispatch with "no tools/manifest.md", looping until self_debug fires.
-        if not (worktree_path / "tools" / "manifest.md").exists():
+        #
+        # ICDEV-ONLY. tools/manifest.md is an ICDev artefact — compass and idea_lab do
+        # not have one and never will. Applying it to them tore down a perfectly good
+        # worktree and returned None, which the caller reported as "worktree creation
+        # failed" and parked the task. That is exactly how the first live compass
+        # dispatch failed, and it is the same mistake in miniature as the whole bug this
+        # change fixes: judging another repo against ICDev's shape.
+        #
+        # For an external repo the honest structural check is the one above — git wrote a
+        # .git file, so the worktree is registered. We do not know what that repo's tree
+        # is supposed to look like, and we must not pretend to.
+        _icdev_worktree = _repo_root == BASE_DIR
+        if _icdev_worktree and not (worktree_path / "tools" / "manifest.md").exists():
             logger.warning(
                 "Worktree dir created for %s but tools/manifest.md is missing "
                 "(partial checkout) — cleaning up so next dispatch rebuilds clean",
@@ -887,7 +1122,7 @@ def _create_worktree(task_id: str) -> Optional[str]:
             )
             import shutil as _shutil
             _shutil.rmtree(worktree_path, ignore_errors=True)
-            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+            _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             return None
         logger.info("Created worktree for %s at %s", task_id, worktree_path)
@@ -947,16 +1182,20 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     False on unrecoverable conflict.  On failure the branch is PRESERVED
     (not deleted) so the user can merge manually.
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
-    default_branch = _default_branch()
+    default_branch = _base_branch
 
     # 1) Is there anything to merge?
     try:
         result = _sp.run(
             ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
-            cwd=str(BASE_DIR),
+            cwd=str(_repo_root),
             capture_output=True,
             text=True,
             timeout=10,
@@ -971,7 +1210,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     #    Using a commit hash avoids the "branch already used by worktree" error.
     main_commit_proc = _sp.run(
         ["git", "rev-parse", default_branch],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=5,
     )
     if main_commit_proc.returncode != 0:
         logger.warning("Could not resolve %s for merge of %s", default_branch, task_id)
@@ -979,21 +1218,21 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     main_commit = main_commit_proc.stdout.strip()
 
     # 3) Create a detached worktree for the merge
-    merge_wt = WORKTREE_BASE / f".merge-{task_id}"
+    merge_wt = _task_worktree_path(task_id).parent / f".merge-{task_id}"
     try:
         if merge_wt.exists():
             _sp.run(
                 ["git", "worktree", "remove", str(merge_wt), "--force"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=30,
             )
             _sp.run(
                 ["git", "worktree", "prune"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
             )
 
         add = _sp.run(
             ["git", "worktree", "add", str(merge_wt), main_commit],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=30,
         )
         if add.returncode != 0:
             logger.warning(
@@ -1027,8 +1266,10 @@ def _merge_worktree_to_main(task_id: str) -> bool:
                 default_branch,
                 len(result.stdout.strip().splitlines()),
             )
-            _push_main(cwd=str(merge_wt))
-            return True
+            # FAIL-CLOSED: only report success if the push actually reached
+            # origin. A swallowed push failure here is what let tasks reach
+            # 'done' while origin/main never received the commit.
+            return _push_main(cwd=str(merge_wt))
 
         # 6) FF failed — rebase branch onto default_branch inside detached worktree
         logger.info(
@@ -1063,8 +1304,8 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             logger.info(
                 "Merged kanban/%s to %s (rebase + fast-forward)", task_id, default_branch
             )
-            _push_main(cwd=str(merge_wt))
-            return True
+            # FAIL-CLOSED: success is contingent on the push reaching origin.
+            return _push_main(cwd=str(merge_wt))
 
         logger.warning(
             "Post-rebase FF merge still failed for %s: %s — branch preserved",
@@ -1081,20 +1322,179 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             if merge_wt.exists():
                 _sp.run(
                     ["git", "worktree", "remove", str(merge_wt), "--force"],
-                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                    cwd=str(_repo_root), capture_output=True, text=True, timeout=30,
                 )
         except Exception as exc:
             logger.debug("Temp merge worktree cleanup failed for %s: %s", task_id, exc)
         try:
             _sp.run(
                 ["git", "branch", "-D", f"temp-merge-{task_id}"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
             )
         except Exception:
             pass
 
 
-def _push_main(cwd: str) -> None:
+def _branch_has_unmerged_commits(task_id: str) -> bool:
+    """Return True IFF branch ``kanban/<task_id>`` exists locally AND has commits
+    that are not yet on ``origin/<default_branch>``.
+
+    This is the merge-verification primitive behind the done-gate: a task is only
+    allowed to reach 'done' when its work has actually landed on origin/main.
+
+    PROVIDER-AGNOSTIC: this checks git/origin state, NOT the worker's self-report.
+    The dispatch model may be Claude, Kimi/Moonshot, or Ollama and can swap on
+    credit exhaustion mid-task; none of that affects this check, which is why the
+    authoritative done-gate lives here and not in the worker's output parsing.
+
+    FAIL-OPEN on infrastructure errors: if the branch does not exist, git is
+    unavailable, or the compare errors, return False (do NOT block completion) —
+    an unreachable git must never wedge every task's completion. Only a positive
+    "branch exists AND has commits not on origin" signal blocks the transition.
+    """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
+    import subprocess as _sp
+    default_branch = _base_branch
+    try:
+        # Which branches carry this task's work? `kanban/<task_id>` is the
+        # convention, but workers routinely add a descriptive suffix
+        # (kanban/dwo-mcp-02-d5-audit) or use another prefix
+        # (test/dwo-vv-03-d3-trigger-link, fix/dwo-mcp-03-d5-d4-r3). Matching
+        # only the exact name made the gate fail open on precisely those
+        # branches, which is how work sitting in an open PR reached 'done'.
+        candidates = _branches_for_task(task_id, _repo_root)
+        if not candidates:
+            return False  # nothing to verify (fail-open)
+        # Best-effort refresh of the origin ref so the compare is current; the
+        # check still works against the stale local origin ref if fetch fails.
+        try:
+            _sp.run(
+                ["git", "fetch", "origin", default_branch, "--quiet"],
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=15,
+            )
+        except Exception:
+            pass
+        for branch_name in candidates:
+            if _branch_is_abandoned(branch_name, _repo_root):
+                continue
+            # `git cherry`, not `git log A..B`: the runner re-lands work under
+            # new SHAs constantly (rebases, cherry-picks onto a fresh base), and
+            # `git log` counts every one of those as unmerged even though the
+            # patch is already on origin. `git cherry` compares by patch-id and
+            # prefixes '-' when an equivalent commit is upstream, '+' when it is
+            # genuinely absent. Only '+' should block a completion.
+            cherry = _sp.run(
+                ["git", "cherry", f"origin/{default_branch}", branch_name],
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=15,
+            )
+            if cherry.returncode != 0:
+                continue  # this compare errored — fail-open for this ref
+            if any(line.startswith("+") for line in cherry.stdout.splitlines()):
+                return True  # a branch for this task has work not on origin
+        return False
+    except Exception as exc:
+        logger.warning("_branch_has_unmerged_commits(%s) errored (fail-open): %s", task_id, exc)
+        return False
+
+
+#: branch name -> True when its PR is closed/merged. Populated per process;
+#: a branch's PR state does not change often enough to be worth re-asking.
+_ABANDONED_BRANCH_CACHE: dict = {}
+
+
+def _branch_is_abandoned(ref: str, repo_root) -> bool:
+    """True when this ref's pull request is already CLOSED or MERGED.
+
+    A superseded branch keeps its commits forever, so the merge gate would go on
+    refusing a task whose work actually landed under a *different* branch — the
+    re-land pattern. Observed 2026-07-28: every `kanban/dwo-*` branch was
+    re-landed, and 34 of them are still pinned by leftover runner worktrees, so
+    their refs cannot even be deleted.
+
+    OFFLINE-SAFE and FAIL-CLOSED **for this predicate**: no `gh`, no network, a
+    timeout or any error all answer False — "not known to be abandoned" — which
+    leaves the ref in the comparison and preserves the existing behaviour. This
+    check can only ever *remove* a false refusal, never create a new one.
+    """
+    if not ref:
+        return False
+    name = ref.split("origin/", 1)[-1] if ref.startswith("origin/") else ref
+    if name in _ABANDONED_BRANCH_CACHE:
+        return _ABANDONED_BRANCH_CACHE[name]
+
+    abandoned = False
+    import json as _json
+    import os as _os
+    if _os.environ.get("KANBAN_GATE_SKIP_CLOSED_PRS", "1").strip().lower() not in ("0", "false", "no"):
+        import subprocess as _sp
+        try:
+            out = _sp.run(
+                ["gh", "pr", "list", "--head", name, "--state", "all",
+                 "--limit", "5", "--json", "state"],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=15,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                states = {e.get("state") for e in _json.loads(out.stdout)}
+                # Abandoned only when EVERY PR for the branch is finished. An
+                # open PR means the work is still in flight and must block.
+                abandoned = bool(states) and states <= {"CLOSED", "MERGED"}
+        except Exception:
+            abandoned = False
+
+    _ABANDONED_BRANCH_CACHE[name] = abandoned
+    return abandoned
+
+
+def _branches_for_task(task_id: str, repo_root) -> list:
+    """Local + remote branch refs whose name contains ``task_id``.
+
+    Ordered so the canonical ``kanban/<task_id>`` is checked first. Matching is
+    on a name boundary, so ``dwo-mcp-01`` does not match ``dwo-mcp-01x``.
+
+    A parent id DOES match its decomposed children's refs: ``dwo-mcp-03-d5``
+    matches ``kanban/dwo-mcp-03-d5-d1``. That is deliberate — a parent whose
+    subtask branch has not merged is not done either — but it means the parent
+    is gated on its children's branches as well as its own. If that ever proves
+    too strict, tighten the trailing group rather than dropping the boundary.
+
+    FAIL-OPEN: returns [] on any git error.
+    """
+    import re
+    import subprocess as _sp
+    try:
+        out = _sp.run(
+            ["git", "for-each-ref", "--format=%(refname:short)",
+             "refs/heads", "refs/remotes/origin"],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode != 0:
+            return []
+    except Exception:
+        return []
+
+    # <task_id> at a name boundary: end of ref, or followed by '-'/'_'/'.'/'/'.
+    pat = re.compile(rf"(^|[/_-]){re.escape(task_id)}([/_.-]|$)")
+    canonical = f"kanban/{task_id}"
+    seen, matches = set(), []
+    for ref in out.stdout.splitlines():
+        ref = ref.strip()
+        if not ref or ref.endswith("/HEAD"):
+            continue
+        name = ref.split("origin/", 1)[-1] if ref.startswith("origin/") else ref
+        if not pat.search(name):
+            continue
+        if ref in seen:
+            continue
+        seen.add(ref)
+        matches.append(ref)
+    matches.sort(key=lambda r: (r not in (canonical, f"origin/{canonical}"), r))
+    return matches
+
+
+def _push_main(cwd: str) -> bool:
     """Push the merged commit to origin/{default_branch}.
 
     Uses ``HEAD:{branch}`` so the push works from any detached/temp branch
@@ -1102,6 +1502,12 @@ def _push_main(cwd: str) -> None:
 
     The stop hook no longer pushes kanban branches — this is the ONLY
     point where validated work reaches origin/main.
+
+    Returns True iff the push actually reached origin (rc == 0). FAIL-CLOSED:
+    a failed or errored push returns False so the caller does NOT treat the
+    task as merged. Previously this swallowed push failures (returned None,
+    logged a warning), so a task whose push failed was still marked done while
+    origin/main never received the commit — the exact done-but-not-on-main bug.
     """
     import subprocess as _sp
     default_branch = _default_branch()
@@ -1115,14 +1521,17 @@ def _push_main(cwd: str) -> None:
         )
         if push.returncode == 0:
             logger.info("Pushed HEAD:%s to origin after merge", default_branch)
-        else:
-            logger.warning(
-                "Push HEAD:%s to origin failed: %s",
-                default_branch,
-                push.stderr[:200],
-            )
+            return True
+        logger.warning(
+            "Push HEAD:%s to origin failed (rc=%d): %s",
+            default_branch,
+            push.returncode,
+            push.stderr[:200],
+        )
+        return False
     except Exception as exc:
         logger.warning("Push HEAD:%s to origin error: %s", default_branch, exc)
+        return False
 
 
 # Batch 4 worktree age sweep threshold — worktrees whose owning task is NOT
@@ -1175,18 +1584,129 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
         if age_sec < threshold_sec:
             continue
         try:
-            _sp.run(
-                ["git", "worktree", "remove", str(sub), "--force"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
-            )
-            logger.info(
-                "Sweep: removed stale worktree %s (age %.1f days, task not in_progress)",
-                sub, age_sec / 86400,
-            )
-            removed.append(task_id)
+            if _remove_worktree(sub):
+                logger.info(
+                    "Sweep: removed stale worktree %s (age %.1f days, task not "
+                    "in_progress)", sub, age_sec / 86400,
+                )
+                removed.append(task_id)
         except Exception as exc:
             logger.warning("Sweep: could not remove %s: %s", sub, exc)
+
+    # Drop registry entries whose directory is already gone. Without this, `git worktree
+    # list` keeps reporting worktrees that do not exist.
+    try:
+        _unlock_dead_entries()
+        _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                capture_output=True, text=True, timeout=30)
+    except Exception:  # noqa: BLE001
+        pass
+
     return removed
+
+
+def _unlock_dead_entries() -> int:
+    """Unlock registry entries whose DIRECTORY NO LONGER EXISTS, so prune can drop them.
+
+    The same bug as _remove_worktree, one layer down: ``git worktree prune`` also refuses
+    to touch a LOCKED entry. So an entry that is both locked and whose directory has been
+    deleted is unreachable by every cleanup path we have — prune skips it because it is
+    locked, and remove never sees it because the sweeper only walks directories that
+    exist. It stays in `git worktree list` forever.
+
+    That is how 26 of them were still being reported after a sweep that had genuinely
+    removed everything it could reach.
+
+    Unlocking is unambiguously safe here: the working tree is GONE. There is nothing left
+    to protect and nothing that can be lost — we are removing a stale pointer to a
+    directory that no longer exists.
+
+    Returns the number of dead entries unlocked.
+    """
+    import subprocess as _sp
+    from pathlib import Path as _Path
+
+    listing = _sp.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+    )
+    if listing.returncode != 0:
+        return 0
+
+    unlocked = 0
+    for block in listing.stdout.split("\n\n"):
+        if "locked" not in block:
+            continue
+        line = next((ln for ln in block.splitlines()
+                     if ln.startswith("worktree ")), "")
+        path = line[len("worktree "):].strip()
+        if not path or _Path(path).exists():
+            continue  # a live directory keeps its lock — we only touch dead pointers
+        result = _sp.run(["git", "worktree", "unlock", path],
+                         cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            unlocked += 1
+
+    if unlocked:
+        logger.info(
+            "Sweep: unlocked %d dead worktree entries (directory gone) so prune can "
+            "drop them", unlocked,
+        )
+    return unlocked
+
+
+def _remove_worktree(path) -> bool:
+    """Actually remove a worktree. Returns True only if it is really gone.
+
+    ## The sweeper was reporting removals it had not performed
+
+    It ran ``git worktree remove <path> --force`` and never looked at the return code.
+    ``subprocess.run`` does not raise on a non-zero exit, so the ``except`` clause below
+    it never fired — and git REFUSES to remove a locked worktree even with --force:
+
+        fatal: cannot remove a locked working tree;
+        use 'remove -f -f' to override or unlock first          (rc=128)
+
+    So every cycle the sweeper logged "Sweep: removed stale worktree ..." and counted it,
+    for a worktree that was still there. It had been reporting success for months while
+    97 locked worktrees accumulated in .tmp/worktrees, and the log said the cleanup was
+    working the whole time.
+
+    A cleanup routine that cannot fail is one that cannot clean up.
+
+    ## Unlocking is safe HERE, and only here
+
+    The caller has already established that this worktree's task is NOT in_progress and
+    that the directory has not been touched for _WORKTREE_STALE_AGE_DAYS. A lock on a
+    worktree in that state is a leftover from a run that ended days ago, not a live
+    agent's claim. We do not unlock anything else.
+    """
+    import subprocess as _sp
+
+    result = _sp.run(
+        ["git", "worktree", "remove", str(path), "--force"],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode == 0:
+        return True
+
+    if "locked" in (result.stderr or "").lower():
+        _sp.run(["git", "worktree", "unlock", str(path)],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30)
+        result = _sp.run(
+            ["git", "worktree", "remove", str(path), "--force"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            logger.info("Sweep: unlocked stale worktree %s before removing it", path)
+            return True
+
+    # Say what happened. The previous code's silence here is the whole bug.
+    logger.warning(
+        "Sweep: git refused to remove %s (rc=%d): %s",
+        path, result.returncode, (result.stderr or "").strip()[:200],
+    )
+    return False
 
 
 def _capture_diff_stats(task_id: str) -> dict:
@@ -1203,7 +1723,7 @@ def _capture_diff_stats(task_id: str) -> dict:
     default = {"files_changed": 0, "lines_added": 0, "lines_removed": 0}
     try:
         result = _sp.run(
-            ["git", "diff", "--stat", f"{_default_branch()}..{branch}"],
+            ["git", "diff", "--stat", f"{_default_base_ref()}..{branch}"],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -1339,6 +1859,56 @@ def _post_merge_route_smoke(task_id: str, commit_summary: str) -> None:
         logger.warning("Failed to create smoke-fail bug task for %s: %s", task_id, exc)
 
 
+def _ensure_pr_base(pr_ref: str, task_id: str) -> str | None:
+    """Verify a PR targets the repo default branch; retarget it if not.
+
+    Incident 2026-07-08: PR #114 (ground-dic-05) was opened with base
+    feat/rfi-six-parts instead of main and auto-merged there by
+    pr_watcher, stranding the change off-main. ``pr_ref`` may be a PR
+    URL, number, or head branch name — the branch form also catches PRs
+    the task agent opened itself with an explicit wrong --base.
+
+    Returns the PR URL if one exists for ``pr_ref``, else None.
+    """
+    import json as _json
+    import subprocess as _sp
+
+    default_branch = _default_branch()
+    try:
+        view = _sp.run(
+            ["gh", "pr", "view", pr_ref, "--json", "baseRefName,url"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if view.returncode != 0:
+            logger.warning(
+                "PR flow: base check failed for %s (%s): %s",
+                task_id, pr_ref, view.stderr.strip(),
+            )
+            return None
+        data = _json.loads(view.stdout or "{}")
+        pr_url = (data.get("url") or "").strip() or None
+        base = (data.get("baseRefName") or "").strip()
+        if not base or base == default_branch:
+            return pr_url
+        logger.warning(
+            "PR flow: PR %s for task %s targets '%s' instead of default "
+            "'%s' — retargeting", pr_url or pr_ref, task_id, base, default_branch,
+        )
+        edit = _sp.run(
+            ["gh", "pr", "edit", pr_ref, "--base", default_branch],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if edit.returncode != 0:
+            logger.warning(
+                "PR flow: retarget to %s failed for %s: %s",
+                default_branch, task_id, edit.stderr.strip(),
+            )
+        return pr_url
+    except Exception as exc:
+        logger.warning("PR flow: base verification errored for %s: %s", task_id, exc)
+        return None
+
+
 def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     """Push the kanban branch to origin and open a GitHub PR.
 
@@ -1347,15 +1917,19 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     auto-merges when green, so the kanban board shows a real PR URL in
     executor_url just like Claude CLI does.
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
-    default_branch = _default_branch()
+    default_branch = _base_branch
 
     # Nothing to push?
     check = _sp.run(
         ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
     )
     if check.returncode != 0 or not check.stdout.strip():
         logger.info("PR flow: no commits to push for %s — skipping PR", task_id)
@@ -1364,7 +1938,7 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     # Push branch (--force-with-lease is safe: only overwrites if nobody else pushed)
     push = _sp.run(
         ["git", "push", "origin", branch_name, "--force-with-lease"],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=60,
     )
     if push.returncode != 0:
         logger.warning("PR flow: branch push failed for %s: %s", task_id, push.stderr.strip())
@@ -1394,13 +1968,21 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
          "--body", pr_body,
          "--head", branch_name,
          "--base", default_branch],
-        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+        cwd=str(_repo_root), capture_output=True, text=True, timeout=60,
     )
     if create.returncode != 0:
         logger.warning("PR flow: gh pr create failed for %s: %s", task_id, create.stderr.strip())
-        return None
+        # The task agent may already have opened a PR for this branch
+        # (possibly with a wrong --base). The base guard resolves the PR
+        # by head branch, retargets it to the default branch if needed,
+        # and returns its URL so the watcher tracks the right PR.
+        existing_url = _ensure_pr_base(branch_name, task_id)
+        if existing_url:
+            logger.info("PR flow: reusing existing PR %s for task %s", existing_url, task_id)
+        return existing_url
 
     pr_url = create.stdout.strip()
+    _ensure_pr_base(pr_url, task_id)
     logger.info("PR flow: opened PR %s for task %s", pr_url, task_id)
     return pr_url
 
@@ -1410,11 +1992,15 @@ def _cleanup_worktree(task_id: str):
     the worktree. If merge fails, the branch is preserved for manual
     review and the worktree is still cleaned up (disk hygiene).
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
     import os as _os
 
     branch_name = f"kanban/{task_id}"
-    worktree_path = WORKTREE_BASE / task_id
+    worktree_path = _task_worktree_path(task_id)
 
     # Detach the worktree FIRST so the branch ref isn't held while we
     # rebase. Commits remain safe on refs/heads/kanban/<task_id> after
@@ -1425,7 +2011,7 @@ def _cleanup_worktree(task_id: str):
         if worktree_path.exists():
             _sp.run(
                 ["git", "worktree", "remove", str(worktree_path), "--force"],
-                cwd=str(BASE_DIR),
+                cwd=str(_repo_root),
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -1441,8 +2027,8 @@ def _cleanup_worktree(task_id: str):
     try:
         import subprocess as _sp2
         _log = _sp2.run(
-            ["git", "log", "--oneline", f"{_default_branch()}..kanban/{task_id}"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            ["git", "log", "--oneline", f"{_base_branch}..kanban/{task_id}"],
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
         _commit_summary = _log.stdout.strip()[:1000] if _log.returncode == 0 else ""
     except Exception:
@@ -1504,7 +2090,7 @@ def _cleanup_worktree(task_id: str):
             # Direct-merge: clean up local branch after successful push to main.
             _sp.run(
                 ["git", "branch", "-D", branch_name],
-                cwd=str(BASE_DIR),
+                cwd=str(_repo_root),
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -1519,15 +2105,26 @@ def _cleanup_worktree(task_id: str):
         logger.warning("Branch cleanup failed for %s: %s", task_id, exc)
 
 
+def _pr_flow_enabled() -> bool:
+    """True when the runner opens a PR instead of merging straight to main."""
+    import os as _os
+
+    return _os.environ.get("ICDEV_KANBAN_PR_FLOW", "").lower() in ("1", "true", "yes")
+
+
 def _check_worktree_commits(task_id: str) -> bool:
     """Check if the worktree branch has new commits vs the parent branch."""
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
     try:
         result = _sp.run(
             ["git", "log", "HEAD.." + branch_name, "--oneline"],
-            cwd=str(BASE_DIR),
+            cwd=str(_repo_root),
             capture_output=True,
             text=True,
             timeout=10,
@@ -1585,6 +2182,9 @@ def _phase_complete(prefix: str, phase: str) -> tuple[bool, list[str]]:
         return True, []  # fail-open on DB error
     unfinished = [dict(r)["id"] for r in rows]
     return len(unfinished) == 0, unfinished
+
+
+from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
 
 
 def _get_due_tasks() -> list:
@@ -1647,7 +2247,10 @@ def _get_due_tasks() -> list:
             "  ELSE 3 END, "
             "kt.created_at ASC"
         ).fetchall()
-        result = [dict(r) for r in scheduled]
+        result = [
+            dict(r) for r in scheduled
+            if not _is_manual_gate(dict(r).get("id"), dict(r).get("title"))
+        ]
 
         # Phase-exit validation (2026-04-15 V&V Batch 2): for phased task IDs
         # like ``efa-E3-*``, refuse to dispatch phase N+1 tasks until phase N
@@ -1682,8 +2285,31 @@ def _get_due_tasks() -> list:
         pending_prompts = _count_pending_prompts()
 
         available_slots = MAX_IN_PROGRESS - current_in_progress
+
+        # Flow control (clx-flow-01). MAX_IN_PROGRESS bounds tasks that are
+        # EXECUTING; it does not bound finished-but-unreviewed output. A task
+        # that moves to pr_opened stops being counted here, frees a slot, and
+        # the loop dispatches more — so open PRs can stack without limit,
+        # conflicting with each other and deferring the human review that is
+        # supposed to be this loop's feedback signal. OFF unless
+        # KANBAN_BACKPRESSURE_ENABLED is set: throttling autonomous throughput
+        # is an operator's call, and this returns available_slots untouched
+        # when disabled.
+        try:
+            from tools.kanban.backpressure import apply_backpressure
+
+            available_slots = apply_backpressure(available_slots)
+        except Exception as _bp_exc:  # noqa: BLE001 — never wedge dispatch
+            logger.warning("backpressure check skipped: %s", _bp_exc)
+
         if available_slots <= 0:
             return []  # At capacity — don't dispatch any scheduled or backlog tasks
+
+        # Drop tasks the dispatcher would refuse anyway (open PR / just
+        # completed) BEFORE truncating. Truncating first let un-dispatchable
+        # tasks hold slots they could never use and starved everything behind
+        # them — see _drop_respawn_guarded.
+        result = _drop_respawn_guarded(result)
 
         # Cap scheduled results to available slots (prevents burst on restart)
         result = result[:available_slots]
@@ -1722,7 +2348,10 @@ def _get_due_tasks() -> list:
             "LIMIT %s",
             ("QUARANTINED by self_debug%", slots),
         ).fetchall()
-        result.extend(dict(r) for r in backlog)
+        result.extend(
+            d for d in (dict(r) for r in backlog)
+            if not _is_manual_gate(d.get("id"), d.get("title"))
+        )
 
         # Decompose batch tasks into individual children before returning
         # (guard-3). Batch cards have 96-100% phantom completion rate, so
@@ -1916,18 +2545,122 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
 
 
 # Step labels for phase-exit gate decomposition (matches established F-gate / E-gate sub-task pattern)
+#
+# These five steps are DETERMINISTIC tool invocations, so they are executed by
+# _dispatch_via_tool_runner rather than handed to an LLM. Wrapping a 40-second
+# subprocess in a 1200-second agent dispatch was pure overhead, and the agent
+# had no way to distinguish a failure it caused from one already present on
+# main — so a single pre-existing failure made every gate sub-task unwinnable.
+# The descriptions are kept human-readable for the board.
 _PHASE_GATE_STEPS = [
     ("codelens", "CodeLens scan",
-     "Run: python tools/code_intelligence/codelens.py --all --json. Report pass/fail."),
+     "Runs CodeLens (py_compile + ruff + bandit, delta vs main) over the phase branch."),
     ("coherence", "Coherence check",
-     "Run: python tools/workflow/coherence_checker.py --all --fix --gate. Report pass/fail."),
+     "Runs the FULL coherence tier, comparing failures per-check-id against the "
+     "cached main baseline so pre-existing failures do not block the gate."),
     ("e2e", "E2E dashboard test",
-     "Run: python tools/testing/e2e_full_dashboard.py. Report pass/fail."),
+     "Runs the Selenium/Playwright dashboard lifecycle test."),
     ("pytest", "Regression pytest",
-     "Run: pytest tests/ -x --timeout=120 --ignore=tests/e2e_selenium. Report pass/fail."),
+     "Runs pytest over the phase branch's changed test files."),
     ("companion", "Companion sync",
-     "Run: python tools/dx/companion.py --sync --write --json. Report pass/fail."),
+     "Runs: python tools/dx/companion.py --sync --write --json (best-effort)."),
 ]
+
+_GATE_STEP_SLUGS = tuple(slug for slug, _label, _desc in _PHASE_GATE_STEPS)
+_GATE_STEP_RE = re.compile(
+    r"-\d+-(" + "|".join(_GATE_STEP_SLUGS) + r")$", re.IGNORECASE
+)
+
+
+def _gate_step_slug(task_id: str) -> Optional[str]:
+    """Return the gate-step slug for an auto-decomposed phase-gate child task."""
+    match = _GATE_STEP_RE.search(task_id or "")
+    return match.group(1).lower() if match else None
+
+
+def _run_gate_step(slug: str, work_dir: str, task_id: str) -> Tuple[bool, str]:
+    """Execute one phase-exit gate step natively. Returns (passed, detail).
+
+    Phase gates validate a whole phase rather than one task's diff, so the
+    scans run unscoped (full coherence tier, whole-tree CodeLens). Coherence
+    still compares per-check-id against the main baseline, which is what makes
+    the step winnable when main is already red.
+    """
+    from tools.workflow.validated_commit import (  # noqa: PLC0415
+        _run_codelens, _run_coherence, _run_companion_sync, _run_e2e, _run_pytest,
+    )
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{_default_base_ref()}...HEAD"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=work_dir, timeout=30,
+        )
+        changed = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+    except Exception:
+        changed = []
+    modified_py = [
+        f for f in changed
+        if f.endswith(".py") and (Path(work_dir) / f).exists()
+    ]
+
+    if slug == "codelens":
+        ok, reason, _m = _run_codelens(work_dir, modified_py, True)
+        return ok, reason
+    if slug == "coherence":
+        ok, reason = _run_coherence(
+            work_dir, compare_to_main=True, changed_files=None,
+            timeout=MAX_EXECUTION_SECONDS_SCAN, tier="full",
+        )
+        # None = could not be evaluated. Do NOT block the phase on an
+        # unevaluated gate, but say so plainly instead of reporting a pass.
+        return ok is not False, reason
+    if slug == "pytest":
+        passed, failed = _run_pytest(work_dir, changed, float(MAX_EXECUTION_SECONDS_SCAN))
+        if passed is None:
+            return True, "pytest not run — no changed test files on this branch"
+        return passed, ("pytest passed" if passed else f"pytest failed: {', '.join(failed)}")
+    if slug == "e2e":
+        ok, reason, _m = _run_e2e(work_dir, True, modified_files=changed)
+        return ok, reason
+    if slug == "companion":
+        ok, reason = _run_companion_sync()
+        return True, reason  # best-effort: never blocks a phase gate
+    return True, f"unknown gate step '{slug}' — skipped"
+
+
+def _dispatch_via_tool_runner(task: dict, work_dir: str, task_log: Path) -> bool:
+    """Run a deterministic gate sub-task in-process. Returns True if handled."""
+    task_id = task["id"]
+    slug = _gate_step_slug(task_id)
+    if not slug:
+        return False
+
+    started = time.monotonic()
+    try:
+        ok, detail = _run_gate_step(slug, work_dir, task_id)
+    except Exception as exc:
+        ok, detail = False, f"gate step raised: {exc}"
+    elapsed = round(time.monotonic() - started, 1)
+
+    try:
+        task_log.write_text(
+            f"[tool-runner dispatch — task {task_id}]\n"
+            f"[work_dir {work_dir}]\n"
+            f"[step {slug}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
+            encoding="utf-8", errors="replace",
+        )
+    except Exception as exc:
+        logger.debug("kanban: gate-step log write failed for %s: %s", task_id, exc)
+
+    _set_executor_type(task_id, "tool_runner")
+    print(f"  Kanban: gate step {task_id} ({slug}) "
+          f"{'PASSED' if ok else 'FAILED'} in {elapsed}s via tool_runner")
+    if ok:
+        _move_task(task_id, "done", actor="tool_runner", reason=detail[:400])
+    else:
+        _move_task(task_id, "backlog", actor="tool_runner", reason=detail[:400])
+    return True
 
 
 def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
@@ -2070,11 +2803,24 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                 prev = int(prev_val) if prev_val is not None else 0
             new_count = prev + 1
 
-            reason_short = (reason or "")[:500]
+            # Put the FAILURE clause first and keep the full narrative
+            # elsewhere. `reason` arrives as a pipe-joined pipeline story built
+            # across _run_verify_checks -> _verify_task_specific ->
+            # _run_post_task_validation -> auto_remediate, and its first clause
+            # is usually whatever the git-first check said. So a task that
+            # PASSED the git check and then failed validation was storing a
+            # string beginning "Verified (git-first): ..." in
+            # last_failure_reason — and at 500 chars the real failure was often
+            # truncated off the end entirely. 41% of the rows in that column
+            # were success or auto-remediation text, which is why triage (and
+            # the Autonomous Recovery panel, and _get_retry_coaching's
+            # classify_failure) had nothing to work with.
+            failure_clause, narrative = _split_failure_narrative(reason)
             conn.execute(
                 "UPDATE kanban_tasks SET failure_count = %s, "
-                "last_failure_reason = %s, last_failure_at = %s WHERE id = %s",
-                (new_count, reason_short, now, task_id),
+                "last_failure_reason = %s, last_failure_at = %s, "
+                "last_run_summary = %s WHERE id = %s",
+                (new_count, failure_clause[:500], now, narrative[:2000], task_id),
             )
             conn.commit()
 
@@ -2125,7 +2871,7 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                             f"Task failed {new_count} verification attempts. "
                             f"It is likely too big for one Claude CLI session. "
                             f"Please split it into smaller sub-tasks.\n"
-                            f"Latest reason: {reason_short[:200]}"
+                            f"Latest reason: {failure_clause[:200]}"
                             f"{chain_note}",
                             severity="warning",
                         )
@@ -2168,12 +2914,15 @@ def _record_status_transition(
             conn.commit()
         finally:
             conn.close()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         # Audit-log writes are best-effort. If the table is missing
         # (migration 025 not yet run) or the DB is locked, we do NOT
         # block the primary state transition. The alternative \u2014
         # crashing _move_task on an audit write \u2014 would be worse.
-        pass
+        logger.warning(
+            "_record_status_transition: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s",
+            exc,
+        )
 
 
 def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
@@ -2235,7 +2984,7 @@ def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") 
             now = _utcnow_iso()
             prefix = f"diag-{parent_task_id}"
             open_statuses = ("suggested", "backlog", "scheduled", "in_progress")
-            placeholders = ",".join("?" * len(open_statuses))
+            placeholders = ",".join(["%s"] * len(open_statuses))
             rows = conn.execute(
                 f"SELECT id FROM kanban_tasks "  # nosec B608
                 f"WHERE (id LIKE %s OR (title LIKE %s AND task_type IN ('chore','research','fix'))) "
@@ -2244,7 +2993,7 @@ def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") 
             ).fetchall()
             orphan_ids = [dict(r)["id"] for r in rows]
             if orphan_ids:
-                ph = ",".join("?" * len(orphan_ids))
+                ph = ",".join(["%s"] * len(orphan_ids))
                 conn.execute(
                     f"UPDATE kanban_tasks SET status='done', completed_at=%s, updated_at=%s, "  # nosec B608
                     f"last_failure_reason=%s WHERE id IN ({ph})",
@@ -2441,6 +3190,39 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             except ImportError:
                 pass  # HITL module not installed — gate is no-op
 
+        # Merge-verify gate (2026-07-11 done-hardening): a task may only reach
+        # 'done' when its work has actually landed on origin/main. If the task's
+        # branch still carries commits not on origin, REFUSE done and leave the
+        # branch preserved for merge. This is the PRIMARY, provider-independent
+        # guarantee against the "board says done but not on main" failure — it
+        # checks git/origin, not the worker's self-report, so it holds regardless
+        # of whether the dispatch model was Claude/Kimi/Ollama or swapped mid-task
+        # on credit exhaustion. Toggle off with KANBAN_REQUIRE_MERGE_FOR_DONE=0.
+        if new_status == "done" and __import__("os").getenv(
+            "KANBAN_REQUIRE_MERGE_FOR_DONE", "1"
+        ).lower() in ("1", "true", "yes"):
+            if _branch_has_unmerged_commits(task_id):
+                logger.warning(
+                    "_move_task: REFUSED done for %s — branch kanban/%s has "
+                    "commits not on origin/%s (unmerged)",
+                    task_id, task_id, _default_branch(),
+                )
+                conn.close()
+                _record_status_transition(
+                    task_id, prior_status, "REFUSED_done_unmerged",
+                    actor=actor,
+                    reason=f"guard: kanban/{task_id} has commits not on origin/{_default_branch()}",
+                )
+                # Lessons-Learned (kph): a stranded/unmerged done attempt is a
+                # SYSTEMIC pipeline signal — record it so recurrence detection +
+                # remediation cards fire (classified as UNMERGED_STRANDED).
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson
+                    write_lesson(analyze_task(task_id, outcome="refused_done_unmerged"))
+                except Exception as _ll_exc:  # noqa: BLE001
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
+                return
+
         now = _utcnow_iso()
         sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
@@ -2449,6 +3231,19 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             vals.append(now)
             if completed_via_bypass:
                 sql += ", completed_via_bypass = 1"
+            # Record observed wall-clock runtime so _detect_execution_anomalies
+            # has a sample to work from. Without this the adaptive-timeout
+            # ceiling has nothing to read and every task silently falls back to
+            # the static constant. Only for tasks this process dispatched —
+            # _dispatch_times is in-memory, so a manual/CLI completion or a
+            # post-restart completion simply leaves the column NULL, which the
+            # anomaly query already filters out.
+            _started = _dispatch_times.get(task_id)
+            if _started is not None:
+                _elapsed = (datetime.now(timezone.utc) - _started).total_seconds()
+                if 0 < _elapsed < _ABSOLUTE_MAX_IN_PROGRESS_SECONDS:
+                    sql += ", execution_seconds = ?"
+                    vals.append(round(_elapsed, 1))
         elif new_status == "in_progress":
             # Clear stale failure reason on re-dispatch so the Autonomous
             # Recovery panel doesn't keep showing this task as broken.
@@ -2494,7 +3289,7 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             for r in desc_rows:
                 rolled_back.append(dict(r)["id"])
             if rolled_back:
-                placeholders = ",".join("?" * len(rolled_back))
+                placeholders = ",".join(["%s"] * len(rolled_back))
                 conn.execute(
                     "UPDATE kanban_tasks SET status='backlog', "
                     "scheduled_at=NULL, "
@@ -2512,6 +3307,18 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         conn.close()
 
     _record_status_transition(task_id, prior_status, new_status, actor=actor, reason=reason)
+
+    # Release this session's per-task coordination lease once the task leaves the
+    # active state (terminal or re-queued). release() is ownership-aware — it only
+    # frees a lease THIS session holds, so it never disturbs a lease held by an
+    # interactive CLI session working the task out-of-band. Best-effort.
+    if new_status in ("done", "failed", "token_exhausted", "backlog", "suggested", "decomposed"):
+        try:
+            from tools.coordination import leases as _leases
+            _leases.release(f"kanban:task:{task_id}")
+        except Exception:
+            pass
+
     # Fire webhook subscriptions on terminal transitions
     _SUBSCRIPTION_EVENTS = {"done", "token_exhausted", "decomposed"}
     if new_status in _SUBSCRIPTION_EVENTS:
@@ -2592,7 +3399,11 @@ def _detect_orphan_done_tasks() -> list[dict]:
                 "       p.status AS parent_status "
                 "FROM kanban_tasks t "
                 "JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed')"
+                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed') "
+                # A manual gate never completes — that is the whole point of it.
+                # Its done dependents are finished work, not orphans.
+                "  AND p.id NOT LIKE '%%-gate-00' "
+                "  AND COALESCE(p.title, '') NOT LIKE '%%MANUAL-MODE GATE%%'"
             ).fetchall()
             # Junction dep orphans: done task with at least one unfinished junction parent
             junction_rows = conn.execute(
@@ -2601,7 +3412,9 @@ def _detect_orphan_done_tasks() -> list[dict]:
                 "FROM kanban_tasks t "
                 "JOIN kanban_task_deps d ON d.task_id = t.id "
                 "JOIN kanban_tasks p ON p.id = d.depends_on_id "
-                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed')"
+                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed') "
+                "  AND p.id NOT LIKE '%%-gate-00' "
+                "  AND COALESCE(p.title, '') NOT LIKE '%%MANUAL-MODE GATE%%'"
             ).fetchall()
         finally:
             conn.close()
@@ -2707,6 +3520,17 @@ def _write_prompt_file(task: dict):
 
     resume_section = _get_resume_context(task_id)
 
+    # Show the agent the criteria it will be GRADED on. review_conformance
+    # (via make_pipeline_grader) and _check_acceptance_criteria both judge the
+    # finished work against acceptance_criteria, but the column never reached
+    # the prompt — the agent was marked down against a spec it was never given.
+    criteria = (task.get("acceptance_criteria") or "").strip()
+    criteria_section = (
+        f"\n## Acceptance Criteria\nYou will be graded against these. "
+        f"Satisfy every one.\n{criteria}\n"
+        if criteria else ""
+    )
+
     prompt = f"""{resume_section}# Kanban Task: {title}
 - **ID:** {task_id}
 - **Type:** {task_type}
@@ -2715,7 +3539,7 @@ def _write_prompt_file(task: dict):
 
 ## Description
 {desc}
-
+{criteria_section}
 ## Instructions
 Execute this task as described above. When complete:
 1. POST to http://localhost:5050/api/kanban/tasks/{task_id}/move
@@ -3091,12 +3915,44 @@ _degraded_executors_probed_at: Dict[str, datetime] = {}
 _DEGRADATION_PROBE_INTERVAL = timedelta(minutes=5)  # Default if no reset hint parsed
 
 
+def _selected_model() -> Optional[dict]:
+    """The model the operator picked for the runner, resolved. None => config routing.
+
+    Never raises: an unreadable override degrades to the default rather than stopping
+    every build.
+    """
+    try:
+        from tools.kanban.model_override import spec
+
+        return spec()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model-override check failed (using config routing): %s", exc)
+        return None
+
+
 def _build_effective_executor_chain(original_chain: list) -> list:
     """Return executor chain with degraded executors moved to the end (or removed).
 
     If all executors are degraded, returns the original chain anyway so the
     scheduler can attempt them as a last resort.
+
+    MODEL OVERRIDE: if the operator selected a model the Claude Code CLI cannot serve
+    (Kimi, Ollama, GPT...), claude_cli is REMOVED from the chain. Leaving it in would
+    mean the runner keeps building with Claude while the dropdown says otherwise — a
+    control that looks like it worked and did nothing, which is worse than no control.
+    Selecting a model means building with it.
     """
+    model = _selected_model()
+    if model and not model.get("cli_capable"):
+        dropped = [t for t in original_chain if t == "claude_cli"]
+        if dropped:
+            logger.info(
+                "kanban: model %r (provider %s) cannot be served by the Claude CLI — "
+                "dropping claude_cli from the executor chain for this dispatch.",
+                model["name"], model.get("provider"),
+            )
+        original_chain = [t for t in original_chain if t != "claude_cli"]
+
     degraded = [tier for tier in original_chain if tier in _degraded_executors]
     active = [tier for tier in original_chain if tier not in _degraded_executors]
 
@@ -3314,6 +4170,49 @@ def _get_parent_handoff(task_id: str) -> Optional[str]:
             conn.close()
 
 
+def _external_repo_brief(task_id: str) -> str:
+    """Tell an external-repo agent which repo it is in and which gates apply.
+
+    Returns "" for an ICDev task, so the ICDev instruction is byte-unchanged.
+
+    This matters because ICDev's gates are the WRONG gates in compass: compass and
+    idea_lab have no CI, so there is no green check to wait for, and ICDev's
+    coherence checker walks an ICDev-shaped tree that does not exist there. An agent
+    that ran them would fail on rules that do not apply to the repo it is standing in.
+    """
+    target = _task_repo_target(task_id)
+    if target is None or not target.is_external or target.root is None:
+        return ""
+
+    return (
+        f"## You are working in the {target.name.upper()} repository, not ICDev\n\n"
+        f"Repo root: `{target.root}`  ·  base branch: `{target.base_branch}`\n"
+        f"You are already in an isolated worktree of that repo. Everything you do — "
+        f"edits, commits, the branch, the PR — belongs to {target.name}. Do NOT edit, "
+        f"commit to, or reason about the ICDev checkout.\n\n"
+        f"### The gate here is NOT ICDev's\n\n"
+        f"{target.name} has **no CI**, so there is no green check to wait for. The "
+        f"accepted gate is a LOCAL full-suite run, compared against a clean baseline so "
+        f"you can tell your failures from pre-existing ones:\n\n"
+        f"    python -m pytest -q\n"
+        f"    python -m ruff check .\n\n"
+        f"Do NOT run ICDev's coherence checker, companion sync, or route verifier — they "
+        f"walk an ICDev-shaped tree that does not exist here, and failing them tells you "
+        f"nothing about this repo.\n\n"
+        f"If the full suite has pre-existing failures, say so explicitly and compare "
+        f"against `origin/{target.base_branch}` rather than assuming they are yours.\n\n"
+        f"### Do NOT mark this task done, and do NOT bypass the verification gate\n\n"
+        f"Open a PR against {target.name} and stop there. The scheduler marks the task "
+        f"done once the commits are actually on {target.name}'s `origin/"
+        f"{target.base_branch}` — that is the only thing that counts as done.\n\n"
+        f"`bypass_verification` means 'ICDev's CodeLens/Coherence/E2E suite could not "
+        f"run here'. That is TRUE in {target.name} and it is IRRELEVANT: it has never "
+        f"meant 'this work does not have to land anywhere'. Marking the task done with "
+        f"your work sitting on an unmerged branch is a phantom completion — the board "
+        f"goes green and nobody ever looks at the branch again. The API will refuse it.\n\n"
+    )
+
+
 def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: str) -> str:
     """Compose the full instruction text used by both executors.
 
@@ -3323,8 +4222,9 @@ def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: 
     """
     coaching = _get_retry_coaching(task_id)
     parent_context = _get_parent_handoff(task_id) or ""
+    external = _external_repo_brief(task_id)
     return (
-        f"{coaching}{parent_context}{prompt_text}\n\n"
+        f"{coaching}{parent_context}{external}{prompt_text}\n\n"
         f"When complete:\n"
         f"1. (Optional) Submit handoff: POST http://localhost:5050/api/kanban/"
         f'tasks/{task_id}/handoff with {{"summary": "...", "metadata": {{...}}}}\n'
@@ -3370,15 +4270,27 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         _instr_tmp.close()
         _stdin_fh = open(_instr_tmp.name, "r", encoding="utf-8", errors="replace")
 
+        # Model override: a Claude model selected in the dashboard is passed straight
+        # through to the CLI. A NON-Claude selection never reaches here at all — it
+        # removes claude_cli from the executor chain (_build_effective_executor_chain),
+        # because the CLI cannot serve it and quietly ignoring the choice would make the
+        # dropdown a lie.
+        _cli_args = [
+            claude_cli,
+            "--dangerously-skip-permissions",
+            "--max-turns",
+            "50",
+            "--output-format",
+            "text",
+        ]
+        _model = _selected_model()
+        if _model and _model.get("cli_capable") and _model.get("model_id"):
+            _cli_args += ["--model", str(_model["model_id"])]
+            logger.info("kanban: dispatching %s on model %s (%s)",
+                        task_id, _model["name"], _model["model_id"])
+
         proc = subprocess.Popen(
-            [
-                claude_cli,
-                "--dangerously-skip-permissions",
-                "--max-turns",
-                "50",
-                "--output-format",
-                "text",
-            ],
+            _cli_args,
             cwd=work_dir,
             stdin=_stdin_fh,
             stdout=log_fh,
@@ -3411,6 +4323,131 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
 
 
+def _rubric_loop_enabled() -> bool:
+    """Phase 3b opt-in: build via the rubric-gated agent loop (which can EDIT
+    files) instead of the text-only LLMRouter path. Default OFF —
+    ``_dispatch_via_claude_cli`` stays primary and the existing air-gap path is
+    byte-unchanged unless ``KANBAN_RUBRIC_LOOP`` is truthy."""
+    import os
+    return os.environ.get("KANBAN_RUBRIC_LOOP", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
+                              work_dir: str, task_log: Path) -> None:
+    """Rubric-gated build loop (Phase 3b) — air-gap executor that actually EDITS
+    files. Runs ``run_agent_loop_with_rubric`` with the delivery-pipeline gates
+    (``make_pipeline_grader``) as the rubric, so a task builds -> runs the gates
+    -> revises in-session until it satisfies the pipeline or hits the
+    iteration/budget cap. LLM-agnostic: every model call routes through the
+    injected ``LLMRouter`` by function name — no provider is assumed. Opt-in via
+    ``KANBAN_RUBRIC_LOOP``; ``_dispatch_via_claude_cli`` remains primary.
+    """
+    task_id = task["id"]
+
+    def _runner():
+        import threading
+
+        # import-as form so a monkeypatched ``tools.llm.*`` module is the same
+        # object the loop uses (see _dispatch_via_llm_router for the rationale).
+        import tools.llm.router as _llm_router_mod
+        # run_agent_loop_with_rubric lives ONLY in the canonical icdev copy —
+        # the physical tools/llm/agent_loop.py is a stale shim without it.
+        try:
+            import icdev.tools.llm.agent_loop as _agent_loop_mod
+        except ImportError:
+            import tools.llm.agent_loop as _agent_loop_mod
+        from tools.genesis.rubric_build_tools import build_worktree_toolset
+        from tools.workflow.pipeline_grader import make_pipeline_grader
+
+        def _changed():
+            # Git-changed files in the worktree; never let a diff failure crash
+            # the grader (make_pipeline_grader accepts a callable).
+            try:
+                from tools.integrity.pr_gates import _git_changed_files
+                return _git_changed_files("origin/main", False, Path(work_dir))
+            except Exception:
+                return []
+
+        with open(task_log, "w", encoding="utf-8", errors="replace") as fh:
+            fh.write(f"[rubric-loop dispatch — task {task_id}]\n")
+            fh.write(f"[work_dir {work_dir}]\n\n")
+
+            tools_schema, tool_handlers = build_worktree_toolset(work_dir)
+            # Cap one gate sweep at a quarter of the task's dispatch budget.
+            # The rubric loop grades up to max_grading_iterations times before
+            # post-task validation runs again, so an ungoverned gate could (and
+            # did) spend the whole dispatch window judging instead of building.
+            _gate_budget = max(60.0, _get_task_timeout(task_id) * 0.25)
+            grader = make_pipeline_grader(
+                cwd=work_dir,
+                task_id=task_id,
+                modified_files=_changed,
+                run_e2e=False,
+                run_conformance=True,
+                compare_to_main=True,
+                budget_sec=_gate_budget,
+            )
+            router = _llm_router_mod.LLMRouter()
+            stop_event = threading.Event()
+            system_prompt = (
+                "You are an autonomous software engineer building ONE kanban task "
+                "inside an isolated git worktree. Use write_file / patch_file to "
+                "implement the change and read_file / list_files to inspect the "
+                "tree, then call done. Your work is graded by the delivery "
+                "pipeline (code quality, coherence, conformance to the task's "
+                "acceptance criteria, and tests); if it fails you receive specific "
+                "feedback and must fix it. Make the smallest correct change that "
+                "satisfies the task."
+            )
+
+            def _on_grade(round_no, grade):
+                fh.write(f"[grade {round_no}] {grade.verdict}: {str(grade.feedback)[:400]}\n")
+                try:
+                    fh.flush()
+                except Exception:
+                    pass
+
+            result = _agent_loop_mod.run_agent_loop_with_rubric(
+                router,
+                grader=grader,
+                max_grading_iterations=3,
+                on_grade=_on_grade,
+                system_prompt=system_prompt,
+                user_prompt=instruction,
+                tools=tools_schema,
+                tool_handlers=tool_handlers,
+                llm_function="code_generation",
+                max_iterations=12,
+                stop_event=stop_event,
+                # Continuous Harness: key the recorded codegen decision on the
+                # kanban task id so record_outcome() (fired on the task's status
+                # transition) attaches to a real decision row.
+                harness_task_id=task_id,
+            )
+
+            ar = result.result
+            fh.write(
+                f"\n[rubric-loop done] satisfied={result.satisfied} "
+                f"grading_attempts={result.grading_attempts} "
+                f"loop_done={getattr(ar, 'done', None)} "
+                f"cost_usd={getattr(ar, 'total_cost_usd', 0)}\n"
+            )
+            if not result.satisfied:
+                # In-session revision exhausted without passing the gates. Signal
+                # failure (returncode 1) so the task is NOT marked done; the
+                # standard post-task verify/remediation/lesson chain still runs.
+                raise RuntimeError(
+                    f"rubric loop did not satisfy the pipeline after "
+                    f"{result.grading_attempts} round(s)"
+                )
+
+    handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
+    handle.start(_runner)
+    _running[task_id] = handle
+    _dispatch_times[task_id] = datetime.now(timezone.utc)
+    print(f"  Kanban: dispatched {task_id} via rubric-gated agent loop (Phase 3b)")
+
+
 def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                              work_dir: str, task_log: Path) -> None:
     """LocalPythonTaskExecutor — air-gap fallback that runs the prompt through
@@ -3424,6 +4461,12 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     OPT-42 anvil/* CLI wrappers.
     """
     task_id = task["id"]
+
+    # Phase 3b opt-in: when enabled, build with the rubric-gated agent loop
+    # (which can edit files + self-verify against the pipeline) instead of this
+    # text-only path. Default OFF keeps this path byte-unchanged.
+    if _rubric_loop_enabled():
+        return _dispatch_via_rubric_loop(task, prompt_path, instruction, work_dir, task_log)
 
     def _runner():
         # Use `import … as` form so the attribute-access chain goes through
@@ -3457,6 +4500,7 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
             )
             messages: list = [{"role": "user", "content": instruction}]
 
+            _dispatch_completed = False
             for iteration in range(1, MAX_ITERATIONS + 1):
                 fh.write(f"\n[iteration {iteration}/{MAX_ITERATIONS}]\n")
                 request = LLMRequest(
@@ -3467,6 +4511,14 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                     agent_id="kanban-executor",
                     project_id="dashboard-kanban",
                 )
+                # Model override: the operator picked a model, so build with THAT — not
+                # with whatever llm_config routes 'code_generation' to. This is the path
+                # a Kimi/Ollama/GPT selection takes (claude_cli having been dropped from
+                # the chain), and it is the whole point of the selector: when Claude is
+                # exhausted, the runner keeps going on something else.
+                _mo = _selected_model()
+                if _mo:
+                    request.model = _mo["name"]
                 response = router.invoke("code_generation", request)
 
                 fh.write(response.content or "")
@@ -3491,6 +4543,7 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                     queued = []
 
                 if not queued:
+                    _dispatch_completed = True
                     break
 
                 fh.write(
@@ -3512,6 +4565,26 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                     f"\n[OPT-62] hit MAX_ITERATIONS={MAX_ITERATIONS} "
                     f"with pending messages — stopping\n"
                 )
+
+            # Continuous Harness feed — the text-only LLMRouter executor does not
+            # go through run_agent_loop, so record the codegen decision directly
+            # here at dispatch completion. This lets the kanban reflex's later
+            # record_outcome() attach an outcome regardless of which executor ran.
+            try:
+                from tools.genesis.harness.eval_harness import record_decision
+                record_decision(
+                    task_id=task_id,
+                    reflex="codegen",
+                    decision="done" if _dispatch_completed else "error_max_turns",
+                    confidence=0.6 if _dispatch_completed else 0.3,
+                    metadata={
+                        "executor": "llm_router",
+                        "llm_function": "code_generation",
+                        "completed": _dispatch_completed,
+                    },
+                )
+            except Exception as _hd_exc:
+                logger.debug("harness record_decision skipped for %s: %s", task_id, _hd_exc)
 
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
@@ -4095,6 +5168,58 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_id = task["id"]
     title = task.get("title", "Untitled")
 
+    # ── Manual Build: the board keeps working; the runner does not build ──────
+    # This is the single choke point where an executor is spawned — the normal
+    # path, the token-exhausted retry, and every recovery re-dispatch all come
+    # through here. Guarding it here rather than at each call site is what makes
+    # "no automatic build" actually true rather than mostly true.
+    #
+    # The task is left at `scheduled`, NOT moved to in_progress: callers only
+    # advance it when the subprocess is confirmed running (`task_id in _running`),
+    # so a no-op dispatch leaves it visible in the Scheduled column, which is
+    # exactly where a CLI session should find it and pick it up.
+    #
+    # Promotion, project cards, and the rest of the cycle are untouched — that is
+    # the whole difference between this and Pause Scheduler.
+    if _manual_build():
+        logger.info(
+            "kanban: Manual Build is ON — not dispatching %s (%s). It stays SCHEDULED "
+            "for a CLI session to pick up.", task_id, title[:50],
+        )
+        return
+
+    # ── Repo-aware dispatch: external-repo tasks ──────────────────────────────
+    # An external-repo task (prem-* compass / idea_lab work, per
+    # args/kanban_external_repos.yaml) must NEVER be built inside ICDev — its
+    # deliverables land in ANOTHER repo, so ICDev's phantom-completion and
+    # merge-to-origin/main gates always fail it and it churns.
+    #
+    # This USED TO park every external task unconditionally, which is why no
+    # prem-* task ever auto-dispatched and the whole Premium Suite was driven by
+    # hand. Now we park ONLY the ones we cannot build: an external task whose
+    # repo root is not configured (root_env unset). Everything else is built
+    # IN ITS OWN REPO — worktree, gates, PR and done-gate all pointed there by
+    # _task_repo_root / _task_base_branch.
+    #
+    # ICDev tasks resolve to the default (is_external False) and are byte-
+    # unchanged; an absent registry is a total no-op.
+    _repo_target = _task_repo_target(task_id)
+    if _repo_target is not None and _repo_target.is_external and not _repo_target.dispatchable:
+        logger.warning(
+            "kanban: %s is an external-repo task (%r) whose root is not configured "
+            "(%s unset) — parking. It is NEVER built inside ICDev.",
+            task_id, _repo_target.name, f"root_env for {_repo_target.name}",
+        )
+        try:
+            _move_task(
+                task_id, "validating", actor="repo-aware-guard",
+                reason=(f"external repo {_repo_target.name!r}: repo root not configured; "
+                        "parked rather than built inside ICDev"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return
+
     # ── Respawn guard 1: recent success ───────────────────────────────────────
     # Don't re-dispatch a task that completed successfully within the last 30 min.
     # Catches stale DB reads where the executor loops and picks up an already-done task.
@@ -4151,8 +5276,28 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
 
     prompt_text = Path(prompt_path).read_text(encoding="utf-8")
 
-    # Create isolated worktree for this task
+    # Create isolated worktree for this task (in ITS repo — see _task_repo_root)
     worktree_path = _create_worktree(task_id)
+    _is_external = _repo_target is not None and _repo_target.is_external
+
+    if not worktree_path and _is_external:
+        # The BASE_DIR fallback below is the whole hazard this change exists to
+        # remove: it would build compass work inside the ICDev checkout. For an
+        # external task there is NO fallback — fail the dispatch instead.
+        logger.error(
+            "kanban: worktree creation failed for external task %s (%r) — NOT falling "
+            "back to the ICDev tree. Parking.", task_id, _repo_target.name,
+        )
+        try:
+            _move_task(
+                task_id, "validating", actor="repo-aware-guard",
+                reason=(f"external repo {_repo_target.name!r}: worktree creation failed; "
+                        "refusing to build it inside ICDev"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return
+
     work_dir = worktree_path if worktree_path else str(BASE_DIR)
     if worktree_path:
         _worktrees[task_id] = worktree_path
@@ -4169,9 +5314,11 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     try:
         import subprocess as _sp
         head_proc = _sp.run(
-            ["git", "rev-parse", _default_branch()],
+            # The baseline for verification must come from the task's OWN repo:
+            # ICDev's main head says nothing about whether compass advanced.
+            ["git", "rev-parse", _task_base_branch(task_id)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(BASE_DIR), timeout=10,
+            cwd=str(_task_repo_root(task_id)), timeout=10,
         )
         if head_proc.returncode == 0:
             _dispatch_main_heads[task_id] = head_proc.stdout.strip()
@@ -4200,6 +5347,17 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
 
     task_desc = task.get("description", task.get("title", ""))
     task_type = task.get("task_type", "chore")
+
+    # Deterministic gate sub-tasks (auto-decomposed phase-exit gates) run their
+    # tool natively instead of paying for an LLM dispatch around a subprocess.
+    try:
+        if _dispatch_via_tool_runner(task, work_dir, task_log):
+            return
+    except Exception as exc:
+        logger.warning(
+            "kanban: tool_runner dispatch failed for %s, falling back to LLM chain: %s",
+            task_id, exc,
+        )
 
     # D-AUTO-DEGRADE: Build effective chain skipping degraded executors.
     # If all executors are degraded, fall back to the full chain anyway.
@@ -4306,27 +5464,93 @@ def _extract_claimed_file_paths(text: str, max_paths: int = 50) -> list[str]:
     return list(seen.keys())
 
 
+def _fetch_origin_main_quiet() -> None:
+    """Best-effort single lightweight fetch of origin/main. Never raises.
+
+    Called at most once per _verify_claimed_files_exist invocation, and only
+    when at least one path is missing on disk — the hot path (everything found
+    locally) never touches the network.
+    """
+    import subprocess as _sp
+
+    try:
+        _sp.run(
+            ["git", "fetch", "origin", "main", "--quiet"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=15,
+        )
+    except Exception:
+        pass
+
+
+def _path_in_origin_main(rel: str) -> bool:
+    """True if *rel* exists in the ``origin/main`` git tree.
+
+    origin/main is the source of truth for merged work. A task whose branch
+    merged and whose worktree was removed leaves no on-disk trace when the
+    shared checkout is itself stale/behind origin/main — but the file is still
+    in the origin/main tree. Windows backslashes are normalised to forward
+    slashes for the git pathspec.
+    """
+    import subprocess as _sp
+
+    pathspec = str(rel).replace("\\", "/").strip()
+    if not pathspec:
+        return False
+    try:
+        r = _sp.run(
+            ["git", "cat-file", "-e", f"origin/main:{pathspec}"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=10,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 def _verify_claimed_files_exist(
     paths: list[str], work_dir: Path | str
 ) -> tuple[int, int, list[str]]:
-    """Check how many agent-claimed paths actually exist on disk.
+    """Check how many agent-claimed paths actually exist.
 
     Returns (existing_count, claimed_count, missing_paths[:5]).
     Paths are resolved relative to work_dir AND BASE_DIR — the agent
-    may have run in a worktree OR the main checkout.
+    may have run in a worktree OR the main checkout. A path not found on
+    disk is then checked against the ``origin/main`` git tree: merged work
+    whose worktree was removed leaves no on-disk trace when the shared
+    checkout is stale/behind origin/main, so origin/main (the source of
+    truth for merged work) is treated as existence. A single best-effort
+    ``git fetch origin main`` refreshes the ref, run ONLY when something is
+    missing on disk so the hot path stays network-free.
     """
     if not paths:
         return 0, 0, []
     work = Path(work_dir) if work_dir else BASE_DIR
     existing = 0
-    missing: list[str] = []
+    on_disk_missing: list[str] = []
     for rel in paths:
         # Try work_dir first (worktree), fall back to BASE_DIR
         candidates = [work / rel, BASE_DIR / rel]
         if any(c.exists() for c in candidates):
             existing += 1
         else:
+            on_disk_missing.append(rel)
+
+    if not on_disk_missing:
+        return existing, len(paths), []
+
+    # Something is missing on disk — refresh origin/main once, then treat
+    # presence in the origin/main tree as existence (merged, worktree gone).
+    _fetch_origin_main_quiet()
+    missing: list[str] = []
+    for rel in on_disk_missing:
+        if _path_in_origin_main(rel):
+            existing += 1
+        else:
             missing.append(rel)
+
     return existing, len(paths), missing[:5]
 
 
@@ -5385,6 +6609,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                         (table_name,),
                     ).fetchone()
                 else:
+                    # pg-portability: sqlite-only path — reached only when the
+                    # backend is SQLite (PG uses the information_schema branch above).
                     check = conn.execute(
                         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = %s",
                         (table_name,),
@@ -5427,7 +6653,7 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     Returns: (passed: bool, reason: str, metrics: dict)
     """
     import subprocess as _sp
-    from tools.workflow.validated_commit import validate_working_tree
+    from tools.workflow.validated_commit import validate_working_tree, _pipeline_enforce
 
     # Resolve the task's worktree — validation runs here, not in main.
     work_dir = _worktrees.get(task_id)
@@ -5453,7 +6679,7 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     branch_name = f"kanban/{task_id}"
     try:
         result = _sp.run(
-            ["git", "diff", "--name-only", f"{_default_branch()}...{branch_name}"],
+            ["git", "diff", "--name-only", f"{_default_base_ref()}...{branch_name}"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             cwd=str(BASE_DIR), timeout=15,
         )
@@ -5461,13 +6687,58 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     except Exception:
         modified = []
 
-    return validate_working_tree(
+    # Defence in depth against a diff that is too large to be a real task.
+    # An over-long list does not fail loudly — it fails SILENTLY, three ways:
+    #   * _run_codelens builds `py_compile <paths>` / `ruff check <paths>` as
+    #     literal argv; past Windows' 32767-char command line the call raises,
+    #     is caught and only logged, and CodeLens degrades to a PASS.
+    #   * _run_pytest selects every changed tests/* path under a <=120s cap, so
+    #     it always TimeoutExpires and is recorded as "not run".
+    #   * ui_touched matches almost any dashboard template, so E2E runs on every
+    #     task and exhausts the verification budget.
+    # Three gates quietly answering "fine" is far worse than one loud failure.
+    if len(modified) > _MAX_CHANGED_FILES_FOR_GATES:
+        logger.error(
+            "guard-7: %s has %d changed files vs %s — refusing to run the gates "
+            "on a diff this size; the base ref is probably wrong",
+            task_id, len(modified), _default_base_ref(),
+        )
+        _oversize: Dict[str, Any] = {
+            "codelens_passed": None, "ruff_issues": 0, "bandit_issues": 0,
+            "coherence_passed": None, "e2e_ran": False, "e2e_passed": None,
+            "companion_synced": False, "modified_files": len(modified),
+            "modified_py": 0, "budget_sec": 0, "elapsed_sec": 0,
+        }
+        return False, (
+            f"changed-file set is implausibly large ({len(modified)} files vs "
+            f"{_default_base_ref()}) — gates not run"
+        ), _oversize
+
+    passed, reason, metrics = validate_working_tree(
         cwd=cwd,
         modified_files=modified,
         compare_to_main=True,
         run_e2e=True,
         run_companion=True,
     )
+
+    # Conformance Review gate (Governed Delivery Pipeline Phase 2). Needs the
+    # task's acceptance_criteria (which validate_working_tree doesn't see), so it
+    # runs here. RECORD-ONLY by default — it only blocks completion when
+    # KANBAN_PIPELINE_ENFORCE is on. Best-effort: never let it crash the gate.
+    try:
+        import json as _json
+        from tools.testing.conformance_reviewer import review_conformance
+        cr = review_conformance(task_id, changed_files=modified)
+        metrics["review_passed"] = cr.get("review_passed")
+        metrics["review_findings"] = _json.dumps(cr.get("findings") or [])[:4000]
+        if passed and cr.get("review_passed") is False and _pipeline_enforce():
+            passed = False
+            reason = f"conformance review failed: {cr.get('reason', '')}"
+    except Exception as _cexc:
+        logger.debug("conformance review skipped for %s: %s", task_id, _cexc)
+
+    return passed, reason, metrics
 
 
 def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
@@ -5477,8 +6748,10 @@ def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
             conn.execute(
                 "UPDATE kanban_verifications SET "
                 "codelens_passed = %s, ruff_issues = %s, bandit_issues = %s, "
-                "pytest_passed = %s, coherence_passed = %s, "
-                "e2e_ran = %s, e2e_passed = %s, companion_synced = %s "
+                "pytest_passed = %s, pytest_ran = %s, failed_tests = %s, "
+                "coherence_passed = %s, coherence_violations = %s, "
+                "e2e_ran = %s, e2e_passed = %s, companion_synced = %s, "
+                "review_passed = %s, review_findings = %s "
                 "WHERE task_id = %s AND id = ("
                 "  SELECT id FROM kanban_verifications WHERE task_id = %s "
                 "  ORDER BY verified_at DESC LIMIT 1)",
@@ -5487,10 +6760,15 @@ def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
                     metrics.get("ruff_issues", 0),
                     metrics.get("bandit_issues", 0),
                     1 if metrics.get("pytest_passed") else 0 if metrics.get("pytest_passed") is False else None,
+                    1 if metrics.get("pytest_ran") else 0,
+                    metrics.get("failed_tests"),
                     1 if metrics.get("coherence_passed") else 0 if metrics.get("coherence_passed") is False else None,
+                    metrics.get("coherence_violations"),
                     1 if metrics.get("e2e_ran") else 0,
                     1 if metrics.get("e2e_passed") else 0 if metrics.get("e2e_passed") is False else None,
                     1 if metrics.get("companion_synced") else 0,
+                    1 if metrics.get("review_passed") else 0 if metrics.get("review_passed") is False else None,
+                    metrics.get("review_findings"),
                     task_id, task_id,
                 ),
             )
@@ -5549,7 +6827,7 @@ def _verify_task_completed(task_id, claude_output):
                 # Get the list of files the agent touched (for targeted ruff/manifest)
                 import subprocess as _sp
                 diff = _sp.run(
-                    ["git", "diff", "--name-only", f"{_default_branch()}...kanban/{task_id}"],
+                    ["git", "diff", "--name-only", f"{_default_base_ref()}...kanban/{task_id}"],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                     cwd=str(BASE_DIR), timeout=15,
                 )
@@ -5606,6 +6884,15 @@ def _verify_task_completed(task_id, claude_output):
     _write_verification_log(task_id, verified, reason)
     if metrics:
         _update_verification_metrics(task_id, metrics)
+    # PEV (agx-verify-03): record a three-valued step verdict alongside the
+    # boolean done-gate. Opt-in (ICDEV_KANBAN_PEV, default off) and ADDITIVE —
+    # it never changes `verified`, so the terminal merge-verify done-gate is
+    # unweakened. Wrapped so a trail-write issue can never break the runner.
+    try:
+        from tools.kanban.pev import record_completion_pev
+        record_completion_pev(task_id, verified=verified, reason=reason, metrics=metrics)
+    except Exception:  # noqa: BLE001 — PEV is best-effort telemetry
+        pass
     return verified, reason
 
 
@@ -5644,7 +6931,15 @@ _dispatch_times: Dict[str, datetime] = {}
 _current_exec_tier: Optional[str] = None
 
 # Override via KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS / KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS env vars.
-_SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 1 * 60)
+#
+# This was 60s and it was the single largest source of task failures: 31 of 182
+# recorded failures were "stale-reaper: ... silent-dispatch (no log output)".
+# An LLM dispatch routinely produces no stdout for minutes while the model
+# thinks, so an empty log after one minute is not evidence of a dead process.
+# Liveness is now carried by last_heartbeat_at (refreshed every scheduler cycle
+# for every live subprocess, see _refresh_running_heartbeats); this threshold is
+# only the fallback for a task that never recorded a heartbeat at all.
+_SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 10 * 60)
 _ABSOLUTE_MAX_IN_PROGRESS_SECONDS = _int_env("KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS", 24 * 60 * 60)
 
 # Anomaly detection parameters for _detect_execution_anomaly.
@@ -5662,6 +6957,184 @@ def _task_log_is_empty(tid: str) -> bool:
         return not log_path.exists() or log_path.stat().st_size == 0
     except Exception:
         return False
+
+
+# Clause prefixes that describe SUCCESS, not failure. A pipeline narrative
+# frequently leads with one of these; storing it as the failure reason is what
+# made 41% of last_failure_reason rows useless for triage.
+_SUCCESS_CLAUSE_PREFIXES = (
+    "verified (",
+    "verified:",
+    "auto-remediated",
+    "remediation=",
+    "passed",
+    "all validation gates passed",
+)
+
+
+def _split_failure_narrative(reason: Optional[str]) -> Tuple[str, str]:
+    """Split a pipeline narrative into (failure_clause, full_narrative).
+
+    The narrative is pipe-joined across the verification stages. Returns the
+    first clause that actually describes a failure, plus the untouched whole
+    story for last_run_summary. When every clause reads as success the failure
+    clause falls back to the whole string prefixed as unclassified — callers
+    still record *something*, but it is visibly not a real diagnosis rather
+    than silently masquerading as one.
+    """
+    narrative = (reason or "").strip()
+    if not narrative:
+        return "", ""
+    clauses = [c.strip() for c in narrative.split("|") if c.strip()]
+    for clause in clauses:
+        low = clause.lower()
+        if not any(low.startswith(p) for p in _SUCCESS_CLAUSE_PREFIXES):
+            return clause, narrative
+    logger.warning(
+        "failure recorded with no failure clause — every clause reads as "
+        "success: %s", narrative[:200],
+    )
+    return f"UNCLASSIFIED (no failure clause): {narrative}", narrative
+
+
+def _foreign_scheduler_pid() -> int:
+    """PID of a LIVE kanban scheduler that is not this process, or 0.
+
+    ``_running`` is a module global, so it is per-process. Any second process
+    that calls the kanban reflex's run() — the heartbeat daemon's wakeup, a
+    dashboard-triggered reflex, an interactive `--once` — sees an empty
+    ``_running`` and concludes that the real scheduler's live tasks are dead.
+    Its reaper then resets them to backlog with failure_count++, and the real
+    scheduler kills the orphaned subprocess as "stale-cleanup".
+
+    Reuses the lockfile tools/genesis/kanban_scheduler.py already maintains
+    rather than introducing a second ownership mechanism.
+    """
+    import os as _os
+
+    lock_path = BASE_DIR / ".tmp" / "kanban_scheduler.pid"
+    try:
+        owner_pid = int(lock_path.read_text(encoding="utf-8").strip())
+    except Exception:
+        return 0
+    if owner_pid == _os.getpid():
+        return 0
+    try:
+        import psutil as _ps
+
+        if _ps.pid_exists(owner_pid):
+            proc = _ps.Process(owner_pid)
+            if "kanban_scheduler" in " ".join(proc.cmdline()):
+                return owner_pid
+    except Exception:
+        pass
+    return 0
+
+
+def _refresh_running_heartbeats() -> int:
+    """Stamp last_heartbeat_at for every task whose subprocess is still alive.
+
+    Called once per scheduler cycle (≤ MAX_IN_PROGRESS rows, so it is cheap).
+    This is what turns last_heartbeat_at into a real liveness signal instead of
+    a column only the dashboard ever wrote: the reaper can then distinguish
+    "the model is thinking and has not printed anything yet" from "the
+    subprocess is gone", which an empty log file cannot do.
+
+    Returns the number of tasks stamped. Never raises.
+    """
+    alive: List[str] = []
+    for tid, proc in list(_running.items()):
+        try:
+            if proc is not None and proc.poll() is None:
+                alive.append(tid)
+        except Exception:  # noqa: BLE001 — a handle that can't be polled isn't proof of death
+            continue
+    if not alive:
+        return 0
+    try:
+        now = _utcnow_iso()
+        with get_connection() as conn:
+            for tid in alive:
+                conn.execute(
+                    "UPDATE kanban_tasks SET last_heartbeat_at = %s WHERE id = %s",
+                    (now, tid),
+                )
+    except Exception as exc:
+        logger.debug("kanban: heartbeat refresh skipped: %s", exc)
+        return 0
+    return len(alive)
+
+
+def _heartbeat_is_stale(tid: str, conn, threshold_seconds: float) -> bool:
+    """True when this task has no usable heartbeat newer than *threshold_seconds*.
+
+    A task that never sent a heartbeat is treated as stale — that is the
+    pre-heartbeat case the age-based threshold already covers. A task with a
+    heartbeat inside the window is alive and must never be reaped.
+    """
+    age = _heartbeat_age_seconds(tid, conn)
+    if age is None:
+        return True
+    return age >= threshold_seconds
+
+
+def _heartbeat_age_seconds(tid: str, conn) -> Optional[float]:
+    """Seconds since this task's last heartbeat, or None if it never sent one."""
+    try:
+        row = conn.execute(
+            "SELECT last_heartbeat_at FROM kanban_tasks WHERE id = %s", (tid,)
+        ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    raw = dict(row).get("last_heartbeat_at")
+    if not raw:
+        return None
+    try:
+        beat = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if beat.tzinfo is None:
+            beat = beat.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - beat).total_seconds()
+    except Exception:
+        return None
+
+
+def _task_dispatched_by_scheduler(tid: str, conn) -> bool:
+    """Return False only if the most recent transition into in_progress for
+    *tid* was explicitly recorded with a non-scheduler actor (e.g. 'manual',
+    via tools/kanban/cli.py --set-status).
+
+    The silent-dispatch fast-reap (_SILENT_DISPATCH_THRESHOLD, default 1 min)
+    exists to catch a scheduler-spawned subprocess that died before writing
+    any output — but an externally/manually managed task (an interactive
+    session working a task directly, not through the scheduler's subprocess
+    dispatch) also has an empty log by construction, since nothing ever
+    writes one for it. Without this check the two are indistinguishable and
+    genuinely-in-progress manual work gets reaped back to backlog within a
+    minute regardless of how long the real work takes (observed 2026-07-08:
+    6 tasks worked via isolated worktrees + manual CLI status updates were
+    repeatedly bounced backlog<->in_progress by this fast path even though
+    the work was already complete and merged).
+
+    Defaults to True (preserve existing aggressive behavior) when no
+    transition row exists or the audit table/query fails — this only ever
+    *relaxes* the threshold for tasks explicitly marked manual, it never
+    tightens it for anything else.
+    """
+    try:
+        row = conn.execute(
+            "SELECT actor FROM kanban_status_transitions "
+            "WHERE task_id = %s AND to_status = 'in_progress' "
+            "ORDER BY recorded_at DESC LIMIT 1",
+            (tid,),
+        ).fetchone()
+        if not row:
+            return True
+        actor = dict(row).get("actor")
+        return actor in (None, "scheduler")
+    except Exception:
+        return True
 
 
 def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
@@ -6123,6 +7596,11 @@ def _decompose_triage_task(task: dict) -> bool:
             return False
 
         child_specs = []
+        # The parent's own dependency — inherited by the first child so a gated
+        # parent cannot be decomposed into an ungated chain.
+        parent_dep = task.get("depends_on_task_id")
+
+        prev_child: str | None = None
         for i, sub in enumerate(subtasks[:7]):
             child_id = f"{task_id}-d{i + 1:02d}"
             child_specs.append({
@@ -6132,9 +7610,12 @@ def _decompose_triage_task(task: dict) -> bool:
                 "task_type": sub.get("task_type", "build"),
                 "priority": sub.get("priority", "medium"),
                 "status": "backlog",
-                "depends_on_task_id": None,
+                # Chain sequentially; the FIRST child inherits the PARENT's dep so
+                # decomposing a gated task cannot produce an ungated chain.
+                "depends_on_task_id": prev_child or parent_dep,
                 "dispatch_source": f"triage:{task_id}",
             })
+            prev_child = child_id
         create_tasks(child_specs)
         logger.info("Triage decompose: created %d child tasks for %s", len(child_specs), task_id)
 
@@ -6157,13 +7638,21 @@ def _reclaim_zombie_tasks() -> None:
     conn = None
     try:
         conn = get_connection()
+        # The cutoff is computed in Python rather than in SQL: the previous
+        # `datetime('now', %s || ' hours')` is SQLite-only and raises
+        # UndefinedFunction on PostgreSQL (the primary backend), so this whole
+        # sweep silently never ran. Comparing ISO-8601 UTC strings is correct
+        # for both backends and needs no dialect branch.
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=silence_hours)
+        ).isoformat()
         rows = conn.execute(
             "SELECT id, title, failure_count "
             "FROM kanban_tasks "
             "WHERE status = 'in_progress' "
             "  AND last_heartbeat_at IS NOT NULL "
-            "  AND last_heartbeat_at < datetime('now', %s || ' hours')",
-            (f"-{silence_hours}",),
+            "  AND last_heartbeat_at < %s",
+            (cutoff,),
         ).fetchall()
         if not rows:
             return
@@ -6208,13 +7697,17 @@ def _has_open_pr(task_id: str) -> bool:
     Uses the gh CLI; returns False on any error so dispatch proceeds normally
     when gh is unavailable (air-gap environments).
     """
+    # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
+    # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
+    _repo_root = _task_repo_root(task_id)
+    _base_branch = _task_base_branch(task_id)
     branch_name = f"kanban/{task_id}"
     try:
         import subprocess as _sp
         import json as _json
         result = _sp.run(
             ["gh", "pr", "list", "--head", branch_name, "--state", "open", "--json", "number"],
-            capture_output=True, text=True, timeout=10, cwd=str(BASE_DIR),
+            capture_output=True, text=True, timeout=10, cwd=str(_repo_root),
         )
         if result.returncode == 0 and result.stdout.strip():
             prs = _json.loads(result.stdout)
@@ -6222,6 +7715,132 @@ def _has_open_pr(task_id: str) -> bool:
     except Exception:
         pass
     return False
+
+
+_open_pr_branch_cache: Dict[str, Tuple[float, Set[str]]] = {}
+_OPEN_PR_CACHE_TTL_SECONDS = 45.0
+
+
+def _open_pr_head_branches(repo_root: str) -> Set[str]:
+    """Head branch names of every open PR in *repo_root*, cached per cycle.
+
+    ONE `gh` call for the whole board instead of one per candidate task. The
+    per-task _has_open_pr costs a subprocess with a 10s timeout, which is fine
+    as a final check before dispatching a single task but far too expensive to
+    run across every candidate during selection.
+
+    Returns an empty set on any error, matching _has_open_pr's air-gap
+    behaviour: when gh is unavailable we do not filter, and the per-task guard
+    at dispatch time remains the backstop.
+    """
+    cached = _open_pr_branch_cache.get(repo_root)
+    if cached and (time.monotonic() - cached[0]) < _OPEN_PR_CACHE_TTL_SECONDS:
+        return cached[1]
+    branches: Set[str] = set()
+    try:
+        import json as _json
+        import subprocess as _sp
+
+        result = _sp.run(
+            ["gh", "pr", "list", "--state", "open", "--limit", "200",
+             "--json", "headRefName"],
+            capture_output=True, text=True, timeout=20, cwd=repo_root,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            branches = {
+                str(p.get("headRefName"))
+                for p in _json.loads(result.stdout)
+                if p.get("headRefName")
+            }
+    except Exception as exc:
+        logger.debug("open-PR branch listing unavailable for %s: %s", repo_root, exc)
+        return set()
+    _open_pr_branch_cache[repo_root] = (time.monotonic(), branches)
+    return branches
+
+
+def _tasks_with_recent_success(task_ids: List[str], within_minutes: int = 30) -> Set[str]:
+    """Ids from *task_ids* that transitioned to done within the window.
+
+    Batched counterpart to _had_recent_success — one query for the whole
+    candidate set. The cutoff is computed in Python because the per-task
+    version's `datetime('now', ...)` is SQLite dialect and PostgreSQL is the
+    primary backend.
+    """
+    if not task_ids:
+        return set()
+    conn = None
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=within_minutes)).isoformat()
+        placeholders = ",".join(["%s"] * len(task_ids))
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT DISTINCT task_id FROM kanban_status_transitions "
+            f"WHERE task_id IN ({placeholders}) "  # nosec B608 — placeholders only
+            "  AND to_status = 'done' AND recorded_at > %s",
+            (*task_ids, cutoff),
+        ).fetchall()
+        return {dict(r)["task_id"] for r in rows}
+    except Exception as exc:
+        logger.debug("recent-success batch lookup skipped: %s", exc)
+        return set()
+    finally:
+        if conn:
+            conn.close()
+
+
+def _drop_respawn_guarded(tasks: List[dict]) -> List[dict]:
+    """Remove tasks the dispatcher would refuse to dispatch anyway.
+
+    _dispatch_to_claude skips a task that already has an open PR or completed
+    in the last 30 minutes. That check used to run only AFTER _get_due_tasks
+    had truncated the candidate list to available_slots — so a task that could
+    never be dispatched still consumed one of the three slots in the selection
+    window, every cycle, forever.
+
+    Observed on this board: the three highest-priority due tasks all had open
+    PRs. The scheduler selected exactly those three, skipped all three, and
+    dispatched nothing, while thirteen ready tasks behind them were never even
+    considered. The board looked idle for hours with every gate green.
+
+    Filtering here, before the cap, means blocked tasks yield their place. The
+    per-task guards at dispatch time stay as the backstop for state that
+    changes between selection and dispatch.
+    """
+    if not tasks:
+        return tasks
+
+    recent = _tasks_with_recent_success([t.get("id") for t in tasks if t.get("id")])
+
+    # Group by repo root: an external task's PRs live in ITS repo, so one
+    # listing per distinct root rather than one for ICDev and wrong answers
+    # for everything else.
+    pr_branches_by_root: Dict[str, Set[str]] = {}
+    kept: List[dict] = []
+    for task in tasks:
+        task_id = task.get("id")
+        if not task_id:
+            continue
+        if task_id in recent:
+            logger.info(
+                "dispatch window: %s completed within the last 30 min — "
+                "yielding its slot", task_id,
+            )
+            continue
+        try:
+            root = str(_task_repo_root(task_id))
+        except Exception:
+            root = str(BASE_DIR)
+        if root not in pr_branches_by_root:
+            pr_branches_by_root[root] = _open_pr_head_branches(root)
+        if f"kanban/{task_id}" in pr_branches_by_root[root]:
+            logger.info(
+                "dispatch window: %s already has an open PR — yielding its slot "
+                "to a task that can actually run", task_id,
+            )
+            continue
+        kept.append(task)
+    return kept
 
 
 def _had_recent_success(task_id: str, within_minutes: int = 30) -> bool:
@@ -6256,13 +7875,32 @@ def _reap_stale_in_progress() -> None:
          instead of resetting to backlog.
       3. Silent dispatch failure — task promoted to in_progress but subprocess
          never started (execution_id still NULL, log file empty). Fast-reaped
-         after _SILENT_DISPATCH_THRESHOLD (5 min) so the board never shows a
-         ghost in_progress for more than one scheduler cycle window.
+         after _SILENT_DISPATCH_THRESHOLD (default 1 min, see env var
+         KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS) so the board never shows a
+         ghost in_progress for more than one scheduler cycle window. Skipped
+         for tasks whose most recent in_progress transition was recorded with
+         a non-scheduler actor (see _task_dispatched_by_scheduler) — those
+         fall through to the normal threshold instead, since an empty log is
+         expected (not evidence of a dead subprocess) for externally/manually
+         managed work.
 
     Normal threshold: 2× task timeout (30–80 min).
-    Silent-dispatch threshold: 5 min (log empty + not in _running).
+    Silent-dispatch threshold: _SILENT_DISPATCH_THRESHOLD (log empty AND no
+    fresh heartbeat AND not in _running AND last in_progress transition actor
+    is 'scheduler' or unrecorded).
     Only resets tasks NOT currently in _running to avoid killing live agents.
+
+    NO-OP when another live scheduler owns the runner: _running is per-process,
+    so a second process would see every one of the owner's live tasks as dead.
     """
+    _foreign = _foreign_scheduler_pid()
+    if _foreign:
+        logger.info(
+            "stale-reaper: skipped — scheduler pid=%d owns the runner and this "
+            "process cannot see its live subprocesses", _foreign,
+        )
+        return
+
     conn = None
     try:
         conn = get_connection()
@@ -6278,6 +7916,12 @@ def _reap_stale_in_progress() -> None:
         for r in rows:
             d = dict(r)
             tid = d["id"]
+
+            # Manual-mode gates are held in_progress indefinitely by design —
+            # reaping one to backlog gets it re-dispatched, which its whole
+            # existence is meant to prevent.
+            if _is_manual_gate(tid, d.get("title")):
+                continue
 
             # Fetch updated_at separately to get the real timestamp
             ts_row = conn.execute(
@@ -6303,6 +7947,25 @@ def _reap_stale_in_progress() -> None:
 
             age_seconds = (now - updated_at).total_seconds()
 
+            # Manual Build: do not reap a task a HUMAN is building.
+            #
+            # From the outside, a CLI session two hours into a task is indistinguishable
+            # from a scheduler subprocess that died an hour ago: no live PID in _running,
+            # no log output. The reaper would reset it to backlog, incrementing
+            # failure_count — silently destroying the record of where the build had got
+            # to, which is the one thing Manual Build exists to preserve.
+            #
+            # So while Manual Build is on, a task whose in_progress transition was
+            # recorded by a NON-scheduler actor is left alone, for as long as it takes.
+            # A genuinely dead scheduler subprocess is still reaped: it was dispatched by
+            # the scheduler, so it does not match, and it really is dead.
+            if _manual_build() and not _task_dispatched_by_scheduler(tid, conn):
+                logger.debug(
+                    "stale-reaper: skipping %s — Manual Build is on and this task is "
+                    "manually dispatched (age %.0f min)", tid, age_seconds / 60,
+                )
+                continue
+
             # Hard ceiling: any task in_progress for >24 h is force-reaped even
             # if it appears to have a live subprocess. A genuine 24 h run does
             # not exist; this catches hung processes whose PID is still in
@@ -6320,13 +7983,28 @@ def _reap_stale_in_progress() -> None:
             elif tid in _running:
                 continue  # live subprocess within normal budget — skip
 
-            # Fast-reap silent dispatch: task is not in _running AND log file
-            # is still empty — subprocess never wrote a single byte, so it
-            # never actually started. Use a short 5-min window instead of the
-            # normal 2× budget to catch these within the next cycle or two.
-            elif _task_log_is_empty(tid) and age_seconds >= _SILENT_DISPATCH_THRESHOLD:
+            # Fast-reap silent dispatch: the subprocess never actually started.
+            #
+            # An empty log alone is NOT evidence of that — an LLM dispatch
+            # routinely prints nothing for minutes while the model thinks, and
+            # reaping on that signal at 60s was the single largest source of
+            # task failures on this board. So require a stale heartbeat too:
+            # _refresh_running_heartbeats stamps last_heartbeat_at every cycle
+            # for every live subprocess, so a fresh beat means the task is
+            # working regardless of what it has printed.
+            #
+            # Skipped for tasks explicitly marked actor='manual' in
+            # kanban_status_transitions (tools/kanban/cli.py --set-status) —
+            # an externally-managed task also has an empty log by
+            # construction, but that's not evidence of a dead subprocess.
+            elif (
+                _task_log_is_empty(tid)
+                and age_seconds >= _SILENT_DISPATCH_THRESHOLD
+                and _heartbeat_is_stale(tid, conn, _SILENT_DISPATCH_THRESHOLD)
+                and _task_dispatched_by_scheduler(tid, conn)
+            ):
                 threshold = _SILENT_DISPATCH_THRESHOLD
-                reap_label = "silent-dispatch (no log output)"
+                reap_label = "silent-dispatch (no log output, no heartbeat)"
             else:
                 threshold = _get_task_timeout(tid) * 2  # 2× normal budget = 30–80 min
                 reap_label = "no live subprocess"
@@ -6406,6 +8084,18 @@ def _startup_recover_stale_in_progress() -> None:
     global _startup_recovery_done
     if _startup_recovery_done:
         return
+
+    # Hard guard: this sweep resets EVERY in_progress row, skipping only those
+    # in the process-local _running. Run from a second process (the heartbeat
+    # daemon's wakeup, a dashboard reflex trigger, an interactive --once) it
+    # would reset the owning scheduler's entire live board in one pass.
+    _foreign = _foreign_scheduler_pid()
+    if _foreign:
+        logger.info(
+            "startup-recovery: skipped — scheduler pid=%d owns the runner", _foreign,
+        )
+        return
+
     _startup_recovery_done = True
     conn = None
     try:
@@ -6427,6 +8117,8 @@ def _startup_recover_stale_in_progress() -> None:
                 continue  # live process from this session — skip
             if rd.get("executor_type") == "github_actions":
                 continue  # external executor — GitHub Actions runs independently
+            if _is_manual_gate(tid, rd.get("title")):
+                continue  # manual-mode gate — held in_progress by design
             conn.execute(
                 "UPDATE kanban_tasks SET status='backlog', "
                 "last_failure_reason=%s, updated_at=%s WHERE id=%s",
@@ -6637,6 +8329,32 @@ def _check_completed():
     for task_id, proc in list(_running.items()):
         ret = proc.poll()
         if ret is not None:
+            # Continuous Harness feed — the claude-cli executor is the PRIMARY
+            # build path but records nothing at dispatch, so its later
+            # record_outcome() would attach to no decision row and codegen
+            # metrics would only ever see fallback builds. Record the codegen
+            # decision here, at the point the subprocess finishes, mirroring the
+            # LLMRouter executor's record_decision. Guard on isinstance(Popen)
+            # so the _LLMTaskHandle paths (LLMRouter / rubric loop), which
+            # already self-record at dispatch, are not double-counted.
+            if isinstance(proc, subprocess.Popen):
+                try:
+                    from tools.genesis.harness.eval_harness import record_decision
+                    record_decision(
+                        task_id=task_id,
+                        reflex="codegen",
+                        decision="done" if ret == 0 else "error_nonzero_exit",
+                        confidence=0.6 if ret == 0 else 0.3,
+                        metadata={
+                            "executor": "claude_cli",
+                            "returncode": ret,
+                            "completed": ret == 0,
+                        },
+                    )
+                except Exception as _hd_exc:
+                    logger.warning(
+                        "harness record_decision skipped for %s: %s", task_id, _hd_exc
+                    )
             completed.append(task_id)
             prompt_path = PROMPT_DIR / f"{task_id}.md"
             # Read Claude output log
@@ -6846,18 +8564,35 @@ def _check_completed():
                         _dispatch_times.pop(task_id, None)
                         continue
 
-                    try:
-                        _move_task(task_id, "done",
-                                   actor="scheduler",
-                                   reason=f"verified: {reason[:80]}")
-                    except Exception as _mt_exc:
-                        # Loud fail: task stays in_progress; next cycle's
-                        # orphan detection / stale-dispatch sweep will pick
-                        # it up. Logging beats silent pass.
-                        logger.error(
-                            "_move_task(done) failed for %s after verified=True: %s",
-                            task_id, _mt_exc,
-                        )
+                    # In PR flow the work is NOT done until the PR MERGES. The
+                    # PR is opened further down (_cleanup_worktree), so marking
+                    # the task done HERE claims completion before the PR even
+                    # exists — which is exactly what produced the
+                    # REFUSED_done_unmerged transitions, and why the "Awaiting
+                    # Merge" column never held a single task. Defer: the cleanup
+                    # block below moves it to pr_opened once the PR is real, and
+                    # pr_watcher moves it to done when the PR actually merges.
+                    #
+                    # A verified task with NO commits (a research/answer task)
+                    # opens no PR and is genuinely done right now.
+                    _will_open_pr = (
+                        _pr_flow_enabled()
+                        and task_id in _worktrees
+                        and _check_worktree_commits(task_id)
+                    )
+                    if not _will_open_pr:
+                        try:
+                            _move_task(task_id, "done",
+                                       actor="scheduler",
+                                       reason=f"verified: {reason[:80]}")
+                        except Exception as _mt_exc:
+                            # Loud fail: task stays in_progress; next cycle's
+                            # orphan detection / stale-dispatch sweep will pick
+                            # it up. Logging beats silent pass.
+                            logger.error(
+                                "_move_task(done) failed for %s after verified=True: %s",
+                                task_id, _mt_exc,
+                            )
                     _clear_retry_count(task_id)
                     _clear_resume_at(task_id)
                     _clear_timeout_count(task_id)
@@ -6971,6 +8706,24 @@ def _check_completed():
                         print(f"  Kanban: worktree kanban/{task_id} has new commits (review before merging)")
                     _cleanup_worktree(task_id)
                     del _worktrees[task_id]
+
+                    # _cleanup_worktree pushed the branch and opened the PR.
+                    # Reflect that on the board: the task is awaiting merge, not
+                    # done. pr_watcher takes it from here.
+                    if _pr_flow_enabled() and has_commits:
+                        if _has_open_pr(task_id):
+                            _move_task(
+                                task_id, "pr_opened", actor="scheduler",
+                                reason="PR opened — awaiting CI + merge",
+                            )
+                        else:
+                            # The branch has commits but no PR exists: the work is
+                            # real and must not be silently marked done. Send it
+                            # back so the failure is visible.
+                            _move_task(
+                                task_id, "backlog", actor="scheduler",
+                                reason="PR flow: branch pushed but the PR could not be opened",
+                            )
                 elif not verified and task_id in _worktrees:
                     # Preserve worktree for debugging/retry
                     print(f"  Kanban: preserving worktree for unverified task {task_id}")
@@ -7517,6 +9270,10 @@ def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
         )
 
         inserted = []
+        # The parent's own dependency — inherited by the first child below, so a
+        # gated parent cannot be decomposed into an ungated chain.
+        parent_dep = task.get("depends_on_task_id")
+
         for i, sub in enumerate(subtasks[:5], start=1):
             sub_title = str(sub.get("title") or f"{title} — part {i}")[:120]
             sub_desc = str(sub.get("description") or "")
@@ -7532,9 +9289,13 @@ def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
             # Truncate if too long for any DB column limit
             child_id = child_id[:64]
 
-            # depends_on_task_id: chain children sequentially so they
-            # run in order (each child depends on the previous)
-            dep = inserted[-1] if inserted else None
+            # depends_on_task_id: chain children sequentially so they run in
+            # order (each depends on the previous). The FIRST child inherits the
+            # PARENT's dependency — otherwise decomposing a gated task produces a
+            # child with no dep at all, and the whole chain walks straight around
+            # the gate that was holding it (observed: prem-bid-01 -> -d1 dispatched
+            # despite prem-gate-00).
+            dep = inserted[-1] if inserted else parent_dep
 
             conn.execute(
                 "INSERT OR IGNORE INTO kanban_tasks "
@@ -7601,6 +9362,25 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         logger.info("Executor tier changed to %s", tier)
         _current_exec_tier = tier
 
+    # 0. Promote dep-satisfied backlog tasks to SCHEDULED.
+    #
+    # tools/kanban/promote_backlog_to_scheduled.py existed but NOTHING ever called
+    # it, so the "Scheduled" column had never held a task in the board's lifetime —
+    # backlog went straight to in_progress and the board could not distinguish
+    # "queued, still blocked" from "ready, waiting for a slot".
+    #
+    # This is a VISIBILITY change, not a dispatch change: _get_due_tasks already
+    # picks up backlog AND scheduled under the same dependency clause, so exactly
+    # the same tasks run. They are now simply visible as ready first.
+    try:
+        from tools.kanban.promote_backlog_to_scheduled import promote as _promote
+
+        _promoted = _promote()
+        if _promoted:
+            print(f"  Kanban: promoted {len(_promoted)} backlog task(s) to scheduled")
+    except Exception as _promo_exc:  # noqa: BLE001 — never block the cycle
+        logger.warning("backlog->scheduled promotion failed: %s", _promo_exc)
+
     # 0a. Orphan-done sweep — roll back any done task whose parent isn't done.
     # Defense-in-depth against manual SQL / spurious automation that marked
     # a row done while its prerequisite work hadn't completed. See memory
@@ -7637,6 +9417,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 print(f"  Kanban: worktree age sweep removed {len(swept)} stale worktree(s)")
     except Exception as _ws_exc:
         logger.warning("worktree age sweep failed: %s", _ws_exc)
+
+    # 0c-bis. Heartbeat refresh — stamp last_heartbeat_at for every live
+    # subprocess. Must run BEFORE the reaper below so a task that started this
+    # cycle already has a beat on record. Cheap: at most MAX_IN_PROGRESS rows.
+    try:
+        _refresh_running_heartbeats()
+    except Exception as _hb_exc:
+        logger.warning("heartbeat refresh failed: %s", _hb_exc)
 
     # 0d. Periodic stale-in_progress reaper — catches tasks that are in_progress
     # in the DB but absent from _running (process died after dispatch without
@@ -7947,6 +9735,33 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # 4. Find due tasks
     due_tasks = _get_due_tasks()
 
+    # Global runner-pause: if an interactive CLI session holds the pause lease
+    # (`python -m tools.kanban.cli --pause-runner`), skip dispatch this cycle so
+    # the autonomous runner and a human never build in parallel. holder() is a
+    # non-mutating peek — the runner does not want to hold the pause, only detect
+    # it. This is the clean answer to switching between kanban and CLI: exactly
+    # one authority at a time, arbitrated by a lease that survives a model swap.
+    try:
+        from tools.coordination import leases as _leases
+        from tools.coordination.constants import get_session_id as _gsid
+        _pause = _leases.holder("kanban:runner:global")
+        if _pause and _pause.get("holder_session") != _gsid():
+            logger.info(
+                "kanban runner paused by session %s — skipping dispatch this cycle",
+                _pause.get("holder_session"),
+            )
+            return {
+                "success": True,
+                "metric_value": len(completed),
+                "details": {
+                    "status": "paused_by_session",
+                    "holder": _pause.get("holder_session"),
+                    "completed_this_cycle": completed,
+                },
+            }
+    except Exception as _pause_exc:
+        logger.debug("runner-pause check failed (continuing): %s", _pause_exc)
+
     if not due_tasks:
         return {
             "success": True,
@@ -7962,6 +9777,29 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     decomposed_this_cycle = []
 
     for task in due_tasks:
+        # Per-task coordination lease: claim exclusive ownership before spending
+        # any tokens. If another session already owns this task (e.g. an
+        # interactive CLI session working it out-of-band via `--claim`), skip it
+        # — this is what prevents the runner and a human from double-building the
+        # same task into divergent branches. The lease is released in _move_task
+        # on terminal/re-queue transitions; its TTL is a backstop if the task
+        # never terminates.
+        try:
+            from tools.coordination import leases as _leases
+            _task_lease = _leases.acquire(
+                f"kanban:task:{task['id']}", intent="kanban-runner",
+                ttl_seconds=3600, block=False,
+            )
+            if _task_lease is None:
+                logger.info(
+                    "kanban: task %s owned by another session — skipping", task["id"],
+                )
+                continue
+        except Exception as _lease_exc:
+            logger.debug(
+                "task-lease acquire failed for %s (continuing): %s", task["id"], _lease_exc,
+            )
+
         # Pre-dispatch complexity gate: score the task before spending any tokens.
         # If it looks too big for a single session (score ≥ 7) decompose it now
         # instead of letting it fail and waste a full 900s agent run.

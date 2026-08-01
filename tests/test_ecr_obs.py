@@ -173,7 +173,7 @@ def test_health_endpoints():
         assert isinstance(data["uptime_seconds"], float)
         checks = data["checks"]
         assert "db" in checks
-        assert "llm" in checks
+        assert "llm_import" in checks
         assert "kanban" in checks
         assert "redis" in checks
     finally:

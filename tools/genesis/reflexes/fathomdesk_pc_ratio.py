@@ -7,9 +7,9 @@ that put_call_sentiment pillar modules read for z-score regime detection.
 
 GREEN tier (read + append-only writes, no LLM in hot path). Air-gap safe.
 """
+from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
-from __future__ import annotations
 
 import json
 import uuid
@@ -17,6 +17,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.genesis.reflexes.fathomdesk_pc_ratio")
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 if str(BASE_DIR) not in sys.path:
@@ -85,8 +88,8 @@ def _mark_cooldown(conn: Any, key: str, now: datetime) -> None:
             (key, now.isoformat()),
         )
         conn.commit()
-    except Exception:  # nosec B110 — cooldown failure is non-fatal
-        pass
+    except Exception as exc:  # nosec B110 — cooldown failure is non-fatal
+        logger.warning("_mark_cooldown: best-effort INSERT into ad_reflex_cooldowns failed (non-blocking): %s", exc)
 
 
 # ── Core logic ─────────────────────────────────────────────────────────────────

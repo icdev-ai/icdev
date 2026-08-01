@@ -7,7 +7,7 @@ Execute end-to-end (E2E) tests using Playwright browser automation (MCP Server).
 run_id: $1 if provided, otherwise generate a random 8 character hex string
 agent_name: $2 if provided, otherwise use 'e2e_test_runner'
 e2e_test_file: $3
-application_url: $4 if provided, otherwise use http://localhost:5000
+application_url: $4 if provided, otherwise use http://localhost:5050
 
 ## Instructions
 
@@ -19,7 +19,7 @@ application_url: $4 if provided, otherwise use http://localhost:5000
 - Capture screenshots as specified
 - IMPORTANT: Return results in the format requested by the `Output Format`
 - Initialize Playwright browser in headless mode (per playwright-mcp-config.json)
-- Use the `application_url` (default: http://localhost:5000 for ICDEV™ dashboard)
+- Use the `application_url` (default: http://localhost:5050 for ICDEV™ dashboard)
 - Allow time for async operations and element visibility
 - IMPORTANT: After taking each screenshot, save it to `Screenshot Directory` with descriptive names
 - Capture and report any errors encountered

@@ -9,6 +9,7 @@ Set PC_STORAGE_BACKEND=postgresql + PC_PG_* env vars to use PostgreSQL.
 """
 
 import json
+from tools.logging.icdev_logger import get_logger
 import os
 import sqlite3
 import uuid
@@ -21,7 +22,13 @@ _PC_BACKEND = os.environ.get("PC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_
 
 
 def get_connection():
-    """Get a database connection — SQLite or PostgreSQL."""
+    """Get a database connection — SQLite or PostgreSQL.
+
+    cvx-sql-03: this is the canvas-connection pattern — it already disables RLS
+    via set_security_context(None) below. It is NOT renamed to
+    get_canvas_connection() because that helper targets the shared icdev DB on PG,
+    which would break this canvas's dedicated PC_PG_DATABASE=pipeline_canvas contract.
+    """
     if _PC_BACKEND == "postgresql":
         try:
             from tools.db.storage import get_connection as _icdev_conn
@@ -33,13 +40,38 @@ def get_connection():
             conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification cols
             return conn
         except ImportError:
-            pass
+            # pdx-data-02: postgresql was explicitly requested but the PG stack is
+            # unavailable — do NOT fall back silently. A silent SQLite fallback
+            # splits this canvas's data across two backends (some writes land in PG,
+            # others in the local pipeline_canvas.db), which is very hard to diagnose.
+            get_logger("icdev.pipeline.db").error(
+                "PDC: postgresql requested but psycopg2/storage unavailable — "
+                "falling back to sqlite; data will split across backends"
+            )
     # SQLite (default) — per-canvas DB, distinct from icdev.db
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    # pdx-data-03: ALL runtime SQL in tools/pipeline (blueprint.py, twin.py,
+    # sops.py) is authored with psycopg2-native %s placeholders. A bare
+    # sqlite3.Connection raises OperationalError near '%'. Wrap it in the shared
+    # StorageConnection(backend="sqlite"), which routes execute/executemany/
+    # cursor through StorageCursor → translate_sql(sql, "sqlite") →
+    # _translate_pg_to_sqlite (%s → ?, string-literal / quoted-identifier /
+    # comment aware; see tools/db/storage.py). No security context is attached,
+    # so _inject_rls is a no-op — correct for these canvas tables, which lack
+    # tenant_id/classification columns. row_factory (sqlite3.Row), commit/
+    # rollback/close, executescript, cursor(), and the context-manager protocol
+    # all pass through unchanged, so callers work without modification.
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")
+    except ImportError:
+        # Reuse impossible (storage layer unavailable) — return the raw
+        # connection so init/seed with native ? placeholders still works.
+        return conn
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -103,6 +135,10 @@ CREATE TABLE IF NOT EXISTS pc_audit (
     ts              TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- RESERVED (pdx-hyg-01): no runtime reader/writer as of pdx-hyg-01. Only the
+-- demo seeder (tools/db/seeds/seed_pdc_demo.py) populates this table, and the PDC
+-- delete-cascade list in blueprint.py references it by FK. No route or engine
+-- reads pc_stages. Kept (not dropped) to preserve deployed DBs.
 CREATE TABLE IF NOT EXISTS pc_stages (
     id              TEXT PRIMARY KEY,
     pipeline_id     TEXT REFERENCES pipelines(id),
@@ -164,6 +200,9 @@ CREATE TABLE IF NOT EXISTS pc_boundaries (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- RESERVED (pdx-hyg-01): no runtime reader/writer as of pdx-hyg-01. Only the
+-- demo seeder (tools/db/seeds/seed_pdc_demo.py) populates this table. No route or
+-- engine reads pc_projects. Kept (not dropped) to preserve deployed DBs.
 CREATE TABLE IF NOT EXISTS pc_projects (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
@@ -174,6 +213,10 @@ CREATE TABLE IF NOT EXISTS pc_projects (
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- RESERVED (pdx-hyg-01): no runtime reader/writer as of pdx-hyg-01. Only the
+-- demo seeder (tools/db/seeds/seed_pdc_demo.py) populates this join table, and the
+-- PDC delete-cascade list in blueprint.py references it by FK. No route or engine
+-- reads pc_project_pipelines. Kept (not dropped) to preserve deployed DBs.
 CREATE TABLE IF NOT EXISTS pc_project_pipelines (
     project_id      TEXT REFERENCES pc_projects(id),
     pipeline_id     TEXT REFERENCES pipelines(id),
@@ -1624,7 +1667,7 @@ def init_db():
             for tpl in TEMPLATES:
                 conn.execute(
                     "INSERT INTO pc_templates (id, name, category, description, graph_json, tags) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (tpl["id"], tpl["name"], tpl["category"], tpl["description"], tpl["graph_json"], tpl["tags"]),
                 )
             conn.commit()
@@ -1638,7 +1681,7 @@ def init_db():
                     "INSERT INTO pc_snippets "
                     "(id, name, category, description, classification_level, impact_level, "
                     "slsa_level, ssdf_practices, graph_json, tags) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         snip["id"],
                         snip["name"],

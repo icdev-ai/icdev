@@ -73,6 +73,10 @@ def profile_env_overrides(profile: dict[str, Any]) -> dict[str, str]:
     if storage_backend and not os.environ.get("ICDEV_STORAGE_BACKEND"):
         overrides["ICDEV_STORAGE_BACKEND"] = storage_backend
 
+    license_tier = profile.get("license_tier")
+    if license_tier and not os.environ.get("ICDEV_LICENSE_TIER"):
+        overrides["ICDEV_LICENSE_TIER"] = license_tier
+
     if profile.get("airgap") and not os.environ.get("ICDEV_AIRGAP"):
         overrides["ICDEV_AIRGAP"] = "true"
 

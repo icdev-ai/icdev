@@ -110,6 +110,32 @@ acceptance_validation:
     - acceptance_criteria_unverified
     - page_content_empty
 
+# Governed Delivery Pipeline gates (Phase 2). These RUN and RECORD per task in
+# kanban_verifications and surface in the /kanban pipeline view. They are
+# non-blocking by default; enforcement (blocking `done`) is toggled at runtime
+# by the KANBAN_PIPELINE_ENFORCE env flag, not by this catalog.
+conformance_review:
+  blocking: []            # enforced only when KANBAN_PIPELINE_ENFORCE=1
+  warning:
+    - conformance_review_failed        # implementation drifted from acceptance criteria
+    - conformance_review_not_run       # no acceptance criteria / no diff / LLM unavailable
+  note: >
+    "Did we build the right thing?" — LLM judge over the branch diff vs the task's
+    acceptance criteria (tools/testing/conformance_reviewer.py, routed via the
+    conformance_review LLM function). Distinct from V&V. Records review_passed /
+    review_findings on kanban_verifications.
+unit_tests:
+  blocking: []            # enforced only when KANBAN_PIPELINE_ENFORCE=1
+  warning:
+    - unit_tests_failed                # pytest on changed test files failed
+  note: >
+    pytest gate — runs only the task's CHANGED test files (validated_commit._run_pytest).
+    Records pytest_passed / pytest_ran / failed_tests on kanban_verifications.
+
+# Aggregation Guard Gate — blocks when a result set's derived classification exceeds
+# the surface ceiling or the requesting user's clearance_level.
+# Run: python tools/security/aggregation_guard.py --gate --json
+
 thresholds:
   sast:
     max_critical: 0

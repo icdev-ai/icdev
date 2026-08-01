@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
     source_event    TEXT        DEFAULT '',
     score           FLOAT       DEFAULT 0.0,
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    last_notified_at TIMESTAMPTZ,
     tenant_id       TEXT        DEFAULT 'default',
     classification  TEXT        DEFAULT 'CUI'
 );
@@ -167,6 +168,26 @@ CREATE TABLE IF NOT EXISTS dic_doc_views (
 CREATE INDEX IF NOT EXISTS idx_dic_doc_views_doc ON dic_doc_views(doc_id);
 CREATE INDEX IF NOT EXISTS idx_dic_doc_views_tenant ON dic_doc_views(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_dic_doc_views_viewed_at ON dic_doc_views(viewed_at);
+
+-- Inter-document cross-references (dmx-ref-01). One row per textual reference
+-- from source_doc_id to another document. target_doc_id is NULL until the
+-- resolution pass matches target_doc_ref to a known DIC document — so this table
+-- is NOT append-only (resolution UPDATEs target_doc_id/target_section).
+CREATE TABLE IF NOT EXISTS dic_cross_references (
+    id              TEXT        PRIMARY KEY,
+    source_doc_id   TEXT        NOT NULL,
+    source_section  TEXT        DEFAULT '',
+    target_doc_ref  TEXT        NOT NULL,
+    target_doc_id   TEXT,
+    target_section  TEXT        DEFAULT '',
+    ref_text        TEXT        DEFAULT '',
+    tenant_id       TEXT        DEFAULT 'default',
+    classification  TEXT        DEFAULT 'CUI',
+    extracted_at    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_source ON dic_cross_references(source_doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_target ON dic_cross_references(target_doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_tenant ON dic_cross_references(tenant_id);
 """
 
 _SCHEMA_SQLITE = """
@@ -225,6 +246,7 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
     source_event    TEXT    DEFAULT '',
     score           REAL    DEFAULT 0.0,
     updated_at      TEXT    DEFAULT (datetime('now')),
+    last_notified_at TEXT,
     tenant_id       TEXT    DEFAULT 'default',
     classification  TEXT    DEFAULT 'CUI'
 );
@@ -325,6 +347,24 @@ CREATE TABLE IF NOT EXISTS dic_doc_views (
 CREATE INDEX IF NOT EXISTS idx_dic_doc_views_doc ON dic_doc_views(doc_id);
 CREATE INDEX IF NOT EXISTS idx_dic_doc_views_tenant ON dic_doc_views(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_dic_doc_views_viewed_at ON dic_doc_views(viewed_at);
+
+-- Inter-document cross-references (dmx-ref-01). NOT append-only: target_doc_id
+-- is NULL until the resolution pass fills it in.
+CREATE TABLE IF NOT EXISTS dic_cross_references (
+    id              TEXT    PRIMARY KEY,
+    source_doc_id   TEXT    NOT NULL,
+    source_section  TEXT    DEFAULT '',
+    target_doc_ref  TEXT    NOT NULL,
+    target_doc_id   TEXT,
+    target_section  TEXT    DEFAULT '',
+    ref_text        TEXT    DEFAULT '',
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI',
+    extracted_at    TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_source ON dic_cross_references(source_doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_target ON dic_cross_references(target_doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_cross_refs_tenant ON dic_cross_references(tenant_id);
 """
 
 _INIT_DONE = False
@@ -349,6 +389,18 @@ def init_db() -> None:
             if stmt:
                 cur.execute(stmt)
         conn.commit()
+        # dmx-loop-01: idempotent column add so pre-existing DBs gain the
+        # freshness-notification cooldown store (last_notified_at). ADD COLUMN
+        # raises if it already exists (PG + SQLite) — swallow + roll back so
+        # init stays clean and re-runnable.
+        try:
+            cur.execute("ALTER TABLE dic_doc_freshness ADD COLUMN last_notified_at TEXT")
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         conn.close()
         _INIT_DONE = True
         logger.info("DIC schema initialized")

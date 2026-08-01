@@ -10,7 +10,7 @@
   .mc-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px; transition: border-color 0.2s; }
   .mc-card h3 { margin: 0 0 10px; font-size: 14px; display:flex;align-items:center;gap:8px; }
   .mc-card p { color: #7a8cb0; font-size: 12px; margin: 0 0 10px; }
-  .mc-btn { display:inline-block;padding:6px 14px;background:#0f3460;color:#7a8cb0;border-radius:6px;text-decoration:none;font-size:12px;margin:4px 4px 0 0;border:1px solid #1e3a6e; }
+  .mc-btn { display:inline-block;padding:6px 14px;background:#0f3460;color:#7a8cb0;border-radius:6px;text-decoration:none;font-size:12px;margin:4px 4px 0 0;border:1px solid #1e3a6e;cursor:pointer; }
   .mc-btn:hover { background:#1e3a6e;color:#eaeaea; }
   .mc-btn-pri { background:#00bcd4;color:#0a1628;border-color:#00bcd4;font-weight:600; }
   .mc-btn-pri:hover { background:#00acc1;color:#fff; }
@@ -24,97 +24,176 @@
   .zone-int { background:#3498db; }
   .zone-exe { background:#27ae60; }
   .zone-sec { background:#e74c3c; }
+  /* Mission list + result panels (cnr-mc-03: real panels, no prompt()/alert()) */
+  .mc-toolbar { padding: 0 30px 6px; display:flex;gap:10px;align-items:center;flex-wrap:wrap; }
+  .mc-toolbar label { font-size:12px;color:#7a8cb0; }
+  .mc-input { background:#0a1628;border:1px solid #1e3a6e;color:#eaeaea;border-radius:6px;padding:6px 10px;font-size:12px;min-width:220px; }
+  .mc-table-wrap { padding: 0 30px 24px; overflow-x:auto; }
+  table.mc-table { width:100%;border-collapse:collapse;font-size:12px; }
+  table.mc-table th, table.mc-table td { text-align:left;padding:7px 10px;border-bottom:1px solid #1e3a6e;color:#c9d4ec; }
+  table.mc-table th { color:#7a8cb0;font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.05em; }
+  .mc-empty { color:#7a8cb0;font-size:12px;padding:10px 0; }
+  .mc-result { margin: 0 30px 30px; background:#0a1628;border:1px solid #1e3a6e;border-radius:8px; }
+  .mc-result-head { display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #1e3a6e; }
+  .mc-result-head .cap { font-size:13px;font-weight:600;color:#eaeaea; }
+  .mc-result-head .status { font-size:11px;color:#7a8cb0; }
+  .mc-result-head .status.ok { color:#27ae60; }
+  .mc-result-head .status.err { color:#e74c3c; }
+  .mc-result pre { margin:0;padding:14px;font-size:12px;color:#c9d4ec;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto; }
+  .mc-obj-tags { padding: 0 30px 24px; display:flex;gap:8px;flex-wrap:wrap; }
+  .mc-obj-tag { font-size:11px;color:#c9d4ec;background:#16213e;border:1px solid #1e3a6e;border-radius:12px;padding:4px 10px; }
 </style>
 
 <div class="mc-hero">
   <h1>Mission Control</h1>
   <p>Program Command Center — unified situational awareness, intelligence, execution, and security posture across all operational domains.</p>
   <div class="mc-stats">
-    <div class="mc-stat"><div class="val">{{ sessions|length }}</div><div class="lbl">Sessions</div></div>
+    <div class="mc-stat"><div class="val">{{ counts.designs if counts else 0 }}</div><div class="lbl">Missions</div></div>
+    <div class="mc-stat"><div class="val">{{ counts.twins if counts else 0 }}</div><div class="lbl">Twin Snapshots</div></div>
+    <div class="mc-stat"><div class="val">{{ counts.evidence if counts else 0 }}</div><div class="lbl">Evidence</div></div>
     <div class="mc-stat"><div class="val">13</div><div class="lbl">Capabilities</div></div>
-    <div class="mc-stat"><div class="val">4</div><div class="lbl">Zones</div></div>
   </div>
 </div>
 
+{# ── Missions (real canvas data) ── #}
+<div class="mc-section-title">Missions</div>
+<div class="mc-table-wrap">
+  {% if designs %}
+  <table class="mc-table">
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>Type</th><th>Classification</th><th>Updated</th></tr>
+    </thead>
+    <tbody>
+      {% for d in designs %}
+      <tr>
+        <td>{{ d.id }}</td>
+        <td>{{ d.name }}</td>
+        <td>{{ d.design_type }}</td>
+        <td>{{ d.classification }}</td>
+        <td>{{ d.updated_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="mc-empty">No missions yet. Create a mission design to populate the command center.</div>
+  {% endif %}
+</div>
+
 <div class="mc-section-title">Operational Zones</div>
+<div class="mc-toolbar">
+  <label for="mc-mission-id">Mission ID</label>
+  <input id="mc-mission-id" class="mc-input" type="text" value="{{ designs[0].id if designs else 'demo-mission-01' }}" placeholder="mission id" />
+  <span class="mc-empty">Select a capability below — results render in the panel, no pop-ups.</span>
+</div>
 <div class="mc-grid">
   {# ── Situation Zone ── #}
   <div class="mc-card">
     <h3><span class="mc-zone-icon zone-sit"></span> Situation</h3>
     <p>Digital twin, real-time correlation, spatial &amp; temporal analysis.</p>
-    <a href="#" class="mc-btn mc-btn-pri" onclick="runApi('twin');return false;">Twin Snapshot</a>
-    <a href="#" class="mc-btn" onclick="runApi('correlate');return false;">Correlate</a>
-    <a href="#" class="mc-btn" onclick="runApi('drift');return false;">Drift Detect</a>
+    <button type="button" class="mc-btn mc-btn-pri" onclick="runApi('twin')">Twin Snapshot</button>
+    <button type="button" class="mc-btn" onclick="runApi('correlate')">Correlate</button>
+    <button type="button" class="mc-btn" onclick="runApi('discover')">Discover</button>
   </div>
 
   {# ── Intelligence Zone ── #}
   <div class="mc-card">
     <h3><span class="mc-zone-icon zone-int"></span> Intelligence</h3>
     <p>Traceable evidence, auto-discovery, plain-English narrative generation.</p>
-    <a href="#" class="mc-btn mc-btn-pri" onclick="runApi('evidence');return false;">Evidence Chain</a>
-    <a href="#" class="mc-btn" onclick="runApi('discover');return false;">Discover</a>
-    <a href="#" class="mc-btn" onclick="runApi('narrative');return false;">Narrative</a>
+    <button type="button" class="mc-btn mc-btn-pri" onclick="runApi('evidence')">Evidence Chain</button>
+    <button type="button" class="mc-btn" onclick="runApi('narrative')">Narrative</button>
   </div>
 
   {# ── Execution Zone ── #}
   <div class="mc-card">
     <h3><span class="mc-zone-icon zone-exe"></span> Execution</h3>
     <p>Agent orchestration, portfolio optimization, DevSecOps CI/CD.</p>
-    <a href="#" class="mc-btn mc-btn-pri" onclick="runApi('orchestrate');return false;">Orchestrate</a>
-    <a href="#" class="mc-btn" onclick="runApi('portfolio');return false;">Portfolio</a>
-    <a href="#" class="mc-btn" onclick="runApi('cicd');return false;">CI/CD Status</a>
+    <button type="button" class="mc-btn mc-btn-pri" onclick="runApi('orchestrate')">Orchestrate</button>
+    <button type="button" class="mc-btn" onclick="runApi('portfolio')">Portfolio</button>
+    <button type="button" class="mc-btn" onclick="runApi('cicd')">CI/CD Status</button>
   </div>
 
   {# ── Security Zone ── #}
   <div class="mc-card">
     <h3><span class="mc-zone-icon zone-sec"></span> Security</h3>
     <p>FedRAMP / ZTA posture, AI trust, conflict detection &amp; resolution.</p>
-    <a href="#" class="mc-btn mc-btn-pri" onclick="runApi('security');return false;">Posture</a>
-    <a href="#" class="mc-btn" onclick="runApi('ai-trust');return false;">AI Trust</a>
-    <a href="#" class="mc-btn" onclick="runApi('conflicts');return false;">Conflicts</a>
+    <button type="button" class="mc-btn mc-btn-pri" onclick="runApi('security')">Posture</button>
+    <button type="button" class="mc-btn" onclick="runApi('ai-trust')">AI Trust</button>
+    <button type="button" class="mc-btn" onclick="runApi('conflicts')">Conflicts</button>
   </div>
 </div>
+
+{# ── Capability result panel (replaces alert()) ── #}
+<div class="mc-result" id="mc-result" style="display:none;">
+  <div class="mc-result-head">
+    <span class="cap" id="mc-result-cap">Result</span>
+    <span class="status" id="mc-result-status"></span>
+  </div>
+  <pre id="mc-result-body"></pre>
+</div>
+
+{% if objects and objects.zones %}
+<div class="mc-section-title">Operational Object Types</div>
+<div class="mc-obj-tags">
+  {% for z in objects.zones %}
+  <span class="mc-obj-tag">{{ z.label }} — {{ z.desc }}</span>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% set iqe_canvas = "mission_canvas" %}
 {% set iqe_api_route = "/mission-canvas/api/iqe-query" %}
 {% set iqe_title = "IQE Query — Mission Control" %}
 {% set iqe_examples = [
-  {"label": "Mission status", "query": "What is the current mission status?"},
-  {"label": "Security posture", "query": "Show me security posture for mission-01"},
-  {"label": "Portfolio opt", "query": "Run portfolio optimization for staging"},
-  {"label": "Narrative", "query": "Generate a plain-English narrative of last 24h events"},
+  {"label": "Missions", "query": "List operational missions"},
+  {"label": "Security posture", "query": "Show security posture with low zta score"},
+  {"label": "Evidence", "query": "Show document evidence"},
+  {"label": "Twin snapshots", "query": "List current twin snapshots"},
 ] %}
 {% include "includes/iqe_query_widget.html" %}
 
 <script>
+// cnr-mc-03: render capability results into a real panel — no prompt(), no alert().
+const MC_CAPS = {
+  "twin":        {label: "Twin Snapshot",   method: "GET",  url: id => "/mission-canvas/api/twin?mission_id=" + encodeURIComponent(id)},
+  "correlate":   {label: "Correlate",       method: "POST", url: () => "/mission-canvas/api/correlate",       body: id => ({mission_id: id, events: []})},
+  "discover":    {label: "Discover",        method: "GET",  url: id => "/mission-canvas/api/discover?mission_id=" + encodeURIComponent(id)},
+  "evidence":    {label: "Evidence Chain",  method: "GET",  url: id => "/mission-canvas/api/evidence?artifact_id=" + encodeURIComponent(id)},
+  "narrative":   {label: "Narrative",       method: "POST", url: () => "/mission-canvas/api/narrative",       body: id => ({mission_id: id, topic: "Mission status"})},
+  "orchestrate": {label: "Orchestrate",     method: "POST", url: () => "/mission-canvas/api/orchestrate",     body: id => ({mission_id: id, objective: "Command center run"})},
+  "portfolio":   {label: "Portfolio",       method: "GET",  url: id => "/mission-canvas/api/portfolio?mission_id=" + encodeURIComponent(id)},
+  "cicd":        {label: "CI/CD Status",    method: "GET",  url: id => "/mission-canvas/api/cicd?mission_id=" + encodeURIComponent(id)},
+  "security":    {label: "Security Posture",method: "GET",  url: id => "/mission-canvas/api/security-posture?mission_id=" + encodeURIComponent(id)},
+  "ai-trust":    {label: "AI Trust",        method: "GET",  url: id => "/mission-canvas/api/ai-trust?mission_id=" + encodeURIComponent(id)},
+  "conflicts":   {label: "Conflicts",       method: "POST", url: () => "/mission-canvas/api/conflicts",       body: id => ({mission_id: id, sources: []})}
+};
+
+function mcShowResult(capLabel, statusText, statusClass, payload) {
+  const panel = document.getElementById("mc-result");
+  document.getElementById("mc-result-cap").textContent = capLabel;
+  const st = document.getElementById("mc-result-status");
+  st.textContent = statusText;
+  st.className = "status " + (statusClass || "");
+  const body = document.getElementById("mc-result-body");
+  body.textContent = (typeof payload === "string") ? payload : JSON.stringify(payload, null, 2);
+  panel.style.display = "block";
+  panel.scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+
 async function runApi(capability) {
-  const missionId = prompt("Enter mission ID:", "demo-mission-01");
-  if (!missionId) return;
-  let url = "";
-  let method = "GET";
-  let body = null;
-  switch (capability) {
-    case "twin": url = "/mission-canvas/api/twin?mission_id=" + encodeURIComponent(missionId); break;
-    case "correlate": method = "POST"; url = "/mission-canvas/api/correlate"; body = JSON.stringify({mission_id: missionId, events: []}); break;
-    case "evidence": url = "/mission-canvas/api/evidence?artifact_id=" + encodeURIComponent(missionId); break;
-    case "discover": url = "/mission-canvas/api/discover?mission_id=" + encodeURIComponent(missionId); break;
-    case "orchestrate": method = "POST"; url = "/mission-canvas/api/orchestrate"; body = JSON.stringify({mission_id: missionId, objective: "Demo run"}); break;
-    case "portfolio": url = "/mission-canvas/api/portfolio?mission_id=" + encodeURIComponent(missionId); break;
-    case "cicd": url = "/mission-canvas/api/cicd?mission_id=" + encodeURIComponent(missionId); break;
-    case "security": url = "/mission-canvas/api/security-posture?mission_id=" + encodeURIComponent(missionId); break;
-    case "ai-trust": url = "/mission-canvas/api/ai-trust?mission_id=" + encodeURIComponent(missionId); break;
-    case "conflicts": method = "POST"; url = "/mission-canvas/api/conflicts"; body = JSON.stringify({mission_id: missionId, sources: []}); break;
-    case "narrative": method = "POST"; url = "/mission-canvas/api/narrative"; body = JSON.stringify({mission_id: missionId, topic: "Mission status"}); break;
-    default: alert("Unknown capability: " + capability); return;
-  }
+  const cap = MC_CAPS[capability];
+  if (!cap) { mcShowResult("Unknown", "error", "err", "Unknown capability: " + capability); return; }
+  const missionId = (document.getElementById("mc-mission-id").value || "demo-mission-01").trim();
+  mcShowResult(cap.label, "running…", "", "Requesting " + cap.label + " for mission " + missionId + " …");
+  const opts = {method: cap.method, headers: {"Accept": "application/json"}};
+  if (cap.body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(cap.body(missionId)); }
   try {
-    const opts = {method};
-    if (body) { opts.headers = {"Content-Type":"application/json"}; opts.body = body; }
-    const resp = await fetch(url, opts);
-    const data = await resp.json();
-    alert(JSON.stringify(data, null, 2).substring(0, 800));
+    const resp = await fetch(cap.url(missionId), opts);
+    let data;
+    try { data = await resp.json(); } catch (e) { data = {error: "non-JSON response"}; }
+    mcShowResult(cap.label, "HTTP " + resp.status, resp.ok ? "ok" : "err", data);
   } catch (e) {
-    alert("API call failed: " + e);
+    mcShowResult(cap.label, "request failed", "err", String(e));
   }
 }
 </script>

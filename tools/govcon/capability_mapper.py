@@ -32,10 +32,12 @@ import json
 import os
 import sqlite3
 import sys
-import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.capability_mapper")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -59,12 +61,12 @@ def _now():
 def _audit(conn, action, details="", actor="capability_mapper"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.capability_map", actor, action, details, "govcon"),
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.capability_map", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _load_config():
@@ -252,7 +254,6 @@ def map_all_patterns(store=True):
                         "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "  # noqa: E501
                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                         (
-                            str(uuid.uuid4()),
                             p_dict["id"],
                             m["capability_id"],
                             m["score"],
@@ -301,7 +302,6 @@ def map_single_pattern(pattern_id, store=True):
                     "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
-                        str(uuid.uuid4()),
                         pattern_id,
                         m["capability_id"],
                         m["score"],

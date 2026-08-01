@@ -20,6 +20,11 @@ from typing import Any
 
 logger = get_logger(__name__)
 
+try:  # fpdf2 is an optional dependency (air-gap installs may lack it)
+    from fpdf.enums import XPos, YPos
+except ImportError:  # pragma: no cover - resolved lazily where fpdf2 is present
+    XPos = YPos = None  # type: ignore[assignment]
+
 _CLASSIFICATION = "CUI // SP-CTI"
 _BRAND = "ICDEV Network Migration Phases"  # TM stripped — fpdf2 core fonts are latin-1 only
 
@@ -96,19 +101,19 @@ def export_to_pdf(
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_fill_color(bg_r, bg_g, bg_b)
         pdf.set_text_color(255, 255, 255)
-        pdf.cell(0, 6, f"  {_safe(classification)}", ln=True, fill=True)
+        pdf.cell(0, 6, f"  {_safe(classification)}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
         pdf.set_text_color(0, 0, 0)
         pdf.ln(4)
 
         # ── Title ─────────────────────────────────────────────────────────────
         pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, _safe(title), ln=True)
+        pdf.cell(0, 10, _safe(title), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)
 
         # ── Body ──────────────────────────────────────────────────────────────
         pdf.set_font("Helvetica", "", 10)
         for line in content.splitlines():
-            pdf.multi_cell(0, 5, _safe(line))
+            pdf.multi_cell(0, 5, _safe(line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # ── Bottom banner on every page ───────────────────────────────────────
         total = pdf.page
@@ -118,7 +123,7 @@ def export_to_pdf(
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_fill_color(bg_r, bg_g, bg_b)
             pdf.set_text_color(255, 255, 255)
-            pdf.cell(0, 5, f"  {_safe(classification)} | Page {pno} of {total}", ln=True, fill=True)
+            pdf.cell(0, 5, f"  {_safe(classification)} | Page {pno} of {total}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
         pdf.page = total
 
         pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -177,18 +182,18 @@ def _build_pdf_fpdf(
     pdf.ln(8)
     pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(30, 110, 181)
-    pdf.cell(0, 12, _safe(_BRAND), ln=True, align="C")
+    pdf.cell(0, 12, _safe(_BRAND), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.set_font("Helvetica", "B", 16)
     pdf.set_text_color(50, 50, 50)
-    pdf.cell(0, 10, _safe(topo_name), ln=True, align="C")
+    pdf.cell(0, 10, _safe(topo_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.set_font("Helvetica", "", 13)
     pdf.set_text_color(80, 80, 80)
-    pdf.cell(0, 8, _safe(phase_label), ln=True, align="C")
+    pdf.cell(0, 8, _safe(phase_label), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.ln(4)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(120, 120, 120)
-    pdf.cell(0, 6, f"Generated: {_now_str()}", ln=True, align="C")
-    pdf.cell(0, 6, "Classification: CUI // SP-CTI | Distribution: Authorized Recipients Only", ln=True, align="C")
+    pdf.cell(0, 6, f"Generated: {_now_str()}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.cell(0, 6, "Classification: CUI // SP-CTI | Distribution: Authorized Recipients Only", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     # Summary stats on cover
     nodes = graph.get("nodes", [])
@@ -208,7 +213,7 @@ def _build_pdf_fpdf(
         pdf.ln(4)
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_text_color(30, 110, 181)
-        pdf.cell(0, 8, _safe(f"Network Topology Diagram - {phase_label}"), ln=True)
+        pdf.cell(0, 8, _safe(f"Network Topology Diagram - {phase_label}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         _draw_topology(pdf, graph)
 
     # ── Pages 3+: Info Boxes ──────────────────────────────────────────────────
@@ -235,7 +240,7 @@ def _cui_banner(pdf: Any) -> None:
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(180, 30, 30)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 5, f"  {_CLASSIFICATION}", ln=True, fill=True)
+    pdf.cell(0, 5, f"  {_CLASSIFICATION}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
     pdf.set_text_color(0, 0, 0)
 
 
@@ -248,7 +253,7 @@ def _cui_footer_all(pdf: Any) -> None:
         pdf.set_font("Helvetica", "B", 7)
         pdf.set_fill_color(180, 30, 30)
         pdf.set_text_color(255, 255, 255)
-        pdf.cell(0, 4, f"  {_CLASSIFICATION} | Page {pno} of {total} | {_BRAND}", ln=True, fill=True)
+        pdf.cell(0, 4, f"  {_CLASSIFICATION} | Page {pno} of {total} | {_BRAND}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
     pdf.page = total
 
 
@@ -260,7 +265,7 @@ def _summary_table(pdf: Any, rows: list[tuple[str, str]]) -> None:
         pdf.set_fill_color(240, 244, 250)
         pdf.cell(w1, 7, label, border=1, fill=True)
         pdf.set_font("Helvetica", "", 10)
-        pdf.cell(w2, 7, value, border=1, ln=True)
+        pdf.cell(w2, 7, value, border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "B", 10)
 
 
@@ -322,7 +327,7 @@ def _draw_topology(pdf: Any, graph: dict) -> None:
     ly = off_y
     pdf.set_font("Helvetica", "B", 7)
     pdf.set_xy(lx, ly)
-    pdf.cell(50, 5, "Legend:", ln=True)
+    pdf.cell(50, 5, "Legend:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     for state, color, label in [
         ("existing", (30, 110, 181), "Existing"),
         ("new", (39, 174, 96), "New"),
@@ -335,7 +340,7 @@ def _draw_topology(pdf: Any, graph: dict) -> None:
         pdf.set_font("Helvetica", "", 7)
         pdf.set_text_color(50, 50, 50)
         pdf.set_xy(lx + 6, pdf.get_y())
-        pdf.cell(44, 3.5, label, ln=True)
+        pdf.cell(44, 3.5, label, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_y(off_y + area_h + 5)
 
@@ -349,7 +354,7 @@ def _add_infobox_pages(pdf: Any, infoboxes: list[dict], phase_label: str) -> Non
         pdf.ln(3)
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_text_color(30, 110, 181)
-        pdf.cell(0, 7, _safe(f"Critical Info Boxes - {phase_label}"), ln=True)
+        pdf.cell(0, 7, _safe(f"Critical Info Boxes - {phase_label}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
 
         chunk = infoboxes[i: i + per_page]
@@ -372,7 +377,7 @@ def _render_infobox(pdf: Any, box: dict, width: float) -> None:
     pdf.set_fill_color(r, g, b)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 9)
-    pdf.cell(width, 6, _safe(f"  {title}"), border=0, ln=True, fill=True)
+    pdf.cell(width, 6, _safe(f"  {title}"), border=0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
 
     # Rows
     pdf.set_font("Helvetica", "", 8)
@@ -394,7 +399,7 @@ def _render_infobox(pdf: Any, box: dict, width: float) -> None:
         pdf.cell(width * 0.55, 5, f"  {label}", border="LRB", fill=True)
         pdf.set_text_color(*vc)
         pdf.set_font("Helvetica", "B" if status else "", 8)
-        pdf.cell(width * 0.45, 5, value, border="RB", ln=True)
+        pdf.cell(width * 0.45, 5, value, border="RB", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "", 8)
         pdf.set_text_color(80, 80, 80)
 
@@ -407,7 +412,7 @@ def _add_device_inventory_page(pdf: Any, nodes: list[dict], topo_name: str) -> N
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(30, 110, 181)
-    pdf.cell(0, 7, _safe(f"Device Inventory - {topo_name}"), ln=True)
+    pdf.cell(0, 7, _safe(f"Device Inventory - {topo_name}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
 
     headers = ["Device Name", "Type", "Vendor", "Model", "Mgmt IP", "EOL", "Rack U"]
@@ -448,7 +453,7 @@ def _add_device_inventory_page(pdf: Any, nodes: list[dict], topo_name: str) -> N
     if len(nodes) > 80:
         pdf.set_font("Helvetica", "I", 7)
         pdf.set_text_color(120, 120, 120)
-        pdf.cell(0, 5, f"  ... and {len(nodes) - 80} more devices", ln=True)
+        pdf.cell(0, 5, f"  ... and {len(nodes) - 80} more devices", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
 def _add_port_mapping_page(pdf: Any, phase_meta: dict) -> None:
@@ -457,7 +462,7 @@ def _add_port_mapping_page(pdf: Any, phase_meta: dict) -> None:
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(30, 110, 181)
-    pdf.cell(0, 7, _safe(f"Port Mapping - Phase {phase_meta.get('phase_num', '?')}: {phase_meta.get('title', '')}"), ln=True)
+    pdf.cell(0, 7, _safe(f"Port Mapping - Phase {phase_meta.get('phase_num', '?')}: {phase_meta.get('title', '')}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
 
     pm = phase_meta.get("port_mappings") or []
@@ -503,7 +508,7 @@ def _add_consolidation_page(pdf: Any, c: dict) -> None:
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(30, 110, 181)
-    pdf.cell(0, 7, "Consolidation & Optimization Analysis - Final/To-Be State", ln=True)
+    pdf.cell(0, 7, "Consolidation & Optimization Analysis - Final/To-Be State", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
 
     sections = [
@@ -544,7 +549,7 @@ def _add_consolidation_page(pdf: Any, c: dict) -> None:
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_fill_color(30, 110, 181)
         pdf.set_text_color(255, 255, 255)
-        pdf.cell(col_w * 2 // len(sections) + 10, 6, _safe(f"  {sec_title}"), border=0, ln=True, fill=True)
+        pdf.cell(col_w * 2 // len(sections) + 10, 6, _safe(f"  {sec_title}"), border=0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
         for label, value in rows:
             pdf.set_font("Helvetica", "", 8)
             pdf.set_text_color(60, 60, 60)
@@ -552,7 +557,7 @@ def _add_consolidation_page(pdf: Any, c: dict) -> None:
             pdf.cell(col_w * 0.55, 5, _safe(f"  {label}"), border=1, fill=True)
             pdf.set_font("Helvetica", "B", 8)
             pdf.set_text_color(20, 100, 40)
-            pdf.cell(col_w * 0.45, 5, _safe(value), border=1, ln=True)
+            pdf.cell(col_w * 0.45, 5, _safe(value), border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(3)
 
 

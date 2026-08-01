@@ -1,0 +1,26 @@
+# PG pytest tier allowlist (kph) — run by tools/testing/pg_pytest_tier.py under
+# ICDEV_PYTEST_PG=1 against a LIVE PostgreSQL service so PG-native `%s` /
+# portability bugs fail loudly (SQLite masks them via translate_sql).
+#
+# ONLY list tests that genuinely exercise runtime DB code on the AMBIENT backend
+# — i.e. they do NOT self-force sqlite (no monkeypatch.setenv ICDEV_STORAGE_BACKEND
+# or ICDEV_DB_PATH redirect in their fixtures) and do NOT roll their own raw
+# sqlite3 connection. The deeper PG/RLS assertions (audit persistence, cross-tenant
+# isolation) come from the verify_* scripts the runner also executes, because those
+# purpose-built checks force real PG whereas the equivalent unit tests self-force
+# sqlite.
+#
+# One path per line; blank lines and `#` comments are ignored. Grow this as new
+# PG-safe, DB-exercising tests land (the coherence check_test_db_isolation gate
+# keeps new tests honest about connection style).
+
+# v1 — conservative set that is robust on a FRESH consolidated-schema PG (the
+# runner applies the cortex schema first via init_db). These mock the LLM and
+# exercise the governed facade + TRUST pipeline through get_connection on PG.
+# Data-dependent analyst/search tests (test_analyst_*, test_search_*) pass on a
+# fully-migrated PG but were held back until validated against a fresh CI PG —
+# add them here once green.
+tests/pg_tier/test_pg_backend_sentinel.py
+tests/cortex/test_api_governed.py
+tests/cortex/test_governance_pipeline.py
+tests/cortex/test_api_core.py

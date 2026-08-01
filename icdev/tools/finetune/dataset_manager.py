@@ -24,6 +24,9 @@ from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.finetune.dataset_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -54,8 +57,8 @@ def _audit(conn: sqlite3.Connection, project_id: str, event_type: str, details: 
             "INSERT INTO audit_trail (project_id, event_type, details, actor, created_at) VALUES (%s, %s, %s, %s, %s)",
             (project_id, event_type, details, "finetune_dataset_manager", _now()),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ── Dataset CRUD ──────────────────────────────────────────────────────

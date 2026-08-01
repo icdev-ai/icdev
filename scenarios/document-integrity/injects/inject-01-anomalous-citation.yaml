@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+id: inject-01-anomalous-citation
+title: 'ALERT: Deliverable Cites a Passage That Does Not Exist'
+body_md: "## DIC INTEGRITY ALERT — CITATION MISMATCH\n\n**Classification:** CUI // SP-CTI  \n**Severity:**\
+  \ P1 — Deliverable integrity at risk\n\nThe DIC citation guard flagged a draft deliverable (`del-2291`)\
+  \ scheduled to promote\nin 120 minutes. One claim carries an inline citation to a source passage that\
+  \ grounded\nsearch cannot locate in the ingested corpus:\n\n> Claim: \"Fleet-wide readiness recovered\
+  \ to 0.91 within 30 days of the parts surge.\"  \n> Cited as: `[source: LOGREADINESS-Q2.pdf, p.14]`\n\
+  \nA `dic_search` for that passage returns the top match at **cosine 0.38** — well below the\ngrounding\
+  \ threshold (0.72). The cited page 14 exists, but its text is about fuel logistics,\nnot readiness recovery.\n\
+  \n### Your Task\n1. **Verdict** — Is this citation grounded, weakly grounded, or fabricated? Justify\
+  \ with\n   the retrieval score and the page-content mismatch.\n2. **Evidence** — Use DIC Grounded Search\
+  \ / Knowledge Search to show what the cited source\n   actually says vs what the claim asserts.\n3.\
+  \ **Next Steps** — List 3 concrete steps to determine whether the source was poisoned or\n   the generator\
+  \ hallucinated the citation.\n\nPoints for grounding your verdict in real retrieval evidence and for\
+  \ speed."
+context_note: 'Correct verdict: fabricated citation (retrieval 0.38 << 0.72 threshold, page content mismatch).
+
+  The strongest teams will note that a low retrieval score plus a real-but-wrong page is the
+
+  signature of a poisoned source rather than a pure generator hallucination, and will propose
+
+  checking ingestion provenance next. Reward evidence-based reasoning over the bare verdict.'

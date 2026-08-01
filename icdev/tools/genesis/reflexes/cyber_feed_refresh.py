@@ -189,6 +189,30 @@ def run(context: dict, session) -> dict:  # noqa: ANN001
             result["error"] = kev_result.get("error", "unknown")
 
         _log_run(conn, result)
+
+        # Notify downstream canvases (e.g. NDC vuln overlays) that new CVE /
+        # KEV data landed so they can mark affected overlays stale.
+        try:
+            total_new = int(result.get("nvd_upserted", 0)) + int(
+                result.get("kev_flagged", 0)
+            )
+            if total_new > 0:
+                from tools.canvas.event_bus import publish as _eb_publish
+
+                _eb_publish(
+                    "sdc",
+                    "sdc.cve.published",
+                    {
+                        "nvd_upserted": result.get("nvd_upserted", 0),
+                        "kev_flagged": result.get("kev_flagged", 0),
+                        "cve_ids": [],
+                    },
+                )
+        except Exception as _emit_exc:  # noqa: BLE001 — bus failure must not break the reflex
+            logger.debug(
+                "cyber_feed_refresh: cve.published emit skipped: %s", _emit_exc
+            )
+
         return result
 
     finally:
@@ -196,5 +220,14 @@ def run(context: dict, session) -> dict:  # noqa: ANN001
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     logging.basicConfig(level=logging.INFO)
     print(json.dumps(run({}, None), indent=2))

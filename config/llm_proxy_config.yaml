@@ -1,0 +1,41 @@
+# ICDEV LLM Proxy (LiteLLM) configuration — lpx-proxy-02
+#
+# OPT-IN, OFF BY DEFAULT. This config is only consumed by the `litellm-proxy`
+# Docker Compose service, which lives behind the `llm-proxy` compose profile and
+# does not start unless that profile is explicitly activated:
+#
+#     docker compose --profile llm-proxy up -d litellm-proxy
+#
+# Selected per ADR docs/features/lpx-proxy-01-adr-llm-proxy-selection.md (LiteLLM,
+# cloud-egress only). NEVER used in the air-gapped / CUI baseline — CUI traffic
+# stays on the in-tree Bedrock proxy (see lpx-egress-02).
+#
+# SECURITY: real provider keys are injected from the environment at runtime via
+# `os.environ/<VAR>`. NO real key is ever written into this file. Virtual keys
+# for cohorts are issued at runtime (lpx-keys-01), not listed here.
+
+model_list:
+  - model_name: claude-sonnet
+    litellm_params:
+      # Model id resolved by LiteLLM; the real key comes from the environment.
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+general_settings:
+  # Admin/master key for the proxy management API — env only, never committed.
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Reuse ICDEV's existing PostgreSQL for proxy metadata (virtual keys, spend)
+  # rather than standing up a new datastore (lpx-proxy-02 requirement).
+  database_url: os.environ/LITELLM_DATABASE_URL
+  # Batch spend writes to reduce DB pressure.
+  proxy_batch_write_at: 10
+
+litellm_settings:
+  # Drop unsupported params rather than erroring, for provider portability.
+  drop_params: true
+  # Do not log raw prompts/responses at the proxy; ICDEV owns audit (lpx-obs-*).
+  turn_off_message_logging: true

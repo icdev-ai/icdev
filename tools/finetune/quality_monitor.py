@@ -295,6 +295,108 @@ def get_quality_status(conn: Optional[sqlite3.Connection] = None) -> Dict[str, A
 
 
 # ---------------------------------------------------------------------------
+# Regression Detection
+# ---------------------------------------------------------------------------
+
+# Metrics where higher values are better
+_HIGHER_IS_BETTER = {"bleu", "rouge_l", "accuracy", "f1", "pass_rate", "ndcg", "mrr", "faithfulness"}
+# Metrics where lower values are better
+_LOWER_IS_BETTER = {"perplexity", "loss"}
+
+
+def detect_regression(
+    current_metrics: dict,
+    baseline_metrics: dict,
+    *,
+    threshold_pct: float = 0.05,
+) -> dict:
+    """Compare current model metrics to baseline and flag regressions.
+
+    Returns dict with has_regression, regressions, improvements, and summary.
+    """
+    regressions = []
+    improvements = []
+
+    for metric, baseline_val in baseline_metrics.items():
+        if metric not in current_metrics:
+            continue
+        current_val = current_metrics[metric]
+        if baseline_val == 0:
+            continue  # avoid division by zero
+        delta_pct = (current_val - baseline_val) / abs(baseline_val)
+
+        if metric in _LOWER_IS_BETTER:
+            # Higher delta_pct = worse (value went up)
+            if delta_pct > threshold_pct:
+                regressions.append({"metric": metric, "delta_pct": round(delta_pct, 6), "direction": "worse"})
+            elif delta_pct < -threshold_pct:
+                improvements.append({"metric": metric, "delta_pct": round(delta_pct, 6), "direction": "better"})
+        else:
+            # Default: higher is better (value went down = worse)
+            if delta_pct < -threshold_pct:
+                regressions.append({"metric": metric, "delta_pct": round(delta_pct, 6), "direction": "worse"})
+            elif delta_pct > threshold_pct:
+                improvements.append({"metric": metric, "delta_pct": round(delta_pct, 6), "direction": "better"})
+
+    has_regression = bool(regressions)
+    if has_regression:
+        reg_names = ", ".join(r["metric"] for r in regressions)
+        summary = f"Regression detected in: {reg_names}"
+    elif improvements:
+        imp_names = ", ".join(i["metric"] for i in improvements)
+        summary = f"Improvements detected in: {imp_names}"
+    else:
+        summary = "No significant changes detected"
+
+    return {
+        "has_regression": has_regression,
+        "regressions": regressions,
+        "improvements": improvements,
+        "summary": summary,
+    }
+
+
+def compare_jobs(job_id_a: str, job_id_b: str, *, conn=None) -> dict:
+    """Load final metrics for two training jobs and return regression report (B vs A).
+
+    job_id_a is the baseline; job_id_b is the candidate being evaluated.
+    """
+    close_conn = conn is None
+    if conn is None:
+        conn = _get_db()
+
+    try:
+        def _load_metrics(job_id: str) -> dict:
+            """Load final metrics JSON from ft_training_jobs."""
+            try:
+                row = conn.execute(
+                    "SELECT final_metrics FROM ft_training_jobs WHERE id = %s",
+                    (job_id,),
+                ).fetchone()
+                if row is None:
+                    return {}
+                raw = row["final_metrics"] if hasattr(row, "keys") else row[0]
+                if not raw:
+                    return {}
+                return json.loads(raw) if isinstance(raw, str) else raw
+            except Exception:
+                return {}
+
+        metrics_a = _load_metrics(job_id_a)
+        metrics_b = _load_metrics(job_id_b)
+
+        report = detect_regression(metrics_b, metrics_a)
+        report["job_id_baseline"] = job_id_a
+        report["job_id_candidate"] = job_id_b
+        report["baseline_metrics"] = metrics_a
+        report["candidate_metrics"] = metrics_b
+        return report
+    finally:
+        if close_conn:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 

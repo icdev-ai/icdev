@@ -74,7 +74,13 @@ def _ensure_tables(conn) -> None:
 
 
 def _resolve_dast_signal(conn, application: str) -> float:
-    """Pull the latest DAST gate result for the application as a 0..1 signal."""
+    """Pull the latest DAST gate result for the application as a 0..1 signal.
+
+    A gate row with status ``unknown`` carries no scan evidence (see
+    ``dast_runtime_gates`` — checks with no observation are never scored as
+    passing), so it resolves to the same neutral value as "no gate run yet". It
+    must never earn authorization credit from a scan that did not happen.
+    """
     row = conn.execute(
         "SELECT gate_status, dast_score, runtime_score FROM zig_dast_gate_results "
         "WHERE application=%s ORDER BY evaluated_at DESC LIMIT 1",
@@ -84,7 +90,9 @@ def _resolve_dast_signal(conn, application: str) -> float:
         return 0.6  # no gate run yet → neutral
     if row["gate_status"] == "blocked":
         return 0.3
-    return round(0.6 * (row["dast_score"] or 0) + 0.4 * (row["runtime_score"] or 0), 4)
+    if row["gate_status"] == "unknown" or row["dast_score"] is None or row["runtime_score"] is None:
+        return 0.6  # evidence-free evaluation → neutral, not credit
+    return round(0.6 * row["dast_score"] + 0.4 * row["runtime_score"], 4)
 
 
 def evaluate_authorization(application: str, signals: dict | None = None) -> dict[str, Any]:

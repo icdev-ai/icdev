@@ -87,6 +87,7 @@
 }
 .fa-tier-header::after { content:""; flex:1; height:1px; background:var(--fa-border); }
 </style>
+{% include "forge_academy/partials/_chrome_clearance.html" %}
 {% endblock %}
 
 {% block content %}
@@ -140,9 +141,36 @@
       <div class="fa-tier-stripe"></div>
       <div class="fa-card-hdr">
         <div class="fa-card-title">{{ m.title }}</div>
+        {# A mission with no steps is a dead end; say so on the card rather than
+           after the click (fga-wire-06). is_available is derived from step
+           count in list_missions. #}
+        {% if m.is_available is defined and not m.is_available %}
+        <span class="fa-type-badge" style="background:#2a2118;color:#ffce7a;border:1px solid #d98b12;">coming soon</span>
+        {% elif m.is_locked %}
+        {# aca-ux-04: locked-but-readable — say so before the click. The card still
+           navigates; the mission just cannot earn credit yet. #}
+        <span class="fa-type-badge" title="Readable, but earns no XP until this tier unlocks"
+              style="background:#1a1a24;color:#9aa0b5;border:1px solid #4a4a5e;">&#128274; locked</span>
+        {% else %}
         <span class="fa-type-badge {{ m.mission_type|default('coding') }}">{{ m.mission_type|default('coding') }}</span>
+        {% endif %}
       </div>
       <p class="fa-card-tag">{{ m.tagline|default('') }}</p>
+      {# aca-ux-06: 86 of 122 missions declare prerequisites and none were shown, so a
+         122-mission catalogue had no visible ordering. Advisory, not a gate — the card
+         still navigates, matching the locked-but-readable choice made in aca-ux-04. #}
+      {% set pre = prereq_state.get(m.id) if prereq_state is defined else None %}
+      {% if pre and pre.prereqs %}
+      <div style="font-size:.68rem;color:var(--text-secondary);margin:-.2rem 0 .5rem;">
+        <span style="opacity:.8;">Requires:</span>
+        {% for p in pre.prereqs %}
+        <span title="{{ 'Completed' if p.satisfied else 'Not yet completed' }}"
+              style="color:{{ '#00FF88' if p.satisfied else '#ffce7a' }};">
+          {{ '&#10003;'|safe if p.satisfied else '&#9675;'|safe }} {{ p.title }}
+        </span>{% if not loop.last %}<span style="opacity:.5;">,</span>{% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="fa-card-ft">
         <span class="fa-xp-badge">+{{ m.xp_reward }} XP</span>
         <span class="fa-diff {{ m.difficulty|default('beginner') }}">{{ m.difficulty|default('beginner') }}</span>

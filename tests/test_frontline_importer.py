@@ -78,7 +78,11 @@ def patched_importer(db_path, monkeypatch):
     """Patch get_connection() and is_pg() so bulk_import hits the test DB."""
     import tools.sg.frontline_importer as fi
 
-    monkeypatch.setattr(fi, "get_connection", lambda: sqlite3.connect(db_path))
+    # Translating wrapper: the importer authors %s for PostgreSQL, so a bare
+    # sqlite3 connection turned every INSERT into a syntax error.
+    from _sql_compat import connect as _tconnect
+
+    monkeypatch.setattr(fi, "get_connection", lambda: _tconnect(db_path, row_factory=False))
     monkeypatch.setattr(fi, "is_pg", lambda: False)
     return db_path
 

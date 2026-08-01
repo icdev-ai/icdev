@@ -14,6 +14,7 @@ Public entry point: ``check_and_diagnose(task_id, reason, cwd)``.
 
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
+from tools.workflow.git_utils import default_branch
 
 import hashlib
 import json
@@ -159,6 +160,23 @@ def _safe_run(cmd: List[str], cwd: Optional[Path] = None, timeout: int = 10) -> 
         return f"<error: {exc}>"
 
 
+def _git_ref_exists(ref: str, cwd: Path) -> bool:
+    """True only if git's exit code confirms the ref exists.
+
+    Unlike ``_safe_run``, which swallows git's own non-zero exit (fatal:
+    messages are just text in the returned string), this checks the actual
+    return code so a missing ref is never mistaken for a present one.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--verify", ref],
+            cwd=str(cwd), capture_output=True, text=True, timeout=10,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 def _suspect_code_refs(reason: str) -> List[str]:
     """Find distinctive phrases in the reason and grep the codebase for them.
 
@@ -211,11 +229,13 @@ def snapshot(task_id: str, cwd: str, reason: str) -> Dict[str, Any]:
     snap["worktree_registered"] = str(cwd_path).replace("\\", "/") in wt_list.replace("\\", "/")
     # Branch state
     branch = f"kanban/{task_id}"
-    snap["branch_exists"] = bool(_safe_run(
-        ["git", "rev-parse", "--verify", branch], cwd=BASE_DIR).strip()
-        and "<error" not in _safe_run(["git", "rev-parse", "--verify", branch], cwd=BASE_DIR))
-    snap["branch_commits_ahead"] = _safe_run(
-        ["git", "rev-list", "--count", f"main..{branch}"], cwd=BASE_DIR).strip()
+    snap["branch_exists"] = _git_ref_exists(branch, BASE_DIR)
+    if snap["branch_exists"]:
+        db = default_branch(str(BASE_DIR))
+        snap["branch_commits_ahead"] = _safe_run(
+            ["git", "rev-list", "--count", f"{db}..{branch}"], cwd=BASE_DIR).strip()
+    else:
+        snap["branch_commits_ahead"] = "n/a: branch does not exist"
     # Last task log tail
     log_path = KANBAN_DIR / f"{task_id}.log"
     if log_path.exists():

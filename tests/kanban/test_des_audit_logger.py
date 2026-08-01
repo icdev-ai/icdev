@@ -24,6 +24,21 @@ os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _storage_conn(db_path):
+    """Connect the way production does, via tools.db.storage.
+
+    Patching get_connection with a RAW sqlite3 connection is the bug this
+    replaces: runtime SQL is authored for PostgreSQL (%s placeholders, per
+    CLAUDE.md) and the storage wrapper is what translates them to SQLite's ?.
+    A raw sqlite3 connection turns every %s into `near "%": syntax error`,
+    which the loggers swallow -- so they silently returned "" and the tests
+    failed on an empty event id rather than on the real error.
+    """
+    from tools.db.storage import get_connection as _real_get_connection
+
+    return _real_get_connection(db_path=str(db_path))
+
+
 def _make_db(tmp_path):
     """Return a sqlite3 connection backed by a temp file with the DES table."""
     from tests.conftest import MINIMAL_ICDEV_SCHEMA
@@ -71,7 +86,7 @@ def test_log_dispatch_inserts_dispatch_row(tmp_path):
     logger = DESAuditLogger()
     with patch(
         "tools.kanban.des_audit_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_dispatch(
             task_id="task-001",
@@ -104,7 +119,7 @@ def test_log_completion_inserts_completion_row(tmp_path):
     logger = DESAuditLogger()
     with patch(
         "tools.kanban.des_audit_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_completion(
             task_id="task-002",
@@ -137,7 +152,7 @@ def test_log_verification_inserts_verification_row(tmp_path):
     signals = {"codelens": True, "coherence": True, "e2e": True, "passed": True}
     with patch(
         "tools.kanban.des_audit_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_verification(task_id="task-003", signals=signals)
 
@@ -164,7 +179,7 @@ def test_log_gate_override_inserts_gate_override_row(tmp_path):
     logger = DESAuditLogger()
     with patch(
         "tools.kanban.des_audit_logger.get_connection",
-        return_value=sqlite3.connect(str(db_path)),
+        side_effect=lambda *_a, **_kw: _storage_conn(db_path),
     ):
         event_id = logger.log_gate_override(
             task_id="task-004",
@@ -210,8 +225,16 @@ def test_no_update_or_delete_issued(tmp_path):
         def close(self):
             return self._real.close()
 
-    real_conn = sqlite3.connect(str(db_path))
-    real_conn.row_factory = sqlite3.Row
+        def __getattr__(self, name):
+            # Delegate everything else (e.g. ``_conn`` / ``_backend`` / ``cursor``)
+            # to the wrapped StorageConnection so the backend-aware table_exists()
+            # probe can introspect through the same connection.
+            return getattr(self._real, name)
+
+    # Wrap the STORAGE connection, not a raw sqlite3 one -- the recorder must sit
+    # in front of the same translating wrapper production uses, or the %s
+    # placeholders never translate and nothing is ever executed to record.
+    real_conn = _storage_conn(db_path)
     recording_conn = _RecordingConn(real_conn)
 
     logger = DESAuditLogger()

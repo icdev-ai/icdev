@@ -74,13 +74,20 @@ def _sqlite_env(monkeypatch, tmp_path):
     conn.commit()
     conn.close()
 
-    # Patch get_connection to return our test db
+    # Patch get_connection to return the real StorageConnection shim wrapping our
+    # test sqlite db. session_manager.py authors PostgreSQL-style %s placeholders
+    # (PG is the primary backend); in production get_connection() returns a
+    # StorageConnection that translates %s -> ? for sqlite. The old fixture
+    # returned a BARE sqlite3.Connection, so those %s placeholders reached sqlite
+    # untranslated and raised — masking real coverage. Wrapping in
+    # StorageConnection reproduces the production translation exactly.
     import sqlite3 as _sqlite3
+    from tools.db.storage import StorageConnection
 
     def _get_conn():
         c = _sqlite3.connect(db)
         c.row_factory = _sqlite3.Row
-        return c
+        return StorageConnection(c, "sqlite")
 
     with patch("tools.db.storage.get_connection", side_effect=lambda: _get_conn()):
         yield
@@ -352,15 +359,19 @@ def test_workflow_stage3_gate_passes_when_all_resolved():
     assert stage3_check_gate(session["id"])
 
 
-def test_workflow_writeguard_bypassed_gracefully_when_not_installed():
+def test_workflow_writeguard_fails_closed_when_not_installed():
+    """cnr-doc-02: a missing WriteGuard engine must FAIL CLOSED, never bypass."""
+    import sys
     from tools.docgen.session_manager import create_session
     from tools.docgen.workflow import stage6_writeguard
 
-    with patch("tools.docgen.workflow.stage6_writeguard") as mock_wg:
-        mock_wg.return_value = {"passed": True, "score": 100, "result": {}, "fixed_text": "text"}
-        session = create_session(title="WG Test", domain="network")
+    session = create_session(title="WG Test", domain="network")
+    # sys.modules[name]=None makes `from tools.pulse.writeguard import …` raise ImportError.
+    with patch.dict(sys.modules, {"tools.pulse.writeguard": None}):
         result = stage6_writeguard(session["id"], "Some doc text.", "network")
-        assert result["passed"]
+    assert result["passed"] is False
+    assert result["blocked"] is True
+    assert result.get("writeguard_unavailable") is True
 
 
 # ─── Context builder ──────────────────────────────────────────────────────────
@@ -968,7 +979,13 @@ class TestApiPublish:
         from tools.docgen.session_manager import create_session, set_field, advance_stage
         s = create_session(title="Publish Route Test", domain="network")
         advance_stage(s["id"], 6, "writeguard")
-        set_field(s["id"], wg_result_id="wg-test-ready")
+        # cnr-doc-01/02: publish reads server-side final_doc_text and runs the TRUST
+        # gate — it must carry a citation and no unresolved placeholders to pass.
+        set_field(
+            s["id"],
+            wg_result_id="wg-test-ready",
+            final_doc_text="Reviewed network runbook body with evidence [source: kb1].",
+        )
         return s
 
     def test_publish_route_returns_201_with_artifacts(self, tmp_path):
@@ -987,7 +1004,9 @@ class TestApiPublish:
         with patch("tools.docgen.workflow.stage8_publish", return_value=[html_artifact]) as mock_pub:
             resp = client.post(
                 f"/docgen/api/sessions/{session['id']}/publish",
-                json={"doc_text": "<p>Test content</p>", "title": "Test Doc"},
+                # cnr-doc-02: client doc_text is ignored — publish uses the
+                # server-side validated final_doc_text set in _make_session_with_wg.
+                json={"title": "Test Doc"},
                 content_type="application/json",
             )
 
@@ -1067,7 +1086,7 @@ class TestApiPublish:
         with patch("tools.docgen.workflow.stage8_publish", return_value=multi_artifacts):
             resp = client.post(
                 f"/docgen/api/sessions/{session['id']}/publish",
-                json={"doc_text": "Content", "classification": "SECRET"},
+                json={"classification": "SECRET"},  # cnr-doc-02: server-side final_doc_text
             )
 
         assert resp.status_code == 201
@@ -2067,10 +2086,13 @@ class TestSseProgress:
 class TestTemplateGallery:
     """Tests for TEMPLATE_GALLERY and related routes."""
 
-    def test_get_template_gallery_returns_5_items(self):
+    def test_get_template_gallery_returns_at_least_baseline(self):
+        # The gallery is YAML-driven (args/docgen/templates.yaml) and grows as
+        # templates are added; the static TEMPLATE_GALLERY is only a 5-item
+        # fallback. Assert a floor, not a hardcoded count that drifts.
         from tools.docgen.domain_profiles import get_template_gallery
         gallery = get_template_gallery()
-        assert len(gallery) == 5
+        assert len(gallery) >= 5
 
     def test_each_template_has_required_keys(self):
         from tools.docgen.domain_profiles import get_template_gallery
@@ -2102,7 +2124,10 @@ class TestTemplateGallery:
         assert resp.status_code == 200
         data = resp.get_json()
         assert "templates" in data
-        assert len(data["templates"]) == 5
+        # The API must surface exactly the live gallery (catches a real drop/dup
+        # regression) without breaking when templates are added to the YAML.
+        from tools.docgen.domain_profiles import get_template_gallery
+        assert len(data["templates"]) == len(get_template_gallery())
 
     def test_api_apply_template_sets_doc_type(self):
         """POST /apply-template updates session doc_type and template_id."""

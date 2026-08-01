@@ -14,6 +14,10 @@ from flask import Blueprint, jsonify, request
 from tools.awareness.value_scorer import annotate_tasks_with_value
 from tools.db.storage import get_connection, sql_placeholder
 from tools.dashboard.sse_manager import sse_manager
+from tools.kanban.gates import is_manual_gate
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.api.kanban")
 
 try:
     from tools.kanban.des_audit_logger import DESAuditLogger as _DESAuditLogger
@@ -51,8 +55,8 @@ def _notify_task_done(task_id: str, title: str):
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_notify_task_done: best-effort INSERT into notifications failed (non-blocking): %s", exc)
 
 
 def _gen_id():
@@ -122,10 +126,13 @@ def _log_verification_bypass(conn, task_id: str, reason: str) -> None:
             ),
         )
         conn.commit()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         # Audit failure must not block the operator-intended move; the
         # bypass is logged downstream via dashboard SSE regardless.
-        pass
+        logger.warning(
+            "_log_verification_bypass: best-effort INSERT into kanban_verifications failed (non-blocking): %s",
+            exc,
+        )
 
 
 def _annotate_in_progress_tasks(conn, tasks: list) -> None:
@@ -221,6 +228,101 @@ def _annotate_task_tags(conn, tasks: list) -> None:
         pass  # table may not exist on older DBs — degrade gracefully
 
 
+_GATE_REFUSAL = (
+    "This task is a manual-mode gate: a sentinel held in_progress by design so its "
+    "dependents never auto-dispatch. Changing its status releases them. Use "
+    "`python -m tools.kanban.cli --set-status {} done` if you really mean to release it."
+)
+
+
+def _external_landing_refusal(task_id: str, new_status, current_status):
+    """Refuse `done` for an external-repo task whose work has not landed in ITS repo.
+
+    Returns a Flask (response, code) tuple, or None to proceed.
+
+    ## Why this is not bypassable
+
+    The first live compass dispatch produced a PHANTOM COMPLETION. The agent built the
+    work, pushed `kanban/prem-rpt-07` to compass, and then marked the task `done` through
+    this API with `bypass_verification: true`, reason: "COMPASS repo, not ICDev: it has
+    no CI and ICDev's coherence checker doesn't apply."
+
+    Every word of that is TRUE, and the conclusion is wrong. It is true because the
+    dispatcher's own instruction says it (see _external_repo_brief). ICDev's verification
+    suite genuinely does not apply in compass — so the agent reasonably concluded the
+    done-gate did not either, bypassed it, and the task went green with the work sitting
+    on an unmerged branch nobody would look at again.
+
+    The bypass exists for "ICDev's CodeLens/Coherence/E2E suite could not run". It was
+    never meant to mean "this task's work does not have to land anywhere".
+
+    So for an external task the gate is a DIFFERENT question, and it is one that has a
+    factual answer in every repo: **is the work on the target repo's origin/<base>?**
+    That is not an ICDev-shaped check, it needs no CI, and `bypass_verification` does not
+    reach it. A task is done when its work landed. Nothing else counts.
+    """
+    if new_status != "done" or current_status == "done":
+        return None
+
+    try:
+        from tools.genesis.reflexes.kanban import (
+            _branch_has_unmerged_commits,
+            _task_base_branch,
+            _task_repo_target,
+        )
+
+        target = _task_repo_target(task_id)
+        if target is None or not target.is_external:
+            return None  # ICDev tasks keep the existing gates, unchanged.
+
+        if not _branch_has_unmerged_commits(task_id):
+            return None  # Nothing unmerged — it landed (or there was nothing to land).
+
+        base = _task_base_branch(task_id)
+    except Exception:  # noqa: BLE001
+        # Fail OPEN on infrastructure errors, exactly as _branch_has_unmerged_commits
+        # does: an unreachable git must never wedge every task's completion.
+        return None
+
+    return jsonify({
+        "error": "external_work_not_landed",
+        "detail": (
+            f"Task {task_id} builds in the {target.name!r} repo, and its branch "
+            f"kanban/{task_id} has commits that are NOT on {target.name}'s "
+            f"origin/{base}. The work has not landed — it is sitting on a branch.\n\n"
+            f"This is NOT bypassable, and `bypass_verification` does not reach it. That "
+            f"flag means 'ICDev's verification suite could not run here', which is TRUE "
+            f"in {target.name} and irrelevant: a task is done when its work landed, and "
+            f"nothing else counts.\n\n"
+            f"Open a PR against {target.name} and let it merge. The scheduler marks the "
+            f"task done once the commits are on origin/{base}."
+        ),
+        "repo": target.name,
+        "base_branch": base,
+        "branch": f"kanban/{task_id}",
+    }), 409
+
+
+def _gate_refusal(task_id: str, title, new_status, current_status):
+    """Refuse any board-driven status change to a manual-mode gate.
+
+    Returns a Flask (response, code) tuple to return, or None to proceed.
+
+    A gate has MORE THAN ONE DOOR: /move, PATCH /tasks/<id>, and /tasks/bulk-move
+    can all write `status`. Guarding only /move is what let a PATCH complete
+    prem-gate-00 on 2026-07-12 and promote all 28 gated tasks (3 reached dispatch)
+    before it was caught. Every writer calls this.
+    """
+    if new_status is None or new_status == current_status:
+        return None
+    if not is_manual_gate(task_id, title):
+        return None
+    return jsonify({
+        "error": "Manual-mode gate status cannot be changed from the board",
+        "detail": _GATE_REFUSAL.format(task_id),
+    }), 409
+
+
 @kanban_api.route("/tasks", methods=["GET"])
 def list_tasks():
     """Return all kanban tasks, optionally filtered by status.
@@ -314,7 +416,9 @@ def list_tasks():
             # never get buried by a cap on the done bucket (which can be
             # thousands of rows). Only "done" is capped.
             active_rows = conn.execute(
-                f"{select}WHERE kt.status IN ('in_progress','suggested','token_exhausted') "
+                f"{select}WHERE kt.status IN ('in_progress','suggested','token_exhausted',"
+                "'validating','pr_opened','ci_failed','merge_conflict',"
+                "'changes_requested','failed','needs_decomposition','decomposed') "
                 f"ORDER BY {priority_case}, kt.created_at DESC"  # nosec B608
             ).fetchall()
             done_sql = (
@@ -363,6 +467,22 @@ def list_tasks():
             if t["oracle_rule"] and t["oracle_rule"] != "internal_awareness":
                 t["oracle_lens"] = t["oracle_rule"]
 
+        # Manual-mode gates are SENTINELS, not work. They sit in_progress forever by
+        # design, so the board rendered them with a live "Running 81m" timer and a
+        # reaper progress bar — indistinguishable from a hung task. Flag them so the
+        # UI can say what they actually are, and count what each one is holding back.
+        _gate_ids = {
+            t["id"] for t in tasks if is_manual_gate(t.get("id"), t.get("title"))
+        }
+        _holding: dict[str, int] = {gid: 0 for gid in _gate_ids}
+        for t in tasks:
+            dep = t.get("depends_on_task_id")
+            if dep in _holding and t.get("status") != "done":
+                _holding[dep] += 1
+        for t in tasks:
+            t["is_manual_gate"] = t["id"] in _gate_ids
+            t["gate_holding"] = _holding.get(t["id"], 0)
+
         # Annotate every row with oracle_value + oracle_dup_count. The
         # scorer is safe on non-Oracle tasks (null confidence → value
         # 0.0, dup_count 1), so the field is always present and the UI
@@ -407,6 +527,27 @@ def list_tasks():
         return jsonify({"tasks": tasks, "total": len(tasks), "done_limit": done_limit or None})
     finally:
         conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/pipeline", methods=["GET"])
+def task_pipeline(task_id):
+    """Delivery-pipeline view for a task: per-stage states, gate outcomes, and
+    the status-transition timeline (read-only; surfaces existing gates).
+
+    ``?live=1`` additionally attaches live PR/CI state via gh (best-effort;
+    omitted when gh / network is unavailable, so the default view stays fast
+    and air-gap-safe).
+    """
+    try:
+        from tools.kanban import pipeline as _pipeline
+        data = _pipeline.assemble(task_id)
+        if str(request.args.get("live", "")).lower() in ("1", "true", "yes"):
+            pr = _pipeline.resolve_pr_live(task_id)
+            if pr:
+                data["pr"] = pr
+        return jsonify(data)
+    except Exception as exc:  # noqa: BLE001 - endpoint must not 500 the board
+        return jsonify({"error": str(exc), "task_id": task_id}), 500
 
 
 def _maybe_auto_close_parent(conn, child_task_id: str) -> None:
@@ -612,6 +753,21 @@ def update_task(task_id):
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
+        _existing = dict(existing)
+        _refusal = _gate_refusal(
+            task_id, _existing.get("title"), data.get("status"), _existing.get("status")
+        )
+        if _refusal:
+            return _refusal
+
+        # An external task is done when its work is on ITS repo's origin/<base>.
+        # Not bypassable — see _external_landing_refusal.
+        _landing = _external_landing_refusal(
+            task_id, data.get("status"), _existing.get("status")
+        )
+        if _landing:
+            return _landing
+
         allowed = (
             "title",
             "description",
@@ -706,9 +862,23 @@ def delete_task(task_id):
     """Delete a kanban task."""
     conn = get_connection()
     try:
-        existing = conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
+        existing = conn.execute(
+            "SELECT id, title FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
+        # Deleting a gate does not release its dependents (_deps_satisfied fails
+        # closed on a missing parent) — it STRANDS them: they can never be promoted
+        # again, by anything. That is quieter than a release but just as wrong.
+        if is_manual_gate(task_id, dict(existing).get("title")):
+            return jsonify({
+                "error": "Manual-mode gate cannot be deleted from the board",
+                "detail": (
+                    "Deleting this sentinel would permanently strand its dependents: "
+                    "a task whose parent row is missing never satisfies its dependency "
+                    "and can never be promoted again."
+                ),
+            }), 409
         conn.execute("DELETE FROM kanban_tasks WHERE id = %s", (task_id,))
         conn.commit()
         try:
@@ -1128,8 +1298,10 @@ def bulk_move_tasks():
     try:
         # Gather source_prediction_id for dismiss path before we
         # UPDATE so we can mark the predictions in the same transaction.
+        # title is selected so the manual-gate guard below can match on the title
+        # marker, not just the id suffix.
         rows = conn.execute(
-            "SELECT id, status, source_prediction_id FROM kanban_tasks "
+            "SELECT id, title, status, source_prediction_id FROM kanban_tasks "
             f"WHERE id IN ({','.join([ph] * len(task_ids))})",  # nosec B608 -- placeholders only
             tuple(task_ids),
         ).fetchall()
@@ -1139,6 +1311,11 @@ def bulk_move_tasks():
             existing = by_id.get(tid)
             if not existing:
                 failed.append({"id": tid, "error": "not found"})
+                continue
+            # A gate swept up in a bulk move is still a released gate. Skip it and
+            # report it, rather than failing the whole batch.
+            if is_manual_gate(tid, existing.get("title")) and new_status != existing.get("status"):
+                failed.append({"id": tid, "error": "manual-mode gate — refused"})
                 continue
             try:
                 sql = f"UPDATE kanban_tasks SET status = {ph}, updated_at = {ph}"
@@ -1301,7 +1478,7 @@ def promote_all_suggested():
             })
 
         # Batch update by IDs (safe cap at 1000 per existing bulk_move limit)
-        ph = ",".join(["?"] * len(eligible_ids))
+        ph = ",".join(["%s"] * len(eligible_ids))
         conn.execute(
             f"UPDATE kanban_tasks SET status = 'backlog', updated_at = %s "  # nosec B608
             f"WHERE id IN ({ph})",
@@ -1357,6 +1534,17 @@ def move_task(task_id):
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
+        _e = dict(existing)
+        _refusal = _gate_refusal(task_id, _e.get("title"), new_status, _e.get("status"))
+        if _refusal:
+            return _refusal
+
+        # An external task is done when its work is on ITS repo's origin/<base>.
+        # Checked BEFORE the bypass branch below, because bypass must not reach it.
+        _landing = _external_landing_refusal(task_id, new_status, _e.get("status"))
+        if _landing:
+            return _landing
+
         # guard-dep: block done transition if depends_on_task_id parent is not done.
         # Mirrors the _parent_is_done check in kanban.py _move_task so the HTTP
         # path (used by Claude CLI subprocess) enforces the same dependency gate.
@@ -1366,7 +1554,11 @@ def move_task(task_id):
                 "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
-            parent_id = (dep_row or {}).get("depends_on_task_id")
+            # dict() first: on PostgreSQL a row is a RealDictRow (which has .get),
+            # but on the SQLite fallback it is a sqlite3.Row, which does not.
+            # Calling .get() straight on the row is an AttributeError on one
+            # backend and fine on the other.
+            parent_id = dict(dep_row or {}).get("depends_on_task_id")
             parent_status = None
             if parent_id:
                 parent_row = conn.execute(
@@ -1464,8 +1656,12 @@ def move_task(task_id):
                     now,
                 ),
             )
-        except Exception:
-            pass  # Best-effort; annotator degrades gracefully if row absent
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # Best-effort; annotator degrades gracefully if row absent
+            logger.warning(
+                "move_task: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s",
+                exc,
+            )
 
         conn.commit()
 

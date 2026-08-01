@@ -19,7 +19,7 @@ import ipaddress
 from datetime import datetime, timezone
 from typing import Optional
 
-CADENCE_HOURS = 1  # used by Genesis reflex bgp_hijack_monitor
+CADENCE_HOURS = 1  # used by Genesis reflex bgp_hijack_monitor (tools/genesis/reflexes/bgp_hijack_monitor.py)
 
 HIJACK_TYPES = ["type_0", "type_1", "type_2", "route_leak", "rpki_invalid", "unknown"]
 HIJACK_STATUSES = ["open", "under_review", "mitigated", "false_positive", "resolved"]
