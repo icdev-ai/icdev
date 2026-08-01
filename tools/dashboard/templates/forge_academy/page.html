@@ -203,9 +203,12 @@
         </div>
       </div>
       <div class="fa-xp-bar-wrap">
+        {# aca-ux-07: this bar is filled by EARNED XP while the figure beside it is
+           the running total, attendance included. Unlabelled, the two read as an
+           arithmetic bug — 1815 XP next to "250 XP to Operative". Name each one. #}
         <div class="fa-xp-bar-label">
-          <span>XP Progress</span>
-          <span class="fa-xp-total">{{ fa_user.xp|default(0) }} XP</span>
+          <span>Rank progress &mdash; earned XP</span>
+          <span class="fa-xp-total">{{ level_ctx.earned_xp|default(0) }} XP</span>
         </div>
         <div class="fa-xp-bar-track">
           <div class="fa-xp-bar-fill" style="width:{{ level_ctx.pct if level_ctx else 0 }}%"></div>
@@ -217,6 +220,20 @@
         </div>
         {% else %}
         <div class="fa-xp-bar-label" style="margin-top:.3rem; color:var(--fa-gold);">MAX RANK — SENSEI</div>
+        {% endif %}
+        {% if level_ctx and level_ctx.attendance_xp %}
+        {# role="status" so a screen reader picks it up when the hub re-renders after
+           the daily-login award, matching faEnrolNotice / the XP live region
+           (aca-trn-06). Standing text, not a dismissible one-time notice: the split
+           is permanent, so an apology that can be dismissed would just leave the
+           next confused learner with nothing. #}
+        <div role="status" class="fa-xp-bar-label" style="margin-top:.45rem;display:block;
+                    font-size:.7rem;color:var(--text-secondary);line-height:1.45;">
+          Total <strong>{{ level_ctx.total_xp|default(0) }} XP</strong>, of which
+          <strong>{{ level_ctx.attendance_xp }}</strong> is daily-login attendance.
+          Attendance still counts toward your total &mdash; rank is earned from
+          graded work only, so showing up does not buy a promotion.
+        </div>
         {% endif %}
       </div>
       <div style="display:flex;gap:.6rem;margin-left:auto;">

@@ -151,17 +151,30 @@ def _level_ctx(fa_user: dict) -> dict:
 
     The displayed XP total is deliberately unchanged — attendance is excluded from
     rank, not confiscated.
+
+    aca-ux-07: that decision leaves two different numbers on screen — a total of
+    1815 beside "250 XP to Operative" — and nothing said which was which. That is
+    not a one-off migration artefact that a dismissible banner could cover: it is
+    the permanent steady state for every learner who ever collects a daily login,
+    so the split is returned here and labelled in the template instead. See
+    docs/features/forge-academy-aca-ux-07-rank-xp-split.md.
     """
     if not fa_user:
-        return xp_to_next_level(0)
+        return dict(xp_to_next_level(0), total_xp=0, earned_xp=0, attendance_xp=0)
+    total = fa_user.get("xp", 0) or 0
     try:
         xp = earned_xp(fa_user["id"])
     except Exception:
         # Before migration 315 there is no ledger to read. Falling back to the total
         # is the pre-int-07 behaviour, which is wrong but not broken — and it only
         # applies to a database that has not been migrated yet.
-        xp = fa_user.get("xp", 0)
-    return xp_to_next_level(xp)
+        xp = total
+    # Derived by subtraction rather than by a second SUM over is_attendance=1, so it
+    # cannot disagree with the total the page prints next to it. A negative value
+    # would mean the ledger over-counts fa_users.xp; clamp so the UI never asserts
+    # a nonsense split, and let the ledger reconciliation surface that separately.
+    return dict(xp_to_next_level(xp), total_xp=total, earned_xp=xp,
+                attendance_xp=max(0, total - xp))
 
 
 # ---------------------------------------------------------------------------
