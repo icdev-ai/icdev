@@ -1,6 +1,5 @@
 """Tests for tools/compliance/accountability_manager.py — Phase 49 AI Accountability."""
 
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -27,8 +26,10 @@ from tools.compliance.accountability_manager import (
 
 @pytest.fixture
 def conn():
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
+    # Translating wrapper — accountability_manager authors %s for PostgreSQL.
+    from _sql_compat import connect as _tconnect
+
+    c = _tconnect(":memory:")
     _ensure_tables(c)
     # Also create audit_trail table for audit log tests
     c.execute(

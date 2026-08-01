@@ -82,10 +82,13 @@ def job_db(tmp_path, monkeypatch):
     seed.commit()
     seed.close()
 
+    # job_store authors %s placeholders for PostgreSQL and relies on
+    # StorageConnection to rewrite them; a bare sqlite3 connection drops that
+    # layer and every statement raises `near "%": syntax error`.
+    from _sql_compat import connect as _tconnect
+
     def fake_get_connection():
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+        return _tconnect(db_path)
 
     # Shim-aware: rebind the name on the imported module object directly.
     monkeypatch.setattr(job_store, "get_connection", fake_get_connection)

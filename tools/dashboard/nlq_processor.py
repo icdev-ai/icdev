@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, list_tables
 from pathlib import Path
 from typing import Optional
 
@@ -49,12 +49,10 @@ def extract_schema(db_path: Path = None) -> dict:
     conn = get_connection(db_path=str(path))
     schema = {}
 
-    tables = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    ).fetchall()
+    # Backend-aware table enumeration (works on PostgreSQL and SQLite)
+    tables = list_tables(conn)
 
-    for table_row in tables:
-        table_name = table_row["name"]
+    for table_name in tables:
         columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
         row_count = conn.execute(f"SELECT COUNT(*) as cnt FROM {table_name}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
 

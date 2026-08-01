@@ -37,6 +37,52 @@ def test_generated_init_has_portable_connection_helper():
     assert "sqlite3.connect(str(db_path))" in src
 
 
+def test_generated_init_verify_is_backend_aware():
+    """pgrt-sweep-06: the generated verify/list step must be backend-aware.
+
+    It should prefer the shared translation-independent ``list_tables`` helper
+    (which works on PostgreSQL and SQLite and does not rely on cursor-level
+    ``%s`` handling), and only fall back to a raw ``sqlite_master`` probe.
+    """
+    blueprint = {
+        "app_name": "test_child",
+        "classification": "CUI",
+        "capabilities": {"knowledge_graph": True},
+    }
+    src = generate_init_script(blueprint)
+
+    # Preferred path: the shared, translation-independent helper.
+    assert "from tools.db.storage import list_tables" in src
+    assert "list_tables(conn)" in src
+    # A raw sqlite_master probe survives only as a standalone fallback, guarded by
+    # an `except` block (never the primary path).
+    assert "except Exception:" in src
+    assert '"SELECT name FROM sqlite_master' in src
+    # The primary listing must not depend on cursor-level %s translation.
+    assert src.index("list_tables(conn)") < src.index("SELECT name FROM sqlite_master")
+
+
+def test_child_app_generator_inline_fallback_is_backend_aware(monkeypatch, tmp_path):
+    """pgrt-sweep-06: the inline fallback init script (used when the sister
+    db_init_generator cannot be imported) must also emit backend-aware listing."""
+    from tools.builder import child_app_generator
+
+    # Force the inline-fallback branch of step_05.
+    monkeypatch.setattr(child_app_generator, "_import_sister", lambda *a, **k: None)
+
+    result = child_app_generator.step_05_db_init_script(
+        tmp_path, {"app_name": "fallback_child"}
+    )
+    assert result["method"] == "fallback"
+    src = Path(result["script_path"]).read_text(encoding="utf-8")
+
+    assert "from tools.db.storage import list_tables" in src
+    assert "list_tables(conn)" in src
+    assert "except Exception:" in src
+    assert '"SELECT name FROM sqlite_master' in src
+    assert src.index("list_tables(conn)") < src.index("SELECT name FROM sqlite_master")
+
+
 def test_generated_init_creates_sqlite_db_when_backend_is_sqlite():
     """End-to-end: with ICDEV_STORAGE_BACKEND=sqlite the script creates a .db file."""
     blueprint = {

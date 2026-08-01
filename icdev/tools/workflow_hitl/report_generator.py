@@ -250,13 +250,17 @@ def _llm_synthesize_section(
 
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
-        response = router.complete(
-            prompt=prompt,
-            function="report_generation",
-            max_tokens=max_words * 2,
+        response = router.invoke(
+            "report_generation",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_words * 2,
+            ),
         )
-        return response.strip() if response else _assemble_section_no_llm(
+        text = (response.content or "").strip()
+        return text if text else _assemble_section_no_llm(
             section, chunks, citations, style_rules
         )
     except Exception as exc:

@@ -34,9 +34,9 @@ from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
+from contextlib import contextmanager
 import logging
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -168,9 +168,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _gen_id(prefix: str) -> str:
-    return f"{prefix}{uuid.uuid4().hex[:12]}"
-
 
 # ---------------------------------------------------------------------------
 # Budget config resolution
@@ -207,6 +204,48 @@ def _get_module_budget_config(module_name: str) -> Dict:
 
 def _get_conn():
     return get_connection()
+
+
+@contextmanager
+def _conn_scope():
+    """Yield a connection that is ALWAYS closed, with no transaction left open.
+
+    Every call site here previously did ``conn = _get_conn()`` ... ``conn.close()``
+    with no try/finally. On the happy path that is fine. On an exception path --
+    a locked database, a schema mismatch, a failed INSERT -- the connection was
+    never closed and any implicit write transaction stayed open.
+
+    That is a production connection leak, and in tests it is worse: budget usage
+    is recorded from ChatManager._agent_loop BACKGROUND THREADS, which outlive
+    the test that started them. A transaction left open there is attributed to
+    whichever unrelated test happens to be finishing when the leak guard looks,
+    and it blocks any later DDL on another connection until the busy timeout
+    expires. That is the mechanism behind the suite hang.
+
+    Rolls back rather than commits on the way out: callers commit explicitly
+    when they mean to, so anything still pending here is by definition
+    unfinished work from a failed path.
+
+    The rollback is unconditional. ``get_connection`` returns a
+    ``StorageConnection`` wrapper, which exposes ``rollback``/``close`` but NOT
+    ``in_transaction`` and defines no ``__getattr__`` passthrough -- so guarding
+    on ``getattr(conn, "in_transaction", False)`` reads False on every call and
+    never rolls anything back. Calling rollback outright is both correct and
+    simpler: with nothing pending it is a no-op on sqlite3 and psycopg2 alike,
+    and it needs no knowledge of which backend is underneath.
+    """
+    conn = _get_conn()
+    try:
+        yield conn
+    finally:
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 - never mask the original error
+            pass
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _get_or_create_period(conn, module_name: str, month: str) -> Dict:
@@ -336,13 +375,12 @@ def check_module_budget(
         }
 
     month = _current_month()
-    conn = _get_conn()
-    _ensure_tables(conn)
+    with _conn_scope() as conn:
+        _ensure_tables(conn)
 
-    # Sync to ensure period table reflects latest usage
-    _sync_period_spent(conn, module_name, month)
-    period = _get_or_create_period(conn, module_name, month)
-    conn.close()
+        # Sync to ensure period table reflects latest usage
+        _sync_period_spent(conn, module_name, month)
+        period = _get_or_create_period(conn, module_name, month)
 
     budget_usd = float(period.get("budget_usd", 0.0))
     budget_tokens = int(period.get("budget_tokens", 0))
@@ -453,42 +491,62 @@ def record_module_usage(
 ) -> str:
     """Record resource consumption against a module budget.
 
-    Returns the inserted usage record ID.
+    Returns the inserted usage record ID as a string, or "" if the module is
+    unknown.
+
+    ``id`` is deliberately absent from the column list. It is
+    ``INTEGER PRIMARY KEY AUTOINCREMENT`` (translated to ``SERIAL`` for
+    PostgreSQL), so the database assigns it. This function used to pass an
+    explicit ``_gen_id("mbu-")`` string into that integer column, which failed
+    on EVERY call and on BOTH backends -- ``InvalidTextRepresentation`` on
+    PostgreSQL, ``IntegrityError: datatype mismatch`` on SQLite. Every caller
+    wraps the call in ``except Exception: pass``, so the failure was silent and
+    ``module_budget_usage`` never received a single row; module budget
+    enforcement read a permanently empty table. The sibling
+    ``_get_or_create_period`` omits ``id`` and has always worked, which is why
+    ``module_budget_periods`` has rows and this table does not.
+
+    Fixed by omitting the column rather than by widening it to TEXT:
+    ``CREATE TABLE IF NOT EXISTS`` never alters an existing table, so a DDL
+    change would leave every deployed database broken until a migration ran.
     """
     if module_name not in VALID_MODULES:
         logger.debug("Skipping module usage for unknown module: %s", module_name)
         return ""
 
-    conn = _get_conn()
-    _ensure_tables(conn)
+    record_id = ""
+    with _conn_scope() as conn:
+        _ensure_tables(conn)
+        cursor = conn.execute(
+            """INSERT INTO module_budget_usage
+               (module_name, function_name, resource_type, amount, tokens,
+                operations, project_id, model_id, details_json, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               RETURNING id""",
+            (
+                module_name,
+                function,
+                "usd" if cost_usd > 0 else ("tokens" if tokens > 0 else "operations"),
+                cost_usd,
+                tokens,
+                operations,
+                project_id,
+                model_id,
+                json.dumps(details) if details else None,
+                _now_iso(),
+            ),
+        )
+        # RETURNING is supported by PostgreSQL and by SQLite 3.35+, so one
+        # statement serves both backends without an is_pg branch. psycopg2's
+        # lastrowid would not: it reports an OID, not the sequence value.
+        row = cursor.fetchone()
+        if row is not None:
+            record_id = str(row["id"] if isinstance(row, dict) else row[0])
+        conn.commit()
 
-    record_id = _gen_id("mbu-")
-    conn.execute(
-        """INSERT INTO module_budget_usage
-           (id, module_name, function_name, resource_type, amount, tokens, operations,
-            project_id, model_id, details_json, created_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-        (
-            record_id,
-            module_name,
-            function,
-            "usd" if cost_usd > 0 else ("tokens" if tokens > 0 else "operations"),
-            cost_usd,
-            tokens,
-            operations,
-            project_id,
-            model_id,
-            json.dumps(details) if details else None,
-            _now_iso(),
-        ),
-    )
-    conn.commit()
-    conn.close()
-
-    # Update period aggregate
-    conn = _get_conn()
-    _sync_period_spent(conn, module_name, _current_month())
-    conn.close()
+    # Update period aggregate on its own connection (_sync_period_spent commits).
+    with _conn_scope() as conn:
+        _sync_period_spent(conn, module_name, _current_month())
 
     return record_id
 
@@ -496,25 +554,24 @@ def record_module_usage(
 def get_module_budget_dashboard() -> Dict:
     """Return budget status for both modules."""
     month = _current_month()
-    conn = _get_conn()
-    _ensure_tables(conn)
+    with _conn_scope() as conn:
+        _ensure_tables(conn)
 
-    results = {}
-    for mod in VALID_MODULES:
-        period = _get_or_create_period(conn, mod, month)
-        results[mod] = {
-            "month": month,
-            "budget_usd": float(period.get("budget_usd", 0.0)),
-            "spent_usd": float(period.get("spent_usd", 0.0)),
-            "budget_tokens": int(period.get("budget_tokens", 0)),
-            "spent_tokens": int(period.get("spent_tokens", 0)),
-            "budget_operations": int(period.get("budget_operations", 0)),
-            "spent_operations": int(period.get("spent_operations", 0)),
-            "warning_threshold": float(period.get("warning_threshold", 0.8)),
-            "hard_stop": bool(period.get("hard_stop", 1)),
-        }
+        results = {}
+        for mod in VALID_MODULES:
+            period = _get_or_create_period(conn, mod, month)
+            results[mod] = {
+                "month": month,
+                "budget_usd": float(period.get("budget_usd", 0.0)),
+                "spent_usd": float(period.get("spent_usd", 0.0)),
+                "budget_tokens": int(period.get("budget_tokens", 0)),
+                "spent_tokens": int(period.get("spent_tokens", 0)),
+                "budget_operations": int(period.get("budget_operations", 0)),
+                "spent_operations": int(period.get("spent_operations", 0)),
+                "warning_threshold": float(period.get("warning_threshold", 0.8)),
+                "hard_stop": bool(period.get("hard_stop", 1)),
+            }
 
-    conn.close()
     return {"status": "ok", "month": month, "modules": results}
 
 
@@ -573,9 +630,8 @@ def main() -> None:
     result: Dict = {}
 
     if args.init_tables:
-        conn = _get_conn()
-        _ensure_tables(conn)
-        conn.close()
+        with _conn_scope() as conn:
+            _ensure_tables(conn)
         result = {"status": "ok", "message": "Module budget tables initialized"}
 
     elif args.check:

@@ -1,26 +1,22 @@
-<!-- [TEMPLATE: CUI // SP-CTI] -->
-<!-- Pipeline Design Canvas — Incident Response Runbooks -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Pipeline Runbooks — Pipeline Design Canvas</title>
-  <link rel="stylesheet" href="/static/css/pipeline-canvas.css">
-  <style>
-    :root { --bg1:#0d1117; --bg2:#161b22; --bg3:#21262d; --border:#30363d; --text:#c9d1d9; --text-dim:#8b949e; --accent:#58a6ff; }
-    body { background:var(--bg1); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; margin:0; padding:0; }
-    .page-header { padding:24px 16px 12px; }
-    .page-header h1 { margin:0 0 4px; font-size:22px; color:var(--text); }
-    .page-header .text-muted { color:var(--text-dim); font-size:13px; margin:0; }
-    .card { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:16px; }
-    .badge { padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; color:#fff; }
-    .btn-primary { background:var(--accent); color:#fff; border:none; border-radius:4px; padding:3px 12px; font-size:11px; text-decoration:none; cursor:pointer; }
-    .btn-primary:hover { opacity:0.85; }
-    .nav-back { display:inline-block; color:var(--accent); text-decoration:none; font-size:13px; margin:0 16px 12px; }
-    .nav-back:hover { text-decoration:underline; }
-  </style>
-</head>
-<body>
+<!-- CUI // SP-CTI — Pipeline Design Canvas — Incident Response Runbooks -->
+{% extends "base.html" %}
+{% block title %}Pipeline Runbooks — Pipeline Design Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  /* pdx-ops-02: converted to base.html with the ICDEV navy theme. Palette vars are
+     scoped to the .pdc-rb wrapper so they never leak into base's own components. */
+  .pdc-rb { --bg2:#16213e; --bg3:#0f3460; --border:#1e3a6e; --text:#eaeaea; --text-dim:#7a8cb0; --accent:#3498db; }
+  .pdc-rb .page-header { padding:24px 16px 12px; }
+  .pdc-rb .page-header h1 { margin:0 0 4px; font-size:22px; color:var(--text); }
+  .pdc-rb .page-header .text-muted { color:var(--text-dim); font-size:13px; margin:0; }
+  .pdc-rb .card { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:16px; }
+  .pdc-rb .badge { padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; color:#fff; }
+  .pdc-rb .btn-primary { background:var(--accent); color:#fff; border:none; border-radius:4px; padding:3px 12px; font-size:11px; text-decoration:none; cursor:pointer; }
+  .pdc-rb .btn-primary:hover { opacity:0.85; }
+  .pdc-rb .nav-back { display:inline-block; color:var(--accent); text-decoration:none; font-size:13px; margin:0 16px 12px; }
+  .pdc-rb .nav-back:hover { text-decoration:underline; }
+</style>
+<div class="pdc-rb">
 <a class="nav-back" href="/devops/">&larr; Back to Pipeline Canvas</a>
 <div class="page-header">
   <h1>Pipeline Incident Runbooks</h1>
@@ -47,5 +43,5 @@
   </div>
   {% endfor %}
 </div>
-</body>
-</html>
+</div>
+{% endblock %}

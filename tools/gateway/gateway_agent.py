@@ -51,6 +51,7 @@ from tools.gateway.adapters.teams import TeamsAdapter  # noqa: E402
 from tools.gateway.adapters.github import GitHubAdapter  # noqa: E402
 from tools.gateway.adapters.gitlab import GitLabAdapter  # noqa: E402
 from tools.gateway.adapters.skype import SkypeAdapter  # noqa: E402
+from tools.gateway.adapters.email_channel import EmailAdapter  # noqa: E402
 
 logger = get_logger("icdev.gateway.agent")
 
@@ -87,6 +88,7 @@ def _load_adapters(config: Dict) -> Dict[str, Any]:
         "github": GitHubAdapter,
         "gitlab": GitLabAdapter,
         "skype": SkypeAdapter,
+        "email": EmailAdapter,
     }
 
     for channel_name, channel_config in channels.items():
@@ -259,8 +261,18 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             )
             return jsonify({"status": "binding_initiated"}), 200
 
+        # 4b. Agent-mode (sag-gw-01): a bound user's free-text (not a structured
+        # allowlisted command) routes to the SAG agent runtime. This does NOT
+        # bypass any gate — it rewrites the envelope to a synthetic 'agent'
+        # command with its own allowlist entry so the full 8-gate chain below
+        # runs unchanged.
+        from tools.gateway.agent_mode import prepare_agent_envelope
+        effective_allowlist, is_agent = prepare_agent_envelope(
+            envelope, channel_name, config, allowlist
+        )
+
         # 5. Check allowlist
-        allowed, entry = is_command_allowed(envelope.command, channel_name, allowlist)
+        allowed, entry = is_command_allowed(envelope.command, channel_name, effective_allowlist)
         if not allowed:
             adapter.send_message(
                 envelope.channel_user_id,
@@ -269,9 +281,9 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             )
             return jsonify({"status": "not_allowed"}), 200
 
-        # 6. Run security chain
+        # 6. Run security chain (same 8 gates for structured and agent commands)
         channel_config = config.get("channels", {}).get(channel_name, {})
-        passed, gate_results = run_security_chain(envelope, adapter, config, channel_config, allowlist)
+        passed, gate_results = run_security_chain(envelope, adapter, config, channel_config, effective_allowlist)
 
         if not passed:
             failed = next((r for r in gate_results if not r.passed), None)
@@ -283,14 +295,32 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             )
             return jsonify({"status": "rejected", "gate": failed.gate_name if failed else "unknown"}), 200
 
+        # 6b. Studio workflow triggers (dwo-evt-02). The envelope has cleared
+        # all eight gates at this point — this hop deliberately sits AFTER the
+        # chain and opens no route of its own, so an event that failed a gate
+        # has already returned above and starts nothing. Fire-and-forget: the
+        # webhook response must not wait on a workflow run.
+        try:
+            from tools.studio.event_dispatch import dispatch_envelope_async
+            dispatch_envelope_async(envelope, channel_config, dict(data or {}), headers)
+        except Exception as _disp_exc:  # noqa: BLE001
+            # A trigger-registry problem must never turn a delivered webhook
+            # into a 500 or block the command the user actually sent.
+            logger.warning("studio event dispatch skipped: %s", _disp_exc)
+
         # 7. Check confirmation requirement
-        if requires_confirmation(envelope.command, allowlist):
+        if requires_confirmation(envelope.command, effective_allowlist):
             # For now, execute directly — confirmation flow can be added
             # with interactive buttons in future iterations
             pass
 
-        # 8. Execute command
-        result = execute_command(envelope, channel_config, config)
+        # 8. Execute command (or run an agent turn — IL response filtering applies
+        # to both; agent-mode never bypasses the response filter).
+        if is_agent:
+            from tools.gateway.agent_mode import handle_agent_message
+            result = handle_agent_message(envelope, channel_config, config)
+        else:
+            result = execute_command(envelope, channel_config, config)
 
         # 9. Send response
         adapter.send_message(

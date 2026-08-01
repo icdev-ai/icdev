@@ -1,0 +1,16 @@
+# CUI // SP-CTI
+id: inject-03-grounding-audit
+title: 'Grounding Audit: Score Every Claim in the Deliverable'
+body_md: "## FULL GROUNDING AUDIT\n\n**Classification:** CUI // SP-CTI\n\nWith the poisoned source quarantined\
+  \ and the clean `7cc2..` version restored, audit the\nentire `del-2291` deliverable. It contains 8 cited\
+  \ claims. Produce a per-claim grounding\ntable: claim -> citation -> retrieval score -> **grounded /\
+  \ weak / ungrounded** -> action.\n\n### Your Task\n1. **Audit table** for all 8 claims using DIC Grounded\
+  \ Search evidence.\n2. **Defect list** — Every ungrounded or weak claim, with the corrected or removed\
+  \ citation.\n3. **Gate readiness** — State whether the deliverable can pass the TRUST citation gate\
+  \ now,\n   and exactly what must change first.\n\nThe judge rewards completeness (all 8 claims covered)\
+  \ and correct grounded/ungrounded calls."
+context_note: 'A rigorous audit re-checks every claim, not just the one from inject-01, because a poisoned
+
+  source can taint multiple citations. Reward teams that surface at least one additional weak
+
+  citation beyond the known fabrication and that gate export on the citation defects.'

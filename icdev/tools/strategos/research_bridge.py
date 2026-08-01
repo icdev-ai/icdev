@@ -375,15 +375,24 @@ def _run_new_session() -> str:
     """Create and run a new vert-strategos research session, return session_id."""
     import subprocess
     import sys
+
+    from tools.compat.subprocess_utils import runnable_module
+
+    # `-m tools.…` cannot resolve in a child process: the tools → icdev.tools
+    # alias is a sys.modules entry in the PARENT, and this call site sets no
+    # PYTHONPATH. In a pip-installed environment all three subprocesses below
+    # died with ModuleNotFoundError — the first two silently (check=False,
+    # capture_output=True), so the failure surfaced only as the JSONDecodeError
+    # raised on session_manager's empty stdout.
     # Load the vertical first
     subprocess.run(
-        [sys.executable, "-m", "tools.research.vertical_loader",
+        [sys.executable, "-m", runnable_module("tools.research.vertical_loader"),
          "--load", "--slug", "strategos"],
         check=False, capture_output=True,
     )
     # Create session — session_manager looks up by slug, not id
     r = subprocess.run(
-        [sys.executable, "-m", "tools.research.session_manager",
+        [sys.executable, "-m", runnable_module("tools.research.session_manager"),
          "--create", "--vertical", "strategos",
          "--name", "Strategos Intelligence Research",
          "--json"],
@@ -398,7 +407,7 @@ def _run_new_session() -> str:
     session_id = sess.get("id") or sess.get("session_id")
     # Run the full pipeline
     subprocess.run(
-        [sys.executable, "-m", "tools.research.research_engine",
+        [sys.executable, "-m", runnable_module("tools.research.research_engine"),
          "--run", "--session", session_id, "--json"],
         check=False,
     )

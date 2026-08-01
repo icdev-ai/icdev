@@ -22,6 +22,19 @@
   <div class="stat-card"><div class="stat-value">{{ recent_assessments|length }}</div><div class="stat-label">Assessments</div></div>
 </div>
 
+<!-- Insider-Risk (UBA lite) — card crx-sec-01 -->
+<section class="panel panel-wide" id="insider-risk-panel">
+  <div class="panel-header">
+    <h2 class="panel-title">Insider-Risk (UBA)</h2>
+    <button class="btn btn-primary" style="font-size:0.7rem;padding:2px 8px;background:#e94560;" onclick="runInsiderScan()">Run Scan</button>
+  </div>
+  <p style="padding:0 1rem;font-size:0.75rem;color:var(--text-dim);margin:0.25rem 0;">
+    Deterministic behavioral-anomaly rules over existing activity/usage telemetry (read-only).
+    Config-gated &amp; default off &mdash; monitors platform users.
+  </p>
+  <div id="insider-risk-body" style="padding:0.5rem 1rem;color:var(--text-dim);font-size:0.8rem;">Loading&hellip;</div>
+</section>
+
 <!-- Recent Assessments -->
 {% if recent_assessments %}
 <section class="panel panel-wide">
@@ -72,18 +85,15 @@
   {% endif %}
 </section>
 
-<!-- IQE Query Widget -->
 {% set iqe_canvas = "security" %}
 {% set iqe_api_route = "/security/api/iqe-query" %}
-{% set iqe_title = "IQE Query — Attack Graph" %}
+{% set iqe_title = "Ask the Security Canvas" %}
 {% set iqe_examples = [
-  {"label": "All attack nodes", "query": "foreach n in attack.nodes select *"},
-  {"label": "High-risk edges", "query": "foreach e in attack.edges where e.risk_score > 7 select e.source, e.target, e.risk_score"},
-  {"label": "Lateral movement", "query": "foreach e in attack.edges where e.technique_id contains \"T1021\" select e.source, e.target, e.technique_id"},
-  {"label": "All attack paths", "query": "foreach p in attack.paths select p.src, p.goal, p.hops"}
+  {"label": "Critical attack paths", "query": "show all critical attack paths"},
+  {"label": "Open CAT I STIGs", "query": "show open CAT I STIG findings"},
+  {"label": "High-risk designs", "query": "show security designs with the highest risk"},
 ] %}
 {% include "includes/iqe_query_widget.html" %}
-
 
 {% endblock %}
 {% block scripts %}
@@ -122,6 +132,47 @@ function clearAllAssessments() {
   if (!confirm('Clear ALL assessment history?')) return;
   apiCall(SC_BASE + '/api/clear-assessments', 'DELETE').then(() => location.reload()).catch(e => alert('Error: ' + e.message));
 }
+
+// ── Insider-Risk (UBA) panel — card crx-sec-01 ──────────────────────────────
+var IR_BAND_COLOR = {high:'#e74c3c', elevated:'#f39c12', normal:'#27ae60'};
+
+function renderInsiderRisk(d) {
+  var body = document.getElementById('insider-risk-body');
+  if (!body) return;
+  if (!d.enabled) {
+    body.innerHTML = '<em>Disabled.</em> Enable in <code>args/insider_risk_config.yaml</code> after a privacy review.';
+    return;
+  }
+  var f = d.findings || [];
+  if (!f.length) {
+    body.innerHTML = '<em>Enabled.</em> No anomalies in the latest scan.';
+    return;
+  }
+  var rows = f.map(function(x){
+    var c = IR_BAND_COLOR[x.risk_band] || '#888';
+    return '<tr><td>' + (x.account_id || '') + '</td>' +
+      '<td><span style="color:' + c + ';font-weight:600;">' + x.risk_band + '</span></td>' +
+      '<td>' + (x.risk_score != null ? x.risk_score : '') + '</td>' +
+      '<td style="font-size:0.7rem;">' + (x.rules_fired || []).join(', ') + '</td></tr>';
+  }).join('');
+  body.innerHTML = '<table class="data-table"><thead><tr><th>Account</th><th>Band</th><th>Score</th><th>Rules Fired</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function loadInsiderRisk() {
+  fetch(SC_BASE + '/api/insider-risk').then(function(r){return r.json();}).then(renderInsiderRisk)
+    .catch(function(){ var b=document.getElementById('insider-risk-body'); if(b) b.textContent='Unavailable.'; });
+}
+
+function runInsiderScan() {
+  var body = document.getElementById('insider-risk-body');
+  if (body) body.textContent = 'Scanning…';
+  fetch(SC_BASE + '/api/insider-risk/scan', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(function(r){return r.json();})
+    .then(function(d){ if (d.skipped) { if(body) body.innerHTML='<em>'+d.skipped+'</em>'; } else { loadInsiderRisk(); } })
+    .catch(function(e){ if(body) body.textContent='Error: ' + e; });
+}
+
+document.addEventListener('DOMContentLoaded', loadInsiderRisk);
 
 </script>
 {% endblock %}

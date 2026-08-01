@@ -99,7 +99,16 @@ def test_classify_extract_do_not_get_persona(monkeypatch):
 
     def _fake_invoke(function, request, context):
         captured["system_prompt"] = request.system_prompt
-        return _fake_response()
+        # Return a response whose content is one of the caller's labels so
+        # classify() resolves through the patched router path (where the
+        # system prompt under test is built). A non-matching content ("ok")
+        # would make classify() degrade to tools.rag.query_classifier, whose
+        # own — unpatched — router.invoke makes a real LLM/DB call that hangs
+        # offline, and which never sees the system prompt we assert on here.
+        return SimpleNamespace(
+            content="a", provider="ollama", model_id="m",
+            cost_usd=0.0, duration_ms=1,
+        )
 
     monkeypatch.setattr(api, "_invoke", _fake_invoke)
     api.classify("some text", ["a", "b"], ctx=CortexContext(domain="network"))

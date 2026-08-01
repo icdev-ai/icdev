@@ -17,7 +17,7 @@ import difflib
 import uuid
 from datetime import datetime, timezone
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_canvas_connection, get_connection
 
 
 def _now_iso() -> str:
@@ -146,7 +146,10 @@ def _propagate_consistency_flags(
         if not related:
             return
         change_summary = f"Section {section_id} changed by {char_delta:+d} chars"
-        with get_connection() as conn:
+        # canvas_events (migration 039) has no tenant_id/classification columns;
+        # carry the security context inside payload_json and use the RLS-disabled
+        # canvas connection (mirrors tools/canvas/event_bus.py, PR #720).
+        with get_canvas_connection() as conn:
             for rdoc in related:
                 event_id = f"evt_{_uuid.uuid4().hex[:16]}"
                 payload = _json.dumps({
@@ -155,14 +158,16 @@ def _propagate_consistency_flags(
                     "related_doc_id": rdoc["doc_id"],
                     "matching_concepts": rdoc["matching_concepts"],
                     "change_summary": change_summary,
+                    "_security_context": {
+                        "tenant_id": tenant_id, "clearance": classification},
                 })
                 conn.execute(
                     "INSERT INTO canvas_events "
                     "(id, source_canvas, target_canvas, event_type, payload_json, "
-                    " created_at, tenant_id, classification) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    " created_at, consumed_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, NULL)",
                     (event_id, "dic", "dic", "dic.consistency_flag", payload,
-                     now, tenant_id, classification),
+                     now),
                 )
             conn.commit()
     except Exception as exc:

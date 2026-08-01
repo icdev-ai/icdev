@@ -16,7 +16,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
-from pptx.util import Inches, Pt
+from pptx.util import Emu, Inches, Pt
 
 from tools.slides.constants import THEME_PALETTES, DEFAULT_THEME
 
@@ -741,7 +741,13 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
         return
 
     top = Inches(0.95)
-    avail_h = H - top - Inches(0.5)       # leave room for the page footer
+    # Emu subclasses int, but `/` is true division: a height that reaches the XML
+    # as cy="5029200.0" is not a valid ST_PositiveCoordinate (xsd:long), so
+    # PowerPoint reports the deck as needing repair and python-pptx raises on
+    # .height — with no error at write time. This expression is int-only, but
+    # the guard is kept explicit so a future divisor here cannot silently
+    # reintroduce the corruption main fixed.
+    avail_h = Emu(int(H - top - Inches(0.5)))   # leave room for the page footer
     has_hf = (1 if headers else 0) + (1 if footer else 0)
     font_pt, max_body = _table_fit(len(rows), has_hf, avail_h)
 

@@ -207,6 +207,65 @@ def check_database() -> CheckResult:
     )
 
 
+def check_db_observability() -> CheckResult:
+    """Non-fatal DB observability snapshot (crx-db-02).
+
+    Surfaces slow-query and connection-pool health on the health-check output.
+    This is informational only — it NEVER fails the overall health check: a
+    missing pg_stat_statements extension or a SQLite backend both report as
+    ``success=True`` with an explanatory detail, never an error. Any exception
+    is caught and reported so a stats hiccup can't crash health_check.
+    """
+    try:
+        from tools.db.query_health import collect
+    except ImportError as exc:  # pragma: no cover - defensive
+        return CheckResult(
+            success=True,
+            warning=f"DB observability unavailable (import failed: {exc})",
+            details={"available": False},
+        )
+
+    try:
+        report = collect()
+    except Exception as exc:  # pragma: no cover - defensive
+        return CheckResult(
+            success=True,
+            warning=f"DB observability collection error: {exc}",
+            details={"available": False},
+        )
+
+    backend = report.get("backend", "unknown")
+    if not report.get("available"):
+        # SQLite / PG-unreachable / extension-absent — informational, not a failure.
+        return CheckResult(
+            success=True,
+            details={
+                "available": False,
+                "backend": backend,
+                "note": report.get("reason", "unavailable"),
+            },
+        )
+
+    pool = report.get("pool_health", {}).get("server", {})
+    slow = report.get("slow_queries", {})
+    alerts = report.get("alerts", [])
+    details = {
+        "available": True,
+        "backend": backend,
+        "active_connections": pool.get("active"),
+        "idle_connections": pool.get("idle"),
+        "idle_in_transaction": pool.get("idle_in_transaction"),
+        "waiting_on_lock": pool.get("waiting_on_lock"),
+        "oldest_idle_in_txn_seconds": pool.get("oldest_idle_in_txn_seconds"),
+        "slow_query_stats": "available" if slow.get("available") else "unavailable",
+        "alerts": alerts,
+    }
+    warning = None
+    if alerts:
+        warning = "; ".join(a.get("message", "") for a in alerts)
+    return CheckResult(success=True, warning=warning, details=details)
+
+
 _REQUIRED_PYTHON_PKGS = {
     "sqlite3": "Database access (stdlib)",
     "pathlib": "File paths (stdlib)",
@@ -520,6 +579,7 @@ def check_osv_scanner() -> CheckResult:
 _HEALTH_CHECKS: Dict[str, Callable[[], CheckResult]] = {
     "environment": check_env_vars,
     "database": check_database,
+    "db_observability": check_db_observability,
     "python_deps": check_python_deps,
     "tools": check_tools,
     "mcp_servers": check_mcp_servers,

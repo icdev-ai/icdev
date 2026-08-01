@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 from tools.rag.chunker import chunk_fields
 from tools.rag.source_registry import (
     SOURCE_REGISTRY,
+    get_chunking_template,
     get_source_config,
 )
 from tools.rag.vector_store_factory import VectorStoreFactory
@@ -255,15 +256,70 @@ def _embed_chunks(chunks, provider, batch_size: "int | None" = None) -> int:
         batch = chunks[i : i + batch_size]
         for chunk in batch:
             try:
+                # Contextual retrieval (rce-ctx-01): embed the contextualized
+                # text when a prefix was applied (embed_text set), otherwise the
+                # original content — identical to prior behavior when unset.
+                embed_input = chunk.text_for_embedding()
                 if hasattr(provider, "embed"):
-                    chunk.embedding = provider.embed(chunk.content)
+                    chunk.embedding = provider.embed(embed_input)
                 else:
-                    resp = provider.embeddings.create(input=chunk.content, model="nomic-embed-text")
+                    resp = provider.embeddings.create(input=embed_input, model="nomic-embed-text")
                     chunk.embedding = resp.data[0].embedding
                 embedded += 1
             except Exception:
                 continue
     return embedded
+
+
+# ---------------------------------------------------------------------------
+# Contextual retrieval (rce-ctx-01) — opt-in, default OFF, air-gap safe.
+# ---------------------------------------------------------------------------
+def _load_contextual_cfg() -> dict:
+    """Load rag.contextual_retrieval config from args/rag_config.yaml (once per run)."""
+    config_path = BASE_DIR / "args" / "rag_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("rag", {}).get("contextual_retrieval", {}) or {}
+    except Exception:
+        return {}
+
+
+def _build_document_text(fields: dict, content_cols: list) -> str:
+    """Rebuild the row's combined 'document' text (same shape chunk_fields uses)."""
+    parts = []
+    for name in content_cols:
+        val = fields.get(name, "")
+        if val and str(val).strip():
+            parts.append(f"{name}: {str(val).strip()}")
+    return "\n".join(parts)
+
+
+def _apply_contextual_prefixes(new_chunks, document_text: str, ctx_cfg: dict) -> int:
+    """Apply context prefixes to new chunks in place. Returns count applied.
+
+    No-op (returns 0) when contextual retrieval is disabled or the module is
+    unavailable — never blocks ingestion. content_hash is left untouched (it was
+    computed on original content at chunk time), so dedup stays stable.
+    """
+    if not new_chunks or not ctx_cfg.get("enabled", False):
+        return 0
+    try:
+        from tools.rag.contextual_retrieval import contextualize_chunk
+    except Exception:
+        return 0
+    applied = 0
+    for chunk in new_chunks:
+        try:
+            if contextualize_chunk(chunk, document_text, config=ctx_cfg):
+                applied += 1
+        except Exception:
+            continue
+    return applied
 
 
 def _log_ingestion(
@@ -411,9 +467,15 @@ def ingest_source(
     total_skipped = 0
     total_embedded = 0
     total_masked = 0
+    total_contextualized = 0
     ingestion_mode = mode or cfg.get("mode", "batch")
+    # oss-chunk-01: the registry's `chunking` key names a template in
+    # args/chunking_templates.yaml. "" = configured default (sliding window).
+    chunking_template = get_chunking_template(source_type)
     # trust-mask-02: decide once per run whether to mask content at ingestion.
     _mask_ingest = _mask_at_ingestion_enabled()
+    # rce-ctx-01: decide once per run whether to apply contextual prefixes.
+    _ctx_cfg = _load_contextual_cfg()
 
     for row in rows:
         row_dict = dict(row)
@@ -441,6 +503,7 @@ def ingest_source(
             metadata=meta,
             tenant_id=tenant_id,
             project_id=project_id,
+            template=chunking_template or None,
         )
 
         if not chunks:
@@ -457,6 +520,12 @@ def ingest_source(
 
         if not new_chunks:
             continue
+
+        # rce-ctx-01: prepend contextual prefixes so the embedding is computed
+        # on contextualized text while stored content stays original.
+        total_contextualized += _apply_contextual_prefixes(
+            new_chunks, _build_document_text(row_dict, content_cols), _ctx_cfg
+        )
 
         # Embed new chunks
         embedded = _embed_chunks(new_chunks, provider, batch_size=embed_batch_size)
@@ -497,10 +566,12 @@ def ingest_source(
         "chunks_skipped": total_skipped,
         "chunks_embedded": total_embedded,
         "mode": ingestion_mode,
+        "chunking_template": chunking_template or "default",
         "embed_batch_size": embed_batch_size,
         "skip_rate": round(skip_rate, 3),
         "skip_rate_anomaly": skip_anomaly,
         "masked_at_ingestion": total_masked,
+        "contextualized_chunks": total_contextualized,
     }
 
 
@@ -645,6 +716,8 @@ def ingest_single_record(
         metadata=meta,
         tenant_id=tenant_id,
         project_id=project_id,
+        # oss-chunk-01: honour the registry's `chunking` key on realtime ingest.
+        template=get_chunking_template(source_type) or None,
     )
 
     if not chunks:
@@ -654,6 +727,11 @@ def ingest_single_record(
     new_chunks = [c for c in chunks if not store.get_by_content_hash(c.content_hash)]
     if not new_chunks:
         return {"ingested": 0, "skipped": len(chunks), "reason": "dedup"}
+
+    # rce-ctx-01: contextual prefixing (opt-in, default off, air-gap safe).
+    _apply_contextual_prefixes(
+        new_chunks, _build_document_text(record, content_cols), _load_contextual_cfg()
+    )
 
     embed_batch_size = _compute_ingestion_thresholds(_load_anomaly_cfg())["embed_batch_size"]
     _embed_chunks(new_chunks, provider, batch_size=embed_batch_size)

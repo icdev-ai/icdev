@@ -42,7 +42,6 @@ _REQUIRED_ACE_TABLES = (
     "ace_audit_log",
     "ace_webhook_log",
     "ace_sessions",
-    "ace_preflight_decisions",
 )
 
 # Patterns that identify decision/outcome/lesson sentences worth persisting
@@ -101,6 +100,9 @@ class ACEController:
         self._executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="ace-cw")
         # Maps instance_id → list of CoWorkerThreads so abort() can stop them
         self._threads: dict[str, list[Any]] = {}
+        # Maps instance_id → threading.Event set by abort() so _run's join loop
+        # stops waiting promptly instead of blocking on thread.join().
+        self._abort_events: dict[str, threading.Event] = {}
         self._threads_lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -154,9 +156,13 @@ class ACEController:
         except Exception as exc:
             logger.warning("ace launch: pre-insert failed for %s: %s", instance_id, exc)
 
+        # webhook_url must be passed through as a keyword: the positional args
+        # stopped at project_id, so _run always received the "" default and
+        # _persist_webhook_url / _deliver_webhook were unreachable from launch().
+        # cortex.api.agent() forwards a webhook_url that was being dropped here.
         self._executor.submit(
             self._run, instance_id, problem_text, trigger_source, trigger_ref,
-            user_id, project_id, role_ids=role_ids,
+            user_id, project_id, webhook_url=webhook_url, role_ids=role_ids,
         )
         return instance_id
 
@@ -218,6 +224,9 @@ class ACEController:
 
         with self._threads_lock:
             threads = self._threads.get(instance_id, [])
+            abort_event = self._abort_events.get(instance_id)
+        if abort_event is not None:
+            abort_event.set()  # wake _run's join loop
         for t in threads:
             try:
                 t.stop()
@@ -248,14 +257,11 @@ class ACEController:
         Best-effort: never raises.
         """
         try:
-            import os
             import re
-            from pathlib import Path
 
-            auto_dir = (
-                Path(os.environ.get("USERPROFILE", Path.home()))
-                / ".claude/projects/C--AI-ICDev/memory"
-            )
+            from tools.memory.claude_memory_path import claude_memory_dir
+
+            auto_dir = claude_memory_dir()
             if not auto_dir.is_dir():
                 return ""
 
@@ -303,16 +309,13 @@ class ACEController:
         Best-effort: never raises.
         """
         try:
-            import os
             import hashlib
-            from pathlib import Path
             from datetime import datetime, timezone
+
+            from tools.memory.claude_memory_path import claude_memory_dir
             from tools.memory.memory_write import update_crossrefs
 
-            auto_dir = (
-                Path(os.environ.get("USERPROFILE", Path.home()))
-                / ".claude/projects/C--AI-ICDev/memory"
-            )
+            auto_dir = claude_memory_dir()
             if not auto_dir.is_dir():
                 return
 
@@ -475,47 +478,64 @@ class ACEController:
                     instance_id, len(skipped_probationary), skipped_probationary,
                 )
 
+            # Register threads + an abort event so abort() can both signal each
+            # CoWorkerThread to stop AND wake this _run's join loop promptly.
+            abort_event = threading.Event()
             with self._threads_lock:
                 self._threads[instance_id] = threads
+                self._abort_events[instance_id] = abort_event
 
-            # Compute effective concurrency cap: minimum max_parallel across all
-            # non-probationary roles (conservative — team autonomy = least-trusted member).
-            #   supervised (band) → max_parallel=1 → sequential
-            #   trusted           → max_parallel=2 → parallel(2)
-            #   autonomous        → max_parallel=4 → parallel(4)
-            if trust_cfgs:
-                effective_max_parallel = min(
-                    cfg.get("max_parallel", 1) for cfg in trust_cfgs.values()
-                )
-            else:
-                effective_max_parallel = 1  # no trust data → sequential (safe default)
-            effective_max_parallel = max(1, effective_max_parallel)
+            # Per-role trust semaphores: each role gets its OWN BoundedSemaphore
+            # sized to that role's own max_parallel.  A single supervised role
+            # (max_parallel=1) no longer serializes the whole team — a trusted
+            # role's coworkers still run concurrently alongside it.
+            #   supervised (band) → max_parallel=1 → that role runs sequentially
+            #   trusted           → max_parallel=2 → that role runs parallel(2)
+            #   autonomous        → max_parallel=4 → that role runs parallel(4)
+            role_semaphores: dict[str, threading.BoundedSemaphore] = {
+                role_id: threading.BoundedSemaphore(max(1, cfg.get("max_parallel", 1)))
+                for role_id, cfg in trust_cfgs.items()
+            }
 
             logger.info(
-                "ACE %s: dispatching %d coworker(s) with effective_max_parallel=%d "
-                "(bands: %s)",
+                "ACE %s: dispatching %d coworker(s) with per-role parallelism "
+                "(max_parallel by role: %s)",
                 instance_id,
                 len(threads),
-                effective_max_parallel,
-                {r: c.get("band", "unknown") for r, c in trust_cfgs.items()},
+                {r: max(1, c.get("max_parallel", 1)) for r, c in trust_cfgs.items()},
             )
 
-            # Semaphore-gated dispatch enforces the parallelism limit derived from
-            # the trust band.  Each worker acquires the semaphore before starting
-            # its CoWorkerThread and releases it only after the thread finishes.
-            sem = threading.BoundedSemaphore(effective_max_parallel)
+            # Start each CoWorkerThread directly — NOT via executor.submit()+join,
+            # which would pin a ThreadPoolExecutor worker for the coworker's whole
+            # lifetime and starve the shared pool.  Each thread's run() is wrapped
+            # to acquire its role's semaphore before doing work and release it on
+            # completion, so per-role concurrency is enforced while extra coworkers
+            # of the same role simply block on the semaphore until a sibling frees
+            # a slot.  If a thread was told to stop while blocked, it exits at once.
+            for t in threads:
+                sem = role_semaphores.get(t.spec.role_id)
+                if sem is None:
+                    sem = threading.BoundedSemaphore(1)
+                    role_semaphores[t.spec.role_id] = sem
+                t.run = self._make_guarded_run(t, sem)  # type: ignore[method-assign]
+                t.start()
 
-            def _launch_guarded(t: CoWorkerThread) -> None:
-                with sem:
-                    t.start()
-                    t.join()
-
-            dispatch_futures = [self._executor.submit(_launch_guarded, t) for t in threads]
-            for fut in dispatch_futures:
-                try:
-                    fut.result()
-                except Exception as exc:
-                    logger.warning("ACE %s: dispatch future error: %s", instance_id, exc)
+            # Await completion at the controller level with a bounded join loop
+            # that honors abort.  abort() sets abort_event and signals each thread
+            # to stop; semaphore-blocked threads drain quickly because the guarded
+            # run checks the stop event immediately after acquiring.
+            pending: list[CoWorkerThread] = list(threads)
+            while pending:
+                if abort_event.is_set():
+                    for t in pending:
+                        t.join(timeout=5.0)
+                    break
+                still_running: list[CoWorkerThread] = []
+                for t in pending:
+                    t.join(timeout=0.5)
+                    if t.is_alive():
+                        still_running.append(t)
+                pending = still_running
 
             # 5. Record trust events based on each coworker's final DB state.
             # All futures have completed so all thread states are final in the DB.
@@ -546,6 +566,7 @@ class ACEController:
             self._emit_completion_event(instance_id)
             self._emit_sse(instance_id, "complete", "All coworkers finished")
             self._emit_task_completed(instance_id)
+            self._deliver_chat_result(instance_id, "complete")
             if webhook_url:
                 self._deliver_webhook(instance_id, webhook_url)
             logger.info("ACE %s: complete", instance_id)
@@ -554,9 +575,57 @@ class ACEController:
             logger.exception("ACE %s: fatal error: %s", instance_id, exc)
             self._set_instance_state(instance_id, "failed")
             self._emit_sse(instance_id, "failed", str(exc))
+            # Tell the conversation. Silence after "spinning up a team" is the
+            # worst outcome: the user cannot distinguish a crash from slow work.
+            self._deliver_chat_result(instance_id, "failed")
         finally:
             with self._threads_lock:
                 self._threads.pop(instance_id, None)
+                self._abort_events.pop(instance_id, None)
+
+    @staticmethod
+    def _make_guarded_run(thread: Any, sem: "threading.BoundedSemaphore"):
+        """Wrap ``thread.run`` so the coworker acquires *sem* before doing work
+        and releases it on completion.
+
+        This enforces per-role parallelism without pinning a ThreadPoolExecutor
+        worker: extra coworkers of the same role block on the semaphore inside
+        their own thread rather than occupying a shared pool slot.  A thread that
+        was signalled to stop while blocked exits immediately after acquiring so
+        aborts drain quickly.
+        """
+        orig_run = thread.run
+        stop_event = getattr(thread, "_stop_event", None)
+
+        def _guarded() -> None:
+            sem.acquire()
+            try:
+                if stop_event is not None and stop_event.is_set():
+                    return
+                orig_run()
+            finally:
+                sem.release()
+
+        return _guarded
+
+    @staticmethod
+    def _deliver_chat_result(instance_id: str, state: str) -> None:
+        """Post the run's outcome back to the chat that started it.
+
+        In-process rather than via the webhook: an outbound POST would mean the
+        dashboard calling itself over loopback, which needs a reachable base URL
+        and breaks in air-gapped and odd-port deployments. Webhooks remain for
+        external consumers.
+
+        Best-effort by design — a delivery failure must never change the outcome
+        of a run that already finished.
+        """
+        try:
+            from icdev.tools.ace.chat_result import deliver
+
+            deliver(instance_id, state=state)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("chat result delivery skipped for %s: %s", instance_id, exc)
 
     def _finalize_instance(self, instance_id: str) -> None:
         """Extract facts from the final artifact and persist to ace_coworker_memory (best-effort)."""

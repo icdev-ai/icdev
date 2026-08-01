@@ -10,8 +10,7 @@ canvas with enterprise branding, form-to-workflow integration, and multi-format 
 | `tools/workflow_canvas/blueprint.py` | Flask blueprint — all WFC routes and API endpoints |
 | `tools/workflow_canvas/constants.py` | INDUSTRY_CATEGORIES, EXPORT_FORMATS, color defaults |
 | `tools/workflow_canvas/export_engine.py` | export_form() / export_workflow() → PPT/PDF/DOCX |
-| `tools/workflow_canvas/form_node.py` | FORM_INTAKE_TOOL definition for DAG integration |
-| `tools/workflow_canvas/db/migrations/001_wfc_init.sql` | wfc_branding, wfc_workflow_form_nodes tables |
+| `tools/workflow_canvas/db/migrations/001_wfc_init.sql` | wfc_branding table |
 | `tools/studio/form_builder.py` | FIELD_TYPES (10), FORM_TEMPLATES (20+ across 10 industries) |
 | `tools/iqe/adapters/wfc.py` | IQE adapter — wfc.forms, wfc.workflows, wfc.templates, wfc.submissions |
 | `tools/workflow_canvas/doc_regenerator.py` | Process-Ify Document Regenerator — regenerates source documents after a workflow is processified, preserving style/tone/structure via LLM fingerprinting. Exports DOCX/PDF via pptx_builder / build_pdf / python-docx. |
@@ -31,6 +30,8 @@ canvas with enterprise branding, form-to-workflow integration, and multi-format 
 | `tools/workflow_canvas/reverse_regen.py` | Reverse document regeneration from a workflow definition |
 | `tools/workflow_canvas/sla_checker.py` | SLA gate enforcement / status checker for workflows |
 | `args/component_registry.yaml` | Canvas registration under key: wfc |
+| `tools/workflow_canvas/form_node.py` | FORM_INTAKE_TOOL definition for DAG integration |
+| `tools/workflow_canvas/db/migrations/001_wfc_init.sql` | wfc_branding, wfc_workflow_form_nodes tables |
 
 ## Routes
 

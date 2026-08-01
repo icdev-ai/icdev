@@ -67,8 +67,9 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, flash, jsonify, make_response, redirect, render_template, request, Response, url_for
+from flask import Blueprint, flash, g, jsonify, make_response, redirect, render_template, request, Response, url_for
 
+from tools.dashboard.auth import require_role
 from tools.db.storage import get_connection, is_pg
 from tools.intelligence.brief_generator import BRIEF_TYPES, BriefGenerator
 from tools.intelligence.pir_manager import (
@@ -185,11 +186,46 @@ _api = Blueprint("strategos_api", __name__)  # API routes  (prefix: /api/strateg
 
 
 # ---------------------------------------------------------------------------
+# RBAC (nav-sec-05)
+# ---------------------------------------------------------------------------
+
+# Approval / resolution / workflow-advance / authoritative-deletion class of
+# state-changing routes (HITL decisions, OPORD approve+delete, F3EAD
+# advance/set-phase/delete, brief approval, CCIR trigger resolution) must be
+# restricted to approver-class roles — a lowest-privilege ``developer`` (whose
+# own product may be under review) must not be able to approve, resolve,
+# advance, or delete authoritative operational state. Mirrors the
+# ``_WF_APPROVAL_ROLES`` convention established for the HITL governance gates
+# in tools/workflow_hitl/blueprint.py (nav-sec-04). Every role listed here also
+# appears in ``VALID_DASHBOARD_ROLES`` in tools/dashboard/auth.py.
+_STRATEGOS_APPROVAL_ROLES = ("admin", "pm", "isso", "co", "cor", "reviewer")
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _actor_id() -> str:
+    """Resolved approver/actor identity for audit fields (nav-sec-05).
+
+    Always sourced from the authenticated session user (``g.current_user``),
+    never from a spoofable request-body field. Falls back to ``"unknown"`` only
+    if no user is on the request context (which the ``@require_role`` gate
+    already prevents for the routes that call this).
+    """
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        return str(user.get("id") or user.get("email") or "unknown")
+    if user is not None:
+        try:
+            return str(user["id"])
+        except Exception:
+            return "unknown"
+    return "unknown"
 
 
 def _safe_fetch(sql: str, params=(), default=None):
@@ -508,6 +544,7 @@ def strategos_hitl():
 
 
 @_bp.route("/hitl/action/<int:action_id>", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def strategos_hitl_action(action_id: int):
     decision = (request.form.get("decision") or "").strip().upper()
     if decision not in ("APPROVE", "REJECT"):
@@ -808,6 +845,15 @@ def strategos_brief_detail(brief_id: str):
         content_html = md_mod.markdown(
             brief.get("content_md", ""), extensions=["tables", "fenced_code"]
         )
+        # nav-sec-08: brief content is analyst/LLM-authored — markdown passes raw
+        # HTML through, so sanitize the rendered output before it is emitted via
+        # {{ content_html | safe }} (fail closed on sanitizer error).
+        try:
+            from tools.docgen.workflow import _sanitize_html
+            content_html = _sanitize_html(content_html)
+        except Exception:
+            import html as _html
+            content_html = _html.escape(content_html or "")
     except ImportError:
         content_html = None
     return render_template(
@@ -1572,9 +1618,11 @@ def api_briefs_create():
 
 
 @_api.route("/briefs/<brief_id>/approve", methods=["PATCH"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_briefs_approve(brief_id: str):
     data = request.get_json(silent=True) or {}
-    reviewed_by = data.get("reviewed_by", "analyst").strip()
+    # nav-sec-05: reviewer identity is the authenticated user, never the body.
+    reviewed_by = _actor_id()
     annotations = data.get("annotations", "").strip()
     conn = get_connection()
     try:
@@ -1655,17 +1703,14 @@ def api_oracle():
             composite_score = latest["composite_score"]
             iw_triggered = latest["iw_triggered"]
             timestamp = latest["timestamp"]
-    except ImportError:
-        # SIOEngine not available — return mock data so the page still renders
-        lenses_raw = {
-            "threat_posture":    {"score": 5.0, "nato_reliability": "C3", "narrative": "Mock data — SIOEngine not available.", "confidence": 0.5},
-            "behavior_pattern":  {"score": 4.5, "nato_reliability": "C3", "narrative": "Mock data — SIOEngine not available.", "confidence": 0.5},
-            "intent_assessment": {"score": 5.5, "nato_reliability": "C3", "narrative": "Mock data — SIOEngine not available.", "confidence": 0.5},
-            "convergence":       {"score": 6.0, "nato_reliability": "C3", "narrative": "Mock data — SIOEngine not available.", "confidence": 0.5},
-        }
-        composite_score = 5.25
-        iw_triggered = False
-        timestamp = datetime.now(timezone.utc).isoformat()
+    except ImportError as exc:
+        # SIOEngine not available — return an explicit degraded state rather than
+        # fabricated scores. Emitting mock lens/composite numbers would render on
+        # /strategos/oracle as a real assessment, misleading the analyst.
+        return jsonify({
+            "available": False,
+            "reason": f"SIO assessment engine unavailable: {exc}",
+        }), 503
 
     # ── Build lean lenses dict for the API response ─────────────────────────
     lenses_out = {}
@@ -1698,6 +1743,7 @@ def api_oracle():
         sparkline = ([0.0] * (14 - len(sparkline))) + sparkline
 
     return jsonify({
+        "available": True,
         "composite_score": composite_score,
         "iw_triggered": iw_triggered,
         "lenses": lenses_out,
@@ -1806,17 +1852,20 @@ def api_signals_brief():
 
 
 @_api.route("/hitl/<item_id>/resolve", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_hitl_resolve(item_id: str):
     data = request.get_json(silent=True) or {}
     decision = data.get("decision", "").strip()
     if not decision:
         return jsonify({"error": "decision required"}), 400
+    # nav-sec-05: resolver identity is the authenticated user, never the body.
+    resolved_by = _actor_id()
     conn = get_connection()
     try:
         result = conn.execute(
             "UPDATE sg_hitl_items SET status='resolved', decision=?, "
-            "resolved_at=?, resolved_by='analyst' WHERE id=? AND status='pending'",
-            (decision, _now(), item_id),
+            "resolved_at=?, resolved_by=? WHERE id=? AND status='pending'",
+            (decision, _now(), resolved_by, item_id),
         )
         conn.commit()
         if result.rowcount == 0:
@@ -1831,18 +1880,21 @@ def api_hitl_resolve(item_id: str):
 
 
 @_api.route("/hitl/bulk", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_hitl_bulk():
     """Resolve all pending HITL items with a single decision."""
     data = request.get_json(silent=True) or {}
     decision = data.get("decision", "").strip()
     if not decision:
         return jsonify({"error": "decision required"}), 400
+    # nav-sec-05: resolver identity is the authenticated user, never the body.
+    resolved_by = _actor_id()
     conn = get_connection()
     try:
         result = conn.execute(
             "UPDATE sg_hitl_items SET status='resolved', decision=?, "
-            "resolved_at=?, resolved_by='analyst' WHERE status='pending'",
-            (decision, _now()),
+            "resolved_at=?, resolved_by=? WHERE status='pending'",
+            (decision, _now(), resolved_by),
         )
         conn.commit()
         return jsonify({"status": "ok", "decision": decision, "updated": result.rowcount})
@@ -1855,6 +1907,7 @@ def api_hitl_bulk():
 
 
 @_api.route("/hitl/delete", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_hitl_delete():
     """Delete all pending HITL items."""
     conn = get_connection()
@@ -2348,6 +2401,134 @@ def api_wargame_assess(wargame_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Wargame Turn Engine (ported from legacy tools/strategos/blueprint.py,
+# nav-strat-05).  Backs the Advance-Turn / turns-table / ORBAT-seed / Monte
+# Carlo controls in strategos/wargame.html, which fetch these under the
+# /api/strategos/wargame/... prefix.
+# ---------------------------------------------------------------------------
+
+@_api.route("/wargame/<wargame_id>/orbat-seed", methods=["GET"])
+def api_wargame_orbat_seed(wargame_id: str):
+    from tools.strategos.wargame_orbat import load_orbat_strengths
+    try:
+        result = load_orbat_strengths(wargame_id)
+    except ValueError as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify(result))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/wargame/<wargame_id>/turn/advance", methods=["POST"])
+def api_wargame_turn_advance(wargame_id: str):
+    from tools.strategos.wargame_turn_engine import advance_turn
+    try:
+        turn = advance_turn(wargame_id)
+    except ValueError as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify(turn), 201)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/wargame/<wargame_id>/lanchester/monte-carlo", methods=["GET"])
+def api_wargame_lanchester_monte_carlo(wargame_id: str):
+    from tools.strategos.ooda import lanchester_monte_carlo
+
+    try:
+        iterations = int(request.args.get("iterations", 500))
+        sigma = float(request.args.get("sigma", 0.15))
+    except (ValueError, TypeError) as exc:
+        resp = make_response(jsonify({"error": f"invalid query param: {exc}"}), 400)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    ph = "%s" if is_pg() else "?"
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"SELECT blue_strength, red_strength, attrition_coefficients_json "  # nosec B608
+            f"FROM sg_wargames WHERE id = {ph}",
+            (wargame_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        resp = make_response(jsonify({"error": f"Wargame {wargame_id!r} not found"}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    b0_db = float(row[0] or 0)
+    r0_db = float(row[1] or 0)
+    coeff: dict = {}
+    if row[2]:
+        try:
+            coeff = json.loads(row[2])
+        except Exception:
+            pass
+    beta_db = float(coeff.get("beta", 0.01))
+    rho_db  = float(coeff.get("rho",  0.01))
+
+    # Allow UI overrides for b0/r0/beta/rho (user may have edited the fields)
+    try:
+        b0   = float(request.args["b0"])   if "b0"   in request.args else b0_db
+        r0   = float(request.args["r0"])   if "r0"   in request.args else r0_db
+        beta = float(request.args["beta"]) if "beta" in request.args else beta_db
+        rho  = float(request.args["rho"])  if "rho"  in request.args else rho_db
+    except (ValueError, TypeError) as exc:
+        resp = make_response(jsonify({"error": f"invalid param: {exc}"}), 400)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    try:
+        result = lanchester_monte_carlo(b0, r0, beta=beta, rho=rho,
+                                        iterations=iterations, sigma=sigma)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    resp = make_response(jsonify(result))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/wargame/<wargame_id>/turns", methods=["GET"])
+def api_wargame_turns(wargame_id: str):
+    ph = "%s" if is_pg() else "?"
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            f"SELECT id, wargame_id, turn_number, blue_losses, red_losses, "  # nosec B608
+            f"blue_remaining, red_remaining, tempo_delta, notes, created_at "
+            f"FROM sg_wargame_turns WHERE wargame_id = {ph} "
+            f"ORDER BY turn_number ASC",
+            (wargame_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    cols = ("id", "wargame_id", "turn_number", "blue_losses", "red_losses",
+            "blue_remaining", "red_remaining", "tempo_delta", "notes", "created_at")
+    turns = [dict(zip(cols, r)) for r in rows]
+    resp = make_response(jsonify({"wargame_id": wargame_id, "turns": turns, "total": len(turns)}))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # Info endpoints
 # ---------------------------------------------------------------------------
 
@@ -2694,13 +2875,24 @@ def api_intsum_generate():
     data = request.get_json(silent=True) or {}
     theater = data.get("theater", "global")
     lookback_hours = int(data.get("lookback_hours", 24))
+    # TRUST invariant (nav-strat-01): promoting ungrounded INTSUM prose requires
+    # an explicit, audited HITL override.
+    force_ungrounded = bool(data.get("force_ungrounded", False))
     try:
         from tools.strategos.intsum import generate_intsum  # noqa: PLC0415
-        result = generate_intsum(theater=theater, lookback_hours=lookback_hours)
+        result = generate_intsum(
+            theater=theater, lookback_hours=lookback_hours,
+            force_ungrounded=force_ungrounded,
+        )
         if "error" in result:
             return jsonify(result), 500
-        resp = make_response(jsonify(result), 201)
+        # Surface ungrounded content clearly: 202 Accepted (draft persisted but
+        # not source-grounded) vs 201 Created for grounded/template output.
+        grounding_status = (result.get("grounding") or {}).get("status", "")
+        http_status = 202 if grounding_status == "ungrounded" else 201
+        resp = make_response(jsonify(result), http_status)
         resp.headers["X-Classification"] = "CUI"
+        resp.headers["X-INTSUM-Grounding"] = grounding_status or "unknown"
         return resp
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -2789,6 +2981,7 @@ def api_ccir_triggers():
 
 
 @_api.route("/ccir/triggers/<event_id>/resolve", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_ccir_trigger_resolve(event_id: str):
     try:
         from tools.strategos.ccir_trigger import resolve_trigger_event  # noqa: PLC0415
@@ -2889,12 +3082,26 @@ def api_opord_synthesize_all(opord_id: str):
 
 
 @_api.route("/opord/<opord_id>/approve", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_opord_approve(opord_id: str):
     try:
         from tools.strategos.opord import approve_opord  # noqa: PLC0415
         data = request.get_json(force=True, silent=True) or {}
-        ok = approve_opord(opord_id, approved_by=data.get("approved_by", "commander"))
-        resp = make_response(jsonify({"status": "approved" if ok else "error"}))
+        # TRUST gate (nav-strat-02): approval is blocked for ungrounded OPORDs
+        # unless an explicit, audited force override is supplied.
+        # nav-sec-05: approver identity is the authenticated user, never the body.
+        result = approve_opord(
+            opord_id,
+            approved_by=_actor_id(),
+            force=bool(data.get("force", False)),
+            force_reason=data.get("force_reason", ""),
+        )
+        http_status = 200
+        if result.get("status") == "blocked":
+            http_status = 409
+        elif result.get("status") == "error":
+            http_status = 404 if result.get("error") == "OPORD not found" else 500
+        resp = make_response(jsonify(result), http_status)
         resp.headers["X-Classification"] = "CUI"
         return resp
     except Exception as exc:
@@ -2902,6 +3109,7 @@ def api_opord_approve(opord_id: str):
 
 
 @_api.route("/opord/<opord_id>", methods=["DELETE"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_opord_delete(opord_id: str):
     try:
         from tools.strategos.opord import delete_opord  # noqa: PLC0415
@@ -3330,13 +3538,15 @@ def api_f3ead_create():
 
 
 @_api.route("/f3ead/targets/<target_id>/advance", methods=["POST"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_f3ead_advance(target_id: str):
     try:
         from tools.strategos.f3ead import advance_phase  # noqa: PLC0415
         data = request.get_json(force=True, silent=True) or {}
         result = advance_phase(
             target_id=target_id,
-            actor=data.get("actor", "analyst"),
+            # nav-sec-05: actor identity is the authenticated user, never the body.
+            actor=_actor_id(),
             notes=data.get("notes", ""),
         )
         resp = make_response(jsonify(result))
@@ -3347,6 +3557,7 @@ def api_f3ead_advance(target_id: str):
 
 
 @_api.route("/f3ead/targets/<target_id>/phase", methods=["PATCH"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_f3ead_set_phase(target_id: str):
     try:
         from tools.strategos.f3ead import set_phase  # noqa: PLC0415
@@ -3354,7 +3565,8 @@ def api_f3ead_set_phase(target_id: str):
         result = set_phase(
             target_id=target_id,
             phase=data.get("phase", "find"),
-            actor=data.get("actor", "analyst"),
+            # nav-sec-05: actor identity is the authenticated user, never the body.
+            actor=_actor_id(),
             notes=data.get("notes", ""),
         )
         resp = make_response(jsonify(result))
@@ -3365,6 +3577,7 @@ def api_f3ead_set_phase(target_id: str):
 
 
 @_api.route("/f3ead/targets/<target_id>", methods=["DELETE"])
+@require_role(*_STRATEGOS_APPROVAL_ROLES)
 def api_f3ead_delete(target_id: str):
     try:
         from tools.strategos.f3ead import delete_target  # noqa: PLC0415
@@ -4327,7 +4540,6 @@ def strategos_dat_page():
         cables=cables,
         unsc_events=unsc_events,
         backchannels=backchannels,
-        history_json=json.dumps(history),
     )
 
 

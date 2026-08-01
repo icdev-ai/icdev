@@ -26,7 +26,20 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/icdev
+  # Fully qualified, including the registry host. Previously this was just
+  # "<owner>/icdev", so the build tags resolved to `icdev-ai/icdev/<image>`
+  # with NO registry — Docker defaults that to Docker Hub, and every push on
+  # main died with "push access denied" even though the Log in to GHCR step
+  # had authenticated to ghcr.io correctly. The tag simply never pointed there.
+  # The host is written literally because a workflow-level `env:` entry cannot
+  # reference another `env:` entry (${{ env.REGISTRY }} is not resolvable here).
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/icdev
+
+# Least privilege by default; the two jobs that publish images to GHCR opt into
+# packages:write individually. Without this the default GITHUB_TOKEN is
+# read-only, which is the second half of the "push access denied" failure.
+permissions:
+  contents: read
 
 jobs:
   # ── Validate: YAML syntax + compose config ─────────────────────────────
@@ -36,16 +49,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install docker-compose (v2)
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y docker-compose-plugin
+      # No install step: ubuntu-latest ships Docker Compose v2 already.
+      # `apt-get install docker-compose-plugin` failed with "no installation
+      # candidate" because that package comes from Docker's own apt repo, which
+      # is not configured on the runner — so this job had been red on every run
+      # that triggered it. It only fires on docker/**, docker-compose*.yml or
+      # deploy/** changes, which is why it stayed unnoticed.
+      - name: Show Docker Compose version
+        run: docker compose version
+
+      # docker-compose.yml declares `env_file: .env`, and .env is gitignored —
+      # so a fresh checkout has none and `config` fails before it validates
+      # anything. Created empty: the required values come from the step env
+      # below, and an empty file satisfies the env_file reference without
+      # inventing configuration that would mask a real missing default.
+      - name: Create placeholder .env for validation
+        run: touch .env
 
       - name: Validate docker-compose.yml syntax
+        # `docker compose config` interpolates EVERY service, including ones
+        # behind an inactive profile — so the llm-proxy profile's required
+        # LITELLM_MASTER_KEY has to resolve even though the proxy is off.
+        #
+        # Supplied here rather than given a default in docker-compose.yml on
+        # purpose: the "must be set" requirement is a real safety property
+        # (it stops the proxy starting with no auth), and weakening the compose
+        # file to make CI pass would trade a runtime guarantee for a green tick.
+        env:
+          # Every `${VAR:?...}` in docker-compose.yml, enumerated rather than
+          # discovered one failed CI run at a time.
+          LITELLM_MASTER_KEY: ci-validation-placeholder
+          ICDEV_PG_PASSWORD: ci-validation-placeholder
         run: docker compose -f docker-compose.yml config --quiet
 
-      - name: Validate docker-compose.ci.yml syntax
-        run: docker compose -f docker-compose.ci.yml config --quiet
+      # Guarded: docker-compose.ci.yml does not exist in this repo, so an
+      # unconditional validate failed the job even once the install step was
+      # fixed. Mirrors the `if [ -d deploy/helm ]` guard the Helm step below
+      # already uses.
+      - name: Validate docker-compose.ci.yml syntax (if present)
+        run: |
+          if [ -f docker-compose.ci.yml ]; then
+            docker compose -f docker-compose.ci.yml config --quiet
+          else
+            echo "docker-compose.ci.yml not present — skipping"
+          fi
 
       - name: Validate Helm chart (if present)
         uses: azure/setup-helm@v4
@@ -64,6 +111,9 @@ jobs:
     name: Build Infrastructure Images
     runs-on: ubuntu-latest
     needs: validate-compose
+    permissions:
+      contents: read
+      packages: write   # required to push images to ghcr.io on main
     strategy:
       fail-fast: false
       matrix:
@@ -109,16 +159,30 @@ jobs:
           load: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
       - name: Smoke-test image (non-root, read-only rootfs)
+        # --entrypoint is load-bearing. 9 of the 10 images declare an ENTRYPOINT
+        # (python, gunicorn, /bin/bash), so a bare trailing command is APPENDED
+        # to it rather than replacing it. The previous probe ran
+        #   python python --version      then     python echo "image OK"
+        # which failed as `python: can't open file '/app/echo'` — after the image
+        # had built successfully. All 10 matrix jobs went red on that, which is
+        # what issue #911 recorded as "all 10 Docker builds fail". They build.
+        #
+        # `sh -c` rather than `python --version`: iac is terraform-based and
+        # api-gateway runs gunicorn, so a Python interpreter is not a safe
+        # assumption across the matrix. Every image here is debian/alpine-based
+        # and has a shell.
+        #
+        # stderr is deliberately NOT sent to /dev/null. That redirect is why this
+        # took a full log dig to diagnose — it discarded the only message that
+        # named the cause and left the confusing /app/echo error behind.
         run: |
           docker run --rm \
             --user 65534:65534 \
             --read-only \
             --tmpfs /tmp \
+            --entrypoint sh \
             ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }} \
-            python --version 2>/dev/null || \
-          docker run --rm \
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }} \
-            echo "image OK"
+            -c 'echo "image OK: $(uname -s) $(id -u)"'
 
   # ── Deploy: spin up CI stack and run health checks ──────────────────────
   provision-ci-stack:
@@ -208,6 +272,9 @@ jobs:
     needs: provision-ci-stack
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
+    permissions:
+      contents: read
+      packages: write   # re-tags and pushes the SHORT_SHA image to ghcr.io
     env:
       ICDEV_CLASSIFICATION: CUI
       IMPACT_LEVEL: IL4
@@ -260,7 +327,7 @@ jobs:
               "builder", "compliance", "security", "infrastructure",
               "api-gateway", "iac"
             ],
-            "registry": "${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}"
+            "registry": "${{ env.IMAGE_PREFIX }}"
           }
           EOF
           cat artifacts/deployment-manifest.json

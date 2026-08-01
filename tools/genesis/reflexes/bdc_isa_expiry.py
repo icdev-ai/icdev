@@ -50,9 +50,29 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         logger.error("bdc_isa_expiry reflex error: %s", exc)
         result["status"] = "error"
         result["errors"].append(str(exc))
+
+    # Dispatch contract: tools/daemon/base.py::run_reflex derives the run outcome
+    # from result.get("success")/("metric_value")/("details"). Without these keys
+    # a successful cycle is scored as a FAILURE and, repeated, trips the reflex
+    # circuit breaker (metric = isas_checked, informational gte 0).
+    result["success"] = result["status"] != "error"
+    result["metric_value"] = float(result.get("isas_checked", 0) or 0)
+    result["details"] = {
+        k: result.get(k)
+        for k in ("isas_checked", "events_published", "notifications_sent", "dry_run", "status", "errors")
+    }
     return result
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import json as _json
     print(_json.dumps(run({}), indent=2))

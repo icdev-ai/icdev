@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+name: Grounding Audit Rubric
+inject_type: grounding_audit
+description: Evaluates completeness and correctness of a full per-claim grounding audit.
+max_score: 100
+dimensions:
+- id: audit_completeness
+  weight: 0.35
+  prompt: Did the audit cover all 8 claims with citation, retrieval score, and grounded/weak/ungrounded
+    call? 10 = all 8 with correct calls; 6 = most; 3 = partial; 0 = one-off.
+- id: defect_detection
+  weight: 0.35
+  prompt: Did the team correctly flag the ungrounded/weak claims (including at least one beyond the known
+    fabrication) with corrected/removed citations? 10 = all defects + corrections; 5 = known one only;
+    0 = none.
+- id: gate_readiness
+  weight: 0.2
+  prompt: Is the gate-readiness call correct and conditioned on fixing the defects? 10 = correct + explicit
+    conditions; 5 = vague; 0 = declares ready with open defects.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were grounded-search receipts used per claim? 10 = yes; 5 = present, unused; 0 = none.

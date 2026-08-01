@@ -17,6 +17,7 @@ from typing import Any
 
 from .constants import (
     ETHICS_BLOCK_THRESHOLD,
+    GAMEDAY_JUDGE_LLM_FUNCTION,
     JUDGE_MODEL,
     OLLAMA_BASE_URL,
     SCORING_WEIGHTS,
@@ -31,12 +32,6 @@ from .db import (
 )
 
 log = get_logger(__name__)
-
-try:
-    import requests as _requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
 
 _JUDGE_SYSTEM = """\
 You are an independent AI judge for a cyber security GameDay competition.
@@ -210,43 +205,41 @@ class JudgeAgent:
             except Exception as exc:
                 log.debug("Adversarial panel failed, falling back to single-lens: %s", exc)
 
-        if not HAS_REQUESTS:
-            return _default_scores()
-
         prompt = (
             f"Team: {team_key.upper()}\n\n"
             f"Artifact to evaluate:\n{json.dumps(artifact, indent=2)}\n\n"
             f"Score this artifact and extract training pairs."
         )
 
-        payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "system": _JUDGE_SYSTEM,
-            "stream": False,
-            "options": {"temperature": 0.3, "num_predict": 1024},
-        }
-
         t0 = time.time()
         try:
-            resp = _requests.post(
-                f"{self.ollama_url}/api/chat",
-                json=payload,
-                timeout=120,
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+
+            router = LLMRouter()
+            provider, model_id, cfg = router.get_provider_for_function(GAMEDAY_JUDGE_LLM_FUNCTION)
+            if provider is None:
+                return _default_scores()
+
+            req = LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                system_prompt=_JUDGE_SYSTEM,
+                max_tokens=1024,
+                temperature=0.3,
+                skip_injection_scan=True,
             )
-            resp.raise_for_status()
-            data = resp.json()
+            resp = provider.invoke(req, model_id, cfg)
             latency_ms = int((time.time() - t0) * 1000)
-            content = data.get("message", {}).get("content", "")
+            content = getattr(resp, "content", "") or ""
 
             log_llmops_event(
                 tournament_id=tournament_id,
                 round_id=round_id,
                 team_key="judge",
                 member_role="judge",
-                model=self.model,
-                prompt_tokens=data.get("prompt_eval_count", 0) or 0,
-                completion_tokens=data.get("eval_count", 0) or 0,
+                model=(self.model or getattr(resp, "model_id", None) or model_id or "router"),
+                prompt_tokens=int(getattr(resp, "input_tokens", 0) or 0),
+                completion_tokens=int(getattr(resp, "output_tokens", 0) or 0),
                 latency_ms=latency_ms,
             )
 

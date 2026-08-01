@@ -10,6 +10,13 @@
 
     <h1>Control Inheritance Visualizer</h1>
     <p class="text-muted">Visualize shared responsibility between your agency and CSP. Identify inherited, shared, and customer-owned controls for FedRAMP/cloud migration.</p>
+    <!-- nav-comp-06: the inherited/shared/customer split is a FedRAMP reference
+         model (API responses carry data_source: "reference_model"), NOT an
+         assessed responsibility assignment for this specific boundary. -->
+    <div id="reference-badge" style="display:inline-block;margin:0 0 1rem;padding:0.3rem 0.75rem;background:#ede7f6;color:#4527a0;border:1px solid #b39ddb;border-radius:999px;font-size:0.8rem;font-weight:bold;">
+        Typical inheritance (reference)
+        <span style="font-weight:normal;color:#5e35b1;">— FedRAMP reference model, not an assessed posture</span>
+    </div>
 
     <!-- CSP Selector -->
     <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin:1.5rem 0;padding:1rem;border:1px solid #ddd;border-radius:8px;background:#fafafa;">

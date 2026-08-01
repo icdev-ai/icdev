@@ -1,0 +1,26 @@
+# CUI // SP-CTI
+# Software currency pack — endoflife.date cache (docmod_eol_products).
+pack_id: software
+label: Software
+enabled: true
+evaluator: tools.doc_modernization.packs.software.SoftwarePack
+entity_types: [software_product]
+extraction:
+  patterns:
+    - '(?i)\bWindows Server \d{4}(?:\s?R2)?\b'
+    - '(?i)\b(?:CentOS|RHEL|Red Hat Enterprise Linux|Ubuntu)\s?\d+(?:\.\d+)?\b'
+    - '(?i)\bPython\s?[23]\.\d+\b'
+    - '(?i)\b(?:\.NET Framework|Java|JDK)\s?\d+(?:\.\d+)?\b'
+alias_map:
+  "windows server": windows-server
+  "rhel": rhel
+  "red hat enterprise linux": rhel
+  "centos": centos
+  "ubuntu": ubuntu
+  "python": python
+evidence_sources: [docmod_eol_products, docmod_defacto_standards]
+verdict_rules:
+  eol_past: eol
+  eol_within_days: {"365": aging}
+replacement:
+  strategy: newest_supported_cycle

@@ -241,6 +241,17 @@ def test_no_update_or_delete_issued(tmp_path):
         def close(self):
             return self._real.close()
 
+        def __getattr__(self, name):
+            # Proxy everything else to the wrapped StorageConnection. Without
+            # this, storage.table_exists() -> _introspect_raw() looks up
+            # ``_conn``, does not find it on the recorder, and falls back to
+            # the recorder itself; the subsequent raw.cursor() then raises
+            # AttributeError, which table_exists swallows and reports as
+            # "table missing". _insert() would skip the INSERT entirely, and
+            # the AU-9 "no UPDATE/DELETE" assertions below would pass
+            # vacuously against an empty statement log.
+            return getattr(self._real, name)
+
     # Wrap the STORAGE connection, not a raw sqlite3 one -- the recorder must sit
     # in front of the same translating wrapper production uses, or the %s
     # placeholders never translate and nothing is ever executed to record.
@@ -449,6 +460,17 @@ def test_au9_no_update_or_delete_issued(tmp_path):
 
         def close(self):
             return self._real.close()
+
+        def __getattr__(self, name):
+            # Proxy everything else to the wrapped StorageConnection. Without
+            # this, storage.table_exists() -> _introspect_raw() looks up
+            # ``_conn``, does not find it on the recorder, and falls back to
+            # the recorder itself; the subsequent raw.cursor() then raises
+            # AttributeError, which table_exists swallows and reports as
+            # "table missing". _insert() would skip the INSERT entirely, and
+            # the AU-9 "no UPDATE/DELETE" assertions below would pass
+            # vacuously against an empty statement log.
+            return getattr(self._real, name)
 
     # Wrap the STORAGE connection, not a raw sqlite3 one -- the recorder must sit
     # in front of the same translating wrapper production uses, or the %s

@@ -1,0 +1,86 @@
+# CUI // SP-CTI
+# App red-team probe catalog (oss-redteam-01).
+#
+# First-party and FIXED — there is no "point it at an arbitrary URL" mode. Probe
+# FAMILIES are chosen from where real defects have actually occurred in this
+# codebase (authz matrix, tenant-crossing reads, classification read-up/down,
+# IDOR on canvas object ids, CSRF on mutating routes), not from a generic
+# scanner's wordlist.
+#
+# A probe describes an EXPECTATION about how the app should behave for a given
+# actor. A finding is the app failing that expectation — and per oss-poc-01 a
+# finding is only confirmed when its reproduction is shown to DISCRIMINATE
+# (fires against the defect, stops once fixed). Nothing here is an exploit
+# payload; these are behavioural assertions.
+
+version: 1
+
+probes:
+  - id: authz-anon-privileged-route
+    family: authz_matrix
+    owasp: "A01:2021 Broken Access Control"
+    severity: high
+    actor: anonymous
+    expectation: >-
+      An unauthenticated request to a privileged route is rejected (401/403),
+      never served (2xx).
+    detect:
+      kind: status_not_in
+      allowed: [401, 403, 302]
+
+  - id: authz-role-below-required
+    family: authz_matrix
+    owasp: "A01:2021 Broken Access Control"
+    severity: high
+    actor: low_privilege
+    expectation: >-
+      A route requiring an elevated role refuses an actor who lacks it.
+    detect:
+      kind: status_not_in
+      allowed: [401, 403]
+
+  - id: tenant-crossing-read
+    family: tenant_isolation
+    owasp: "A01:2021 Broken Access Control"
+    severity: high
+    actor: tenant_a
+    expectation: >-
+      A tenant-scoped listing returns only the requesting tenant's rows; no row
+      belonging to another tenant appears.
+    detect:
+      kind: no_foreign_tenant_rows
+
+  - id: classification-read-up
+    family: classification
+    owasp: "A01:2021 Broken Access Control"
+    severity: high
+    actor: lower_clearance
+    expectation: >-
+      An actor cleared below a record's classification cannot read it
+      (read-up is refused).
+    detect:
+      kind: no_higher_classification_rows
+
+  - id: idor-canvas-object
+    family: idor
+    owasp: "A01:2021 Broken Access Control"
+    severity: high
+    actor: tenant_a
+    expectation: >-
+      Requesting a canvas object id owned by another tenant returns 403/404,
+      not the object.
+    detect:
+      kind: status_not_in
+      allowed: [403, 404]
+
+  - id: csrf-mutating-route
+    family: csrf
+    owasp: "A01:2021 Broken Access Control"
+    severity: medium
+    actor: authenticated
+    expectation: >-
+      A state-changing route rejects a request lacking a valid CSRF token /
+      same-site protection.
+    detect:
+      kind: status_not_in
+      allowed: [400, 403]

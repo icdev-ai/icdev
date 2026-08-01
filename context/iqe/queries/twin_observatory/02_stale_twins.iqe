@@ -1,0 +1,6 @@
+# IQE-TWINOBS-002: Stale twins
+# Twins whose newest snapshot is stale or absent (need a refresh).
+
+foreach t in twin_observatory.twins
+where t.stale == true
+select t.canvas, t.display_name, t.age_human, t.snapshot_count

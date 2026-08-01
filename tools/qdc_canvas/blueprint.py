@@ -9,7 +9,9 @@ enhancements, and emitting OSCAL evidence artifacts.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import hmac
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +27,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
 
@@ -79,6 +82,66 @@ qdc_bp = Blueprint(
     template_folder="../../tools/dashboard/templates",
 )
 
+# Initialize the QDC schema + seeds at blueprint import time (best-effort). This
+# is the module-level-blueprint equivalent of BI Studio's init_db() at
+# blueprint-factory creation (tools/bi_dashboard/blueprint.py:47-51). Guarded so
+# an unavailable DB never blocks dashboard startup; page routes also degrade
+# gracefully to empty lists if a table is still absent (cnr-qdc-04).
+try:
+    from tools.qdc_canvas.db.init_db import init_db as _qdc_init_db
+
+    _qdc_init_db()
+except Exception as _exc:  # pragma: no cover - defensive startup guard
+    logger.warning("QDC DB init at blueprint import failed: %s", _exc)
+
+
+# ---------------------------------------------------------------------------
+# Authentication (cnr-qdc-01)
+# ---------------------------------------------------------------------------
+
+
+@qdc_bp.before_request
+def _require_auth():
+    """Enforce authentication on every QDC route.
+
+    Mirrors BI Studio's ``_login_required`` behaviour but applied blueprint-wide
+    via ``before_request`` so no route (including destructive endpoints such as
+    ``DELETE /quality/api/designs``) can be reached unauthenticated. Page (GET)
+    routes redirect to /login; API routes and any mutating method return a JSON
+    401. ``ICDEV_AUTH_BYPASS`` keeps CI/E2E parity with other canvases, and a
+    presented ``ICDEV_DASHBOARD_API_KEY`` authenticates headless callers.
+    """
+    if session.get("user_id"):
+        return None
+
+    # ICDEV_AUTH_BYPASS: explicit test-only opt-in — bypass unchanged.
+    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+        session["user_id"] = "e2e-bypass"
+        return None
+
+    # ICDEV_DASHBOARD_API_KEY: presented-key semantics (constant-time compare).
+    # Merely having the var set does NOT auto-authenticate.
+    api_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+    if api_key:
+        presented = request.headers.get("X-ICDEV-API-Key", "")
+        if not presented:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                presented = auth_header[len("Bearer "):].strip()
+        if presented and hmac.compare_digest(presented, api_key):
+            session["user_id"] = "api-key"
+            return None
+
+    # API calls and any mutating method get JSON 401; page GETs redirect.
+    if (
+        request.is_json
+        or request.path.startswith("/quality/api/")
+        or request.method in ("DELETE", "POST", "PUT")
+    ):
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect("/login")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -115,6 +178,43 @@ def _rows_to_list(rows) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
+# --- Graceful fetch + pagination (cnr-qdc-04) -----------------------------
+
+_DEFAULT_PAGE_SIZE = 200
+_MAX_PAGE_SIZE = 500
+
+
+def _safe_rows(conn, sql: str, params=()) -> list[dict]:
+    """Fetch rows as dicts, degrading to [] if the table is absent or query fails.
+
+    Fresh-DB installs (before migrations/seeds run) must render the page rather
+    than 500. On PostgreSQL a failed statement aborts the transaction, so roll
+    back before returning so later queries on the same connection still work.
+    """
+    try:
+        return _rows_to_list(conn.execute(sql, params).fetchall())
+    except Exception as exc:
+        logger.debug("QDC list query degraded to empty: %s", exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def _page_bounds() -> tuple[int, int]:
+    """Return (limit, offset) from ?page / ?per_page query args, safely bounded."""
+    try:
+        per_page = min(max(int(request.args.get("per_page", _DEFAULT_PAGE_SIZE)), 1), _MAX_PAGE_SIZE)
+    except (TypeError, ValueError):
+        per_page = _DEFAULT_PAGE_SIZE
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+    return per_page, (page - 1) * per_page
+
+
 def _audit(conn, design_id: str, action: str, detail: str = "", user: str = "system") -> None:
     """Write an append-only audit entry."""
     conn.execute(
@@ -131,18 +231,20 @@ def _audit(conn, design_id: str, action: str, detail: str = "", user: str = "sys
 @qdc_bp.route("/")
 def index():
     """List all designs and templates."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        designs = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, description, classification, created_at, updated_at "
-                "FROM qdc_designs ORDER BY updated_at DESC"
-            ).fetchall()
+        designs = _safe_rows(
+            conn,
+            "SELECT id, name, description, classification, created_at, updated_at "
+            "FROM qdc_designs ORDER BY updated_at DESC LIMIT %s OFFSET %s",
+            (limit, offset),
         )
-        templates = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, category, description, compliance_target, tags FROM qdc_templates ORDER BY name"
-            ).fetchall()
+        templates = _safe_rows(
+            conn,
+            "SELECT id, name, category, description, compliance_target, tags "
+            "FROM qdc_templates ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -158,6 +260,7 @@ def index():
 def new_canvas():
     """Create a new design, optionally from a template."""
     template_id = request.args.get("template")
+    project_id = request.args.get("project_id")
     graph_json = '{"nodes":[],"edges":[]}'
     name = "Untitled Quality Design"
 
@@ -186,9 +289,9 @@ def new_canvas():
     try:
         conn.execute(
             "INSERT INTO qdc_designs "
-            "(id, name, description, graph_json, template_id, classification, "
-            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-            (design_id, name, "", graph_json, template_id, "CUI", now, now),
+            "(id, name, description, graph_json, template_id, project_id, classification, "
+            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (design_id, name, "", graph_json, template_id, project_id, "CUI", now, now),
         )
         conn.commit()
         _audit(conn, design_id, "create", f"Created from template={template_id}")
@@ -201,25 +304,35 @@ def new_canvas():
 @qdc_bp.route("/canvas/<design_id>")
 def canvas_editor(design_id: str):
     """Canvas editor page for a specific design."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
+        try:
+            row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
+        except Exception as exc:
+            logger.debug("QDC canvas_editor design lookup degraded: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            row = None
         if not row:
             return render_template(
                 "qdc_canvas/index.html", designs=[], templates=[], config=_QDC_CONFIG, error="Design not found"
             ), 404
         design_dict = _row_to_dict(row)
 
-        snippets_list = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, category, description, graph_json, node_count, tags FROM qdc_snippets ORDER BY name"
-            ).fetchall()
+        snippets_list = _safe_rows(
+            conn,
+            "SELECT id, name, category, description, graph_json, node_count, tags "
+            "FROM qdc_snippets ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
-        runbooks_list = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, trigger_gate, auto_executable, confidence_threshold, "
-                "run_count, last_run FROM qdc_runbooks ORDER BY name"
-            ).fetchall()
+        runbooks_list = _safe_rows(
+            conn,
+            "SELECT id, name, trigger_gate, auto_executable, confidence_threshold, "
+            "run_count, last_run FROM qdc_runbooks ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -240,12 +353,14 @@ def canvas_editor(design_id: str):
 @qdc_bp.route("/templates")
 def templates_page():
     """Template gallery page."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        templates = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, category, description, compliance_target, tags FROM qdc_templates ORDER BY name"
-            ).fetchall()
+        templates = _safe_rows(
+            conn,
+            "SELECT id, name, category, description, compliance_target, tags "
+            "FROM qdc_templates ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -261,12 +376,14 @@ def templates_page():
 @qdc_bp.route("/snippets")
 def snippets_page():
     """Snippet library page."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        snippets = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, category, description, graph_json, node_count, tags FROM qdc_snippets ORDER BY name"
-            ).fetchall()
+        snippets = _safe_rows(
+            conn,
+            "SELECT id, name, category, description, graph_json, node_count, tags "
+            "FROM qdc_snippets ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -283,16 +400,17 @@ def snippets_page():
 @qdc_bp.route("/assessments")
 def assessments_page():
     """Assessment history with UQS trends."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        assessments = _rows_to_list(
-            conn.execute(
-                "SELECT a.id, a.design_id, a.score, a.uqs_score, a.created_at, "
-                "d.name AS design_name "
-                "FROM qdc_assessments a "
-                "LEFT JOIN qdc_designs d ON d.id = a.design_id "
-                "ORDER BY a.created_at DESC LIMIT 100"
-            ).fetchall()
+        assessments = _safe_rows(
+            conn,
+            "SELECT a.id, a.design_id, a.score, a.uqs_score, a.created_at, "
+            "d.name AS design_name "
+            "FROM qdc_assessments a "
+            "LEFT JOIN qdc_designs d ON d.id = a.design_id "
+            "ORDER BY a.created_at DESC LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -309,14 +427,15 @@ def assessments_page():
 @qdc_bp.route("/runbooks")
 def runbooks_page():
     """Runbook library page."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        runbooks = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, trigger_gate, body_markdown, auto_executable, "
-                "confidence_threshold, run_count, last_run, created_at "
-                "FROM qdc_runbooks ORDER BY name"
-            ).fetchall()
+        runbooks = _safe_rows(
+            conn,
+            "SELECT id, name, trigger_gate, body_markdown, auto_executable, "
+            "confidence_threshold, run_count, last_run, created_at "
+            "FROM qdc_runbooks ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -333,14 +452,15 @@ def runbooks_page():
 @qdc_bp.route("/sops")
 def sops_page():
     """SOP library page."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        sops = _rows_to_list(
-            conn.execute(
-                "SELECT id, sop_number, title, version, frequency, audience, "
-                "approval_status, classification, created_at, updated_at "
-                "FROM qdc_sops ORDER BY sop_number"
-            ).fetchall()
+        sops = _safe_rows(
+            conn,
+            "SELECT id, sop_number, title, version, frequency, audience, "
+            "approval_status, classification, created_at, updated_at "
+            "FROM qdc_sops ORDER BY sop_number LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -357,9 +477,18 @@ def sops_page():
 @qdc_bp.route("/remediation/<design_id>")
 def remediation_page(design_id: str):
     """Gap analysis / remediation view for a design."""
+    limit, offset = _page_bounds()
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
+        try:
+            row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
+        except Exception as exc:
+            logger.debug("QDC remediation design lookup degraded: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            row = None
         if not row:
             return render_template(
                 "qdc_canvas/index.html", designs=[], templates=[], config=_QDC_CONFIG, error="Design not found"
@@ -367,16 +496,20 @@ def remediation_page(design_id: str):
         design_dict = _row_to_dict(row)
 
         # Get latest assessment
-        assess_row = conn.execute(
+        assess_rows = _safe_rows(
+            conn,
             "SELECT findings_json, score, uqs_score, uqs_breakdown "
             "FROM qdc_assessments WHERE design_id = %s ORDER BY created_at DESC LIMIT 1",
             (design_id,),
-        ).fetchone()
-        assessment = _row_to_dict(assess_row) if assess_row else {}
+        )
+        assessment = assess_rows[0] if assess_rows else {}
 
         # Get runbooks for remediation suggestions
-        runbooks = _rows_to_list(
-            conn.execute("SELECT id, name, trigger_gate, body_markdown FROM qdc_runbooks ORDER BY name").fetchall()
+        runbooks = _safe_rows(
+            conn,
+            "SELECT id, name, trigger_gate, body_markdown FROM qdc_runbooks "
+            "ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
         )
     finally:
         conn.close()
@@ -437,6 +570,7 @@ def api_save_design(design_id: str):
         now = _utcnow()
         graph_json = data.get("graph_json")
         name = data.get("name")
+        project_id = data.get("project_id")
 
         updates = ["updated_at = ?"]
         params: list = [now]
@@ -447,6 +581,11 @@ def api_save_design(design_id: str):
         if name is not None:
             updates.append("name = ?")
             params.append(name)
+        # cnr-qdc-05: project_id (schema column) is now writable so a design can
+        # be associated with an owning project rather than being permanently null.
+        if project_id is not None:
+            updates.append("project_id = ?")
+            params.append(project_id)
 
         params.append(design_id)
         conn.execute(
@@ -511,9 +650,6 @@ def api_delete_all_designs():
 @qdc_bp.route("/api/designs/<design_id>/assess", methods=["POST"])
 def api_assess_design(design_id: str):
     """Run quality assessment on a design."""
-    data = request.get_json(silent=True) or {}
-    use_cod = data.get("use_cod", False)
-    chain_mode = "cod" if use_cod else ""
     conn = _get_conn()
     try:
         row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
@@ -623,7 +759,6 @@ def api_assess_design(design_id: str):
             "result": result,
             "uqs": uqs_result,
             "sa11_mapping": sa11_mapping,
-            "chain_mode": chain_mode,
         }
     )
 
@@ -1200,15 +1335,33 @@ def api_collab_leave(design_id: str):
 
 @qdc_bp.route("/api/collab/<design_id>/push", methods=["POST"])
 def api_collab_push(design_id: str):
-    """Push an operation to the collaboration session."""
+    """Push an operation to the collaboration session and persist it.
+
+    cnr-qdc-05: previously this endpoint reported ``{"ok": True}`` but dropped the
+    operation on the floor — poll then returned only presence, so no operation
+    sync ever occurred. Now the op is appended to ``qdc_collab_ops`` with a
+    monotonic per-design ``seq`` (same MAX+1 pattern as version snapshots) so
+    peers can replay it via poll's ``?since=`` cursor.
+    """
     data = request.get_json(silent=True) or {}
     session_id = data.get("session_id", "")
+    user_id = data.get("user_id", "")
     operation = data.get("operation", {})
 
     conn = _get_conn()
     try:
-        # Update last_seen
         now = _utcnow()
+        max_row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) FROM qdc_collab_ops WHERE design_id = %s",
+            (design_id,),
+        ).fetchone()
+        next_seq = (max_row[0] if max_row else 0) + 1
+        conn.execute(
+            "INSERT INTO qdc_collab_ops "
+            "(id, design_id, seq, session_id, user_id, operation, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (_gen_id(), design_id, next_seq, session_id, user_id, json.dumps(operation), now),
+        )
         conn.execute(
             "UPDATE qdc_collab_sessions SET last_seen = %s WHERE id = %s",
             (now, session_id),
@@ -1217,22 +1370,37 @@ def api_collab_push(design_id: str):
     finally:
         conn.close()
 
-    return jsonify({"ok": True, "received_at": now, "operation": operation})
+    return jsonify({"ok": True, "seq": next_seq, "received_at": now, "operation": operation})
 
 
 @qdc_bp.route("/api/collab/<design_id>/poll", methods=["GET"])
 def api_collab_poll(design_id: str):
-    """Poll for collaboration updates."""
+    """Poll for collaboration updates — participants plus operations since a cursor.
+
+    cnr-qdc-05: replays operations pushed by peers. Pass ``?since=<seq>`` (the
+    ``cursor`` from the previous poll, default 0) to receive only newer ops; the
+    returned ``cursor`` is the highest seq seen so the client can advance.
+    """
+    try:
+        since = int(request.args.get("since", 0))
+    except (TypeError, ValueError):
+        since = 0
+
     conn = _get_conn()
     try:
-        participants = _rows_to_list(
-            conn.execute(
-                "SELECT id, user_id, user_name, color, last_seen "
-                "FROM qdc_collab_sessions "
-                "WHERE design_id = %s AND is_active = 1 "
-                "ORDER BY joined_at",
-                (design_id,),
-            ).fetchall()
+        participants = _safe_rows(
+            conn,
+            "SELECT id, user_id, user_name, color, last_seen "
+            "FROM qdc_collab_sessions "
+            "WHERE design_id = %s AND is_active = 1 "
+            "ORDER BY joined_at",
+            (design_id,),
+        )
+        operations = _safe_rows(
+            conn,
+            "SELECT seq, session_id, user_id, operation, created_at "
+            "FROM qdc_collab_ops WHERE design_id = %s AND seq > %s ORDER BY seq ASC",
+            (design_id, since),
         )
         row = conn.execute(
             "SELECT graph_json, updated_at FROM qdc_designs WHERE id = %s",
@@ -1241,9 +1409,20 @@ def api_collab_poll(design_id: str):
         design_state = _row_to_dict(row) if row else {}
     finally:
         conn.close()
+
+    for op in operations:
+        raw = op.get("operation", "{}")
+        try:
+            op["operation"] = json.loads(raw) if isinstance(raw, str) else raw
+        except (json.JSONDecodeError, TypeError):
+            op["operation"] = {}
+
+    cursor = operations[-1]["seq"] if operations else since
     return jsonify(
         {
             "participants": participants,
+            "operations": operations,
+            "cursor": cursor,
             "design_updated_at": design_state.get("updated_at", ""),
         }
     )
@@ -1266,6 +1445,52 @@ def api_collab_participants(design_id: str):
     finally:
         conn.close()
     return jsonify({"participants": rows, "count": len(rows)})
+
+
+# ===================================================================
+# API Endpoints — IQE natural-language query (cnr-qdc-03)
+# ===================================================================
+
+
+@qdc_bp.route("/api/iqe-query", methods=["POST"])
+def api_iqe_query():
+    """Answer a plain-English question over QDC collections via IQE.
+
+    Mirrors BI Studio's /api/iqe-query. Importing the adapter registers the
+    qdc.* collections on the module-level IQE Executor.
+    """
+    import importlib
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    execute = data.get("execute", True)
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    try:
+        importlib.import_module("tools.iqe.adapters.qdc")
+    except Exception:
+        pass
+
+    iqe_str = ""
+    try:
+        from tools.iqe.executor import execute_query
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import parse as _parse
+
+        collections = [
+            "qdc.designs",
+            "qdc.assessments",
+            "qdc.gate_results",
+            "qdc.ai_decisions",
+        ]
+        translation = nl_to_iqe(question, collections=collections)
+        iqe_str = translation["iqe"]
+        ast = _parse(iqe_str)
+        results = execute_query(ast, None) if execute else []
+        return jsonify({"iqe": iqe_str, "results": results, "row_count": len(results)})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
 
 # ── Gate Execution API ─────────────────────────────────────────────────────

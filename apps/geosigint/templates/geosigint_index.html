@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set static_reference = true %}
 {% block title %}GeoSIGINT — Indo-Pacific Theater Analysis{% endblock %}
 
 {% block head %}
@@ -25,6 +26,7 @@
 {% endblock %}
 
 {% block content %}
+{% include "_geosigint_reference_badge.html" %}
 <div class="geo-hero">
     <div>
         <div class="geo-hero__title">&#127757; GeoSIGINT — Indo-Pacific Theater Analysis</div>

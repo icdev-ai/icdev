@@ -4,7 +4,7 @@
 Import Cortex capabilities from here (or from ``tools.cortex`` directly);
 the per-capability modules (``analyst``, …) are implementation detail.
 
-First 3 of the 7 Cortex facade functions (ctx-core-02). Callers import one
+First 3 of the 8 Cortex facade functions (ctx-core-02). Callers import one
 namespace (``tools.cortex``) instead of wiring LLMRouter/LLMRequest per call
 site. Every function returns a :class:`CortexResult`.
 
@@ -272,12 +272,20 @@ def _run_single_agent(
     llm_function: str,
     max_iterations: int,
     ctx: CortexContext,
+    rubric: bool = False,
 ):
-    """Late-bound single-agent loop for goal execution."""
-    from tools.llm.agent_loop import run_agent_loop
+    """Late-bound single-agent loop for goal execution.
 
-    return run_agent_loop(
-        router,
+    Imports the canonical ``icdev.tools.llm.agent_loop`` directly (not the healed
+    root shim). When ``rubric`` is true the loop is graded in real time by the
+    delivery-pipeline rubric (build -> gates -> revise) via
+    ``run_agent_loop_with_rubric``; conformance review is off (no kanban
+    acceptance criteria for an ad-hoc goal). Returns an ``AgentLoopResult`` in
+    both paths so callers are unchanged.
+    """
+    from icdev.tools.llm.agent_loop import run_agent_loop
+
+    loop_kwargs = dict(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=tools,
@@ -287,6 +295,27 @@ def _run_single_agent(
         tenant_id=ctx.tenant_id,
         user_id=ctx.user_id,
     )
+
+    if not rubric:
+        return run_agent_loop(router, **loop_kwargs)
+
+    from icdev.tools.llm.agent_loop import run_agent_loop_with_rubric
+    from icdev._paths import get_project_root
+    from tools.workflow.pipeline_grader import make_pipeline_grader
+
+    grader = make_pipeline_grader(
+        cwd=str(get_project_root()),
+        task_id=ctx.session_id or "cortex.agent",
+        run_e2e=False,
+        run_conformance=False,
+    )
+    rubric_result = run_agent_loop_with_rubric(
+        router,
+        grader=grader,
+        max_grading_iterations=3,
+        **loop_kwargs,
+    )
+    return rubric_result.result
 
 
 def _apply_domain_persona(context: CortexContext, system_prompt: str) -> str:
@@ -757,6 +786,7 @@ def agent(
     tool_handlers: Optional[Dict[str, Any]] = None,
     llm_function: str = "code_generation",
     max_iterations: int = 12,
+    rubric: bool = False,
 ) -> CortexResult:
     """Run a goal through the multi-agent stack, governed end to end.
 
@@ -771,6 +801,12 @@ def agent(
       ``tools.llm.agent_loop.run_agent_loop`` for one agent over the provided
       ``tools``/``tool_handlers``; the CortexResult ``text`` is the loop's
       final content and ``data`` carries the loop accounting.
+
+    ``rubric`` (single mode only, opt-in, default off) grades the loop in real
+    time against the delivery pipeline — the agent builds, the gates run, and it
+    revises in-session until the pipeline passes or the iteration cap is hit —
+    instead of trusting the loop's own ``done``. Conformance review is off (an
+    ad-hoc goal has no kanban acceptance criteria). No effect in team mode.
 
     ``ctx`` threads tenant_id/user_id into the launch/loop (cost attribution,
     RLS) and into the governance pipeline. Because this facade is governed
@@ -814,6 +850,7 @@ def agent(
         llm_function=llm_function,
         max_iterations=max_iterations,
         ctx=context,
+        rubric=rubric,
     )
     return CortexResult(
         text=loop.final_content or "",

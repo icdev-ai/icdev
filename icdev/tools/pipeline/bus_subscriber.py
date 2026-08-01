@@ -3,6 +3,8 @@
 
 Subscribes to:
   qdc.gate.executed — when QDC runs a quality gate → write pc_compliance_findings
+  pdc.pipeline.stale — when the pdc_pipeline_stale reflex flags a stale pipeline
+                       → write a pc_compliance_findings row (visible artifact)
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ def register() -> None:
     try:
         from tools.canvas.event_bus import subscribe
         subscribe("pdc", "qdc.gate.executed", _on_qdc_gate_executed)
+        subscribe("pdc", "pdc.pipeline.stale", _on_pdc_pipeline_stale)
         logger.info("pdc.bus: subscriptions registered")
     except Exception as exc:
         logger.warning("pdc.bus: could not register subscriptions: %s", exc)
@@ -52,12 +55,26 @@ def _on_qdc_gate_executed(event_id: str, canvas_id: str, event_type: str, payloa
         from tools.pipeline.db.init_db import get_connection
         conn = get_connection()
         try:
-            # Find the most recent pipeline to attach findings to
-            pipeline_row = conn.execute(
-                "SELECT id FROM pipelines ORDER BY updated_at DESC LIMIT 1"
-            ).fetchone()
-            pipeline_id = (pipeline_row[0] if isinstance(pipeline_row, (list, tuple))
-                           else (pipeline_row["id"] if pipeline_row else None))
+            # Resolve the target pipeline from an explicit CORRELATION field in
+            # the event payload. QDC publishes design_id (a QDC design, NOT a PDC
+            # pipeline) and MAY publish pipeline_id. We attribute the finding ONLY
+            # when a correlation id resolves to a real pipeline row; we NEVER fall
+            # back to "most recently updated" (the old behaviour), which silently
+            # mis-attributed every finding to whatever pipeline anyone touched
+            # last. If nothing resolves, pipeline_id stays NULL (the column is
+            # nullable) — an honest "unattributed" finding beats a wrong guess.
+            pipeline_id = None
+            for _key in ("pipeline_id", "design_id"):
+                _cand = payload.get(_key)
+                if not _cand:
+                    continue
+                _prow = conn.execute(
+                    "SELECT id FROM pipelines WHERE id=%s", (_cand,)
+                ).fetchone()
+                if _prow:
+                    pipeline_id = (_prow[0] if isinstance(_prow, (list, tuple))
+                                   else _prow["id"])
+                    break
 
             if passed:
                 # Close any open finding for this gate
@@ -99,3 +116,60 @@ def _on_qdc_gate_executed(event_id: str, canvas_id: str, event_type: str, payloa
             conn.close()
     except Exception as exc:
         logger.warning("pdc.bus: compliance finding update failed: %s", exc)
+
+
+def _on_pdc_pipeline_stale(event_id: str, canvas_id: str, event_type: str, payload: dict) -> None:
+    """When the pdc_pipeline_stale reflex flags a stale pipeline, record a finding.
+
+    Creates (idempotently) an 'open' pc_compliance_findings row of severity CAT3
+    per stale pipeline so the staleness signal is visible in the PDC compliance
+    surface. A rule_id keyed to the pipeline id keeps repeated cycles from
+    duplicating findings while the pipeline stays stale.
+    """
+    pipeline_id = payload.get("pipeline_id")
+    pipeline_name = payload.get("pipeline_name", "")
+    days_since_update = payload.get("days_since_update", 0)
+
+    if not pipeline_id:
+        return
+    logger.info(
+        "pdc.bus: pdc.pipeline.stale pipeline=%s days=%s", pipeline_id, days_since_update
+    )
+
+    rule_id = f"pdc.pipeline.stale.{pipeline_id}"
+    try:
+        from tools.pipeline.db.init_db import get_connection
+        conn = get_connection()
+        try:
+            existing = conn.execute(
+                "SELECT id FROM pc_compliance_findings WHERE rule_id=%s AND status='open'",
+                (rule_id,),
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    "INSERT INTO pc_compliance_findings "
+                    "(id, pipeline_id, rule_id, framework, severity, title, description, "
+                    "affected_entity, affected_type, status, created_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        str(uuid.uuid4()),
+                        pipeline_id,
+                        rule_id,
+                        "PDC Pipeline Health",
+                        "CAT3",
+                        f"Pipeline stale: {pipeline_name or pipeline_id}",
+                        f"Pipeline '{pipeline_name or pipeline_id}' has not been updated in "
+                        f"{days_since_update} days (flagged by pdc_pipeline_stale reflex). "
+                        f"Event: {event_id}.",
+                        str(pipeline_id),
+                        "pipeline",
+                        "open",
+                        _now(),
+                    ),
+                )
+                conn.commit()
+                logger.info("pdc.bus: stale-pipeline finding recorded for %s", pipeline_id)
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("pdc.bus: stale-pipeline finding update failed: %s", exc)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,74 @@ _CACHE_TTL = 60  # seconds
 
 class RoleNotFoundError(KeyError):
     """Raised when get_role() is called with an unknown role_id."""
+
+
+# ---------------------------------------------------------------------------
+# Shared parse cache
+# ---------------------------------------------------------------------------
+#
+# RoleLoader.__init__ calls _load(), which parsed every yaml in the roles dir
+# (88 files as of writing). The TTL cache lives on the instance, so the seven
+# call sites that construct RoleLoader() inline re-parsed the whole directory
+# every time and got no benefit from it — a single /coworker request was doing
+# 174 yaml parses.
+#
+# Caching the PARSE (keyed on a stat signature of the directory) rather than
+# sharing a loader instance keeps RoleLoader's public API and per-instance
+# semantics exactly as they were, including the monkeypatch seams the ACE test
+# suite relies on. Hot-reload still works: touching a role yaml changes the
+# signature and forces a re-parse.
+
+_PARSE_CACHE: dict[str, tuple[tuple, dict[str, "RoleTemplate"]]] = {}
+_PARSE_CACHE_LOCK = threading.Lock()
+
+
+def _dir_signature(roles_dir: Path) -> tuple:
+    """Cheap identity of the roles dir: (name, mtime, size) per yaml file.
+
+    Stat-ing the directory costs microseconds against ~500ms to parse it.
+    """
+    sig = []
+    for path in sorted(roles_dir.glob("*.yaml")):
+        try:
+            st = path.stat()
+            sig.append((path.name, st.st_mtime_ns, st.st_size))
+        except OSError:
+            sig.append((path.name, None, None))
+    return tuple(sig)
+
+
+def _parse_roles_dir(roles_dir: Path) -> dict[str, "RoleTemplate"]:
+    """Parse every role yaml in ``roles_dir``, reusing the last parse if unchanged.
+
+    Returns a fresh dict each call so a caller mutating its own cache cannot
+    corrupt the shared one.
+    """
+    key = str(roles_dir)
+    sig = _dir_signature(roles_dir)
+    hit = _PARSE_CACHE.get(key)
+    if hit is not None and hit[0] == sig:
+        return dict(hit[1])
+
+    cache: dict[str, RoleTemplate] = {}
+    for path in sorted(roles_dir.glob("*.yaml")):
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            role = RoleTemplate.from_dict(data)
+            cache[role.role_id] = role
+        except Exception as exc:  # noqa: BLE001
+            import warnings
+            warnings.warn(f"Skipping {path.name}: {exc}", stacklevel=2)
+
+    with _PARSE_CACHE_LOCK:
+        _PARSE_CACHE[key] = (sig, dict(cache))
+    return cache
+
+
+def reset_role_parse_cache() -> None:
+    """Drop the shared parse cache. For tests and explicit reload hooks."""
+    with _PARSE_CACHE_LOCK:
+        _PARSE_CACHE.clear()
 
 
 @dataclass
@@ -73,6 +142,10 @@ class RoleTemplate:
     mode: str = "steps"
     agent_tools: list[str] = field(default_factory=list)
     max_iterations: int = 12
+    # Real-time rubric gating (opt-in). When set to "pipeline" an agent-mode run
+    # is routed through run_agent_loop_with_rubric with the delivery-pipeline
+    # grader (build -> gates -> revise). Absent/empty/None = off (plain loop).
+    rubric: str = ""
 
     def __post_init__(self) -> None:
         # Expose listen_topics at top level for dispatcher hot-path
@@ -107,6 +180,7 @@ class RoleTemplate:
             mode=str(data.get("mode", "steps")),
             agent_tools=list(data.get("agent_tools") or []),
             max_iterations=int(data.get("max_iterations", 12)),
+            rubric=str(data.get("rubric") or ""),
         )
 
 
@@ -149,15 +223,7 @@ class RoleLoader:
             self._load()
 
     def _load(self) -> int:
-        cache: dict[str, RoleTemplate] = {}
-        for path in sorted(self._roles_dir.glob("*.yaml")):
-            try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-                role = RoleTemplate.from_dict(data)
-                cache[role.role_id] = role
-            except Exception as exc:  # noqa: BLE001
-                import warnings
-                warnings.warn(f"Skipping {path.name}: {exc}", stacklevel=2)
+        cache = _parse_roles_dir(self._roles_dir)
         self._cache = cache
         self._loaded_at = time.monotonic()
         return len(cache)

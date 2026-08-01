@@ -20,7 +20,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
-from tools.db.storage import get_connection
+from tools.db.storage import column_exists, get_connection, table_exists
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -128,35 +128,31 @@ def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    """Check if a table exists in the database."""
-    row = conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
-        (table_name,),
-    ).fetchone()
-    return row[0] > 0
-
-
 def _count_project_records(conn: sqlite3.Connection, table_name: str, project_id: str) -> Dict[str, Any]:
     """Count records for a project in a table, with freshness info."""
-    if not _table_exists(conn, table_name):
+    # Backend-aware existence/column probes (information_schema on PG,
+    # sqlite_master / PRAGMA table_info on SQLite) so evidence counts run on the
+    # PostgreSQL code path instead of silently reporting an empty table.
+    if not table_exists(conn, table_name):
         return {"table": table_name, "exists": False, "count": 0, "latest": None}
 
-    # Check if table has project_id column
-    cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
-    if "project_id" not in cols:
+    # Which timestamp column is present (ordered preference preserved).
+    present_ts = [
+        c for c in ("created_at", "collected_at", "assessed_at", "timestamp")
+        if column_exists(conn, table_name, c)
+    ]
+    if not column_exists(conn, table_name, "project_id"):
         # Table without project_id — count all records
         row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         count = row[0]
         # Try to get latest timestamp
         latest = None
-        for ts_col in ["created_at", "collected_at", "assessed_at", "timestamp"]:
-            if ts_col in cols:
-                ts_row = conn.execute(
-                    f"SELECT MAX({ts_col}) FROM {table_name}"  # nosec B608 -- table/column names are internal constants, not user input
-                ).fetchone()
-                latest = ts_row[0] if ts_row else None
-                break
+        for ts_col in present_ts:
+            ts_row = conn.execute(
+                f"SELECT MAX({ts_col}) FROM {table_name}"  # nosec B608 -- table/column names are internal constants, not user input
+            ).fetchone()
+            latest = ts_row[0] if ts_row else None
+            break
         return {"table": table_name, "exists": True, "count": count, "latest": latest}
 
     row = conn.execute(
@@ -167,14 +163,13 @@ def _count_project_records(conn: sqlite3.Connection, table_name: str, project_id
 
     # Get latest record timestamp
     latest = None
-    for ts_col in ["created_at", "collected_at", "assessed_at", "timestamp"]:
-        if ts_col in cols:
-            ts_row = conn.execute(
-                f"SELECT MAX({ts_col}) FROM {table_name} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
-                (project_id,),
-            ).fetchone()
-            latest = ts_row[0] if ts_row else None
-            break
+    for ts_col in present_ts:
+        ts_row = conn.execute(
+            f"SELECT MAX({ts_col}) FROM {table_name} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
+            (project_id,),
+        ).fetchone()
+        latest = ts_row[0] if ts_row else None
+        break
 
     return {"table": table_name, "exists": True, "count": count, "latest": latest}
 

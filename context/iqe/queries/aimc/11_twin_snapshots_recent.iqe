@@ -1,0 +1,5 @@
+# IQE-AIMC-011: Recent AI/ML architecture twin snapshots
+# Lists the most recent AIML digital-twin snapshots (architecture graph freezes).
+
+foreach s in aimc.twin_snapshots
+select s.id, s.design_id, s.label, s.node_count, s.edge_count, s.created_at

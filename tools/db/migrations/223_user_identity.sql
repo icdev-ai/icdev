@@ -3,6 +3,11 @@
 -- Stores per-user profile, objectives, relationships, challenges, integration
 -- tokens, and daily briefings.  All tables are canvas-scoped (no classification /
 -- tenant_id RLS columns); connections MUST use get_canvas_connection().
+--
+-- cnr-me-04: timestamp DEFAULTs use the portable CURRENT_TIMESTAMP (valid on
+-- both SQLite and PostgreSQL, matching schema/pg_consolidated.sql) rather than
+-- the SQLite-only datetime('now'), so the migration is dialect-safe and does not
+-- rely on translate_sql rewriting DDL defaults.
 
 CREATE TABLE IF NOT EXISTS user_identity_profiles (
     user_id          TEXT NOT NULL,
@@ -26,8 +31,8 @@ CREATE TABLE IF NOT EXISTS user_identity_profiles (
     team_mission     TEXT,
     profile_summary  TEXT,
     context_complete INTEGER NOT NULL DEFAULT 0,
-    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, tenant_id)
 );
 
@@ -41,7 +46,7 @@ CREATE TABLE IF NOT EXISTS user_objectives (
     metric      TEXT,
     status      TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','done','dropped')),
     sort_order  INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_obj
@@ -58,7 +63,7 @@ CREATE TABLE IF NOT EXISTS user_relationships (
     relationship_type TEXT CHECK(relationship_type IN ('boss','direct','peer','stakeholder','customer','vendor','other')),
     notes             TEXT,
     last_contact_at   TEXT,
-    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_rel
@@ -72,7 +77,7 @@ CREATE TABLE IF NOT EXISTS user_challenges (
     custom_description   TEXT,
     severity             TEXT NOT NULL DEFAULT 'medium' CHECK(severity IN ('low','medium','high')),
     status               TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','resolved')),
-    created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_chal
@@ -82,7 +87,10 @@ CREATE TABLE IF NOT EXISTS user_integrations (
     id                TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL,
     tenant_id         TEXT NOT NULL DEFAULT 'default',
-    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','github','gitlab','jira','linear','notion')),
+    -- Service list derived from icdev.tools.second_brain.constants.INTEGRATION_SERVICES
+    -- (guarded by tests/test_second_brain.py::TestMsGraphIntegration). 'msgraph'
+    -- MUST be present — blueprint.py persists Microsoft Graph tokens (cnr-me-03).
+    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','msgraph','github','gitlab','jira','linear','notion')),
     access_token_enc  TEXT,
     refresh_token_enc TEXT,
     token_expiry      TEXT,
@@ -90,7 +98,7 @@ CREATE TABLE IF NOT EXISTS user_integrations (
     metadata_json     TEXT NOT NULL DEFAULT '{}',
     status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked','error')),
     last_sync_at      TEXT,
-    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, tenant_id, service)
 );
 
@@ -103,7 +111,7 @@ CREATE TABLE IF NOT EXISTS user_daily_briefings (
     delivery_channels    TEXT NOT NULL DEFAULT '["dashboard"]',
     delivery_status_json TEXT NOT NULL DEFAULT '{}',
     opened_at            TEXT,
-    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, tenant_id, briefing_date)
 );
 

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 IMPLEMENTATION_STATUS = "full"
 
+import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -138,25 +140,195 @@ def _llm_assess_staleness(
 
 
 # ---------------------------------------------------------------------------
+# ACOIC drift bridge helpers
+# ---------------------------------------------------------------------------
+
+def _configs_by_device(graph: Dict[str, Any], topo_name: str) -> Dict[str, str]:
+    """Generate {device_id: config_text} for a topology graph.
+
+    ``generate_device_configs`` keys its result by *filename*
+    (e.g. ``core-router_ios.txt``); ``detect_drift`` compares by device. Strip
+    the generator's suffix so drift items name the device, not a file.
+    Deterministic and air-gap safe — no LLM, no network.
+    """
+    from tools.network.config_generator import generate_device_configs
+
+    out: Dict[str, str] = {}
+    for filename, text in (generate_device_configs(graph, topo_name) or {}).items():
+        device_id = re.sub(r"(_ios)?\.txt$", "", filename)
+        out[device_id] = text
+    return out
+
+
+def _load_baseline_graph(conn, topology_id: str) -> Dict[str, Any] | None:
+    """Return the baseline graph for a topology, or None when none is saved.
+
+    Baseline = an explicitly-labelled ``baseline``/``golden`` version if one
+    exists, else the highest ``version_num``. Returning None is a real answer:
+    a topology with no saved version has nothing to diff against and MUST be
+    reported, never fabricated.
+    """
+    row = conn.execute(
+        "SELECT graph_json FROM nc_versions WHERE topology_id = %s "
+        "ORDER BY CASE WHEN LOWER(COALESCE(label,'')) LIKE '%%baseline%%' "
+        "           OR LOWER(COALESCE(label,'')) LIKE '%%golden%%' THEN 0 ELSE 1 END, "
+        "         version_num DESC LIMIT 1",
+        (topology_id,),
+    ).fetchone()
+    if not row:
+        return None
+    raw = dict(row).get("graph_json") if not isinstance(row, (list, tuple)) else row[0]
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def _affected_doc_ids(topology_id: str, topo_name: str, tenant_id: str, limit: int = 5) -> List[str]:
+    """Resolve DIC documents impacted by this topology's drift.
+
+    Reuses the existing ``args/dic_canvas_integrations.yaml`` mapping via
+    canvas_adapter — no new config. Returns [] when nothing maps, which is an
+    honest outcome (drift happened; no document is tagged for it).
+    """
+    from tools.document_intelligence.canvas_adapter import resolve_affected_collections
+
+    affected = resolve_affected_collections({
+        "event_type": "ndc.topology.drift_detected",
+        "source_canvas": "ndc",
+        "payload_json": json.dumps({"topology_id": topology_id, "topology_name": topo_name}),
+        "tenant_id": tenant_id,
+    })
+    if not affected:
+        return []
+
+    from tools.db.storage import get_connection
+
+    doc_ids: List[str] = []
+    conn = get_connection()
+    try:
+        for entry in affected:
+            cid = entry.get("collection_id")
+            if not cid:
+                continue
+            rows = conn.execute(
+                "SELECT doc_id FROM dic_documents WHERE collection_id = %s LIMIT %s",
+                (cid, limit),
+            ).fetchall()
+            for r in rows:
+                doc_ids.append(dict(r)["doc_id"] if not isinstance(r, (list, tuple)) else r[0])
+    except Exception as exc:
+        logger.warning("[ndc_topology_drift] doc resolution failed: %s", exc)
+    finally:
+        conn.close()
+    return doc_ids
+
+
+def _check_topology_drift(
+    conn, tid: str, name: str, graph_raw: str, tenant_id: str, classification: str,
+    dry_run: bool, result: Dict[str, Any],
+) -> bool:
+    """Diff one topology against its baseline and feed ACOIC. Returns True on drift."""
+    from tools.network.drift_detector import detect_drift, emit_drift_events
+
+    baseline_graph = _load_baseline_graph(conn, tid)
+    if baseline_graph is None:
+        result["baselines_missing"].append({"id": tid, "name": name})
+        return False
+
+    try:
+        current_graph = json.loads(graph_raw or "{}")
+    except Exception:
+        result["errors"].append(f"{tid}: unreadable graph_json")
+        return False
+
+    baseline_cfgs = _configs_by_device(baseline_graph, name)
+    current_cfgs = _configs_by_device(current_graph, name)
+    if not baseline_cfgs and not current_cfgs:
+        result["no_configurable_devices"].append({"id": tid, "name": name})
+        return False
+
+    report = detect_drift(tid, baseline_cfgs, current_cfgs)
+    if not report.items:
+        return False
+
+    result["drifted_topologies"].append({
+        "id": tid, "name": name,
+        "items": len(report.items), "severity": report.overall_severity,
+    })
+    if dry_run:
+        return True
+
+    doc_ids = _affected_doc_ids(tid, name, tenant_id)
+    if not doc_ids:
+        result["docs_unmapped"].append({"id": tid, "name": name})
+
+    # Record the drift events once, then enqueue each impacted doc against them.
+    emitted = emit_drift_events(
+        report, document_id="", tenant_id=tenant_id, classification=classification,
+    )
+    result["drift_events_recorded"] += len(emitted.get("event_ids", []))
+
+    if doc_ids and emitted.get("event_ids"):
+        from tools.document_intelligence import acoic
+        for doc_id in doc_ids:
+            try:
+                acoic.enqueue_regen(
+                    doc_id,
+                    event_id=emitted["event_ids"][0],
+                    drift_source=f"network/{tid}",
+                    drift_entity=tid,
+                    severity=report.overall_severity,
+                    dedup_key=f"{doc_id}|{tid}|{report.current_snapshot_id}",
+                    tenant_id=tenant_id or None,
+                    classification=classification or None,
+                )
+                result["regen_enqueued"] += 1
+            except Exception as exc:
+                result["errors"].append(f"{tid}: enqueue_regen failed: {exc}")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
-    """Check NDC topologies for drift vs last export.
+def run(ctx: Dict[str, Any], trust: Any = None) -> Dict[str, Any]:
+    """Check NDC topologies for config drift vs their saved baseline.
+
+    Producer for ACOIC: diffs each topology's generated device configs against
+    its ``nc_versions`` baseline, records drift into ``dic_drift_events``, and
+    enqueues impacted DIC documents for HITL regeneration.
+
+    Note the daemon dispatches reflexes as ``fn(config, trust)`` — the second
+    positional arg is the TrustKernel, NOT a DB connection.
+
+    ctx keys: dry_run, staleness_threshold_days, topology_ids (filter),
+    tenant_id, classification.
 
     Returns:
-        stale_topologies: list of {id, name, days_since_export}
-        events_published: int
-        llm_assessment: dict (only present when llm_anomaly_detection.enabled=true)
-        errors: list[str]
+        stale_topologies, drifted_topologies, drift_events_recorded,
+        regen_enqueued, baselines_missing, docs_unmapped,
+        no_configurable_devices, events_published, errors, status
     """
     dry_run = ctx.get("dry_run", False)
     threshold = int(ctx.get("staleness_threshold_days", _STALENESS_THRESHOLD_DAYS))
+    only_ids = {t for t in (ctx.get("topology_ids") or []) if t}
+    tenant_id = ctx.get("tenant_id") or ""
+    classification = ctx.get("classification") or "CUI"
 
     result: Dict[str, Any] = {
         "cadence_hours": CADENCE_HOURS,
         "staleness_threshold_days": threshold,
         "stale_topologies": [],
+        "drifted_topologies": [],
+        "drift_events_recorded": 0,
+        "regen_enqueued": 0,
+        "baselines_missing": [],
+        "docs_unmapped": [],
+        "no_configurable_devices": [],
         "events_published": 0,
         "errors": [],
         "status": "ok",
@@ -166,8 +338,26 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         conn_ndc = ndc_conn()
         try:
             rows = conn_ndc.execute(
-                "SELECT id, name, updated_at FROM topologies ORDER BY updated_at DESC"
+                "SELECT id, name, updated_at, graph_json FROM topologies "
+                "ORDER BY updated_at DESC"
             ).fetchall()
+
+            # ── ACOIC bridge: real config drift vs saved baseline ────────────
+            # Each topology is isolated so one bad graph never kills the run.
+            for row in rows:
+                d = dict(row) if not isinstance(row, (list, tuple)) else None
+                tid = d["id"] if d else row[0]
+                name = d["name"] if d else row[1]
+                graph_raw = d["graph_json"] if d else row[3]
+                if only_ids and tid not in only_ids:
+                    continue
+                try:
+                    _check_topology_drift(
+                        conn_ndc, tid, name, graph_raw, tenant_id,
+                        classification, dry_run, result,
+                    )
+                except Exception as exc:
+                    result["errors"].append(f"{tid}: drift check failed: {exc}")
         finally:
             conn_ndc.close()
 
@@ -203,15 +393,26 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
         result["stale_topologies"] = stale
 
-        if stale and not dry_run:
+        # Publish only for topologies with REAL config drift, not mere staleness
+        # — the editorial consumer turns each event into a dic_suggestions row,
+        # and "updated recently" is not evidence that a document is now wrong.
+        # target_canvas="dic" is required: dic_integration filters on
+        # `WHERE target_canvas = 'dic'`, so an untargeted publish is invisible.
+        if result["drifted_topologies"] and not dry_run:
             try:
                 from tools.canvas.event_bus import publish
-                for t in stale:
-                    publish("ndc", "ndc.topology.drift_detected", {
-                        "topology_id": t["id"],
-                        "topology_name": t["name"],
-                        "days_since_update": t["days_since_update"],
-                    })
+                for t in result["drifted_topologies"]:
+                    publish(
+                        "ndc",
+                        "ndc.topology.drift_detected",
+                        {
+                            "topology_id": t["id"],
+                            "topology_name": t["name"],
+                            "drift_items": t["items"],
+                            "severity": t["severity"],
+                        },
+                        target_canvas="dic",
+                    )
                     result["events_published"] += 1
             except Exception as exc:
                 result["errors"].append(f"event_bus: {exc}")
@@ -224,5 +425,14 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import json as _json
     print(_json.dumps(run({}), indent=2))

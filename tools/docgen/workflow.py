@@ -17,6 +17,7 @@ the appropriate stage with reviewer notes injected into the next generation.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import uuid
 from typing import Any
@@ -45,6 +46,95 @@ _WG_MAX_RETRIES = 3
 
 # Maximum context characters passed to ACE generation (1M-ctx models are GA)
 _ACE_CONTEXT_MAX_CHARS = 50_000
+
+
+# ─── TRUST citation & placeholder gate (cnr-doc-01) ──────────────────────────
+# Every LLM-generated artifact MUST carry inline [source: …] citations and be
+# free of unresolved placeholders before it can be exported/published (CLAUDE.md
+# TRUST invariant). Built on the SHARED tools/quality grounding modules — no
+# citation parsing is re-implemented here.
+
+def assembled_doc_findings(
+    doc_text: str,
+    *,
+    allowed_sources: Any = None,
+    require_citations: bool = True,
+) -> tuple[list[dict], list[dict]]:
+    """Return (citation_findings, placeholder_findings) for an assembled document.
+
+    The whole document is treated as a single ``citation_gate`` section. Pure — no
+    DB, no Flask. Empty lists mean the document is clean. When ``allowed_sources``
+    is provided, citations to any id outside that set are flagged as hallucinated;
+    when it is None only citation *presence* is enforced (``require_citations``).
+    """
+    section: dict[str, Any] = {"item_number": "document", "content": doc_text or ""}
+    if allowed_sources is not None:
+        section["allowed_sources"] = allowed_sources
+    citation: list[dict] = []
+    placeholder: list[dict] = []
+    try:
+        from tools.quality.citation_grounding import citation_gate
+        citation = citation_gate([section], require_citations=require_citations)
+    except Exception:
+        citation = []
+    try:
+        from tools.quality.content_grounding import placeholder_findings
+        placeholder = placeholder_findings([section])
+    except Exception:
+        placeholder = []
+    return citation, placeholder
+
+
+def citation_publish_gate(
+    doc_text: str,
+    *,
+    force_citations: bool = False,
+    force_placeholders: bool = False,
+    allowed_sources: Any = None,
+    require_citations: bool = True,
+) -> dict[str, Any]:
+    """TRUST export/publish gate — mirrors govcon ``response_drafter.approve_draft``.
+
+    Placeholder guard runs first, then citation guard. A defect blocks unless the
+    matching ``force_*`` override is set, in which case the finding is recorded in
+    ``overrides`` for the caller to persist to the append-only audit trail.
+
+    Returns ``{blocked, gate, citation_findings, placeholder_findings, overrides,
+    grounding_available}``.  ``grounding_available`` is False when the shared
+    grounding module could not be imported — callers MUST fail closed on that
+    (never publish text no gate could inspect).
+    """
+    grounding_available = True
+    try:
+        import tools.quality.citation_grounding  # noqa: F401
+        import tools.quality.content_grounding  # noqa: F401
+    except Exception:
+        grounding_available = False
+
+    citation, placeholder = assembled_doc_findings(
+        doc_text, allowed_sources=allowed_sources, require_citations=require_citations
+    )
+    result: dict[str, Any] = {
+        "blocked": False,
+        "gate": None,
+        "citation_findings": citation,
+        "placeholder_findings": placeholder,
+        "overrides": {},
+        "grounding_available": grounding_available,
+    }
+    if placeholder and not force_placeholders:
+        result.update(blocked=True, gate="placeholder_guard")
+        return result
+    if citation and not force_citations:
+        result.update(blocked=True, gate="citation_guard")
+        return result
+    overrides: dict[str, Any] = {}
+    if placeholder and force_placeholders:
+        overrides["placeholder_guard_override"] = placeholder
+    if citation and force_citations:
+        overrides["citation_guard_override"] = citation
+    result["overrides"] = overrides
+    return result
 
 
 def _diff_scope_check(
@@ -151,27 +241,56 @@ def _append_compliance_stamp(doc_text: str, classification: str) -> str:
 
 # ─── Item 8: Document freshness gate ────────────────────────────────────────
 
+# cnr-doc-04(e): cache of digest keyed by a (path, mtime_ns, size) signature so a
+# rendered session list doesn't re-read every upload file on every request. The
+# signature only changes when a file actually changes, so the digest VALUE is
+# preserved exactly (no re-baselining of existing stored hashes).
+_HASH_CACHE: dict[tuple, str] = {}
+_HASH_CACHE_MAX = 512
+
+
 def compute_source_hash(upload_paths: list[str]) -> str:
     """Return a stable SHA-256 hash of the content of all upload files.
 
     Files are sorted by path before hashing to ensure determinism.
     Returns a hex string, or empty string if no paths provided or all files missing.
+    Caches by (path, mtime, size) so unchanged files are not re-read on every call.
     """
     import hashlib
 
     if not upload_paths:
         return ""
 
+    ordered = sorted(upload_paths)
+    # Cheap stat-only signature (no byte reads) to short-circuit unchanged sources.
+    sig_parts: list[tuple] = []
+    stat_ok = True
+    for path in ordered:
+        try:
+            st = os.stat(path)
+            sig_parts.append((path, st.st_mtime_ns, st.st_size))
+        except OSError:
+            stat_ok = False
+            break
+    sig = tuple(sig_parts) if stat_ok and sig_parts else None
+    if sig is not None and sig in _HASH_CACHE:
+        return _HASH_CACHE[sig]
+
     h = hashlib.sha256()
     any_read = False
-    for path in sorted(upload_paths):
+    for path in ordered:
         p = pathlib.Path(path)
         try:
             h.update(p.read_bytes())
             any_read = True
         except (OSError, IOError):
             pass
-    return h.hexdigest() if any_read else ""
+    digest = h.hexdigest() if any_read else ""
+    if sig is not None and digest:
+        if len(_HASH_CACHE) >= _HASH_CACHE_MAX:
+            _HASH_CACHE.clear()
+        _HASH_CACHE[sig] = digest
+    return digest
 
 
 def record_source_hash(session_id: str, upload_paths: list[str]) -> str:
@@ -193,15 +312,25 @@ def record_source_hash(session_id: str, upload_paths: list[str]) -> str:
     return h
 
 
-def check_freshness(session_id: str, upload_paths: list[str]) -> dict:
+def check_freshness(
+    session_id: str,
+    upload_paths: list[str],
+    stored_hash: str | None = None,
+) -> dict:
     """Compare current upload hash against the stored last_source_hash.
 
     Returns {"stale": bool, "current_hash": str, "stored_hash": str}.
     stale=True means uploads have changed since the document was last generated.
     stale=False if no stored hash (new session) or hashes match.
+
+    cnr-doc-04(e): pass ``stored_hash`` (from a session row the caller already has)
+    to skip the per-session get_session() round-trip when rendering a session list.
     """
-    session = sm.get_session(session_id) or {}
-    stored = session.get("last_source_hash") or ""
+    if stored_hash is None:
+        session = sm.get_session(session_id) or {}
+        stored = session.get("last_source_hash") or ""
+    else:
+        stored = stored_hash or ""
     current = compute_source_hash(upload_paths)
     stale = bool(stored and current and stored != current)
     return {"stale": stale, "current_hash": current, "stored_hash": stored}
@@ -962,10 +1091,15 @@ def stage6_writeguard(
                     policy_result = policy_check(current_text, _doc_type, _classification)
                 else:
                     policy_result = {"passed": True, "violations": [], "warnings": []}
+                # TRUST gate (cnr-doc-01): surface citation/placeholder defects on
+                # the passing text so reviewers see them before the publish gate.
+                _cite_findings, _ph_findings = assembled_doc_findings(current_text)
                 log.info(
-                    "IDR WriteGuard: session=%s score=%.1f PASS (attempt=%d) policy=%s",
+                    "IDR WriteGuard: session=%s score=%.1f PASS (attempt=%d) policy=%s "
+                    "citation_defects=%d placeholder_defects=%d",
                     session_id, last_score, attempt,
                     "PASS" if policy_result["passed"] else "FAIL",
+                    len(_cite_findings), len(_ph_findings),
                 )
                 return {
                     "passed": policy_result["passed"],
@@ -977,6 +1111,8 @@ def stage6_writeguard(
                     "ace_regen_needed": False,
                     "policy_violations": policy_result["violations"],
                     "policy_warnings": policy_result["warnings"],
+                    "citation_findings": _cite_findings,
+                    "placeholder_findings": _ph_findings,
                 }
 
             if attempt >= _WG_MAX_RETRIES:
@@ -1021,14 +1157,23 @@ def stage6_writeguard(
             "ace_regen_needed": True,
             "policy_violations": [],
             "policy_warnings": [],
+            "citation_findings": [],
+            "placeholder_findings": [],
         }
 
     except ImportError:
-        log.warning("WriteGuard not available — gate bypassed (import error)")
+        # cnr-doc-02: a missing WriteGuard engine must FAIL CLOSED — "quality
+        # check unavailable" can never be reported as "quality passed". Block the
+        # gate and surface the reason so publish cannot proceed.
+        log.error("WriteGuard not available (ImportError) — FAILING CLOSED (gate blocked)")
         return {
-            "passed": True, "score": 100, "result": {}, "fixed_text": doc_text,
-            "attempts": 0, "blocked": False, "ace_regen_needed": False,
+            "passed": False, "score": 0,
+            "result": {"error": "WriteGuard unavailable (ImportError) — gate failed closed"},
+            "fixed_text": doc_text,
+            "attempts": 0, "blocked": True, "ace_regen_needed": False,
             "policy_violations": [], "policy_warnings": [],
+            "citation_findings": [], "placeholder_findings": [],
+            "writeguard_unavailable": True,
         }
     except Exception as exc:
         log.exception("IDR WriteGuard exception: session=%s", session_id)
@@ -1036,6 +1181,7 @@ def stage6_writeguard(
             "passed": False, "score": 0, "result": {"error": str(exc)}, "fixed_text": doc_text,
             "attempts": 0, "blocked": False, "ace_regen_needed": False,
             "policy_violations": [], "policy_warnings": [],
+            "citation_findings": [], "placeholder_findings": [],
         }
 
 
@@ -1128,17 +1274,48 @@ _CLS_BANNER_STYLES: dict[str, str] = {
 }
 
 
+def _sanitize_html(html_str: str) -> str:
+    """Strip stored-XSS vectors from rendered markdown (cnr-doc-03).
+
+    Removes <script>/<style>/<iframe>/<object>/<embed>/<svg>/<form> and similar
+    active elements, inline on* event-handler attributes, and javascript:/vbscript:/
+    data: URIs in href/src. Pure-regex — no external deps (air-gap safe). Markdown
+    passes raw HTML through by default, so this runs on the RENDERED output.
+    """
+    import re as _re
+
+    if not html_str:
+        return ""
+    s = html_str
+    _dangerous = r"script|style|iframe|object|embed|svg|math|template|link|meta|base|form|input|button|textarea|noscript|frame|frameset|applet"
+    # Remove dangerous element blocks (opening tag through matching close).
+    s = _re.sub(rf"(?is)<\s*({_dangerous})\b.*?<\s*/\s*\1\s*>", "", s)
+    # Remove any remaining dangerous opening/void/closing tags.
+    s = _re.sub(rf"(?is)<\s*/?\s*({_dangerous})\b[^>]*>", "", s)
+    # Strip inline event-handler attributes (onload=, onerror=, onclick=, …).
+    s = _re.sub(r"(?i)\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", s)
+    # Neutralize javascript:/vbscript:/data: URIs in href/src.
+    s = _re.sub(r"(?i)(href|src)\s*=\s*([\"']?)\s*(?:javascript|vbscript|data)\s*:[^\"'>\s]*", r"\1=\2#", s)
+    return s
+
+
 def _try_export_html(session_id, text, title, out_dir, classification, artifacts):
     try:
+        import html as _html
+
         html_path = str(pathlib.Path(out_dir) / "document.html")
         cls_upper = (classification or "CUI").upper()
         banner_style = _CLS_BANNER_STYLES.get(cls_upper, _CLS_BANNER_STYLES["CUI"])
         banner_css = f"{banner_style};padding:6px 12px;font-size:13px;font-weight:bold;text-align:center;letter-spacing:1px;"
+        # cnr-doc-03: escape untrusted title/classification and sanitize the rendered
+        # markdown body so a hostile document title or embedded HTML can't inject XSS
+        # into the exported artifact.
+        title = _html.escape(str(title or ""))
+        classification = _html.escape(str(classification or "CUI"))
         try:
             import markdown as _md
-            body_html = _md.markdown(text, extensions=["tables", "fenced_code"])
+            body_html = _sanitize_html(_md.markdown(text, extensions=["tables", "fenced_code"]))
         except Exception:
-            import html as _html
             body_html = f"<pre>{_html.escape(text)}</pre>"
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1194,12 +1371,28 @@ def _try_export_docx(session_id, text, title, out_dir, classification, artifacts
 
 def _try_export_pdf(session_id, text, title, out_dir, classification, artifacts):
     try:
+        import importlib.util
+
+        # cnr-doc-04(d): export_to_pdf silently writes an HTML file (document.pdf →
+        # document.html) when fpdf2 is missing — which would BOTH overwrite the real
+        # HTML artifact AND be mislabelled 'pdf'. Only attempt a genuine PDF when
+        # fpdf2 is present; the HTML artifact is already produced by _try_export_html.
+        if importlib.util.find_spec("fpdf") is None:
+            log.info("IDR PDF export skipped: fpdf2 not installed (HTML already exported)")
+            return
+
         from tools.network.pdf_export import export_to_pdf
 
         pdf_path = str(pathlib.Path(out_dir) / "document.pdf")
         export_to_pdf(content=text, output_path=pdf_path, title=title, classification=classification)
-        row = sm.add_artifact(session_id, "pdf", file_path=pdf_path)
-        artifacts.append(row)
+        if pathlib.Path(pdf_path).is_file():
+            row = sm.add_artifact(session_id, "pdf", file_path=pdf_path)
+            artifacts.append(row)
+        else:
+            log.warning(
+                "IDR PDF export produced no .pdf (fpdf2 fallback?) — not recording a 'pdf' artifact: session=%s",
+                session_id,
+            )
     except ImportError:
         log.debug("pdf_export not available — skipping PDF export")
     except Exception:

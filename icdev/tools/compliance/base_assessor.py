@@ -143,9 +143,11 @@ class BaseAssessor(ABC):
             ("assessor", "TEXT DEFAULT 'icdev-compliance-engine'"),
             ("updated_at", "TEXT"),
         ]
-        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({self.TABLE_NAME})").fetchall()}
+        # Backend-aware column probe (information_schema on PG, PRAGMA table_info
+        # on SQLite) instead of a raw PRAGMA that only introspects on SQLite.
+        from tools.db.storage import column_exists
         for col_name, col_def in expected_cols:
-            if col_name not in existing:
+            if not column_exists(conn, self.TABLE_NAME, col_name):
                 try:
                     conn.execute(f"ALTER TABLE {self.TABLE_NAME} ADD COLUMN {col_name} {col_def}")
                 except Exception:

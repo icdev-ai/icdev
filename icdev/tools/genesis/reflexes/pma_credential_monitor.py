@@ -230,5 +230,14 @@ def _write_memory_log(results: Dict) -> None:
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     result = run({}, None)
     print(json.dumps(result, indent=2, default=str))

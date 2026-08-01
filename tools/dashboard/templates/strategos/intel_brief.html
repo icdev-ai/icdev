@@ -310,7 +310,7 @@
 {# Brief data for JS ── #}
 <script src="/static/vendor/marked/marked.min.js"></script>
 <script>
-const BRIEFS_DATA = {{ briefs_json | safe }};
+const BRIEFS_DATA = {{ briefs_json | json_script_safe }};
 
 function renderMarkdown(md) {
   if (typeof marked !== "undefined") {

@@ -425,9 +425,13 @@ def assess_design(design_id: str, graph_json: str | dict,
     # Confidence gate path check (MEA-1)
     cg_findings = check_confidence_gate_path(nodes, edges)
 
-    # AIMC bridge: IL compatibility check + OWASP LLM01 bridge security check
+    # AIMC bridge: IL compatibility check + OWASP LLM01 bridge security check.
+    # If the bridge is unavailable (import/DB error) its findings would silently
+    # vanish; record an explicit marker so the assessment output distinguishes
+    # "bridge ran, found nothing" from "bridge never ran".
     il_compat_findings: list[dict] = []
     bridge_sec_findings: list[dict] = []
+    bridge_status = "available"
     try:
         from tools.agentic_ai_canvas.canvas_bridge import check_il_compatibility, bridge_security_check
         violations = check_il_compatibility(design_id)
@@ -442,7 +446,7 @@ def assess_design(design_id: str, graph_json: str | dict,
             })
         bridge_sec_findings = bridge_security_check(design_id, nodes, edges)
     except Exception:
-        pass
+        bridge_status = "unavailable"
 
     all_findings = (rmf_findings + owasp_findings + hitl_findings
                     + obs_findings + a2a_findings + safety_ext_findings
@@ -506,5 +510,6 @@ def assess_design(design_id: str, graph_json: str | dict,
         "rights_impacting": int(rights_impacting),
         "findings_json": json.dumps(all_findings),
         "atlas_threats": json.dumps(atlas_threats),
+        "bridge": bridge_status,
         "created_at": _now(),
     }

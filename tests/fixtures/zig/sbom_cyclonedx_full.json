@@ -1,0 +1,68 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-07-17T12:00:00Z",
+    "component": {"type": "application", "name": "icdev-web", "version": "3.2.0"}
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/flask@2.3.3",
+      "name": "flask",
+      "version": "2.3.3",
+      "purl": "pkg:pypi/flask@2.3.3",
+      "vulnerabilities": []
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/requests@2.28.2",
+      "name": "requests",
+      "version": "2.28.2",
+      "purl": "pkg:pypi/requests@2.28.2",
+      "vulnerabilities": [
+        {
+          "id": "CVE-2023-32681",
+          "source": {"name": "NVD"},
+          "ratings": [{"severity": "high", "score": 7.5, "method": "CVSSv3"}]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/pillow@10.0.0",
+      "name": "pillow",
+      "version": "10.0.0",
+      "purl": "pkg:pypi/pillow@10.0.0",
+      "vulnerabilities": [
+        {
+          "id": "CVE-2023-50447",
+          "source": {"name": "NVD"},
+          "ratings": [{"severity": "critical", "score": 9.8, "method": "CVSSv3"}]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/pyyaml@6.0",
+      "name": "pyyaml",
+      "version": "6.0",
+      "purl": "pkg:pypi/pyyaml@6.0",
+      "vulnerabilities": [
+        {
+          "id": "GHSA-low-0001",
+          "ratings": [{"severity": "low", "score": 3.1}]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "internal-shim",
+      "name": "internal-shim",
+      "purl": "pkg:generic/internal-shim",
+      "vulnerabilities": []
+    }
+  ]
+}

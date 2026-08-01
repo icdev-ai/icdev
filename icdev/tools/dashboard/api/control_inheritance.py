@@ -10,11 +10,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
+from tools.db.storage import get_connection, table_exists, sql_placeholder  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 control_inheritance_api = Blueprint("control_inheritance_api", __name__, url_prefix="/api/control-inheritance")
+
+# nav-comp-06: the responsibility split (inherited / shared / customer) below is a
+# hardcoded FedRAMP *reference* model, not a measured posture for any specific
+# system or authorization boundary. Every response is tagged with this so the UI
+# can badge it "Typical inheritance (reference)" and no consumer mistakes the
+# reference split for an assessed control-responsibility assignment.
+DATA_SOURCE = "reference_model"
 
 # ---------------------------------------------------------------------------
 # Static inheritance model — FedRAMP typical responsibility by control family
@@ -72,20 +79,7 @@ def _get_db():
 
 def _table_exists(conn, table_name: str) -> bool:
     """Check if a table exists (works for both SQLite and PostgreSQL)."""
-    try:
-        if getattr(conn, "_backend", "sqlite") == "postgresql":
-            row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
-                (table_name,),
-            ).fetchone()
-            return row is not None
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-            (table_name,),
-        ).fetchone()
-        return row is not None
-    except Exception:
-        return False
+    return table_exists(conn, table_name)
 
 
 def _resolve_responsibility(family: str, csp: str) -> str:
@@ -106,7 +100,7 @@ def list_csps():
     profiles = []
     for key, val in CSP_PROFILES.items():
         profiles.append({"id": key, "name": val["name"]})
-    return jsonify({"csps": profiles})
+    return jsonify({"csps": profiles, "data_source": DATA_SOURCE})
 
 
 @control_inheritance_api.route("/model", methods=["GET"])
@@ -146,6 +140,7 @@ def get_model():
                 "csp": csp,
                 "csp_name": CSP_PROFILES.get(csp, {}).get("name", csp),
                 "families": families,
+                "data_source": DATA_SOURCE,
             }
         )
     except Exception as exc:
@@ -218,6 +213,7 @@ def get_summary():
                 "project_id": project_id,
                 "total_controls": total,
                 "summary": summary,
+                "data_source": DATA_SOURCE,
             }
         )
     except Exception as exc:
@@ -248,7 +244,7 @@ def list_controls():
         has_project = _table_exists(conn, "project_controls")
 
         if not has_controls:
-            return jsonify({"controls": [], "total": 0})
+            return jsonify({"controls": [], "total": 0, "data_source": DATA_SOURCE})
 
         query = "SELECT id, family, title, description, impact_level FROM compliance_controls WHERE 1=1"
         params = []
@@ -290,7 +286,7 @@ def list_controls():
 
             controls.append(entry)
 
-        return jsonify({"controls": controls, "total": len(controls)})
+        return jsonify({"controls": controls, "total": len(controls), "data_source": DATA_SOURCE})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -317,7 +313,7 @@ def gap_analysis():
         has_project = _table_exists(conn, "project_controls")
 
         if not has_controls:
-            return jsonify({"gaps": [], "total": 0})
+            return jsonify({"gaps": [], "total": 0, "data_source": DATA_SOURCE})
 
         rows = conn.execute(
             "SELECT id, family, title, description, impact_level FROM compliance_controls ORDER BY family, id"
@@ -364,6 +360,7 @@ def gap_analysis():
                 "csp": csp,
                 "gaps": gaps,
                 "total": len(gaps),
+                "data_source": DATA_SOURCE,
             }
         )
     except Exception as exc:

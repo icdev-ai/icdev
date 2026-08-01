@@ -11,6 +11,19 @@
   <script src="{{ url_for('static', filename='js/vendor/backbone.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/joint.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/dagre.min.js') }}"></script>
+  <style>
+    /* Responsive toolbar (pdx-ux-01). The base .pc-toolbar already sets
+       flex-wrap:wrap; below ~1100px also let wide button groups (e.g. the 11
+       export buttons) wrap internally and tighten spacing so the toolbar never
+       forces horizontal page scroll on narrow / split-screen viewports. */
+    @media (max-width: 1100px) {
+      .pc-toolbar .tb-group { flex-wrap: wrap; border-right: none; padding: 0 3px; }
+      .pc-toolbar .tb-btn { font-size: 11px; padding: 2px 6px; }
+      .pc-toolbar .tb-status { width: 100%; }
+    }
+    /* Keyboard focus visibility for the click-to-add palette items (a11y). */
+    .palette-item:focus-visible { outline: 2px solid #7ba7d4; outline-offset: 1px; }
+  </style>
 </head>
 <body style="margin:0;">
 {% from "includes/classification_macros.html" import design_classification_banner %}
@@ -20,56 +33,56 @@
 <div class="pc-toolbar">
   <div class="tb-group">
     <a href="/devops/" class="tb-btn" style="text-decoration:none;">← Dashboard</a>
-    <button class="tb-btn" onclick="newCanvas()">⊞ New</button>
-    <button class="tb-btn" onclick="savePipeline()">💾 Save</button>
-    <button class="tb-btn" onclick="undoAction()">↩ Undo</button>
-    <button class="tb-btn" onclick="redoAction()">↪ Redo</button>
-    <button class="tb-btn" onclick="exportCanvasPDF()">📄 Export PDF</button>
+    <button class="tb-btn" onclick="newCanvas()" aria-label="New pipeline">⊞ New</button>
+    <button class="tb-btn" onclick="savePipeline()" aria-label="Save pipeline">💾 Save</button>
+    <button class="tb-btn" onclick="undoAction()" aria-label="Undo">↩ Undo</button>
+    <button class="tb-btn" onclick="redoAction()" aria-label="Redo">↪ Redo</button>
+    <button class="tb-btn" onclick="exportCanvasPDF()" aria-label="Export PDF">📄 Export PDF</button>
     <input id="pc-pipeline-name" type="text" value="{{ pipeline_name }}"
            style="padding:2px 6px; border-radius:3px; width:180px; font-size:12px;"
            onchange="markDirty()">
   </div>
   <div class="tb-group">
-    <button class="tb-btn" onclick="openTemplatesModal()">📋 Templates</button>
-    <button class="tb-btn" onclick="toggleSnippets()">⊞ Snippets</button>
+    <button class="tb-btn" onclick="openTemplatesModal()" aria-label="Templates">📋 Templates</button>
+    <button class="tb-btn" onclick="toggleSnippets()" aria-label="Snippets">⊞ Snippets</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" onclick="zoomIn()" title="Zoom in (+)">+ Zoom</button>
-    <button class="tb-btn" onclick="zoomOut()" title="Zoom out (-)">- Zoom</button>
-    <button class="tb-btn" onclick="zoomFit()" title="Fit all nodes (F)">⊞ Fit</button>
-    <button class="tb-btn" onclick="zoomReset()" title="Reset to 100% (0)">1:1</button>
+    <button class="tb-btn" onclick="zoomIn()" title="Zoom in (+)" aria-label="Zoom in">+ Zoom</button>
+    <button class="tb-btn" onclick="zoomOut()" title="Zoom out (-)" aria-label="Zoom out">- Zoom</button>
+    <button class="tb-btn" onclick="zoomFit()" title="Fit all nodes (F)" aria-label="Fit all nodes to view">⊞ Fit</button>
+    <button class="tb-btn" onclick="zoomReset()" title="Reset to 100% (0)" aria-label="Reset zoom to 100%">1:1</button>
     <span id="pc-zoom-label">100%</span>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" onclick="exportAs('gitlab_ci')">🔧 GitLab CI</button>
-    <button class="tb-btn" onclick="exportAs('github_actions')">🔧 GitHub</button>
-    <button class="tb-btn" onclick="exportAs('jenkinsfile')">🔧 Jenkins</button>
-    <button class="tb-btn" onclick="exportAs('tekton')">🔧 Tekton</button>
-    <button class="tb-btn" onclick="exportAs('azure_pipelines')">🔧 Azure</button>
-    <button class="tb-btn" onclick="exportAs('drawio')">📐 draw.io</button>
-    <button class="tb-btn" onclick="exportAs('svg')">🖼 SVG</button>
-    <button class="tb-btn" onclick="exportAs('cloudformation')" title="AWS CloudFormation">☁ CFN</button>
-    <button class="tb-btn" onclick="exportAs('bicep')" title="Azure Bicep">☁ Bicep</button>
-    <button class="tb-btn" onclick="exportAs('openslo')" title="OpenSLO SLO definitions">📋 OpenSLO</button>
-    <button class="tb-btn" onclick="exportAs('runbook_manifest')" title="Runbook + chaos manifest">📋 Runbooks</button>
+    <button class="tb-btn" onclick="exportAs('gitlab_ci')" aria-label="Export GitLab CI">🔧 GitLab CI</button>
+    <button class="tb-btn" onclick="exportAs('github_actions')" aria-label="Export GitHub Actions">🔧 GitHub</button>
+    <button class="tb-btn" onclick="exportAs('jenkinsfile')" aria-label="Export Jenkinsfile">🔧 Jenkins</button>
+    <button class="tb-btn" onclick="exportAs('tekton')" aria-label="Export Tekton">🔧 Tekton</button>
+    <button class="tb-btn" onclick="exportAs('azure_pipelines')" aria-label="Export Azure Pipelines">🔧 Azure</button>
+    <button class="tb-btn" onclick="exportAs('drawio')" aria-label="Export draw.io">📐 draw.io</button>
+    <button class="tb-btn" onclick="exportAs('svg')" aria-label="Export SVG">🖼 SVG</button>
+    <button class="tb-btn" onclick="exportAs('cloudformation')" title="AWS CloudFormation" aria-label="Export AWS CloudFormation">☁ CFN</button>
+    <button class="tb-btn" onclick="exportAs('bicep')" title="Azure Bicep" aria-label="Export Azure Bicep">☁ Bicep</button>
+    <button class="tb-btn" onclick="exportAs('openslo')" title="OpenSLO SLO definitions" aria-label="Export OpenSLO definitions">📋 OpenSLO</button>
+    <button class="tb-btn" onclick="exportAs('runbook_manifest')" title="Runbook + chaos manifest" aria-label="Export runbook and chaos manifest">📋 Runbooks</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" style="background:#14532d;color:#4ade80;font-weight:700;border-color:#16a34a;" onclick="validateIaC()" title="Validate generated IaC (syntax, schema, policy)">✓ Validate IaC</button>
-    <button class="tb-btn" style="background:#1e3a5f;color:#60a5fa;font-weight:700;border-color:#2563eb;" onclick="deployBundle()" title="Generate IaC deployment bundle (Terraform + Helm + Ansible)">🚀 Deploy IaC</button>
+    <button class="tb-btn" style="background:#14532d;color:#4ade80;font-weight:700;border-color:#16a34a;" onclick="validateIaC()" title="Validate generated IaC (syntax, schema, policy)" aria-label="Validate IaC">✓ Validate IaC</button>
+    <button class="tb-btn" style="background:#1e3a5f;color:#60a5fa;font-weight:700;border-color:#2563eb;" onclick="deployBundle()" title="Generate IaC deployment bundle (Terraform + Helm + Ansible)" aria-label="Deploy IaC bundle">🚀 Deploy IaC</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" onclick="autoGroupByStage()" title="Auto-detect stages and draw boundary boxes">⬡ Auto Boundaries</button>
-    <button class="tb-btn" onclick="clearBoundaries()" title="Remove all boundary boxes">✕ Clear Boundaries</button>
-    <button class="tb-btn" onclick="toggleLegend()" title="Show/hide color legend">◧ Legend</button>
+    <button class="tb-btn" onclick="autoGroupByStage()" title="Auto-detect stages and draw boundary boxes" aria-label="Auto-detect stage boundaries">⬡ Auto Boundaries</button>
+    <button class="tb-btn" onclick="clearBoundaries()" title="Remove all boundary boxes" aria-label="Clear boundaries">✕ Clear Boundaries</button>
+    <button class="tb-btn" onclick="toggleLegend()" title="Show/hide color legend" aria-label="Toggle legend">◧ Legend</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" onclick="runAnalysis('governance')" style="color:#c084fc;">🏛 Governance</button>
-    <button class="tb-btn" onclick="runScorecard()">📊 Scorecard</button>
-    <button class="tb-btn" onclick="runAnalysis('security_coverage')">🛡 OWASP</button>
-    <button class="tb-btn" onclick="runAnalysis('slsa')">🔗 SLSA</button>
-    <button class="tb-btn" onclick="runAnalysis('compliance')">✓ Compliance</button>
-    <button class="tb-btn" onclick="runAnalysis('cost')">💰 Cost</button>
-    <button class="tb-btn" onclick="runAnalysis('antipatterns')">⚠ Anti-Patterns</button>
+    <button class="tb-btn" onclick="runAnalysis('governance')" style="color:#c084fc;" aria-label="Governance analysis">🏛 Governance</button>
+    <button class="tb-btn" onclick="runScorecard()" aria-label="Scorecard">📊 Scorecard</button>
+    <button class="tb-btn" onclick="runAnalysis('security_coverage')" aria-label="OWASP coverage analysis">🛡 OWASP</button>
+    <button class="tb-btn" onclick="runAnalysis('slsa')" aria-label="SLSA analysis">🔗 SLSA</button>
+    <button class="tb-btn" onclick="runAnalysis('compliance')" aria-label="Compliance analysis">✓ Compliance</button>
+    <button class="tb-btn" onclick="runAnalysis('cost')" aria-label="Cost analysis">💰 Cost</button>
+    <button class="tb-btn" onclick="runAnalysis('antipatterns')" aria-label="Anti-pattern analysis">⚠ Anti-Patterns</button>
     <a href="/sre" target="_blank" class="tb-btn" style="text-decoration:none;color:#38bdf8;" title="Open SRE Operations Dashboard">📈 SRE Dashboard</a>
     {% set wf_canvas_id = "pdc" %}
     {% set wf_context_label = pipeline_name %}
@@ -93,7 +106,10 @@
       <div class="palette-items" style="display:none">
         {% for item in cat_items %}
         <div class="palette-item" draggable="true" data-type="{{ item.type }}"
-             ondragstart="onDragStart(event)" title="{{ item.desc }}">
+             ondragstart="onDragStart(event)" title="{{ item.desc }}"
+             role="button" tabindex="0" aria-label="Add {{ item.label }} node"
+             onclick="addNodeFromPalette('{{ item.type }}')"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();addNodeFromPalette('{{ item.type }}');}">
           <div class="pi-icon" style="background:{{ NODE_STYLES.get(item.type, {}).get('fill', '#1a1a2e') if NODE_STYLES is defined else '#1a1a2e' }}; color:{{ NODE_STYLES.get(item.type, {}).get('stroke', '#7a8cb0') if NODE_STYLES is defined else '#7a8cb0' }};">{{ item.icon }}</div>
           <span>{{ item.label }}</span>
         </div>
@@ -112,7 +128,7 @@
   <div class="pc-config-panel">
     <div class="pc-config-header">
       <span>Properties</span>
-      <button class="tb-btn" onclick="closeConfigPanel()">✕</button>
+      <button class="tb-btn" onclick="closeConfigPanel()" aria-label="Close panel">✕</button>
     </div>
     <div class="pc-config-body"></div>
   </div>
@@ -128,7 +144,7 @@
 <div class="pc-modal-overlay" id="pc-templates-modal">
   <div class="pc-modal">
     <h3>Pipeline Templates
-      <button class="tb-btn" style="float:right" onclick="closeTemplatesModal()">✕</button>
+      <button class="tb-btn" style="float:right" onclick="closeTemplatesModal()" aria-label="Close templates">✕</button>
     </h3>
     <div class="tpl-grid" id="pc-tpl-grid"></div>
   </div>
@@ -137,7 +153,7 @@
 <script>
 // Tool info map — generated from PIPELINE_OBJECTS for rich tooltips
 const TOOL_INFO = {
-{% for cat_key, cat_items in objects.items() %}{% for item in cat_items %}  '{{ item.type }}': { category: '{{ cat_key | replace("_", " ") | title }}', desc: '{{ item.desc | replace("'", "\\'") }}', stage: '{{ item.stage | default("") }}', license: '{{ item.license | default("") }}', csp: '{{ item.csp | default("") }}', deploy: '{% if item.type in ["cicd-github-actions","scm-gitlab","scm-bitbucket","az-repos","az-pipelines","scan-snyk","scan-burp","registry-jfrog","mon-soar","mon-pagerduty","deploy-feature-flag"] %}SaaS{% elif item.type.startswith("build-") or item.type.startswith("scan-") or item.type.startswith("sbom-") or item.type.startswith("sign-") or item.type.startswith("attest-") or item.type.startswith("vex-") or item.type.startswith("gate-") %}CI Step{% elif item.type.startswith("boundary-") or item.type.startswith("pipeline-") or item.type == "sneakernet" or item.type == "cds-guard" or item.type == "cds-data-diode" or item.type == "registry-ironbank" %}Boundary{% elif item.type.startswith("aws-") or item.type.startswith("az-") or item.type.startswith("gcp-") or item.type.startswith("oci-") or item.type.startswith("ibm-") %}Managed{% else %}Helm{% endif %}' },
+{% for cat_key, cat_items in objects.items() %}{% for item in cat_items %}  {{ item.type | tojson }}: { category: {{ (cat_key | replace("_", " ") | title) | tojson }}, desc: {{ (item.desc | default("")) | tojson }}, stage: {{ (item.stage | default("")) | tojson }}, license: {{ (item.license | default("")) | tojson }}, csp: {{ (item.csp | default("")) | tojson }}, deploy: {% if item.type in ["cicd-github-actions","scm-gitlab","scm-bitbucket","az-repos","az-pipelines","scan-snyk","scan-burp","registry-jfrog","mon-soar","mon-pagerduty","deploy-feature-flag"] %}"SaaS"{% elif item.type.startswith("build-") or item.type.startswith("scan-") or item.type.startswith("sbom-") or item.type.startswith("sign-") or item.type.startswith("attest-") or item.type.startswith("vex-") or item.type.startswith("gate-") %}"CI Step"{% elif item.type.startswith("boundary-") or item.type.startswith("pipeline-") or item.type == "sneakernet" or item.type == "cds-guard" or item.type == "cds-data-diode" or item.type == "registry-ironbank" %}"Boundary"{% elif item.type.startswith("aws-") or item.type.startswith("az-") or item.type.startswith("gcp-") or item.type.startswith("oci-") or item.type.startswith("ibm-") %}"Managed"{% else %}"Helm"{% endif %} },
 {% endfor %}{% endfor %}};
 </script>
 <script src="{{ url_for('static', filename='js/canvas-tooltips.js') }}"></script>
@@ -150,15 +166,31 @@ if (typeof TOOL_INFO !== 'undefined') {
   });
 }
 </script>
-<script src="{{ url_for('static', filename='js/pipeline-canvas.js') }}?v=7"></script>
+<!-- pipeline-canvas.js was split into six ordered modules (pdx-ux-01). Load
+     order matters only in that node-styles + core must precede the rest; all
+     cross-module calls resolve at runtime through the shared global scope. -->
+<script src="{{ url_for('static', filename='js/pipeline-node-styles.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/pipeline-canvas-core.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/pipeline-ndc-bridge.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/pipeline-snippets.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/pipeline-iac.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/pipeline-analysis.js') }}?v=8"></script>
 <script>
   // Initialize
   document.addEventListener('DOMContentLoaded', () => {
     pipelineId = '{{ pipeline_id }}';
     initCanvas();
 
-    // Load existing graph
-    const graphJson = {{ graph_json | safe }};
+    // Load existing graph. graph_json is a JSON *string*; the `| tojson` filter
+    // emits it as a safely-escaped JS string literal (angle brackets become
+    // < / >), defeating stored XSS such as a script-closing label.
+    // JSON.parse() then turns that string back into the graph object.
+    let graphJson;
+    try {
+      graphJson = JSON.parse({{ graph_json | tojson }});
+    } catch (e) {
+      graphJson = { nodes: [], edges: [] };
+    }
     if (graphJson && (graphJson.nodes?.length || graphJson.edges?.length)) {
       loadGraph(graphJson);
       // Defer fit: first RAF lets JointJS paint cells; setTimeout lets the
@@ -168,28 +200,31 @@ if (typeof TOOL_INFO !== 'undefined') {
       _updateZoomLabel();
     }
 
-    // Load templates for modal
-    fetch('/devops/api/templates')
-      .then(r => r.json())
+    // Load templates for modal (fetchJson surfaces HTTP/backend errors)
+    fetchJson('/devops/api/templates')
       .then(templates => {
         const grid = document.getElementById('pc-tpl-grid');
         if (!grid) return;
-        grid.innerHTML = templates.map(t => `
+        grid.innerHTML = (templates || []).map(t => `
           <div class="tpl-card" onclick="loadTemplate('${t.id}')">
             <h4>${t.name}</h4>
             <div class="tpl-cat">${t.category || ''}</div>
             <div class="tpl-desc">${t.description || ''}</div>
           </div>
         `).join('');
+      })
+      .catch(err => {
+        const grid = document.getElementById('pc-tpl-grid');
+        if (grid) grid.innerHTML = '<div style="padding:12px;color:#e74c3c;font-size:12px;">Failed to load templates: '
+          + escapeHtml(err && err.message ? err.message : 'unknown error') + '</div>';
       });
 
     // Load snippets for drawer
-    fetch('/devops/api/snippets')
-      .then(r => r.json())
+    fetchJson('/devops/api/snippets')
       .then(snippets => {
         const drawer = document.getElementById('pc-snippet-drawer');
         if (!drawer) return;
-        drawer.innerHTML = snippets.map(s => `
+        drawer.innerHTML = (snippets || []).map(s => `
           <div class="snippet-card" onclick="loadSnippet('${s.id}')">
             <h4>${s.name}</h4>
             <p>${s.description || ''}</p>
@@ -198,6 +233,11 @@ if (typeof TOOL_INFO !== 'undefined') {
             <span class="badge">SLSA ${s.slsa_level || 'L0'}</span>
           </div>
         `).join('');
+      })
+      .catch(err => {
+        const drawer = document.getElementById('pc-snippet-drawer');
+        if (drawer) drawer.innerHTML = '<div style="padding:12px;color:#e74c3c;font-size:12px;">Failed to load snippets: '
+          + escapeHtml(err && err.message ? err.message : 'unknown error') + '</div>';
       });
   });
 </script>

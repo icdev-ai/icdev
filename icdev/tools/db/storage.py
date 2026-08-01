@@ -51,6 +51,7 @@ from tools.logging.icdev_logger import get_logger
 import os
 import re
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 #: Tables whose column-masking failure has already been reported (warn once each).
@@ -455,15 +456,27 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
             flags=re.IGNORECASE,
         )
         # Pattern: SELECT name FROM sqlite_master WHERE type='table'  (list all tables)
+        #
+        # The trailing ``(?!\s+AND\b)`` negative lookahead stops this list-all
+        # regex from PREFIX-matching a literal-name query such as
+        # ``... WHERE type='table' AND name='foo'``. The named-form regex above
+        # handles only the parameterised ``AND name=%s`` shape, so without the
+        # lookahead the list-all rule rewrote just the prefix and left a dangling
+        # ``AND name='foo'`` that references information_schema's nonexistent
+        # ``name`` column (invalid PG). With the lookahead a query carrying an
+        # extra ``AND`` condition is left ALONE rather than mangled, while the
+        # legitimate list-all shapes (bare, or followed by ORDER BY/GROUP BY)
+        # still translate. See tests/test_translate_sql_rule14.py.
         sql = re.sub(
-            r"SELECT\s+name\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'",
+            r"SELECT\s+name\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'(?!\s+AND\b)",
             "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public'",
             sql,
             flags=re.IGNORECASE,
         )
         # Pattern: SELECT count(*) FROM sqlite_master WHERE type='table'
+        #          (same anti-prefix-match lookahead as the list-all name shape)
         sql = re.sub(
-            r"SELECT\s+count\(\*\)\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'",
+            r"SELECT\s+count\(\*\)\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'(?!\s+AND\b)",
             "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'",
             sql,
             flags=re.IGNORECASE,
@@ -754,14 +767,21 @@ class DictRow:
 # ---------------------------------------------------------------------------
 
 def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
-    """Append one row to rls_audit. Never raises — failures are silently dropped."""
+    """Append one row to rls_audit. Never raises — failures are silently dropped.
+
+    Placeholders are `?`, not `%s`: this opens a RAW ``sqlite3`` connection and
+    bypasses ``translate_sql`` entirely, so it must speak sqlite's dialect. With
+    `%s` every insert raised, the bare ``except`` below swallowed it, and **no
+    RLS audit record was ever written** — an audit trail that reported nothing
+    while appearing to be enabled. NIST AU expects the opposite failure mode.
+    """
     try:
         import sqlite3 as _sq
         from datetime import datetime, timezone
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO rls_audit (table_name, action, tenant_id, details, recorded_at)"
-            " VALUES (%s, %s, %s, %s, %s)",
+            " VALUES (?, ?, ?, ?, ?)",
             (table_name, "rls_filter", tenant_id, "{}", datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -771,7 +791,11 @@ def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
 
 
 def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
-    """Append one row to column_mask_audit. Never raises."""
+    """Append one row to column_mask_audit. Never raises.
+
+    Raw ``sqlite3`` connection, so `?` placeholders — see _write_rls_audit for
+    why `%s` here silently produced an empty audit table.
+    """
     try:
         import sqlite3 as _sq
         import json as _js
@@ -779,7 +803,7 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO column_mask_audit (table_name, role, masked_columns, recorded_at)"
-            " VALUES (%s, %s, %s, %s)",
+            " VALUES (?, ?, ?, ?)",
             (table_name, role, _js.dumps(masked_cols), datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -831,7 +855,23 @@ def _pg_exec_statements(cursor, sql: str, backend: str) -> None:
             cursor.execute(translated)
             if use_sp:
                 cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
-        except Exception:  # noqa: BLE001 — skip; keep prior successful statements
+        except Exception as stmt_exc:  # noqa: BLE001 — skip; keep prior statements
+            # Log it. Skipping is deliberate (already-exists DDL, out-of-order
+            # references), but doing it SILENTLY means a migration can report
+            # success having applied only some of its statements. That is exactly
+            # how migration 313 half-applied on the live database: a UTF-8 BOM at
+            # the start of the file made its first statement (a DELETE) invalid,
+            # the failure vanished here, the second statement succeeded, and the
+            # runner recorded the migration as applied. The data fix never ran and
+            # nothing anywhere said so.
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "executescript: skipping failed statement (%s: %s) - first 120 chars: %s",
+                type(stmt_exc).__name__,
+                stmt_exc,
+                " ".join(translated.split())[:120],
+            )
             if use_sp:
                 try:
                     cursor.execute("ROLLBACK TO SAVEPOINT icdev_es_stmt")
@@ -1107,6 +1147,72 @@ def _strip_sql_line_comments(sql: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Reflex connection scope — thread-local leak reclamation (crx-gen-01)
+# ---------------------------------------------------------------------------
+# A crashing Genesis reflex that opens get_connection() but raises before
+# close() leaks a checked-out pool connection (and, pre-idle-timeout, an
+# idle-in-transaction session holding ACCESS SHARE locks — the historical
+# kanban_tasks lock-storm). idle_in_transaction_session_timeout rolls the
+# transaction back server-side, but the connection stays checked OUT of the
+# 20-slot pool, so repeated leaks still exhaust it.
+#
+# reflex_connection_scope() wraps a single reflex execution. Every connection
+# opened on the SAME thread while the scope is active is registered; on scope
+# exit any that were never closed are rolled back and returned to the pool.
+# It is thread-local by construction, so it never touches connections held by
+# other threads/processes (the dashboard, a cached compass connection, etc.).
+import threading as _threading  # noqa: E402
+
+_conn_scope = _threading.local()
+
+
+def _register_scoped_connection(conn) -> None:
+    """Register a freshly-opened connection with the active thread scope, if any."""
+    stack = getattr(_conn_scope, "stack", None)
+    if stack:
+        # Only the innermost active scope tracks the connection.
+        stack[-1].append(conn)
+
+
+@contextmanager
+def reflex_connection_scope():
+    """Isolate one unit of work so leaked connections are reclaimed on exit.
+
+    Guarantees that any StorageConnection opened within the ``with`` block on
+    this thread and left open (e.g. because the body raised before calling
+    ``close()``) is rolled back and returned to the pool. Connections the body
+    closed itself are left untouched — reclamation is skipped when ``_closed``
+    is already set, so a pooled connection is never returned to the pool twice.
+
+    Reflexes that intentionally keep a shared/cached connection alive are
+    unaffected as long as that connection is not opened via get_connection()
+    inside the scope (cached helpers hand back the same object without
+    re-registering, and are never force-closed here).
+    """
+    stack = getattr(_conn_scope, "stack", None)
+    if stack is None:
+        stack = []
+        _conn_scope.stack = stack
+    tracked: list = []
+    stack.append(tracked)
+    try:
+        yield
+    finally:
+        stack.pop()
+        for conn in tracked:
+            if getattr(conn, "_closed", True):
+                continue  # already closed by the reflex — do not double-close
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
 # Connection wrapper — the main abstraction
 # ---------------------------------------------------------------------------
 class StorageConnection:
@@ -1119,6 +1225,10 @@ class StorageConnection:
     def __init__(self, conn, backend: str):
         self._conn = conn
         self._backend = backend
+        self._closed = False
+        # If a reflex_connection_scope is active on this thread, register self so
+        # a leaked (never-closed) connection is reclaimed when the scope exits.
+        _register_scoped_connection(self)
 
     def execute(self, sql: str, params=None):
         """Execute SQL with automatic translation."""
@@ -1160,6 +1270,7 @@ class StorageConnection:
         self._conn.rollback()
 
     def close(self):
+        self._closed = True
         self._conn.close()
 
     def cursor(self):
@@ -1299,11 +1410,19 @@ class _PooledPgConnection:
         self._conn = raw_conn
         self._pool = pool
         self.autocommit = False
+        self._closed = False
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
 
     def close(self):
+        if self._closed:
+            # Idempotent: never putconn() a connection twice — a second putconn
+            # of a raw conn the pool may have already re-issued to another caller
+            # would corrupt that caller's session (the classic cached/shared-conn
+            # poisoning hazard).
+            return
+        self._closed = True
         try:
             if not self._conn.closed:
                 self._conn.rollback()  # return in clean state
@@ -1352,15 +1471,59 @@ def _get_pg_connection(db_url: str = None):
         return conn
 
 
+#: How long SQLite waits on a contended lock, in seconds.
+#:
+#: Production waits 30s: real contention between a request and a background job
+#: should queue, not fail.
+#:
+#: Under pytest it waits 5s, and the gap is the entire point. The per-test
+#: budget (``timeout = 30`` in pyproject.toml) was IDENTICAL to this wait, so a
+#: contended lock consumed exactly the whole budget: the statement never got to
+#: raise "database is locked", pytest-timeout fired first, and because its only
+#: method on Windows is ``thread`` it killed the interpreter rather than failing
+#: one test. The run aborted naming whatever file happened to be nearby.
+#:
+#: That is what made the suite look like it hung at random. It is order-
+#: dependent — it needs a test that leaks an open write transaction (the class
+#: #1066's guard catches) to run before anything that opens a second connection
+#: and writes, e.g. LLMRouter lazily creating LLMResponseCache and running
+#: CREATE TABLE IF NOT EXISTS.
+#:
+#: With a 5s wait the contention surfaces as a normal, attributable
+#: OperationalError naming the real test, 25s before the killer fires.
+_SQLITE_BUSY_TIMEOUT_PROD = 30.0
+_SQLITE_BUSY_TIMEOUT_TEST = 5.0
+
+
+def _sqlite_busy_timeout() -> float:
+    """Lock wait for this process, in seconds.
+
+    ``ICDEV_SQLITE_BUSY_TIMEOUT`` overrides both defaults.
+    """
+    override = os.environ.get("ICDEV_SQLITE_BUSY_TIMEOUT", "").strip()
+    if override:
+        try:
+            return max(0.1, float(override))
+        except ValueError:
+            pass
+    under_pytest = bool(
+        os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("PYTEST_VERSION")
+    )
+    return _SQLITE_BUSY_TIMEOUT_TEST if under_pytest else _SQLITE_BUSY_TIMEOUT_PROD
+
+
 def _get_sqlite_connection(db_path: str = None):
     """Create a SQLite connection with Row factory."""
     path = db_path or os.environ.get("ICDEV_DB_PATH", DB_PATH)
     # Ensure parent directory exists
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), timeout=30)
+    busy = _sqlite_busy_timeout()
+    # Both must agree: sqlite3's own `timeout` and the PRAGMA govern the same
+    # wait, and setting only one leaves the other at its default.
+    conn = sqlite3.connect(str(path), timeout=busy)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute(f"PRAGMA busy_timeout={int(busy * 1000)}")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -1673,6 +1836,175 @@ def sql_strftime(conn, fmt: str, col: str) -> str:
             pg_fmt = pg_fmt.replace(s_tok, p_tok)
         return f"to_char(({col})::timestamp, '{pg_fmt}')"
     return f"strftime('{fmt}', {col})"
+
+
+# ---------------------------------------------------------------------------
+# Backend-aware schema introspection (translation-independent)
+# ---------------------------------------------------------------------------
+#
+# These helpers replace ad-hoc ``sqlite_master`` / ``PRAGMA table_info`` probes
+# that only work on SQLite — or that silently rely on translate_sql rule-14,
+# which rewrites only three exact query shapes and lets every other shape bypass
+# translation and raise (or silently skip) on PostgreSQL.  They build the correct
+# catalogue query per backend DIRECTLY and execute it against the raw DB-API
+# connection (bypassing StorageConnection's translating cursor), so they are
+# correct regardless of whether translate_sql would have matched the shape.
+#
+# All three accept either a StorageConnection wrapper OR a raw psycopg2 / sqlite3
+# connection, never raise for a missing table/column (they return False / []),
+# and validate identifiers with a strict regex before any interpolation.
+
+_INTROSPECT_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _introspect_backend(conn) -> str:
+    """Return ``'postgresql'`` or ``'sqlite'`` for a StorageConnection or raw conn.
+
+    Duck-types the ``_backend`` attribute first (StorageConnection / StorageCursor
+    / _PooledPgConnection expose it); otherwise sniffs the raw connection's class
+    module/name to distinguish psycopg2 from sqlite3.  Unknown connections default
+    to ``'sqlite'`` (the ``?`` + ``sqlite_master`` dialect).
+    """
+    backend = getattr(conn, "_backend", None)
+    if isinstance(backend, str) and backend:
+        return "postgresql" if backend.lower().startswith("postgre") else "sqlite"
+    cls = type(conn)
+    ident = f"{getattr(cls, '__module__', '')}.{getattr(cls, '__name__', '')}".lower()
+    if "psycopg" in ident:
+        return "postgresql"
+    if "sqlite" in ident:
+        return "sqlite"
+    return "sqlite"
+
+
+def _introspect_raw(conn):
+    """Return the underlying DB-API connection.
+
+    For a StorageConnection this returns ``conn._conn`` so introspection SQL runs
+    verbatim through the raw cursor, bypassing StorageCursor's translate_sql pass.
+    Raw connections are returned unchanged.
+    """
+    return getattr(conn, "_conn", conn)
+
+
+def _introspect_scalar_rows(cursor) -> list:
+    """Return the first column of every fetched row, tolerant of dict rows.
+
+    psycopg2 RealDictCursor yields dict rows; sqlite3 yields tuples / Row objects.
+    """
+    out = []
+    for row in cursor.fetchall():
+        if row is None:
+            continue
+        if isinstance(row, dict):
+            out.append(next(iter(row.values())))
+        else:
+            out.append(row[0])
+    return out
+
+
+def _validate_identifier(name: str, kind: str = "identifier") -> str:
+    """Raise ValueError unless *name* is a bare SQL identifier (``^[A-Za-z_]\\w*$``)."""
+    if not isinstance(name, str) or not _INTROSPECT_IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid SQL {kind}: {name!r}")
+    return name
+
+
+def table_exists(conn, table_name: str) -> bool:
+    """Return True if *table_name* exists in the connected database.
+
+    Backend-aware and translation-independent:
+        * PostgreSQL → ``information_schema.tables`` (table_schema='public')
+        * SQLite     → ``sqlite_master`` (type='table')
+
+    Accepts a StorageConnection or a raw psycopg2 / sqlite3 connection.  Never
+    raises for a missing table (returns False).  Raises ValueError if
+    *table_name* is not a valid SQL identifier.
+    """
+    _validate_identifier(table_name, "table name")
+    backend = _introspect_backend(conn)
+    raw = _introspect_raw(conn)
+    if backend == "postgresql":
+        sql = (
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = %s LIMIT 1"
+        )
+    else:
+        sql = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1"
+    try:
+        cur = raw.cursor()
+        cur.execute(sql, (table_name,))
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def list_tables(conn) -> list[str]:
+    """Return a sorted list of user table names in the connected database.
+
+    PostgreSQL reads ``information_schema.tables`` (table_schema='public',
+    BASE TABLE); SQLite reads ``sqlite_master`` (type='table', excluding internal
+    ``sqlite_*`` tables).  Accepts a StorageConnection or raw connection and never
+    raises (returns [] on error).
+    """
+    backend = _introspect_backend(conn)
+    raw = _introspect_raw(conn)
+    if backend == "postgresql":
+        sql = (
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+            "ORDER BY table_name"
+        )
+    else:
+        sql = (
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+            "ORDER BY name"
+        )
+    try:
+        cur = raw.cursor()
+        cur.execute(sql)
+        return [str(v) for v in _introspect_scalar_rows(cur)]
+    except Exception:
+        return []
+
+
+def column_exists(conn, table_name: str, column: str) -> bool:
+    """Return True if *table_name* has a column named *column*.
+
+    PostgreSQL → ``information_schema.columns`` (fully parameterized).
+    SQLite     → ``PRAGMA table_info(<table>)`` — PRAGMA takes no bind parameters,
+                 so the table name is interpolated; it is validated against a
+                 strict identifier regex and double-quoted first.
+
+    Accepts a StorageConnection or a raw connection.  Returns False for a missing
+    table or column; raises ValueError for an invalid identifier.
+    """
+    _validate_identifier(table_name, "table name")
+    _validate_identifier(column, "column name")
+    backend = _introspect_backend(conn)
+    raw = _introspect_raw(conn)
+    try:
+        cur = raw.cursor()
+        if backend == "postgresql":
+            cur.execute(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = %s "
+                "AND column_name = %s LIMIT 1",
+                (table_name, column),
+            )
+            return cur.fetchone() is not None
+        # SQLite: PRAGMA accepts no bind params; table_name was validated above
+        # and is double-quoted to survive reserved-word identifiers.
+        cur.execute(f'PRAGMA table_info("{table_name}")')  # nosec B608 — identifier regex-validated
+        for row in cur.fetchall():
+            # PRAGMA table_info cols: cid, name, type, notnull, dflt_value, pk
+            name = row.get("name") if isinstance(row, dict) else row[1]
+            if name == column:
+                return True
+        return False
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------

@@ -358,12 +358,33 @@ def test_lexicon_authorizes_capability_same_as_claim_parser():
 
 def test_no_requirements_means_nothing_authorized():
     # Project with zero requirements -> every exercised capability is unauthorized.
+    # NB: deliberately does NOT use "crypto" — that type is suppressed platform-wide
+    # by platform_authorized_capabilities (REQ-PLATFORM-CRYPTO-FINGERPRINT-01), so
+    # it would never be flagged here regardless of requirements. See
+    # test_platform_authorized_capability_suppressed_without_requirements below.
     conn = _aware_conn([])
-    manifest = [_cap("filesystem"), _cap("crypto")]
+    manifest = [_cap("filesystem"), _cap("network_egress")]
     result = ir.reconcile_aware(manifest, "proj-A", conn=conn)
     conn.close()
     flagged = {f["detail"]["capability_type"] for f in _by_type(result["findings"], "unauthorized_capability")}
-    assert flagged == {"filesystem", "crypto"}
+    assert flagged == {"filesystem", "network_egress"}
+
+
+def test_platform_authorized_capability_suppressed_without_requirements():
+    """``crypto`` is authorized platform-wide, so zero requirements still clears it.
+
+    args/integrity_config.yaml::platform_authorized_capabilities carves out
+    ``crypto`` under REQ-PLATFORM-CRYPTO-FINGERPRINT-01: hashlib is used across
+    the tools/ tree for non-keyed content fingerprinting, not for encryption or
+    key derivation. Capabilities outside that carve-out are still flagged.
+    """
+    assert "crypto" in ir._load_platform_authorized_capabilities()
+
+    conn = _aware_conn([])
+    result = ir.reconcile_aware([_cap("crypto"), _cap("filesystem")], "proj-A", conn=conn)
+    conn.close()
+    flagged = {f["detail"]["capability_type"] for f in _by_type(result["findings"], "unauthorized_capability")}
+    assert flagged == {"filesystem"}, "crypto must be suppressed, filesystem must not"
 
 
 def test_unauthorized_sites_collapse_per_file_capability():

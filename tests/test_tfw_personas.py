@@ -18,8 +18,17 @@ import pytest
 
 # ─── Shared helpers ───────────────────────────────────────────────────────────
 
-def _make_conn() -> sqlite3.Connection:
-    """Minimal in-memory SQLite DB with tables needed by generate_all."""
+def _make_conn():
+    """Minimal in-memory SQLite DB with tables needed by generate_all.
+
+    Wrapped in StorageConnection so the PG-native ``%s`` placeholders authored in
+    narrative_generator translate to ``?`` on the SQLite backend — mirroring the
+    production caller (network ``get_connection()`` returns a StorageConnection).
+    A raw sqlite3 connection bypasses that translator: ``%s`` is a syntax error,
+    the best-effort persist swallows it, and the row-count assertion fails.
+    """
+    from tools.db.storage import StorageConnection
+
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript("""
@@ -52,7 +61,7 @@ def _make_conn() -> sqlite3.Connection:
             UNIQUE(step_id, persona_id)
         );
     """)
-    return conn
+    return StorageConnection(conn, "sqlite")
 
 
 _FAKE_STEPS = [

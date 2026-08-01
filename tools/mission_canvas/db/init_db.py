@@ -12,6 +12,12 @@ from pathlib import Path
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = Path(os.environ.get("MCAN_DB_PATH", str(_ICDEV_ROOT / "data" / "mission_canvas.db")))
 
+# Env var carrying the dedicated SQLite path when the resolved backend is sqlite.
+# On PostgreSQL (primary) it is ignored; mission_* tables live in the shared
+# icdev database, namespaced by their table prefix.
+_MCAN_DB_PATH_ENV = "MCAN_DB_PATH"
+os.environ.setdefault(_MCAN_DB_PATH_ENV, str(DB_PATH))
+
 _MCAN_BACKEND = os.environ.get(
     "MCAN_STORAGE_BACKEND",
     os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "postgresql"),
@@ -19,19 +25,17 @@ _MCAN_BACKEND = os.environ.get(
 
 
 def get_connection():
-    if _MCAN_BACKEND == "postgresql":
-        try:
-            from tools.db.storage import get_canvas_connection
-            return get_canvas_connection("MCAN_PG_DATABASE")
-        except Exception:
-            pass
-    import sqlite3
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    """Get a canvas database connection — RLS disabled (cnr-mc-01).
+
+    mission_* tables carry no tenant_id/classification columns, so the global
+    RLS predicate injected by tools.db.storage.get_connection would raise
+    UndefinedColumn on PostgreSQL. get_canvas_connection returns a
+    StorageConnection with security context None — %s placeholders translate per
+    backend, and the dedicated SQLite file (MCAN_DB_PATH) is used only when the
+    resolved backend is sqlite.
+    """
+    from tools.db.storage import get_canvas_connection
+    return get_canvas_connection(_MCAN_DB_PATH_ENV)
 
 
 SCHEMA = """
@@ -170,18 +174,12 @@ CREATE TRIGGER IF NOT EXISTS mission_audit_no_delete
 def init_db() -> None:
     conn = get_connection()
     try:
-        if _MCAN_BACKEND == "postgresql":
-            for stmt in SCHEMA.split(";"):
-                stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
-                    try:
-                        conn.execute(stmt)
-                    except Exception:
-                        pass
-        else:
-            conn.executescript(SCHEMA)
+        # StorageConnection.executescript handles both backends: native on
+        # SQLite; on PostgreSQL it splits and isolates each statement in a
+        # savepoint (SQLite-only triggers/DDL are skipped without aborting).
+        conn.executescript(SCHEMA)
         conn.commit()
-        print(f"[init_db] Mission Canvas schema ready ({_MCAN_BACKEND})")
+        print("[init_db] Mission Canvas schema ready")
     finally:
         conn.close()
 

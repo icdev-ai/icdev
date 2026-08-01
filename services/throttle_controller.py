@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from typing import Optional
 
 from .budget_monitor import BudgetMonitor, BudgetVariance
@@ -22,6 +21,11 @@ class ThrottleController:
         self._throttled: dict[str, bool] = {}
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        # Event rather than a bare flag so stop() can interrupt the poll wait.
+        # With time.sleep(poll_interval) the thread stayed alive for up to a
+        # full interval after stop(), which in a test process meant a "stopped"
+        # controller still holding a DB connection while the next test ran.
+        self._stop_event = threading.Event()
 
     # ------------------------------------------------------------------
     def start(self) -> None:
@@ -29,12 +33,22 @@ class ThrottleController:
             return
         self._monitor.initialize()
         self._running = True
+        self._stop_event.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="throttle-controller")
         self._thread.start()
         logger.info("ThrottleController started (poll every %ss)", self._poll_interval)
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 5.0) -> None:
+        """Signal the loop and wait for it to actually exit.
+
+        Returning before the thread has stopped is how a "stopped" controller
+        keeps polling the database underneath whatever runs next.
+        """
         self._running = False
+        self._stop_event.set()
+        thread, self._thread = self._thread, None
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=timeout)
 
     # ------------------------------------------------------------------
     def is_throttled(self, resource: str) -> bool:
@@ -57,4 +71,6 @@ class ThrottleController:
                         self._throttled[v.resource] = False
             except Exception:
                 logger.exception("ThrottleController poll error")
-            time.sleep(self._poll_interval)
+            # Interruptible: returns immediately once stop() fires.
+            if self._stop_event.wait(self._poll_interval):
+                break

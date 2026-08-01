@@ -24,7 +24,7 @@
   <div id="plan-{{ p.id }}" style="padding:1rem;">
     <script>
       (function(){
-        const steps = {{ p.remediation_steps|safe if p.remediation_steps else '[]' }};
+        const steps = {{ p.remediation_steps|json_script_safe if p.remediation_steps else '[]' }};
         let html = '';
         if (Array.isArray(steps) && steps.length) {
           steps.forEach((phase, i) => {

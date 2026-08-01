@@ -1,10 +1,21 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Adaptive content chunker for RAG ingestion (D-RAG-4).
 
-Strategy:
+Default strategy (template ``general``, unchanged):
   - Short content (<500 tokens): store whole as single chunk
   - Long content (>2000 tokens): sliding window with 10% overlap at sentence boundaries
   - Medium content: store whole (below chunk threshold)
+
+Document-type templates (oss-chunk-01): pass ``template="oscal_catalog"`` (or
+any name in ``args/chunking_templates.yaml``) to chunk on structural boundaries
+instead — one chunk per control, rule, clause, step or slide. Dispatch is always
+explicit: a caller names the template, or a ``tools/rag/source_registry.py``
+entry names it via its ``chunking`` key. Content is never inspected to pick a
+template silently; :func:`tools.rag.chunking_templates.suggest_template` exists
+for operators and is not called from this module.
+
+Every chunk records the template that produced it in
+``metadata['chunking_template']`` so the decision is auditable.
 
 Token estimation: ~4 chars per token (conservative for English text).
 Deterministic — no LLM needed, air-gap safe.
@@ -15,8 +26,13 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
+from tools.rag.chunking_templates import (
+    STRATEGY_SLIDING,
+    get_template,
+    split_content,
+)
 from tools.rag.vector_store_provider import VectorChunk
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -82,84 +98,41 @@ def _find_sentence_boundary(text: str, target_pos: int) -> int:
     return min(boundaries, key=lambda b: abs(b - target_pos))
 
 
-def chunk_content(
-    content: str,
-    source_type: str = "",
-    source_id: str = "",
-    source_table: str = "",
-    metadata: Optional[dict] = None,
-    tenant_id: str = "",
-    project_id: str = "",
-    classification: str = "CUI",
-    chunk_config: Optional[dict] = None,
-) -> List[VectorChunk]:
-    """Chunk content adaptively based on length.
+def _resolve_chunk_size(content: str, cfg: dict) -> int:
+    """Compute the adaptive sliding-window chunk size for ``content``.
 
-    Args:
-        content: Raw text to chunk.
-        source_type: Source type identifier.
-        source_id: Row ID in source table.
-        source_table: DB table name.
-        metadata: Optional metadata dict.
-        tenant_id: Tenant ID for multi-tenant.
-        project_id: Project ID.
-        classification: CUI marking.
-        chunk_config: Override chunking config.
+    Adaptive chunk size: always compute a content-length-aware size and use
+    min(configured, adaptive) so we never produce fewer than ~30 chunks on
+    documents that are actually small/medium.  This avoids the 8-chunk
+    constitution problem where each chunk is 8 KB, BM25 scores collapse, and
+    amendment text gets buried in noise.
 
-    Returns:
-        List of VectorChunk instances (without embeddings — caller must embed).
+    Formula: target ~70 retrievable chunks per document.
+    Clamp to [150, 2000] so we never produce single-sentence slivers
+    (bad for semantic coherence) or oversized bricks (bad for retrieval).
+    When the doc is large enough that 2000-token chunks still yields >=70
+    chunks, the configured value wins — no change for already-large docs.
     """
-    if not content or not content.strip():
-        return []
-
-    cfg = chunk_config or _load_chunk_config()
-    overlap_pct = cfg.get("overlap_pct", _DEFAULT_OVERLAP_PCT)
-
-    content = content.strip()
-    est_tokens = _estimate_tokens(content)
-
-    # Adaptive chunk size: always compute a content-length-aware size and use
-    # min(configured, adaptive) so we never produce fewer than ~30 chunks on
-    # documents that are actually small/medium.  This avoids the 8-chunk
-    # constitution problem where each chunk is 8 KB, BM25 scores collapse, and
-    # amendment text gets buried in noise.
-    #
-    # Formula: target ~70 retrievable chunks per document.
-    # Clamp to [150, 2000] so we never produce single-sentence slivers
-    # (bad for semantic coherence) or oversized bricks (bad for retrieval).
-    # When the doc is large enough that 2000-token chunks still yields ≥70
-    # chunks, the configured value wins — no change for already-large docs.
     configured_chunk_size = cfg.get("chunk_size_tokens", _DEFAULT_CHUNK_SIZE)
     target_chunks = 70
-    adaptive = max(150, min(2000, est_tokens // target_chunks))
-    chunk_size = min(configured_chunk_size, adaptive)
+    adaptive = max(150, min(2000, _estimate_tokens(content) // target_chunks))
+    return min(configured_chunk_size, adaptive)
 
-    # Short content: store as single chunk
-    if est_tokens <= chunk_size:
-        chunk = VectorChunk(
-            chunk_id=f"chunk-{uuid.uuid4().hex[:12]}",
-            content=content,
-            source_type=source_type,
-            source_id=str(source_id),
-            source_table=source_table,
-            chunk_index=0,
-            total_chunks=1,
-            metadata=metadata or {},
-            tenant_id=tenant_id,
-            project_id=project_id,
-            classification=classification,
-        )
-        chunk.compute_content_hash()
-        return [chunk]
 
-    # Long content: sliding window with overlap
+def _sliding_window_split(content: str, chunk_size: int, overlap_pct: float) -> List[str]:
+    """Split content into overlapping windows snapped to sentence boundaries.
+
+    Returns the chunk texts in order. Content at or below ``chunk_size`` tokens
+    comes back as a single element.
+    """
+    if _estimate_tokens(content) <= chunk_size:
+        return [content]
+
     chunk_chars = chunk_size * CHARS_PER_TOKEN
     overlap_chars = int(chunk_chars * overlap_pct)
-    chunk_chars - overlap_chars
 
-    chunks: list[VectorChunk] = []
+    texts: List[str] = []
     pos = 0
-    idx = 0
 
     while pos < len(content):
         end_pos = pos + chunk_chars
@@ -174,35 +147,180 @@ def chunk_content(
             end_pos = boundary
 
         if chunk_text:
-            chunk = VectorChunk(
-                chunk_id=f"chunk-{uuid.uuid4().hex[:12]}",
-                content=chunk_text,
-                source_type=source_type,
-                source_id=str(source_id),
-                source_table=source_table,
-                chunk_index=idx,
-                total_chunks=0,  # Set after loop
-                metadata=metadata or {},
-                tenant_id=tenant_id,
-                project_id=project_id,
-                classification=classification,
-            )
-            chunk.compute_content_hash()
-            chunks.append(chunk)
-            idx += 1
+            texts.append(chunk_text)
 
         # Advance position
         if end_pos >= len(content):
             break
+        prev_pos = pos
         pos = end_pos - overlap_chars
-        if pos <= chunks[-1].chunk_index if chunks else 0:
+        if pos <= (len(texts) - 1 if texts else 0):
             pos = end_pos  # Prevent infinite loop
+        if pos <= prev_pos:
+            # A backward-snapping boundary would otherwise stall the window.
+            pos = end_pos
 
-    # Set total_chunks on all
-    for c in chunks:
-        c.total_chunks = len(chunks)
+    return texts
 
-    return chunks
+
+def _make_chunk(
+    text: str,
+    idx: int,
+    source_type: str,
+    source_id: str,
+    source_table: str,
+    metadata: Optional[dict],
+    tenant_id: str,
+    project_id: str,
+    classification: str,
+    chunk_meta: Optional[Dict[str, Any]] = None,
+) -> VectorChunk:
+    """Build one VectorChunk with per-chunk (non-shared) metadata."""
+    meta: Dict[str, Any] = dict(metadata or {})
+    if chunk_meta:
+        meta.update(chunk_meta)
+
+    chunk = VectorChunk(
+        chunk_id=f"chunk-{uuid.uuid4().hex[:12]}",
+        content=text,
+        source_type=source_type,
+        source_id=str(source_id),
+        source_table=source_table,
+        chunk_index=idx,
+        total_chunks=1,
+        metadata=meta,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        classification=classification,
+    )
+    chunk.compute_content_hash()
+    return chunk
+
+
+def chunk_content(
+    content: str,
+    source_type: str = "",
+    source_id: str = "",
+    source_table: str = "",
+    metadata: Optional[dict] = None,
+    tenant_id: str = "",
+    project_id: str = "",
+    classification: str = "CUI",
+    chunk_config: Optional[dict] = None,
+    template: Optional[str] = None,
+) -> List[VectorChunk]:
+    """Chunk content by document-type template, or adaptively by length.
+
+    Args:
+        content: Raw text to chunk.
+        source_type: Source type identifier.
+        source_id: Row ID in source table.
+        source_table: DB table name.
+        metadata: Optional metadata dict.
+        tenant_id: Tenant ID for multi-tenant.
+        project_id: Project ID.
+        classification: CUI marking.
+        chunk_config: Override chunking config.
+        template: Explicit template name from ``args/chunking_templates.yaml``
+            (e.g. ``oscal_catalog``, ``stig_checklist``). ``None`` uses the
+            configured default (``general`` — the historical sliding window).
+            Never auto-detected; see
+            :func:`tools.rag.chunking_templates.suggest_template`.
+
+    Returns:
+        List of VectorChunk instances (without embeddings — caller must embed).
+    """
+    if not content or not content.strip():
+        return []
+
+    cfg = chunk_config or _load_chunk_config()
+    overlap_pct = cfg.get("overlap_pct", _DEFAULT_OVERLAP_PCT)
+
+    content = content.strip()
+
+    tmpl_name, tmpl, tmpl_fallback = get_template(template)
+    strategy = tmpl.get("strategy", STRATEGY_SLIDING)
+
+    # Metadata stamped on every chunk so the chunking decision is auditable.
+    base_meta: Dict[str, Any] = {
+        "chunking_template": tmpl_name,
+        "chunking_strategy": strategy,
+    }
+    if tmpl_fallback:
+        base_meta["chunking_template_requested"] = template
+        base_meta["chunking_fallback_reason"] = tmpl_fallback
+
+    seg_result = split_content(content, tmpl)
+    if seg_result.pattern_errors:
+        base_meta["chunking_pattern_errors"] = seg_result.pattern_errors
+
+    # Structural/row-group template that produced no usable segments falls back
+    # to the sliding window rather than emitting one giant chunk.
+    if strategy != STRATEGY_SLIDING and not seg_result.segments:
+        base_meta["chunking_strategy"] = STRATEGY_SLIDING
+        base_meta["chunking_fallback_reason"] = (
+            seg_result.fallback_reason or "no_segments"
+        )
+        seg_result.segments = []
+
+    def _emit(texts_and_meta: List[tuple]) -> List[VectorChunk]:
+        out: List[VectorChunk] = []
+        for i, (text, extra) in enumerate(texts_and_meta):
+            chunk_meta = dict(base_meta)
+            chunk_meta.update(extra)
+            out.append(
+                _make_chunk(
+                    text=text,
+                    idx=i,
+                    source_type=source_type,
+                    source_id=source_id,
+                    source_table=source_table,
+                    metadata=metadata,
+                    tenant_id=tenant_id,
+                    project_id=project_id,
+                    classification=classification,
+                    chunk_meta=chunk_meta,
+                )
+            )
+        for c in out:
+            c.total_chunks = len(out)
+        return out
+
+    # --- Structural / row-group path -------------------------------------
+    if seg_result.segments:
+        oversize_policy = tmpl.get("oversize_policy", "split")
+        max_tokens = int(
+            tmpl.get("max_chunk_tokens", cfg.get("chunk_size_tokens", _DEFAULT_CHUNK_SIZE))
+        )
+        emitted: List[tuple] = []
+        for seg in seg_result.segments:
+            extra = {"chunking_label": seg.label} if seg.label else {}
+            if _estimate_tokens(seg.text) <= max_tokens:
+                emitted.append((seg.text, extra))
+                continue
+            if oversize_policy == "keep":
+                # "Never split a control" — emit whole and flag it.
+                emitted.append((seg.text, {**extra, "chunking_oversize": True}))
+                continue
+            parts = _sliding_window_split(seg.text, max_tokens, overlap_pct)
+            for p_i, part in enumerate(parts):
+                emitted.append(
+                    (
+                        part,
+                        {
+                            **extra,
+                            "chunking_item_split": True,
+                            "chunking_item_part": p_i,
+                            "chunking_item_parts": len(parts),
+                        },
+                    )
+                )
+        return _emit(emitted)
+
+    # --- Sliding-window path (default / fallback) -------------------------
+    chunk_size = _resolve_chunk_size(content, cfg)
+    texts = _sliding_window_split(content, chunk_size, overlap_pct)
+    return _emit([(t, {}) for t in texts])
 
 
 def chunk_fields(
@@ -215,6 +333,7 @@ def chunk_fields(
     tenant_id: str = "",
     project_id: str = "",
     classification: str = "CUI",
+    template: Optional[str] = None,
 ) -> List[VectorChunk]:
     """Chunk multiple fields from a DB row, concatenated with field labels.
 
@@ -228,6 +347,7 @@ def chunk_fields(
         tenant_id: Tenant ID.
         project_id: Project ID.
         classification: CUI marking.
+        template: Explicit chunking template name (see :func:`chunk_content`).
 
     Returns:
         List of VectorChunk instances.
@@ -248,4 +368,5 @@ def chunk_fields(
         tenant_id=tenant_id,
         project_id=project_id,
         classification=classification,
+        template=template,
     )

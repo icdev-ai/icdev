@@ -26,6 +26,10 @@
   .pdc-stat .val { font-size: 28px; font-weight: 700; color: #3498db; }
   .pdc-stat .lbl { font-size: 11px; color: #7a8cb0; }
   .tag { display: inline-block; padding: 1px 6px; font-size: 10px; background: #0f3460; color: #7a8cb0; border-radius: 3px; margin-right: 3px; }
+  /* pdx-ops-02: secondary nav row — makes runbooks/SOPs/twin/ask reachable (page-gate item 7) */
+  .pdc-subnav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px 30px; border-bottom: 1px solid #1e3a6e; }
+  .pdc-subnav a { padding: 6px 14px; background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; color: #7a8cb0; text-decoration: none; font-size: 13px; font-weight: 600; transition: border-color 0.2s, color 0.2s; }
+  .pdc-subnav a:hover { border-color: #e94560; color: #eaeaea; }
 </style>
 
 <div class="pdc-hero">
@@ -45,6 +49,13 @@
   </div>
 </div>
 
+<nav class="pdc-subnav" aria-label="Pipeline canvas sections">
+  <a href="/devops/runbooks">Runbooks</a>
+  <a href="/devops/sops">SOPs</a>
+  <a href="/devops/twin">Twin Dashboard</a>
+  <a href="/devops/ask">Ask</a>
+</nav>
+
 {% if pipelines %}
 <div class="pdc-section-title" style="display:flex;justify-content:space-between;align-items:center;">
   <span>Recent Pipelines</span>
@@ -52,8 +63,11 @@
 </div>
 <div class="pdc-grid">
   {% for p in pipelines %}
-  <div class="pdc-card" style="position:relative;">
-    <div onclick="window.location='/devops/canvas/{{ p.id }}'">
+  {# data-* + addEventListener: p.name in a JS-string sink is unsafe because the
+     browser HTML-decodes attribute values before JS parses; Jinja attribute
+     escaping does not protect the JS string context. #}
+  <div class="pdc-card" style="position:relative;" data-pid="{{ p.id }}" data-pname="{{ p.name }}">
+    <div class="pdc-card-open">
       <h3>{{ p.name }}</h3>
       <p>{{ p.description or 'No description' }}</p>
       <div class="meta">
@@ -62,8 +76,7 @@
         {{ p.updated_at[:10] if p.updated_at else '' }}
       </div>
     </div>
-    <button onclick="event.stopPropagation(); deletePipeline('{{ p.id }}', '{{ p.name }}')"
-            class="pdc-delete-btn" title="Delete this pipeline">✕</button>
+    <button class="pdc-delete-btn pdc-delete-pipeline" title="Delete this pipeline">✕</button>
   </div>
   {% endfor %}
 </div>
@@ -111,29 +124,62 @@
 ] %}
 {% include "includes/iqe_query_widget.html" %}
 
+<script src="{{ url_for('static', filename='js/pdc-http.js') }}"></script>
 <script>
+// Wire pipeline cards via listeners (id/name from data-*, never a JS-string sink).
+document.querySelectorAll('.pdc-card[data-pid]').forEach(card => {
+  const id = card.dataset.pid;
+  const name = card.dataset.pname;
+  const open = card.querySelector('.pdc-card-open');
+  if (open) open.addEventListener('click', () => {
+    window.location = '/devops/canvas/' + encodeURIComponent(id);
+  });
+  const del = card.querySelector('.pdc-delete-pipeline');
+  if (del) del.addEventListener('click', e => {
+    e.stopPropagation();
+    deletePipeline(id, name);
+  });
+});
+
 function loadTemplate(tplId) {
-  fetch(`/devops/api/templates/${tplId}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-    .then(r => r.json())
-    .then(data => { if (data.id) window.location.href = `/devops/canvas/${data.id}`; });
+  fetchJson(`/devops/api/templates/${tplId}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+    .then(data => {
+      if (data && data.id) window.location.href = `/devops/canvas/${data.id}`;
+      else pdcToast('Template loaded but no pipeline id was returned.', 'error');
+    })
+    .catch(err => pdcToast('Failed to load template: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function deletePipeline(id, name) {
   if (!confirm('Delete pipeline "' + name + '"? This cannot be undone.')) return;
-  fetch('/devops/api/pipelines/' + id, { method: 'DELETE' })
-    .then(r => r.json())
-    .then(() => window.location.reload());
+  fetchJson('/devops/api/pipelines/' + id, { method: 'DELETE' })
+    .then(() => window.location.reload())
+    .catch(err => pdcToast('Failed to delete pipeline: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function clearAllPipelines() {
-  if (!confirm('Delete ALL pipelines? This cannot be undone.')) return;
-  fetch('/devops/api/pipelines')
-    .then(r => r.json())
+  // Fetch the full (UNLIMITED) list first so the confirmation count matches what
+  // will actually be deleted — the page only shows LIMIT 20. Use allSettled so
+  // one failed DELETE does not abort the rest, and report failures visibly.
+  fetchJson('/devops/api/pipelines')
     .then(pipelines => {
-      Promise.all(pipelines.map(p =>
-        fetch('/devops/api/pipelines/' + p.id, { method: 'DELETE' })
-      )).then(() => window.location.reload());
-    });
+      const list = pipelines || [];
+      if (!list.length) { pdcToast('No pipelines to delete.', 'info'); return; }
+      if (!confirm('Delete ALL ' + list.length + ' pipelines? This cannot be undone.')) return;
+      Promise.allSettled(list.map(p =>
+        fetchJson('/devops/api/pipelines/' + p.id, { method: 'DELETE' })
+      )).then(results => {
+        const failed = results.filter(r => r.status === 'rejected').length;
+        if (failed > 0) {
+          pdcToast(failed + ' of ' + list.length + ' pipelines could not be deleted.', 'error');
+          // Delay reload so the user can see the failure notice.
+          setTimeout(() => window.location.reload(), 2500);
+        } else {
+          window.location.reload();
+        }
+      });
+    })
+    .catch(err => pdcToast('Failed to list pipelines: ' + (err && err.message ? err.message : 'unknown error'), 'error'));
 }
 
 function loadSnippetAsNew(snippetId) {

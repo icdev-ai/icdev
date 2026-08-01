@@ -243,13 +243,13 @@ def run_rule(rule: dict, conn_params: dict) -> dict:
 def run_all_rules(design_id: str, conn_params: dict, ddc_conn) -> list[dict]:
     """Run all enabled rules for a design_id. Stores results in dd_quality_runs.
 
-    ddc_conn: connection to the data_canvas.db (from get_connection()).
+    ddc_conn: connection to the data_canvas.db (from get_canvas_connection()).
     Returns list of {rule, result} dicts.
     """
     from tools.common.helpers import now_isoformat
 
     rows = ddc_conn.execute(
-        "SELECT * FROM dd_quality_rules WHERE design_id=%s AND enabled=1",
+        "SELECT * FROM dd_quality_rules WHERE design_id=? AND enabled=1",
         (design_id,),
     ).fetchall()
 
@@ -263,7 +263,7 @@ def run_all_rules(design_id: str, conn_params: dict, ddc_conn) -> list[dict]:
         ddc_conn.execute(
             """INSERT INTO dd_quality_runs
                (id, rule_id, db_conn_json, passed, actual_value, threshold, detail, classification, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 run_id,
                 rule["id"],

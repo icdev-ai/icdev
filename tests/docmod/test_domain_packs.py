@@ -154,16 +154,27 @@ def test_policy_pack_supersession(db):
     pack = PolicyRefsPack(config={"pack_id": "policy_refs"})
     conn = _conn()
     entities = pack.extract("Controls are tailored per NIST SP 800-53 Rev 4 guidance.", _REF)
-    assert len(entities) == 1
-    verdict = pack.evaluate(entities[0], conn)
+    # Rev 4 now carries temporal dates, so extract emits the supersession entity
+    # PLUS a disjoint temporal entity (kind='temporal'); assert on the former.
+    supersession = [e for e in entities if (e.attributes or {}).get("kind") != "temporal"]
+    assert len(supersession) == 1
+    verdict = pack.evaluate(supersession[0], conn)
     assert verdict.currency_verdict == "retired"
     assert verdict.finding_type == "superseded_standard"
 
-    rep = pack.recommend(entities[0], verdict, conn)
+    rep = pack.recommend(supersession[0], verdict, conn)
     conn.close()
     assert rep is not None and "Rev 5" in rep.label
 
-    assert pack.extract("Aligned to NIST SP 800-53 Rev 5.", _REF) == []
+    # Rev 5 matches no supersession rule, but is now extracted as a dynamic
+    # NIST-pubs candidate (dmx-loop-02). Without a docmod_nist_pubs cache row it
+    # evaluates to 'unknown' -> no finding, so it never becomes a false positive.
+    dyn = pack.extract("Aligned to NIST SP 800-53 Rev 5.", _REF)
+    assert len(dyn) == 1 and dyn[0].attributes.get("nist_pub_id") == "SP 800-53"
+    conn2 = _conn()
+    verdict_dyn = pack.evaluate(dyn[0], conn2)
+    conn2.close()
+    assert not verdict_dyn.is_finding
 
 
 # ── network_hardware ─────────────────────────────────────────────────────────

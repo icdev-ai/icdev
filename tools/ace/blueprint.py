@@ -119,6 +119,47 @@ def _int_arg(name: str, default: int, *, lo: int, hi: int) -> int:
     return max(lo, min(n, hi))
 
 
+def _pending_confidence_hitl(conn, instance_id: str) -> list[dict]:
+    """Unresolved HITL approval requests for every co-worker in an instance.
+
+    Reads ace_audit_log: a ``hitl_pending`` row is outstanding until a matching
+    ``hitl_resolved`` / ``hitl_rejected`` row (same coworker_id + detail) exists.
+    Covers both the confidence gate (fired at run start for low-trust co-workers)
+    and the required-step gate — each renders in the instance page's approval
+    banner (coworker/hitl.html) whose Approve button POSTs to /api/ace/<id>/hitl.
+    """
+    try:
+        pending = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT id, coworker_id, detail, created_at FROM ace_audit_log "
+                    "WHERE instance_id = ? AND action = 'hitl_pending' "
+                    "ORDER BY created_at DESC",
+                ),
+                (instance_id,),
+            )
+        )
+        if not pending:
+            return []
+        resolved = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT coworker_id, detail FROM ace_audit_log "
+                    "WHERE instance_id = ? "
+                    "AND action IN ('hitl_resolved', 'hitl_rejected')",
+                ),
+                (instance_id,),
+            )
+        )
+        done = {(r["coworker_id"], r["detail"]) for r in resolved}
+        return [r for r in pending if (r["coworker_id"], r["detail"]) not in done]
+    except Exception as exc:  # noqa: BLE001 — table may be empty/absent pre-migration
+        logger.warning("ace pending HITL read failed for %s: %s", instance_id, exc)
+        return []
+
+
 # --------------------------------------------------------------------------- #
 # Blueprints
 # --------------------------------------------------------------------------- #
@@ -336,6 +377,7 @@ def instance_detail(instance_id: str):
     coworkers: list[dict] = []
     messages: list[dict] = []
     artifacts: list[dict] = []
+    pending_hitl: list[dict] = []
     conn = None
     try:
         conn = _db()
@@ -390,6 +432,7 @@ def instance_detail(instance_id: str):
                     (instance_id,),
                 )
             )
+            pending_hitl = _pending_confidence_hitl(conn, instance_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace instance_detail read failed for %s: %s", instance_id, exc)
     finally:
@@ -405,10 +448,12 @@ def instance_detail(instance_id: str):
         return render_template(
             "coworker/instance.html",
             instance=instance,
+            instance_id=instance_id,
             coworkers=coworkers,
             messages=messages,
             artifacts=artifacts,
             coworker_display=coworker_display,
+            pending_hitl=pending_hitl,
         )
     except Exception as exc:  # noqa: BLE001
         logger.info("coworker/instance.html unavailable (%s); JSON fallback", exc)
@@ -1831,3 +1876,115 @@ def api_ace_chat():
     finally:
         if conn is not None:
             conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chat-initiated team proposals (suggest-then-confirm)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The implicit chat trigger writes a proposal instead of launching. These routes
+# are what the action_card in the chat panel drives. Approval is the ONLY path
+# that spawns agents from an implicit trigger, so the premium gate belongs on
+# confirm -- and SME generation sits behind it, meaning a locked tenant can
+# never burn LLM spend on a team it is not entitled to run.
+
+
+@ace_api_bp.route("/suggestions/<suggestion_id>", methods=["GET"])
+def api_suggestion_get(suggestion_id: str):
+    """GET /api/ace/suggestions/<id> — current state of a proposal."""
+    from icdev.tools.ace import chat_trigger
+
+    proposal = chat_trigger.get_proposal(suggestion_id)
+    if not proposal:
+        return jsonify({"error": "unknown suggestion"}), 404
+
+    try:
+        roles = json.loads(proposal.get("proposed_roles_json") or "[]")
+    except Exception:  # noqa: BLE001
+        roles = []
+
+    return jsonify({
+        "suggestion_id": proposal["id"],
+        "state": proposal["state"],
+        "roles": roles,
+        "instance_id": proposal.get("instance_id") or "",
+        "expired": chat_trigger.is_expired(proposal),
+        "created_at": proposal.get("created_at") or "",
+    })
+
+
+@ace_api_bp.route("/suggestions/<suggestion_id>/confirm", methods=["POST"])
+def api_suggestion_confirm(suggestion_id: str):
+    """POST /api/ace/suggestions/<id>/confirm — approve and launch.
+
+    Tier is checked BEFORE anything is generated or launched.
+    """
+    from icdev.tools.ace import chat_trigger
+
+    allowed, required_tier = _sme_tier_allows()
+    if not allowed:
+        return jsonify({
+            "error": "upgrade_required",
+            "required_tier": required_tier,
+            "message": (
+                "Chat-initiated co-worker teams require the "
+                f"{required_tier} plan."
+            ),
+        }), 402
+
+    result = chat_trigger.confirm_proposal(suggestion_id, user_id=_suggestion_actor())
+    if not result["ok"]:
+        status = 404 if result["error"] == "unknown suggestion" else 409
+        return jsonify({"error": result["error"]}), status
+
+    instance_id = result["instance_id"]
+    return jsonify({
+        "ok": True,
+        "instance_id": instance_id,
+        "deep_link": f"/coworker/{instance_id}",
+    })
+
+
+@ace_api_bp.route("/suggestions/<suggestion_id>/decline", methods=["POST"])
+def api_suggestion_decline(suggestion_id: str):
+    """POST /api/ace/suggestions/<id>/decline — dismiss a proposal."""
+    from icdev.tools.ace import chat_trigger
+
+    data = request.get_json(silent=True) or {}
+    ok = chat_trigger.decline_proposal(suggestion_id, str(data.get("reason") or ""))
+    if not ok:
+        return jsonify({"error": "not declinable"}), 409
+    return jsonify({"ok": True})
+
+
+def _suggestion_actor() -> str:
+    """Best-effort identity of whoever clicked approve, for the audit trail."""
+    try:
+        from flask import g
+
+        return str(getattr(g, "current_user", "") or "system")
+    except Exception:  # noqa: BLE001
+        return "system"
+
+
+def _sme_tier_allows() -> tuple[bool, str]:
+    """Return (allowed, required_tier) for chat-initiated teams.
+
+    Uses icdev/tools/billing/tier.py -- the module the dashboard actually
+    injects as active_tier. tools/license/tier.py is a different, largely
+    unreferenced module with a four-tier vocabulary including "starter", which
+    component_registry silently rewrites to "community"; using it here would
+    quietly disable the gate.
+
+    Fails OPEN when the tier module is unavailable: this is an entitlement
+    check, not a security boundary, and the real safety controls (trust tier,
+    HITL gate, capability bundles) are enforced elsewhere regardless.
+    """
+    required = "professional"
+    try:
+        from icdev.tools.billing.tier import get_active_tier, tier_satisfies
+
+        return bool(tier_satisfies(get_active_tier(), required)), required
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("ace: tier check unavailable (%s); allowing", exc)
+        return True, required

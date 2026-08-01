@@ -430,22 +430,22 @@ def list_assets(
         params = []
 
         if asset_type:
-            query += " AND asset_type = ?"
+            query += " AND asset_type = %s"
             params.append(asset_type)
         if tenant_id:
-            query += " AND publisher_tenant_id = ?"
+            query += " AND publisher_tenant_id = %s"
             params.append(tenant_id)
         if catalog_tier:
-            query += " AND catalog_tier = ?"
+            query += " AND catalog_tier = %s"
             params.append(catalog_tier)
         if status:
-            query += " AND status = ?"
+            query += " AND status = %s"
             params.append(status)
         if impact_level:
-            query += " AND impact_level = ?"
+            query += " AND impact_level = %s"
             params.append(impact_level)
 
-        query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+        query += " ORDER BY updated_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         rows = conn.execute(query, params).fetchall()
@@ -464,16 +464,16 @@ def list_assets(
         count_query = "SELECT COUNT(*) as cnt FROM marketplace_assets WHERE 1=1"
         count_params = []
         if asset_type:
-            count_query += " AND asset_type = ?"
+            count_query += " AND asset_type = %s"
             count_params.append(asset_type)
         if tenant_id:
-            count_query += " AND publisher_tenant_id = ?"
+            count_query += " AND publisher_tenant_id = %s"
             count_params.append(tenant_id)
         if catalog_tier:
-            count_query += " AND catalog_tier = ?"
+            count_query += " AND catalog_tier = %s"
             count_params.append(catalog_tier)
         if status:
-            count_query += " AND status = ?"
+            count_query += " AND status = %s"
             count_params.append(status)
 
         total = conn.execute(count_query, count_params).fetchone()["cnt"]

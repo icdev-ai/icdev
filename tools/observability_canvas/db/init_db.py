@@ -30,8 +30,14 @@ def get_connection():
         conn.close()
         row["column_name"] — dict-like row access
 
-    For PostgreSQL, uses ICDEV's StorageConnection wrapper which
-    auto-translates SQLite SQL to PostgreSQL (? -> %s, PRAGMA -> no-op, etc.)
+    For both backends the returned connection auto-translates placeholders:
+    PostgreSQL uses ICDEV's StorageConnection (? -> %s, PRAGMA -> no-op); the
+    SQLite fallback is ALSO wrapped in StorageConnection (backend="sqlite") so
+    that the %s placeholders used throughout this canvas's runtime and seed SQL
+    are translated to ?. A raw sqlite3 connection does NOT understand %s and
+    raises sqlite3.OperationalError ("near \"%\": syntax error") — that broke
+    the template/SOP/runbook seed path and every runbooks.py/sops.py query on
+    a fresh SQLite worktree.
     """
     if _OC_BACKEND == "postgresql":
         try:
@@ -41,12 +47,19 @@ def get_connection():
             return get_canvas_connection("OC_STORAGE_BACKEND")
         except ImportError:
             pass
-    # SQLite (default) — per-canvas DB, distinct from icdev.db
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    # SQLite (default) — per-canvas DB, distinct from icdev.db.
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    raw = sqlite3.connect(str(DB_PATH))
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA journal_mode=WAL")
+    raw.execute("PRAGMA foreign_keys=ON")
+    # Route through the translating StorageConnection wrapper so %s -> ? works
+    # everywhere on this path (seed inserts + runbooks/sops runtime queries).
+    try:
+        from tools.db.storage import StorageConnection
+        return StorageConnection(raw, "sqlite")
+    except ImportError:
+        return raw
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -260,6 +273,19 @@ CREATE TABLE IF NOT EXISTS odc_mitre_techniques (
 
 CREATE INDEX IF NOT EXISTS idx_odc_mt_technique ON odc_mitre_techniques(technique_id);
 CREATE INDEX IF NOT EXISTS idx_odc_mt_tactic    ON odc_mitre_techniques(tactic);
+
+CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    label           TEXT NOT NULL DEFAULT '',
+    service_count   INTEGER NOT NULL DEFAULT 0,
+    coverage_score  REAL NOT NULL DEFAULT 0.0,
+    coverage_basis  TEXT NOT NULL DEFAULT 'no_assessment',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_twin_snap_design ON odc_twin_snapshots(design_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -759,6 +785,65 @@ TEMPLATES = [
 ]
 
 
+# ── Additive schema migrations ────────────────────────────────────────────────
+#
+# obx-fix-04: ODC-NDC-001 (check_nc_audit_to_siem_forwarder) needs to record,
+# per ODC design, which NDC topology has its audit events forwarded to a SIEM.
+# The base odc_sdc_verifications table only carries MITRE TTP-coverage columns,
+# which cannot express audit->SIEM forwarding. These additive columns extend it
+# WITHOUT touching the base CREATE TABLE (kept as a separate, idempotent block to
+# avoid merge conflicts with concurrent init_db.py edits, e.g. PR #468).
+_ODC_SDCV_ADDITIVE_COLUMNS = [
+    ("topology_id", "TEXT DEFAULT ''"),      # NDC topology this row's forwarding covers
+    ("siem_node_id", "TEXT DEFAULT ''"),     # SIEM node in the ODC design receiving audit
+    ("forward_status", "TEXT DEFAULT ''"),   # '' | 'forwarded' | 'verified' | 'unverified'
+]
+
+
+def _existing_columns(conn, table):
+    """Return the set of column names on ``table`` (backend-agnostic).
+
+    Uses PRAGMA table_info, which StorageConnection translates to an
+    information_schema query on PostgreSQL. Returns an empty set on error.
+    """
+    cols = set()
+    try:
+        for r in conn.execute(f"PRAGMA table_info({table})").fetchall():
+            try:
+                cols.add(r["name"])
+            except (KeyError, IndexError, TypeError):
+                try:
+                    cols.add(r[1])
+                except (KeyError, IndexError, TypeError):
+                    pass
+    except Exception:
+        return set()
+    return cols
+
+
+def _ensure_odc_sdcv_columns(conn):
+    """Idempotently add the ODC-NDC-001 audit-forwarding columns.
+
+    Only ALTERs columns that are actually missing, so no statement is expected
+    to fail — this avoids poisoning a PostgreSQL transaction with an
+    already-exists error.
+    """
+    existing = _existing_columns(conn, "odc_sdc_verifications")
+    if not existing:
+        # Table not present yet (or introspection unavailable) — the base CREATE
+        # TABLE runs first in init_db(), so this should not happen; bail safely.
+        return
+    for col, decl in _ODC_SDCV_ADDITIVE_COLUMNS:
+        if col in existing:
+            continue
+        try:
+            conn.execute(f"ALTER TABLE odc_sdc_verifications ADD COLUMN {col} {decl}")
+        except Exception:
+            # Best-effort: a concurrent init may have added it between introspection
+            # and ALTER. The check that reads these columns is fail-closed regardless.
+            pass
+
+
 # ── Init function ────────────────────────────────────────────────────────────
 
 
@@ -771,6 +856,10 @@ def init_db():
             stmt = stmt.strip()
             if stmt:
                 conn.execute(stmt)
+        conn.commit()
+
+        # Additive columns for ODC-NDC-001 audit->SIEM forwarding (obx-fix-04).
+        _ensure_odc_sdcv_columns(conn)
         conn.commit()
 
         # Seed templates (skip if already seeded)

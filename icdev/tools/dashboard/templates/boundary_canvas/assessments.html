@@ -1,6 +1,6 @@
 <!-- CUI // SP-CTI — Boundary Design Canvas Assessment History -->
 {% extends "base.html" %}
-{% block title %}Assessments — Boundary Canvas — ICDEV{% endblock %}
+{% block title %}Diagram Assessments — Boundary Canvas — ICDEV{% endblock %}
 {% block content %}
 <style>
   .assess-hero { padding: 20px 30px; }
@@ -20,8 +20,8 @@
   .findings-detail { font-size: 11px; color: #7a8cb0; }
 </style>
 <div class="assess-hero">
-  <h1 class="accent">Assessment History</h1>
-  <p>Compliance assessment results across all boundary designs.</p>
+  <h1 class="accent">Diagram Assessment History</h1>
+  <p>Diagram completeness grade results (A-F) across all boundary designs.</p>
   <a href="/boundary/" class="back-btn">Back to Dashboard</a>
 </div>
 <table class="assess-table">
@@ -50,7 +50,7 @@
       <td>{{ a.created_at[:16] if a.created_at else '—' }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="8" style="color:#5a6e8c;">No assessments yet. Open a design and click Assess.</td></tr>
+    <tr><td colspan="8" style="color:#5a6e8c;">No diagram grades yet. Open a design and click Diagram Grade.</td></tr>
     {% endfor %}
   </tbody>
 </table>

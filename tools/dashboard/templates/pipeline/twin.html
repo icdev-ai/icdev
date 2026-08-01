@@ -205,7 +205,13 @@ async function takeSnapshot() {
     li.className = 'snap-item active';
     li.dataset.id = data.id;
     li.onclick = () => selectSnap(li, data.id);
-    li.innerHTML = `<span>${data.label}</span><span class="snap-meta">${data.node_count}n · ${data.created_at.slice(0,10)}</span>`;
+    // textContent: snapshot label is persisted/server-echoed — never innerHTML.
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = data.label;
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'snap-meta';
+    metaSpan.textContent = `${data.node_count}n · ${String(data.created_at || '').slice(0,10)}`;
+    li.append(labelSpan, metaSpan);
     ul.prepend(li);
     document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
     li.classList.add('active');

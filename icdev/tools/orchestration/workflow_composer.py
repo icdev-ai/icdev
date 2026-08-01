@@ -15,10 +15,12 @@ Usage:
   python tools/orchestration/workflow_composer.py --list --json
   python tools/orchestration/workflow_composer.py --template ato_acceleration --project-id proj-test --dry-run --json
   python tools/orchestration/workflow_composer.py --template security_hardening --project-id proj-test --json
+  python tools/orchestration/workflow_composer.py --template ato_acceleration --project-id proj-test --run-id run-1 --json
 """
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -31,6 +33,14 @@ import yaml
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TEMPLATE_DIR = BASE_DIR / "args" / "workflow_templates"
+
+# ── MCP steps (dwo-mcp-03) ─────────────────────────────────
+# A `node_type: mcp` step names a TOOL_REGISTRY tool in `mcp_tool` (with
+# optional `mcp_params`) instead of a script path in `tool`. Every such step
+# runs through this one executor — the same one Studio's workflow_runner
+# dispatches to, so a template behaves identically headless and in the UI.
+# tests/test_dwo_mcp_composer_parity.py asserts the two builders agree.
+MCP_EXECUTOR = "tools/studio/executors/mcp_executor.py"
 
 
 def _load_template(template_name: str) -> dict:
@@ -81,17 +91,80 @@ def _resolve_dag(steps: list) -> list:
     return list(sorter.static_order())
 
 
-def _build_command(step: dict, project_id: str, overrides: dict = None) -> list:
+def _step_tool_path(step: dict) -> str:
+    """Repo-relative script this step runs ('' when it declares none).
+
+    An `mcp` node names a registry tool, not a script — every one of them runs
+    through the shared executor, so the path is fixed rather than authored.
+    """
+    if step.get("node_type") == "mcp":
+        return MCP_EXECUTOR
+    return step.get("tool", "") or ""
+
+
+def _mcp_params_json(step: dict) -> str:
+    """Serialize a step's `mcp_params` for the executor's --params flag.
+
+    A string is passed through untouched so a template may hand-author the JSON;
+    anything else is dumped. The executor rejects non-object JSON either way.
+    """
+    params = step.get("mcp_params")
+    if params is None:
+        return "{}"
+    if isinstance(params, str):
+        return params.strip() or "{}"
+    return json.dumps(params)
+
+
+def _build_mcp_command(step: dict, project_id: str, run_id: str = "") -> list:
+    """Command for a `node_type: mcp` step — dispatch via mcp_executor.py.
+
+    Byte-identical to workflow_runner._build_mcp_command for the same step, so
+    the headless composer and Studio run an mcp node exactly the same way. The
+    step's `args` (and any composer overrides for them) are deliberately not
+    forwarded: an MCP tool takes its arguments from `mcp_params` only.
+    """
+    mcp_tool = str(step.get("mcp_tool", "") or "").strip()
+    if not mcp_tool:
+        return []
+    cmd = [
+        sys.executable, str(BASE_DIR / MCP_EXECUTOR),
+        "--tool", mcp_tool,
+        "--params", _mcp_params_json(step),
+    ]
+    step_id = str(step.get("id", "") or "")
+    if step_id:
+        cmd.extend(["--step-id", step_id])
+    if step.get("inject_project_id", True):
+        cmd.extend(["--project-id", project_id])
+    if run_id and step.get("inject_run_id", True):
+        cmd.extend(["--run-id", run_id])
+    if step.get("json_output", True):
+        cmd.append("--json")
+    return cmd
+
+
+def _build_command(
+    step: dict,
+    project_id: str,
+    overrides: dict = None,
+    run_id: str = "",
+) -> list:
     """Build subprocess command from step definition.
 
     Args:
-        step: Step dict with 'tool' (Python module path) and optional 'args'.
+        step: Step dict with 'tool' (Python module path) and optional 'args',
+            or — for `node_type: mcp` — a registry tool name in 'mcp_tool'.
         project_id: Project ID to inject.
-        overrides: Optional argument overrides.
+        overrides: Optional argument overrides (ignored for mcp steps).
+        run_id: Optional run ID to inject as --run-id.
 
     Returns:
         Command list suitable for subprocess.run().
     """
+    if step.get("node_type") == "mcp":
+        return _build_mcp_command(step, project_id, run_id)
+
     tool_path = step.get("tool", "")
     if not tool_path:
         return []
@@ -108,6 +181,10 @@ def _build_command(step: dict, project_id: str, overrides: dict = None) -> list:
     # Inject project_id if tool expects it
     if step.get("inject_project_id", True) and "--project-id" not in str(step_args):
         cmd.extend(["--project-id", project_id])
+
+    # Inject run_id the same way workflow_runner does (dwo-mem-01 reads it)
+    if run_id and step.get("inject_run_id", True):
+        cmd.extend(["--run-id", run_id])
 
     # Add --json for structured output
     if step.get("json_output", True):
@@ -157,6 +234,7 @@ def compose_workflow(
     template_name: str,
     project_id: str,
     overrides: dict = None,
+    run_id: str = "",
 ) -> dict:
     """Compose a workflow execution plan from a template.
 
@@ -164,6 +242,7 @@ def compose_workflow(
         template_name: Template name.
         project_id: Project ID for tool injection.
         overrides: Optional argument overrides per step.
+        run_id: Optional run ID injected into each step as --run-id.
 
     Returns:
         Execution plan with ordered steps and commands.
@@ -186,13 +265,16 @@ def compose_workflow(
     for step_id in execution_order:
         step = step_map[step_id]
         step_overrides = overrides.get(step_id, {})
-        cmd = _build_command(step, project_id, step_overrides)
+        cmd = _build_command(step, project_id, step_overrides, run_id)
 
         plan_steps.append(
             {
                 "id": step_id,
                 "name": step.get("name", step_id),
-                "tool": step.get("tool", ""),
+                # An mcp node resolves to the shared executor, not to `tool` —
+                # so the existence check below covers it like any other script.
+                "tool": _step_tool_path(step),
+                "node_type": step.get("node_type", "tool"),
                 "depends_on": step.get("depends_on", []),
                 "command": cmd,
                 "description": step.get("description", ""),
@@ -205,6 +287,7 @@ def compose_workflow(
         "workflow_id": f"wf-{uuid.uuid4().hex[:8]}",
         "template": template_name,
         "project_id": project_id,
+        "run_id": run_id,
         "description": template.get("description", ""),
         "category": template.get("category", "general"),
         "total_steps": len(plan_steps),
@@ -226,10 +309,12 @@ def execute_workflow(
     Returns:
         Execution results with per-step status.
     """
+    run_id = plan.get("run_id", "")
     results = {
         "workflow_id": plan["workflow_id"],
         "template": plan["template"],
         "project_id": plan["project_id"],
+        "run_id": run_id,
         "dry_run": dry_run,
         "steps": [],
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -255,7 +340,11 @@ def execute_workflow(
 
         if not step["command"]:
             step_result["status"] = "skip"
-            step_result["error"] = "No tool path configured"
+            step_result["error"] = (
+                "node_type: mcp step declares no 'mcp_tool'"
+                if step.get("node_type") == "mcp"
+                else "No tool path configured"
+            )
             results["steps"].append(step_result)
             continue
 
@@ -273,6 +362,11 @@ def execute_workflow(
 
         start = time.monotonic()
         try:
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+            # dwo-mem-01: the step reads/writes run-scoped memory through this id.
+            if run_id:
+                env["ICDEV_RUN_ID"] = run_id
             proc = subprocess.run(
                 step["command"],
                 capture_output=True,
@@ -280,6 +374,7 @@ def execute_workflow(
                 timeout=step.get("timeout_seconds", 300),
                 stdin=subprocess.DEVNULL,
                 cwd=str(BASE_DIR),
+                env=env,
             )
             elapsed = int((time.monotonic() - start) * 1000)
             step_result["duration_ms"] = elapsed
@@ -323,6 +418,7 @@ def main():
     parser = argparse.ArgumentParser(description="Cross-Phase Workflow Composer (D343)")
     parser.add_argument("--template", help="Workflow template name")
     parser.add_argument("--project-id", help="Project ID", dest="project_id")
+    parser.add_argument("--run-id", default="", dest="run_id", help="Run ID to inject into each step")
     parser.add_argument("--list", action="store_true", help="List available templates")
     parser.add_argument("--dry-run", action="store_true", dest="dry_run", help="Preview commands without executing")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
@@ -344,7 +440,7 @@ def main():
     if not args.project_id:
         parser.error("--project-id required with --template")
 
-    plan = compose_workflow(args.template, args.project_id)
+    plan = compose_workflow(args.template, args.project_id, run_id=args.run_id)
     result = execute_workflow(plan, dry_run=args.dry_run)
 
     if args.json_output:

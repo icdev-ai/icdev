@@ -63,23 +63,39 @@ def judge_response(
 ) -> dict[str, Any]:
     """Score a team response using the LLM judge + rubric.
 
-    Returns {dimension_scores, total, rationale, confidence}.
-    Falls back to rubric average (50) if LLM unavailable.
+    Returns {dimension_scores, total, rationale, confidence, unscored?}.
+
+    FAIL LOUD: if the LLM is unavailable, its output is unparseable, or there is
+    no usable rubric, the response is marked UNSCORED (total 0, ``unscored``
+    True, and a reason) — never a fabricated midpoint. A silent 50 is
+    indistinguishable from a real score and corrupts the leaderboard/AAR.
     """
     try:
         from tools.llm.router import LLMRouter
         router = LLMRouter()
         if not router.has_any_llm():
             raise RuntimeError("no_llm")
-    except Exception:
-        return _fallback_score(rubric)
+    except Exception as exc:
+        log.warning("LLM judge unavailable (%s) — response left unscored", exc)
+        return _unscored("LLM judge unavailable — response left unscored")
 
-    dims = rubric.get("dimensions", [])
-    if not dims:
-        return {"dimension_scores": {}, "total": 50, "rationale": "No rubric", "confidence": 0.5}
+    dims = rubric.get("dimensions", []) if isinstance(rubric, dict) else []
+    # FAIL LOUD on a malformed rubric shape rather than crashing. The canonical
+    # dimensions-LIST format is produced once at load time by
+    # scenario_loader.normalize_rubric_dimensions; a legacy dict-of-dicts rubric
+    # (or any other malformed shape) reaching here means the loader was bypassed,
+    # so we mark the response unscored instead of raising AttributeError on
+    # ``str.get`` (which previously 500'd POST /api/gameday/response for the
+    # forge_ascent / hunt_the_fleet / meridian packs).
+    if not isinstance(dims, list) or not dims:
+        return _unscored("No usable rubric dimensions for inject — response left unscored")
+    if not all(isinstance(d, dict) and "id" in d and "weight" in d for d in dims):
+        return _unscored("Rubric dimensions malformed (not id/weight dicts) — response left unscored")
+    if sum(d.get("weight", 0) for d in dims) == 0:
+        return _unscored("Rubric dimensions have zero total weight — response left unscored")
 
     dim_block = "\n".join(
-        f"- {d['id']} (weight {d['weight']}): {d['prompt']}" for d in dims
+        f"- {d['id']} (weight {d['weight']}): {d.get('prompt', '')}" for d in dims
     )
     system_prompt = (
         "You are an objective tabletop exercise judge. Score the team response "
@@ -109,8 +125,8 @@ def judge_response(
                 raw = raw[4:]
         parsed = json.loads(raw)
     except Exception as exc:
-        log.warning("LLM judge parse failed: %s", exc)
-        return _fallback_score(rubric)
+        log.warning("LLM judge output unparseable (%s) — response left unscored", exc)
+        return _unscored(f"LLM judge output unparseable — response left unscored ({exc})")
 
     scores = parsed.get("scores", {})
     total = _weighted_total(scores, dims)
@@ -125,21 +141,26 @@ def judge_response(
 def _weighted_total(scores: dict, dims: list[dict]) -> int:
     total_weight = sum(d["weight"] for d in dims)
     if total_weight == 0:
-        return 50
+        # Guarded against in judge_response (returns unscored); 0 here is a
+        # defensive floor, never a fabricated midpoint.
+        return 0
     weighted = sum(
         scores.get(d["id"], 5) * d["weight"] for d in dims
     )
     return round((weighted / total_weight) * 10)  # scale 0-10 → 0-100
 
 
-def _fallback_score(rubric: dict) -> dict[str, Any]:
-    dims = rubric.get("dimensions", [])
-    scores = {d["id"]: 5 for d in dims}
+def _unscored(reason: str) -> dict[str, Any]:
+    """Explicitly-unscored judge result. NEVER a fabricated midpoint — an
+    LLM/parse/rubric failure must be distinguishable from a genuine score so the
+    leaderboard and AAR can render it distinctly instead of counting it as 50."""
     return {
-        "dimension_scores": scores,
-        "total": 50,
-        "rationale": "LLM unavailable — default score assigned",
-        "confidence": 0.3,
+        "dimension_scores": {},
+        "total": 0,
+        "rationale": reason,
+        "confidence": 0.0,
+        "unscored": True,
+        "unscored_reason": reason,
     }
 
 
@@ -247,7 +268,11 @@ def score_response(
         judge_result = judge_response(inject_body, response_text, rubric, receipt_evidence)
 
     judge_pts = judge_result["total"]
+    judge_unscored = bool(judge_result.get("unscored"))
     time_bonus = compute_time_bonus(time_taken_s) if time_bonus_enabled else 0
+    # judge_pts is 0 when unscored, so an LLM outage adds no fabricated points —
+    # the response simply earns receipt + time bonus and is flagged unscored via
+    # judge_rationale_json (persisted below).
     total_pts = receipt_pts + judge_pts + time_bonus
 
     conn = get_connection()
@@ -276,6 +301,7 @@ def score_response(
         "receipt_pts": receipt_pts,
         "receipt_count": receipt_count,
         "judge_pts": judge_pts,
+        "judge_unscored": judge_unscored,
         "time_bonus_pts": time_bonus,
         "total_pts": total_pts,
         "rationale": judge_result.get("rationale", ""),

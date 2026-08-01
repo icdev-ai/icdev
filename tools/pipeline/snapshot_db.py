@@ -2,6 +2,20 @@
 # CUI // SP-CTI
 """Pipeline snapshot CRUD — append-only DAG snapshot store.
 
+.. deprecated:: pdx-data-01
+    DEPRECATED in favor of the ``pdc_snapshots`` canvas table (see
+    ``tools/pipeline/db/init_db.py`` and ``tools.pipeline.twin.take_snapshot``),
+    which is the store actually written on every pipeline save and read by the
+    ``/devops/twin`` delta view (``tools.pipeline.delta``) and the IQE pipeline
+    adapters. This module targets ``pipeline_snapshots`` in the shared icdev DB,
+    a table nothing in ``tools/`` writes; it has no remaining runtime callers.
+    Do not wire new code to it. It is retained (not deleted) because migration
+    027 and the APPEND_ONLY registration for ``pipeline_snapshots`` are owned by
+    sibling tasks. NOTE: ``get_connection()`` here carries no security context,
+    so calling these functions inside a Flask request would attach the global
+    RLS predicate and fail (``pipeline_snapshots`` lacks tenant_id/classification
+    columns) — another reason to use ``pdc_snapshots`` via the canvas connection.
+
 Thin DB layer over the pipeline_snapshots table (migration 027).
 Snapshots are immutable once written; call create_snapshot to record a
 new state rather than updating an existing row.

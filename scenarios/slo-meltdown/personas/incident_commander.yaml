@@ -1,0 +1,15 @@
+# CUI // SP-CTI
+label: Incident Commander
+description: Owns the incident record, the decision log, and the after-action review.
+attributes:
+- organization
+- IC certification/experience
+- comms discipline
+- decision-log rigor
+- clearance level
+prompt_hint: Generate an incident commander who keeps a clean decision log, posts crisp customer comms,
+  and files an evidence-grounded AAR with owned corrective actions. Mention the Academy incident-response
+  bonus for factual timelines over narrative.
+academy_relevant_missions:
+- incident-response
+- communications

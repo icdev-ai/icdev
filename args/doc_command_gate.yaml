@@ -1,0 +1,117 @@
+# CUI // SP-CTI
+# Documented Command Path Gate (oss-fix-02)
+#
+# A documented command that does not exist is worse than an undocumented one:
+# an agent reading the docs will confidently run it and burn a cycle deciding
+# whether the tree is broken or the doc is.
+#
+# Consumed by: tools/workflow/coherence_checker.py :: _load_doc_command_config
+# Gate source: tools/workflow/coherence_checker.py :: check_doc_command_paths
+#
+# Rules:
+#   - Any `python tools/...py` or `python -m tools...` invocation in the `docs`
+#     files below MUST resolve to a real file, or the gate FAILS.
+#   - `grandfathered` entries are DOWNGRADED to a warning so the pre-existing
+#     backlog stays visible without blocking unrelated commits.
+#   - Do NOT use grandfathering as an escape hatch for new docs. The correct fix
+#     for a new broken reference is to build the tool or delete the doc line.
+#   - Entries whose target now exists, or that are no longer cited, are reported
+#     as stale and should be deleted from this file.
+#   - Paths are repo-relative, forward-slash.
+
+#   - Entries may be literal paths or glob patterns. Prefer a pattern for a
+#     whole doc surface so a file added later is covered by default.
+
+docs:
+  - CLAUDE.md
+  - docs/reference/commands.md
+  # Capability catalogue (ahx-doc-01). These files were outside the gate, and
+  # context/capabilities/harness.yaml consequently advertised three tools —
+  # maturity_assessor.py, trace_analyzer.py, exit_criteria_evaluator.py — that
+  # existed nowhere in the tree. tools/pulse/engine/capability_scanner.py reads
+  # this directory and feeds `article_hooks` into generated content, so an
+  # unbacked claim here is publishable. Adding the pattern surfaced no NEW
+  # unresolved paths: every one already appears in the grandfather list below.
+  - context/capabilities/*.yaml
+
+# Pre-existing broken references as of oss-fix-02 (2026-07-25).
+# 55 distinct paths — whole subsystems documented in commands.md that were
+# never implemented. Tracked for cleanup: each should be built or the doc section removed.
+grandfathered:
+  # analytics/ subsystem documented but never built
+  tools/analytics/scorecard.py: "documented but not implemented (oss-fix-02)"
+  tools/analytics/vsm_engine.py: "documented but not implemented (oss-fix-02)"
+  # PR-intelligence tool documented but never built
+  tools/ci/pr_intelligence.py: "documented but not implemented (oss-fix-02)"
+  # CloudForge runbooks/metastore documented; only event_emitter.py exists
+  tools/cloudforge/metastore/registry.py: "documented but not implemented (oss-fix-02)"
+  tools/cloudforge/runbooks/engine.py: "documented but not implemented (oss-fix-02)"
+  tools/cloudforge/runbooks/template_loader.py: "documented but not implemented (oss-fix-02)"
+  # documented compliance tools never built (dir exists, these modules do not)
+  tools/compliance/cato_live_engine.py: "documented but not implemented (oss-fix-02)"
+  tools/compliance/firmware_sbom.py: "documented but not implemented (oss-fix-02)"
+  tools/compliance/narrative_workflow.py: "documented but not implemented (oss-fix-02)"
+  tools/compliance/template_exchange.py: "documented but not implemented (oss-fix-02)"
+  # DocHub subsystem documented but never built
+  tools/dochub/byos_scanner.py: "documented but not implemented (oss-fix-02)"
+  tools/dochub/data_collector.py: "documented but not implemented (oss-fix-02)"
+  tools/dochub/diff_engine.py: "documented but not implemented (oss-fix-02)"
+  tools/dochub/doc_generator.py: "documented but not implemented (oss-fix-02)"
+  tools/dochub/enrichment_engine.py: "documented but not implemented (oss-fix-02)"
+  tools/dochub/export_engine.py: "documented but not implemented (oss-fix-02)"
+  tools/dochub/health_scorer.py: "documented but not implemented (oss-fix-02)"
+  tools/dochub/profile_engine.py: "documented but not implemented (oss-fix-02)"
+  tools/dochub/tenant_manager.py: "documented but not implemented (oss-fix-02)"
+  # edge_ai/ subsystem documented but never built
+  tools/edge_ai/model_manager.py: "documented but not implemented (oss-fix-02)"
+  # embedded/ subsystem documented but never built
+  tools/embedded/cmake_generator.py: "documented but not implemented (oss-fix-02)"
+  tools/embedded/crash_analyzer.py: "documented but not implemented (oss-fix-02)"
+  tools/embedded/nl_to_firmware.py: "documented but not implemented (oss-fix-02)"
+  # fleet/ subsystem documented but never built
+  tools/fleet/device_registry.py: "documented but not implemented (oss-fix-02)"
+  tools/fleet/ota_manager.py: "documented but not implemented (oss-fix-02)"
+  # forge_studio/ subsystem documented but never built
+  tools/forge_studio/blueprint/build_tracker.py: "documented but not implemented (oss-fix-02)"
+  tools/forge_studio/blueprint/export_engine.py: "documented but not implemented (oss-fix-02)"
+  tools/forge_studio/blueprint/parent_client.py: "documented but not implemented (oss-fix-02)"
+  tools/forge_studio/generator/complexity_detector.py: "documented but not implemented (oss-fix-02)"
+  # documented harness assessors never built; only cli/mcp generators exist
+  tools/harness/exit_criteria_evaluator.py: "documented but not implemented (oss-fix-02)"
+  tools/harness/maturity_assessor.py: "documented but not implemented (oss-fix-02)"
+  tools/harness/scaffold_harness.py: "documented but not implemented (oss-fix-02)"
+  tools/harness/trace_analyzer.py: "documented but not implemented (oss-fix-02)"
+  # module_crypto.py documented but never built
+  tools/marketplace/module_crypto.py: "documented but not implemented (oss-fix-02)"
+  # thread_heatmap.py documented but never built
+  tools/mbse/thread_heatmap.py: "documented but not implemented (oss-fix-02)"
+  # documented MCP servers never built
+  tools/mcp/connector_forge_server.py: "documented but not implemented (oss-fix-02)"
+  tools/mcp/ops_server.py: "documented but not implemented (oss-fix-02)"
+  # missions/ subsystem documented but never built
+  tools/missions/mission_engine.py: "documented but not implemented (oss-fix-02)"
+  # provenance query/export documented; only prov_recorder.py exists
+  tools/observability/provenance/prov_export.py: "documented but not implemented (oss-fix-02)"
+  tools/observability/provenance/prov_query.py: "documented but not implemented (oss-fix-02)"
+  # documented Oracle reflex/bridge/lenses never built; 2 of 6 lenses exist
+  tools/oracle/kanban_bridge.py: "documented but not implemented (oss-fix-02)"
+  tools/oracle/lens_child_app_demand.py: "documented but not implemented (oss-fix-02)"
+  tools/oracle/lens_ecosystem_gap.py: "documented but not implemented (oss-fix-02)"
+  tools/oracle/lens_regulatory.py: "documented but not implemented (oss-fix-02)"
+  tools/oracle/oracle_reflex.py: "documented but not implemented (oss-fix-02)"
+  # scaffold/ subsystem documented but never built
+  tools/scaffold/golden_path.py: "documented but not implemented (oss-fix-02)"
+  # documented security tools never built (dir exists, these modules do not)
+  tools/security/mtls_integration.py: "documented but not implemented (oss-fix-02)"
+  tools/security/threat_modeler.py: "documented but not implemented (oss-fix-02)"
+  # ato_simulator.py documented but never built
+  tools/simulation/ato_simulator.py: "documented but not implemented (oss-fix-02)"
+  # simulator/ subsystem documented but never built
+  tools/simulator/sim_runner.py: "documented but not implemented (oss-fix-02)"
+  # adversarial_verify.py documented but never built
+  tools/skills/adversarial_verify.py: "documented but not implemented (oss-fix-02)"
+  # documented news pipeline modules never built; only rss_ingestor exists
+  tools/trading/news/aggregator.py: "documented but not implemented (oss-fix-02)"
+  tools/trading/news/classifier.py: "documented but not implemented (oss-fix-02)"
+  tools/trading/news/news_reasoner.py: "documented but not implemented (oss-fix-02)"
+  tools/trading/news/perspective_scorer.py: "documented but not implemented (oss-fix-02)"

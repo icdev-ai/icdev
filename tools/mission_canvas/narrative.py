@@ -28,23 +28,53 @@ def generate_narrative(
         from tools.studio.wne.narrative_generator import NarrativeGenerator
         from tools.studio.wne.context_builder import WorkflowContext
 
+        # cnr-mc-03: WorkflowContext is a dataclass with a fixed field set —
+        # the previous call passed topic=/sources= (not fields) and omitted
+        # required fields, so construction always raised and no narrative was
+        # ever produced. Map the mission topic to purpose and carry sources in
+        # parameters so grounding has something real to validate.
         ctx = WorkflowContext(
             template_name="mission_canvas",
             audience="leadership",
             org_name="ICDEV",
             program_name=mission_id,
             classification=classification,
-            topic=topic,
-            sources=sources or [],
+            purpose=topic,
+            timeframe_months=0,
+            parameters={"topic": topic, "sources": sources or []},
+            phases=[],
+            decision_points=[],
+            approval_gates=[],
         )
         generator = NarrativeGenerator()
         narrative = generator.generate(ctx=ctx)
+        summary = narrative.executive_summary
+
+        # cnr-mc-03: ground the LLM executive summary against its evidence.
+        # Previously the narrative echoed sources but enforced no citation
+        # grounding. validate_citations flags any [source: N] tag that references
+        # a source not in the evidence (hallucination); citation_gate mirrors the
+        # placeholder_guard finding shape so a promote/export surface can gate on
+        # it. allowed_sources uses the RAG 1..N injected-source convention.
+        from tools.quality.citation_grounding import citation_gate, validate_citations
+
+        allowed = len(sources or [])
+        report = validate_citations(summary, allowed)
+        findings = citation_gate(
+            [{"id": mission_id, "content": summary, "allowed_sources": allowed}],
+            require_citations=bool(sources),
+        )
         return {
             "mission_id": mission_id,
             "topic": topic,
-            "narrative": narrative.executive_summary,
+            "narrative": summary,
             "sources_used": sources or [],
             "classification": classification,
+            "grounding": {
+                "report": report,
+                "findings": findings,
+                "grounded": not findings,
+            },
             "status": "ok",
         }
     except Exception as exc:

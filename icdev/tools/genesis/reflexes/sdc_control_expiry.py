@@ -227,12 +227,15 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
     try:
         from tools.security_canvas.db.init_db import get_connection as sdc_conn  # noqa: PLC0415
+        from tools.db.storage import column_exists  # noqa: PLC0415
         conn_sdc = sdc_conn()
         try:
-            cols = [r[1] for r in conn_sdc.execute("PRAGMA table_info(sc_controls)").fetchall()]
+            # Shared backend-aware column probe (information_schema on PG,
+            # PRAGMA table_info on SQLite) instead of a raw PRAGMA that only
+            # introspects on SQLite.
             date_col = (
-                "review_date" if "review_date" in cols
-                else ("next_review" if "next_review" in cols else None)
+                "review_date" if column_exists(conn_sdc, "sc_controls", "review_date")
+                else ("next_review" if column_exists(conn_sdc, "sc_controls", "next_review") else None)
             )
             if date_col:
                 rows = conn_sdc.execute(
@@ -307,9 +310,33 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
         result["status"] = "error"
         result["errors"].append(str(exc))
 
+    # Genesis daemon success contract (shx-safe-04): the daemon reads
+    # result["success"], result["metric_value"] and result["details"].  Without
+    # these keys run_reflex_impl() treats every run as a failure and trips the
+    # circuit breaker after 3 cycles, so the reflex would go dormant again.
+    result["success"] = result["status"] == "ok"
+    result["metric_value"] = float(len(result["expiring_soon"]))
+    result["details"] = {
+        "controls_checked": result["controls_checked"],
+        "expiring_soon": len(result["expiring_soon"]),
+        "warn_threshold_days": result["warn_threshold_days"],
+        "threshold_source": result["threshold_source"],
+        "events_published": result["events_published"],
+        "status": result["status"],
+    }
+
     return result
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import json as _json
     print(_json.dumps(run({}), indent=2))

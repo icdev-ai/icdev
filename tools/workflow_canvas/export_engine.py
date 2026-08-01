@@ -30,15 +30,31 @@ def _slug(text: str) -> str:
 
 # ── Branding helpers ──────────────────────────────────────────────────────────
 
-def _get_branding(entity_type: str, entity_id: str, conn) -> dict:
+def _get_branding(entity_type: str, entity_id: str, conn=None) -> dict:
+    """Read branding from the WFC canvas connection — the SAME source
+    blueprint._save_branding writes to (get_canvas_connection("ICDEV_WFC_ENABLED")).
+
+    Previously this read via the passed-in main get_connection(), so on a
+    SQLite-pinned WFC canvas (where branding is written to a separate .db)
+    exports silently lost all branding. The ``conn`` parameter is retained for
+    backward compatibility but is no longer used for branding. (cnr-wfc-04)
+    """
+    from tools.db.storage import get_canvas_connection, sql_placeholder
+    cconn = get_canvas_connection("ICDEV_WFC_ENABLED")
     try:
-        row = conn.execute(
-            "SELECT * FROM wfc_branding WHERE entity_type=%s AND entity_id=%s",
+        ph = sql_placeholder(cconn)
+        row = cconn.execute(
+            f"SELECT * FROM wfc_branding WHERE entity_type={ph} AND entity_id={ph}",
             (entity_type, entity_id),
         ).fetchone()
         return dict(row) if row else {}
     except Exception:
         return {}
+    finally:
+        try:
+            cconn.close()
+        except Exception:
+            pass
 
 
 # ── Form → slides conversion ──────────────────────────────────────────────────

@@ -107,14 +107,6 @@ _DYNAMIC_HEURISTICS: list[dict] | None = None
 # Triage config loaded once per process from args/oracle_triage_config.yaml
 _TRIAGE_CONFIG: dict | None = None
 
-# Adaptive anomaly-detection thresholds, computed once per triage() run from the
-# historical oracle_predictions confidence distribution.  None = not yet loaded.
-_ADAPTIVE_THRESHOLDS_CACHE: dict | None = None
-
-# Minimum history samples for adaptive threshold computation (module-level fallback
-# used when config value is unavailable).
-_MIN_HISTORY_FOR_ADAPTIVE = 10
-
 
 def _load_dynamic_heuristics() -> list[dict]:
     global _DYNAMIC_HEURISTICS
@@ -145,7 +137,6 @@ def _load_triage_config() -> dict:
             "low_confidence_threshold": 0.3,
             "orphan_min_refs_low_confidence": 3,
             "high_confidence_threshold": 0.85,
-            "min_history_for_adaptive": 10,
         },
     }
     try:
@@ -398,106 +389,34 @@ def _count_code_refs(table: str) -> int:
     return count
 
 
-def _compute_adaptive_thresholds(
-    history: List[float],
-    *,
-    min_history: int = _MIN_HISTORY_FOR_ADAPTIVE,
-    static_high: float = 0.85,
-    static_low: float = 0.30,
-    low_confidence_refs: int = 3,
-) -> Optional[Dict[str, Any]]:
-    """Compute adaptive anomaly-detection thresholds from historical confidence scores.
-
-    Uses mean ± 1 standard deviation to define high/low confidence bands, clamped
-    to the static config bounds.  Returns None when history is insufficient
-    (< min_history samples) or the distribution is degenerate (std = 0).
-
-    Args:
-        history: oracle_predictions.confidence values in [0, 1]
-        min_history: minimum sample count to activate adaptive computation
-        static_high: upper bound from config (adaptive high ≤ this)
-        static_low: lower bound from config (adaptive low ≥ this)
-        low_confidence_refs: orphan_min_refs_low_confidence passed through unchanged
-
-    Returns:
-        dict matching the anomaly_detection config block, or None.
-    """
-    if len(history) < min_history:
-        return None
-
-    n = len(history)
-    mean = sum(history) / n
-    variance = sum((x - mean) ** 2 for x in history) / n
-    std = variance ** 0.5
-
-    if std == 0.0:
-        return None  # degenerate distribution — static config is more meaningful
-
-    high_threshold = min(static_high, mean + std)
-    low_threshold = max(static_low, mean - std)
-
-    if high_threshold <= low_threshold:
-        return None  # collapsed band — static config is safer
-
-    return {
-        "high_confidence_threshold": round(high_threshold, 4),
-        "low_confidence_threshold": round(low_threshold, 4),
-        "orphan_min_refs_low_confidence": low_confidence_refs,
-    }
-
-
-def _fetch_confidence_history(limit: int = 100) -> List[float]:
-    """Return recent oracle_predictions.confidence values for adaptive threshold computation.
-
-    Returns an empty list when the DB is unavailable or the table does not exist.
-    """
-    if get_connection is None:
-        return []
-    try:
-        conn = get_connection()
-        try:
-            rows = conn.execute(
-                """
-                SELECT confidence FROM oracle_predictions
-                WHERE confidence IS NOT NULL
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (limit,),
-            ).fetchall()
-            return [float(r[0]) for r in rows if r[0] is not None]
-        finally:
-            conn.close()
-    except Exception as exc:
-        LOG.debug("[oracle_triage] _fetch_confidence_history failed: %s", exc)
-        return []
-
-
 def _get_active_anomaly_thresholds() -> Dict[str, Any]:
-    """Return the active anomaly-detection threshold dict for this triage run.
+    """Return the anomaly-detection thresholds from static config.
 
-    Computes adaptive thresholds (mean ± 1 std) from recent oracle confidence
-    scores when sufficient history exists.  Falls back to the static values in
-    oracle_triage_config.yaml / module defaults when history is unavailable or
-    the distribution is degenerate.  Result is cached for the duration of the
-    current process (reset by triage() at the start of each run).
+    There used to be an "adaptive" path here that recomputed the high/low
+    confidence bands as mean ± 1 std over the recent oracle_predictions
+    confidence values. It was removed because the statistic is meaningless: in
+    the awareness lens `confidence` is not a per-prediction estimate, it is a
+    per-rule constant copied out of awareness_config.yaml (gap::route_no_e2e is
+    always 0.70, gap::orphan_db_table always 0.85, and so on). So the "history"
+    it averaged was a bag of ~7 constants weighted by how often each rule
+    happened to fire — a popularity contest among unrelated rules, not a
+    distribution. Live, it drove low_confidence_threshold from 0.30 up to 0.825
+    purely because high-confidence rules had fired a lot recently, which would
+    have set gap::route_no_e2e's evidence bar from the firing rate of
+    gap::tool_not_in_manifest.
+
+    It also never actually changed an outcome. Its only consumer is
+    `_verify_orphan_db_table`, which only ever sees orphan_db_table predictions
+    at confidence 0.85; both adaptive and static clamp high_threshold to exactly
+    0.85, so 0.85 >= high_threshold returns 0 (skip the refs check) in either
+    mode and the inflated low bar is never read. Removing it is behaviour-
+    preserving cleanup.
+
+    A real per-rule evidence bar wants observed OUTCOME accuracy, not claimed
+    confidence — that signal now lives in
+    tools/genesis/harness/calibration_report.py and is the correct future input.
     """
-    global _ADAPTIVE_THRESHOLDS_CACHE
-    if _ADAPTIVE_THRESHOLDS_CACHE is not None:
-        return _ADAPTIVE_THRESHOLDS_CACHE
-
-    cfg = _load_triage_config()
-    static_ad = cfg.get("anomaly_detection", {})
-    history = _fetch_confidence_history()
-    adaptive = _compute_adaptive_thresholds(
-        history,
-        min_history=int(static_ad.get("min_history_for_adaptive", _MIN_HISTORY_FOR_ADAPTIVE)),
-        static_high=float(static_ad.get("high_confidence_threshold", 0.85)),
-        static_low=float(static_ad.get("low_confidence_threshold", 0.30)),
-        low_confidence_refs=int(static_ad.get("orphan_min_refs_low_confidence", 3)),
-    )
-    _ADAPTIVE_THRESHOLDS_CACHE = adaptive if adaptive is not None else dict(static_ad)
-    return _ADAPTIVE_THRESHOLDS_CACHE
+    return dict(_load_triage_config().get("anomaly_detection", {}))
 
 
 def _get_orphan_min_refs(oracle_confidence: Optional[float] = None) -> int:
@@ -1066,9 +985,8 @@ def triage(
 
     Returns a summary dict with counts and per-task decisions.
     """
-    global _flask_routes_cache, _ADAPTIVE_THRESHOLDS_CACHE
+    global _flask_routes_cache
     _flask_routes_cache = None          # reset per-run caches
-    _ADAPTIVE_THRESHOLDS_CACHE = None
 
     tasks = _fetch_suggested_tasks()
     if not tasks:
@@ -1224,4 +1142,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     sys.exit(main())

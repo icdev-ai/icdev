@@ -12,8 +12,29 @@ from tools.logging.icdev_logger import get_logger
 
 import json
 import os
+from functools import lru_cache
 
 logger = get_logger("icdev.network.routes.analysis")
+
+
+@lru_cache(maxsize=256)
+def _version_meta_fields(meta_json: str):
+    """Parse an ``nc_versions.metadata_json`` blob once and return the two
+    fields the trend view needs, as an immutable tuple (ndc-perf-02).
+
+    Bounded memo keyed by the raw JSON string — identical metadata across many
+    version rows (common when compliance scores are unchanged) is parsed once.
+    Returning a tuple (not the dict) keeps the memo mutation-safe.
+    """
+    try:
+        meta = json.loads(meta_json or "{}")
+    except Exception as exc:
+        # Fail-closed (ndc-gov-01): report the parse failure instead of
+        # returning (None, None), which the trend view renders as empty cells
+        # indistinguishable from a version that legitimately has no score.
+        # Silently swallowing it made corrupt metadata look like missing data.
+        return None, None, f"metadata parse failed: {type(exc).__name__}: {exc}"
+    return meta.get("compliance_score"), meta.get("cat1_count"), None
 
 
 def register_analysis_routes(bp, get_conn=None, helpers=None):
@@ -87,10 +108,16 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
             cat1, cat2, cat3 = finding_map.get("cat1", 0), finding_map.get("cat2", 0), finding_map.get("cat3", 0)
             compliance_score = max(0, 100 - cat1 * 25 - cat2 * 10 - cat3 * 3)
 
-            # Security: intent validation failures
+            # Security: intent validation failures.
+            #
+            # Fail-closed (ndc-gov-01): 'error' counts as not-pass alongside
+            # 'fail'. An intent check that could not be evaluated is not a
+            # passing check — counting only 'fail' meant a topology whose checks
+            # all errored scored a clean security tally, which is the fail-OPEN
+            # case this gate exists to prevent.
             intent_fails = db.execute(
                 "SELECT COUNT(*) FROM nc_intent_validations "
-                "WHERE topology_id=%s AND result='fail'",
+                "WHERE topology_id=%s AND result IN ('fail','error')",
                 (topo_id,),
             ).fetchone()[0] if _table_exists(db, "nc_intent_validations") else 0
             intent_total = db.execute(
@@ -186,15 +213,18 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
         trend = []
         for v in versions:
             version_num, created_at, meta_json = v
-            try:
-                meta = json.loads(meta_json or "{}")
-            except Exception:
-                meta = {}
+            compliance_score, cat1_count, meta_error = _version_meta_fields(meta_json or "{}")
+            if meta_error:
+                logger.warning(
+                    "Version %s metadata parse failed for topology %s: %s",
+                    version_num, topo_id, meta_error,
+                )
             trend.append({
                 "version": version_num,
                 "date": created_at,
-                "compliance_score": meta.get("compliance_score"),
-                "cat1_count": meta.get("cat1_count"),
+                **({"error": meta_error} if meta_error else {}),
+                "compliance_score": compliance_score,
+                "cat1_count": cat1_count,
             })
         return jsonify({"topology_id": topo_id, "trend": trend})
 
@@ -213,10 +243,10 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
 
         topo_name = row[0] if isinstance(row, (list, tuple)) else row["name"]
         gj_raw = row[1] if isinstance(row, (list, tuple)) else row["graph_json"]
-        try:
-            graph = json.loads(gj_raw or '{"nodes":[],"edges":[]}')
-        except Exception:
-            graph = {"nodes": [], "edges": []}
+        # Fail-closed (ndc-gov-01): a graph that cannot be parsed must surface
+        # as an explicit error, not silently degrade to an empty graph that
+        # the heuristics would then report as a clean/"healthy" topology.
+        graph, graph_error = _parse_topology_graph(gj_raw)
 
         nodes = graph.get("nodes") or []
         edges = graph.get("edges") or []
@@ -376,8 +406,22 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
                 [n["id"] for n in router_nodes],
             )
 
+        # ── ERROR: unparseable topology graph (fail-closed) ───────────────────
+        review_status = "ok"
+        if graph_error:
+            review_status = "error"
+            _add(
+                "ERROR", "ERROR",
+                "Topology graph could not be parsed",
+                "The stored topology graph is invalid and could not be analyzed, so "
+                "this review is incomplete and must not be read as a clean result. "
+                f"Parser reported: {graph_error}",
+                "Re-save the topology from the canvas to regenerate valid graph JSON, "
+                "then re-run the AI review.",
+            )
+
         # ── SUGGESTION: empty topology ────────────────────────────────────────
-        if not device_nodes:
+        if not device_nodes and not graph_error:
             _add(
                 "INFO", "SUGGESTION",
                 "Topology is empty",
@@ -445,6 +489,9 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
             "findings": findings,
             "summary": ai_summary,
             "provider": provider,
+            # Fail-closed status: "error" means the review could not complete
+            # (e.g. corrupt graph) and its findings are NOT a clean bill.
+            "status": review_status,
         })
 
     # ── Export ────────────────────────────────────────────────────────────────
@@ -493,14 +540,39 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _parse_topology_graph(gj_raw) -> tuple[dict, str | None]:
+    """Parse a topology graph_json blob under a fail-closed contract (ndc-gov-01).
+
+    On success returns (graph_dict, None). On any parse failure — or a payload
+    that is not a JSON object — returns (benign_empty_graph, error_summary)
+    where error_summary is a short string naming the exception. Callers must
+    treat a non-None error as a failed/incomplete analysis, NEVER as a clean
+    result. The empty fallback graph lets downstream code run without a second
+    guard, but the error string is what makes the failure visible.
+    """
+    try:
+        graph = json.loads(gj_raw or '{"nodes":[],"edges":[]}')
+    except Exception as exc:
+        logger.warning("ai_review: topology graph parse failed: %s", exc)
+        return {"nodes": [], "edges": []}, f"{type(exc).__name__}: {exc}"
+    if not isinstance(graph, dict):
+        logger.warning(
+            "ai_review: topology graph is %s, expected object", type(graph).__name__
+        )
+        return {"nodes": [], "edges": []}, (
+            f"graph JSON is {type(graph).__name__}, expected object"
+        )
+    return graph, None
+
+
 def _table_exists(db, table: str) -> bool:
-    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
-    return r is not None
+    from tools.network.blueprint_helpers import table_exists
+    return table_exists(db, table)
 
 
 def _col_exists(db, table: str, col: str) -> bool:
-    cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
-    return col in cols
+    from tools.network.blueprint_helpers import col_exists
+    return col_exists(db, table, col)
 
 
 def _quadrant(likelihood: int, impact: int) -> str:

@@ -912,6 +912,27 @@ function addSourceCard(id, title, type) {
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
+// Stable per-tab conversation id, scoped to the notebook. Without a session_id
+// the chat API's `if mem_on and session_id:` guard is False and conversational
+// memory never runs — the notebook was the second chat surface still missing it
+// after search.html was fixed. Keyed separately so a notebook thread and a
+// search thread are distinct conversations. Mirrors search.html::_dicSessionId.
+function _dicSessionId() {
+  try {
+    var k = 'dic_notebook_session_id';
+    var v = window.sessionStorage.getItem(k);
+    if (!v) {
+      v = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : 'dic-nb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+      window.sessionStorage.setItem(k, v);
+    }
+    return v;
+  } catch (e) {
+    return '';  // private mode / storage blocked -> memory simply stays off
+  }
+}
+
 function sendChat() {
   const input = document.getElementById('chat-input');
   const q = input.value.trim();
@@ -922,7 +943,7 @@ function sendChat() {
   fetch('/document-intelligence/api/chat', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({message: q, collection_id: COLLECTION, max_results: 5}),
+    body: JSON.stringify({message: q, collection_id: COLLECTION, max_results: 5, session_id: _dicSessionId()}),
   })
   .then(r => r.json())
   .then(d => {

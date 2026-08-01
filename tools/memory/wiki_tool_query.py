@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -78,7 +77,9 @@ def wiki_tool_query(
         List of dicts with keys: slug, score, snippet, source_dir.
     """
     if memory_dirs is None:
-        auto = Path(os.environ.get("USERPROFILE", Path.home())) / ".claude/projects/C--AI-ICDev/memory"
+        from tools.memory.claude_memory_path import claude_memory_dir
+
+        auto = claude_memory_dir(BASE_DIR)
         proj = BASE_DIR / "memory"
         memory_dirs = [str(d) for d in [proj, auto] if Path(d).is_dir()]
 

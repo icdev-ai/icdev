@@ -17,6 +17,7 @@ from typing import Any
 
 from tools.security_canvas.db.init_db import get_connection
 from tools.security.device_trust import verify_device_posture, DeviceTrustResult
+from tools.security.stub_gate import stub_allowed
 
 # ---------------------------------------------------------------------------
 # Compliance baseline definitions
@@ -103,7 +104,16 @@ def scan_device(hostname: str, os_platform: str = "linux",
     now = datetime.now(timezone.utc).isoformat()
 
     trust: DeviceTrustResult = verify_device_posture(device_id)
-    health_score = trust.health_score if trust.health_score > 0 else 0.75
+    # Falcon stub / unknown posture: the device trust adapter could not verify
+    # this device against the live CrowdStrike API. Fail closed — do NOT
+    # fabricate a healthy score — unless the zero-trust stub gate is enabled
+    # for dev/CI/e2e (ICDEV_ZT_ALLOW_STUB).
+    posture_unknown = getattr(trust, "status", "") == "unknown"
+    stub_ok = stub_allowed()
+    if posture_unknown and not stub_ok:
+        health_score = 0.0
+    else:
+        health_score = trust.health_score if trust.health_score > 0 else 0.75
 
     conn = get_connection()
     try:
@@ -156,6 +166,15 @@ def scan_device(hostname: str, os_platform: str = "linux",
         cis_pass_rate = sum(cis_results.values()) / len(cis_results)
         stig_score = passed_weight / total_weight if total_weight else 0.0
         compliance_score = round(0.5 * cis_pass_rate + 0.5 * stig_score, 4)
+
+        # Fail closed on unknown device posture (Falcon stub unavailable):
+        # a device we could not verify must not be reported as compliant.
+        if posture_unknown and not stub_ok:
+            compliance_score = 0.0
+            gaps.append(
+                "Device posture UNKNOWN (CrowdStrike stub unavailable) — fail closed; "
+                "set ICDEV_ZT_ALLOW_STUB to permit in dev"
+            )
 
         conn.execute(
             """INSERT INTO zig_device_registry

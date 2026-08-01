@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | MCP Base Server | tools/mcp/base_server.py | Base MCP server class (JSON-RPC 2.0 stdio) | — | — |
+| MCP Toolset Profiles | tools/mcp/toolset_profiles.py | Curated MCP toolset profiles for external-agent consumption (sag-mcp-01). Loads `args/mcp_toolset_profiles.yaml`, resolves a profile to a bounded validated tool set, and fail-closed CUI-egress gate (`local_only` profiles refused on cloud LLMs). Used by `unified_server.py --toolset`. | profile name | tool-name set |
 | MCP Core Server | tools/mcp/core_server.py | Project management MCP server | stdio | JSON-RPC responses |
 | MCP Compliance Server | tools/mcp/compliance_server.py | Compliance artifact MCP server | stdio | JSON-RPC responses |
 | MCP Builder Server | tools/mcp/builder_server.py | Code generation MCP server | stdio | JSON-RPC responses |
@@ -30,4 +31,6 @@
 |------|------|-------------|-------|--------|
 | LLM Proxy Server | tools/mcp/llm_proxy_server.py | LLM proxy MCP server for multi-provider routing | (server) | MCP endpoints |
 | LSP Server | tools/mcp/lsp_server.py | Language Server Protocol MCP server | (server) | MCP endpoints |
-
+| Outbound MCP Client | `tools/mcp_client/client.py` | Call tools on THIRD-PARTY MCP servers -- the inverse of `tools/mcp/`, which makes ICDEV a server. Two stdlib transports: `StdioTransport` (warm subprocess, newline-delimited JSON-RPC) and `HttpTransport` (JSON-RPC POST, gated by `egress_guard` before the socket opens). Deliberately stdlib rather than the `mcp` SDK so air-gapped deployments need no new dependency. `build_transport(spec) -> transport | None`. Every entry point degrades to None; none raises into an agent loop. |
+| External MCP Registry | `tools/mcp_client/registry.py` | Registry and gate for external MCP tools. `get_external_registry() -> ExternalToolRegistry` with `.discover()`, `.list_tools()`, `.call(namespaced_name, arguments, classification=...)`. Four controls: tools are namespaced `ext__<server>__<tool>` so a remote server cannot shadow an ICDEV tool; only tools in the per-server `tools:` allowlist are exposed; arguments are checked against the server`s `classification_ceiling` before connecting; and air-gap mode disables every server regardless of config. Config: `args/external_mcp_servers.yaml` (disabled by default, no endpoints shipped). |
+| MCP Description Sanitiser | `tools/mcp_client/sanitize.py` | Neutralises attacker-controlled text from remote MCP servers. A remote server supplies its own tool names and descriptions, and those descriptions are injected into an agent prompt -- untrusted text entering the reasoning loop of an agent holding credentials, arriving whether or not the tool is called. `sanitize_description(raw, server=...)` strips fake role turns, `<|..|>`/`[INST]` markers, HTML comments and fences, collapses imperative override phrases, caps length, and frames the remainder as an untrusted quotation. `sanitize_tool_name(raw)` reduces names to `[a-z0-9_]`. `is_suspicious(raw)` reports for logging and never blocks. |

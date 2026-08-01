@@ -17,18 +17,24 @@ LENS_NAME = "Agent Readiness Score"
 
 _ORG_THRESHOLD = 60.0  # pillars below this % are flagged
 
+# fa_step_progress has no mission_slug / step_type / metadata_json columns; those
+# live on fa_missions.slug, fa_mission_steps.step_type, and the step submission
+# (fa_step_progress.submission) respectively. Join through the steps→missions
+# chain and read the pillar-score JSON out of the submission. (penta-fix-02)
 _READINESS_STEPS_SQL = """
-    SELECT user_id, metadata_json
-    FROM fa_step_progress
-    WHERE mission_slug LIKE 'm-readiness-%'
-      AND step_type = 'agent_readiness'
-      AND status = 'completed'
-    ORDER BY completed_at DESC
+    SELECT fsp.user_id, fsp.submission
+    FROM fa_step_progress fsp
+    JOIN fa_mission_steps fms ON fms.id = fsp.step_id
+    JOIN fa_missions fm ON fm.id = fms.mission_id
+    WHERE fm.slug LIKE 'm-readiness-%'
+      AND fms.step_type = 'agent_readiness'
+      AND fsp.status = 'completed'
+    ORDER BY fsp.completed_at DESC
 """
 
 _ORG_READINESS_UPSERT = """
     INSERT INTO fa_org_readiness (metric_name, metric_value, details_json, computed_at)
-    VALUES (?, ?, ?, ?)
+    VALUES (%s, %s, %s, %s)
     ON CONFLICT (metric_name) DO UPDATE SET
         metric_value = excluded.metric_value,
         details_json = excluded.details_json,

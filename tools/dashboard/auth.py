@@ -14,6 +14,7 @@ Provides:
 
 import functools
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -400,6 +401,16 @@ RBAC_MATRIX = {
     "cpmp_deliverable_detail": {"admin", "pm", "contract_mgr", "co", "cor", "isso"},
     # Proposal Genesis (prop-fix-08)
     "proposal_genesis": {"admin", "pm", "bd", "capture_mgr"},
+    # Strategos — approval / resolution / workflow-advance / authoritative-deletion
+    # class of state-changing routes (nav-sec-05). Enforcement is via the
+    # @require_role(*_STRATEGOS_APPROVAL_ROLES) decorators in
+    # apps/strategos/blueprint.py; this entry is the documentary role map (the
+    # matrix itself is not consumed programmatically for enforcement).
+    "strategos_approval": {"admin", "pm", "isso", "co", "cor", "reviewer"},
+    # ZIG mutating endpoints — capability-status PATCH + global assess POST
+    # (nav-sec-05). Enforced via @require_role(*_ZIG_MUTATION_ROLES) in
+    # tools/security_canvas/blueprint.py.
+    "zig_mutation": {"admin", "isso", "ciso"},
 }
 
 
@@ -572,6 +583,29 @@ def _auth_before_request():
             )
             return None
         else:
+            # nav-sec-01: The .env bootstrap key (ICDEV_DASHBOARD_API_KEY,
+            # written by _auto_provision_env_key on first install) may not yet
+            # have a DB row, so validate_api_key() above returns None the first
+            # time it is presented. Honor it here ONLY when the request actually
+            # PRESENTS a key equal to it, compared in constant time, then
+            # bootstrap its DB entry. Merely having the key set in the
+            # environment must never authenticate a request on its own.
+            env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+            if env_key and hmac.compare_digest(raw_key, env_key):
+                user = bootstrap_env_user(env_key)
+                if user:
+                    g.current_user = dict(user)
+                    _attach_security_context()
+                    session["user_id"] = user["id"]
+                    log_auth_event(
+                        user["id"],
+                        "login_success",
+                        ip_address=request.remote_addr,
+                        user_agent=request.headers.get("User-Agent", "")[:256],
+                        details="via_env_key",
+                    )
+                    return None
+
             # API requests get 401, browser requests redirect
             log_auth_event(
                 None,
@@ -583,15 +617,31 @@ def _auth_before_request():
             if request.is_json or request.path.startswith("/api/"):
                 abort(401)
 
-    # Auto-login via .env API key if configured
-    env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
-    if env_key:
-        user = bootstrap_env_user(env_key)
-        if user:
-            g.current_user = dict(user)
-            _attach_security_context()
-            session["user_id"] = user["id"]
-            return None
+    # nav-sec-01: Developer convenience ONLY — auto-login the admin env user
+    # for requests that present NO credential. Off by default; must be
+    # explicitly opted into via ICDEV_DASHBOARD_DEV_AUTOLOGIN. This restores the
+    # legacy "env key set => everyone is admin" behavior, so it MUST NEVER be
+    # enabled in a deployed or network-exposed environment — it is a full auth
+    # bypass by design, intended for local single-user development only.
+    dev_autologin = os.environ.get(
+        "ICDEV_DASHBOARD_DEV_AUTOLOGIN", ""
+    ).lower() in ("true", "1", "yes")
+    if dev_autologin:
+        env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+        if env_key:
+            user = bootstrap_env_user(env_key)
+            if user:
+                g.current_user = dict(user)
+                _attach_security_context()
+                session["user_id"] = user["id"]
+                log_auth_event(
+                    user["id"],
+                    "login_success",
+                    ip_address=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:256],
+                    details="via_dev_autologin",
+                )
+                return None
 
     # Not authenticated — redirect to login for browser requests
     if request.is_json or request.path.startswith("/api/"):

@@ -168,6 +168,51 @@ _RE_RATING = re.compile(r"(\d+(?:\.\d+)?)\s*/?\s*(?:out of\s*)?5(?:\.0)?", re.IG
 _RE_REVIEW_COUNT = re.compile(r"(\d[\d,]*)\s*(?:reviews?|ratings?|verified)", re.IGNORECASE)
 
 
+def _clean_scraped(value):
+    """Tag-strip one scraped fragment with the shared ``page_extract`` parser.
+
+    Replaces ``re.sub(r"<[^>]+>", "", value)``, which left entities behind and
+    mangled any literal ``<`` in a product name.  ``to_text`` also resolves the
+    entity soup the old hand-rolled ``&amp;``/``&#39;``/``&quot;`` chain missed.
+    """
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if "<" in text or "&" in text:
+        try:
+            from tools.http.page_extract import to_text
+
+            text = to_text(text) or text
+        except Exception:  # noqa: BLE001 - never let cleaning drop a discovery
+            text = re.sub(r"<[^>]+>", "", text)
+    return text.strip()
+
+
+def _scan_page(html, url):
+    """Injection-scan a scraped page's readable text.  Returns True when safe.
+
+    Competitor names and feature lists are summarised by the creative engine's
+    LLM passes, so scraped review-site markup is model-facing content from an
+    untrusted origin and has to clear the scanner before extraction runs.
+    """
+    try:
+        from tools.http.fetch_extract import scan_or_drop
+        from tools.http.page_extract import to_text
+
+        _text, findings, blocked = scan_or_drop(to_text(html), source=url)
+    except Exception:  # noqa: BLE001 - scanner unavailable → fail closed
+        _audit("creative.discover.scan", f"Injection scan unavailable for {url}", {"url": url})
+        return False
+    if blocked:
+        _audit(
+            "creative.discover.blocked",
+            f"Prompt injection detected — discarded page {url}",
+            {"url": url, "categories": sorted({str(f.get("category")) for f in findings})},
+        )
+        return False
+    return True
+
+
 def _extract_jsonld_products(html):
     """Extract product/software entries from JSON-LD blocks."""
     results = []
@@ -234,10 +279,7 @@ def _extract_products_from_html(html, patterns):
     seen = set()
     for pat in patterns:
         for m in pat.finditer(html):
-            name = m.group(1).strip()
-            # Clean HTML entities and tags
-            name = re.sub(r"<[^>]+>", "", name).strip()
-            name = name.replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", '"')
+            name = _clean_scraped(m.group(1))
             if not name or len(name) < 2 or len(name) > 120:
                 continue
             key = name.lower()
@@ -350,6 +392,8 @@ def discover_from_g2(category_url, max_competitors=20):
     if err or not html:
         _audit("creative.discover.g2", f"G2 fetch failed: {err}", {"url": category_url, "error": err})
         return []
+    if not _scan_page(html, category_url):
+        return []
     # Attempt 1: JSON-LD structured data
     products = _extract_jsonld_products(html)
     # Attempt 2: HTML patterns
@@ -392,6 +436,8 @@ def discover_from_capterra(category_url, max_competitors=20):
     if err or not html:
         _audit("creative.discover.capterra", f"Capterra fetch failed: {err}", {"url": category_url, "error": err})
         return []
+    if not _scan_page(html, category_url):
+        return []
     products = _extract_jsonld_products(html)
     if not products:
         products = _extract_products_from_html(html, _CAPTERRA_PRODUCT_PATTERNS)
@@ -429,6 +475,8 @@ def discover_from_trustradius(category_url, max_competitors=20):
     html, err = _safe_get(category_url, as_text=True)
     if err or not html:
         _audit("creative.discover.trustradius", f"TrustRadius fetch failed: {err}", {"url": category_url, "error": err})
+        return []
+    if not _scan_page(html, category_url):
         return []
     products = _extract_jsonld_products(html)
     if not products:
@@ -624,6 +672,8 @@ def refresh_competitor_features(competitor_id, db_path=None):
         html, err = _safe_get(source_url, as_text=True)
         if err or not html:
             return {"error": f"Failed to fetch {source_url}: {err}"}
+        if not _scan_page(html, source_url):
+            return {"error": f"Content blocked: prompt-injection detected at {source_url}"}
 
         features = _extract_features_from_html(html)
         conn.execute(
@@ -659,9 +709,7 @@ def _extract_features_from_html(html):
     seen = set()
     for pat in _FEATURE_PATTERNS:
         for m in pat.finditer(html):
-            feat = m.group(1).strip()
-            feat = re.sub(r"<[^>]+>", "", feat).strip()
-            feat = feat.replace("&amp;", "&").replace("&#39;", "'")
+            feat = _clean_scraped(m.group(1))
             if not feat or len(feat) < 5:
                 continue
             key = feat.lower()

@@ -18,9 +18,15 @@ ad-hoc governance. The chain, in order:
                             injected sources (full promote/export policy lands
                             in ctx-govern-02; hallucinated citations already
                             fail here).
-5. ``content_grounding``  — ``tools/quality/content_grounding`` placeholder
-                            scan plus token-overlap cross-check of the output
-                            against the injected context.
+5. ``content_grounding``  — ``tools/quality/content_grounding`` semantic
+                            claim-vs-context grounding: when the call is
+                            retrieval-backed AND context snippets are present,
+                            ``ground_content`` scores how well each output
+                            sentence is supported by the injected snippets and
+                            the score is warned/blocked against the SHARED
+                            confidence bands from ``citation_grounding``
+                            (``CONF_ABSTAIN``). When no snippet text is
+                            available it falls back to the placeholder scan.
 6. ``output_redaction``   — ``tools/llm/output_redactor`` masks PII/secrets in
                             the response text.
 7. ``provenance``         — ``tools/provenance/registry.register_citation``
@@ -53,7 +59,7 @@ from typing import Callable, Optional
 
 from tools.logging.icdev_logger import get_logger
 
-from .config import resolve_fail_closed
+from .config import load_cortex_config, resolve_fail_closed
 from .schemas import CortexContext, CortexResult, GovernanceReport
 
 logger = get_logger(__name__)
@@ -85,12 +91,25 @@ OUTCOME_WARN = "warn"
 OUTCOME_FAIL = "fail"
 OUTCOME_SKIP = "skip"
 
-# Minimum token-overlap recall for the output to count as grounded in the
-# injected context (content_grounding gate). Deliberately low: the gate warns
-# on *zero* overlap, it does not demand extractive answers.
-_ATTRIBUTION_FLOOR = 0.05
-
 _CLASSIFICATION_IL = {"CUI": "IL4", "CUI//SP-CTI": "IL5", "SECRET": "IL6"}
+
+
+def _content_grounding_floor(config_path=None) -> float:
+    """Pass/warn floor for the content_grounding gate — the SHARED band.
+
+    Single source of truth: derived from ``citation_grounding.CONF_ABSTAIN``
+    (the same >=0.7 include / 0.4 abstain bands the citation gate uses), NOT a
+    hardcoded local threshold. An operator may override it under
+    ``governance.content_grounding.min_score`` in ``args/cortex_config.yaml``;
+    absent that key the shared constant wins, so the two TRUST gates cannot
+    silently drift apart.
+    """
+    from tools.quality.citation_grounding import CONF_ABSTAIN
+    cfg = (load_cortex_config(config_path).get("governance") or {}).get(
+        "content_grounding"
+    ) or {}
+    override = cfg.get("min_score")
+    return float(override) if override is not None else float(CONF_ABSTAIN)
 
 
 class GovernanceBlockedError(RuntimeError):
@@ -136,11 +155,58 @@ def _gate_find_placeholders(text: str) -> list:
     return _mod("quality.content_grounding").find_placeholders(text)
 
 
-def _gate_attribution_score(chunk_text: str, output_text: str) -> float:
-    """Gate 5b: token-overlap recall of one context chunk in the output."""
-    return _mod("quality.citation_grounding").compute_attribution_score(
-        chunk_text, output_text
+def _gate_ground_content(output_text: str, context_snippets, ctx) -> dict:
+    """Gate 5b: semantic claim-vs-context grounding of the output.
+
+    Delegates to the shared ``content_grounding.ground_content``. The LLM-
+    assisted pass is OFF unless ``governance.content_grounding.llm_assisted``
+    is set in ``args/cortex_config.yaml``; when on, an ``llm_invoke`` closure
+    over the platform ``LLMRouter`` routing chains is injected (no model ids
+    are named here) and any failure degrades to the deterministic heuristic.
+    """
+    grounding_mod = _mod("quality.content_grounding")
+    cfg = (load_cortex_config().get("governance") or {}).get("content_grounding") or {}
+    method = "heuristic"
+    llm_invoke = None
+    if cfg.get("llm_assisted"):
+        llm_invoke = _build_grounding_llm_invoke(cfg, ctx)
+        if llm_invoke is not None:
+            method = "llm"
+    return grounding_mod.ground_content(
+        output_text,
+        context_snippets,
+        method=method,
+        support_floor=_content_grounding_floor(),
+        llm_invoke=llm_invoke,
     )
+
+
+def _build_grounding_llm_invoke(cfg: dict, ctx):
+    """Build an ``(prompt) -> str`` closure routed through LLMRouter, or None.
+
+    The routing FUNCTION name comes from config (default ``cortex_complete``,
+    an existing chain) — never a model id. Any wiring failure returns None so
+    the grounding falls back to the LLM-free heuristic.
+    """
+    try:
+        router_mod = _mod("llm.router")
+        provider_mod = _mod("llm.provider")
+        router = router_mod.LLMRouter()
+        function = cfg.get("routing_function") or "cortex_complete"
+
+        def _invoke(prompt: str) -> str:
+            request = provider_mod.LLMRequest(
+                prompt=prompt,
+                agent_id=getattr(ctx, "agent_id", "") or "cortex-grounding",
+                temperature=0.0,
+            )
+            response = router.invoke(function, request)
+            return getattr(response, "content", "") or ""
+
+        return _invoke
+    except Exception as exc:  # noqa: BLE001 — heuristic is always the floor
+        logger.debug("content grounding LLM invoke unavailable: %s", exc)
+        return None
 
 
 def _gate_redact_output(text: str) -> tuple:
@@ -444,7 +510,12 @@ class GovernancePipeline:
             grounded = False
             self._record(report, GATE_CITATION_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
 
-        # 5. Content grounding cross-check against the injected context.
+        # 5. Content grounding — semantic claim-vs-context grounding when the
+        #    call is retrieval-backed AND snippet text is available; otherwise a
+        #    placeholder scan. The score/method/floor are recorded on the report
+        #    (report.content_grounding) so the gate is observable, and the
+        #    warn/block threshold is the SHARED citation_grounding band, not a
+        #    local constant. Fail-open/ctx.fail_closed semantics are preserved.
         if retrieval:
             try:
                 issues = []
@@ -453,9 +524,31 @@ class GovernancePipeline:
                     issues.append(f"unresolved placeholders: {placeholders}")
                 chunks = _context_texts(context_sources)
                 if chunks and text:
-                    best = max(_gate_attribution_score(c, text) for c in chunks)
-                    if best < _ATTRIBUTION_FLOOR:
-                        issues.append(f"output shares no content with injected context (recall={best})")
+                    grounding = _gate_ground_content(text, chunks, ctx)
+                    floor = _content_grounding_floor()
+                    report.content_grounding = {
+                        "score": grounding.get("score"),
+                        "method": grounding.get("method"),
+                        "ungrounded_claims": grounding.get("ungrounded_claims", []),
+                        "floor": floor,
+                    }
+                    score = grounding.get("score")
+                    if score is not None and score < floor:
+                        issues.append(
+                            f"output weakly grounded in injected context "
+                            f"(score={score} < floor={floor}, method="
+                            f"{grounding.get('method')}, ungrounded="
+                            f"{grounding.get('ungrounded_claims')})"
+                        )
+                else:
+                    # No snippet text to ground against — the placeholder scan is
+                    # the only available signal. Record the fallback method.
+                    report.content_grounding = {
+                        "score": None,
+                        "method": "placeholder",
+                        "ungrounded_claims": [],
+                        "floor": _content_grounding_floor(),
+                    }
                 if issues:
                     grounded = False
                     detail = "; ".join(issues)
@@ -463,7 +556,11 @@ class GovernancePipeline:
                         self._block(report, ctx, GATE_CONTENT_GROUNDING, detail)
                     self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
                 else:
-                    self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_PASS)
+                    self._record(
+                        report, GATE_CONTENT_GROUNDING, OUTCOME_PASS,
+                        f"method={report.content_grounding.get('method')} "
+                        f"score={report.content_grounding.get('score')}",
+                    )
             except GovernanceBlockedError:
                 raise
             except Exception as exc:

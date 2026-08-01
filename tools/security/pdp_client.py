@@ -117,16 +117,30 @@ class LocalPDPAdapter(PDPAdapter):
 
 
 class DisaICAMAdapter(PDPAdapter):
-    """Stub adapter for DISA ICAM integration (non-strict)."""
+    """Stub adapter for DISA ICAM integration.
+
+    The live DISA ICAM PDP is not yet wired up, so this adapter is a stub.
+    It fails **closed** (deny) by default — an unavailable PDP must not
+    silently permit access. Dev/CI/e2e set ICDEV_ZT_ALLOW_STUB to opt into
+    the permissive stub decision.
+    """
 
     def evaluate(self, user_ctx: dict, resource: str, action: str) -> PDPDecision:
         logger.warning(
             "DISA ICAM adapter not configured",
             extra={"extra": {"resource": resource, "action": action}},
         )
+        from tools.security.stub_gate import stub_allowed
+
+        if stub_allowed():
+            return PDPDecision(
+                permit=True,
+                reason="DISA ICAM adapter not configured — stub permit via ICDEV_ZT_ALLOW_STUB",
+                adapter="disa_icam",
+            )
         return PDPDecision(
-            permit=True,
-            reason="DISA ICAM adapter not configured — non-strict permit",
+            permit=False,
+            reason="DISA ICAM adapter not configured — fail closed (set ICDEV_ZT_ALLOW_STUB to permit in dev)",
             adapter="disa_icam",
         )
 
@@ -137,16 +151,30 @@ class DisaICAMAdapter(PDPAdapter):
 
 
 class ZscalerZPAAdapter(PDPAdapter):
-    """Stub adapter for Zscaler ZPA integration (non-strict)."""
+    """Stub adapter for Zscaler ZPA integration.
+
+    The live Zscaler ZPA PDP is not yet wired up, so this adapter is a stub.
+    It fails **closed** (deny) by default — an unavailable PDP must not
+    silently permit access. Dev/CI/e2e set ICDEV_ZT_ALLOW_STUB to opt into
+    the permissive stub decision.
+    """
 
     def evaluate(self, user_ctx: dict, resource: str, action: str) -> PDPDecision:
         logger.warning(
             "Zscaler ZPA adapter not configured",
             extra={"extra": {"resource": resource, "action": action}},
         )
+        from tools.security.stub_gate import stub_allowed
+
+        if stub_allowed():
+            return PDPDecision(
+                permit=True,
+                reason="Zscaler ZPA adapter not configured — stub permit via ICDEV_ZT_ALLOW_STUB",
+                adapter="zscaler_zpa",
+            )
         return PDPDecision(
-            permit=True,
-            reason="Zscaler ZPA adapter not configured — non-strict permit",
+            permit=False,
+            reason="Zscaler ZPA adapter not configured — fail closed (set ICDEV_ZT_ALLOW_STUB to permit in dev)",
             adapter="zscaler_zpa",
         )
 

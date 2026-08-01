@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import column_exists, get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Module-level constants — Discover Reflex (R1) thresholds & limits.
@@ -121,10 +121,8 @@ def _ensure_workflow_loop_id_column() -> bool:
     """
     conn = get_connection()
     try:
-        # Check if column already exists via PRAGMA
-        cols = conn.execute("PRAGMA table_info(proposal_opportunities)").fetchall()
-        col_names = [c["name"] if isinstance(c, dict) else c[1] for c in cols]
-        if "workflow_loop_id" in col_names:
+        # Backend-aware column probe (pgrt-sweep-06) — no PRAGMA/translation reliance.
+        if column_exists(conn, "proposal_opportunities", "workflow_loop_id"):
             return True
         conn.execute("ALTER TABLE proposal_opportunities ADD COLUMN workflow_loop_id TEXT")
         conn.commit()

@@ -4,6 +4,14 @@
 Persists dashboards using the exact DashboardSpec.tiles shape
 (``[{"spec": <viz spec dict>, "w": <1-12>}, ...]``) so a saved dashboard
 round-trips straight into ``tools.viz.spec.DashboardSpec.from_dict``.
+
+Owner/tenant scoping (cnr-bi-01/02): every read/mutation accepts a
+``tenant_id`` so the ``bi_*`` RLS columns actually separate tenants, and
+reads/lists can additionally be scoped to an ``owner_id``. Callers (the
+blueprint) derive both from the authenticated session — this module never
+invents a tenant. When ``tenant_id`` is ``None`` the filter is omitted
+(back-compat / admin/system reads); the blueprint always passes a concrete
+tenant for user-facing routes.
 """
 from __future__ import annotations
 
@@ -28,13 +36,17 @@ def create_dashboard(title: str, tiles: list[dict], owner_id: str = "",
     return dashboard_id
 
 
-def get_dashboard(dashboard_id: str) -> dict[str, Any] | None:
+def get_dashboard(dashboard_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
     conn = get_connection()
-    cur = conn.execute(
+    sql = (
         "SELECT id, title, owner_id, tiles_json, created_at, updated_at, tenant_id, classification "
-        "FROM bi_dashboards WHERE id = %s",
-        (dashboard_id,),
+        "FROM bi_dashboards WHERE id = %s"
     )
+    params: list[Any] = [dashboard_id]
+    if tenant_id is not None:
+        sql += " AND tenant_id = %s"
+        params.append(tenant_id)
+    cur = conn.execute(sql, tuple(params))
     row = cur.fetchone()
     conn.close()
     if not row:
@@ -45,34 +57,55 @@ def get_dashboard(dashboard_id: str) -> dict[str, Any] | None:
     return d
 
 
-def list_dashboards(tenant_id: str = "default", limit: int = 100) -> list[dict[str, Any]]:
+def list_dashboards(tenant_id: str = "default", owner_id: str | None = None,
+                    limit: int = 100) -> list[dict[str, Any]]:
+    """List dashboards for a tenant.
+
+    When ``owner_id`` is provided, results are scoped to that owner so a user
+    only sees their own dashboards (admins/system callers pass ``owner_id=None``
+    to see every dashboard in the tenant).
+    """
     conn = get_connection()
-    cur = conn.execute(
+    sql = (
         "SELECT id, title, owner_id, created_at, updated_at FROM bi_dashboards "
-        "WHERE tenant_id = %s ORDER BY updated_at DESC LIMIT %s",
-        (tenant_id, limit),
+        "WHERE tenant_id = %s"
     )
+    params: list[Any] = [tenant_id]
+    if owner_id is not None:
+        sql += " AND owner_id = %s"
+        params.append(owner_id)
+    sql += " ORDER BY updated_at DESC LIMIT %s"
+    params.append(limit)
+    cur = conn.execute(sql, tuple(params))
     cols = ["id", "title", "owner_id", "created_at", "updated_at"]
     rows = [dict(zip(cols, r)) for r in cur.fetchall()]
     conn.close()
     return rows
 
 
-def update_dashboard_tiles(dashboard_id: str, tiles: list[dict]) -> bool:
+def update_dashboard_tiles(dashboard_id: str, tiles: list[dict],
+                           tenant_id: str | None = None) -> bool:
     conn = get_connection()
-    cur = conn.execute(
-        "UPDATE bi_dashboards SET tiles_json = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
-        (json.dumps(tiles), dashboard_id),
-    )
+    sql = "UPDATE bi_dashboards SET tiles_json = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s"
+    params: list[Any] = [json.dumps(tiles), dashboard_id]
+    if tenant_id is not None:
+        sql += " AND tenant_id = %s"
+        params.append(tenant_id)
+    cur = conn.execute(sql, tuple(params))
     conn.commit()
     updated = cur.rowcount > 0
     conn.close()
     return updated
 
 
-def delete_dashboard(dashboard_id: str) -> bool:
+def delete_dashboard(dashboard_id: str, tenant_id: str | None = None) -> bool:
     conn = get_connection()
-    cur = conn.execute("DELETE FROM bi_dashboards WHERE id = %s", (dashboard_id,))
+    sql = "DELETE FROM bi_dashboards WHERE id = %s"
+    params: list[Any] = [dashboard_id]
+    if tenant_id is not None:
+        sql += " AND tenant_id = %s"
+        params.append(tenant_id)
+    cur = conn.execute(sql, tuple(params))
     conn.commit()
     deleted = cur.rowcount > 0
     conn.close()

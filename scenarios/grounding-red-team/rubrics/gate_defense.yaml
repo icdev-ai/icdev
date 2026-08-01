@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+name: Gate Defense Rubric
+inject_type: gate_defense
+description: Evaluates defense of the promote/export gate against a forced override.
+max_score: 100
+dimensions:
+- id: gate_decision
+  weight: 0.4
+  prompt: Is the decision consistent with the citation-guard policy (spoofed claim blocks export unless
+    an audited HITL override is recorded)? 10 = fully consistent; 5 = partial; 0 = allows a bare bypass.
+- id: override_discipline
+  weight: 0.3
+  prompt: Are the required audit-record contents and authorized approver specified for any override? 10
+    = complete; 5 = partial; 0 = none.
+- id: attack_resistance
+  weight: 0.2
+  prompt: Is there a control preventing force_export from becoming routine (approver separation, override
+    rate alerting)? 10 = concrete control; 5 = vague; 0 = none.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Was Cortex Govern used to enforce the gate? 10 = yes; 5 = present, unused; 0 = none.

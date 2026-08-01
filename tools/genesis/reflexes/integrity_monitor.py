@@ -39,6 +39,7 @@ from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +48,29 @@ from typing import Any, Dict, List, Optional
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _env_flag(name: str) -> bool:
+    """Read a boolean env flag (default OFF)."""
+    return os.environ.get(name, "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+# opx-sipa-02 flags — BOTH default OFF so merging changes NOTHING on the live 6h
+# reflex. The operator enables them for one transition run, then drops the
+# transition flag (see the reflex docstring / PR go-live note).
+#
+#   ICDEV_SIPA_RELPATH_DIRS       — when on, _rel_path's marker-absent fallback
+#     keeps the normalized relative posix path (directories preserved) instead
+#     of collapsing to the basename. Resolves basename ambiguity (posture.py x6,
+#     iac_generator.py x24) so distinct files get distinct, still-stable
+#     signatures. Measured 0 collisions between distinct files (the only
+#     dir-path merges are the same file stored with '/' vs '\').
+#   ICDEV_SIPA_RELPATH_TRANSITION — when on, run() treats the pass as a silent
+#     baseline-establishing run (no cards) even when prior assessments exist, so
+#     the FIRST run under the new rel-path scheme re-baselines every finding
+#     WITHOUT opening cards. Belt-and-suspenders against a re-signaturing flood.
+_RELPATH_DIRS_ENV = "ICDEV_SIPA_RELPATH_DIRS"
+_RELPATH_TRANSITION_ENV = "ICDEV_SIPA_RELPATH_TRANSITION"
 
 # Reflex cadence (hours). Mirrored in args/genesis_config.yaml + reflex_registry.
 CADENCE_HOURS = 6
@@ -97,8 +121,18 @@ def _rel_path(file_path: Optional[str], assessment_id: int) -> str:
     so a finding's ``file_path`` carries a per-run quarantine prefix that differs
     every cycle. Stripping everything up to and including the ``/<assessment_id>/``
     segment recovers the tree-relative path (e.g. ``net.py`` / ``sub/x.py``) which
-    is stable across assessments — the basis for baseline diffing. Falls back to the
-    basename if the marker is absent.
+    is stable across assessments — the basis for baseline diffing.
+
+    Marker-absent fallback (opx-sipa-02): in practice findings are stored with
+    tree-relative paths and the ``/<assessment_id>/`` marker is essentially never
+    present, so this fallback drives ~all signatures. The LEGACY behaviour returns
+    just the basename, which is ambiguous — 6+ files share ``posture.py`` and 24
+    share ``iac_generator.py``, collapsing to ONE signature and causing wrong
+    triage. When ``ICDEV_SIPA_RELPATH_DIRS`` is enabled the fallback keeps the
+    normalized relative posix path (directories preserved), which is still stable
+    across runs (mixed ``/``\\``\\`` separators normalize identically) and unique
+    per file. The flag defaults OFF so merging does not change live reflex output
+    until the operator runs the one-time baseline transition.
     """
     if not file_path:
         return ""
@@ -107,6 +141,10 @@ def _rel_path(file_path: Optional[str], assessment_id: int) -> str:
     idx = posix.find(marker)
     if idx >= 0:
         return posix[idx + len(marker):]
+    if _env_flag(_RELPATH_DIRS_ENV):
+        # Directory-preserving, normalized, and relative (strip any leading
+        # slash so an absolute stray path can't destabilize the signature).
+        return posix.lstrip("/")
     return Path(file_path).name
 
 
@@ -130,7 +168,7 @@ def _detail_of(row: Any) -> Dict[str, Any]:
 
 def _high_risk_signatures(conn: Any, assessment_id: int) -> Dict[str, Dict[str, Any]]:
     """Return ``{signature: finding-info}`` for the high-risk findings of one assessment."""
-    placeholders = ", ".join("?" * len(HIGH_RISK_FINDING_TYPES))
+    placeholders = ", ".join(["%s"] * len(HIGH_RISK_FINDING_TYPES))
     rows = conn.execute(
         f"SELECT finding_type, severity, file_path, line, detail "
         f"FROM integrity_findings "
@@ -140,13 +178,25 @@ def _high_risk_signatures(conn: Any, assessment_id: int) -> Dict[str, Dict[str, 
     out: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         detail = _detail_of(r)
-        cap = detail.get("capability_type") or detail.get("rule") or ""
+        cap = (
+            detail.get("capability_type")
+            or detail.get("category")
+            or detail.get("rule")
+            or detail.get("rule_id")
+            or ""
+        )
         rel = _rel_path(r["file_path"], assessment_id)
         sig = _signature(r["finding_type"], rel, cap)
         out[sig] = {
             "finding_type": r["finding_type"],
             "severity": r["severity"],
             "rel_path": rel,
+            # Raw, un-normalized finding path. rel_path is often a bare basename
+            # (the _rel_path fallback) and 6+ files share names like posture.py,
+            # so the card MUST also carry the raw path + assessment_id to be
+            # unambiguous during triage (opx-sipa-01). Do NOT rely on rel_path
+            # alone for file identification.
+            "file_path": r["file_path"],
             "line": r["line"],
             "capability_type": cap,
             "detail": detail,
@@ -172,13 +222,26 @@ def _baseline_signatures(conn: Any, assessment_ids: List[int]) -> set:
 
 
 def _card_title(info: Dict[str, Any]) -> str:
-    """Deterministic, signature-stable card title (drives open-card dedupe)."""
+    """Deterministic, signature-stable card title (drives open-card dedupe).
+
+    The two high-risk finding types are different claims and must not share a
+    sentence. ``unauthorized_capability`` means "this code can do X and no
+    requirement authorizes X". ``known_bad_signature`` means "a scanner rule
+    matched here" — which is not a capability claim at all.
+
+    Titling both as "Unauthorized capability '<x>'" produced cards reading
+    ``Unauthorized capability 'known_bad_signature'``: the finding *type* in the
+    slot where the capability name belongs, naming nothing that exists in the
+    file. A reviewer then greps for a capability that was never there.
+    """
     cap = info["capability_type"] or info["finding_type"]
+    if info.get("finding_type") == "known_bad_signature":
+        return f"[SIPA] Signature match '{cap}' in {info['rel_path']}"
     return f"[SIPA] Unauthorized capability '{cap}' in {info['rel_path']}"
 
 
 def _open_card_exists(conn: Any, title: str) -> bool:
-    placeholders = ", ".join("?" * len(_OPEN_STATUSES))
+    placeholders = ", ".join(["%s"] * len(_OPEN_STATUSES))
     try:
         row = conn.execute(
             f"SELECT 1 FROM kanban_tasks WHERE title = %s AND status IN ({placeholders}) LIMIT 1",
@@ -255,8 +318,18 @@ def _card_description(info: Dict[str, Any], assessment_id: int, source_ref: str,
         f"Finding type:    {info['finding_type']}",
         f"Severity:        {info['severity']}",
         f"Capability:      {cap}",
-        f"File:            {rel_path}"
-        + (f":{info['line']}" if info.get("line") else ""),
+        f"File (rel):      {rel_path}"
+        + (f":{info['line']}" if info.get("line") else "")
+        + "   <- may be a bare basename; disambiguate via the raw path below",
+        f"File (raw):      {info.get('file_path') or ''}",
+        "",
+        "Triage — resolve the file unambiguously (rel path above can collide; 6+ "
+        "files share names like posture.py). Query the raw findings for THIS "
+        "assessment; output is authoritative and must NOT be truncated:",
+        "  SELECT finding_type, file_path, line, detail",
+        "  FROM integrity_findings",
+        f"  WHERE assessment_id = {assessment_id}",
+        "  ORDER BY file_path, line;",
     ]
     reason = detail.get("reason")
     if reason:
@@ -385,6 +458,7 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
             "cards": [],
             "deduped": 0,
             "baseline_established": False,
+            "baseline_transition": False,
             "errors": [],
         },
     }
@@ -424,12 +498,23 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
         result["scanned"] = len(current)
         prior_ids = _prior_assessment_ids(db, source_ref, assessment_id)
 
-        if not prior_ids:
-            # First assessment of this source — establish the baseline silently so
-            # the initial sweep of a large tree never floods the board.
+        # opx-sipa-02 baseline transition: when the operator flips
+        # ICDEV_SIPA_RELPATH_DIRS on, every finding is re-signatured under the
+        # new dir-preserving rel path. This transition flag forces the FIRST such
+        # run to re-establish the baseline SILENTLY (no cards) even though prior
+        # assessments exist, so re-signatured findings never flood the board.
+        # The operator drops the flag after one run; subsequent runs diff
+        # normally against the re-baselined (dir-path) signatures.
+        transition = _env_flag(_RELPATH_TRANSITION_ENV)
+
+        if not prior_ids or transition:
+            # First assessment of this source (or a forced transition pass) —
+            # establish the baseline silently so the sweep never floods the board.
             details["baseline_established"] = True
+            details["baseline_transition"] = bool(transition and prior_ids)
             logger.info(
-                "integrity_monitor: baseline established for %s (%d high-risk capability(ies)) — no cards",
+                "integrity_monitor: baseline %s for %s (%d high-risk capability(ies)) — no cards",
+                "transition (re-signatured, forced)" if (transition and prior_ids) else "established",
                 source_ref, len(current),
             )
             result["success"] = True
@@ -496,7 +581,28 @@ def _source_ref_of(conn: Any, assessment_id: int, fallback: str) -> str:
     return fallback
 
 
+def _load_env() -> None:
+    """Load THIS repo's ``.env`` for a direct-CLI run so config matches the daemon.
+
+    ``python tools/genesis/reflexes/integrity_monitor.py`` does NOT place the repo
+    root on ``sys.path``; ``import tools.*`` can then resolve to a *different*
+    pip-installed ICDEV checkout whose ``storage.py`` already loaded *its* ``.env``
+    into ``os.environ`` at import time — so a direct CLI run would connect to the
+    wrong board (``current transaction is aborted`` / wrong PG config). We load the
+    repo-root ``.env`` (resolved from ``__file__``, never cwd) with ``override=True``
+    so the local board/PG config wins, mirroring how ``GenesisDaemon`` loads ``.env``
+    at startup. No-op if python-dotenv or the file is absent.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv(BASE_DIR / ".env", override=True)
+
+
 if __name__ == "__main__":
+    _load_env()
+
     import argparse
 
     parser = argparse.ArgumentParser(

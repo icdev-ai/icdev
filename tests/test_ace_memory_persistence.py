@@ -56,11 +56,30 @@ def nova_db(tmp_path):
 
 @pytest.fixture()
 def patched_dbs(monkeypatch, ace_db, nova_db):
-    """Patch get_canvas_connection → ace_db, get_connection → nova_db."""
+    """Patch get_canvas_connection → ace_db, get_connection → nova_db.
+
+    Both route through the REAL storage layer rather than sqlite3.connect.
+    _finalize_instance authors %s placeholders for PostgreSQL, and it is
+    StorageConnection that rewrites them to ? for SQLite. Handing back a raw
+    sqlite3 connection skipped that step, so every statement raised a syntax
+    error — swallowed by the method's best-effort `except Exception` — and the
+    test then asserted against zero rows it had caused itself.
+
+    The real function is captured before patching, so the lambdas below cannot
+    recurse into their own replacements.
+    """
     import icdev.tools.db.storage as _storage
 
-    monkeypatch.setattr(_storage, "get_canvas_connection", lambda *a, **kw: sqlite3.connect(str(ace_db)))
-    monkeypatch.setattr(_storage, "get_connection", lambda *a, **kw: sqlite3.connect(str(nova_db)))
+    _real_get_connection = _storage.get_connection
+
+    monkeypatch.setattr(
+        _storage, "get_canvas_connection",
+        lambda *a, **kw: _real_get_connection(str(ace_db)),
+    )
+    monkeypatch.setattr(
+        _storage, "get_connection",
+        lambda *a, **kw: _real_get_connection(str(nova_db)),
+    )
     return ace_db, nova_db
 
 

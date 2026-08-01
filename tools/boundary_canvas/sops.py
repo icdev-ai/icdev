@@ -45,13 +45,13 @@ def _sop_to_dict(row):
 def get_all_sops(sop_type=None, approval_status=None):
     """Return all SOPs, optionally filtered by type and/or approval_status."""
     if sop_type and approval_status:
-        sql = "SELECT * FROM bdc_sops WHERE sop_type = ? AND approval_status = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM bdc_sops WHERE sop_type = %s AND approval_status = %s ORDER BY updated_at DESC"
         params = [sop_type, approval_status]
     elif sop_type:
-        sql = "SELECT * FROM bdc_sops WHERE sop_type = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM bdc_sops WHERE sop_type = %s ORDER BY updated_at DESC"
         params = [sop_type]
     elif approval_status:
-        sql = "SELECT * FROM bdc_sops WHERE approval_status = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM bdc_sops WHERE approval_status = %s ORDER BY updated_at DESC"
         params = [approval_status]
     else:
         sql = "SELECT * FROM bdc_sops ORDER BY updated_at DESC"

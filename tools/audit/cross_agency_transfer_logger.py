@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
 
 log = get_logger(__name__)
 
@@ -40,11 +40,8 @@ def _now() -> str:
 
 
 def _table_exists(conn) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
-        (_TABLE,),
-    ).fetchone()
-    return row is not None
+    # Backend-aware, translation-independent existence probe (pgrt-sweep-06).
+    return table_exists(conn, _TABLE)
 
 
 class CrossAgencyTransferLogger:

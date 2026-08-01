@@ -5,6 +5,7 @@
 const AutoBuilder = (() => {
   let triggers = [], actionTypes = [], operators = [];
   let selectedTrigger = null;
+  let triggerConfig = {};
   let conditions = [];
   let actions = [];
   let savedId = null;
@@ -49,8 +50,9 @@ const AutoBuilder = (() => {
     `).join('');
   }
 
-  function selectTrigger(id) {
+  function selectTrigger(id, config) {
     selectedTrigger = triggers.find(t => t.id === id) || null;
+    triggerConfig = config ? JSON.parse(JSON.stringify(config)) : {};
     renderTriggerPicker();
     if (selectedTrigger) {
       $('at-trigger-selected').style.display = 'block';
@@ -65,13 +67,33 @@ const AutoBuilder = (() => {
           </div>
           <button class="studio-btn studio-btn--ghost studio-btn--sm" style="margin-left:auto;"
                   onclick="AutoBuilder.clearTrigger()">&times;</button>
-        </div>`;
+        </div>
+        ${renderTriggerConfig()}`;
       $('at-trigger-picker').style.display = 'none';
     }
   }
 
+  // Triggers that carry configuration (e.g. external_event names an event
+  // source) declare config_fields; everything else renders nothing.
+  function renderTriggerConfig() {
+    const fields = (selectedTrigger && selectedTrigger.config_fields) || [];
+    if (!fields.length) return '';
+    return `<div class="studio-mt-4" style="display:grid;gap:8px;">
+      ${fields.map(f => `
+        <label style="display:block;">
+          <span class="studio-label">${esc(f.label)}${f.required ? ' *' : ''}</span>
+          <input type="text" class="studio-input" style="width:100%;"
+                 placeholder="${esc(f.placeholder || '')}" value="${esc(triggerConfig[f.name] || '')}"
+                 onchange="AutoBuilder.updateTriggerConfig('${esc(f.name)}', this.value)">
+        </label>`).join('')}
+    </div>`;
+  }
+
+  function updateTriggerConfig(name, val) { triggerConfig[name] = val; }
+
   function clearTrigger() {
     selectedTrigger = null;
+    triggerConfig = {};
     $('at-trigger-selected').style.display = 'none';
     $('at-trigger-picker').style.display = 'block';
     renderTriggerPicker();
@@ -128,7 +150,7 @@ const AutoBuilder = (() => {
   function addAction(typeId) {
     const at = actionTypes.find(a => a.id === typeId);
     if (!at) return;
-    actions.push({ type: typeId, label: at.label, icon: at.icon, color: at.color, config: {} });
+    actions.push({ type: typeId, label: at.label, icon: at.icon, color: at.color, params: at.params || [], config: {} });
     renderActions();
     closeModal('at-action-modal');
     toast(`Action "${at.label}" added`, 'success');
@@ -141,15 +163,25 @@ const AutoBuilder = (() => {
       return;
     }
     container.innerHTML = actions.map((a, i) => `
-      <div class="at-action-item">
+      <div class="at-action-item" style="flex-wrap:wrap;">
         <div class="at-action-item__icon" style="background:${a.color}20;color:${a.color};">${esc(a.icon)}</div>
         <div style="flex:1;">
           <div class="at-action-item__label">${esc(a.label)}</div>
         </div>
         <button class="studio-btn studio-btn--ghost studio-btn--sm" onclick="AutoBuilder.removeAction(${i})">&times;</button>
+        ${(a.params || []).length ? `<div style="flex-basis:100%;display:grid;gap:6px;margin-top:8px;">
+          ${(a.params || []).map(p => `
+            <label style="display:flex;align-items:center;gap:8px;">
+              <span class="studio-text-muted" style="font-size:0.75rem;width:110px;">${esc(p)}</span>
+              <input type="text" class="studio-input" style="flex:1;" value="${esc(a.config[p] || '')}"
+                     onchange="AutoBuilder.updateActionConfig(${i}, '${esc(p)}', this.value)">
+            </label>`).join('')}
+        </div>` : ''}
       </div>
     `).join('');
   }
+
+  function updateActionConfig(idx, key, val) { actions[idx].config[key] = val; }
 
   function removeAction(idx) { actions.splice(idx, 1); renderActions(); }
 
@@ -165,7 +197,7 @@ const AutoBuilder = (() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          trigger: { type: selectedTrigger.id },
+          trigger: { type: selectedTrigger.id, config: triggerConfig },
           conditions,
           actions: actions.map(a => ({ type: a.type, config: a.config })),
           description: `${selectedTrigger.label} → ${actions.length} action(s)`,
@@ -190,11 +222,17 @@ const AutoBuilder = (() => {
       const data = await resp.json();
       $('at-sim-body').innerHTML = `
         <div class="studio-flex studio-gap-3 studio-mb-4">
+          <span class="studio-badge studio-badge--${data.trigger_matched ? 'success' : 'warning'}">
+            Trigger: ${data.trigger_matched ? 'MATCHED' : 'NOT MATCHED'}
+          </span>
           <span class="studio-badge studio-badge--${data.conditions_met ? 'success' : 'warning'}">
             Conditions: ${data.conditions_met ? 'MET' : 'NOT MET'}
           </span>
           <span class="studio-badge studio-badge--info">${(data.actions_preview || []).length} action(s)</span>
         </div>
+        ${data.trigger_reason ? `<div class="studio-text-muted" style="font-size:0.75rem;margin-bottom:12px;">${esc(data.trigger_reason)}</div>` : ''}
+        ${data.sample_event ? `<details style="margin-bottom:12px;"><summary class="studio-text-muted" style="font-size:0.75rem;cursor:pointer;">Sample event</summary>
+          <pre style="font-size:0.7rem;white-space:pre-wrap;">${esc(JSON.stringify(data.sample_event, null, 2))}</pre></details>` : ''}
         ${(data.condition_results || []).map(cr => `
           <div style="font-size:0.8rem;margin-bottom:8px;color:${cr.met ? 'var(--studio-success)' : 'var(--studio-error)'};">
             ${cr.met ? '&#10003;' : '&#10007;'} ${esc(cr.field)} ${esc(cr.operator)} "${esc(cr.expected)}" (actual: "${esc(cr.actual)}")
@@ -204,7 +242,8 @@ const AutoBuilder = (() => {
           <div class="studio-label">Actions that would execute:</div>
           ${(data.actions_preview || []).map(ap => `
             <div class="at-action-item" style="opacity:${ap.would_execute ? 1 : 0.4};">
-              <div style="font-size:0.85rem;color:var(--studio-text-primary);">${esc(ap.type)}</div>
+              <div style="font-size:0.85rem;color:var(--studio-text-primary);">${esc(ap.type)}${
+                ap.workflow_id ? ` &rarr; ${esc(ap.workflow_id)}` : ''}</div>
               <span class="studio-badge studio-badge--${ap.would_execute ? 'success' : 'neutral'}">
                 ${ap.would_execute ? 'Would Execute' : 'Skipped'}
               </span>
@@ -247,12 +286,12 @@ const AutoBuilder = (() => {
       if (!tpl) return;
 
       $('at-name').value = tpl.name;
-      selectTrigger(tpl.trigger.type);
+      selectTrigger(tpl.trigger.type, tpl.trigger.config);
       conditions = JSON.parse(JSON.stringify(tpl.conditions || []));
       renderConditions();
       actions = tpl.actions.map(a => {
         const at = actionTypes.find(t => t.id === a.type) || {};
-        return { type: a.type, label: at.label || a.type, icon: at.icon || '?', color: at.color || '#6b7280', config: a.config || {} };
+        return { type: a.type, label: at.label || a.type, icon: at.icon || '?', color: at.color || '#6b7280', params: at.params || [], config: a.config || {} };
       });
       renderActions();
       closeModal('at-templates-modal');
@@ -323,7 +362,7 @@ const AutoBuilder = (() => {
   }
 
   function createNew() {
-    selectedTrigger = null; conditions = []; actions = []; savedId = null;
+    selectedTrigger = null; triggerConfig = {}; conditions = []; actions = []; savedId = null;
     $('at-name').value = 'Untitled Automation';
     clearTrigger(); renderConditions(); renderActions();
     const tab = document.querySelector('[data-tab="builder"]');
@@ -335,8 +374,8 @@ const AutoBuilder = (() => {
   document.addEventListener('DOMContentLoaded', init);
 
   return {
-    selectTrigger, clearTrigger, addCondition, updateCondition, removeCondition,
-    showActionPicker, addAction, removeAction, save, simulate,
+    selectTrigger, clearTrigger, updateTriggerConfig, addCondition, updateCondition, removeCondition,
+    showActionPicker, addAction, updateActionConfig, removeAction, save, simulate,
     showTemplates, useTemplate, loadSaved, toggleAuto, deleteAuto,
     switchTab, createNew, closeModal,
   };

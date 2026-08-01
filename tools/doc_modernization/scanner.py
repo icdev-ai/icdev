@@ -240,8 +240,11 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
             except Exception:
                 pass
 
+        # Materialize once: the same (text, ChunkRef) list feeds both the finding
+        # scan and the toggle-gated claim extraction below (no second fetch).
+        doc_chunks = _doc_chunks(ev_conn, doc_id, version_id)
         try:
-            for text, chunk_ref in _doc_chunks(ev_conn, doc_id, version_id):
+            for text, chunk_ref in doc_chunks:
                 for pack in packs.values():
                     try:
                         entities = pack.extract(text, chunk_ref)
@@ -317,11 +320,61 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
                 (findings_new, findings_resolved, _now(), run_id),
             )
         conn.commit()
+        # Semantic claim extraction (dmx-claims-02) — toggle-gated (default OFF).
+        # Isolated on its own connection/transaction so a claim failure can never
+        # roll back committed findings. Reached only when the doc actually
+        # re-scanned (the docmod_doc_scan_state skip above returns early for an
+        # unchanged version), so extraction fires once per NEW approved version.
+        _maybe_extract_claims(doc_id, version_id, doc_chunks, tenant_id, classification)
         return {"doc_id": doc_id, "scanned": True, "findings_new": findings_new,
                 "findings_resolved": findings_resolved, "open_findings": open_count}
     finally:
         if own_conn:
             conn.close()
+
+
+def _maybe_extract_claims(doc_id: str, version_id: str, doc_chunks, tenant_id, classification) -> None:
+    """Run toggle-gated claim extraction + lifecycle on an isolated connection.
+
+    A no-op unless ``claims.enabled`` is true (default false): the extractor is
+    not even called. Deterministic-first — the LLM only proposes claim structure;
+    claims land ``pending_review`` (HITL). Air-gap degrades to the rulebook path.
+
+    Three steps, all on an isolated connection so a claim failure can never roll
+    back committed findings (never fatal):
+      1. Extract new claims (idempotent per approved version).
+      2. Phase D linkage — flag ``active`` claims invalidated by the findings
+         just written (the deterministic edge: only a finding row flips a claim).
+      3. Phase D verify — auto-``superseded`` claims whose anchor drifted.
+    """
+    try:
+        cfg = load_config()
+        if not (cfg.get("claims") or {}).get("enabled"):
+            return
+        from .claim_extractor import extract_and_persist_claims
+        from .claim_lifecycle import link_findings_to_claims, verify_claim_anchors
+
+        claims_conn = _connect()
+        try:
+            extract_and_persist_claims(
+                claims_conn, doc_id, version_id, doc_chunks,
+                config=cfg, tenant_id=tenant_id, classification=classification,
+            )
+            # Deterministic linkage + anchor verification run every scan (not only
+            # on a new version): a rulebook/evidence change re-scans this doc,
+            # producing the finding that flags an already-active claim.
+            link_findings_to_claims(claims_conn, doc_id, version_id)
+            chunk_texts = {
+                ref.chunk_link_id: text
+                for text, ref in doc_chunks
+                if getattr(ref, "chunk_link_id", None)
+            }
+            verify_claim_anchors(claims_conn, doc_id, chunk_texts)
+            claims_conn.commit()
+        finally:
+            claims_conn.close()
+    except Exception as exc:  # noqa: BLE001 — claim extraction must never fail a scan
+        logger.warning("docmod: claim extraction failed for %s: %s", doc_id, exc)
 
 
 def scan_collection(collection_id: str | None = None, trigger: str = "manual",

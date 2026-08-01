@@ -66,10 +66,17 @@ def mem_db():
 def patched_db(mem_db):
     """Patch get_connection in mitre_coverage_db to return the in-memory DB.
 
-    Returns a _NoCloseConn wrapper so that each CRUD function's conn.close()
-    call does not tear down the shared in-memory DB.
+    The module authors its SQL with PostgreSQL ``%s`` placeholders and, in
+    production, ``init_db.get_connection`` hands it a translating
+    ``StorageConnection`` (``%s`` -> ``?`` on the SQLite fallback). The fixture
+    must therefore wrap the in-memory connection in a ``StorageConnection`` too —
+    a raw ``sqlite3`` connection raises ``sqlite3.OperationalError: near "%"``.
+    The ``_NoCloseConn`` layer keeps each CRUD function's ``conn.close()`` from
+    tearing down the shared in-memory DB.
     """
-    wrapped = _NoCloseConn(mem_db)
+    from tools.db.storage import StorageConnection
+
+    wrapped = _NoCloseConn(StorageConnection(mem_db, "sqlite"))
 
     import tools.observability_canvas.mitre_coverage_db as mod
 

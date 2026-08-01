@@ -89,7 +89,7 @@ def _gather_pillar_evidence(project_id: str, pillar: str, conn) -> dict:
 
     # Check NIST 800-53 control implementations for this pillar
     if nist_controls:
-        placeholders = ",".join("?" * len(nist_controls))
+        placeholders = ",".join(["%s"] * len(nist_controls))
         rows = conn.execute(
             f"""SELECT control_id, status FROM project_controls
                 WHERE project_id = %s AND control_id IN ({placeholders})""",  # nosec B608 -- table/column names are internal constants, not user input
@@ -113,8 +113,8 @@ def _gather_pillar_evidence(project_id: str, pillar: str, conn) -> dict:
     rows = (
         conn.execute(
             """SELECT evidence_type, status FROM zta_posture_evidence
-           WHERE project_id = ? AND evidence_type IN ({})""".format(  # nosec B608 -- table/column names are internal constants, not user input
-                ",".join("?" * len(evidence_types))
+           WHERE project_id = %s AND evidence_type IN ({})""".format(  # nosec B608 -- table/column names are internal constants, not user input
+                ",".join(["%s"] * len(evidence_types))
             ),
             [project_id] + evidence_types,
         ).fetchall()
@@ -411,6 +411,86 @@ def get_trend(project_id: str, days: int = 90) -> dict:
         }
     finally:
         conn.close()
+
+
+def get_latest_score(project_id: str | None = None) -> dict | None:
+    """Read the most recent persisted ZTA maturity scores for a project.
+
+    Read-only accessor consumed by the ZIG bridge
+    (tools/security_canvas/zig_assessor.py::_try_zta_bridge). It never runs a
+    new assessment — it returns whatever ``score_all_pillars`` last persisted
+    to ``zta_maturity_scores``. The bridge calls this with no arguments and
+    reads ``pillar_scores[<pillar_key>]``, so the returned pillar scores are
+    the raw persisted values in the **0.0–1.0** range (the same scale the
+    scorer stores; the CHECK constraint bounds ``score`` to [0.0, 1.0]).
+
+    Args:
+        project_id: Project to read. When None, the project of the most
+            recently created score row is used (latest assessment wins).
+
+    Returns:
+        Dict of the shape::
+
+            {
+                "project_id": str,
+                "overall_score": float (0.0-1.0),
+                "overall_maturity": str,
+                "pillar_scores": {pillar_key: float 0.0-1.0, ...},
+                "assessed_at": str | None,   # ISO timestamp of latest row
+            }
+
+        or ``None`` when no assessment has ever been persisted.
+    """
+    conn = _get_db()
+    try:
+        if project_id is None:
+            latest = conn.execute(
+                "SELECT project_id FROM zta_maturity_scores "
+                "ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+            if not latest:
+                return None
+            project_id = latest["project_id"]
+
+        rows = conn.execute(
+            """SELECT pillar, score, maturity_level, created_at
+               FROM zta_maturity_scores
+               WHERE project_id = %s
+               ORDER BY created_at ASC""",
+            (project_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return None
+
+    # Later rows (ASC by created_at) overwrite earlier ones, so each pillar
+    # ends up holding its most recent score.
+    latest_by_pillar: dict[str, dict] = {}
+    for r in rows:
+        latest_by_pillar[r["pillar"]] = {
+            "score": float(r["score"]) if r["score"] is not None else 0.0,
+            "maturity_level": r["maturity_level"],
+            "created_at": r["created_at"],
+        }
+
+    pillar_scores = {
+        p: latest_by_pillar[p]["score"] for p in PILLARS if p in latest_by_pillar
+    }
+    overall = latest_by_pillar.get("overall", {})
+    assessed_at = max(
+        (v["created_at"] for v in latest_by_pillar.values() if v["created_at"]),
+        default=None,
+    )
+
+    return {
+        "project_id": project_id,
+        "overall_score": overall.get("score", 0.0),
+        "overall_maturity": overall.get("maturity_level", "traditional"),
+        "pillar_scores": pillar_scores,
+        "assessed_at": assessed_at,
+    }
 
 
 # ---------------------------------------------------------------------------

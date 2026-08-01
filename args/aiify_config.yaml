@@ -25,6 +25,18 @@ confidence_threshold: 0.65  # only register high-confidence AI augmentation cand
 
 scan_depth: full  # options: full | shallow | summary
 
+kanban_promotion:
+  # Auto-promotion of scan opportunities to kanban_tasks. Guards against runaway
+  # seeding (the root cause of the 353 aiify-* branch explosion, penta-aiify-01).
+  # Hard cap on the TOTAL number of tasks auto-created per scan (top + phase
+  # combined). Opportunities beyond the cap are visible in the scan/roadmap but
+  # are NOT auto-seeded onto the board.
+  auto_promote_cap: 10
+  # Status for auto-created tasks. Must be a non-dispatchable/quarantine status
+  # ('suggested') — never 'backlog' (directly dispatchable). HITL review promotes
+  # them onward via /api/send-to-kanban.
+  auto_promote_status: suggested
+
 supported_languages:
   - python
   - java

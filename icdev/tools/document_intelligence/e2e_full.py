@@ -39,15 +39,15 @@ def _grant_roles():
     if not conn.execute("SELECT 1 FROM dic_collections WHERE collection_id='default'").fetchone():
         conn.execute(
             "INSERT INTO dic_collections (collection_id, name, description, classification, tenant_id) "
-            "VALUES ('default','Default Collection','',?,?)", ("CUI", "default"))
+            "VALUES ('default','Default Collection','',%s,%s)", ("CUI", "default"))
         conn.commit()
     for coll in ("net_knowledge", "default"):
         for uid in ("current_user", "net-admin"):
-            if not conn.execute("SELECT 1 FROM dic_team_access WHERE collection_id=? AND user_id=?",
+            if not conn.execute("SELECT 1 FROM dic_team_access WHERE collection_id=%s AND user_id=%s",
                                 (coll, uid)).fetchone():
                 conn.execute(
                     "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, "
-                    "classification, tenant_id) VALUES (?,?,?,?,?,?)",
+                    "classification, tenant_id) VALUES (%s,%s,%s,%s,%s,%s)",
                     (_hid("acc", coll, uid, _now()), coll, uid, "admin", "CUI", "default"))
     conn.commit()
     conn.close()
@@ -187,7 +187,7 @@ def main() -> int:
         # find an agenda item to answer
         from tools.db.storage import get_connection
         conn = get_connection()
-        row = conn.execute("SELECT item_id FROM dic_handoff_items WHERE session_id=? LIMIT 1",
+        row = conn.execute("SELECT item_id FROM dic_handoff_items WHERE session_id=%s LIMIT 1",
                            (sess,)).fetchone()
         conn.close()
         if row:

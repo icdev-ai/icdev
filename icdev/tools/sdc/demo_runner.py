@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 import time
 import uuid
@@ -44,10 +43,11 @@ _PRIMARY_DESIGN_ID = "demo-design-001"
 
 # ── Canvas DB connection ───────────────────────────────────────────────────────
 
-def _canvas_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_CANVAS_DB))
-    conn.row_factory = sqlite3.Row
-    return conn
+def _canvas_conn():
+    # PG-primary via the Security Canvas helper; SQLite is a guarded fallback.
+    from tools.security_canvas.db.init_db import get_connection
+
+    return get_connection()
 
 
 def _main_conn():

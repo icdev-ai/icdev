@@ -17,6 +17,14 @@ tags:
 
 CUI // SP-CTI
 
+> **⚠️ Reference seed — NOT an executable capability (oss2-fix-03 / D3).**
+> This card embeds an AutoGen agent definition, but **AutoGen is not an ICDEV
+> dependency and nothing executes it** — `autogen` is imported nowhere in `tools/`.
+> It is retained as a design reference from the SkillHub seed, not a wired agent.
+> For the capability it describes, use ICDEV's actual implementation: the
+> `/security_audit` command (`.claude/commands/security_audit.md`) or the headless
+> secure workflow (`tools/anvil/secure.py`) and the scanners under `tools/security/`.
+
 ## Overview
 
 Offensive-minded security researcher agent for threat modeling, vuln research, and red teaming.

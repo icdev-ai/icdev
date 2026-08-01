@@ -297,8 +297,8 @@ def _uc_init_table(conn):
         canvas_seeds TEXT DEFAULT NULL,
         workflow_steps TEXT DEFAULT NULL
     )""")
-    # Idempotent column migrations for existing tables
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(use_case_overrides)").fetchall()}
+    # Idempotent column migrations for existing tables (backend-aware probe)
+    from tools.db.storage import column_exists
     for col_def in [
         ("classification",          "TEXT DEFAULT NULL"),
         ("fast_track",              "INTEGER DEFAULT 0"),
@@ -313,7 +313,7 @@ def _uc_init_table(conn):
         ("canvas_seeds",            "TEXT DEFAULT NULL"),
         ("workflow_steps",          "TEXT DEFAULT NULL"),
     ]:
-        if col_def[0] not in existing:
+        if not column_exists(conn, "use_case_overrides", col_def[0]):
             try:
                 conn.execute(f"ALTER TABLE use_case_overrides ADD COLUMN {col_def[0]} {col_def[1]}")
             except Exception:

@@ -42,7 +42,7 @@ import os
 import shutil
 import sys
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, table_exists
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -720,11 +720,10 @@ def check_updates(tenant_id, db_path=None):
 
 def _table_exists(conn, table_name):
     """Check if a table exists in the database."""
-    row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name=%s",
-        (table_name,),
-    ).fetchone()
-    return row["cnt"] > 0
+    # Backend-aware, translation-independent existence probe (pgrt-sweep-06).
+    # The prior "COUNT(*) AS cnt" form bypassed translate_sql rule 14 and raised
+    # on PostgreSQL (sqlite_master does not exist there).
+    return table_exists(conn, table_name)
 
 
 # ---------------------------------------------------------------------------

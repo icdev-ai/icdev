@@ -42,23 +42,29 @@ def handle_rag_search(arguments: Dict[str, Any]) -> Dict[str, Any]:
     top_k = arguments.get("top_k", 5)
     source_type = arguments.get("source_type", "")
     tenant_id = arguments.get("tenant_id", "")
-    child_id = arguments.get("child_id", "")
 
     if not query:
         return {"error": "query is required", "results": []}
 
     try:
         from tools.rag.retriever import RAGRetriever
+        from tools.rag.retriever_common import run_rag_search
 
-        retriever = RAGRetriever(tenant_id=tenant_id)
-        filters = {}
+        # Map MCP-schema params onto RAGRetriever.search()'s real signature
+        # (query, top_k, source_types, project_id, rerank, query_label). The
+        # single ``source_type`` filter becomes the retriever's ``source_types``
+        # list; tenant scoping is applied by run_rag_search constructing the
+        # retriever with ``tenant_id=``. There is no retriever/provenance hook
+        # for a caller-supplied agent/child id (provenance records a fixed
+        # ``agent_id="rag_retriever"``), so ``child_id`` is not advertised.
+        search_kwargs: Dict[str, Any] = {"top_k": top_k}
         if source_type:
-            filters["source_type"] = source_type
-        results = retriever.retrieve(
-            query=query,
-            top_k=top_k,
-            filters=filters if filters else None,
-            agent_id=f"child:{child_id}" if child_id else "",
+            search_kwargs["source_types"] = [source_type]
+        results = run_rag_search(
+            RAGRetriever,
+            query,
+            tenant_id=tenant_id,
+            **search_kwargs,
         )
         return {
             "classification": "CUI // SP-CTI",
@@ -514,18 +520,21 @@ def handle_rag_decompose(arguments: Dict[str, Any]) -> Dict[str, Any]:
             # Try scanner-tier LLM decomposition
             try:
                 from tools.llm.router import LLMRouter
+                from tools.llm.provider import LLMRequest
                 import json as _json
 
                 router = LLMRouter()
                 prompt = _DECOMPOSE_PROMPT.format(query=query)
-                raw = router.complete(
-                    prompt=prompt,
-                    function_name="rag_decompose",
-                    temperature=0.0,
-                    max_tokens=512,
+                resp = router.invoke(
+                    "rag_decompose",
+                    LLMRequest(
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.0,
+                        max_tokens=512,
+                    ),
                 )
                 # Extract JSON array from response
-                text = raw.strip()
+                text = (resp.content or "").strip()
                 start = text.find("[")
                 end = text.rfind("]") + 1
                 if start >= 0 and end > start:
@@ -592,17 +601,20 @@ def _grade_chunk(query: str, chunk_text: str) -> Dict[str, Any]:
     """Grade a single chunk's relevance to the query using scanner-tier LLM."""
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         import json as _json
 
         router = LLMRouter()
         prompt = _CHUNK_GRADE_PROMPT.format(query=query, chunk=chunk_text[:800])
-        raw = router.complete(
-            prompt=prompt,
-            function_name="rag_evaluate",
-            temperature=0.0,
-            max_tokens=80,
+        resp = router.invoke(
+            "rag_evaluate",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=80,
+            ),
         )
-        text = raw.strip()
+        text = (resp.content or "").strip()
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:

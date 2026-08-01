@@ -32,6 +32,16 @@
         </div>
     </nav>
     <main class="main">
+        {# nav-plat-06: the persistent static-reference provenance badge now lives
+           in the shared partial _geosigint_reference_badge.html, which the 7
+           static templates include at the top of their content block. It was
+           moved out of this base wrapper because when the geosigint blueprint
+           mounts under the main dashboard, `{% extends "base.html" %}` resolves to
+           tools/dashboard/templates/base.html (app folder wins over the blueprint
+           folder) and this base.html is shadowed — so a badge carried here never
+           rendered in dashboard mode. The include renders in both modes. Gating
+           stays on `static_reference`, so DB-backed pages (dashboard, map,
+           signals, patterns, graph, sea) still never show it. #}
         {% block content %}{% endblock %}
     </main>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

@@ -115,6 +115,24 @@
 var _mode = 'search';
 var _chatHistory = [];
 
+// Stable per-tab conversation id. sessionStorage (not localStorage) so separate
+// tabs are separate conversations and closing the tab ends the thread.
+function _dicSessionId() {
+  try {
+    var k = 'dic_chat_session_id';
+    var v = window.sessionStorage.getItem(k);
+    if (!v) {
+      v = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : 'dic-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+      window.sessionStorage.setItem(k, v);
+    }
+    return v;
+  } catch (e) {
+    return '';  // private mode / storage blocked -> memory simply stays off
+  }
+}
+
 function setMode(mode) {
   _mode = mode;
   ['search','chat','kg'].forEach(function(m) {
@@ -278,10 +296,13 @@ function runChat(message) {
   document.getElementById('query-input').value = '';
   document.getElementById('chat-thinking').style.display = 'block';
 
+  // Conversational memory is keyed on session_id. The chat POST never sent one,
+  // so blueprint's `if mem_on and session_id:` was always False and follow-up
+  // resolution / turn recording were never reached from any UI. Persist per tab.
   fetch('/document-intelligence/api/chat', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({message: message, collection_id: collection || null, history: _chatHistory.slice(-6)})
+    body: JSON.stringify({message: message, collection_id: collection || null, history: _chatHistory.slice(-6), session_id: _dicSessionId()})
   }).then(function(r) { return r.json(); })
     .then(function(data) {
       document.getElementById('chat-thinking').style.display = 'none';
@@ -303,15 +324,84 @@ function runChat(message) {
         var label = s.doc_title || s.doc_id || 'source';
         return '<a href="' + escHtml(url) + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:#0a2040;color:#4f8ef7;font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid #1a3a60;text-decoration:none;margin:0 2px 4px 0;">' + num + '. ' + escHtml(label) + page + '</a>';
       }).join('');
+      // The badge is driven from the response, never hardcoded. It previously
+      // asserted "CoD-verified" for every ai_assisted answer, on a path where
+      // the verifier never actually ran — claiming verification that did not
+      // happen is worse than claiming none.
+      function chip(bg, fg, text) {
+        return '<span style="background:' + bg + ';color:' + fg + ';font-size:10px;padding:1px 6px;'
+             + 'border-radius:3px;margin-bottom:6px;display:inline-block;">' + text + '</span><br>';
+      }
+      // Per-claim grounding summary. Reports how many sentences are actually
+      // backed by the span they cite — the answer-level badge cannot say that.
+      var cs = data.claim_summary;
+      var claimBar = '';
+      if (cs) {
+        var parts = [];
+        if (cs.supported)   parts.push(cs.supported + ' supported');
+        if (cs.partial)     parts.push(cs.partial + ' partial');
+        if (cs.unsupported) parts.push(cs.unsupported + ' UNSUPPORTED');
+        if (cs.uncited)     parts.push(cs.uncited + ' uncited');
+        if (parts.length) {
+          // Amber whenever any claim failed to bind — the number is the point,
+          // so it must not be styled as reassuring.
+          var bad = cs.unsupported > 0;
+          claimBar = chip(bad ? '#3a1a00' : '#0a2040', bad ? '#fbbf24' : '#4f8ef7',
+                          'claims: ' + parts.join(' · '));
+        }
+      }
+      // Derivation disclosure. A quotation, a paraphrase and a computed figure
+      // all render identically in the answer text, and all three carry the same
+      // well-formed citation. This says which is which, and for computed
+      // figures shows the arithmetic and each operand's source.
+      var ds = data.derivation_summary;
+      var derivBar = '';
+      if (ds && ds.has_derived) {
+        var dc = ds.counts || {};
+        var dparts = [];
+        if (dc['verbatim'])       dparts.push(dc['verbatim'] + ' quoted');
+        if (dc['derived-text'])   dparts.push(dc['derived-text'] + ' synthesized');
+        if (dc['derived-numeric'])dparts.push(dc['derived-numeric'] + ' computed');
+        // Amber when a computed figure has no recoverable derivation — a number
+        // grounded in nothing is exactly what an invented figure looks like.
+        var risky = ds.has_unexplained_numeric;
+        if (dparts.length) {
+          derivBar = chip(risky ? '#3a1a00' : '#0a2040', risky ? '#fbbf24' : '#4f8ef7',
+                          (risky ? '⚠ ' : '') + 'derivation: ' + dparts.join(' · '));
+        }
+        var rows = ((data.derivation || {}).claims || []).filter(function(c) {
+          return c.derivation && c.derivation.kind !== 'verbatim';
+        }).map(function(c) {
+          var d = c.derivation;
+          var srcs = (d.source_ids || []).join(', ');
+          var detail = escHtml(d.description || '');
+          return '<div style="margin:6px 0;padding:6px 8px;background:#08182c;border-left:2px solid '
+               + (d.kind === 'derived-numeric' && !d.formula ? '#fbbf24' : '#1a3a60') + ';">'
+               + '<div style="color:#7fa8d0;font-size:10px;text-transform:uppercase;">'
+               + escHtml(d.label || d.kind) + (srcs ? ' · source ' + escHtml(srcs) : '') + '</div>'
+               + '<div style="color:#a8c8e0;font-size:11px;margin-top:3px;">' + escHtml(c.claim) + '</div>'
+               + '<div style="color:#8fb8d8;font-size:11px;margin-top:3px;">' + detail + '</div>'
+               + (d.quote ? '<div style="color:#6f96b8;font-size:10px;margin-top:3px;font-style:italic;">“'
+                          + escHtml(d.quote) + '”</div>' : '')
+               + '</div>';
+        }).join('');
+        if (rows) {
+          derivBar += '<details style="margin-bottom:6px;"><summary style="color:#4f8ef7;'
+                    + 'font-size:10px;cursor:pointer;">show derivations</summary>' + rows + '</details>';
+        }
+      }
+      var llmUsed = data.mode === 'ai_assisted' || data.mode === 'graphrag';
       var badge = data.abstained
-        ? '<span style="background:#3a1a00;color:#fbbf24;font-size:10px;padding:1px 6px;border-radius:3px;margin-bottom:6px;display:inline-block;">⚠ Insufficient evidence — partial answer</span><br>'
-        : data.mode === 'ai_assisted'
-          ? '<span style="background:#052e16;color:#4ade80;font-size:10px;padding:1px 6px;border-radius:3px;margin-bottom:6px;display:inline-block;">AI-assisted · CoD-verified · cited</span><br>'
-          : '<span style="background:#0a2040;color:#4f8ef7;font-size:10px;padding:1px 6px;border-radius:3px;margin-bottom:6px;display:inline-block;">📎 Grounded · RAG+KG · no LLM</span><br>';
+        ? chip('#3a1a00', '#fbbf24', '⚠ Insufficient evidence — showing cited passages only')
+        : data.verified
+          ? chip('#052e16', '#4ade80', 'AI-assisted · claims verified against sources · cited')
+          : llmUsed
+            ? chip('#3a1a00', '#fbbf24', '⚠ AI-assisted · not verified · check citations')
+            : chip('#0a2040', '#4f8ef7', '📎 Grounded · RAG+KG · no LLM');
 
       thread.innerHTML += '<div style="margin-bottom:14px;">' +
         '<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:2px 8px 8px 8px;padding:12px 14px;max-width:88%;">' +
-        badge + '<span style="color:#a8c8e0;font-size:13px;line-height:1.6;">' + answerHtml + '</span>' +
+        badge + claimBar + derivBar + '<span style="color:#a8c8e0;font-size:13px;line-height:1.6;">' + answerHtml + '</span>' +
         (sourceLinks ? '<div style="margin-top:8px;">Sources: ' + sourceLinks + '</div>' : '') +
         '</div></div>';
       thread.scrollTop = thread.scrollHeight;

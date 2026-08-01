@@ -1,33 +1,30 @@
-"""Tests for the ACE pipeline runner."""
-import importlib
-import pathlib
+# Auto-grader — runner idiom.
+#
+# aca-vv-01: this file used to be a pytest module (def test_*, importlib/subprocess to
+# load the starter from disk). The Academy runner concatenates the learner's code and
+# this grader into ONE script and runs it with `python -I`, so:
+#   * importlib/subprocess are rejected by the sandbox AST allowlist (penta-aca-02),
+#     which made this step impossible to complete; and
+#   * even unblocked, `def test_*` functions are never called by plain python, so it
+#     would have passed everything.
+# The learner's module-level names are already in scope here. Assert on those.
 
+_req = globals().get("PIPELINE_REQUEST")
+assert isinstance(_req, dict), "PIPELINE_REQUEST must be defined as a dict."
+_stages = _req.get("pipeline")
+assert isinstance(_stages, list), "PIPELINE_REQUEST['pipeline'] must be a list."
+assert len(_stages) >= 3, f"A pipeline needs at least 3 stages, found {len(_stages)}."
 
-def _load(tmp_path=None):
-    src = pathlib.Path(__file__).parent / "step2_starter.py"
-    spec = importlib.util.spec_from_file_location("step2_starter", src)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+_valid_roles = {
+    "ai_developer", "agent_developer", "security_analyst",
+    "data_engineer", "devops_engineer", "compliance_officer",
+}
+for _stage in _stages:
+    assert "role" in _stage, f"Stage missing 'role': {_stage}"
+    assert "task" in _stage, f"Stage missing 'task': {_stage}"
+    assert _stage["role"] in _valid_roles, (
+        f"Unknown role {_stage['role']!r}. Valid roles: {sorted(_valid_roles)}"
+    )
 
-
-def test_pipeline_request_has_3_stages(tmp_path):
-    mod = _load(tmp_path)
-    assert len(mod.PIPELINE_REQUEST["pipeline"]) >= 3, "Pipeline needs at least 3 stages"
-
-
-def test_all_stages_have_role_and_task(tmp_path):
-    mod = _load(tmp_path)
-    valid_roles = {
-        "ai_developer", "agent_developer", "security_analyst",
-        "data_engineer", "devops_engineer", "compliance_officer",
-    }
-    for stage in mod.PIPELINE_REQUEST["pipeline"]:
-        assert "role" in stage, f"Stage missing 'role': {stage}"
-        assert "task" in stage, f"Stage missing 'task': {stage}"
-        assert stage["role"] in valid_roles, f"Unknown role: {stage['role']}"
-
-
-def test_run_pipeline_defined(tmp_path):
-    mod = _load(tmp_path)
-    assert callable(getattr(mod, "run_pipeline", None)), "run_pipeline() function must be defined"
+assert callable(globals().get("run_pipeline")), "run_pipeline() must be defined."
+print("PASS: a multi-role pipeline with valid roles and a runner.")

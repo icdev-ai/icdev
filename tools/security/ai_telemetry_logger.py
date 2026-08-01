@@ -71,6 +71,15 @@ class AITelemetryLogger:
         entry_id = str(uuid.uuid4())
         logged_at = datetime.now(timezone.utc).isoformat()
 
+        # The connection is closed in `finally`, and rolled back before that on
+        # the failure path. Without both, a failing INSERT — a type SQLite will
+        # not bind, a schema drift, a locked file — returns None through the
+        # `except` below while abandoning the connection mid-transaction. SQLite
+        # opened an implicit BEGIN on the first DML, so the abandoned connection
+        # keeps a RESERVED write lock on the shared data/icdev.db until the
+        # object is garbage collected, and every other writer blocks on it. The
+        # caller sees only `None`, which is indistinguishable from "no DB".
+        conn = None
         try:
             conn = get_connection(db_path=str(self._db_path))
             conn.execute(
@@ -103,10 +112,32 @@ class AITelemetryLogger:
                 ),
             )
             conn.commit()
-            conn.close()
             return entry_id
         except Exception:
+            self._rollback_quietly(conn)
             return None
+        finally:
+            self._close_quietly(conn)
+
+    @staticmethod
+    def _rollback_quietly(conn) -> None:
+        """Release an open transaction. Never raises — callers are on a failure path."""
+        if conn is None:
+            return
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 - the connection may already be dead
+            pass
+
+    @staticmethod
+    def _close_quietly(conn) -> None:
+        """Close *conn* if it was opened. Never raises."""
+        if conn is None:
+            return
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 - closing twice, or after a fatal error
+            pass
 
     def detect_anomalies(self, window_hours: int = 24) -> List[Dict]:
         """Detect anomalies in AI usage within a time window.
@@ -125,6 +156,7 @@ class AITelemetryLogger:
 
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
 
+        conn = None
         try:
             conn = get_connection(db_path=str(self._db_path))
 
@@ -200,10 +232,10 @@ class AITelemetryLogger:
                         "threshold": 0,
                     }
                 )
-
-            conn.close()
         except Exception:
             pass
+        finally:
+            self._close_quietly(conn)
 
         return anomalies
 
@@ -233,6 +265,7 @@ class AITelemetryLogger:
         baseline_start = (now - timedelta(hours=baseline_hours + window_hours)).isoformat()
         baseline_end = (now - timedelta(hours=window_hours)).isoformat()
 
+        conn = None
         try:
             conn = get_connection(db_path=str(self._db_path))
 
@@ -351,10 +384,10 @@ class AITelemetryLogger:
                                 "threshold_sigma": threshold_sigma,
                             }
                         )
-
-            conn.close()
         except Exception:
             pass
+        finally:
+            self._close_quietly(conn)
 
         return alerts
 
@@ -374,6 +407,7 @@ class AITelemetryLogger:
 
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
+        conn = None
         try:
             conn = get_connection(db_path=str(self._db_path))
 
@@ -421,8 +455,6 @@ class AITelemetryLogger:
                     "cost_usd": round(mrow[2], 6),
                 }
 
-            conn.close()
-
             return {
                 "total_requests": row[0],
                 "total_input_tokens": row[1],
@@ -438,6 +470,8 @@ class AITelemetryLogger:
             }
         except Exception as e:
             return {"error": str(e)}
+        finally:
+            self._close_quietly(conn)
 
 
 def main():

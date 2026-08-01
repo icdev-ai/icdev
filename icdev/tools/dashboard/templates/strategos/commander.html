@@ -142,6 +142,11 @@
 <script>
 let _picture = null;
 
+// nav-sec-07: escape signal/LLM-derived strings before innerHTML interpolation.
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 async function loadPicture() {
     try {
         const res = await fetch('/api/strategos/commander/picture');
@@ -204,14 +209,14 @@ function renderPicture(pic) {
         document.getElementById('ccir-alerts').innerHTML = alerts.map(a => `
             <div class="ccir-alert">
                 <div style="font-size:.82rem;font-weight:600;color:var(--text-primary)">
-                    ${a.topic || 'CCIR'}
+                    ${esc(a.topic || 'CCIR')}
                 </div>
                 <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">
-                    Source: ${a.signal_source || '—'} &nbsp;|&nbsp;
+                    Source: ${esc(a.signal_source || '—')} &nbsp;|&nbsp;
                     Score: ${((a.match_score || 0) * 100).toFixed(0)}% &nbsp;|&nbsp;
-                    ${(a.created_at || '').slice(0, 16)}
+                    ${esc((a.created_at || '').slice(0, 16))}
                 </div>
-                <button onclick="resolveAlert('${a.id}')"
+                <button onclick="resolveAlert('${esc(a.id)}')"
                         style="margin-top:.35rem;font-size:.72rem;padding:.2rem .5rem;border-radius:3px;
                                border:1px solid rgba(233,69,96,.3);background:transparent;
                                color:#e94560;cursor:pointer">
@@ -226,13 +231,13 @@ function renderPicture(pic) {
     if (intsum) {
         document.getElementById('intsum-panel').innerHTML = `
             <div style="font-size:.82rem;font-weight:500;color:var(--text-primary);margin-bottom:.4rem">
-                ${(intsum.theater || 'global').replace(/_/g,' ').toUpperCase()}
+                ${esc((intsum.theater || 'global').replace(/_/g,' ').toUpperCase())}
                 &nbsp;<span style="font-size:.72rem;font-weight:400;color:var(--text-muted)">
-                    ${(intsum.created_at || '').slice(0,16)}
+                    ${esc((intsum.created_at || '').slice(0,16))}
                 </span>
             </div>
             <div style="font-size:.8rem;color:var(--text-secondary);line-height:1.55">
-                ${intsum.assessment_snippet || '<em>No assessment paragraph available.</em>'}
+                ${intsum.assessment_snippet ? esc(intsum.assessment_snippet) : '<em>No assessment paragraph available.</em>'}
             </div>
         `;
     } else {
@@ -244,8 +249,8 @@ function renderPicture(pic) {
     const sigHtml = Object.entries(activity).map(([src, cnt]) => `
         <div style="display:flex;justify-content:space-between;align-items:center;
                     padding:.35rem 0;border-bottom:1px solid var(--border-color);font-size:.85rem">
-            <span style="color:var(--text-secondary)">${src}</span>
-            <span style="font-weight:600;color:var(--text-primary)">${cnt}</span>
+            <span style="color:var(--text-secondary)">${esc(src)}</span>
+            <span style="font-weight:600;color:var(--text-primary)">${esc(cnt)}</span>
         </div>
     `).join('');
     document.getElementById('signal-activity').innerHTML =
@@ -256,8 +261,8 @@ function renderPicture(pic) {
     const orbatHtml = Object.entries(orbat).map(([side, cnt]) => `
         <div style="display:flex;justify-content:space-between;align-items:center;
                     padding:.35rem 0;border-bottom:1px solid var(--border-color);font-size:.85rem">
-            <span style="color:var(--text-secondary);text-transform:capitalize">${side}</span>
-            <span style="font-weight:600;color:var(--text-primary)">${cnt} units</span>
+            <span style="color:var(--text-secondary);text-transform:capitalize">${esc(side)}</span>
+            <span style="font-weight:600;color:var(--text-primary)">${esc(cnt)} units</span>
         </div>
     `).join('');
     document.getElementById('orbat-summary').innerHTML =

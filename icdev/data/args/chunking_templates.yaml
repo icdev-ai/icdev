@@ -1,0 +1,233 @@
+# [TEMPLATE: CUI // SP-CTI]
+# Document-type chunking templates for RAG ingestion (oss-chunk-01).
+#
+# Activates the `chunking` key that already exists on entries in
+# tools/rag/source_registry.py.  A registry entry's `chunking` value names a
+# template below; tools/rag/chunker.py::chunk_content dispatches on it.
+#
+# Change behaviour here, not in code.
+#
+# ---------------------------------------------------------------------------
+# Schema
+# ---------------------------------------------------------------------------
+#   default_template   Template used when none is supplied (must exist below).
+#
+#   templates.<name>:
+#     description        Human-readable purpose.
+#     strategy           One of:
+#                          sliding_window  fixed-size window with overlap
+#                                          (today's behaviour, unchanged)
+#                          structural      new chunk at each boundary match
+#                          row_groups      N body rows per chunk, header repeated
+#     boundary_patterns  [structural] Python regexes, matched with re.MULTILINE.
+#                        A new chunk starts at the START of every match.
+#                        Text before the first match becomes its own chunk.
+#     oversize_policy    [structural/row_groups] What to do when one item
+#                        exceeds max_chunk_tokens:
+#                          keep   emit it whole and flag it (never split)
+#                          split  window it with the sliding-window splitter
+#     max_chunk_tokens   Token ceiling for one item (est. 4 chars/token).
+#     header_lines       [row_groups] Leading lines repeated on every chunk.
+#     rows_per_group     [row_groups] Body rows per chunk.
+#     detect             Auto-detection hints. SUGGESTION ONLY — never applied
+#                        silently; surfaced to an operator who chooses.
+#       patterns           Regexes scanned against the content.
+#       min_score          Minimum score before the template is suggested.
+
+version: 1
+default_template: general
+
+templates:
+
+  # -------------------------------------------------------------------------
+  # Default — today's behaviour, byte-for-byte unchanged.
+  # -------------------------------------------------------------------------
+  general:
+    description: >-
+      Sliding window with 10% overlap snapped to a sentence boundary, chunk
+      size adaptively clamped to [150, 2000] tokens. The historical default.
+    strategy: sliding_window
+
+  # -------------------------------------------------------------------------
+  # NIST 800-53 / OSCAL control catalogs — one chunk per control.
+  # -------------------------------------------------------------------------
+  oscal_catalog:
+    description: >-
+      One chunk per security control. A control is never split, however long
+      its guidance text is, because retrieval that returns half a control is
+      worse than one oversized chunk.
+    strategy: structural
+    oversize_policy: keep
+    max_chunk_tokens: 2000
+    boundary_patterns:
+      # Markdown/plain heading naming a control: "AC-2", "SC-7(4)", "## AU-12"
+      - '^[ \t]*(?:#{1,6}[ \t]*)?(?:AC|AT|AU|CA|CM|CP|IA|IR|MA|MP|PE|PL|PM|PS|PT|RA|SA|SC|SI|SR)-\d+(?:\s*\(\s*\d+\s*\))?(?=[ \t.:)\-–—]|$)'
+      # OSCAL JSON/YAML control object: "id: ac-2" / "control-id": "ac-2"
+      - '^[ \t]*"?(?:control[-_]?id|id)"?[ \t]*[:=][ \t]*"?(?:ac|at|au|ca|cm|cp|ia|ir|ma|mp|pe|pl|pm|ps|pt|ra|sa|sc|si|sr)-\d+'
+    detect:
+      min_score: 3
+      patterns:
+        - '(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:AC|AU|CM|IA|SC|SI)-\d+(?:\s*\(\s*\d+\s*\))?[ \t.:)]'
+        - '(?i)\bNIST\s+SP\s+800-53\b'
+        - '(?i)\bOSCAL\b'
+        - '(?i)"control[-_]?id"'
+        - '(?i)\bcontrol\s+enhancements?\b'
+
+  # -------------------------------------------------------------------------
+  # DISA STIG checklists — one chunk per rule.
+  # -------------------------------------------------------------------------
+  stig_checklist:
+    description: >-
+      One chunk per STIG rule (V-key / Rule ID). Check text, fix text and
+      severity stay attached to their rule.
+    strategy: structural
+    oversize_policy: keep
+    max_chunk_tokens: 2000
+    boundary_patterns:
+      - '^[ \t]*(?:#{1,6}[ \t]*)?V-\d{5,6}\b'
+      - '^[ \t]*(?:#{1,6}[ \t]*)?SV-\d+r\d+_rule\b'
+      - '^[ \t]*"?(?:Group[ _]?ID|Vuln[ _]?Num|Rule[ _]?ID|STIG[ _]?ID|group[-_]?id|rule[-_]?id)"?[ \t]*[:=]'
+    detect:
+      min_score: 3
+      patterns:
+        - '(?m)^[ \t]*V-\d{5,6}\b'
+        - '\bSV-\d+r\d+_rule\b'
+        - '(?i)\b(?:Check\s+Text|Fix\s+Text|Discussion)\s*:'
+        - '(?i)\bSTIG\b'
+        - '(?i)\bCAT\s*(?:I{1,3})\b'
+
+  # -------------------------------------------------------------------------
+  # RFP / SOW — Section L and Section M boundaries.
+  # -------------------------------------------------------------------------
+  rfp_sow:
+    description: >-
+      Split on solicitation section boundaries (Sections A-M, and the L.x / M.x
+      subsection numbering used for instructions and evaluation criteria) so an
+      instruction never gets separated from the criterion it maps to.
+    strategy: structural
+    oversize_policy: split
+    max_chunk_tokens: 2000
+    boundary_patterns:
+      - '^[ \t]*(?:#{1,6}[ \t]*)?SECTION[ \t]+[A-M]\b'
+      - '^[ \t]*(?:#{1,6}[ \t]*)?[LM][ \t]*[-–—:][ \t]*\S'
+      - '^[ \t]*(?:#{1,6}[ \t]*)?[LM]\.\d+(?:\.\d+)*[ \t.)]'
+      - '^[ \t]*(?:#{1,6}[ \t]*)?(?:ATTACHMENT|EXHIBIT|APPENDIX)[ \t]+[A-Z0-9]'
+    detect:
+      min_score: 3
+      patterns:
+        - '(?im)^[ \t]*SECTION[ \t]+[LM]\b'
+        - '(?im)^[ \t]*[LM]\.\d+'
+        - '(?i)\b(?:instructions\s+to\s+offerors|evaluation\s+factors\s+for\s+award)\b'
+        - '(?i)\b(?:statement\s+of\s+work|performance\s+work\s+statement|SOW|PWS)\b'
+        - '(?i)\bofferor\b'
+
+  # -------------------------------------------------------------------------
+  # Contracts — numbered-clause boundaries.
+  # -------------------------------------------------------------------------
+  contract:
+    description: >-
+      One chunk per numbered clause (1., 2.1, ARTICLE IV, FAR 52.xxx-xx) so a
+      clause and its subparagraphs are retrieved together.
+    strategy: structural
+    oversize_policy: split
+    max_chunk_tokens: 2000
+    boundary_patterns:
+      - '^[ \t]*(?:#{1,6}[ \t]*)?(?:ARTICLE|CLAUSE|SECTION)[ \t]+(?:[IVXLC]+|\d+)\b'
+      # Sub-clause "2.1" / "2.1.3" — trailing punctuation optional.
+      - '^[ \t]*(?:#{1,6}[ \t]*)?\d+(?:\.\d+)+[.)]?[ \t]+\S'
+      # Top-level "3." / "3)" — punctuation required, so stray numerals in a
+      # table or a dollar figure do not start a clause.
+      - '^[ \t]*(?:#{1,6}[ \t]*)?\d+[.)][ \t]+\S'
+      - '^[ \t]*(?:#{1,6}[ \t]*)?(?:FAR|DFARS)?[ \t]*52\.\d{3}-\d+\b'
+    detect:
+      min_score: 3
+      patterns:
+        - '(?im)^[ \t]*ARTICLE[ \t]+(?:[IVXLC]+|\d+)\b'
+        - '(?m)\b52\.2\d{2}-\d+\b'
+        - '(?i)\b(?:the\s+parties|hereinafter|shall\s+be\s+deemed|in\s+witness\s+whereof)\b'
+        - '(?i)\b(?:contracting\s+officer|period\s+of\s+performance)\b'
+        - '(?im)^[ \t]*\d+\.\d+[ \t]+[A-Z]'
+
+  # -------------------------------------------------------------------------
+  # SOPs / runbooks — numbered-step boundaries.
+  # -------------------------------------------------------------------------
+  sop_runbook:
+    description: >-
+      One chunk per procedure step. Steps are short, so a step keeps its
+      command block and expected output rather than being windowed mid-command.
+    strategy: structural
+    oversize_policy: split
+    max_chunk_tokens: 2000
+    boundary_patterns:
+      - '^[ \t]*(?:#{1,6}[ \t]*)?(?:Step|STEP)[ \t]+\d+\b'
+      - '^[ \t]*(?:#{1,6}[ \t]*)?\d+[.)][ \t]+\S'
+      - '^[ \t]*(?:#{1,6}[ \t]*)?(?:Procedure|Prerequisites?|Rollback|Verification|Escalation)\b'
+    detect:
+      min_score: 3
+      patterns:
+        - '(?im)^[ \t]*Step[ \t]+\d+\b'
+        - '(?i)\b(?:runbook|standard\s+operating\s+procedure|SOP)\b'
+        - '(?i)\b(?:prerequisites?|rollback|verification\s+steps?)\b'
+        - '(?im)^[ \t]*\d+[.)][ \t]+[A-Z]'
+
+  # -------------------------------------------------------------------------
+  # Slide decks — one chunk per slide.
+  # -------------------------------------------------------------------------
+  slide_deck:
+    description: >-
+      One chunk per slide. Slides are self-contained units; merging two slides
+      into one window mixes unrelated talking points.
+    strategy: structural
+    oversize_policy: keep
+    max_chunk_tokens: 2000
+    boundary_patterns:
+      - '^[ \t]*(?:#{1,6}[ \t]*)?(?:Slide|SLIDE)[ \t]*[#]?[ \t]*\d+\b'
+      - '^[ \t]*-{3,}[ \t]*$'
+      - '\f'
+    detect:
+      min_score: 2
+      patterns:
+        - '(?im)^[ \t]*Slide[ \t]*#?[ \t]*\d+\b'
+        - '\f'
+        - '(?i)\b(?:speaker\s+notes|presenter\s+notes)\b'
+        - '(?im)^[ \t]*-{3,}[ \t]*$'
+
+  # -------------------------------------------------------------------------
+  # Spreadsheets / CSV exports — row groups with header repetition.
+  # -------------------------------------------------------------------------
+  spreadsheet:
+    description: >-
+      Fixed groups of body rows with the header row repeated on every chunk, so
+      a retrieved row group is still interpretable without its neighbours.
+    strategy: row_groups
+    oversize_policy: split
+    max_chunk_tokens: 2000
+    header_lines: 1
+    rows_per_group: 25
+    detect:
+      min_score: 2
+      patterns:
+        - '(?m)^[^\n,]*,[^\n,]*,[^\n,]*,'
+        - '(?m)^[^\n|]*\|[^\n|]*\|[^\n|]*\|'
+        - '(?m)^[^\n\t]*\t[^\n\t]*\t'
+
+  # -------------------------------------------------------------------------
+  # Canvas sources — the two values the source registry already carries.
+  # -------------------------------------------------------------------------
+  # These existed as dead `chunking` values in source_registry.py. They are
+  # defined here so the registry key resolves instead of falling back with a
+  # warning. Behaviour is deliberately identical to `general` for now: naming
+  # them activates the key and makes the choice auditable WITHOUT silently
+  # changing how already-ingested canvas content is split. Give them real
+  # structural boundaries when canvas graph/assessment shapes are stable.
+  canvas_graph:
+    description: >-
+      Design-canvas graph payloads (nodes/edges JSON plus narrative). Currently
+      sliding-window; recorded on each chunk so the choice is visible.
+    strategy: sliding_window
+
+  canvas_assessment:
+    description: >-
+      Design-canvas assessment/compliance findings. Currently sliding-window;
+      recorded on each chunk so the choice is visible.
+    strategy: sliding_window

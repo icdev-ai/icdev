@@ -2,6 +2,8 @@
 import pathlib
 import sqlite3
 
+import pytest
+
 from tools.iqe.ast_nodes import AttrRef, BinOp, ForeachNode, Literal, SelectNode
 from tools.iqe.executor import Executor
 from tools.iqe.parser import parse
@@ -11,6 +13,22 @@ _QUERY_DIR = pathlib.Path(__file__).parent.parent / "context" / "iqe" / "queries
 
 def _read(name: str) -> str:
     return (_QUERY_DIR / name).read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def mem_conn():
+    """A scratch in-memory DB that is closed when the test ends.
+
+    These tests seed rows and never commit, so a `sqlite3.connect()` opened
+    inline in the test body finishes holding an implicit write transaction —
+    which is what the transaction-leak guard in conftest.py fails on (tsh-leak-01).
+    Closing here ends the transaction with the connection.
+    """
+    conn = sqlite3.connect(":memory:")
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 # 1 — vendor_inventory -------------------------------------------------------
@@ -97,7 +115,7 @@ def test_capacity_threshold_parses():
 
 # 6 — routing_loops ----------------------------------------------------------
 
-def test_routing_loops_parses_and_executes():
+def test_routing_loops_parses_and_executes(mem_conn):
     q = parse(_read("routing_loops.iqe"))
     assert isinstance(q, ForeachNode)
     assert q.var == "r"
@@ -110,7 +128,7 @@ def test_routing_loops_parses_and_executes():
     fields = [f.parts[-1] for f in q.select.fields]
     assert "hop_count" in fields
     assert "prefix" in fields
-    conn = sqlite3.connect(":memory:")
+    conn = mem_conn
     conn.execute(
         "CREATE TABLE routes"
         " (device TEXT, prefix TEXT, next_hop TEXT, hop_count INTEGER, protocol TEXT)"
@@ -131,7 +149,7 @@ def test_routing_loops_parses_and_executes():
 
 # 7 — mtu_mismatch -----------------------------------------------------------
 
-def test_mtu_mismatch_parses_and_executes():
+def test_mtu_mismatch_parses_and_executes(mem_conn):
     q = parse(_read("mtu_mismatch.iqe"))
     assert isinstance(q, ForeachNode)
     assert q.var == "i"
@@ -145,7 +163,7 @@ def test_mtu_mismatch_parses_and_executes():
     fields = [f.parts[-1] for f in q.select.fields]
     assert "mtu" in fields
     assert "peer_mtu" in fields
-    conn = sqlite3.connect(":memory:")
+    conn = mem_conn
     conn.execute(
         "CREATE TABLE interfaces"
         " (device TEXT, name TEXT, mtu INTEGER, peer_device TEXT, peer_mtu INTEGER)"
@@ -165,7 +183,7 @@ def test_mtu_mismatch_parses_and_executes():
 
 # 8 — vlan_coverage ----------------------------------------------------------
 
-def test_vlan_coverage_parses_and_executes():
+def test_vlan_coverage_parses_and_executes(mem_conn):
     q = parse(_read("vlan_coverage.iqe"))
     assert isinstance(q, ForeachNode)
     assert q.var == "v"
@@ -178,7 +196,7 @@ def test_vlan_coverage_parses_and_executes():
     fields = [f.parts[-1] for f in q.select.fields]
     assert "vlan_id" in fields
     assert "active_ports" in fields
-    conn = sqlite3.connect(":memory:")
+    conn = mem_conn
     conn.execute(
         "CREATE TABLE vlans"
         " (vlan_id INTEGER, name TEXT, active_ports INTEGER, site TEXT, tagged_devices TEXT)"
@@ -199,7 +217,7 @@ def test_vlan_coverage_parses_and_executes():
 
 # 9 — acl_drift --------------------------------------------------------------
 
-def test_acl_drift_parses_and_executes():
+def test_acl_drift_parses_and_executes(mem_conn):
     q = parse(_read("acl_drift.iqe"))
     assert isinstance(q, ForeachNode)
     assert q.var == "a"
@@ -212,7 +230,7 @@ def test_acl_drift_parses_and_executes():
     fields = [f.parts[-1] for f in q.select.fields]
     assert "acl_name" in fields
     assert "status" in fields
-    conn = sqlite3.connect(":memory:")
+    conn = mem_conn
     conn.execute(
         "CREATE TABLE acl_rules"
         " (device TEXT, acl_name TEXT, rule_id INTEGER, action TEXT, status TEXT)"
@@ -233,7 +251,7 @@ def test_acl_drift_parses_and_executes():
 
 # 10 — bgp_convergence -------------------------------------------------------
 
-def test_bgp_convergence_parses_and_executes():
+def test_bgp_convergence_parses_and_executes(mem_conn):
     q = parse(_read("bgp_convergence.iqe"))
     assert isinstance(q, ForeachNode)
     assert q.var == "p"
@@ -246,7 +264,7 @@ def test_bgp_convergence_parses_and_executes():
     fields = [f.parts[-1] for f in q.select.fields]
     assert "peer_ip" in fields
     assert "convergence_sec" in fields
-    conn = sqlite3.connect(":memory:")
+    conn = mem_conn
     conn.execute(
         "CREATE TABLE bgp_peers"
         " (device TEXT, peer_ip TEXT, local_as INTEGER, remote_as INTEGER,"

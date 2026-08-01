@@ -260,6 +260,20 @@ class LLMRouter:
     _degraded_tier2_probed_at: Dict[str, float] = {}
     _DEGRADATION_PROBE_INTERVAL_SECONDS: float = 300.0  # 5 minutes
 
+    # Embedding providers that failed their availability probe — the same
+    # circuit-breaker idea applied to `embeddings.default_chain`.
+    #
+    # Without this, a chain like [openai-embed, gemini-embed, nomic-embed-local]
+    # re-probes BOTH cloud providers on every cold process before reaching the
+    # local one. Measured on this machine with an invalid OpenAI key: ~12s of
+    # failing round-trips ahead of a 0.06s local embed, paid again by every
+    # dashboard restart, CLI invocation and worker process.
+    #
+    # Persisted like _degraded_tier2_* so the knowledge survives process exit;
+    # a short TTL means a repaired credential recovers on its own.
+    _embedding_unavailable_at: Dict[str, float] = {}
+    _EMBEDDING_UNAVAILABLE_TTL_SECONDS: float = 900.0  # 15 minutes
+
     def __init__(self, config_path=None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config: Dict = {}
@@ -272,6 +286,7 @@ class LLMRouter:
         self._load_config()
         self._maybe_activate_cli_bridge()
         self._load_degraded_tier2_state()
+        self._load_embedding_unavailable()
 
     # -------------------------------------------------------------------
     # Dual-model mode (RTX 4060 Ti 8GB VRAM — 2 models resident)
@@ -469,6 +484,71 @@ class LLMRouter:
         except Exception:
             pass  # Best-effort persistence
 
+    # -------------------------------------------------------------------
+    # Embedding availability circuit-breaker
+    # -------------------------------------------------------------------
+    _EMBEDDING_STATE_FILENAME = "llm_embedding_unavailable.json"
+
+    @classmethod
+    def _embedding_state_path(cls):
+        return BASE_DIR / "data" / cls._EMBEDDING_STATE_FILENAME
+
+    @classmethod
+    def _load_embedding_unavailable(cls) -> None:
+        """Load the persisted set of embedding providers that failed probing."""
+        try:
+            path = cls._embedding_state_path()
+            if path.exists():
+                with open(path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                loaded = state.get("unavailable_at", {})
+                if isinstance(loaded, dict):
+                    cls._embedding_unavailable_at = {
+                        str(k): float(v) for k, v in loaded.items()
+                    }
+        except Exception:  # noqa: BLE001 - state is an optimisation, never a gate
+            pass
+
+    @classmethod
+    def _save_embedding_unavailable(cls) -> None:
+        try:
+            path = cls._embedding_state_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"unavailable_at": cls._embedding_unavailable_at}, f, indent=2)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @classmethod
+    def _embedding_recently_failed(cls, model_name: str) -> bool:
+        """True when ``model_name`` failed a probe inside the TTL.
+
+        Time-boxed rather than permanent: a provider marked dead forever would
+        make a fixed API key look like it changed nothing.
+        """
+        ts = cls._embedding_unavailable_at.get(model_name)
+        if ts is None:
+            return False
+        if (time.time() - ts) >= cls._EMBEDDING_UNAVAILABLE_TTL_SECONDS:
+            cls._embedding_unavailable_at.pop(model_name, None)
+            return False
+        return True
+
+    @classmethod
+    def _mark_embedding_unavailable(cls, model_name: str) -> None:
+        cls._embedding_unavailable_at[model_name] = time.time()
+        cls._save_embedding_unavailable()
+
+    @classmethod
+    def reset_embedding_availability(cls) -> None:
+        """Forget every recorded embedding failure and re-probe on next use.
+
+        For callers that have just fixed a credential and do not want to wait
+        out the TTL (e.g. a settings page that saved a new API key).
+        """
+        cls._embedding_unavailable_at = {}
+        cls._save_embedding_unavailable()
+
     def _load_degraded_tier2_state(self) -> None:
         """Load degraded tier2 state from persistent JSON file."""
         try:
@@ -595,6 +675,27 @@ class LLMRouter:
         if not provider_cfg:
             logger.warning("Provider '%s' not found in config", provider_name)
             return None
+
+        # LPX (lpx-proxy-03): when the opt-in LLM proxy gateway is enabled,
+        # redirect cloud providers' base_url to the proxy and swap in a virtual
+        # key. No-op (default) when ICDEV_LLM_PROXY_ENABLED is unset, and never
+        # touches ollama/bedrock. Distinct from proxy_resolver's HTTPS_PROXY.
+        try:
+            from tools.llm.proxy_gateway import apply_gateway_to_provider_cfg
+
+            provider_cfg = apply_gateway_to_provider_cfg(provider_name, provider_cfg)
+        except Exception as exc:  # pragma: no cover - defensive import guard
+            logger.debug("LLM proxy gateway resolution skipped: %s", exc)
+
+        # LPX (lpx-keys-04): a per-person LOCAL CANVAS COPY must fail CLOSED with a
+        # clear message when it has no virtual key — never silently fall back to a
+        # real provider key. This runs OUTSIDE the try/except above on purpose so
+        # LocalCopyEgressError is NOT swallowed. apply_gateway_to_provider_cfg has
+        # already forced api_key_env to the virtual key, so even a swallowed raise
+        # cannot leak a real key. No-op unless ICDEV_LLM_LOCAL_COPY is truthy.
+        from tools.llm.proxy_gateway import enforce_local_copy_egress
+
+        enforce_local_copy_egress(provider_cfg)
 
         ptype = provider_cfg.get("type", "")
         instance = None
@@ -1982,8 +2083,13 @@ class LLMRouter:
                             project_id=getattr(request, "project_id", None),
                             model_id=getattr(response, "model_id", model_id),
                         )
-                except Exception:
-                    pass  # Best-effort — never block on budget recording
+                except Exception as exc:
+                    # Best-effort — never block a completed LLM call on budget
+                    # bookkeeping. But log it: a bare `pass` here hid a schema
+                    # mismatch that made every insert fail, so
+                    # module_budget_usage stayed empty and budget enforcement
+                    # silently read a table that could never fill.
+                    logger.warning("Module budget recording failed: %s", exc)
 
                 # D-CACHE-5: Store successful response in cache
                 self._cache_store(function, request, response, model_id)
@@ -2096,13 +2202,44 @@ class LLMRouter:
         "unknown model" fails closed — so a perfectly good LOCAL model gets refused
         and the call dies. Fails safe, but still broken.
         """
+        # CUI egress gate (lpx-egress-02): the shared LLM proxy is a NEW cloud
+        # egress path. Independently of the general routing-policy threshold,
+        # classified/controlled content must never SILENTLY traverse the proxy to
+        # a cloud provider. This check is invoke-time (it reads the live request's
+        # classification, unavailable at cached-provider construction) and only
+        # fires when the proxy WOULD carry this provider — otherwise a no-op. A
+        # refusal is raised as ForceLocalViolation so the chain falls back to a
+        # local model exactly like any other egress refusal.
+        # proxy_gateway is stdlib-only and already imported at provider
+        # construction; calling it here cannot introduce a new failure mode. It is
+        # deliberately NOT wrapped in a swallow-all except — a gate that fails open
+        # is not a gate. Any error propagates as a call failure (fail closed).
+        from tools.llm.proxy_gateway import proxy_egress_classification_block
+
+        providers = self._config.get("providers", {})
+        provider_name = (model_cfg or {}).get("provider", "")
+        provider_cfg = providers.get(provider_name, {}) if provider_name else {}
+        _proxy_block = proxy_egress_classification_block(
+            provider_cfg, getattr(request, "classification", None)
+        )
+        if _proxy_block:
+            logger.warning(
+                "proxy_egress[%s]: REFUSED model '%s' — %s",
+                function or "<no function>", model_id, _proxy_block,
+            )
+            raise ForceLocalViolation(
+                f"Refusing to send content to '{model_id}' via the LLM proxy: {_proxy_block}",
+                function=function or "",
+                model=model_id,
+                rule="proxy_cui_egress",
+            )
+
         from tools.llm.routing_policy import resolve as _resolve_policy
 
         decision = _resolve_policy(function, request, self._config)
         if not decision.local_only:
             return
 
-        provider_name = (model_cfg or {}).get("provider", "")
         if _provider_is_local_only(provider_name, self._config.get("providers", {})):
             return
 
@@ -2611,6 +2748,17 @@ class LLMRouter:
             if model_name in self._embedding_providers:
                 return self._embedding_providers[model_name]
 
+            # Skip providers that failed a probe recently. This is what makes
+            # the local fallback FAST rather than merely correct: without it,
+            # every cold process re-pays the full cost of failing past each
+            # cloud provider before reaching the local one.
+            if self._embedding_recently_failed(model_name):
+                logger.debug(
+                    "embeddings: skipping %s (probe failed within the last %ds)",
+                    model_name, int(self._EMBEDDING_UNAVAILABLE_TTL_SECONDS),
+                )
+                continue
+
             mcfg = models.get(model_name, {})
             if not mcfg:
                 continue
@@ -2618,12 +2766,32 @@ class LLMRouter:
             provider_name = mcfg.get("provider", "")
             ptype = self._config.get("providers", {}).get(provider_name, {}).get("type", "")
 
+            # LPX (lpx-proxy-03) applies to EMBEDDINGS too.
+            #
+            # `_get_provider` routes chat traffic through the proxy and swaps in a
+            # virtual key, but the embedding chain built its providers straight
+            # from raw config — so with ICDEV_LLM_PROXY_ENABLED=true, chat went
+            # through the proxy while embeddings still called the real endpoint
+            # with the REAL provider key. That defeats the whole point of the
+            # gateway ("the real provider key never leaves the proxy") on a path
+            # that sends document text off the machine.
+            #
+            # No-op by default, and `apply_gateway_to_provider_cfg` never touches
+            # ollama/bedrock, so the local and CUI paths are unaffected.
+            provider_cfg = self._config.get("providers", {}).get(provider_name, {})
+            try:
+                from tools.llm.proxy_gateway import apply_gateway_to_provider_cfg
+
+                provider_cfg = apply_gateway_to_provider_cfg(provider_name, provider_cfg)
+            except Exception as exc:  # pragma: no cover - defensive import guard
+                logger.debug("LLM proxy gateway skipped for embeddings: %s", exc)
+
             try:
                 emb = None
                 if ptype in ("openai", "openai_compatible"):
                     from tools.llm.embedding_provider import OpenAIEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     api_key = pcfg.get("api_key", "")
                     if not api_key:
                         api_key_env = pcfg.get("api_key_env", "")
@@ -2639,7 +2807,7 @@ class LLMRouter:
                 elif ptype == "bedrock":
                     from tools.llm.embedding_provider import BedrockEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     region = _expand_env(pcfg.get("region", "us-gov-west-1"))
                     emb = BedrockEmbeddingProvider(
                         region=region,
@@ -2649,7 +2817,7 @@ class LLMRouter:
                 elif ptype == "gemini":
                     from tools.llm.embedding_provider import GeminiEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     api_key = pcfg.get("api_key", "")
                     if not api_key:
                         api_key_env = pcfg.get("api_key_env", "GOOGLE_API_KEY")
@@ -2663,7 +2831,7 @@ class LLMRouter:
                 elif ptype == "azure_openai":
                     from tools.llm.embedding_provider import AzureEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     api_key = _expand_env(pcfg.get("api_key", ""))
                     if not api_key:
                         api_key_env = pcfg.get("api_key_env", "AZURE_OPENAI_API_KEY")
@@ -2682,7 +2850,7 @@ class LLMRouter:
                 elif ptype == "oci_genai":
                     from tools.llm.embedding_provider import OCIEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     compartment_id = _expand_env(pcfg.get("compartment_id", ""))
                     if not compartment_id:
                         compartment_id = os.environ.get("OCI_COMPARTMENT_OCID", "")
@@ -2701,7 +2869,7 @@ class LLMRouter:
                 elif ptype == "ibm_watsonx":
                     from tools.llm.embedding_provider import IBMWatsonxEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     api_key = _expand_env(pcfg.get("api_key", ""))
                     if not api_key:
                         api_key = os.environ.get(pcfg.get("api_key_env", "IBM_CLOUD_API_KEY"), "")
@@ -2720,7 +2888,7 @@ class LLMRouter:
                 elif ptype == "ollama":
                     from tools.llm.embedding_provider import OllamaEmbeddingProvider
 
-                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    pcfg = provider_cfg
                     base_url = _expand_env(pcfg.get("base_url", "http://localhost:11434"))
                     emb = OllamaEmbeddingProvider(
                         base_url=base_url,
@@ -2732,9 +2900,18 @@ class LLMRouter:
                     self._embedding_providers[model_name] = emb
                     logger.info("Embedding provider ready: %s", model_name)
                     return emb
+                # Probed and did not answer — remember it, so the next process
+                # falls straight through to the local provider.
+                self._mark_embedding_unavailable(model_name)
+                logger.info(
+                    "Embedding provider %s unavailable — falling through to the "
+                    "next entry in embeddings.default_chain", model_name,
+                )
             except ImportError as exc:
+                self._mark_embedding_unavailable(model_name)
                 logger.debug("Embedding provider '%s' not importable: %s", model_name, exc)
             except Exception as exc:
+                self._mark_embedding_unavailable(model_name)
                 logger.debug("Embedding provider '%s' failed: %s", model_name, exc)
 
         raise LLMUnavailableError(

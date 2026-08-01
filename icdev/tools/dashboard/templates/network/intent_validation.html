@@ -54,9 +54,15 @@
         </span>
         {% if policy.last_validation %}
           {% set lv = policy.last_validation %}
+          {% if lv.result == 'error' or lv.errored %}
+          <span class="badge badge-amber" style="margin-left:4px;" title="{{ lv.reason or 'Evaluation error — treated as not-pass' }}">
+            ⚠ ERROR{% if lv.reason %} — {{ lv.reason }}{% endif %}
+          </span>
+          {% else %}
           <span class="badge {% if lv.failed == 0 %}badge-green{% else %}badge-red{% endif %}" style="margin-left:4px;">
             {{ "PASS" if lv.failed == 0 else "FAIL" }} ({{ lv.passed }}/{{ lv.total_constraints }})
           </span>
+          {% endif %}
         {% endif %}
       </div>
       <div style="display:flex;gap:6px;">
@@ -121,6 +127,7 @@
   .badge-green { background:#27ae6022;color:#27ae60; }
   .badge-red { background:#e74c3c22;color:#e74c3c; }
   .badge-orange { background:#f39c1222;color:#f39c12; }
+  .badge-amber { background:#e6a81722;color:#e6a817; }
   .badge-dim { background:var(--border);color:var(--text-dim); }
   .badge-type { background:#3498db22;color:#3498db;text-transform:uppercase;letter-spacing:0.5px; }
   .btn-danger-sm { background:#e74c3c;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:0.75rem; }
@@ -249,7 +256,8 @@ async function validateAll(){
   // Overall status bar
   const bar = document.getElementById('overall-status');
   bar.style.display='flex';
-  const color = data.overall_status==='PASS'?'#27ae60':data.overall_status==='FAIL'?'#e74c3c':'#95a5a6';
+  const _os = (data.overall_status||'').toUpperCase();
+  const color = _os==='PASS'?'#27ae60':_os==='FAIL'?'#e74c3c':_os==='ERROR'?'#e6a817':'#95a5a6';
   bar.innerHTML = `
     <div class="stat-card"><div class="stat-value" style="color:${color}">${data.overall_status}</div><div class="stat-label">Overall</div></div>
     <div class="stat-card"><div class="stat-value">${data.policies_validated}</div><div class="stat-label">Policies</div></div>
@@ -266,7 +274,14 @@ function renderViolations(pid, data){
   const el = document.getElementById('violations-'+pid);
   if(!el) return;
   el.style.display='block';
-  if(data.violations.length===0){
+  // Fail-closed (ndc-gov-01): an evaluation error is amber and must never be
+  // rendered as a PASS.
+  if((data.result||data.status||'').toLowerCase()==='error'){
+    const reason = data.reason || (data.detail && data.detail.reason) || 'Evaluation error';
+    el.innerHTML = '<div style="padding:0.5rem;color:#e6a817;font-weight:600;">⚠ ERROR — '+reason+' (treated as not-pass)</div>';
+    return;
+  }
+  if((data.violations||[]).length===0){
     el.innerHTML = '<div style="padding:0.5rem;color:#27ae60;font-weight:600;">PASS — All constraints satisfied</div>';
     return;
   }

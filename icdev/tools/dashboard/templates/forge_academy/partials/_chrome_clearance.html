@@ -1,0 +1,72 @@
+{# aca-ux-05 — keep docked dashboard chrome off academy content.
+
+   The dashboard docks three fixed widgets that the Academy does not own: the IQE
+   mini-bar across the bottom, the "CLI Prompt / BRIDGE" panel bottom-left, and the
+   assistant FAB bottom-right. Measured at the live viewport on /academy/missions,
+   they covered four mission cards, and body had padding-bottom: 0 — so content at
+   the foot of the page could not be scrolled clear of them. On the mission runner
+   the IQE bar sat over the primary "Understood -> Continue" control, which is the
+   forward action of every watch step.
+
+   Fixed defensively and ACADEMY-SCOPED: these widgets belong to the dashboard shell
+   and other canvases share it, so a global body rule would reach well beyond this
+   change. Padding the academy's own containers lets their content scroll clear
+   without touching anyone else's layout.
+
+   --fa-docked-chrome is sized from the measured stack: the IQE mini-bar is ~68px
+   tall and the CLI panel ~42px, sitting ~24px off the bottom edge. 7.5rem (120px)
+   clears both with room for the focus ring on a control that lands at the boundary.
+
+   --fa-fab-gutter handles the two round buttons stacked ABOVE the bar rather than
+   below it, which bottom padding cannot reach. Both are anchored to the right edge
+   (the assistant FAB starts 95px in, the IQE FAB 75px) and the runner's content
+   ended 75px in — so any right-aligned control that scrolled into their vertical
+   band lost its right corner. Measured on the runner: 20px of "Ask Sensei" sat
+   under the assistant FAB, and a click there opened the assistant instead. Both
+   sides being right-anchored is what makes one gutter correct at every viewport
+   width rather than only the one measured.
+
+   Sizing, in px because the FAB offsets are: the runner's pane ends 47px from the
+   viewport edge and the FAB begins at 95px, so its content needs >=48px of right
+   padding. 2rem of that already exists on .fa-main, and the root font here is 14px,
+   so a 2rem gutter takes it to 56px — clear by 8px.
+#}
+<style>
+:root { --fa-docked-chrome: 7.5rem; --fa-fab-gutter: 2rem; --fa-cli-gutter: 2.5rem; }
+
+/* Hub, missions browser, and the simple academy pages: their outermost content
+   wrapper is a plain block, so padding is enough to extend the scroll range. */
+.fa-hub,
+.fa-missions-grid,
+.fa-cert-page,
+.fa-profile-page,
+.fa-skilltree-page {
+  padding-bottom: var(--fa-docked-chrome);
+}
+
+/* The missions browser wraps everything in an unclassed <div>; reach it via the
+   grid's parent so the last tier section clears the bar too. */
+.fa-missions-grid:last-of-type { margin-bottom: var(--fa-docked-chrome); }
+
+/* The mission runner is a full-height grid whose right pane scrolls on its own, so
+   the padding has to go on the scrolling pane rather than the page. Without this
+   the Run/Continue controls sit under the IQE bar at the bottom of the pane. */
+.fa-main {
+  padding-bottom: calc(1.5rem + var(--fa-docked-chrome));
+  /* Keeps right-aligned controls (Run, Continue, Ask Sensei) out of the FAB column
+     no matter where they land as the pane scrolls. The 2rem repeats mission.html's
+     own `padding:1.5rem 2rem` because CSS cannot add to an inherited value; the
+     gutter is what this rule contributes. */
+  padding-right: calc(2rem + var(--fa-fab-gutter));
+  /* And the same on the left, for the "CLI Prompt / BRIDGE" panel. Found by driving
+     the graded journey for aca-vv-02 rather than by inspection: with the pane
+     scrolled down, "Run" sat at x 340-411 while the panel ended at x 364, so
+     elementFromPoint at the button's left edge returned clibp_tog. Centre and right
+     edge still hit Run, but this is the primary action of every coding step — the
+     one control a learner must reach to be assessed at all. */
+  padding-left: calc(2rem + var(--fa-cli-gutter));
+}
+
+/* The sidebar scrolls independently and ends in the "All Missions" link. */
+.fa-sidebar { padding-bottom: calc(1.2rem + var(--fa-docked-chrome)); }
+</style>

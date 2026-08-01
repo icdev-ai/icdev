@@ -35,6 +35,11 @@ class DeviceTrustResult:
     last_seen_seconds_ago: int = 0
     sensor_version: str = ""
     reason: str = ""
+    # Posture status: "healthy" / "unhealthy" from a real evaluation, or
+    # "unknown" when the result came from the CrowdStrike stub (live API
+    # unavailable). Consumers MUST treat "unknown" as DENY unless the
+    # zero-trust stub gate is explicitly enabled (ICDEV_ZT_ALLOW_STUB).
+    status: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +49,7 @@ class DeviceTrustResult:
             "last_seen_seconds_ago": self.last_seen_seconds_ago,
             "sensor_version": self.sensor_version,
             "reason": self.reason,
+            "status": self.status,
         }
 
 
@@ -102,18 +108,23 @@ def _call_crowdstrike_api(device_fingerprint: str) -> dict:
     url = f"{base_url.rstrip('/')}/devices/entities/devices/v1?filter=device_fingerprint%3A%27{device_fingerprint}%27"
     # CrowdStrike uses OAuth2 client-credentials; for a production adapter
     # you would exchange client_id/client_secret for a bearer token here.
-    # This stub logs a warning and returns a simulated healthy device to avoid
-    # requiring live credentials in CI/dev environments.
+    # This stub logs a warning and reports the device posture as UNKNOWN —
+    # NOT healthy — so the decision point can fail closed (deny) unless the
+    # zero-trust stub gate (ICDEV_ZT_ALLOW_STUB) is explicitly enabled for
+    # dev/CI/e2e. Fabricating a healthy device here is a fail-open defect.
     logger.warning(
-        "CrowdStrike API call is a stub — returning simulated healthy device",
+        "CrowdStrike API call is a stub — device posture is UNKNOWN (not healthy)",
         extra={"extra": {"device_fingerprint": device_fingerprint, "url": url}},
     )
-    # Simulated response (replace with real HTTP call when credentials land)
+    # Stub response: status "unknown", no fabricated health. The "_stub"
+    # marker lets verify_device_posture() gate this behind stub_allowed().
     return {
         "device_id": f"sim-{device_fingerprint[:16]}",
-        "health_score": 0.95,
+        "health_score": 0.0,
         "last_seen_seconds_ago": 300,
         "sensor_version": "7.14.0",
+        "status": "unknown",
+        "_stub": True,
     }
 
 
@@ -198,6 +209,46 @@ def verify_device_posture(device_fingerprint: str) -> DeviceTrustResult:
         _cache[device_fingerprint] = (result, now)
         return result
 
+    # Stub / unknown posture: the live CrowdStrike API was unavailable and we
+    # only have a simulated response. Fail closed (deny, status "unknown")
+    # unless the zero-trust stub gate is explicitly enabled for dev/CI/e2e.
+    if posture.get("_stub") or posture.get("status") == "unknown":
+        from tools.security.stub_gate import stub_allowed
+
+        device_id = posture.get("device_id", device_fingerprint)
+        if stub_allowed():
+            result = DeviceTrustResult(
+                trusted=True,
+                device_id=device_id,
+                health_score=float(posture.get("health_score", 0.0)),
+                last_seen_seconds_ago=int(posture.get("last_seen_seconds_ago", 0)),
+                sensor_version=posture.get("sensor_version", ""),
+                status="unknown",
+                reason="device posture unknown (CrowdStrike stub) — permitted via ICDEV_ZT_ALLOW_STUB",
+            )
+        else:
+            result = DeviceTrustResult(
+                trusted=False,
+                device_id=device_id,
+                health_score=0.0,
+                status="unknown",
+                reason="device posture unknown (CrowdStrike stub unavailable) — fail closed; set ICDEV_ZT_ALLOW_STUB to permit in dev",
+            )
+        _cache[device_fingerprint] = (result, now)
+        logger.info(
+            "Device trust evaluated (stub)",
+            extra={
+                "extra": {
+                    "device_fingerprint": device_fingerprint,
+                    "device_id": device_id,
+                    "trusted": result.trusted,
+                    "status": "unknown",
+                    "stub_allowed": result.trusted,
+                }
+            },
+        )
+        return result
+
     device_id: str = posture.get("device_id", "")
     health_score: float = float(posture.get("health_score", 0.0))
     last_seen: int = int(posture.get("last_seen_seconds_ago", 99999))
@@ -222,6 +273,7 @@ def verify_device_posture(device_fingerprint: str) -> DeviceTrustResult:
         last_seen_seconds_ago=last_seen,
         sensor_version=sensor_version,
         reason=reason_str,
+        status="healthy" if trusted else "unhealthy",
     )
 
     _cache[device_fingerprint] = (result, now)

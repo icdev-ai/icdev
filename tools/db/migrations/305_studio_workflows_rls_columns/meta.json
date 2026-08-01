@@ -1,0 +1,7 @@
+{
+  "id": "305_studio_workflows_rls_columns",
+  "description": "Backfill the RLS columns (classification, tenant_id) onto studio_workflows. workflow_editor.create_workflow() stamps the caller's classification on INSERT, but the column was never added to the schema — so creating a workflow raised 'table studio_workflows has no column named classification' and the API answered 500 on every DB built from the canonical schema",
+  "created": "2026-07-28",
+  "targets": ["icdev.db"],
+  "adrs": []
+}

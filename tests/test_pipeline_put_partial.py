@@ -74,6 +74,9 @@ def _make_app_with_pipeline(existing: dict) -> tuple[Flask, MagicMock]:
 def _login(client):
     with client.session_transaction() as sess:
         sess["user_id"] = "test-user"
+        # pdx-sec-03: pipeline write routes now require a write-tier role
+        # (developer/pm/isso/admin). An authorized editor is a developer.
+        sess["role"] = "developer"
 
 
 # ── tests ────────────────────────────────────────────────────────────────────
@@ -103,7 +106,7 @@ def test_partial_put_does_not_clobber_omitted_fields():
         _login(client)
         resp = client.put(
             f"/devops/api/pipelines/{pipe_id}",
-            data=json.dumps({"name": "BCAP IL5 (renamed)", "graph_json": '{"nodes":[]}'}),
+            data=json.dumps({"name": "BCAP IL5 (renamed)", "graph_json": '{"nodes":[],"edges":[]}'}),
             content_type="application/json",
         )
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -115,20 +118,22 @@ def test_partial_put_does_not_clobber_omitted_fields():
     sql = update_calls[0].args[0]
     sql_lc = sql.lower()
     # Only the fields we sent should be in the SET clause
-    assert "name=?" in sql_lc
-    assert "graph_json=?" in sql_lc
-    assert "description=?" not in sql_lc, "description not in payload — must not be SET"
-    assert "classification=?" not in sql_lc, "classification not in payload — must not be SET"
-    assert "target_csp=?" not in sql_lc, "target_csp not in payload — must not be SET"
+    assert "name=%s" in sql_lc
+    assert "graph_json=%s" in sql_lc
+    assert "description=%s" not in sql_lc, "description not in payload — must not be SET"
+    assert "classification=%s" not in sql_lc, "classification not in payload — must not be SET"
+    assert "target_csp=%s" not in sql_lc, "target_csp not in payload — must not be SET"
     # updated_at is always written
-    assert "updated_at=?" in sql_lc
+    assert "updated_at=%s" in sql_lc
 
     # Params should be exactly [name, graph_json, updated_at, pipe_id]
     params = update_calls[0].args[1]
     assert isinstance(params, (list, tuple)), f"params must be sequence, got {type(params)}"
     assert len(params) == 4, f"expected 4 params, got {len(params)}: {params!r}"
     assert params[0] == "BCAP IL5 (renamed)", f"name mismatch: {params[0]!r}"
-    assert params[1] == '{"nodes":[]}', f"graph_json mismatch: {params[1]!r}"
+    # graph_json is validated + canonicalized at the write boundary (pdx-sec-01),
+    # so compare parsed structure rather than exact bytes (json.dumps adds spaces).
+    assert json.loads(params[1]) == {"nodes": [], "edges": []}, f"graph_json mismatch: {params[1]!r}"
     assert isinstance(params[2], str) and len(params[2]) >= 10, (
         f"updated_at must be ISO timestamp string, got {params[2]!r}"
     )
@@ -177,10 +182,10 @@ def test_explicit_empty_string_clears_field():
                     if "UPDATE pipelines" in str(c.args[0])]
     assert update_calls
     sql_lc = update_calls[0].args[0].lower()
-    assert "description=?" in sql_lc
+    assert "description=%s" in sql_lc
     # Other fields absent from payload — must not be SET
-    assert "name=?" not in sql_lc
-    assert "classification=?" not in sql_lc
+    assert "name=%s" not in sql_lc
+    assert "classification=%s" not in sql_lc
     # Param value is the empty string (the explicit clear)
     params = update_calls[0].args[1]
     assert "" in params
@@ -205,7 +210,7 @@ def test_full_put_with_all_fields_backward_compat():
             data=json.dumps({
                 "name": "New Name",
                 "description": "New desc",
-                "graph_json": '{"nodes":[]}',
+                "graph_json": '{"nodes":[],"edges":[]}',
                 "classification": "SECRET",
                 "target_csp": "onprem-dod",
             }),
@@ -217,7 +222,7 @@ def test_full_put_with_all_fields_backward_compat():
     sql_lc = update_calls[0].args[0].lower()
     # All 5 fields present in SET
     for col in ("name", "description", "graph_json", "classification", "target_csp"):
-        assert f"{col}=?" in sql_lc, f"{col} should be in SET for full PUT"
+        assert f"{col}=%s" in sql_lc, f"{col} should be in SET for full PUT"
 
 
 def test_savepipeline_payload_preserves_all_metadata():
@@ -252,6 +257,6 @@ def test_savepipeline_payload_preserves_all_metadata():
     assert resp.status_code == 200
     assert len(captured_sql) == 1
     # The bug: server wrote ALL 5 fields. The fix: only name + graph_json.
-    assert "description=?" not in captured_sql[0]
-    assert "classification=?" not in captured_sql[0]
-    assert "target_csp=?" not in captured_sql[0]
+    assert "description=%s" not in captured_sql[0]
+    assert "classification=%s" not in captured_sql[0]
+    assert "target_csp=%s" not in captured_sql[0]

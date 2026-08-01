@@ -32,6 +32,7 @@ from tools.ttx.inject_dispatcher import (
 from tools.ttx.leaderboard import get_leaderboard, compute_leaderboard, award_ribbons
 from tools.ttx.aar_generator import generate_aar
 from tools.db.storage import get_connection
+from .auth import login_required, require_facilitator
 
 bp = Blueprint("ai_gameday", __name__)
 _engine = TTXEngine()
@@ -57,6 +58,17 @@ def _gameday_tenant_id() -> str | None:
         return None
 
 
+def _session_for_tenant(session_id: int):
+    """Return the session iff it belongs to the caller's tenant, else None.
+
+    Prevents cross-tenant enumeration on the response/leaderboard/simulate-state
+    endpoints, which key off sequential integer session IDs. When no tenant
+    context is active (single-tenant deployments), get_session falls back to an
+    unscoped lookup, matching the list-page behaviour.
+    """
+    return get_session(session_id, tenant_id=_gameday_tenant_id())
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -66,6 +78,7 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 
 @bp.route("/gameday")
+@login_required
 def hub():
     _ensure_init()
     _tid = _gameday_tenant_id()
@@ -86,6 +99,7 @@ def hub():
 
 
 @bp.route("/gameday/session/<int:session_id>/play")
+@login_required
 def player_console(session_id: int):
     _ensure_init()
     session = get_session(session_id)
@@ -111,6 +125,7 @@ def player_console(session_id: int):
 
 
 @bp.route("/gameday/session/<int:session_id>/facilitate")
+@require_facilitator
 def facilitator_console(session_id: int):
     _ensure_init()
     session = get_session(session_id)
@@ -140,6 +155,7 @@ def facilitator_console(session_id: int):
 
 
 @bp.route("/gameday/leaderboard/<int:session_id>")
+@login_required
 def live_leaderboard(session_id: int):
     _ensure_init()
     session = get_session(session_id)
@@ -160,6 +176,7 @@ def live_leaderboard(session_id: int):
 
 
 @bp.route("/gameday/scenarios")
+@require_facilitator
 def scenario_manager():
     _ensure_init()
     slugs = list_scenario_slugs()
@@ -192,6 +209,7 @@ def scenario_manager():
 
 
 @bp.route("/gameday/scenarios/builder")
+@require_facilitator
 def scenario_builder():
     _ensure_init()
     inject_types = INJECT_TYPES
@@ -211,6 +229,7 @@ def scenario_builder():
 
 
 @bp.route("/gameday/session/<int:session_id>/results")
+@require_facilitator
 def session_results(session_id: int):
     _ensure_init()
     session = get_session(session_id)
@@ -292,6 +311,7 @@ def session_results(session_id: int):
 # ---------------------------------------------------------------------------
 
 @bp.route("/api/gameday/session", methods=["POST"])
+@require_facilitator
 def api_create_session():
     _ensure_init()
     data = request.get_json(force=True) or {}
@@ -315,6 +335,7 @@ def api_create_session():
 
 
 @bp.route("/api/gameday/session/<int:session_id>/state", methods=["PATCH"])
+@require_facilitator
 def api_update_session_state(session_id: int):
     data = request.get_json(force=True) or {}
     new_state = data.get("state", "")
@@ -333,6 +354,7 @@ def api_update_session_state(session_id: int):
 
 
 @bp.route("/api/gameday/session/join", methods=["POST"])
+@login_required
 def api_join_session():
     _ensure_init()
     data = request.get_json(force=True) or {}
@@ -353,6 +375,7 @@ def api_join_session():
 
 
 @bp.route("/api/gameday/team/join", methods=["POST"])
+@login_required
 def api_join_team():
     _ensure_init()
     data = request.get_json(force=True) or {}
@@ -376,6 +399,7 @@ def api_join_team():
 # ---------------------------------------------------------------------------
 
 @bp.route("/api/gameday/session/<int:session_id>/injects", methods=["GET"])
+@login_required
 def api_get_injects(session_id: int):
     state_filter = request.args.get("state")
     if state_filter == "dispatched":
@@ -386,6 +410,7 @@ def api_get_injects(session_id: int):
 
 
 @bp.route("/api/gameday/inject/<inject_id>/dispatch", methods=["POST"])
+@require_facilitator
 def api_dispatch_inject(inject_id: str):
     from tools.ttx.inject_dispatcher import dispatch_inject
     ok = dispatch_inject(inject_id)
@@ -393,6 +418,7 @@ def api_dispatch_inject(inject_id: str):
 
 
 @bp.route("/api/gameday/inject/<inject_id>/close", methods=["POST"])
+@require_facilitator
 def api_close_inject(inject_id: str):
     from tools.ttx.inject_dispatcher import close_inject
     close_inject(inject_id)
@@ -404,6 +430,7 @@ def api_close_inject(inject_id: str):
 # ---------------------------------------------------------------------------
 
 @bp.route("/api/gameday/response", methods=["POST"])
+@login_required
 def api_submit_response():
     _ensure_init()
     data = request.get_json(force=True) or {}
@@ -437,6 +464,7 @@ def api_submit_response():
 
 
 @bp.route("/api/gameday/api-log", methods=["POST"])
+@login_required
 def api_log_receipt():
     """Teams call this endpoint to register a receipt when they use an ICDEV AI tool."""
     _ensure_init()
@@ -472,8 +500,11 @@ def api_log_receipt():
 # ---------------------------------------------------------------------------
 
 @bp.route("/api/gameday/session/<int:session_id>/responses", methods=["GET"])
+@require_facilitator
 def api_session_responses(session_id: int):
     """Return all team responses with scores for a session (facilitator use)."""
+    if _session_for_tenant(session_id) is None:
+        return jsonify({"responses": [], "total": 0}), 404
     conn = get_connection()
     rows = conn.execute(
         """SELECT r.response_id, r.team_id, r.inject_id, r.response_text,
@@ -499,6 +530,12 @@ def api_session_responses(session_id: int):
         row["is_aadc"] = cfg.get("inject_type") == "aadc_design_challenge"
         if row["is_aadc"]:
             row["aadc_score"] = row.get("judge_pts") or 0
+        # Surface the fail-loud unscored marker so the monitor renders an LLM
+        # outage distinctly instead of as a real judge score of 0.
+        try:
+            row["judge_unscored"] = bool(json.loads(row.get("judge_rationale_json") or "{}").get("unscored"))
+        except Exception:
+            row["judge_unscored"] = False
         # Truncate response text for display
         row["response_preview"] = (row.get("response_text") or "")[:120]
         out.append(row)
@@ -510,7 +547,10 @@ def api_session_responses(session_id: int):
 # ---------------------------------------------------------------------------
 
 @bp.route("/api/gameday/session/<int:session_id>/leaderboard", methods=["GET"])
+@login_required
 def api_leaderboard(session_id: int):
+    if _session_for_tenant(session_id) is None:
+        return jsonify({"leaderboard": [], "total": 0}), 404
     lb = compute_leaderboard(session_id)
     ontology_class = request.args.get("ontology_class")
     exclude_class = request.args.get("exclude_class")
@@ -541,12 +581,14 @@ def api_leaderboard(session_id: int):
 
 
 @bp.route("/api/gameday/session/<int:session_id>/ribbons", methods=["GET"])
+@login_required
 def api_ribbons(session_id: int):
     ribbons = award_ribbons(session_id)
     return jsonify({"ribbons": ribbons})
 
 
 @bp.route("/api/gameday/session/<int:session_id>/ontology", methods=["GET"])
+@login_required
 def api_session_ontology(session_id: int):
     """Return ontology tags for the session's scenario, roles, and injects."""
     _ensure_init()
@@ -592,6 +634,7 @@ def api_session_ontology(session_id: int):
 
 
 @bp.route("/api/gameday/ontology/concepts", methods=["GET"])
+@login_required
 def api_ontology_concepts():
     """Return all ontology concepts for UI reference."""
     from tools.ai_game_engine.ontology import get_all_ontology_concepts
@@ -608,6 +651,7 @@ def api_ontology_concepts():
 # ---------------------------------------------------------------------------
 
 @bp.route("/api/gameday/scenarios", methods=["GET"])
+@login_required
 def api_list_scenarios():
     conn = get_connection()
     rows = conn.execute(
@@ -618,6 +662,7 @@ def api_list_scenarios():
 
 
 @bp.route("/api/gameday/scenarios", methods=["POST"])
+@require_facilitator
 def api_save_scenario():
     _ensure_init()
     data = request.get_json(force=True) or {}
@@ -655,6 +700,7 @@ def api_save_scenario():
 
 
 @bp.route("/api/gameday/inject-templates", methods=["GET"])
+@login_required
 def api_inject_templates():
     conn = get_connection()
     rows = conn.execute(
@@ -664,6 +710,7 @@ def api_inject_templates():
 
 
 @bp.route("/api/gameday/inject-templates", methods=["POST"])
+@require_facilitator
 def api_save_inject_template():
     _ensure_init()
     data = request.get_json(force=True) or {}
@@ -690,6 +737,7 @@ def api_save_inject_template():
 # ---------------------------------------------------------------------------
 
 @bp.route("/gameday/simulation")
+@login_required
 def simulation_landing():
     """Session picker for the simulation. Auto-redirects if exactly one active session."""
     _ensure_init()
@@ -710,6 +758,7 @@ def simulation_landing():
 
 
 @bp.route("/gameday/session/<int:session_id>/simulate")
+@login_required
 def simulate_view(session_id: int):
     _ensure_init()
     session = get_session(session_id)
@@ -726,9 +775,10 @@ def simulate_view(session_id: int):
 
 
 @bp.route("/api/gameday/session/<int:session_id>/simulate-state")
+@login_required
 def api_simulate_state(session_id: int):
     _ensure_init()
-    session = get_session(session_id)
+    session = _session_for_tenant(session_id)
     if not session:
         return jsonify({"ok": False, "error": "not found"}), 404
     injects = sorted(get_all_injects(session_id), key=lambda x: x.get("sequence_num") or 0)
@@ -761,6 +811,7 @@ def api_simulate_state(session_id: int):
 # ---------------------------------------------------------------------------
 
 @bp.route("/api/gameday/session/<int:session_id>/aar", methods=["GET"])
+@require_facilitator
 def api_aar_markdown(session_id: int):
     md = generate_aar(session_id)
     return md, 200, {"Content-Type": "text/plain; charset=utf-8"}
@@ -774,6 +825,7 @@ def api_aar_markdown(session_id: int):
 # ---------------------------------------------------------------------------
 
 @bp.route("/gameday/ai-league")
+@login_required
 def ai_league_hub():
     _ensure_init()
     from tools.gameday import db as _gdb
@@ -791,6 +843,7 @@ def ai_league_hub():
 
 
 @bp.route("/gameday/ai-league/team/<team_key>")
+@login_required
 def ai_league_team(team_key: str):
     _ensure_init()
     from tools.gameday.game_master import get_or_create_active_tournament
@@ -805,6 +858,7 @@ def ai_league_team(team_key: str):
 
 
 @bp.route("/gameday/ai-league/ops")
+@require_facilitator
 def ai_league_ops():
     _ensure_init()
     from tools.gameday import db as _gdb
@@ -818,6 +872,7 @@ def ai_league_ops():
 
 
 @bp.route("/api/gameday/ai-league/start", methods=["POST"])
+@require_facilitator
 def ai_league_start():
     _ensure_init()
     data = request.get_json(silent=True) or {}
@@ -829,22 +884,26 @@ def ai_league_start():
     round_count = max(1, min(round_count, 10))
     from tools.gameday.game_master import GameMaster
     gm = GameMaster(tournament_name=name, round_count=round_count)
-    # run_tournament() drives LLM rounds (needs Ollama) and can take minutes —
+    # run_tournament() drives LLM rounds via the router and can take minutes —
     # run it off the request thread so the endpoint returns immediately.
     import threading
 
     def _run():
+        # run_tournament() already records status='aborted' + the error on the
+        # tournament row before re-raising, so a failed run is visible on the
+        # AI League ops page (/gameday/ai-league/ops) rather than a silent no-op.
         try:
             gm.run_tournament()
         except Exception as exc:
             import logging
-            logging.getLogger(__name__).warning("AI League tournament run failed: %s", exc)
+            logging.getLogger(__name__).error("AI League tournament run failed: %s", exc)
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"ok": True, "tournament_name": gm.tournament_name, "round_count": round_count})
 
 
 @bp.route("/api/gameday/ai-league/leaderboard", methods=["GET"])
+@login_required
 def ai_league_leaderboard_api():
     _ensure_init()
     from tools.gameday.game_master import get_or_create_active_tournament
@@ -858,6 +917,7 @@ def ai_league_leaderboard_api():
 
 
 @bp.route("/api/gameday/ai-league/team/<team_key>", methods=["GET"])
+@login_required
 def ai_league_team_api(team_key: str):
     _ensure_init()
     from tools.gameday.game_master import get_or_create_active_tournament

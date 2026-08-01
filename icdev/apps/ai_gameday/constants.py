@@ -54,7 +54,21 @@ SCOREBOARD_ONTOLOGY_FILTERS = [
     {"id": "ai_ops",    "label": "AI Operations",  "filter": "ai"},
 ]
 
-# ICDEV tool slugs surfaced to players in the "Link AI Tool" picker
+# ICDEV tool slugs surfaced to players in the "Link AI Tool" picker.
+# Entries that map to a real MCP tool carry an `mcp_tool` key whose value is a
+# key in tools/mcp/tool_registry.py::TOOL_REGISTRY. The freshness test
+# (tests/test_penta_gd_content.py) asserts every `mcp_tool` resolves there.
+def tool_is_navigable(tool: dict) -> bool:
+    """True when a catalog entry can be opened in a browser tab.
+
+    12 of the 34 entries are POST-only ``/api/...`` endpoints. The player
+    console rendered every entry as ``<a href=...>``, so clicking one of those
+    opened a tab that 405s or 404s (fga-gd-02). A page cannot GET a POST API,
+    so these are shown as reference rather than as links.
+    """
+    return not str(tool.get("endpoint", "")).startswith("/api/")
+
+
 AI_TOOLS_CATALOG = [
     {"slug": "strategos.oracle",          "label": "Strategos Oracle",       "endpoint": "/api/strategos/oracle",           "icon": "🔮"},
     {"slug": "strategos.signals",         "label": "Signal Prioritizer",     "endpoint": "/api/strategos/signals",          "icon": "📡"},
@@ -63,18 +77,47 @@ AI_TOOLS_CATALOG = [
     {"slug": "strategos.iw.composite",   "label": "IW Composite (PMESII)",  "endpoint": "/api/strategos/iw/composite",     "icon": "📊"},
     {"slug": "strategos.simulate",        "label": "Supply Chain Simulate",  "endpoint": "/api/strategos/simulate/run",     "icon": "🔁"},
     {"slug": "finetune.deploy",           "label": "Fine-Tune Deploy",       "endpoint": "/api/finetune/jobs",              "icon": "🧠"},
-    {"slug": "knowledge.search",          "label": "Knowledge RAG Search",   "endpoint": "/api/knowledge/search",           "icon": "📚"},
+    {"slug": "knowledge.search",          "label": "Knowledge RAG Search",   "endpoint": "/api/knowledge/search",           "icon": "📚", "mcp_tool": "rag_search"},
     {"slug": "aadc.assess",              "label": "AADC Compliance Assess", "endpoint": "/agentic-ai/canvas",  "icon": "🛡️"},
     {"slug": "aadc.threat_model",        "label": "AADC Threat Model",      "endpoint": "/agentic-ai/canvas",  "icon": "⚔️"},
     {"slug": "aadc.recommend",           "label": "AADC Auto-Recommend",    "endpoint": "/agentic-ai/canvas",  "icon": "💡"},
     {"slug": "ace.delegate",          "label": "ACE Co-Worker Delegate",   "endpoint": "/api/ace/coworker/delegate",        "icon": "🤝"},
     {"slug": "ace.inspect",           "label": "ACE Co-Worker Inspect",    "endpoint": "/api/ace/coworker/{id}/result",     "icon": "🔍"},
-    {"slug": "docgen.session",        "label": "DocGen Session",           "endpoint": "/api/docgen/sessions",              "icon": "📄"},
-    {"slug": "docgen.workflow",       "label": "DocGen Workflow",          "endpoint": "/api/docgen/workflow/run",          "icon": "⚙️"},
     {"slug": "readiness.check",       "label": "Agent Readiness Check",   "endpoint": "/api/readiness/check",              "icon": "✅"},
     {"slug": "readiness.remediate",   "label": "Readiness Remediation",   "endpoint": "/api/readiness/remediate",          "icon": "🔧"},
     {"slug": "transparency.inventory","label": "AI Transparency Inventory","endpoint": "/ai-transparency/api/inventory",    "icon": "📋"},
     {"slug": "transparency.card",     "label": "Model Card Generator",    "endpoint": "/ai-transparency/api/model-card",   "icon": "🃏"},
     {"slug": "accountability.plan",   "label": "AI Oversight Plan",       "endpoint": "/ai-accountability/api/plan",       "icon": "⚖️"},
-    {"slug": "pna.predict",           "label": "PNA Predictor",           "endpoint": "/network/api/pna/predict",          "icon": "📈"},
+    # ── Cortex unified AI layer ──────────────────────────────────────────────
+    {"slug": "cortex.ask",            "label": "Cortex Ask (grounded Q&A)", "endpoint": "/cortex",              "icon": "🧠", "mcp_tool": "cortex_ask"},
+    {"slug": "cortex.extract",        "label": "Cortex Extract",           "endpoint": "/cortex",              "icon": "🔎", "mcp_tool": "cortex_extract"},
+    {"slug": "cortex.classify",       "label": "Cortex Classify",          "endpoint": "/cortex",              "icon": "🏷️", "mcp_tool": "cortex_classify"},
+    {"slug": "cortex.govern",         "label": "Cortex Govern (policy gate)", "endpoint": "/cortex",           "icon": "⚖️", "mcp_tool": "cortex_govern"},
+    # ── Document Intelligence Canvas (replaces legacy docgen.*) ───────────────
+    {"slug": "dic.ingest",            "label": "DIC Document Ingest",      "endpoint": "/document-intelligence", "icon": "📥", "mcp_tool": "dic_ingest"},
+    {"slug": "dic.search",            "label": "DIC Grounded Search",      "endpoint": "/document-intelligence", "icon": "📚", "mcp_tool": "dic_search"},
+    {"slug": "dic.generate",          "label": "DIC Grounded Generate",    "endpoint": "/document-intelligence", "icon": "📝", "mcp_tool": "dic_generate"},
+    # ── Knowledge graph / GraphRAG ───────────────────────────────────────────
+    {"slug": "kg.search",             "label": "Knowledge Graph Search",   "endpoint": "/knowledge",           "icon": "🕸️", "mcp_tool": "kg_search"},
+    {"slug": "kg.federated",          "label": "Federated KG Search",      "endpoint": "/knowledge",           "icon": "🌐", "mcp_tool": "kg_federated_search"},
+    # ── Network Design Canvas (replaces legacy pna.predict) ───────────────────
+    {"slug": "ndc.ai_assist",         "label": "NDC Network AI Assist",    "endpoint": "/network",             "icon": "📈", "mcp_tool": "mc_net_ai_assist"},
+    {"slug": "ndc.topology",          "label": "NDC Topology Build",       "endpoint": "/network",             "icon": "🗺️", "mcp_tool": "topology_build"},
+    {"slug": "ndc.spof",              "label": "NDC SPOF Finder",          "endpoint": "/network",             "icon": "⚠️", "mcp_tool": "topology_spof"},
+    # ── Observability (ODC/OHC) ──────────────────────────────────────────────
+    {"slug": "obs.slo",               "label": "SLO Dashboard",            "endpoint": "/observability",       "icon": "📊", "mcp_tool": "slo_dashboard"},
+    {"slug": "obs.drift",             "label": "Model Drift Monitor",      "endpoint": "/observability",       "icon": "📉", "mcp_tool": "model_monitor_drift"},
+    # ── Autonomous Capability Foundry ────────────────────────────────────────
+    {"slug": "foundry.run",           "label": "Foundry Capability Run",   "endpoint": "/foundry",             "icon": "🏭", "mcp_tool": "foundry_run"},
+    # ── Governed delivery pipeline ───────────────────────────────────────────
+    {"slug": "kanban.summary",        "label": "Kanban Board Summary",     "endpoint": "/kanban",              "icon": "📋", "mcp_tool": "kanban_board_summary"},
 ]
+
+
+def catalog_for_render() -> list:
+    """AI_TOOLS_CATALOG with a ``navigable`` flag on each entry.
+
+    Kept next to the catalog so every render site gets the same answer; the
+    player console previously linked all 34 entries regardless of method.
+    """
+    return [{**t, "navigable": tool_is_navigable(t)} for t in AI_TOOLS_CATALOG]

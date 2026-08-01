@@ -14,6 +14,29 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.canvas_health.constants import (  # noqa: E402
+    ISSUE_NO_BLUEPRINT,
+    ISSUE_NO_E2E,
+    ISSUE_NO_IQE,
+    ISSUE_RLS_BYPASS,
+    RED_ISSUES,
+    STATUS_AMBER,
+    STATUS_GREEN,
+    STATUS_RED,
+)
+
+
+def _blueprint_exists(key: str, module: str | None) -> bool:
+    """Does this canvas have a blueprint file, wherever the registry says it lives?"""
+    if module:
+        try:
+            from tools.config.component_registry import _blueprint_path_from_module
+
+            return _blueprint_path_from_module(module, BASE_DIR).is_file()
+        except Exception:
+            pass
+    return (BASE_DIR / "tools" / key / "blueprint.py").exists()
+
 
 def _load_registry() -> List[Dict[str, Any]]:
     try:
@@ -61,8 +84,12 @@ def get_canvas_health() -> List[Dict[str, Any]]:
         default_enabled = c.get("default_enabled", False)
         url_prefix = c.get("url_prefix") or f"/{key}"
 
-        # File-existence checks
-        bp_exists = (BASE_DIR / "tools" / key / "blueprint.py").exists()
+        # File-existence checks. Resolve the blueprint from the registry `module`
+        # rather than assuming tools/<key>/blueprint.py — a canvas may be served by
+        # a plain module in another package (logs -> tools/logging/blueprint.py,
+        # rfi_canvas -> tools/govcon/rfi_canvas_blueprint.py), and guessing reported
+        # those working canvases as having no blueprint at all.
+        bp_exists = _blueprint_exists(key, c.get("module"))
         e2e_exists = bool(list(e2e_dir.glob(f"{key}*.spec.ts"))) if e2e_dir.exists() else False
         iqe_exists = (iqe_adapters_dir / f"{key}.py").exists()
         rls_ok = key not in rls_violators
@@ -70,20 +97,20 @@ def get_canvas_health() -> List[Dict[str, Any]]:
         # Aggregate status
         issues = []
         if not bp_exists:
-            issues.append("no blueprint")
+            issues.append(ISSUE_NO_BLUEPRINT)
         if not e2e_exists:
-            issues.append("no E2E spec")
+            issues.append(ISSUE_NO_E2E)
         if not iqe_exists:
-            issues.append("no IQE adapter")
+            issues.append(ISSUE_NO_IQE)
         if not rls_ok:
-            issues.append("RLS bypass needed")
+            issues.append(ISSUE_RLS_BYPASS)
 
-        if not rls_ok:
-            status = "red"
+        if any(i in RED_ISSUES for i in issues):
+            status = STATUS_RED
         elif issues:
-            status = "amber"
+            status = STATUS_AMBER
         else:
-            status = "green"
+            status = STATUS_GREEN
 
         results.append({
             "key": key,
@@ -98,5 +125,5 @@ def get_canvas_health() -> List[Dict[str, Any]]:
             "status": status,
         })
 
-    results.sort(key=lambda x: (x["status"] != "red", x["status"] != "amber", x["key"]))
+    results.sort(key=lambda x: (x["status"] != STATUS_RED, x["status"] != STATUS_AMBER, x["key"]))
     return results

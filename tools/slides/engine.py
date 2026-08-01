@@ -112,10 +112,15 @@ class DeckEngine:
             self._set_phase(deck_id, "gathering")
             raw = self._gather(req)
 
+            # Research degradation signal (general decks): the connector reports
+            # degraded=True when it could not produce real research and refused to
+            # fabricate a summary/citations. Absent research must be surfaced.
+            research_degraded = bool((raw.get("research") or {}).get("degraded", False))
+
             # Phase 2: Plan outline
             self._set_phase(deck_id, "planning")
             from tools.slides import orchestrator
-            outline = orchestrator.plan_outline(
+            _outline_result = orchestrator.plan_outline(
                 raw_content=raw,
                 deck_title=req.title,
                 deck_type=req.deck_type,
@@ -127,7 +132,14 @@ class DeckEngine:
                 enable_rich_diagrams=req.enable_rich_diagrams,
                 audience_mode=req.audience_mode,
                 output_language=req.output_language,
+                return_provenance=True,
             )
+            # return_provenance=True yields (titles, used_fallback). Tolerate a
+            # plain-list return (e.g. patched mocks) by treating it as non-fallback.
+            if isinstance(_outline_result, tuple):
+                outline, outline_fallback = _outline_result
+            else:
+                outline, outline_fallback = _outline_result, False
 
             # Phase 3: Generate content (parallel)
             self._set_phase(deck_id, "generating")
@@ -177,16 +189,37 @@ class DeckEngine:
                 except Exception as html_exc:
                     self._audit(deck_id, "html_export_warning", {"error": str(html_exc)})
 
+            # Determine honest final status. A deck that shipped canned/fallback
+            # content must never report a plain "completed" (wave honesty
+            # standard, cf. Oracle available:false, FathomDesk simulated:true):
+            #   template  — the outline itself is a static fallback (whole deck
+            #               structure is canned; LLM planner was unavailable)
+            #   degraded  — outline is real but some slides fell back to canned
+            #               content, or requested research was unavailable
+            #   completed — real LLM content end-to-end
+            slide_fallbacks = sum(
+                1 for s in slides if s.get("provenance") == "fallback"
+            )
+            if outline_fallback:
+                final_status = "template"
+            elif slide_fallbacks or research_degraded:
+                final_status = "degraded"
+            else:
+                final_status = "completed"
+
             # Phase 6: Persist
             self._update_deck_record(
-                deck_id, slides, pptx_path, "completed",
+                deck_id, slides, pptx_path, final_status,
                 pdf_path=pdf_path, html_path=html_path,
             )
-            self._audit(deck_id, "completed", {
+            self._audit(deck_id, final_status, {
                 "slide_count": len(slides),
                 "pptx_path": pptx_path,
                 "pdf_path": pdf_path,
                 "html_path": html_path,
+                "outline_fallback": outline_fallback,
+                "slide_fallbacks": slide_fallbacks,
+                "research_degraded": research_degraded,
             })
 
             return DeckResult(
@@ -196,7 +229,7 @@ class DeckEngine:
                 slides=slides,
                 theme=req.theme,
                 source_types=req.sources,
-                status="completed",
+                status=final_status,
                 pdf_path=pdf_path,
                 html_path=html_path,
                 tone=req.tone,
@@ -358,8 +391,9 @@ class DeckEngine:
                     conn.execute(
                         "INSERT INTO slides_slides "
                         "(deck_id, position, slide_type, title, bullets, speaker_notes, citations, "
-                        "image_path, image_prompt, mermaid_code, three_scene_config, excalidraw_elements) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        "image_path, image_prompt, mermaid_code, three_scene_config, excalidraw_elements, "
+                        "provenance) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (
                             deck_id, i + 1,
                             slide_data.get("slide_type", "content"),
@@ -372,6 +406,7 @@ class DeckEngine:
                             slide_data.get("mermaid_code"),
                             json.dumps(three_cfg) if three_cfg is not None else None,
                             json.dumps(exc_elems) if exc_elems is not None else None,
+                            slide_data.get("provenance", "llm"),
                         ),
                     )
                 conn.commit()

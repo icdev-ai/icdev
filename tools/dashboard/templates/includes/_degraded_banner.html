@@ -1,0 +1,25 @@
+{#
+  _degraded_banner.html — Degraded-State Alert Banner (nav-misc-02)
+
+  Renders a role="alert" banner when a page's data read failed, so an outage is
+  visible to the operator instead of masquerading as a healthy-but-empty page.
+  See docs/dev/degraded-state-pattern.md.
+
+  Template variables (any one truthy triggers the banner):
+    degraded        — bool, preferred flag set by the route on the except path
+    error           — bool, backward-compat flag (some routes use error=True)
+  Optional:
+    degraded_detail — short human-readable cause (never rendered raw HTML)
+#}
+{% if (degraded is defined and degraded) or (error is defined and error) %}
+<div class="icdev-degraded-banner" role="alert" aria-live="polite"
+     style="margin:0.75rem 0;padding:0.6rem 0.9rem;border:1px solid #e0a800;border-left:4px solid #e0a800;border-radius:6px;background:#fff8e1;color:#7a5b00;font-size:0.9rem;">
+  <strong>Data temporarily unavailable.</strong>
+  Some content on this page could not be loaded because a backend read failed.
+  The values shown may be incomplete &mdash; this is a system fault, not an
+  indication that there is no data.
+  {% if degraded_detail is defined and degraded_detail %}
+  <span style="opacity:0.75;">({{ degraded_detail }})</span>
+  {% endif %}
+</div>
+{% endif %}

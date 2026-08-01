@@ -54,7 +54,7 @@ import sqlite3
 import sys
 import uuid
 from tools.common.helpers import now_iso
-from tools.db.storage import get_connection
+from tools.db.storage import column_exists, get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -236,15 +236,14 @@ def _ensure_triage_tables(conn):
         except Exception:
             pass
 
-    # Add triage columns to innovation_signals if not present
-    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(innovation_signals)").fetchall()}
-
+    # Add triage columns to innovation_signals if not present.
+    # Backend-aware column probes (pgrt-sweep-06) — no PRAGMA/translation reliance.
     alter_stmts = []
-    if "triage_result" not in existing_cols:
+    if not column_exists(conn, "innovation_signals", "triage_result"):
         alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN triage_result TEXT")
-    if "gotcha_layer" not in existing_cols:
+    if not column_exists(conn, "innovation_signals", "gotcha_layer"):
         alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN gotcha_layer TEXT")
-    if "boundary_tier" not in existing_cols:
+    if not column_exists(conn, "innovation_signals", "boundary_tier"):
         alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN boundary_tier TEXT")
 
     for stmt in alter_stmts:

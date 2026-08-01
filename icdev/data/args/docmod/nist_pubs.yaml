@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+# NIST publication latest-revision seed — air-gap ground truth for the docmod
+# policy_refs pack. Loaded by nist_pubs_sync.load_seed() (source='seed').
+# nist_pubs_sync --sync refreshes these online from the NIST CSRC feed; keep this
+# file current for air-gapped sites (revision_num drives the deterministic
+# "cited revision is older than the latest" comparison).
+publications:
+  "SP 800-53":
+    latest_revision: "Rev 5"
+    revision_num: 5
+    title: "Security and Privacy Controls for Information Systems and Organizations"
+    url: "https://csrc.nist.gov/pubs/sp/800/53/r5/final"
+    published_date: "2020-12-10"
+  "SP 800-171":
+    latest_revision: "Rev 3"
+    revision_num: 3
+    title: "Protecting Controlled Unclassified Information in Nonfederal Systems"
+    url: "https://csrc.nist.gov/pubs/sp/800/171/r3/final"
+    published_date: "2024-05-14"
+  "SP 800-52":
+    latest_revision: "Rev 2"
+    revision_num: 2
+    title: "Guidelines for the Selection, Configuration, and Use of TLS Implementations"
+    url: "https://csrc.nist.gov/pubs/sp/800/52/r2/final"
+    published_date: "2019-08-29"
+  "SP 800-63":
+    latest_revision: "Rev 3"
+    revision_num: 3
+    title: "Digital Identity Guidelines"
+    url: "https://csrc.nist.gov/pubs/sp/800/63/r3/final"
+    published_date: "2017-06-22"
+  "SP 800-207":
+    latest_revision: "Rev 1"
+    revision_num: 1
+    title: "Zero Trust Architecture"
+    url: "https://csrc.nist.gov/pubs/sp/800/207/final"
+    published_date: "2020-08-11"

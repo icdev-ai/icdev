@@ -369,7 +369,7 @@ def notify_oracle_alert(
     conn = get_connection()
     try:
         # --- DB: fetch predictions and lens metadata ---
-        placeholders = ", ".join("?" * len(prediction_ids)) if prediction_ids else "''"
+        placeholders = ", ".join(["%s"] * len(prediction_ids)) if prediction_ids else "''"
         pred_rows = conn.execute(
             f"SELECT id, title, severity, confidence, lens_id, outcome, created_at "  # nosec B608
             f"FROM oracle_predictions WHERE id IN ({placeholders})",

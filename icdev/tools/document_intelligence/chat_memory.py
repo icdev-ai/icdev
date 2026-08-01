@@ -66,19 +66,93 @@ CREATE TABLE IF NOT EXISTS dic_chat_memory (
 """
 
 _schema_ensured = False
+_schema_error = ""
+
+# The column that distinguishes the turn-based schema this module writes from
+# the legacy message-log shape migration 191 created (memory_id/role/content).
+_SHAPE_MARKER_COLUMN = "turn_id"
+
+
+def _table_shape(conn) -> tuple[bool, bool]:
+    """Return ``(table_exists, has_turn_shape)`` for ``dic_chat_memory``.
+
+    ``CREATE TABLE IF NOT EXISTS`` cannot repair a table that exists with the
+    WRONG columns — it simply no-ops — so existence alone is not a usable
+    signal. We have to look at the columns.
+    """
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'dic_chat_memory'"
+        )
+        cols = {str(r[0] if not isinstance(r, dict) else r["column_name"]).lower()
+                for r in (cur.fetchall() or [])}
+    except Exception:  # noqa: BLE001 - SQLite has no information_schema
+        try:
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(dic_chat_memory)")  # pg-ok: sqlite-only fallback
+            cols = {str(r[1]).lower() for r in (cur.fetchall() or [])}
+        except Exception:  # noqa: BLE001
+            return (False, False)
+    if not cols:
+        return (False, False)
+    return (True, _SHAPE_MARKER_COLUMN in cols)
+
+
+def memory_health(conn=None) -> dict:
+    """Report whether DIC conversational memory can actually record turns.
+
+    Returned to the chat API so the UI can say "memory unavailable" instead of
+    degrading in silence. ``record_turn`` swallows write failures, so without
+    this a broken table is indistinguishable from an idle one — which is
+    exactly how this went unnoticed while ``dic_chat_memory`` sat at 0 rows.
+    """
+    if conn is None:
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+        except Exception as exc:  # noqa: BLE001
+            return {"available": False, "reason": f"no_connection: {exc}"}
+    exists, correct = _table_shape(conn)
+    if not exists:
+        return {"available": False, "reason": "table_missing"}
+    if not correct:
+        return {
+            "available": False,
+            "reason": (
+                "schema_mismatch: dic_chat_memory exists with the legacy "
+                "message-log shape (migration 191); migration 264 has not been "
+                "applied. Conversational memory cannot record turns."
+            ),
+        }
+    return {"available": True, "reason": ""}
 
 
 def _ensure_table(conn) -> None:
-    """Idempotently create the turn-based dic_chat_memory table, once per process.
+    """Ensure ``dic_chat_memory`` exists AND has the turn-based shape.
 
-    Best-effort: a failure here does not mask the caller's own error. Uses
-    CREATE ... IF NOT EXISTS, so on a DB that already has the correct table this
-    is a no-op; the stale 191 message-log table is reconciled by migration 264.
+    The previous implementation issued a bare ``CREATE TABLE IF NOT EXISTS``,
+    which silently no-ops against the legacy 191 message-log table. Every
+    ``record_turn`` INSERT then failed against the wrong columns and was
+    swallowed, so DIC conversational memory was dead while looking merely idle.
+    A wrong-shaped table is now detected explicitly and logged at ERROR.
     """
-    global _schema_ensured
+    global _schema_ensured, _schema_error
     if _schema_ensured:
         return
     try:
+        exists, correct = _table_shape(conn)
+        if exists and not correct:
+            _schema_error = "schema_mismatch"
+            logger.error(
+                "dic chat_memory: table 'dic_chat_memory' exists with the legacy "
+                "message-log schema (no %s column). Migration 264 has not been "
+                "applied to this database, so every turn write will fail. "
+                "Conversational memory is DISABLED until the schema is reconciled.",
+                _SHAPE_MARKER_COLUMN,
+            )
+            return
         conn.execute(_TURN_TABLE_DDL)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_dic_chat_memory_session "
@@ -87,8 +161,10 @@ def _ensure_table(conn) -> None:
         if hasattr(conn, "commit"):
             conn.commit()
         _schema_ensured = True
+        _schema_error = ""
     except Exception as exc:  # noqa: BLE001
-        logger.debug("dic chat_memory _ensure_table best-effort failed: %s", exc)
+        _schema_error = str(exc)
+        logger.warning("dic chat_memory _ensure_table failed: %s", exc)
 
 # Referring tokens that signal a turn depends on a prior subject. Matched as
 # whole words so "item" / "their_field" never trip "it" / "their".
@@ -265,7 +341,7 @@ def record_turn(
             cur = conn.cursor()
             _ensure_table(conn)
             cur.execute(
-                "SELECT COUNT(*) FROM dic_chat_memory WHERE session_id = ? AND tenant_id = ?",
+                "SELECT COUNT(*) FROM dic_chat_memory WHERE session_id = %s AND tenant_id = %s",
                 (session_id, tenant_id),
             )
             row = cur.fetchone()
@@ -277,7 +353,7 @@ def record_turn(
                     (turn_id, session_id, collection_id, turn_index, query, answer,
                      subject, subject_doc_id, entities_json, doc_ids_json,
                      citations_json, mode, created_at, tenant_id, classification)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     turn_id, session_id, collection_id or "", turn_index, query or "",
@@ -317,7 +393,7 @@ def recall_last_turn(session_id: str, tenant_id: str = "default") -> ChatTurn | 
                        subject, subject_doc_id, entities_json, doc_ids_json,
                        citations_json, mode
                 FROM dic_chat_memory
-                WHERE session_id = ? AND tenant_id = ?
+                WHERE session_id = %s AND tenant_id = %s
                 ORDER BY turn_index DESC
                 LIMIT 1
                 """,

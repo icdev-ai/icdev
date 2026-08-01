@@ -105,7 +105,10 @@ def test_verify_all_exist(tmp_path):
     assert missing == []
 
 
-def test_verify_none_exist(tmp_path):
+def test_verify_none_exist(tmp_path, monkeypatch):
+    # Keep the test network-free and deterministic: neither file is merged.
+    monkeypatch.setattr(kanban, "_fetch_origin_main_quiet", lambda: None)
+    monkeypatch.setattr(kanban, "_path_in_origin_main", lambda rel: False)
     existing, claimed, missing = kanban._verify_claimed_files_exist(
         ["tools/nope1.py", "tools/nope2.py"], tmp_path
     )
@@ -114,7 +117,9 @@ def test_verify_none_exist(tmp_path):
     assert len(missing) == 2
 
 
-def test_verify_partial(tmp_path):
+def test_verify_partial(tmp_path, monkeypatch):
+    monkeypatch.setattr(kanban, "_fetch_origin_main_quiet", lambda: None)
+    monkeypatch.setattr(kanban, "_path_in_origin_main", lambda rel: False)
     (tmp_path / "tools").mkdir()
     (tmp_path / "tools" / "exists.py").write_text("pass")
 
@@ -124,6 +129,106 @@ def test_verify_partial(tmp_path):
     assert existing == 1
     assert claimed == 2
     assert missing == ["tools/missing.py"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# origin/main fallback — merged work whose worktree is gone and whose shared
+# checkout is stale must still count as existing.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def test_verify_missing_on_disk_but_in_origin_main_counts_as_existing(
+    tmp_path, monkeypatch
+):
+    """A path absent from a stale on-disk checkout but present in origin/main
+    is counted as existing (merged work, worktree removed)."""
+    fetched = {"n": 0}
+    monkeypatch.setattr(
+        kanban, "_fetch_origin_main_quiet",
+        lambda: fetched.__setitem__("n", fetched["n"] + 1),
+    )
+    # Only the merged path is in origin/main; the truly-missing one is not.
+    monkeypatch.setattr(
+        kanban, "_path_in_origin_main",
+        lambda rel: rel == "tools/merged_but_worktree_gone.py",
+    )
+
+    existing, claimed, missing = kanban._verify_claimed_files_exist(
+        ["tools/merged_but_worktree_gone.py", "tools/truly_absent.py"], tmp_path
+    )
+    assert claimed == 2
+    assert existing == 1, "merged path should be counted via origin/main"
+    assert missing == ["tools/truly_absent.py"]
+    assert fetched["n"] == 1, "exactly one best-effort fetch when something missing"
+
+
+def test_verify_hot_path_skips_fetch_when_all_on_disk(tmp_path, monkeypatch):
+    """When every claimed path exists on disk, no git fetch is attempted —
+    the hot path must stay network-free."""
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "a.py").write_text("pass")
+    (tmp_path / "tools" / "b.py").write_text("pass")
+
+    fetched = {"n": 0}
+    monkeypatch.setattr(
+        kanban, "_fetch_origin_main_quiet",
+        lambda: fetched.__setitem__("n", fetched["n"] + 1),
+    )
+
+    existing, claimed, missing = kanban._verify_claimed_files_exist(
+        ["tools/a.py", "tools/b.py"], tmp_path
+    )
+    assert (existing, claimed, missing) == (2, 2, [])
+    assert fetched["n"] == 0, "no fetch when everything is already on disk"
+
+
+def test_path_in_origin_main_normalizes_backslashes(monkeypatch):
+    """Windows backslash paths become forward-slash git pathspecs."""
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        r = type("R", (), {})()
+        r.returncode = 0
+        r.stdout = ""
+        r.stderr = ""
+        return r
+
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert kanban._path_in_origin_main("tools\\kanban\\gates.py") is True
+    assert captured["args"][:3] == ["git", "cat-file", "-e"]
+    assert captured["args"][3] == "origin/main:tools/kanban/gates.py"
+
+
+def test_path_in_origin_main_returncode_maps_to_bool(monkeypatch):
+    import subprocess
+
+    def make_run(rc):
+        def _run(args, **kwargs):
+            r = type("R", (), {})()
+            r.returncode = rc
+            r.stdout = ""
+            r.stderr = ""
+            return r
+        return _run
+
+    monkeypatch.setattr(subprocess, "run", make_run(0))
+    assert kanban._path_in_origin_main("tools/x.py") is True
+
+    monkeypatch.setattr(subprocess, "run", make_run(1))
+    assert kanban._path_in_origin_main("tools/x.py") is False
+
+
+def test_path_in_origin_main_swallows_subprocess_error(monkeypatch):
+    import subprocess
+
+    def boom(args, **kwargs):
+        raise OSError("git not found")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert kanban._path_in_origin_main("tools/x.py") is False
 
 
 def test_verify_empty_list():
@@ -240,14 +345,20 @@ def test_verify_task_phantom_guard_runs_before_git():
         "All checks pass, tests green. "
     ) * 5
 
-    fake_run_count = {"n": 0}
+    calls = []
     def fake_run(args, **kwargs):
-        fake_run_count["n"] += 1
+        calls.append(list(args))
         result = type("R", (), {})()
-        # Pretend git log returns commits (would normally pass verification)
-        result.stdout = "abc1234 phantom commit\n"
+        # Phantom paths are NOT in origin/main → cat-file existence probe fails.
+        if len(args) >= 2 and args[1] == "cat-file":
+            result.stdout = ""
+            result.returncode = 1
+        else:
+            # A git-commit check, if reached, WOULD wrongly report commits —
+            # it must never run because the phantom guard short-circuits first.
+            result.stdout = "abc1234 phantom commit\n"
+            result.returncode = 0
         result.stderr = ""
-        result.returncode = 0
         return result
 
     with patch("subprocess.run", side_effect=fake_run):
@@ -255,7 +366,8 @@ def test_verify_task_phantom_guard_runs_before_git():
 
     assert verified is False
     assert "PHANTOM COMPLETION" in reason
-    # Critical: phantom check must run BEFORE git check (fake_run_count should be 0)
-    assert fake_run_count["n"] == 0, (
-        "phantom guard should short-circuit before running git commands"
+    # The git COMMIT check (git log) must never run — the phantom guard rejects
+    # first. (The guard itself may run fetch + cat-file to consult origin/main.)
+    assert not any(len(a) >= 2 and a[1] == "log" for a in calls), (
+        "phantom guard should short-circuit before the git commit check"
     )

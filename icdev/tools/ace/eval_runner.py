@@ -184,7 +184,7 @@ def _persist_run(run_result: EvalRunResult) -> None:
             "INSERT INTO agent_eval_runs "
             "(id, run_id, eval_name, session_id, passed, expected_outcome, "
             "actual_outcome, expected_tools_json, actual_tools_json, eval_id, run_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 f"aer-{uuid.uuid4().hex[:10]}",
                 run_result.run_id, run_result.eval_name,

@@ -28,7 +28,7 @@ _WORKTREE_ROOT = str(Path(__file__).resolve().parents[2])
 if _WORKTREE_ROOT not in sys.path:
     sys.path.insert(0, _WORKTREE_ROOT)
 
-BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000")
+BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050")
 
 
 def _server_reachable(url: str, timeout: float = 2.0) -> bool:

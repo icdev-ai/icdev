@@ -7,8 +7,9 @@ countdown cards.
 
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
-IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
+
+IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 
 from datetime import datetime, timezone
@@ -51,12 +52,14 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
     }
     try:
         from tools.migration_canvas.db.init_db import get_connection as mdc_conn
+        from tools.db.storage import column_exists
         conn_mdc = mdc_conn()
         try:
-            # Look for cutover_date or target_date column
-            cols = [r[1] for r in conn_mdc.execute("PRAGMA table_info(mc_sops)").fetchall()]
-            date_col = "cutover_date" if "cutover_date" in cols else (
-                "target_date" if "target_date" in cols else None
+            # Look for cutover_date or target_date column via the shared
+            # backend-aware probe (information_schema on PG, PRAGMA table_info on
+            # SQLite) rather than a raw PRAGMA that only introspects on SQLite.
+            date_col = "cutover_date" if column_exists(conn_mdc, "mc_sops", "cutover_date") else (
+                "target_date" if column_exists(conn_mdc, "mc_sops", "target_date") else None
             )
             if date_col:
                 rows = conn_mdc.execute(
@@ -109,5 +112,14 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
+    # Load THIS repo's .env so a direct CLI run uses the same board/PG config as the
+    # GenesisDaemon. override=True: a pip-installed ICDEV in site-packages may have
+    # already loaded a different checkout's .env at import. Repo root via __file__, not cwd.
+    try:
+        from pathlib import Path as _EnvPath
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_EnvPath(__file__).resolve().parents[3] / ".env", override=True)
+    except ImportError:
+        pass
     import json as _json
     print(_json.dumps(run({}), indent=2))

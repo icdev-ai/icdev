@@ -1,8 +1,0 @@
-# [TEMPLATE: CUI // SP-CTI]
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: sparkpilot
-  labels:
-    app.kubernetes.io/part-of: sparkpilot
-    classification: CUI

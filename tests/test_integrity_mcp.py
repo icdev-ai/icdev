@@ -95,9 +95,22 @@ def shared_db(monkeypatch, tmp_path):
     monkeypatch.setenv("ICDEV_INTEGRITY_QUARANTINE_DIR", str(tmp_path / "quarantine"))
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
 
+    # Hand out the StorageConnection wrapper, not the raw sqlite3 connection.
+    # The engine authors its SQL PostgreSQL-first (%s placeholders); a bare
+    # sqlite3 connection rejects them, the persist step fails, and the engine
+    # fails CLOSED — surfacing as status/verdict "quarantine" on a benign tree
+    # rather than as a visible error. Production always sees the wrapper, whose
+    # translate_sql rewrites %s -> ? for SQLite.
+    #
+    # A fresh wrapper per call is fine: _SharedConn.close() is a no-op, so every
+    # wrapper shares the one live in-memory database.
     storage = importlib.import_module("tools.db.storage")
-    monkeypatch.setattr(storage, "get_connection", lambda *a, **k: conn)
-    monkeypatch.setattr(gap_handlers, "get_connection", lambda *a, **k: conn)
+    monkeypatch.setattr(
+        storage, "get_connection", lambda *a, **k: storage.StorageConnection(conn, "sqlite")
+    )
+    monkeypatch.setattr(
+        gap_handlers, "get_connection", lambda *a, **k: storage.StorageConnection(conn, "sqlite")
+    )
 
     monkeypatch.setattr(scanners, "_invoke_scanner", lambda cmd, timeout: (0, "{}", ""))
     monkeypatch.setattr(scanners, "_detect_signatures", lambda staged: None)

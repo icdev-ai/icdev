@@ -32,8 +32,21 @@ Subcommands:
   enable <name> [...]      Enable canvas(es) / subsystem(s) by flipping the
                            right .env flags (e.g. boundary, security, rag).
   disable <name> [...]     Disable — flip flags to false.
+  setup [--plain|--json]   Interactive stdlib-only TUI to toggle every
+                           registry component on/off and write .env.
   status [--json]          Report which toggles are currently on/off.
   list [--json]            List supported toggle names + descriptions.
+  tools list [--json]      List all tools discovered by the agent runtime.
+  tools bundles [--json]   List agent toolset bundles (args/agent_toolsets.yaml).
+  chat [-q "query"]        Start an interactive standalone agent session
+                           (--resume <ctx-id> to continue a conversation).
+  sessions list|export|search
+                           List / export (JSONL) / full-text search conversations.
+  skills list|search|install|update
+                           Manage skills via the local registry + marketplace.
+  cron create|list|pause|resume|remove|run|runs
+                           Schedule standalone-agent prompts or allowlisted
+                           scripts (interval or 5-field cron).
   audit export             Export SOC 2 (and future framework) evidence reports.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
@@ -68,6 +81,19 @@ def main(argv: list[str] | None = None) -> int:
         from icdev.tools.cli.enable import main as enable_main
         return enable_main([sub] + rest)
 
+    if sub == "setup":
+        # `icdev setup` is the GUIDED wizard (OS -> LLM -> database -> RAG ->
+        # Docker -> components). The original component-toggle TUI is still one
+        # flag away as `--components`; the wizard hands off to it directly.
+        #
+        # Flags the old TUI owns (--plain/--json on components) still reach it,
+        # so existing scripted usage does not break.
+        if any(a in rest for a in ("--components", "--plain")):
+            from icdev.tools.cli.setup import main as setup_main
+            return setup_main([a for a in rest if a != "--components"])
+        from icdev.tools.cli.setup_wizard import main as wizard_main
+        return wizard_main(rest)
+
     if sub == "scaffold":
         from icdev.tools.cli.scaffold import main as scaffold_main
         return scaffold_main(rest)
@@ -75,6 +101,26 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "profile":
         from icdev.tools.cli.profile import main as profile_main
         return profile_main(rest)
+
+    if sub == "tools":
+        from tools.cli.tools_list import main as tools_main
+        return tools_main(rest)
+
+    if sub == "chat":
+        from tools.agent_runtime.cli import chat_main
+        return chat_main(rest)
+
+    if sub == "sessions":
+        from tools.agent_runtime.cli import sessions_main
+        return sessions_main(rest)
+
+    if sub == "skills":
+        from tools.cli.skills import main as skills_main
+        return skills_main(rest)
+
+    if sub == "cron":
+        from tools.agent_runtime.cron import cron_main
+        return cron_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main

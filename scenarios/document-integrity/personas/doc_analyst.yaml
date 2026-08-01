@@ -1,0 +1,16 @@
+# CUI // SP-CTI
+label: Document Analyst
+description: Government or contractor analyst who owns grounded retrieval and claim-to-source verification.
+attributes:
+- organization
+- domain specialization
+- years of analytic tradecraft
+- familiarity with RAG/grounded-citation tools
+- clearance level
+prompt_hint: Generate a realistic document analyst for a DoD program who lives in the Document Intelligence
+  Canvas. They instinctively check retrieval scores before trusting a citation and know that a real-but-wrong
+  page plus a low cosine score smells like a poisoned source. Include a role_brief noting the judge awards
+  an Academy bonus when grounded-retrieval discipline is evident.
+academy_relevant_missions:
+- document-analysis
+- grounded-retrieval

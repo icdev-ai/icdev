@@ -33,7 +33,14 @@ STUDIO_TABLES: dict[str, str] = {
             created_at    TEXT DEFAULT (datetime('now')),
             updated_at    TEXT DEFAULT (datetime('now')),
             version       INTEGER DEFAULT 1,
-            shared        INTEGER DEFAULT 0
+            shared        INTEGER DEFAULT 0,
+            -- RLS columns. get_connection() injects an exact-match predicate on
+            -- classification, and create_workflow() stamps the caller's own value
+            -- so the create->read->delete roundtrip stays visible to that caller.
+            -- Without these the INSERT fails outright ("no column named
+            -- classification"). Backfilled onto existing DBs by migration 307.
+            classification TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id      TEXT
         )
     """,
     # ── Forms ──────────────────────────────────────────────
@@ -137,7 +144,18 @@ STUDIO_TABLES: dict[str, str] = {
             completed_at   TEXT,
             triggered_by   TEXT,
             project_id     TEXT DEFAULT 'default',
-            summary_json   TEXT
+            -- RLS columns (migration 309). get_connection() attaches the global
+            -- tenant/classification predicate inside a request context; without
+            -- these the run-detail read raises "no such column: classification"
+            -- and the API 500s, while the same read outside a request context
+            -- succeeds — which is why only the browser and E2E caught it.
+            classification TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id      TEXT,
+            summary_json   TEXT,
+            -- dwo-evt-04: inputs the run started with (trigger input_mapping_json
+            -- output, or manual inputs).  NULL = none recorded, distinct from
+            -- '{}' = started with an empty input set.
+            inputs_json    TEXT
         )
     """,
     "studio_workflow_run_steps": """
@@ -153,8 +171,103 @@ STUDIO_TABLES: dict[str, str] = {
             stdout       TEXT,
             stderr       TEXT,
             duration_ms  INTEGER DEFAULT 0,
+            classification TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id    TEXT,
             started_at   TEXT DEFAULT (datetime('now')),
             completed_at TEXT
+        )
+    """,
+    # ── Run-scoped memory (dwo-mem-01) — mutable, per-run step state ──
+    "studio_run_memory": """
+        CREATE TABLE IF NOT EXISTS studio_run_memory (
+            run_id     TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (run_id, key)
+        )
+    """,
+    # ── Event sources & workflow triggers (dwo-evt-01) ─────
+    "studio_event_sources": """
+        CREATE TABLE IF NOT EXISTS studio_event_sources (
+            source_id   TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            kind        TEXT NOT NULL
+                        CHECK(kind IN ('gateway_channel','canvas_bus','schedule','manual')),
+            config_json TEXT,
+            enabled     INTEGER DEFAULT 1,
+            max_il      TEXT DEFAULT 'IL2',
+            created_by  TEXT,
+            created_at  TEXT DEFAULT (datetime('now')),
+            -- RLS (migration 311). get_connection() attaches a
+            -- tenant/classification predicate inside a request context, so a
+            -- table without these columns is not merely unfiltered — every
+            -- dashboard read of it raises "no such column: classification".
+            classification TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id      TEXT
+        )
+    """,
+    "studio_workflow_triggers": """
+        CREATE TABLE IF NOT EXISTS studio_workflow_triggers (
+            trigger_id        TEXT PRIMARY KEY,
+            source_id         TEXT NOT NULL REFERENCES studio_event_sources(source_id),
+            workflow_id       TEXT NOT NULL REFERENCES studio_workflows(workflow_id),
+            event_type        TEXT,
+            filter_json       TEXT,
+            input_mapping_json TEXT,
+            enabled           INTEGER DEFAULT 1,
+            workflow_il       TEXT DEFAULT 'IL6',
+            project_id        TEXT DEFAULT 'default',
+            created_at        TEXT DEFAULT (datetime('now')),
+            -- RLS (migration 311) — see studio_event_sources above.
+            classification    TEXT NOT NULL DEFAULT 'CUI',
+            tenant_id         TEXT
+        )
+    """,
+    # APPEND-ONLY — audit trail: why did this run start
+    "studio_trigger_events": """
+        CREATE TABLE IF NOT EXISTS studio_trigger_events (
+            event_id     TEXT PRIMARY KEY,
+            source_id    TEXT,
+            trigger_id   TEXT,
+            event_type   TEXT,
+            payload_json TEXT,
+            matched      INTEGER DEFAULT 0,
+            run_id       TEXT,
+            reason       TEXT,
+            workflow_id  TEXT,
+            outcome      TEXT,
+            classification TEXT,
+            idempotency_key TEXT UNIQUE,
+            envelope_id  TEXT,
+            received_at  TEXT DEFAULT (datetime('now')),
+            -- RLS (migration 311). `classification` already exists above as the
+            -- event's own IL marking and doubles as the RLS predicate column;
+            -- only tenant_id was missing.
+            tenant_id    TEXT
+        )
+    """,
+    # APPEND-ONLY — audit trail: every MCP dispatch attempt (dwo-mcp-02-d5).
+    # decision CHECK mirrors mcp_executor.DECISIONS; params are digested, never
+    # stored verbatim. See migration 307 for the full rationale.
+    "studio_mcp_dispatch_audit": """
+        CREATE TABLE IF NOT EXISTS studio_mcp_dispatch_audit (
+            audit_id       TEXT PRIMARY KEY,
+            run_id         TEXT,
+            step_id        TEXT,
+            tool           TEXT NOT NULL,
+            params_sha256  TEXT NOT NULL,
+            principal_id   TEXT,
+            tenant_id      TEXT,
+            caller_il      TEXT,
+            caller_roles   TEXT,
+            caller_source  TEXT,
+            decision       TEXT NOT NULL
+                           CHECK(decision IN ('allowed','refused','pending_approval')),
+            reason         TEXT NOT NULL,
+            detail         TEXT,
+            classification TEXT NOT NULL,
+            recorded_at    TEXT NOT NULL
         )
     """,
     # ── Dashboards ─────────────────────────────────────────
@@ -178,6 +291,7 @@ APPEND_ONLY_TABLES = [
     "studio_automation_runs",
     "studio_workflow_runs",
     "studio_workflow_run_steps",
+    "studio_trigger_events",
 ]
 
 

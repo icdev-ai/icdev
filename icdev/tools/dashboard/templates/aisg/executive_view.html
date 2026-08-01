@@ -8,6 +8,19 @@
     <p class="page-subtitle">ROI summary, agent activity digest, and AI maturity trend for leadership.</p>
 </div>
 
+{% if state != 'ok' %}
+<div class="exec-empty-state" id="exec-empty-state">
+    <div class="exec-empty-icon">{% if state == 'error' %}⚠️{% else %}📊{% endif %}</div>
+    <div class="exec-empty-title">
+        {% if state == 'error' %}Executive data unavailable{% else %}No ROI data yet{% endif %}
+    </div>
+    <div class="exec-empty-msg">{{ message or 'No ROI events recorded yet' }}</div>
+    {% if state != 'error' %}
+    <div class="exec-empty-hint">Leadership metrics populate automatically as ICDEV™ automation logs ROI events. Nothing has been recorded for this environment yet.</div>
+    {% endif %}
+</div>
+{% else %}
+
 <!-- Hero ROI Card -->
 <div class="hero-roi-card" id="hero-roi-card">
     <div class="hero-roi-primary">
@@ -29,7 +42,7 @@
             <div class="hero-roi-stat-label">Agents Active</div>
         </div>
         <div class="hero-roi-stat">
-            <div class="hero-roi-stat-value">{{ maturity_score }}/100</div>
+            <div class="hero-roi-stat-value">{% if maturity_available and maturity_score is not none %}{{ maturity_score }}/100{% else %}N/A{% endif %}</div>
             <div class="hero-roi-stat-label">Maturity Score</div>
         </div>
     </div>
@@ -40,6 +53,7 @@
     <!-- Maturity Trend -->
     <div class="exec-card exec-card-wide">
         <h3>AI Maturity Trend</h3>
+        {% if maturity_available and maturity_trend %}
         <div class="maturity-level-badge">
             <span class="badge badge-success" style="font-size:1rem;padding:8px 16px;">{{ maturity_level }}</span>
         </div>
@@ -52,6 +66,9 @@
             </div>
             {% endfor %}
         </div>
+        {% else %}
+        <div class="exec-inline-empty">AI maturity scoring is not yet available for this environment.</div>
+        {% endif %}
     </div>
 
     <!-- Agent Activity -->
@@ -115,10 +132,24 @@
         </tbody>
     </table>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block styles %}
 <style>
+.exec-empty-state {
+    text-align: center;
+    padding: 64px 32px;
+    background: var(--bg-card);
+    border: 1px dashed var(--border);
+    border-radius: 16px;
+    margin-top: 24px;
+}
+.exec-empty-icon { font-size: 3rem; line-height: 1; }
+.exec-empty-title { font-size: 1.3rem; font-weight: 700; margin-top: 16px; }
+.exec-empty-msg { font-size: 0.95rem; color: var(--text-dim); margin-top: 8px; }
+.exec-empty-hint { font-size: 0.83rem; color: var(--text-dim); margin: 16px auto 0; max-width: 520px; }
+.exec-inline-empty { font-size: 0.85rem; color: var(--text-dim); padding: 24px 8px; text-align: center; }
 .hero-roi-card {
     display: flex;
     align-items: center;

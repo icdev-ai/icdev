@@ -132,7 +132,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
 
             now = _now()
             updates["updated_at"] = now
-            set_clause = ", ".join(f"{k}=?" for k in updates)
+            set_clause = ", ".join(f"{k}=%s" for k in updates)
             db.execute(
                 f"UPDATE nc_change_requests SET {set_clause} WHERE id=%s",
                 list(updates.values()) + [cr_id],
@@ -197,13 +197,28 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
                 return jsonify({"error": "Intent policy not found"}), 404
 
             policy_dict = dict(policy)
+            rule_parse_error = None
             try:
                 rule = json.loads(policy_dict.get("rule_json") or "{}")
-            except Exception:
+            except Exception as exc:
+                # Fail-closed (ndc-gov-01): an unparseable rule cannot be
+                # evaluated, so the validation is an explicit error — never a
+                # silent benign default.
+                logger.warning(
+                    "Intent policy %s (topo=%s) has invalid rule_json: %s",
+                    policy_id, topo_id, exc,
+                )
                 rule = {}
+                rule_parse_error = str(exc)
 
-            # Evaluate rule against topology (delegate to twin.py if available)
-            result, detail = _evaluate_intent_rule(db, topo_id, rule)
+            if rule_parse_error:
+                result, detail = "error", {
+                    "reason": f"Invalid rule definition: {rule_parse_error}",
+                    "error": "rule_json_parse",
+                }
+            else:
+                # Evaluate rule against topology (delegate to twin.py if available)
+                result, detail = _evaluate_intent_rule(db, topo_id, rule)
 
             val_id = "iv-" + uuid.uuid4().hex[:10]
             now = _now()
@@ -219,6 +234,9 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
             "validation_id": val_id,
             "policy_id": policy_id,
             "result": result,
+            # Aggregate verdict — fail-closed: only an explicit "pass" passes;
+            # "error"/"fail"/"unknown" all read as not-passing.
+            "passed": _verdict_is_pass(result),
             "detail": detail,
             "validated_at": now,
         })
@@ -233,21 +251,42 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
                 "SELECT topology_id, COUNT(*) as cnt FROM nc_change_requests "
                 "WHERE status NOT IN ('closed','cancelled') GROUP BY topology_id",
             ).fetchall()
+            has_intents = _table_exists(db, "nc_intent_validations")
             failed_intents = db.execute(
                 "SELECT topology_id, COUNT(*) as cnt FROM nc_intent_validations "
                 "WHERE result='fail' GROUP BY topology_id",
-            ).fetchall() if _table_exists(db, "nc_intent_validations") else []
+            ).fetchall() if has_intents else []
+            # Fail-closed (ndc-gov-01): validations that errored are NOT passes.
+            # Surface them alongside failures so an evaluation error can never
+            # be silently rolled up as a healthy/passing gate.
+            errored_intents = db.execute(
+                "SELECT topology_id, COUNT(*) as cnt FROM nc_intent_validations "
+                "WHERE result='error' GROUP BY topology_id",
+            ).fetchall() if has_intents else []
             pending_approval = db.execute(
                 "SELECT topology_id, COUNT(*) as cnt FROM nc_change_requests "
                 "WHERE status='pending_approval' GROUP BY topology_id",
             ).fetchall()
 
+        total_failed = sum(r[1] for r in failed_intents)
+        total_errored = sum(r[1] for r in errored_intents)
+        # Overall gate verdict — errors are a distinct not-pass state.
+        if total_errored:
+            overall_intent_status = "error"
+        elif total_failed:
+            overall_intent_status = "fail"
+        else:
+            overall_intent_status = "pass"
+
         return jsonify({
             "open_change_requests": [dict(zip(["topology_id", "count"], r)) for r in open_crs],
             "failed_intent_policies": [dict(zip(["topology_id", "count"], r)) for r in failed_intents],
+            "errored_intent_policies": [dict(zip(["topology_id", "count"], r)) for r in errored_intents],
             "pending_approvals": [dict(zip(["topology_id", "count"], r)) for r in pending_approval],
             "total_open_crs": sum(r[1] for r in open_crs),
-            "total_failed_intents": sum(r[1] for r in failed_intents),
+            "total_failed_intents": total_failed,
+            "total_errored_intents": total_errored,
+            "overall_intent_status": overall_intent_status,
         })
 
 
@@ -262,8 +301,18 @@ def _current_user() -> str:
 
 
 def _table_exists(db, table: str) -> bool:
-    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
-    return r is not None
+    from tools.network.blueprint_helpers import table_exists
+    return table_exists(db, table)
+
+
+def _verdict_is_pass(result: str) -> bool:
+    """Fail-closed verdict test — only the explicit 'pass' state passes.
+
+    'fail', 'error', and 'unknown' all read as not-passing. Any aggregation
+    that rolls up gate verdicts MUST route through this so an evaluation error
+    can never be counted as a pass (ndc-gov-01).
+    """
+    return result == "pass"
 
 
 def _evaluate_intent_rule(db, topo_id: str, rule: dict) -> tuple[str, dict]:
@@ -271,42 +320,56 @@ def _evaluate_intent_rule(db, topo_id: str, rule: dict) -> tuple[str, dict]:
 
     Delegates to twin.py if available, otherwise returns a heuristic result.
 
-    Returns: (result: 'pass' | 'fail' | 'unknown', detail: dict)
+    Returns: (result: 'pass' | 'fail' | 'error' | 'unknown', detail: dict)
+
+    Fail-closed contract (ndc-gov-01): if any evaluation step raises, the
+    result is the explicit 'error' state (with a short exception summary in
+    the detail), NEVER a benign 'pass'. The exception is caught here so the
+    calling route still returns 200 with a result, but callers/aggregators
+    must treat 'error' as not-pass.
     """
     rule_type = rule.get("type", "")
 
-    if rule_type == "no_single_points_of_failure":
-        # Heuristic: devices with only 1 uplink connection
-        spof_devices = []
-        try:
+    try:
+        if rule_type == "no_single_points_of_failure":
+            # Heuristic: devices with only 1 uplink connection
             from tools.network.twin import blast_radius
             br = blast_radius(topo_id)
             spof_devices = [n for n, data in br.get("nodes", {}).items() if data.get("is_spof")]
-        except Exception:
-            pass
-        result = "pass" if not spof_devices else "fail"
-        return result, {"spof_devices": spof_devices, "rule_type": rule_type}
+            result = "pass" if not spof_devices else "fail"
+            return result, {"spof_devices": spof_devices, "rule_type": rule_type}
 
-    if rule_type == "no_open_cat1_findings":
-        count = db.execute(
-            "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=%s AND severity='cat1' AND status='open'",
-            (topo_id,),
-        ).fetchone()[0]
-        result = "pass" if count == 0 else "fail"
-        return result, {"cat1_open_count": count, "rule_type": rule_type}
+        if rule_type == "no_open_cat1_findings":
+            count = db.execute(
+                "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=%s AND severity='cat1' AND status='open'",
+                (topo_id,),
+            ).fetchone()[0]
+            result = "pass" if count == 0 else "fail"
+            return result, {"cat1_open_count": count, "rule_type": rule_type}
 
-    if rule_type == "all_devices_managed":
-        unmanaged = db.execute(
-            "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND managed=0 AND object_type NOT IN ('label','group','link')",
-            (topo_id,),
-        ).fetchone()[0] if _col_exists_inner(db, "nc_objects", "managed") else 0
-        result = "pass" if unmanaged == 0 else "fail"
-        return result, {"unmanaged_count": unmanaged, "rule_type": rule_type}
+        if rule_type == "all_devices_managed":
+            unmanaged = db.execute(
+                "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND managed=0 AND object_type NOT IN ('label','group','link')",
+                (topo_id,),
+            ).fetchone()[0] if _col_exists_inner(db, "nc_objects", "managed") else 0
+            result = "pass" if unmanaged == 0 else "fail"
+            return result, {"unmanaged_count": unmanaged, "rule_type": rule_type}
+    except Exception as exc:
+        # Fail-closed: an evaluation error is an explicit 'error', not a 'pass'.
+        logger.warning(
+            "Intent rule evaluation failed (rule_type=%s, topo=%s): %s",
+            rule_type or "?", topo_id, exc,
+        )
+        return "error", {
+            "rule_type": rule_type,
+            "error": type(exc).__name__,
+            "reason": f"Evaluation error: {exc}",
+        }
 
     # Unknown rule type — cannot evaluate
     return "unknown", {"message": f"Rule type '{rule_type}' not implemented", "rule": rule}
 
 
 def _col_exists_inner(db, table: str, col: str) -> bool:
-    cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
-    return col in cols
+    from tools.network.blueprint_helpers import col_exists
+    return col_exists(db, table, col)

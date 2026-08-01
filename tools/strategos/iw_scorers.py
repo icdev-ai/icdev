@@ -32,14 +32,13 @@ _NOW = lambda: datetime.now(timezone.utc)  # noqa: E731
 
 
 def _get_conn():
-    try:
-        from tools.db.storage import get_connection
-        return get_connection()
-    except Exception:
-        import sqlite3
-        from pathlib import Path
-        db = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
-        return sqlite3.connect(str(db))
+    # Always route through the shared storage layer. Its translate layer
+    # handles placeholder/dialect differences on both SQLite and PostgreSQL.
+    # A raw sqlite3 fallback would reject the %s placeholders these queries
+    # use, so it was dead weight that masked genuine import failures — let
+    # an import error raise loudly instead.
+    from tools.db.storage import get_connection
+    return get_connection()
 
 
 def _cutoff(window_days: int) -> str:

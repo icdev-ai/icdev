@@ -87,13 +87,19 @@
             <tr>
                 <td><strong>{{ v.check_type|replace('_', ' ')|title }}</strong></td>
                 <td>
-                    {% if v.passed %}
+                    {% if v.passed is none %}
+                    <span class="badge badge-warning" title="Validation toolchain absent or not run — result could not be confirmed">Not verified</span>
+                    {% elif v.passed %}
                     <span class="badge badge-success">Pass</span>
                     {% else %}
                     <span class="badge badge-danger">Fail</span>
                     {% endif %}
                 </td>
-                <td>{{ "%.1f"|format((v.score or 0) * 100) }}%</td>
+                <td>
+                    {% if v.score is none %}
+                    <span class="text-muted" title="Not verified — toolchain absent">n/a</span>
+                    {% else %}{{ "%.1f"|format(v.score * 100) }}%{% endif %}
+                </td>
                 <td>
                     {% if v.findings %}
                     <details>

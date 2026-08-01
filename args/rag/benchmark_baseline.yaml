@@ -1,0 +1,182 @@
+# CUI // SP-CTI
+# Retrieval-toggle benchmark baseline configuration (oss-meas-01-d1).
+#
+# Declares WHAT oss-meas-01 measures and WHAT it measures against, so the runner
+# (oss-meas-01-d2), the run (d3), the report (d4), and the flip (d5) all read one
+# source of truth instead of re-deriving toggle paths from prose.
+#
+# FORGE layer separation: this is args/ — behaviour settings. The runner reads
+# it; no toggle path, baseline filename, or precondition is hardcoded in Python.
+version: 1
+classification: "CUI // SP-CTI"
+
+golden_set: args/rag/golden_query_set.yaml
+config_under_test: args/rag_config.yaml
+top_k: 5
+
+# ---------------------------------------------------------------------------
+# Committed reference runs
+# ---------------------------------------------------------------------------
+# Both were generated over the 33 v1 queries (golden_set_version: 1). Compare
+# against them ONLY via the rce-eval-01 cohort below — a 48-query v2 aggregate
+# is a different population and a delta against it would be meaningless.
+references:
+  baseline:
+    path: data/rag/rce_baseline_compliance.json
+    note: >-
+      All toggles at their shipped defaults. recall@5 0.9394 / MRR 0.9343 /
+      nDCG@5 0.9429 / citation_hit_rate 0.9697 over 33 queries.
+  contextual:
+    path: data/rag/rce_contextual_compliance.json
+    note: >-
+      contextual_retrieval ON (already shipped ON). +0.0151 recall@5 over
+      baseline. Kept as the worked example of a KEEP-sized effect.
+
+# ---------------------------------------------------------------------------
+# Comparability cohorts
+# ---------------------------------------------------------------------------
+# Report each cohort separately. "rce-eval-01" is frozen: these 33 ids are the
+# exact population behind the committed reference runs, so this cohort — and
+# only this cohort — is directly comparable to them.
+cohorts:
+  rce-eval-01:
+    comparable_to: [baseline, contextual]
+    description: The original 33 v1 queries. Frozen; never add or remove ids.
+    query_ids:
+      - q-ac2-account-mgmt
+      - q-ac3-access-enforcement
+      - q-ac6-least-privilege
+      - q-ac17-remote-access
+      - q-au2-event-logging
+      - q-au3-audit-content
+      - q-au9-protection-audit
+      - q-ia2-mfa
+      - q-ia5-authenticator-mgmt
+      - q-sc7-boundary-protection
+      - q-sc8-transmission-confidentiality
+      - q-sc13-cryptographic-protection
+      - q-sc28-data-at-rest
+      - q-cm2-baseline-config
+      - q-cm6-config-settings
+      - q-cm7-least-functionality
+      - q-ra5-vuln-scanning
+      - q-ra3-risk-assessment
+      - q-cp9-system-backup
+      - q-ir4-incident-handling
+      - q-ir6-incident-reporting
+      - q-ca2-control-assessments
+      - q-ca5-poam
+      - q-ca7-continuous-monitoring
+      - q-fedramp-impact-levels
+      - q-fedramp-authorization-boundary
+      - q-fedramp-continuous-monitoring
+      - q-cmmc-levels
+      - q-cmmc-cui-protection
+      - q-stig-cat1
+      - q-stig-hardening
+      - q-fips199-categorization
+      - q-cui-marking
+  # Pattern cohorts are derived from the `pattern` key, not listed by id.
+  by_pattern:
+    comparable_to: []
+    description: >-
+      Aggregate per pattern (simple / multi_hop / complex). This is the cohort
+      that can actually resolve rerank and adaptive_routing — see headroom below.
+
+# ---------------------------------------------------------------------------
+# Headroom — why the v1-only measurement could not have worked
+# ---------------------------------------------------------------------------
+headroom:
+  v1_saturation:
+    queries_at_perfect_recall_and_mrr: 30
+    queries_total: 33
+    note: >-
+      A cross-encoder only reorders top-k, so it cannot improve a query already
+      at rank 1. 30/33 of v1 is inert for rerank; the entire measurement rode on
+      q-sc13-cryptographic-protection, q-fedramp-authorization-boundary, and
+      q-stig-hardening. d4 must not read a null result on the simple cohort as
+      "the toggle does nothing" — on that cohort it CANNOT do anything.
+
+# ---------------------------------------------------------------------------
+# Toggles under test
+# ---------------------------------------------------------------------------
+# Isolation protocol (d2): exactly one toggle flipped per arm, everything else
+# left at the shipped default. contextual_retrieval stays ON — it is already
+# shipped ON, so turning it off would measure a different system than the one
+# users run.
+toggles:
+  - name: rerank
+    path: rag.rerank.enabled
+    default: false
+    metrics: [recall_at_5, mrr, ndcg_at_5, citation_hit_rate, latency_ms]
+    discriminating_cohort: [multi_hop, complex]
+    precondition: >-
+      rag.rerank.method selects the arm. method "bge" loads bge-reranker-v2-m3,
+      a downloaded model weight — which the oss_adaptation card explicitly
+      rejects as a runtime dependency. Run the "llm" method (rag.rerank.llm_model,
+      qwen3-local) as the shippable arm; if the bge arm is also measured, record
+      it as reference-only and do NOT let d5 flip a KEEP that requires weights.
+
+  - name: reflective_rerank
+    path: rag.reflective_rerank.enabled
+    default: false
+    metrics: [recall_at_5, mrr, ndcg_at_5, citation_hit_rate, latency_ms]
+    discriminating_cohort: [complex, multi_hop]
+    precondition: >-
+      Self-RAG per-doc reflection over max_candidates 20. Costs one LLM call per
+      candidate — latency delta is the deciding number here, not recall alone.
+
+  - name: adaptive_routing
+    path: rag.adaptive_routing.enabled
+    default: false
+    metrics: [recall_at_5, mrr, ndcg_at_5, citation_hit_rate, latency_ms]
+    discriminating_cohort: [complex, multi_hop]
+    precondition: >-
+      Only diverges from the default path on queries its classifier labels
+      complex, where it widens to complex_top_k 10. On the simple cohort it is
+      the null change BY CONSTRUCTION. d3 must also record the classifier's
+      label per query — if it labels the multi_hop/complex queries "simple",
+      the toggle is untested and the run is void, not a DROP.
+      use_llm_classifier is true, so this arm needs a reachable LLM.
+
+  - name: binary_prefilter
+    path: rag.quantization.binary_prefilter.enabled
+    default: false
+    metrics: [recall_at_5, mrr, ndcg_at_5, latency_ms]
+    discriminating_cohort: [simple, multi_hop, complex]
+    precondition: >-
+      HARD GATE — min_corpus_size is 512. The committed data/rag/rag_vectors.db
+      is a ~31-chunk SAMPLE (see data/rag/README.md), so on the sample store
+      this toggle SILENTLY NO-OPS and would report a perfect null. d3 must
+      assert the live corpus is >= 512 chunks before recording a verdict;
+      otherwise the verdict is INCONCLUSIVE, not DROP. This is a speed/recall
+      tradeoff — judge it on latency at equal recall, not on recall alone.
+
+  - name: auto_indexer
+    path: rag.auto_indexer.enabled
+    default: false
+    metrics: [latency_ms]
+    discriminating_cohort: []
+    precondition: >-
+      CATEGORY MISMATCH — this is an ingestion-side file watcher (300s scan
+      interval), not a retrieval-path toggle. It cannot change recall/MRR/nDCG
+      over a FIXED corpus, so scoring it with ranking metrics would manufacture
+      a meaningless zero. Judge it on corpus freshness and coverage (does an
+      edited file become retrievable without a manual re-ingest?) plus its
+      CUI-boundary behaviour, and say so explicitly in d4 rather than emitting
+      a fake ranking row.
+
+# ---------------------------------------------------------------------------
+# Reference row — already measured, do not re-run to satisfy a symmetry urge
+# ---------------------------------------------------------------------------
+reference_rows:
+  - name: raptor
+    path: rag.raptor.enabled
+    verdict: DROP
+    measured:
+      recall_at_5: 0.0
+      mrr: 0.0
+      ndcg_at_5_delta: -0.0005
+    note: >-
+      Measured as an outright regression in rce-eval-05. Carried into the d4
+      report as contrast. RAGFlow having it is not a reason to re-enable it.

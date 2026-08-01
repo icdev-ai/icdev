@@ -1,6 +1,9 @@
 -- CUI // SP-CTI
 -- Workflow Forms Canvas (WFC) — initial migration
--- Tables: wfc_branding, wfc_workflow_form_nodes
+-- Tables: wfc_branding
+-- (wfc_workflow_form_nodes was removed in cnr-wfc-03 — the form-intake HITL
+--  gate it backed was never registered or enforced; per-step form linkage is
+--  persisted in studio_workflows.template_yaml instead.)
 
 CREATE TABLE IF NOT EXISTS wfc_branding (
     id               TEXT PRIMARY KEY,
@@ -18,15 +21,4 @@ CREATE TABLE IF NOT EXISTS wfc_branding (
     UNIQUE(entity_type, entity_id)
 );
 
-CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
-    id                   TEXT PRIMARY KEY,
-    workflow_id          TEXT NOT NULL,
-    node_key             TEXT NOT NULL,
-    form_id              TEXT NOT NULL REFERENCES studio_forms(form_id),
-    node_label           TEXT,
-    required_before_next INTEGER DEFAULT 1,
-    created_at           TEXT DEFAULT (datetime('now'))
-);
-
 CREATE INDEX IF NOT EXISTS idx_wfc_branding_entity ON wfc_branding(entity_type, entity_id);
-CREATE INDEX IF NOT EXISTS idx_wfc_form_nodes_workflow ON wfc_workflow_form_nodes(workflow_id);

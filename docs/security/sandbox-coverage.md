@@ -329,6 +329,22 @@ recommend whether to enable reasoned codegen.
 - **Revisit if:** the wrapper ever directly executes, compiles, or `subprocess`-runs the
   code it generates → re-decide as **sandboxed**.
 
+### Gap 17 — PDC pipeline ingress (`tools/pipeline/`)
+
+**Modules:** `tools/pipeline/blueprint.py` (design-graph save/export/deploy/validate routes, collab push/poll, SOP CRUD), `tools/pipeline/export.py`, `tools/pipeline/deploy_generator.py`, `tools/pipeline/iac_validator.py`, `tools/pipeline/sops.py`
+
+**Ingress path:** An authenticated PDC operator submits (a) a pipeline **design graph JSON** (`{nodes, edges}`) that is rendered into IaC (GitLab CI / GitHub Actions / Jenkinsfile / Tekton / Terraform-style bundles) and a downloadable zip, (b) **SOP bodies** (title, steps, NIST controls) persisted to `pdc_sops`, and (c) **collaboration payloads** (op_type + data) pushed to `pc_collab_sessions`. All content is stored verbatim in the pipeline-canvas DB (SQLite/PG TEXT/JSON columns) and re-rendered into templated text or the browser.
+
+- **Decision:** **trusted-first-party / data-only** (render-side escaping + write-boundary JSON validation)
+- **Rationale:** The design graph, SOP body, and collab payload are **data, never code** — no module in `tools/pipeline/` calls `exec()`, `eval()`, `os.system`, or `subprocess` on ingress content. IaC renderers (`export.py`, `deploy_generator.py`) build strings from allowlisted node types via fixed templates; unknown node types are dropped, not evaluated. Graph JSON is parsed with `json.loads`/`parse_graph_json` behind a write boundary that rejects malformed input (`422 corrupt graph`). The pipeline-canvas connection runs with RLS disabled by design (canvas tables lack tenant_id/classification), so writes are scoped to the per-canvas DB, not the shared icdev DB. LLM-assisted IaC *review* (`tools/devops/iac_review.py`) now runs the router prompt-injection scan on the uploaded IaC (pdx-hyg-01 removed its `skip_injection_scan`).
+- **Guardrails:**
+  - Graph JSON validated at the write boundary (`parse_graph_json` → `422` on corrupt input); node types filtered to an allowlist before rendering.
+  - Rendered IaC / SOP / collab content is emitted through Jinja2 auto-escaping in templates and as JSON via `jsonify` on API routes — never interpolated unescaped into HTML.
+  - Export download filenames are sanitized to `[a-z0-9._-]` (pdx-hyg-01) to block Content-Disposition header injection / path traversal.
+  - No `exec()`/`eval()`/`subprocess` on ingress content anywhere in `tools/pipeline/`.
+  - All routes are behind `pc_login_required` / `pc_role_required`; collab identity is server-derived, never body-supplied.
+- **Revisit if:** any pipeline content is ever passed to a shell command, compiled/executed, or rendered outside Jinja2 auto-escape → re-decide as **sandboxed**.
+
 ### Bypass — non-LLM code generators (template/scaffold emitters)
 
 These paths were assessed as reasoned-codegen wiring targets and found to contain **no LLM
@@ -556,17 +572,27 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 - **Risk:** Parses user-supplied content from 5 external scan formats: CycloneDX SBOM (JSON),
   Bandit SAST output (JSON), security survey responses (JSON), Nmap scan results (XML),
   and OpenAPI specifications (YAML/JSON). All content arrives from an authenticated API
-  endpoint (`POST /security/api/zig/targets/<id>/ingest`).
+  endpoint (`POST /security/api/zig/targets/<id>/ingest`). As of shx-auth-01 the endpoint
+  is auth-guarded (`@sc_login_required`), so ingest requires an authenticated session.
 - **Decision:** **bypass-documented**
-- **Rationale:** All 5 parsers use safe stdlib decoders only — `json.loads()`,
-  `xml.etree.ElementTree.fromstring()`, `yaml.safe_load()`. No `eval()`, `exec()`,
-  `subprocess`, or filesystem writes occur. Parsed data flows only to `set_activity_status()`
-  via parameterized SQL inserts. XML parsing uses stdlib `ElementTree` (no DTD expansion,
-  no external entity resolution). YAML uses `safe_load` (no custom constructors). This
-  guarantee is enforced by `tests/test_zig_ingest_adapters.py` (31 unit tests, all
-  using a DB-stub that verifies no real SQL calls reach the DB).
+- **Rationale:** All 5 parsers use safe decoders only — `json.loads()`, `yaml.safe_load()`
+  (no custom constructors), and hardened XML parsing. No `eval()`, `exec()`, `subprocess`,
+  or filesystem writes occur. Parsed data flows only to `set_activity_status()` via
+  parameterized SQL inserts. **XML entity-expansion / XXE defense (shx-auth-03):** XML is
+  parsed through `zig_external_adapter._parse_xml_safe()`, which (1) rejects any payload
+  containing `<!DOCTYPE` or `<!ENTITY` (case-insensitive pre-parse guard) with a clear
+  `ValueError` before the parser runs, and (2) parses via `defusedxml.ElementTree.fromstring`
+  (already a project dependency; forbids entity expansion and external entity resolution).
+  This closes the billion-laughs entity-expansion DoS that the previous stdlib
+  `xml.etree.ElementTree` parser was vulnerable to. **Payload size cap (shx-auth-03):** the
+  route enforces `ZIG_INGEST_MAX_BYTES` (5 MiB) and returns HTTP 413 before any parsing,
+  bounding memory/CPU for every source type. These guarantees are enforced by
+  `tests/test_zig_ingest_adapters.py` (adapter-level XML defense + benign-parse tests, all
+  using a DB-stub that verifies no real SQL calls reach the DB) and
+  `tests/test_zig_ingest_route.py` (route-level oversized-payload → 413).
 - **Revisit if:** any ingest path adds `eval()`, subprocess execution of scan tools,
-  or resolves external references from within the uploaded content.
+  resolves external references from within the uploaded content, or switches XML parsing
+  away from `_parse_xml_safe()` / `defusedxml`.
 
 ### Gap 20 — NOVA SELA Skill Evolution (`tools/evolution/artifact_evolver.py`)
 - **Files:** `tools/evolution/artifact_evolver.py`, `tools/evolution/fitness.py`
@@ -729,3 +755,267 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - Output is consumed solely as a proxy URL string (first stdout line) — never executed, never rendered.
   - Resolving `None` never clobbers a pre-existing OS `HTTPS_PROXY`; the whole feature is opt-in and off by default.
 - **Revisit if:** the proxy command ever becomes settable from a per-request/API surface or from tenant-supplied data → re-decide as **sandboxed** (`tools/security/sandbox_executor.py`) or drop `shell=True` in favor of an argv allowlist.
+
+### Gap 29 — Data Design Canvas — Query tab SQL sandbox (`tools/data_canvas/query_sandbox.py`)
+
+**Module:** `tools/data_canvas/query_sandbox.py` (`validate_query()` + `execute_query()`)
+
+**Ingress path:** An authenticated Data Design Canvas user types a **free-form SQL query** into the Query tab; the string is validated by `validate_query()` and, if accepted, executed read-only against the connected backend (sqlite / postgresql-psycopg2 / duckdb) via `execute_query()`. The query text is the highest-trust-sensitivity input in the canvas — it is passed to a live DB cursor.
+
+- **Decision:** **sandboxed** (parser-based read-only gate + statement timeout; DB-role backstop)
+- **Rationale:** User-supplied SQL is untrusted and reaches a DB cursor, so the gate is treated as a sandbox boundary rather than trusted-first-party. Prior to dcpr-sec-01 the validator was a first-word regex allowlist plus a `\b`-bounded keyword blocklist, which allowed several bypasses (stacked statements smuggling `COPY … TO PROGRAM` RCE, `COPY`/`INSTALL`/`LOAD`/`SET` absent from the blocklist, and file/catalog reads via plain `SELECT pg_read_file(...)`/`read_csv_auto(...)`). The rewrite parses with `sqlparse`, accepting **exactly one** top-level statement whose shape is SELECT / WITH (CTE) / EXPLAIN and rejecting every DML/DDL and file/catalog/RCE reference. No user SQL is `exec()`/`eval()`-ed as Python — it is only handed to the DB driver after passing the gate.
+- **Guardrails:**
+  - **Single-statement gate** — `sqlparse.split()` rejects any input with more than one statement, closing the stacked-statement RCE (`SELECT 1; COPY x TO PROGRAM 'sh -c id'`).
+  - **Statement-shape gate** — accepts only SELECT/WITH (`get_type()=="SELECT"`) or EXPLAIN (first keyword); everything else (COPY, INSERT, etc.) is refused.
+  - **Keyword blocklist** — DML/DDL plus `COPY`/`SET`/`RESET`/`INSTALL`/`LOAD` (and the original `insert…analyze` set) rejected anywhere in the statement.
+  - **Identifier/function blocklist** — `pg_read_file`, `pg_read_binary_file`, `pg_ls_dir`, `pg_stat_file`, `lo_import`, `lo_export`, `pg_authid`, `pg_shadow`, `pg_catalog`, `information_schema`, `read_csv_auto`, `read_parquet`, `dblink`, and the `TO PROGRAM` construct are refused even inside a plain SELECT.
+  - **DoS bound** — `execute_query()` issues `SET LOCAL statement_timeout = '10000'` (10s) on PostgreSQL before running the query; results are capped at 1000 rows on every backend (sqlite/duckdb timeout is a documented no-op backed by the row cap).
+  - **Defense in depth** — the module documents that the DB connection SHOULD authenticate as a low-privilege, read-only role (no COPY/superuser/write grants).
+  - **Regression test** — `tests/test_dcpr_query_sandbox.py` asserts rejection of stacked statements, COPY, `pg_read_file`, `information_schema`, DML/DDL, and admin verbs, and acceptance of `SELECT 1` / `EXPLAIN SELECT 1`.
+- **Revisit if:** the Query tab ever accepts unauthenticated input, the sandbox is asked to allow writes, or a new backend adds a file/catalog function not covered by the identifier blocklist.
+
+### Gap 30 — Data Mesh `ext.*` governance gate — local no-OPA fail-open (`tools/data_canvas/data_mesh/governance_engine.py`)
+
+**Module:** `tools/data_canvas/data_mesh/governance_engine.py` (`check_ext_access()`)
+
+**Ingress path:** `check_ext_access(connector_name, table, user_attrs=None)` is the governance gate IQE's `ext.*` adapter (`tools/iqe/adapters/ext_databridge.py`) calls before reading rows from an external DataBridge connector (Splunk, Tenable, ServiceNow, GDELT, …). When an OPA server is configured (`ICDEV_OPA_URL`), the gate evaluates the datamesh policy. When `ICDEV_OPA_URL` is **blank — the default** — the gate historically returned `allowed=True` unconditionally with a `local pass-through` audit entry. For an IL4 canvas this is a **fail-open** posture: absent policy infrastructure, every external read is permitted.
+
+- **Decision:** **sandboxed-on-demand** (fail-open by default; a toggle switches the local no-OPA path to fail-closed default-deny)
+- **Rationale:** Parity with the sibling `check_access()` in `tools/data_canvas/governance_engine.py`, which was given default-deny in dcpr-sec-03. Flipping the ext path unconditionally to deny would break existing dev/IL2 deployments that run without OPA, so the fail-closed behavior is gated behind an explicit, default-off env toggle (mirroring the `redaction.fail_closed` convention). When the toggle is set, a missing OPA server denies the read instead of allowing it; the OPA-configured branch is unchanged. The gate performs no code execution — it only reads env/config, evaluates policy, and writes an append-only audit row.
+- **Guardrails:**
+  - **`ICDEV_GOVERNANCE_FAIL_CLOSED`** env toggle (accepts `1`/`true`/`yes`, case-insensitive), **default OFF** to preserve historical fail-open behavior. Read at **call time** (not import time) so operators/tests can flip it per environment without reimport.
+  - When ON **and** no OPA server is configured, `check_ext_access()` returns `{"allowed": False, "reason": "governance fail-closed: no OPA server configured", "method": "local", "policy_id": None}` and **still writes** the `dm_policy_audit_log` audit entry (decision=0), preserving the audit trail on deny.
+  - When OFF, the local pass-through allow is preserved exactly (decision=1 audit row).
+  - The OPA-configured branch (`ICDEV_OPA_URL` set) is untouched — it always evaluates the policy.
+  - **Regression test** — `tests/test_dcpr_ext_access_failclosed.py` asserts (a) toggle ON + no OPA denies and audits, and (b) toggle OFF (default) + no OPA allows (behavior preserved), plus case-insensitive token parsing.
+- **Revisit if:** the default is ever flipped to fail-closed (make the toggle opt-*out* and re-audit dev/IL2 impact), or if a policy-decision cache is added that could serve a stale allow after the toggle is set.
+
+### Gap 31 — FORGE Academy learner code runner (`apps/forge_academy/code_runner.py`)
+
+**Module:** `apps/forge_academy/code_runner.py` (`run_code()`)
+
+**Ingress path:** An authenticated FORGE Academy learner submits arbitrary Python source (their lesson solution, plus an optional test harness) via `POST /api/academy/code/run` (`apps/forge_academy/blueprint.py`). The strings are written to a script in a fresh `TemporaryDirectory` and executed with `subprocess.run([sys.executable, ...])`. This is by design a **code-execution ingress** — the whole point of the feature is to run learner-authored Python.
+
+- **Decision:** **sandboxed** (in-process hardening — AST allowlist gate + scrubbed env + isolated cwd + interpreter isolation + timeout + POSIX resource caps)
+- **Rationale:** The platform `SandboxExecutor` (`tools/security/sandbox_executor.py`, D-SEC-10) requires a Docker/K8s/Podman runtime and adds ~5–15× latency; it is not present on Windows dev hosts and is a poor fit for this **interactive, per-keystroke-grade** hot path where fast feedback is essential. In-process hardening is therefore the pragmatic route (the doc's `sandboxed-on-demand` convention still applies — an operator running `ICDEV_STRICT_SANDBOX=1` at IL5 should route this path through `SandboxExecutor`; wiring that is deferred). The prior gate was a **bypassable denylist substring check** (`_BLOCKED_PATTERNS`) with an unused `_ALLOWED_IMPORTS` set. penta-aca-02 replaced it with a real allowlist and neutralised the three known escapes:
+  1. `import os; print(os.environ)` — `os` stays importable, but the child runs with a **scrubbed environment** (only a non-secret system minimum: `SYSTEMROOT`, `PATH`, `PATHEXT`, `COMSPEC`, `WINDIR`, `HOME`/`USERPROFILE`, locale, and `TMP*` pointed at the sandbox dir). No `ICDEV_*`, `*_API_KEY`, `*_PASSWORD`, or `*_TOKEN` reaches the child, so `os.environ` cannot leak `ICDEV_PG_PASSWORD` or API keys.
+  2. `urllib.request` (and `socket`/`requests`/`httpx`/`aiohttp`) egress — rejected by the AST import allowlist. `urllib.parse` is the only permitted `urllib` submodule; bare `urllib` / `urllib.request` are refused.
+  3. `open('/etc/passwd')` — the AST gate rejects `open`/`os.open`/`io.open`/`os.fdopen` calls whose first **literal** argument is an absolute path, a Windows drive/UNC path, or a `..` traversal path. Relative opens inside the isolated cwd remain allowed for legitimate lesson file I/O.
+- **Guardrails:**
+  - **AST allowlist gate** (`_check_code_safety`) parses the *combined* learner code **and** any supplied `test_code`; rejects imports whose top-level module (or specific `urllib.parse`) is not in `_ALLOWED_IMPORTS`, dynamic-import/eval escapes (`__import__`, `importlib`, `eval`, `exec`, `compile`), process escapes (`os.system`/`os.popen`/`os.exec*`/`os.spawn*`/`os.startfile`/`os.fork`/`os.putenv`, `subprocess`), and absolute/traversal file opens. Unparseable code is allowed through the gate only because Python compiles the whole module before executing — a `SyntaxError` runs nothing.
+  - **Scrubbed environment** — `_build_scrubbed_env()` passes only a fixed non-secret allowlist of OS vars; secrets are never inherited.
+  - **Isolated cwd** — execution happens in a per-call `TemporaryDirectory` removed after the run.
+  - **Interpreter isolation** — `python -I -X utf8` ignores ambient `PYTHONPATH` / user site / cwd modules and forces UTF-8 I/O.
+  - **Timeout** — the 10s wall-clock cap is preserved.
+  - **Resource caps** — on POSIX a `preexec_fn` sets `RLIMIT_CPU`/`RLIMIT_AS`/`RLIMIT_FSIZE`; Windows relies on the timeout + AST gate (no `resource` module).
+  - **Regression test** — `tests/test_penta_aca_sandbox.py` asserts each of the three named escapes is blocked/neutralised without leaking, plus dynamic-import/process escapes, and that legitimate tier1 starter code (and its auto-grader) still runs.
+- **Residual risk / Revisit if:** in-process hardening is not a true isolation boundary — `os` remains importable, so a determined learner could still perform limited local filesystem reads of relative paths or CPU/mem abuse (bounded by the timeout and, on POSIX, resource caps). Promote this path to the container-backed `SandboxExecutor` if (a) `ICDEV_STRICT_SANDBOX=1` is honored for Academy at IL5, (b) the endpoint is ever exposed unauthenticated, or (c) a new escape class (e.g. a sandbox-relevant stdlib CVE) is found.
+
+### Gap 32 — DocMod URL link-rot checker (`tools/doc_modernization/link_check.py`)
+
+**Module:** `tools/doc_modernization/link_check.py` (`check_url()` / `egress_guard()` / `check_corpus_links()`)
+
+**Ingress path:** The nightly Document Modernization sweep extracts the URLs a DIC document *cites* from its (user-authored) content and, when the feature is enabled, makes outbound HTTP(S) requests to check each one's health (broken / moved / content-drifted). The request **targets** are therefore attacker-influenceable document data, which makes this an outbound server-side-request-forgery surface rather than a code-execution one: no document content is ever parsed as code, `exec`-ed, or handed to a native parser — the bytes read back are only hashed and their status recorded.
+
+- **Decision:** **sandboxed-on-demand** (outbound egress guard is always on; the feature itself is default-OFF and skips entirely when there is no egress)
+- **Rationale:** The threat here is not execution but egress — a cited hostname could be pointed at internal infrastructure. That is contained by an egress policy enforced **before any socket is opened**, so a container/network sandbox is not the primary control; the policy is. The feature is a network feature and ships **disabled** (`link_rot.enabled: false` in `args/docmod/docmod_config.yaml`); at IL5 / air-gap (`ICDEV_STRICT_SANDBOX=1` deployments) it stays off or self-skips, matching the `sandboxed-on-demand` convention. Verdicts are deterministic given the HTTP response (no LLM — TRUST) and land as ordinary HITL-gated `docmod_findings` (state `open`), never auto-edits.
+- **Guardrails:**
+  - **Scheme allowlist** — only `https` URLs are contacted; `http`, `ftp`, `file`, `gopher`, etc. are refused with a `blocked` status and never reached.
+  - **Resolve-then-check** — the hostname is resolved to its IP address(es) *first*, and the request is refused if **any** resolved address falls in a non-public range (loopback `127.0.0.0/8` / `::1`, private/RFC1918 + IPv6 unique-local `fc00::/7`, link-local `169.254.0.0/16` — which covers the cloud instance-metadata address — and `fe80::/10`, multicast, unspecified, reserved). Checking the resolved address rather than the hostname string is what prevents a public-looking name from steering the request at internal space.
+  - **Allow/denylist** — operator `allowlist`/`denylist` in `docmod_config.yaml` are honored (suffix match; denylist wins).
+  - **No auto-redirect** — redirects are never auto-followed; each hop's target is re-run through the same guard and the chain depth is capped (`max_redirects`).
+  - **Tight timeouts + bounded read** — every request carries a mandatory short timeout, uses HEAD (ranged GET fallback), and reads at most `head_hash_bytes` of the body (via `Range`) for the drift hash; TLS verification is never disabled.
+  - **Per-sweep cap** — `max_urls_per_sweep` bounds how many outbound checks a sweep performs.
+  - **Air-gap safe** — when `offline: true` or an air-gap runtime is detected, the whole step skips and URLs are reported `not checked (no egress)`; an unresolvable host is likewise never reported as rotted.
+  - **Regression test** — `tests/docmod/test_link_check.py` asserts scheme rejection, literal-internal-IP and metadata-IP rejection, a DNS-rebinding-style case (public hostname resolving to an internal IP is refused), allow/denylist behavior, the per-sweep cap, the air-gap skip status, and the broken / moved / hash-drift finding types — all with the network mocked.
+- **Revisit if:** the checker is ever made to follow redirects automatically without re-validation, to accept non-https schemes, to run against unauthenticated user-submitted URLs outside the document corpus, or to fetch full response bodies instead of a bounded head slice — any of which would warrant routing the outbound call through a network-isolating sandbox/proxy in addition to the egress guard.
+
+### Gap 32 — External-agent MCP consumption via curated toolsets (`tools/mcp/unified_server.py`, `tools/mcp/toolset_profiles.py`)
+
+**Module:** `tools/mcp/unified_server.py` (`--toolset` / `ICDEV_MCP_TOOLSET`), `tools/mcp/toolset_profiles.py` (SAG sag-mcp-01)
+
+**Ingress path:** `tools/mcp/unified_server.py` already exposes 447+ ICDEV tools over stdio MCP and is consumed by Claude Code in production. sag-mcp-01 makes it consumable by an **external, possibly-non-Claude agent** (e.g. Hermes on a local kimi/ollama model, or a cloud LLM) via `<agent> mcp add icdev --command "python tools/mcp/unified_server.py --toolset <profile>"`. The new ingress is twofold: (a) an external agent chooses which registered tools to invoke, and (b) tool **output may egress to whatever LLM the external agent runs** — which can be a cloud provider outside the ICDEV trust boundary.
+
+- **Decision:** **bypass-documented** for tool *execution* (the tools are first-party ICDEV code, already covered by their own gates) **+ a fail-closed CUI-egress gate** for tool *exposure*.
+- **Rationale:** No new code-execution sandbox is warranted — every tool dispatched by `unified_server` is first-party ICDEV Python already subject to its own RLS/classification/security gates; the external agent cannot inject code, only call existing registered handlers. The real, novel risk is **CUI/classification egress to a cloud LLM**. That is addressed by the same distinction the CLI bridge uses (`api_key_env`/provider: `ollama` = local, everything else = cloud):
+  - Tools are exposed through **curated profiles** (`args/mcp_toolset_profiles.yaml`), not the full 447-tool surface. Small local models get a bounded list (`--toolset compliance` ≈ 12 tools), which is both a usability and a least-privilege win.
+  - Each profile declares `cui_egress: cloud_safe | local_only`. `enforce_cui_egress()` runs **before any tool is registered** and **refuses** a `local_only` profile when a cloud provider is detected (fail-safe toward "cloud" when the provider is unknown), unless an operator sets the explicit `ICDEV_MCP_ALLOW_CLOUD_CUI=1` override.
+- **Guardrails:**
+  - **`--toolset <profile>` / `ICDEV_MCP_TOOLSET`** restrict registration to a curated set; unknown tool names in a profile are dropped with a warning (a registry rename never crashes startup).
+  - **`enforce_cui_egress()`** is fail-closed for `local_only` profiles on cloud providers; `cloud_safe` profiles (`minimal`, `research`, `security`) are curated to exclude CUI-emitting tools.
+  - **No default behavior change** — with no `--toolset`, the server exposes the full surface exactly as before (Claude Code path unaffected).
+  - **Regression test** — `tests/mcp/test_toolset_profiles.py` asserts every profile references only real `TOOL_REGISTRY` tools, the fail-closed gate blocks `local_only` on cloud and allows it on local / with override, and the server registers only the profile's tools.
+- **Revisit if:** a `cloud_safe` profile is expanded to include a tool that can emit CUI (re-audit its `cui_egress`), per-tool response redaction/classification filtering is added (tighten from profile-level to tool-level egress control), or the server ever accepts remote (non-stdio) transport without an auth layer.
+
+### Gap 33 — SAG auto-skill lifecycle: LLM-generated skill promotion (`tools/agent_runtime/skills_lifecycle.py`)
+
+**Module:** `tools/agent_runtime/skills_lifecycle.py` (SAG sag-skl-01)
+
+**Ingress path:** The standalone agent proposes new skills via NOVA's generator when a session solved a novel task. The generated markdown spec (an LLM output — untrusted content) is queued in `agent_improvement_artifacts` and, on approval, written to `.agents/skills/icdev-auto-<slug>/SKILL.md`, where it becomes parseable by `tools/skills/registry.py` and thus discoverable/invokable as a skill.
+
+- **Decision:** **bypass-documented** — the write is gated by mandatory human-in-the-loop approval; no auto-execution and no auto-promotion.
+- **Rationale:** The novel content (an LLM-drafted skill spec) is never executed by this module and never lands on disk without an explicit human `approve` action (`/skill approve <id>` or the headless CLI). Quarantine is the `pending` status in the NOVA queue; nothing reaches `.agents/skills` until a person reviews and approves it. The spec is markdown documentation, not code that this module runs — a skill's *commands* are only ever executed later through the existing allowlisted `tools/skills/invoke.py` path (Gap-covered), which restricts execution to `python tools/…` prefixes. Every promoted skill carries a provenance frontmatter block (`source-session`, `source-model`, `generated-at`, `approved-by`, `trust: unverified-llm-generated`) so the LLM origin is always visible — a TRUST record, not a laundered first-party skill.
+- **Guardrails:**
+  - **HITL is the gate** — `approve_proposal()` is the sole writer to `.agents/skills`, and only on explicit human approval; the automatic post-session proposal hook (`maybe_propose_from_session`) only ever *queues* a `pending` proposal and is itself env-gated (`ICDEV_SAG_SKILL_PROPOSALS`, default off).
+  - **Provenance frontmatter** — every promoted `SKILL.md` is stamped `trust: unverified-llm-generated` with its source session/model, so downstream consumers know it is machine-drafted.
+  - **Namespaced, not laundered** — auto-skills live under the reserved `icdev-auto-` prefix, distinct from hand-authored `icdev-*` skills.
+  - **Curator archives, never deletes** — the `sag_skill_curator` reflex only moves idle, unpinned skills to `.agents/skills/_archive/` (dry-run default); it never executes or deletes them.
+  - **Execution stays allowlisted** — a promoted skill's commands run only via `tools/skills/invoke.py`'s `python tools/…` allowlist, never by this module.
+- **Revisit if:** promotion is ever made automatic (removing the human approval step), the post-session hook is switched on by default, or auto-skill commands are ever dispatched outside the `invoke.py` allowlist — any of which would require sandboxing skill execution and re-scoping this decision.
+
+### Gap 34 — Email gateway channel adapter: inbound IMAP poll (`tools/gateway/adapters/email_channel.py`)
+
+**Module:** `tools/gateway/adapters/email_channel.py` (SAG sag-gw-02)
+
+**Ingress path:** A new Remote Command Gateway channel. `poll_once()` fetches `UNSEEN` messages over an authenticated IMAP session, parses them (stdlib `email`), and normalises each into a `CommandEnvelope`. This is externally-sourced, attacker-influenceable content (anyone can email the mailbox).
+
+- **Decision:** **bypass-documented** — the adapter parses and routes; it never executes, and every produced envelope flows through the unchanged 8-gate `run_security_chain` before any command runs.
+- **Rationale:** The adapter is a pure translator: raw RFC822 bytes → a `CommandEnvelope` of the same shape every other channel produces. It runs no attachment, no macro, no LLM — it only reads text/plain bodies and headers. A malicious email cannot execute anything by arriving; it must still pass identity-binding (the `From` address must map to a bound ICDEV user), authentication, classification, RBAC, rate-limit, and domain-authority gates — identical to Telegram/Slack. Command execution remains the gateway's existing allowlisted path, not this adapter.
+- **Guardrails:**
+  - **Authenticated mailbox + identity binding** — inbound is read only from an authenticated IMAP mailbox, and the sender `From` is the `channel_user_id` the identity-binding gate must resolve to a bound user; an unbound sender is rejected at gate 3.
+  - **Bot/loop protection** — RFC 3834 `Auto-Submitted` and `Precedence: bulk|list|auto_reply` mark `is_bot=True`, dropped by the bot-detection gate (prevents mail loops and auto-responder abuse).
+  - **Attachments ignored** — only `text/plain` parts are read; attachments and `text/html` are never decoded or executed.
+  - **Command filter** — only messages whose subject/first-body-line names an `icdev-*`/`bind` command are turned into envelopes; everything else is dropped.
+  - **Bounded poll** — `max_poll` caps messages processed per cycle.
+  - **Default off** — the `email` channel ships `enabled: false`; no mailbox is polled until an operator configures IMAP/SMTP and enables it.
+  - **Regression test** — `tests/gateway/test_email_adapter.py` asserts command parsing from subject/body, the non-ICDEV drop, bot-header detection, threading via In-Reply-To, and that SMTP/IMAP are mocked (no network).
+- **Revisit if:** the adapter is ever made to parse/execute attachments or `text/html`, to auto-bind senders without the identity gate, or to act on mail before DKIM/SPF verification is added — any of which would warrant sandboxing the parse and hardening sender authentication.
+
+### Gap 35 — AGX benchmark suite (`tools/llm/architectures/benchmark.py`, `leaderboard.py`, `baseline.py`)
+
+**Modules:** `tools/llm/architectures/benchmark.py`, `leaderboard.py`, `baseline.py` (AGX agx-bench-01/02).
+
+**Ingress path:** The benchmark reads a first-party, checked-in task suite (`args/agx/benchmark_tasks.yaml`); the leaderboard reads the tool's own machine-generated report (`data/agx/benchmark_latest.json`); the `baseline` architecture issues a single `LLMRouter.invoke` on a benchmark task prompt. No end-user, attacker, or externally-sourced content enters any of these modules.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** All inputs are repo-authored data or the tool's own output. The modules perform no `exec()`/`eval()`/`subprocess`; they call the LLMRouter and the deterministic fitness judge and aggregate results in pure Python. There is no user-provided-content ingress to sandbox. CUI safety is preserved by routing all inference through `LLMRouter` (the api_key_env local-vs-cloud distinction keeps CUI local); the harness itself moves no CUI.
+- **Revisit if:** the benchmark is ever pointed at a user-supplied or externally-fetched task corpus (rather than the first-party `args/agx/` suite), or the leaderboard is made to ingest reports from an untrusted source — either of which would introduce untrusted-content ingress and warrant re-scoping.
+
+### Gap 36 — Agent browser scope controls (`tools/browser/scope.py`)
+
+**Module:** `tools/browser/scope.py` (OSS adaptation oss-browse-02).
+
+**Ingress path:** The guardrail seam an LLM-driven agent must use to drive a live WebDriver. Two untrusted inputs converge here: (a) **agent-authored action arguments** — URLs handed to `navigate()`, text handed to `type_text()`, scripts handed to `run_script()` — which are LLM output and therefore attacker-influenceable whenever the model reads untrusted content; and (b) **remote page content** rendered by the browser itself, which reaches the process via `current_url`, page text, and screenshots, and can carry prompt-injection back into the agent loop.
+
+- **Decision:** **bypass-documented** — the browser process is not sandboxed; `scope.py` is the enforcement boundary, and it is default-deny.
+- **Rationale:** Sandboxing the browser is the wrong seam: a WebDriver is *already* a separate OS process, and the risk is not code execution inside ICDEV but an agent reaching a host it should not, or leaking a credential into a page/transcript. Both are network-and-data problems, so the control is an allowlist plus a credential broker, not a container. Out of the box the agent can reach **loopback only** — the default policy denies every routable host even if the config file is missing, empty, or unparseable.
+- **Guardrails:**
+  - **Default-deny domain allowlist** — `check_navigation()` refuses any host not in `allowed_domains` (default `localhost`/`127.0.0.1`/`::1`). A routable host needs three independent switches: allowlisted **and** `allow_non_local: true` **and** cleared by `egress_guard` (https-only, DNS resolve-then-check against private/loopback/link-local ranges). A missing `egress_guard` import fails closed.
+  - **Scheme allowlist** — only `http`/`https` are navigable. `javascript:`, `data:`, `file:` and `about:` are refused, which is what stops `navigate()` from doubling as a script-injection or local-file-read primitive.
+  - **Post-action re-check** — `assert_in_scope()` re-validates `current_url` after every action and parks the session at `about:blank` before raising, so a redirect cannot walk the session out of scope.
+  - **Credentials never reach the model** — the agent writes `<secret>name</secret>`; `SensitiveDataResolver` substitutes the value at the driver, sourced from the env var named in config, only after `tools/security/credential_broker.py` authorizes the request (fail-closed on denial or broker unavailability). The prompt, transcript, and audit row keep the placeholder, and `redact()` reverses any secret that surfaces in persisted text. No new secret store is introduced.
+  - **Bounded run** — `ActionBudget` caps actions per run (50), total failures per run (3, cumulative — not reset by an intervening success), and per-step wall-clock (15s), backed by Selenium page-load/script timeouts.
+  - **Full audit** — every action, allowed or denied, writes an `audit_trail` row via the existing `agent_task_completed`/`agent_task_failed` event types (the `audit=True` pattern from `tools/agent_toolkit/_shell.py`); audit failures never fail the call, but denials always raise.
+  - **Bypass is explicit** — `get`, `execute_script`, `execute_cdp_cmd` and the timeout setters raise `ScopeViolation` on the wrapper; `.driver` is the single documented escape hatch. **CDP-transport note (cdp-port-03/04):** when the CDP backend is selected, CDP is an *internal transport detail beneath the guard*, never a caller-reachable escape hatch — `GuardedDriver` wraps the `CDPDriver` exactly as it wraps a Selenium `WebDriver`, and `execute_cdp_cmd` stays in `_BYPASS_ATTRS`, so reaching the DevTools protocol through the guarded wrapper still raises `ScopeViolation`. The backend swap does not widen this seam.
+  - **Regression tests** — `tests/browser/test_scope.py` (52 tests) covers scheme/denylist/allowlist/locality ordering, the three-switch non-local path, egress fail-closed, placeholder substitution + broker denial, budget caps, post-action redirect containment, and bypass-attribute refusal.
+- **Revisit if:** the agent is ever given a non-loopback default, `require_egress_guard` is turned off in a shipped config, or page content is fed back into the planning prompt without passing through the prompt-injection controls — the last would make rendered remote content a direct LLM ingress and warrant treating the browser as untrusted-content intake in its own right.
+
+### Gap 37 — Third-party HTML content filter (`tools/http/page_extract.py`)
+
+**Module:** `tools/http/page_extract.py` (OSS adaptation oss-filter-01), consumed by `tools/chat_router/url_analyzer.py::fetch_content`.
+
+**Ingress path:** Raw HTML fetched from arbitrary third-party URLs a user pastes into chat or a canvas. This is the most openly attacker-influenceable input the platform accepts — anyone who can get a URL in front of a user controls the bytes. The module parses that HTML, scores its blocks, and renders markdown that is subsequently placed in an LLM prompt.
+
+- **Decision:** **bypass-documented** — the module is a parser and a scorer; it executes nothing, fetches nothing, and resolves nothing. Sandboxing a pure stdlib text transform would add a process boundary without removing a capability, because the module has no capability to remove.
+- **Rationale:** Parsing is stdlib `html.parser` in its default, non-executing mode. There is no `exec`/`eval`/`subprocess`, no network call, no filesystem write, and no deserialisation of attacker bytes into objects (the only `yaml.safe_load` reads the first-party `args/page_extract.yaml`). Scripts and styles never enter the tree at all — `script`, `style`, `noscript`, `template`, `svg`, `canvas`, `iframe`, `form`, `button`, `select` and `textarea` are dropped as whole subtrees during parsing, so their contents cannot reach the output or the LLM. `javascript:` and fragment hrefs are emitted as plain label text and never as links. No new runtime dependency is introduced (stdlib + the already-pinned `rank_bm25`), so the third-party attack surface is unchanged by this module.
+- **Guardrails:**
+  - **Non-executing parse** — `html.parser` with `convert_charrefs=True`; no scripting engine, no DOM, no resource loading. Malformed and hostile markup is tolerated (stray close tags are ignored, deep nesting is bounded by Python recursion, empty input returns an empty result) — covered by `tests/http/test_page_extract.py::test_malformed_input_does_not_raise`.
+  - **Executable subtrees never enter the tree** — the `pruning.drop_tags` list in `args/page_extract.yaml` is applied at parse time, not after; `tests/http/test_page_extract.py::test_chrome_and_scripts_never_reach_the_output` asserts script and style bodies are absent from every corpus page's output.
+  - **URLs are quarantined into a reference block** — reference-style citations mean the prose the LLM reads contains `[label][1]`, never a raw URL, which blunts prompt-injection-via-URL and keeps token spend down. `test_links_are_reference_style_and_urls_stay_out_of_the_prose` asserts no `https://` survives in the body.
+  - **No egress** — the module takes an HTML *string*. It never fetches; the caller (`url_analyzer`) owns the fetch and its existing egress posture.
+  - **Deterministic and bounded** — identical input yields byte-identical output (asserted per corpus page), and `markdown.max_block_chars` / `bm25.max_blocks` cap output size independently of input size.
+  - **The output is still untrusted content** — this module *reduces* untrusted text; it does not *sanitise* it into trusted text. Downstream consumers must keep treating `fit_markdown` as third-party data subject to the existing prompt-injection and TRUST/provenance controls.
+- **Revisit if:** the module is ever given the fetch itself, gains a JavaScript/DOM execution path (headless browser rendering), grows a non-stdlib HTML parser dependency, or begins resolving/inlining remote resources (images, imports, `srcset`) — any of which converts it from a text transform into an execution surface and warrants sandboxing.
+
+### Gap 38 — Agent Browser page ingestion (`tools/browser/agent_browser.py`, `agent_tools.py`)
+
+**Modules:** `tools/browser/agent_browser.py`, `tools/browser/agent_tools.py` (OSS adaptation oss-browse-01).
+
+**Relationship to Gap 36:** Gap 36 covers the *policy* seam; this entry covers the *content* seam on the other side of it. `AgentBrowser` holds a `scope.GuardedDriver` and has no unguarded path to the session, so every control listed in Gap 36 — default-deny allowlist, scheme allowlist, post-action re-check, credential broker, action budget, audit row — applies to every method here without being restated or reimplemented. What follows is only what is *additional* to Gap 36: the risk created by pulling remote DOM content into an LLM context.
+
+**Ingress path:** This is the most externally-exposed ingress in `tools/` — an agent navigates a real headless Edge/Chrome to an allowlisted URL and the page's DOM is extracted into `PageState`, whose `to_text()` rendering is fed straight into an LLM context by `BrowserToolRegistry`. Everything on the far side of `navigate()` is attacker-controllable: element text, attribute values, page title.
+
+- **Decision:** **sandboxed** — the isolation boundary is the browser's own renderer sandbox, not `SandboxExecutor`.
+- **Rationale:** Hostile web content is exactly the workload Chromium's renderer sandbox and site isolation were built for; wrapping the driver in `SandboxExecutor` would add a container boundary around a process that already has a stronger, purpose-built one, at the cost of making the vendored-driver path unusable. **This boundary is transport-independent (cdp-port-03/04):** whether the page is driven over Selenium/WebDriver or over CDP, the renderer sandbox is the same browser-side control, and on the Python side the ingested content is equally inert on both paths — `_EXTRACT_JS` returns plain JSON (over CDP it is run via `Runtime.evaluate` and returned by value), and no page-derived string is ever passed to `exec()`, `eval()`, `subprocess`, or a native parser regardless of transport. The only file mutation is a PNG written to `playwright/screenshots/` under a sanitised stem (`[^A-Za-z0-9_.-]` stripped, `..` collapsed, extension forced) — page content cannot influence the path.
+- **Guardrails additional to Gap 36:**
+  - **Prompt-injection blast radius is bounded by the representation, not by trust in the page.** `include_attributes` is an allowlist (page-authored attributes outside it never reach the model at all), and `max_elements` / `max_text_length` / `max_attr_length` cap what a single page can inject. This shrinks the channel; it does **not** close it — a page can still place instruction-shaped text in an element's visible text.
+  - Element indices are per-observation: a stale index raises `StaleIndexError` rather than falling through to whatever now occupies that position, so a page that re-renders under the agent cannot redirect a click.
+  - The extraction round trip and index lookup are read-only and deliberately **not** charged to the action budget, but they still run `assert_in_scope()` first — observation cannot be used to read a page the policy would refuse to navigate to.
+- **Residual risk (accepted, stated plainly):** indirect prompt injection via page text. Any caller wiring `BrowserToolRegistry` into an agent loop with privileged tools owns that risk and should narrow `allowed_domains` in `args/browser_scope.yaml`.
+- **Revisit if:** the browser is given a non-allowlisted attribute set, page-derived content is ever routed into a code-execution or file-write path, or `AgentBrowser` is exposed through an unauthenticated surface (a dashboard route or an MCP tool) rather than in-process to an agent loop.
+
+### Gap 39 — Untrusted URL fetch/extract/scan path (`tools/http/fetch_extract.py`)
+
+**Module:** `tools/http/fetch_extract.py` (OSS adaptation oss-filter-02), consumed by `tools/chat_router/url_analyzer.py`, `tools/document_intelligence/extractors.py::extract_url`, `tools/research/source_scanner.py`, `tools/creative/competitor_discoverer.py` and `tools/genesis/reflexes/research.py`.
+
+**Relationship to Gap 37:** Gap 37 records that `page_extract` is a pure text transform which deliberately *does not fetch*. This entry covers the module that does — the composition of fetch, extract and scan into one path — and is where the egress and LLM-ingress guarantees for third-party pages now live.
+
+**Ingress path:** Arbitrary third-party URLs supplied by a user (pasted into chat, registered as a research feed, configured as a competitor review page) are fetched over the network and the response body is extracted and placed into an LLM prompt. The bytes are fully attacker-controlled, and unlike Gap 37 this module performs the network call itself.
+
+- **Decision:** **bypass-documented** — the module composes three existing controls (the central HTTP client, the `page_extract` parser, the injection scanner) and adds no execution, deserialisation or file-mutation capability of its own.
+- **Rationale:** Response bytes are only ever `.decode()`d to `str` and handed to `page_extract` (Gap 37: stdlib `html.parser`, non-executing) or returned verbatim to a caller that parses them as XML/JSON with the stdlib. There is no `exec`/`eval`/`subprocess`, no filesystem write, no pickle/YAML load of attacker bytes, and no HTML rendering engine. The one `yaml.safe_load` reads the first-party `args/http_client.yaml`. Because the module's whole purpose is to *replace* ~5 hand-rolled fetch paths that had none of these controls, sandboxing it would isolate the hardened path while the bypasses it retires were never isolated at all — the security gain is in adoption, not in a process boundary.
+- **Guardrails:**
+  - **Egress is centralised, never ad hoc** — every fetch goes through `tools.http.client.get_session()`, so mTLS, the CA bundle, the egress proxy, `max_retries`/`backoff_factor` and redirect limits from `args/http_client.yaml` apply. `tests/http/test_fetch_extract.py::test_fetch_raw_uses_the_central_client_session` asserts the session is obtained from the client rather than constructed locally, and `test_no_raw_urllib_or_requests_fetch_in_retrofitted_modules` is an AST-level regression guard that the retrofitted call sites do not grow a direct `urlopen`/`requests.get` back.
+  - **Memory is bounded during the read, not after it** — the body is streamed with `iter_content()` and cut at `fetch.max_bytes` (2 MiB default) *while* reading, so an unbounded or decompression-heavy response cannot exhaust memory before the cap is applied. `test_body_is_cut_at_the_byte_cap_and_flagged` asserts the cap bounds what is read. Truncation is reported (`truncated`, and a note in `reason`) rather than hidden.
+  - **The byte cap is a transport ceiling, not a content budget** — relevance selection is `page_extract`'s job, so no caller re-truncates positionally. This is the defect the task set out to remove: a `[:7000]` cut keeps whatever sits at the top of the file (nav, cookie banner) and drops the answer.
+  - **Injection scanning is mandatory and fails closed** — extracted text is passed to `tools/security/injection_scanner.py::scan_text` *after* extraction, so instructions hidden in markup a regex strip would have dropped are still seen. A `critical` finding replaces the text with the empty string, so a caller that ignores the `blocked` flag still cannot forward the payload. A scanner that is missing or raises is treated as a critical finding, not as a pass — asserted by `test_a_missing_scanner_fails_closed` and `test_a_crashing_scanner_fails_closed`.
+  - **Scanning is opt-out only in code, never by config** — `scan=False` exists for forensic callers that must see raw payloads and has no `args/` switch; `block_on_critical_injection` in `args/http_client.yaml` defaults to `true`.
+  - **A hostile or dead URL is data, not an exception** — every path returns `FetchedPage`, so one bad URL cannot take down a feed sweep or an ingestion run. Errors surface in `error`/`reason` instead of propagating.
+  - **The output is still untrusted content** — as with Gap 37, this module *reduces and screens* third-party text; it does not launder it into trusted text. Downstream consumers keep the existing TRUST/provenance obligations.
+- **Residual risk (accepted, stated plainly):** the injection scanner is pattern-based, so novel instruction-shaped text below `critical` severity still reaches the model. The module narrows the channel and makes the screening universal; it does not claim to close it.
+- **Revisit if:** the module gains a JavaScript/DOM rendering path, begins resolving remote sub-resources, learns to write response bodies to disk, deserialises attacker bytes into objects (pickle, unsafe YAML, a native parser), or `block_on_critical_injection` is shipped as `false` in any profile — the last would make the fail-closed guarantee configuration-dependent.
+
+### Gap 40 — CDP browser transport (`tools/browser/cdp/*`, `tools/browser/backend.py`, `browser_locator.py`)
+
+**Modules:** `tools/browser/cdp/ws_client.py`, `session.py`, `launcher.py`, `driver.py`, `preflight.py`; `tools/browser/backend.py`; `tools/browser/browser_locator.py` (card `cdp-`, spike cdp-00).
+
+**Relationship to Gaps 36/38:** this is the *transport* underneath the agent browser, one layer below Gap 38's content seam and Gap 36's policy seam. It carries no attacker-authored content decision of its own — page content ingestion and its renderer-sandbox boundary stay exactly where Gap 38 records them, transport-independent. What this entry adds is the one genuinely new surface the transport creates: a **local, unauthenticated DevTools debug port**.
+
+**Ingress path:** To drive a browser over CDP, `launcher.py` starts it with `--remote-debugging-port`, and the browser then serves the DevTools protocol over a loopback WebSocket. CDP is **unauthenticated** — any local process that discovers the port can drive the browser. This is exactly why Chrome ≥136 refuses remote debugging on the default profile. The bytes the transport reads come from a browser ICDEV itself launched (first-party), not from a remote peer; the exposure is the port, not the framed data.
+
+- **Decision:** **bypass-documented** — the transport is not sandboxed; it is a first-party channel to a browser process ICDEV owns, and the debug-port exposure is mitigated by construction rather than by a container.
+- **Rationale:** There is nothing to isolate on the Python side — the frame codec (`ws_client`) does stdlib socket I/O and a 4-byte XOR mask, the session (`session.py`) parses JSON with `json.loads`, and no CDP-derived string is passed to `exec`/`eval`/`subprocess` or a native parser. `execute_script` results return by value as JSON. The launcher's `subprocess.Popen` argv is built only from a locator-resolved browser executable and fixed flags — never from user input. The real risk is the *port*, and a container boundary would not address it; the construction below does.
+- **Guardrails:**
+  - **Loopback only** — the listener binds to `127.0.0.1` (the CDP default), never `0.0.0.0`. Only `ws://` loopback is accepted (`ws_client.connect` refuses `wss://`/non-loopback schemes); TLS is out of scope by design.
+  - **Ephemeral port** — `--remote-debugging-port=0` lets the OS assign the port; it is neither predictable (no fixed 9222) nor long-lived. The real port is read from the `DevToolsActivePort` file, not assumed.
+  - **Fresh temp profile per run** — a mandatory `--user-data-dir` under a `tempfile.mkdtemp("icdev-cdp-")` carries no cookies, no saved credentials, no session state, so there is nothing of value for a co-resident local process to steal through the port. This profile is doing double duty: Chrome/Edge ≥136 *require* a non-default profile for debugging, and it is also the control that makes an unauthenticated port acceptable.
+  - **Deterministic teardown** — `LaunchedBrowser.terminate()` stops the process and removes the temp profile; the session lifetime is short and bounded.
+  - **Beneath the guard, never a bypass** — the CDP driver is what a backend selector hands to `GuardedDriver`; `execute_cdp_cmd` stays in `_BYPASS_ATTRS`, so CDP is not a caller-reachable escape hatch (see Gap 36).
+  - **Loud degradation** — when no browser is present or policy forbids debugging, the transport refuses with an actionable error (naming the searched families / the tier), rather than binding something or stalling on a timeout.
+- **Residual risk (accepted, stated plainly):** on a multi-user host, a co-resident local process could, within the session's short lifetime, connect to the ephemeral loopback port and drive the throwaway profile. The mitigation is that the profile holds nothing worth stealing and the port is short-lived and unpredictable; `--remote-debugging-pipe` (fd-based, no TCP listener at all) is the documented future hardening that removes the port entirely.
+- **Revisit if:** the listener is ever bound to a routable address, the debug port is made fixed/predictable or long-lived, a persistent (non-temp) profile is used for a debugging session, or CDP is exposed to a caller as anything other than an internal transport beneath `GuardedDriver`.
+
+### Gap 41 — Generic MCP tool executor for workflow steps (`tools/studio/executors/mcp_executor.py`)
+
+**Module:** `tools/studio/executors/mcp_executor.py` (+ `icdev/` mirror) — dispatches any entry of `tools/mcp/tool_registry.py::TOOL_REGISTRY` as a Studio workflow step, so 455 registered tools become reachable without a hand-written executor each (card `dwo-`, task dwo-mcp-01).
+
+**Ingress path:** A workflow step supplies two strings — `--tool <name>` and `--params '<json>'` — that originate from a Studio workflow template or the DAG editor, i.e. from an **authenticated Studio author**, not from an anonymous request or an ingested document. The executor then `importlib.import_module()`s a module path and `getattr()`s a handler, and calls it with the parsed params.
+
+- **Decision:** **trusted-first-party** (import target). Authorization of *which* tools a step may call is the default-deny allowlist landed by dwo-mcp-02-d1/d2; *which caller* may call them is the IL/RBAC check landed by dwo-mcp-02-d3.
+- **Rationale:** The security-relevant property is that **no user-supplied string ever reaches `importlib`**. `--tool` is used only as a dictionary key into `TOOL_REGISTRY`; a miss raises `LookupError` and exits 1. The `module`/`handler` strings actually passed to `importlib.import_module()`/`getattr()` come exclusively from that repo-authored registry, so the reachable import set is a fixed, committed allowlist of 455 entries — not an open namespace. This is the identical resolution path `tools/mcp/unified_server.py::_resolve_handler` already uses for the same registry; this executor adds no import capability that the MCP gateway did not already expose. Params are `json.loads`-parsed only (never `eval`), and are schema-checked before dispatch. There is no `exec`, no `subprocess`, and no shell.
+- **Guardrails:**
+  - **Registry-keyed dispatch** — `resolve_entry()` refuses anything not in `TOOL_REGISTRY`; MCP *resources* are refused explicitly rather than silently dispatched.
+  - **Schema gate before dispatch** — params are validated against the entry's own `input_schema` (`jsonschema.Draft7Validator`) and the handler is **not called** if validation fails; `test_run_rejects_invalid_params_before_dispatch` asserts non-invocation.
+  - **Object-only params** — `parse_params()` refuses non-JSON and refuses any JSON that is not an object, so a handler always receives a `dict`.
+  - **Fails the step, never launders the error** — an unknown tool, invalid params, an unimportable handler, or a raising handler all exit 1, so `workflow_runner` marks the step failed. This deliberately diverges from the MCP protocol layer, which returns a handler exception as a *successful* call with `{"error": ...}` in the payload.
+  - **Default-deny allowlist before lookup** — `check_tool_allowed()` refuses any tool absent from `mcp_workflow_tools.allowed` (gate MCP-WF-001) *before* the registry is touched, so a refused tool is never imported. A missing or non-default-deny policy refuses everything.
+  - **Caller IL/RBAC before dispatch** — `check_caller_authorized()` refuses a caller below the tool's `min_il` or missing a required role, reading both from `args/component_registry.yaml` via the component that owns the handler's module. Runs after lookup (it needs the module) but before params and dispatch; `test_run_refuses_before_the_handler_is_called` asserts non-invocation.
+  - **Regression test** — `tests/studio/test_mcp_executor.py` (39 tests) covers registry lookup, resource rejection, each validation failure mode, handler-exception propagation, the allowlist gate, and the CLI exit-code contract; `tests/studio/test_mcp_executor_rbac.py` (34 tests) covers caller resolution and the IL/role refusals.
+- **Revisit if:** the tool name or module path ever becomes derivable from tenant/end-user content rather than an authenticated template author; the registry lookup is relaxed to accept an arbitrary dotted module path; or the `mcp_workflow_tools` allowlist is removed or made default-allow → re-decide as **sandboxed** (`tools/security/sandbox_executor.py`).
+
+### Gap 42 — SAML ACS response parsing (`tools/auth/saml.py`)
+
+**Module:** `tools/auth/saml.py` (`process_acs_response()`, + `icdev/` mirror); ingress at `tools/auth/blueprint.py` route `POST /auth/saml/<provider_id>/acs` (task aca-hyg-06-d2).
+
+**Ingress path:** An identity provider (or anyone who can reach the ACS route) POSTs a base64-encoded `SAMLResponse` form field. `process_acs_response()` base64-decodes it and parses the resulting XML to extract `NameID` and `Attribute` values, which are then persisted to `sso_sessions`. This is **unauthenticated, remote-attacker-reachable XML** — the ACS endpoint must accept the POST before any session exists.
+
+- **Decision:** **bypass-documented** (hardened parser, no code-execution surface)
+- **Rationale:** Parsing goes through `defusedxml.ElementTree.fromstring` (already a project dependency, `defusedxml>=0.7` in both `requirements.txt` and `pyproject.toml`), which forbids internal entity expansion (billion-laughs DoS), external entity resolution (XXE / local file disclosure), and external DTD retrieval (SSRF). Previously this call site used stdlib `xml.etree.ElementTree.fromstring`, which permits internal entity expansion — Bandit B314. The stdlib `ET` import is retained *only* to BUILD the XML this module emits (`register_namespace`, `Element`, `SubElement`, `tostring` in `generate_sp_metadata`/`initiate_saml_login`) and is marked `# nosec B405` accordingly; no untrusted bytes reach it. Extraction is read-only tree traversal (`find`/`findall`) into parameterized SQL — no `eval()`, `exec()`, `subprocess`, or filesystem writes.
+- **Guardrails:**
+  - `defusedxml.ElementTree.fromstring` for all untrusted parsing; stdlib `ET` is construction-only.
+  - Both `ET.ParseError` (malformed XML) and `ValueError` (defusedxml's `EntitiesForbidden` / `DTDForbidden` / `ExternalReferenceForbidden`, which subclass `ValueError`) are caught and re-raised as a uniform `ValueError("Invalid SAMLResponse XML")`, so the parser's internals are never echoed to the caller.
+  - `tools/auth/blueprint.py::acs` catches that `ValueError` and returns HTTP 400 — a hostile payload is rejected without creating a session.
+  - Invalid base64 is rejected before the parser runs.
+  - `tests/test_ecr_sso.py` covers metadata parsing and benign ACS round-trips (16 tests).
+- **Revisit if:** parsing moves back to stdlib `xml.etree`/`minidom`/`lxml` without `resolve_entities=False`, the module starts resolving external references from assertion content, or a signature-verification path is added that shells out to an external XMLSec binary.
+- **Scope of this entry:** this decision covers the **parser's** attack surface only (entity expansion, external references, malformed input). SAML *protocol trust* — assertion signature verification and condition/audience validation — is a separate concern reviewed and tracked outside this document.

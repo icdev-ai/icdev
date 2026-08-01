@@ -437,30 +437,31 @@ def get_eval(session_id: str):
 
 _JUDGE_PROMPT = """You are a senior AI systems evaluator with experience grading 10,000+ agentic sessions across enterprise software development, security analysis, and research workflows. You think in signal-to-noise ratios: an agent that wastes turns is not just slow, it is consuming budget that could have been progress.
 
-Grade the following agent session. For each scored dimension (0.0-1.0) also assign a confidence label:
-  HIGH    = directly observable in the provided session data
-  MEDIUM  = estimated from partial signals or inferred from patterns
-  LOW     = directional only — limited data to judge
-  UNKNOWN = key data missing; do not guess
+Grade the following agent session. For each dimension choose EXACTLY ONE label:
+  supported   = the dimension is well met, directly evidenced in the session data
+  partial     = partially met, or only inferable from limited signal
+  unsupported = not met, or key data missing — do not guess a pass
+
+Do NOT emit numeric scores. The platform composes the numeric grade from your
+labels deterministically (this keeps grades comparable across model families).
 
 DIMENSIONS:
 1. faithfulness       — Does the final output accurately address the original user request? No hallucinated claims, no ignored requirements.
 2. completeness       — Does the output cover all key aspects of the request? Partial completion is not full credit.
-3. reasoning_quality  — Was reasoning clear, relevant, and grounded before each action? Score 0.0 if no reasoning present.
-4. cod_quality        — If Chain-of-Draft style: is draft appropriately concise yet complete? Score 0.5 if style is N/A or unknown.
+3. reasoning_quality  — Was reasoning clear, relevant, and grounded before each action? "unsupported" if no reasoning present.
+4. cod_quality        — If Chain-of-Draft style: is draft appropriately concise yet complete? "partial" if style is N/A or unknown.
 5. error_adaptation   — After tool errors, did the agent adapt its approach or blindly retry the same call?
-6. overall            — Weighted quality score integrating all above dimensions plus efficiency context.
 
-RULES — these anti-patterns must lower the relevant score:
-- Identical tool call repeated 3+ times with same inputs → lower error_adaptation
-- Final response ignores an explicitly stated requirement → lower faithfulness
-- No text before the first tool call in a multi-step task → lower reasoning_quality
-- Agent declared done but final output contains explicit TODOs or unfilled placeholders → lower completeness
-- Reasoning text is only trivial filler ("let me check", "I'll do this") with no analytical content → lower reasoning_quality
-- Final output contradicts tool results visible in the session → lower faithfulness
+RULES — these anti-patterns must lower the relevant label:
+- Identical tool call repeated 3+ times with same inputs → error_adaptation "unsupported"
+- Final response ignores an explicitly stated requirement → faithfulness "unsupported"
+- No text before the first tool call in a multi-step task → reasoning_quality at most "partial"
+- Agent declared done but final output contains explicit TODOs or unfilled placeholders → completeness at most "partial"
+- Reasoning text is only trivial filler ("let me check", "I'll do this") with no analytical content → reasoning_quality at most "partial"
+- Final output contradicts tool results visible in the session → faithfulness "unsupported"
 
-Return ONLY valid JSON matching this schema exactly:
-{{"faithfulness": float, "faithfulness_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "completeness": float, "completeness_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "reasoning_quality": float, "reasoning_quality_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "cod_quality": float, "cod_quality_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "error_adaptation": float, "error_adaptation_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "overall": float, "flags": ["<anti-pattern triggered or empty>"], "evidence": {{"what": "<one sentence finding with specific values>", "so_what": "<consequence or impact>", "now_what": "<specific action or NO ACTION REQUIRED>"}}, "reasoning": "<one sentence overall summary>"}}
+Return ONLY valid JSON matching this schema exactly (labels only, no numbers):
+{{"faithfulness": "supported"|"partial"|"unsupported", "completeness": "supported"|"partial"|"unsupported", "reasoning_quality": "supported"|"partial"|"unsupported", "cod_quality": "supported"|"partial"|"unsupported", "error_adaptation": "supported"|"partial"|"unsupported", "flags": ["<anti-pattern triggered or empty>"], "evidence": {{"what": "<one sentence finding with specific values>", "so_what": "<consequence or impact>", "now_what": "<specific action or NO ACTION REQUIRED>"}}, "reasoning": "<one sentence overall summary>"}}
 
 USER REQUEST:
 {user_prompt}
@@ -564,6 +565,21 @@ def grade_output_quality(
         end = raw.rfind("}") + 1
         if start >= 0 and end > start:
             grade = json.loads(raw[start:end])
+            # Deterministic-picker (agx-pick-02): the judge now emits only a
+            # per-dimension enum; Python composes the numeric floats + overall
+            # (any-unsupported-on-faithfulness caps overall). Unknown/malformed
+            # tokens degrade to the neutral midpoint inside compose_eval_overall.
+            from icdev.tools.quality.categorical_scoring import (  # noqa: PLC0415
+                EVAL_DIMENSIONS,
+                VOCABULARY_VERSION,
+                compose_eval_overall,
+            )
+            composed = compose_eval_overall(grade)
+            for _dim in EVAL_DIMENSIONS:
+                grade[_dim] = composed[_dim]
+            grade["overall"] = composed["overall"]
+            grade["faithfulness_failed"] = composed["faithfulness_failed"]
+            grade["vocabulary_version"] = VOCABULARY_VERSION
         else:
             grade = {"error": "invalid JSON from judge", "overall": 0.0}
         grade["grader_model_id"] = grader_model_id

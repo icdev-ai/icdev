@@ -138,15 +138,18 @@ class MLPatternEngine:
             if self._llm is None:
                 return None
             req = LLMRequest(
-                prompt=(
-                    "You are a conflict analyst. In one sentence, assess whether the "
-                    f"following text indicates conflict escalation: {text[:500]}"
-                ),
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        "You are a conflict analyst. In one sentence, assess whether the "
+                        f"following text indicates conflict escalation: {text[:500]}"
+                    ),
+                }],
                 max_tokens=80,
                 temperature=0.0,
             )
-            resp = self._llm.complete(req, function="summarization")
-            return resp.text.strip() if resp and resp.text else None
+            resp = self._llm.invoke("summarization", req)
+            return resp.content.strip() if resp and resp.content else None
         except Exception as exc:
             log.debug("LLM assessment skipped: %s", exc)
             return None

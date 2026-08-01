@@ -45,11 +45,18 @@ from typing import Any, Optional
 
 from flask import Blueprint, jsonify, render_template, request
 
+from tools.dashboard.auth import require_role
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.foundry.blueprint")
 
 FEATURE_FLAG = "ICDEV_FOUNDRY_ENABLED"
+
+# nav-sec-06: the ``/api/foundry/run`` compute trigger is a state-changing action
+# (kicks off a harvest→synth→score→seed cycle). Before this fix it was gated only
+# on "is authenticated". Restrict it to admin/pm; reads (runs/concepts/detail/IQE)
+# stay open. Both roles appear in ``VALID_DASHBOARD_ROLES`` in tools/dashboard/auth.py.
+_FOUNDRY_RUN_ROLES = ("admin", "pm")
 
 # Concept lifecycle. Sourced from ``foundry.constants`` when that module exposes
 # it; otherwise the documented default the synthesizer → scorer → deliberator
@@ -411,6 +418,7 @@ def create_foundry_blueprint() -> Optional[Blueprint]:
 
     # ── JSON API — run one cycle (delegates to the engine) ────────────────── #
     @bp.route("/api/foundry/run", methods=["POST"])
+    @require_role(*_FOUNDRY_RUN_ROLES)
     def api_run():
         """Trigger one foundry cycle. Delegates to ``tools.foundry.engine`` which
         owns harvest → synth → novelty-gate → score → CoD go/no-go → SIPA self-vet

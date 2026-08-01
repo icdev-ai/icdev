@@ -268,7 +268,10 @@ def _calculate_family_scores(assessments):
         if total == 0:
             results[family_code] = {
                 "name": CONTROL_FAMILIES.get(family_code, family_code),
-                "score": 0.0,
+                # No controls in this family: nothing to score. score is None
+                # (rendered "N/A") and not_scoreable flags it out of rollups.
+                "score": None,
+                "not_scoreable": True,
                 "total": 0,
                 "satisfied": 0,
                 "other_than_satisfied": 0,
@@ -287,13 +290,22 @@ def _calculate_family_scores(assessments):
         # Denominator excludes not_applicable
         scoreable = total - not_applicable
         if scoreable > 0:
-            score = 100.0 * (satisfied + risk_accepted * 0.75) / scoreable
+            score = round(100.0 * (satisfied + risk_accepted * 0.75) / scoreable, 1)
+            not_scoreable = False
         else:
-            score = 100.0  # All N/A means fully compliant for this family
+            # Every control in this family is not_applicable, so there is
+            # nothing to score. Reporting 100% here would read as "fully
+            # satisfied" when in fact nothing was assessed (the same trap the
+            # overall readiness score had in nav-comp-01). Mark the family
+            # not_scoreable and leave score None so the table renders "N/A"
+            # and rollups exclude it rather than treating it as 0 or 100.
+            score = None
+            not_scoreable = True
 
         results[family_code] = {
             "name": CONTROL_FAMILIES.get(family_code, family_code),
-            "score": round(score, 1),
+            "score": score,
+            "not_scoreable": not_scoreable,
             "total": total,
             "satisfied": satisfied,
             "other_than_satisfied": other_than_satisfied,
@@ -323,7 +335,12 @@ def _calculate_readiness_score(assessments):
 
     scoreable = total - not_applicable
     if scoreable <= 0:
-        return 100.0, "Ready for Assessment"
+        # Every control is marked not_applicable, so there are zero scoreable
+        # controls. Returning 100% / "Ready for Assessment" here would be
+        # actively misleading: a system that has assessed *nothing* has not
+        # demonstrated any readiness. Report 0.0 with an explicit status so the
+        # readiness gate fails and the report explains that scope is missing.
+        return 0.0, "Insufficient Scope"
 
     score = 100.0 * (satisfied + risk_accepted * 0.75) / scoreable
     score = round(score, 1)
@@ -402,8 +419,14 @@ def _build_control_family_table(family_scores):
         if s.get("total", 0) == 0:
             continue
         name = s.get("name", code)
+        # A family with zero scoreable controls (all not_applicable) is N/A —
+        # never render it as a 100% (or 0%) score. See _calculate_family_scores.
+        if s.get("not_scoreable") or s.get("score") is None:
+            score_cell = "N/A"
+        else:
+            score_cell = f"{s.get('score', 0.0):.1f}%"
         lines.append(
-            f"| {code} | {name} | {s.get('score', 0.0):.1f}% "
+            f"| {code} | {name} | {score_cell} "
             f"| {s.get('satisfied', 0)} "
             f"| {s.get('other_than_satisfied', 0)} "
             f"| {s.get('not_applicable', 0)} "
@@ -431,10 +454,13 @@ def _build_control_family_details(assessments, family_scores):
     for code in sorted(family_data.keys()):
         items = family_data[code]
         s = family_scores.get(code, {})
-        score = s.get("score", 0.0)
         name = s.get("name", CONTROL_FAMILIES.get(code, code))
+        if s.get("not_scoreable") or s.get("score") is None:
+            score_label = "N/A"
+        else:
+            score_label = f"{s.get('score', 0.0):.1f}%"
 
-        sections.append(f"### {code} - {name} ({score:.1f}%)")
+        sections.append(f"### {code} - {name} ({score_label})")
         sections.append("")
 
         if not items:
@@ -519,7 +545,10 @@ def _build_recommendations(assessments, family_scores, gate_result):
         [
             (code, data)
             for code, data in family_scores.items()
-            if data.get("total", 0) > 0 and data.get("score", 100) < 80
+            if data.get("total", 0) > 0
+            and not data.get("not_scoreable")
+            and data.get("score") is not None
+            and data["score"] < 80
         ],
         key=lambda x: x[1]["score"],
     )
@@ -666,7 +695,9 @@ def _build_executive_summary(readiness_score, readiness_level, gate_result, asse
     scored_families = {
         code: data
         for code, data in family_scores.items()
-        if data.get("total", 0) > 0 and data.get("total", 0) != data.get("not_applicable", 0)
+        if data.get("total", 0) > 0
+        and not data.get("not_scoreable")
+        and data.get("score") is not None
     }
     weakest_family = ""
     weakest_score = 100.0
@@ -674,6 +705,10 @@ def _build_executive_summary(readiness_score, readiness_level, gate_result, asse
         if data["score"] < weakest_score:
             weakest_score = data["score"]
             weakest_family = f"{code} ({data.get('name', code)})"
+
+    # A system with zero scoreable controls (every control marked
+    # not_applicable, or no controls at all) cannot be assessed for readiness.
+    scoreable = total - not_applicable
 
     lines = []
     lines.append(
@@ -683,6 +718,16 @@ def _build_executive_summary(readiness_score, readiness_level, gate_result, asse
         f"**{gate_result['gate_result']}**."
     )
     lines.append("")
+    if scoreable <= 0:
+        lines.append(
+            "- **Readiness cannot be assessed: there are no scoreable controls.** "
+            f"All {total} control(s) are marked not applicable (or none are in "
+            "scope), so no evidence of compliance exists. The readiness score is "
+            "reported as 0.0% (**Insufficient Scope**) rather than 100% to avoid "
+            "overstating readiness. Bring in-scope controls into the assessment "
+            "before relying on this report."
+        )
+        lines.append("")
     lines.append(
         f"- **{satisfied}** controls satisfied, "
         f"**{other_than_satisfied}** other than satisfied, "
@@ -882,10 +927,14 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "critical_control_gate": gate_result["critical_control_gate"],
             "readiness_gate": gate_result["readiness_gate"],
             "family_coverage_gate": gate_result["family_coverage_gate"],
-            # Readiness level thresholds
-            "readiness_level_80": "CURRENT" if readiness_score >= 80 else "--",
-            "readiness_level_60": "CURRENT" if 60 <= readiness_score < 80 else "--",
-            "readiness_level_below_60": "CURRENT" if readiness_score < 60 else "--",
+            # Readiness level thresholds. When there are no scoreable controls the
+            # level is "Insufficient Scope" (not one of the three graded bands), so
+            # none of the standard rows are marked current.
+            "readiness_level_80": "CURRENT" if readiness_level != "Insufficient Scope" and readiness_score >= 80 else "--",
+            "readiness_level_60": "CURRENT" if readiness_level != "Insufficient Scope" and 60 <= readiness_score < 80 else "--",
+            "readiness_level_below_60": "CURRENT"
+            if readiness_level != "Insufficient Scope" and readiness_score < 60
+            else "--",
             # Control counts
             "total_controls": str(total_controls),
             "controls_satisfied": str(controls_satisfied),
@@ -927,7 +976,11 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
         for code in CONTROL_FAMILIES:
             key_prefix = code.lower()
             s = family_scores.get(code, {})
-            variables[f"{key_prefix}_score"] = f"{s.get('score', 0.0):.1f}"
+            fam_score = s.get("score")
+            if s.get("not_scoreable") or fam_score is None:
+                variables[f"{key_prefix}_score"] = "N/A"
+            else:
+                variables[f"{key_prefix}_score"] = f"{fam_score:.1f}"
             variables[f"{key_prefix}_total"] = str(s.get("total", 0))
             variables[f"{key_prefix}_satisfied"] = str(s.get("satisfied", 0))
             variables[f"{key_prefix}_other"] = str(s.get("other_than_satisfied", 0))
@@ -1014,10 +1067,15 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "readiness_score": readiness_score,
             "readiness_level": readiness_level,
             "total_gaps": total_gaps,
+            # Only families with scoreable controls appear here; N/A families
+            # (all not_applicable) are excluded so any downstream average/rollup
+            # never treats them as 0 or 100.
             "family_scores": {
                 code: family_scores[code]["score"]
                 for code in sorted(family_scores.keys())
                 if family_scores[code]["total"] > 0
+                and not family_scores[code].get("not_scoreable")
+                and family_scores[code].get("score") is not None
             },
         }
 

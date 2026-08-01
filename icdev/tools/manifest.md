@@ -5,6 +5,7 @@
 
 ## Index
 
+- [Standalone Agent Runtime (SAG)](manifest/standalone-agent-runtime.md)
 - [LLM Chain Orchestration (CoT / CoD)](manifest/llm-chain-orchestration.md)
 - [AIS Vessel Data Importer](manifest/ais-importer.md)
 - [Network Design Canvas + IQE (ICDEV Query Engine)](manifest/network-iqe.md)
@@ -55,6 +56,8 @@
 - [SharePoint Integration (Phase E / P4.1)](manifest/sharepoint.md)
 - [Agent Execution Framework (Phase 39)](manifest/agent-execution-framework.md)
 - [LLM Provider Abstraction (Vendor-Agnostic)](manifest/llm-provider-abstraction.md)
+- [ICDEV Cortex (Unified AI Facade)](manifest/cortex.md)
+- [BI Dashboard Canvas](manifest/bi-dashboard.md)
 - [Bedrock Client (Opus 4.6 Multi-Agent — Phase A)](manifest/bedrock-client.md)
 - [Multi-Agent Orchestration (Opus 4.6 Multi-Agent — Phase B)](manifest/multi-agent-orchestration.md)
 - [Agent Collaboration (Opus 4.6 Multi-Agent — Phase C)](manifest/agent-collaboration.md)
@@ -152,6 +155,7 @@
 - [Canvas Auto-Remediation](manifest/canvas-auto-remediation.md)
 - [BDC cATO Twin (Phase BDC-1)](manifest/bdc-cato-twin.md)
 - [IDC IaC Twin (Phase IDC-1)](manifest/idc-twin.md)
+- [Twin Core — Cross-Canvas Digital-Twin Unification (TWX)](manifest/twin-core.md)
 - [Agent Adapters (OPT-71)](manifest/agent-adapters.md)
 - [Skill Invocation (OPT-41, 2026-04-12)](manifest/skill-invocation.md)
 - [ANVIL Headless Commands (OPT-42, 2026-04-12)](manifest/anvil-headless-commands.md)
@@ -341,7 +345,7 @@
 | Bootstrap Hmm | tools\trading\ml\bootstrap_hmm.py | Auto-registered: ml/bootstrap_hmm.py | --json | JSON |
 | Cmmi L3 Assessor | tools\compliance\cmmi_l3_assessor.py | Auto-registered: compliance/cmmi_l3_assessor.py | --json | JSON |
 | Connectivity Ref | tools\network\connectivity_ref.py | Auto-registered: network/connectivity_ref.py | --json | JSON |
-| Forge Academy Oracle | tools\genesis\reflexes\forge_academy_oracle.py | Auto-registered: reflexes/forge_academy_oracle.py | --json | JSON |
+| Academy Oracle Reflex | tools\genesis\reflexes\academy_oracle_reflex.py | Auto-registered: reflexes/academy_oracle_reflex.py | --json | JSON |
 | Cost Estimator | tools\agentic_ai_canvas\cost_estimator.py | Auto-registered: agentic_ai_canvas/cost_estimator.py | --json | JSON |
 | Data Profiler | tools\data_canvas\data_profiler.py | Auto-registered: data_canvas/data_profiler.py | --json | JSON |
 | Quality Engine | tools\data_canvas\quality_engine.py | Auto-registered: data_canvas/quality_engine.py | --json | JSON |
@@ -369,7 +373,6 @@
 | Sim Cipher Forge | tools\ttx\scenarios\sim_cipher_forge.py | Auto-registered: scenarios/sim_cipher_forge.py | --json | JSON |
 | Sim Forge Ascent | tools\ttx\scenarios\sim_forge_ascent.py | Auto-registered: scenarios/sim_forge_ascent.py | --json | JSON |
 | Sim Hunt The Fleet | tools\ttx\scenarios\sim_hunt_the_fleet.py | Auto-registered: scenarios/sim_hunt_the_fleet.py | --json | JSON |
-| Sim Lifecycle E2E | tools\ttx\scenarios\sim_lifecycle_e2e.py | Auto-registered: scenarios/sim_lifecycle_e2e.py | --json | JSON |
 | Sim Meridian | tools\ttx\scenarios\sim_meridian.py | Auto-registered: scenarios/sim_meridian.py | --json | JSON |
 | Solarwinds Connector | tools\databridge\connectors\solarwinds_connector.py | Auto-registered: connectors/solarwinds_connector.py | --json | JSON |
 | Librenms Connector | tools\databridge\connectors\librenms_connector.py | Auto-registered: connectors/librenms_connector.py | --json | JSON |
@@ -510,8 +513,6 @@
 | Game Pack | tools\ai_game_engine\game_pack.py | Auto-registered: ai_game_engine/game_pack.py | --json | JSON |
 | Game Session | tools\ai_game_engine\game_session.py | Auto-registered: ai_game_engine/game_session.py | --json | JSON |
 | Round Runner | tools\ai_game_engine\round_runner.py | Auto-registered: ai_game_engine/round_runner.py | --json | JSON |
-| Boundary Scanner | tools\bdc\boundary_scanner.py | Auto-registered: bdc/boundary_scanner.py | --json | JSON |
-| Isa Checker | tools\bdc\isa_checker.py | Auto-registered: bdc/isa_checker.py | --json | JSON |
 | Blockchain Config | tools\blockchain\blockchain_config.py | Auto-registered: blockchain/blockchain_config.py | --json | JSON |
 | Chain Anchor | tools\blockchain\chain_anchor.py | Auto-registered: blockchain/chain_anchor.py | --json | JSON |
 | Channel Manager | tools\blockchain\channel_manager.py | Auto-registered: blockchain/channel_manager.py | --json | JSON |
@@ -610,7 +611,6 @@
 | Enclave Scanner | tools\network\enclave_scanner.py | Auto-registered: network/enclave_scanner.py | --json | JSON |
 | Nipr Constraint Validator | tools\network\nipr_constraint_validator.py | Auto-registered: network/nipr_constraint_validator.py | --json | JSON |
 | Schema Extractor | tools\ontology\schema_extractor.py | Auto-registered: ontology/schema_extractor.py | --json | JSON |
-| Localstack Ecr | tools\pipeline\localstack_ecr.py | Auto-registered: pipeline/localstack_ecr.py | --json | JSON |
 | Timeline Loader | tools\project\timeline_loader.py | Auto-registered: project/timeline_loader.py | --json | JSON |
 | Backfill Registry | tools\provenance\backfill_registry.py | Auto-registered: provenance/backfill_registry.py | --json | JSON |
 | Budget Validator | tools\requirements\budget_validator.py | Auto-registered: requirements/budget_validator.py | --json | JSON |
@@ -1155,3 +1155,66 @@
 | Render Png | tools\viz\render_png.py | Auto-registered: viz/render_png.py | --json | JSON |
 | Render Pptx | tools\viz\render_pptx.py | Auto-registered: viz/render_pptx.py | --json | JSON |
 | Story Builder | tools\viz\story_builder.py | Auto-registered: viz/story_builder.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Agent Coordination | tools\ace\agent_coordination.py | Auto-registered: ace/agent_coordination.py | --json | JSON |
+| Chat Trigger | tools\ace\chat_trigger.py | Auto-registered: ace/chat_trigger.py | --json | JSON |
+| Llm Step | tools\ace\llm_step.py | Auto-registered: ace/llm_step.py | --json | JSON |
+| Markov Sequencer | tools\ace\markov_sequencer.py | Auto-registered: ace/markov_sequencer.py | --json | JSON |
+| Message Bus | tools\ace\message_bus.py | Auto-registered: ace/message_bus.py | --json | JSON |
+| Step Executor | tools\ace\step_executor.py | Auto-registered: ace/step_executor.py | --json | JSON |
+| Team Assembler | tools\ace\team_assembler.py | Auto-registered: ace/team_assembler.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Specialist Consult | tools\govcon\specialist_consult.py | Auto-registered: govcon/specialist_consult.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Intent Router | tools\cortex\intent_router.py | Auto-registered: cortex/intent_router.py | --json | JSON |
+| Modernization Routes | tools\document_intelligence\modernization_routes.py | Auto-registered: document_intelligence/modernization_routes.py | --json | JSON |
+| Card Bridge | tools\doc_modernization\card_bridge.py | Auto-registered: doc_modernization/card_bridge.py | --json | JSON |
+| Redline Drafter | tools\doc_modernization\redline_drafter.py | Auto-registered: doc_modernization/redline_drafter.py | --json | JSON |
+| Regen Orchestrator | tools\doc_modernization\regen_orchestrator.py | Auto-registered: doc_modernization/regen_orchestrator.py | --json | JSON |
+| Rubric Build Tools | tools\genesis\rubric_build_tools.py | Auto-registered: genesis/rubric_build_tools.py | --json | JSON |
+| Cross Process Lease | tools\llm\cross_process_lease.py | Auto-registered: llm/cross_process_lease.py | --json | JSON |
+| Pg Lease | tools\llm\pg_lease.py | Auto-registered: llm/pg_lease.py | --json | JSON |
+| Proxy Resolver | tools\llm\proxy_resolver.py | Auto-registered: llm/proxy_resolver.py | --json | JSON |
+| Rate Gate | tools\llm\rate_gate.py | Auto-registered: llm/rate_gate.py | --json | JSON |
+| Conformance Reviewer | tools\testing\conformance_reviewer.py | Auto-registered: testing/conformance_reviewer.py | --json | JSON |
+| Pg Pytest Tier | tools\testing\pg_pytest_tier.py | Auto-registered: testing/pg_pytest_tier.py | --json | JSON |
+| Pipeline Grader | tools\workflow\pipeline_grader.py | Auto-registered: workflow/pipeline_grader.py | --json | JSON |
+| Standards Catalog | tools\iqe\adapters\standards_catalog.py | Auto-registered: adapters/standards_catalog.py | --json | JSON |
+| Doc Modernization Sweep | tools\genesis\reflexes\doc_modernization_sweep.py | Auto-registered: reflexes/doc_modernization_sweep.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Prd Common | tools\aiify\prd_common.py | Auto-registered: aiify/prd_common.py | --json | JSON |
+| Export Pptx | tools\boundary_canvas\export_pptx.py | Auto-registered: boundary_canvas/export_pptx.py | --json | JSON |
+| Drift Bridge | tools\doc_modernization\drift_bridge.py | Auto-registered: doc_modernization/drift_bridge.py | --json | JSON |
+| Cost Volume Intake | tools\govcon\cost_volume_intake.py | Auto-registered: govcon/cost_volume_intake.py | --json | JSON |
+| Key Personnel | tools\govcon\key_personnel.py | Auto-registered: govcon/key_personnel.py | --json | JSON |
+| Build Mode | tools\kanban\build_mode.py | Auto-registered: kanban/build_mode.py | --json | JSON |
+| Model Override | tools\kanban\model_override.py | Auto-registered: kanban/model_override.py | --json | JSON |
+| Routing Policy | tools\llm\routing_policy.py | Auto-registered: llm/routing_policy.py | --json | JSON |
+| Pptx Export | tools\network\pptx_export.py | Auto-registered: network/pptx_export.py | --json | JSON |
+| Html Sanitizer | tools\quality\html_sanitizer.py | Auto-registered: quality/html_sanitizer.py | --json | JSON |
+| Redaction Util | tools\second_brain\redaction_util.py | Auto-registered: second_brain/redaction_util.py | --json | JSON |
+| Stub Gate | tools\security\stub_gate.py | Auto-registered: security/stub_gate.py | --json | JSON |
+| Llm Adapter | tools\security_canvas\llm_adapter.py | Auto-registered: security_canvas/llm_adapter.py | --json | JSON |
+| Lens Network | tools\oracle\lenses\lens_network.py | Auto-registered: lenses/lens_network.py | --json | JSON |
+| Collab Capture | tools\network\routes\collab_capture.py | Auto-registered: routes/collab_capture.py | --json | JSON |
+| Import Io | tools\network\routes\import_io.py | Auto-registered: routes/import_io.py | --json | JSON |
+| Peering Inventory | tools\network\routes\peering_inventory.py | Auto-registered: routes/peering_inventory.py | --json | JSON |
+| Topology Ops | tools\network\routes\topology_ops.py | Auto-registered: routes/topology_ops.py | --json | JSON |
+| Twin Migration | tools\network\routes\twin_migration.py | Auto-registered: routes/twin_migration.py | --json | JSON |
+| Bgp Hijack Monitor | tools\genesis\reflexes\bgp_hijack_monitor.py | Auto-registered: reflexes/bgp_hijack_monitor.py | --json | JSON |

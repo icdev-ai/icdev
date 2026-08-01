@@ -45,6 +45,10 @@ jobs:
     needs: [Interface-Validation-Scan]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
+    permissions:
+      contents: read
+      packages: write   # "Tag and push (GHCR)" below needs it; the default
+                        # GITHUB_TOKEN is read-only and the push would be denied
     steps:
       - uses: actions/checkout@v4
 

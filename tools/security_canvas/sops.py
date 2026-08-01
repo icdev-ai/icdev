@@ -46,13 +46,13 @@ def get_all_sops(sop_type=None, approval_status=None):
     """Return all SOPs, optionally filtered by type and/or approval_status."""
     # Build query from fixed allowed clauses — no user string interpolated into SQL
     if sop_type and approval_status:
-        sql = "SELECT * FROM sdc_sops WHERE sop_type = ? AND approval_status = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM sdc_sops WHERE sop_type = %s AND approval_status = %s ORDER BY updated_at DESC"
         params = [sop_type, approval_status]
     elif sop_type:
-        sql = "SELECT * FROM sdc_sops WHERE sop_type = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM sdc_sops WHERE sop_type = %s ORDER BY updated_at DESC"
         params = [sop_type]
     elif approval_status:
-        sql = "SELECT * FROM sdc_sops WHERE approval_status = ? ORDER BY updated_at DESC"
+        sql = "SELECT * FROM sdc_sops WHERE approval_status = %s ORDER BY updated_at DESC"
         params = [approval_status]
     else:
         sql = "SELECT * FROM sdc_sops ORDER BY updated_at DESC"

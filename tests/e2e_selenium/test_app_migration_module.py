@@ -5,7 +5,7 @@ Covers app inventory CRUD, CSV import, app-server binding, dependency graph,
 migration order, data migration planner, and post-migration validator.
 
 Prerequisites:
-  - Flask dashboard running (ICDEV_DASHBOARD_URL or http://localhost:5000)
+  - Flask dashboard running (ICDEV_DASHBOARD_URL or http://localhost:5050)
   - DB initialised with mc_app_inventory, mc_app_server_bindings, mc_app_dependencies,
     mc_data_migration tables (migration_canvas.db)
 
@@ -35,7 +35,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000").rstrip("/")
+BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050").rstrip("/")
 _BASE_SCHEME = urllib.parse.urlparse(BASE_URL).scheme
 if _BASE_SCHEME not in ("http", "https"):
     raise ValueError(f"ICDEV_DASHBOARD_URL must use http or https; got {_BASE_SCHEME!r}")

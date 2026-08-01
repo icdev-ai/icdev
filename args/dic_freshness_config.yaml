@@ -1,0 +1,29 @@
+# CUI // SP-CTI
+# DIC Freshness Engine — config-driven scoring weights.
+#
+# The freshness score (0.0 fresh -> 1.0 stale) is a weighted sum of dimension
+# sub-scores. These weights are the single source of truth; the engine falls
+# back to identical built-in defaults if this file is absent or malformed.
+#
+# blast_radius is the 5th (semantic KG blast-radius) dimension: how many
+# recently-changed KG entities a document cites. Its weight is 0.0 BY DESIGN so
+# existing freshness scores are BYTE-IDENTICAL until an operator deliberately
+# tunes it up. Do not raise it without also re-normalizing (weights need not sum
+# to 1.0, but the state thresholds fresh<0.35 / aging<0.7 assume ~1.0 total).
+weights:
+  age: 0.25          # document age vs retention tier
+  approval: 0.35     # time since last approved version
+  drift: 0.25        # drift events affecting the collection since last update
+  pending: 0.15      # sections pending review
+  blast_radius: 0.0  # DEFAULT 0 — cites N+ recently-changed KG entities
+
+blast_radius:
+  # A document is a blast-radius "finding" when it cites this many (or more)
+  # recently-changed entities. Complements DMX explicit cross-references
+  # (dmx-ref-01) with a semantic signal.
+  min_overlap: 3
+  # blast sub-score = min(overlap_count * score_per_entity, 1.0)
+  score_per_entity: 0.2
+  # When the blast_radius weight is > 0, route flagged docs through the shared
+  # drift sink (acoic.handle_drift — the same sink the docmod drift_bridge uses).
+  emit_drift: true

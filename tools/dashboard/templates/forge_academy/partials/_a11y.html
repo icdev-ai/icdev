@@ -1,0 +1,47 @@
+{# aca-trn-06 — accessibility primitives the academy surfaces share.
+
+   .sr-only exists in the dashboard only inside batch.js, injected at runtime for a
+   different page, so academy markup could not rely on it: a "(required)" hint marked
+   sr-only would simply have rendered visibly.
+
+   The focus ring matters more than it looks. Making the step list focusable
+   (tabindex) without a visible focus indicator trades one barrier for another — a
+   keyboard user can now reach the steps but cannot see which one they are on. The
+   dark theme's default UA outline is nearly invisible against #12192b, so it is
+   stated explicitly.
+#}
+<style>
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* :focus-visible keeps the ring for keyboard users without drawing it on every
+   mouse click, which is what made earlier attempts at this look broken. */
+.fa-step-nav li:focus-visible,
+.fa-step-nav li:focus {
+  outline: 2px solid var(--fa-cyan, #00D4FF);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.fa-step-nav li:focus:not(:focus-visible) { outline: none; }
+
+/* Same treatment for the runner's own controls and the editor. */
+.fa-btn-run:focus-visible,
+.fa-btn-next:focus-visible,
+.fa-btn-hint:focus-visible,
+.fa-editor-wrap .CodeMirror-focused {
+  outline: 2px solid var(--fa-cyan, #00D4FF);
+  outline-offset: 2px;
+}
+
+/* A learner who navigates by keyboard lands on the step list first; let them skip
+   straight to the step they are working on. */
+.fa-skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 10000;
+  background: #12192b; color: var(--fa-cyan, #00D4FF);
+  border: 1px solid var(--fa-cyan, #00D4FF); border-radius: 0 0 6px 0;
+  padding: .6rem 1rem; font-size: .8rem; text-decoration: none;
+}
+.fa-skip-link:focus { left: 0; }
+</style>

@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+name: Injection Detection Rubric
+inject_type: injection_detection
+description: Evaluates detection and neutralization of a prompt-injected source document.
+max_score: 100
+dimensions:
+- id: detection_correctness
+  weight: 0.4
+  prompt: Did Blue identify the claim as originating from an injected instruction, citing BOTH the injection
+    pattern and the page-content mismatch? 10 = both signals; 6 = one; 3 = asserts injection without evidence;
+    0 = accepts the claim.
+- id: neutralization
+  weight: 0.25
+  prompt: Is the strip/quarantine + re-ground action correct? 10 = quarantine source + re-ground; 5 =
+    partial; 0 = none.
+- id: detection_signatures
+  weight: 0.25
+  prompt: Are there >=2 durable detection signatures for injected sources? 10 = 2 concrete signatures;
+    5 = 1 or vague; 0 = none.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were grounded-search receipts used to prove the mismatch? 10 = yes; 5 = present, unused; 0 =
+    none.

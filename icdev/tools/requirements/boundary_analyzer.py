@@ -369,7 +369,7 @@ def register_system(
 
     if _HAS_AUDIT:
         log_event(
-            event_type="system_registered",
+            event_type="ato_system_registered",
             actor="boundary-analyzer",
             action=f"Registered ATO system '{system_name}' ({system_id})",
             project_id=project_id,
@@ -799,7 +799,7 @@ def assess_boundary_impact(
 
     if _HAS_AUDIT:
         log_event(
-            event_type="boundary_impact_assessed",
+            event_type="boundary_assessed",
             actor="boundary-analyzer",
             action=(f"Assessed requirement {requirement_id} against system {system_id}: {tier} (score={score})"),
             project_id=project_id,
@@ -1028,7 +1028,7 @@ def generate_alternatives(
 
     if _HAS_AUDIT:
         log_event(
-            event_type="alternatives_generated",
+            event_type="boundary_alternative_generated",
             actor="boundary-analyzer",
             action=(f"Generated {len(alternatives)} alternative COAs for assessment {assessment_id}"),
             project_id=project_id,

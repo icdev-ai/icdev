@@ -39,23 +39,27 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.component_registry")
 
-def _find_repo_root() -> Path:
-    """Resolve the repository root by locating ``args/component_registry.yaml``.
+def _find_repo_root() -> tuple[Path, Path]:
+    """Locate ``component_registry.yaml`` and the base dir that contains it.
 
     Works whether this module is imported from the canonical ``icdev.tools.*
-    package (nested under ``icdev/``) or the legacy root ``tools.*`` shim.
+    package (nested under ``icdev/``), the legacy root ``tools.*`` shim, or a
+    ``pip install``ed wheel. In a wheel the registry is installed as package
+    data under ``icdev/data/args/`` rather than ``<root>/args/``, so both
+    layouts are probed at every level. Returns ``(base_dir, registry_path)``.
     """
     here = Path(__file__).resolve()
     for parent in here.parents:
-        candidate = parent / "args" / "component_registry.yaml"
-        if candidate.is_file():
-            return parent
+        for rel in (("args",), ("data", "args")):
+            candidate = parent.joinpath(*rel, "component_registry.yaml")
+            if candidate.is_file():
+                return parent, candidate
     # Fallback to the naive parent-of-parent heuristic.
-    return here.parent.parent.parent
+    base = here.parent.parent.parent
+    return base, base / "args" / "component_registry.yaml"
 
 
-BASE_DIR = _find_repo_root()
-DEFAULT_REGISTRY_PATH = BASE_DIR / "args" / "component_registry.yaml"
+BASE_DIR, DEFAULT_REGISTRY_PATH = _find_repo_root()
 
 
 # ---------------------------------------------------------------------------
@@ -558,16 +562,23 @@ class ComponentRegistry:
         return toggles
 
     def get_cli_toggles(self) -> dict[str, list[str]]:
-        """Return user-facing CLI toggles (canvas + feature kinds only).
+        """Return user-facing CLI toggles — every component with an env_flag.
 
-        Core extensions and child apps are registered separately in the
-        dashboard and are not exposed through `icdev enable/disable` in
-        Phase 0.
+        This is the single source of truth for `icdev enable/disable`. It
+        covers **all** toggleable kinds (canvas, feature, core_extension,
+        child_app), so any component that declares an ``env_flag`` in
+        ``component_registry.yaml`` is reachable from the CLI. The value is the
+        primary ``env_flag`` plus any ``extra_env_flags`` (legacy aliases that
+        flip together, e.g. ICDEV_NDC_ENABLED + ICDEV_NETWORK_ENABLED).
+
+        Historically this filtered to canvas + feature only, which left 21
+        core-extension / child-app env flags (STRATEGOS, CPMP, INNOVATION, the
+        *_IQE_* flags, …) with no CLI path at all — the exact registry/CLI
+        drift CLAUDE.md forbids. Broadening the filter closes that gap; the
+        drift-guard test in tests/test_component_registry.py keeps it closed.
         """
         toggles: dict[str, list[str]] = {}
         for c in self._components:
-            if c.kind not in ("canvas", "feature"):
-                continue
             if not c.env_flag:
                 continue
             name = c.cli_name or c.key
@@ -580,11 +591,15 @@ class ComponentRegistry:
         return {(c.cli_name or c.key): c.display_name for c in self._components}
 
     def get_cli_descriptions(self) -> dict[str, str]:
-        """Return user-facing CLI toggle descriptions (canvas + feature only)."""
+        """Return CLI toggle descriptions for every component with an env_flag.
+
+        Mirrors the coverage of ``get_cli_toggles()`` so every reachable toggle
+        has a display name in `icdev list` / `icdev status`.
+        """
         return {
             (c.cli_name or c.key): c.display_name
             for c in self._components
-            if c.kind in ("canvas", "feature") and c.env_flag
+            if c.env_flag
         }
 
     def get_iqe_mapping(self) -> dict[str, tuple[str, list[str]]]:
@@ -602,6 +617,90 @@ class ComponentRegistry:
                 mapping[c.key] = (str(adapter), list(collections))
         return mapping
 
+    def get_iqe_path_canvas(self) -> list[tuple[str, str]]:
+        """Return an ordered ``(regex_source, canvas_key)`` list for the
+        client-side canvas detector (IQE mini-bar + AI-brief banner).
+
+        Single source of truth replacing the two divergent hardcoded
+        ``PATH_CANVAS`` copies in ``base.html`` and
+        ``includes/ai_brief_banner.html``. The result is injected once into
+        ``base.html`` as ``window.__ICDEV_PATH_CANVAS__`` and consumed by both.
+
+        Derivation (priority order — first match wins in JS, loose ``^prefix``
+        semantics preserved from the legacy array):
+
+          1. The explicit, ordered ``iqe_path_canvas`` list from
+             ``component_registry.yaml``. Each entry is either
+             ``{path: <prefix>, canvas: <key>}`` (loose prefix → ``^<prefix>``)
+             or ``{regex: <src>, canvas: <key>}`` (verbatim pattern, e.g.
+             ``^/network|^/twin``). This preserves legacy ordering, regex
+             specials, and path→canvas aliases (e.g. ``/proposals`` → ``govcon``).
+             More specific paths are listed before shorter ones, and the
+             ``/coworkers`` → ``cwk`` entry precedes ``/coworker`` → ``ace``
+             (the documented longest-path-first collision resolution).
+
+          2. Auto-derived entries for every ``canvas`` component that declares a
+             ``url_prefix`` AND an IQE adapter and is not already covered by (1).
+             Appended longest-prefix-first so a longer path is always tested
+             before a shorter one. This future-proofs the detector: a new canvas
+             with a ``url_prefix`` + IQE adapter appears automatically, without
+             editing either template.
+
+        Each returned regex source is anchored with ``^`` and is compatible with
+        both Python ``re`` and JavaScript ``RegExp``. The registry is load-once
+        (YAML parsed at construction), so callers may cache the result at module
+        scope.
+        """
+        import re as _re
+
+        raw = self._load_yaml(self.registry_path)
+        explicit = raw.get("iqe_path_canvas") or []
+
+        result: list[tuple[str, str]] = []
+        covered_prefixes: set[str] = set()
+        covered_keys: set[str] = set()
+
+        def _prefix_to_src(prefix: str) -> str:
+            return "^" + _re.escape(prefix)
+
+        if isinstance(explicit, list):
+            for entry in explicit:
+                if not isinstance(entry, dict):
+                    continue
+                canvas = str(entry.get("canvas", "")).strip()
+                if not canvas:
+                    continue
+                if entry.get("regex"):
+                    src = str(entry["regex"])
+                elif entry.get("path"):
+                    prefix = str(entry["path"]).rstrip("/") or "/"
+                    src = _prefix_to_src(prefix)
+                    covered_prefixes.add(prefix)
+                else:
+                    continue
+                result.append((src, canvas))
+                covered_keys.add(canvas)
+
+        # Auto-derive: enabled-or-not canvases with a url_prefix + IQE adapter
+        # not already covered, longest-prefix-first for deterministic matching.
+        auto: list[tuple[int, str, str]] = []
+        for c in self._components:
+            if c.kind != "canvas":
+                continue
+            prefix = (c.url_prefix or "").rstrip("/")
+            if not prefix or not c.iqe.get("adapter_module"):
+                continue
+            if c.key in covered_keys or prefix in covered_prefixes:
+                continue
+            auto.append((len(prefix), _prefix_to_src(prefix), c.key))
+            covered_keys.add(c.key)
+            covered_prefixes.add(prefix)
+        auto.sort(key=lambda t: -t[0])
+        for _length, src, key in auto:
+            result.append((src, key))
+
+        return result
+
     @staticmethod
     def _normalize_nav_links(
         nav: dict[str, Any], url_prefix: str
@@ -610,12 +709,20 @@ class ComponentRegistry:
 
         If the registry entry does not declare explicit links, generate a single
         "Dashboard" link pointing at the component's ``url_prefix``.
+
+        cnr-nav-01: when a component declares no explicit links **and** has no
+        ``url_prefix`` (empty string), emit **no** link rather than fabricating a
+        link to ``/``. The old ``href = url_prefix or "/"`` fallback dumped users
+        back on the home dashboard for every ``url_prefix: ''`` component whose
+        real routes live in its blueprint — such components must declare explicit
+        ``nav.links`` (or none, if they are page-less feature toggles).
         """
         links = nav.get("links")
         if not links:
-            href = url_prefix or "/"
-            if not href.endswith("/"):
-                href = f"{href}/"
+            prefix = (url_prefix or "").strip()
+            if not prefix:
+                return []
+            href = prefix if prefix.endswith("/") else f"{prefix}/"
             return [
                 {
                     "label": "Dashboard",
@@ -755,12 +862,10 @@ def _file_exists(path: Path | str | None) -> bool:
     return Path(path).exists()
 
 
-def _has_route_decorator(blueprint_path: Path) -> bool:
-    """Return True if the blueprint file contains a Flask route decorator."""
-    if not blueprint_path.exists():
-        return False
+def _ast_has_route_decorator(text: str) -> bool:
+    """Return True if the Python source declares a Flask ``@*.route(...)`` decorator."""
     try:
-        tree = ast.parse(blueprint_path.read_text(encoding="utf-8"))
+        tree = ast.parse(text)
     except SyntaxError:
         return False
     for node in ast.walk(tree):
@@ -774,12 +879,76 @@ def _has_route_decorator(blueprint_path: Path) -> bool:
     return False
 
 
-def _module_dir_from_module(module: str) -> str:
-    """Convert 'tools.xxx.blueprint' to 'tools/xxx'."""
+def _has_route_decorator(blueprint_path: Path) -> bool:
+    """Return True if the blueprint declares a Flask route — inline or split.
+
+    Classic blueprints carry ``@bp.route(...)`` decorators directly in the file.
+    After a route-group split (cvx-net-01) the blueprint becomes a thin assembler
+    whose ``create_*_blueprint()`` delegates to ``register_<group>_routes(bp)``
+    helpers imported from a sibling ``routes/`` subpackage; the actual ``@route``
+    decorators live in those modules. When the file itself carries no route but
+    (a) references ``register_*_routes`` / imports from a ``routes`` subpackage,
+    OR (b) has a ``routes/`` directory beside it, scan ``routes/**/*.py`` and pass
+    if any declares a route. Still returns False when nothing declares a route.
+    """
+    if not blueprint_path.exists():
+        return False
+    try:
+        text = blueprint_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if _ast_has_route_decorator(text):
+        return True
+
+    import re
+
+    references_split = bool(
+        re.search(r"register_\w+_routes", text)
+        or re.search(r"from\s+[\w.]*routes(?:\.\w+)?\s+import", text)
+        or re.search(r"import\s+[\w.]*\.routes\b", text)
+    )
+    routes_dir = blueprint_path.parent / "routes"
+    if references_split or routes_dir.is_dir():
+        if routes_dir.is_dir():
+            for py in sorted(routes_dir.rglob("*.py")):
+                try:
+                    if _ast_has_route_decorator(py.read_text(encoding="utf-8")):
+                        return True
+                except OSError:
+                    continue
+    return False
+
+
+def _module_dir_from_module(module: str, root: Path | None = None) -> str:
+    """Return the package directory for a registry `module` entry.
+
+    `module` may name a package's blueprint submodule ('tools.xxx.blueprint') or a
+    standalone module file ('tools.govcon.rfi_canvas_blueprint'). Only the first
+    form was handled, so a canvas whose blueprint is a plain module — rather than
+    a `blueprint.py` inside its own package — resolved to a directory that does not
+    exist, and was reported as missing both its blueprint and its backing module.
+
+    When `root` is supplied, decide by looking at the filesystem: strip the final
+    segment whenever it denotes a .py file rather than a directory. Without a root,
+    fall back to the historical 'blueprint'-suffix rule.
+    """
     parts = module.split(".")
+    if root is not None and len(parts) > 1:
+        candidate = root.joinpath(*parts)
+        if not candidate.is_dir() and candidate.with_suffix(".py").is_file():
+            parts = parts[:-1]
+        return "/".join(parts)
     if len(parts) > 1 and parts[-1] == "blueprint":
         parts = parts[:-1]
     return "/".join(parts)
+
+
+def _blueprint_path_from_module(module: str, root: Path) -> Path:
+    """Resolve the file that should carry the @route decorators."""
+    module_file = root.joinpath(*module.split(".")).with_suffix(".py")
+    if module_file.is_file():
+        return module_file
+    return root / _module_dir_from_module(module, root) / "blueprint.py"
 
 
 def validate_canvas_completeness(
@@ -836,7 +1005,7 @@ def validate_canvas_completeness(
     # Point 1: main page template — check declared path, then common legacy fallbacks.
     # Legacy canvases may use index.html, dashboard.html, or live in a differently named dir.
     module_path_tmp = comp.module or ""
-    module_dir_tmp = _module_dir_from_module(module_path_tmp)
+    module_dir_tmp = _module_dir_from_module(module_path_tmp, root)
     _module_leaf = module_dir_tmp.split("/")[-1] if "/" in module_dir_tmp else module_dir_tmp
 
     template_path_str = completeness.get("template") or f"tools/dashboard/templates/{key}/page.html"
@@ -879,8 +1048,8 @@ def validate_canvas_completeness(
 
     # Point 3: blueprint with route decorators
     module_path = comp.module or ""
-    module_dir = _module_dir_from_module(module_path)
-    blueprint_path = root / module_dir / "blueprint.py"
+    module_dir = _module_dir_from_module(module_path, root)
+    blueprint_path = _blueprint_path_from_module(module_path, root)
     route_present = _has_route_decorator(blueprint_path)
 
     # Point 4: backing module (a non-blueprint, non-init Python file in the package)
@@ -888,7 +1057,7 @@ def validate_canvas_completeness(
     backing_present = False
     if module_pkg.is_dir():
         for py_file in module_pkg.glob("*.py"):
-            if py_file.name not in ("__init__.py", "blueprint.py"):
+            if py_file.name not in ("__init__.py", blueprint_path.name):
                 backing_present = True
                 break
 

@@ -6,6 +6,91 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.42] - 2026-07-27
+
+### Fixed
+- **The 1.2.41 wheel could not import `icdev.tools.llm.agent_loop`.** `sync_package_tree.py` mirrors `tools/` over `icdev/tools/`, but several `tools/*.py` files are the back-compat SHIMS documented in CLAUDE.md — thin modules that re-export from the canonical `icdev.tools.*`. Copying a shim over its own twin produced a module importing from **itself**, so `icdev/tools/llm/agent_loop.py` went from 1,825 lines to an 89-line stub that raised `ImportError: cannot import name 'DONE' from partially initialized module`. Five modules were affected (`llm/agent_loop`, `billing/tier`, `showcase/synthetic_data_engine`, `testing/qa_agent_runner`, `testing/selector_healer`); all are restored.
+- **The sync can no longer destroy an implementation.** `_is_backcompat_shim()` refuses to copy when the source is a shim (imports from `icdev.tools.*`) **and** the target is substantially larger. Deliberately narrow: a genuine module that merely imports from `icdev.tools.*` still syncs. Proven by re-running the full sync — the restored files survive it.
+
+  **If you installed 1.2.41 or 1.2.40, upgrade.**
+
+## [1.2.41] - 2026-07-27
+
+### Fixed
+- **The 1.2.40 wheel shipped a stale FORGE args layer.** `tools/installer/sync_package_tree.py` mirrors `args/`, `goals/`, `context/`, `hardprompts/`, `docs/` and `tools/` into the packaged `icdev/` tree and must run **before** `python -m build`; it was not run for 1.2.40. The published wheel therefore carried **29 differing and 53 missing** `args/` files, including `component_registry.yaml` — the very file 1.2.39 fixed for `pip install` — and a `brand.yaml` still reading 1.2.30, so an installed dashboard showed a stale version badge. The mirror is re-synced here and now reports zero drift (the single exclusion, `llm_config.yaml.bak`, is a backup file and correctly skipped).
+
+  If you installed **1.2.40 from PyPI, upgrade** — its packaged configuration layer is incomplete.
+
+## [1.2.40] - 2026-07-27
+
+Grounding work aimed at one problem: working with a corpus far larger than any available context window, without the answers quietly inventing things. 1.2.35 introduced TRUST citations; this release makes the grounding underneath them work.
+
+### Added
+- **Derivation disclosure.** `tools/quality/derivation.py` classifies every claim as `verbatim` / `derived-text` / `derived-numeric`, and for computed figures recovers the arithmetic — formula, each operand's value, each operand's source. A cited answer previously presented a quotation, a paraphrase and a computed figure identically; the computed case passes citation validation because the cited chunk genuinely exists, even when the number is not on the page. Classification is deterministic (D391 picker rule) — the model is never asked whether it quoted or computed, because a model that fabricated a number will equally happily report that it quoted one. `derived-numeric` with **no** recoverable derivation is the loud case. Surfaced on `/document-intelligence`, amber only when a derivation could not be recovered. `Provenance` gains a `derivation` field, defaulting to `""` rather than `verbatim` (which would assert a quotation nobody checked).
+- **Context budgeting.** `tools/llm/context_budget.py` — a real token account plus a per-model `context_window` (now declared for all 30 routed models), budgeting to the floor of the routed chain and reporting explicitly what it dropped. `_llm_synthesize` previously sent a fixed `results[:5]` at 1,000 chars regardless of model, after the retriever had fetched 50 candidates and discarded 45.
+- **Per-claim grounding on the DIC chat path** — claim decomposition, token-F1 span binding, and an anchor guard (numbers, dates, currency, acronyms, proper nouns must appear in the bound span), with the shipped CoVe guard enforced at the publish gate.
+- **Embedding-provider circuit breaker** — persisted and TTL'd, with a bounded 5s availability probe (`ICDEV_EMBED_PROBE_TIMEOUT`) and `LLMRouter.reset_embedding_availability()`.
+
+### Fixed
+- **DIC search returned zero results for every query in the browser.** RLS predicate injection appended a `classification` filter to `SELECT 1 FROM pg_extension` — a PostgreSQL system catalog with no such column. The probe raised, `PgVectorStore` reported pgvector unavailable, and retrieval returned nothing. A script has no Flask request context, so no RLS and no injection: every reproduction outside the browser looked healthy, and nothing logged an error. Row predicates are no longer injected into system catalogs; application tables still receive theirs (asserted in both directions).
+- **Collection-scoped search lost 85% of the corpus.** The result filter re-derived each chunk's collection from `dic_chunk_links`, written by only one ingest path and covering 168 of 559 live chunks — so a scoped query against a 236-chunk collection returned zero while the retriever had correctly returned its chunks. It now reads the column the retriever filtered on.
+- **All three security audit trails were permanently empty.** `_write_rls_audit`, `_write_column_audit` and `_write_field_audit` open a raw `sqlite3` connection (bypassing `translate_sql`) but bound `%s`. Every insert raised, each bare `except: pass` swallowed it, and the tables recorded nothing while reporting as enabled.
+- **BM25 keyword fallback could not execute on PostgreSQL** — mixed `?`/`%s` in one statement, so psycopg2 raised and the caller returned `[]`. The keyword safety net had been dead on the primary backend.
+- **Embeddings bypassed the LPX proxy gateway.** `apply_gateway_to_provider_cfg` was called only on the chat path, so with `ICDEV_LLM_PROXY_ENABLED=true` chat used a virtual key while embeddings called the real endpoint with the real provider key.
+- **Local embedding fallback was slow, not broken** — nothing remembered a failed cloud probe, so every cold process re-probed both providers (~12s) ahead of a 0.06s local embed.
+- **Layout probe imported the packages it was only meant to detect** — `importlib.import_module` on PaddleOCR/doclayout-yolo at DIC module load, executing torch and a model-weight download the probe's own docstring said it existed to avoid. Now `importlib.util.find_spec`, and the first available backend wins rather than requiring all of them.
+- **HTML ingestion silently dropped body text** on small documents — the web-page boilerplate pruner treats a short paragraph as chrome, so `<p>Hello world</p>` disappeared and only the heading survived.
+- **The DIC answer badge asserted verification that never ran** — now driven from the response payload.
+- **~150 failing tests repaired** across DIC, router, workflow-HITL and pattern-classifier. Fixtures injecting raw `sqlite3` connections into PG-dialect code also un-hid three tests that had been passing on the empty list a swallowed exception produced. 98 tests exercised `pattern_classifier` code that never reached main — landed by a bulk kanban merge whose implementation did not survive it — and were removed; a mixed file was pruned surgically so its 16 live tests still run.
+
+### Changed
+- **Version sources reconciled.** `args/brand.yaml` (dashboard badge) had drifted to 1.2.30 and `CHANGELOG.md` to 1.2.37 while the package was 1.2.39 — three numbers across four files. All now track `icdev/_version.py`.
+
+## [1.2.39] - 2026-07-24
+
+### Fixed
+- **`pip install icdev` could not resolve its own component registry.** `_find_repo_root()` probed only `<parent>/args/component_registry.yaml`, but the wheel installs that file under `icdev/data/args/`. Every PyPI install loaded **zero** components. Both layouts are now probed, source checkout taking precedence. Invisible from a repo clone, which is why it survived since 1.2.37.
+- **`icdev status` crashed on a fresh install** — `ValueError: max() iterable argument is empty` on an empty registry; now prints an actionable message.
+- **`icdev init` recommended a command that does not exist** (`icdev enable --list`); the working command is `icdev list`.
+- **Framework counts derive from the source of truth** — the README advertised 42 over a table of 36 while the registry declared 35. Now 35 compliance frameworks (enumerated from the registry) and 12 AI governance & assurance standards, stated separately.
+
+## [1.2.38] - 2026-07-22
+
+A hardening release, not a feature release: 170 fixes to 121 features across 338 merged PRs.
+
+### Security
+- **Fail-closed authentication across the canvas surface** — mutating routes auth-gated by default (DSOC, QDC, OHC/NOCC, AADC, AIMC, AI-ify, GameDay, Strategos, ZIG, Migration Intelligence, `/canvas-compliance`, Second Brain). Three fail-open paths removed: the Admin Console's conditional RBAC, the usage API's admin fallback, and the `'default'` user fallback on `/me`. Canvas access defaults to deny.
+- **XSS / CSRF / IDOR / upload sweep** — shared `escapeHtml` helper replacing ad-hoc interpolation, a CSRF guard for cookie-authed mutating JSON APIs, a global upload cap with JSON 413s, tenant-scoped IDOR guards, a path-traversal fix in `api_regen_download`, and Academy's `code_runner` hardened against secret exfiltration.
+
+### Fixed
+- **Surfaces that overstated what they knew** were retired rather than papered over — the PDC Studio trio returning invented results, a hollow Info Ops canvas, a dead NDC health endpoint, and a raw-`sqlite3` fail-soft fallback in Strategos that masked failures.
+- **PostgreSQL-primary runtime** — `%s`/`?` reconciliation, `sqlite_master`/`PRAGMA` introspection removed from runtime paths, and the missing PDC / Data-canvas / Security-canvas tables reconciled into `pg_consolidated.sql` with a schema-parity test.
+
+### Added
+- **TRUST extended to every drafting surface** — citation grounding and the publish gate now cover docgen, the Migration Canvas and AI-ify's AI Boost; WriteGuard is fail-closed; Second Brain masks PII at LLM egress.
+- 10 FORGE Academy platform-subsystem missions and 3 AI GameDay TTX scenarios.
+
+## [1.2.37] - 2026-07-15
+
+### Added
+- **ICDEV Cortex — unified governed AI facade.** `cortex.complete() / reason() / search() / extract() / classify() / govern()` over the LLM router, RAG, KG, DIC, and IQE. Policy-routed with end-to-end token accounting (result → audit → metrics), governed CoT / debate / council reasoning over REST, Reciprocal Rank Fusion for cross-backend search merge, an opt-in audited LRU+TTL response cache (tenant-safe), and a governance-first home monitor card over `cortex_audit`. `governance.fail_closed` is now live config.
+- **Cortex external exposure** — scoped service keys + client SDK, DataBridge connectors for `icdev_cpmp` (contract/delivery bridge with `cpars_assessments` + `negative_events`, `mod_recommendations` write path) and `icdev_demand` (RFI demand signals), a RICOAS intake bridge at `/cortex/api/v1/intake/*`, and an award endpoint where a won bid proposes the `/cpmp` delivery baseline.
+- **Policy-routed LLM (Pillar 0)** — request content is classified to decide egress: CUI / local-only chains stay on-host, releasable content may use cloud models. Playwright / e2e execution chains centralized on the configured test-execution provider (`chain_groups`).
+- **Kanban** — repo-aware external dispatch (build into the target repo instead of parking `prem-*` tasks), a Manual Build checkbox + build-model selector, and the two previously-unwired board columns.
+- **GovCon PTW** — bid-side LCAT→person registry, auditable pricing carried into `/cpmp`, cited win-theme intake, PTW-posture Council consult, and whole-dashboard BI export.
+
+### Fixed
+- **Kanban manual-gate integrity** — manual-mode gate tasks are now exempt from the reaper, scheduler startup recovery, dispatch, and the backlog→scheduled promoter, closing four paths that could release (and then erase) gated work.
+- **External done-gate** — an external task is done only when its work landed on that repo's `origin/main`; the repo-aware git check runs in the task's own repo and bypass cannot skip it. External worktrees no longer die on ICDev-shaped structural checks.
+- **Worktree sweeper** — stopped reporting removals it never performed; prune can now clear a locked worktree entry.
+- **Dashboard** — an unescaped apostrophe on the home page had killed every JS function on `/`.
+- **`specialist_consult` fails closed**; a zero rate is treated as real data, not a missing one.
+- **Tests** — 76 failing kanban tests repaired alongside 3 real production/schema bugs.
+
+### Changed
+- **Employer identity removed from the repo** — no company name in ICDEV.
+- **CI lint gate** no longer runs `--fix` (stops the gate hiding lint debt); dead imports removed.
+
 ## [1.2.36] - 2026-07-09
 
 ### Security

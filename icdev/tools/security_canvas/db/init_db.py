@@ -49,7 +49,12 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        from tools.db.storage import StorageConnection
+
+        return StorageConnection(conn, "sqlite")  # so NC-style %s placeholders translate
+    except ImportError:
+        return conn
 
 
 SCHEMA = """
@@ -311,6 +316,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON zig_activity_completions(a
 CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     pillar_slug     TEXT NOT NULL,
+    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
     score           REAL NOT NULL DEFAULT 0.0,
     maturity_level  TEXT,
     capability_count INTEGER DEFAULT 0,
@@ -320,6 +326,7 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_zig_score_pillar ON zig_maturity_scores(pillar_slug);
+CREATE INDEX IF NOT EXISTS idx_zig_score_target ON zig_maturity_scores(target_id);
 
 CREATE TABLE IF NOT EXISTS fedramp_ato_packages (
     id                  TEXT PRIMARY KEY,

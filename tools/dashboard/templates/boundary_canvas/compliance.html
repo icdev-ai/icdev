@@ -39,7 +39,7 @@
 <div class="comp-grid" id="compGrid" style="display:none;">
   <!-- Score & Grade -->
   <div class="comp-card">
-    <h3>Assessment Score</h3>
+    <h3>Diagram Grade</h3>
     <div style="display:flex; align-items:baseline;">
       <span class="comp-score" id="compScore" style="color:#9c27b0;">--</span>
       <span class="comp-grade" id="compGrade" style="color:#7a8cb0;">--</span>
@@ -116,7 +116,9 @@
       const isaGaps = gaps.filter(g => (g.rule || '').toLowerCase().includes('isa') || (g.title || '').toLowerCase().includes('isa'));
       const summaryDiv = document.getElementById('isaSummary');
       if (isaGaps.length > 0) {
-        summaryDiv.innerHTML = isaGaps.map(g => `<div class="comp-isa-row"><span class="comp-isa-badge" style="background:#9c27b033; color:#ce93d8;">${g.severity || 'INFO'}</span> ${g.title || g.rule || g.description || ''}</div>`).join('');
+        // nav-sec-08: escape server/LLM-sourced gap fields before innerHTML.
+        const _e = window.escHtml || (s => String(s == null ? '' : s));
+        summaryDiv.innerHTML = isaGaps.map(g => `<div class="comp-isa-row"><span class="comp-isa-badge" style="background:#9c27b033; color:#ce93d8;">${_e(g.severity || 'INFO')}</span> ${_e(g.title || g.rule || g.description || '')}</div>`).join('');
       }
     })
     .catch(err => {

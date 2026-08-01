@@ -173,9 +173,13 @@ def init_db():
     try:
         conn.executescript(SCHEMA)
         conn.commit()
-        tables = [r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name"
-        ).fetchall()]
+        try:
+            from tools.db.storage import list_tables
+            tables = list_tables(conn)
+        except Exception:
+            tables = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name"
+            ).fetchall()]
         return {{"status": "ok", "tables": tables}}
     finally:
         conn.close()

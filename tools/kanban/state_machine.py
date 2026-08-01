@@ -26,6 +26,7 @@ Transitions:
                                                              failed
 """
 from __future__ import annotations
+from tools.kanban.gates import is_manual_gate
 from tools.logging.icdev_logger import get_logger
 
 import json
@@ -202,10 +203,10 @@ def db_status_for(state: KanbanState) -> str:
 def _ensure_kanban_cot_enabled() -> None:
     """Defensively add cot_enabled column to kanban_tasks if missing."""
     try:
-        from tools.db.storage import get_connection
+        from tools.db.storage import get_connection, column_exists
         conn = get_connection()
-        cols = conn.execute("PRAGMA table_info(kanban_tasks)").fetchall()
-        if not any(c[1] == "cot_enabled" for c in cols):
+        # Backend-aware column probe — works on PG + SQLite without translate_sql.
+        if not column_exists(conn, "kanban_tasks", "cot_enabled"):
             conn.execute(
                 "ALTER TABLE kanban_tasks ADD COLUMN cot_enabled INTEGER NOT NULL DEFAULT 0"
             )
@@ -457,12 +458,27 @@ def auto_close_by_naming_convention(
         return None
 
     parent_row = conn.execute(
-        "SELECT status FROM kanban_tasks WHERE id = %s", (parent_id,)
+        "SELECT status, title FROM kanban_tasks WHERE id = %s", (parent_id,)
     ).fetchone()
     if not parent_row:
         return None
 
-    parent_status = dict(parent_row)["status"] if hasattr(parent_row, "keys") else parent_row[0]
+    if hasattr(parent_row, "keys"):
+        _pr = dict(parent_row)
+        parent_status = _pr["status"]
+        parent_title = _pr.get("title")
+    else:
+        parent_status = parent_row[0]
+        parent_title = parent_row[1] if len(parent_row) > 1 else None
+
+    # Manual-mode gate sentinels are held in_progress FOREVER by design.
+    # Automation must never release them, even when their dependents finish.
+    if is_manual_gate(parent_id, parent_title):
+        logger.info(
+            "auto_close_by_naming_convention: skipping manual-mode gate %s", parent_id
+        )
+        return None
+
     if parent_status == "done":
         return None
     if parent_status != "decomposed":
@@ -524,12 +540,25 @@ def auto_close_parent_if_all_children_done(
     done, no children, or children not all done).
     """
     parent_row = conn.execute(
-        "SELECT status FROM kanban_tasks WHERE id = %s", (parent_id,)
+        "SELECT status, title FROM kanban_tasks WHERE id = %s", (parent_id,)
     ).fetchone()
     if not parent_row:
         return None
 
-    parent_status = dict(parent_row)["status"]
+    _pr = dict(parent_row)
+    parent_status = _pr["status"]
+    parent_title = _pr.get("title")
+
+    # Manual-mode gate sentinels (e.g. lpx-gate-00) are held in_progress
+    # FOREVER by design; the FK backfill sweep must never auto-close them
+    # once their dependents finish. This is the fix for the reported bug.
+    if is_manual_gate(parent_id, parent_title):
+        logger.info(
+            "auto_close_parent_if_all_children_done: skipping manual-mode gate %s",
+            parent_id,
+        )
+        return None
+
     if parent_status == "done":
         return None
 

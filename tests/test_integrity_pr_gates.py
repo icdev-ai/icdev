@@ -33,6 +33,7 @@ import types
 
 import pytest
 
+from tools.db.storage import StorageConnection
 from tools.integrity import engine, pr_gates, scanners
 from tools.integrity.db import init_db as init_db_mod
 
@@ -125,11 +126,19 @@ def _commit(repo_dir, message):
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def conn():
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
-    init_db_mod.init_db(c)
-    yield c
-    c.close()
+    """A SQLite connection wrapped as production hands one to the SIPA engine.
+
+    The engine authors its SQL PostgreSQL-first (``%s`` placeholders). A bare
+    sqlite3.Connection rejects those — capability_extractor._persist() died
+    with ``near "%": syntax error``. get_connection() returns a
+    StorageConnection in production, whose translate_sql rewrites ``%s`` ->
+    ``?`` for SQLite, so the wrapper is what the code under test actually sees.
+    """
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    init_db_mod.init_db(raw)
+    yield StorageConnection(raw, "sqlite")
+    raw.close()
 
 
 @pytest.fixture

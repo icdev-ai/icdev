@@ -39,128 +39,22 @@ _SRC_LOGSOURCE: dict[str, dict] = {
 }
 
 # ---------------------------------------------------------------------------
-# Technique-specific detection snippets keyed by (tid, logsource category)
+# Technique catalog (single source of truth) — derived legacy views
 # ---------------------------------------------------------------------------
-_TECHNIQUE_DETECTIONS: dict[str, dict[str, dict]] = {
-    "T1059": {
-        "process_creation": {
-            "selection": {"CommandLine|contains": ["cmd.exe", "powershell", "bash", "sh "]},
-            "condition": "selection",
-        },
-        "application": {
-            "selection": {"Message|contains": ["exec(", "eval(", "subprocess"]},
-            "condition": "selection",
-        },
-    },
-    "T1566": {
-        "application": {
-            "selection": {"Message|contains": ["attachment", ".exe", "macro", "phishing"]},
-            "condition": "selection",
-        },
-        "authentication": {
-            "selection": {"EventID": 4625, "Status": "0xC000006D"},
-            "condition": "selection",
-        },
-    },
-    "T1078": {
-        "authentication": {
-            "selection": {"EventID": [4624, 4648], "LogonType": [3, 10]},
-            "condition": "selection",
-        },
-        "cloud": {
-            "selection": {"eventName": "ConsoleLogin", "responseElements|contains": "Failure"},
-            "condition": "selection",
-        },
-    },
-    "T1003": {
-        "process_creation": {
-            "selection": {
-                "CommandLine|contains|any": ["mimikatz", "lsass", "procdump", "sekurlsa"],
-            },
-            "condition": "selection",
-        },
-    },
-    "T1110": {
-        "authentication": {
-            "selection": {"EventID": 4625},
-            "condition": "selection | count() > 10",
-            "timeframe": "5m",
-        },
-        "cloud": {
-            "selection": {"eventName": "ConsoleLogin", "errorCode": "Failed authentication"},
-            "condition": "selection | count() > 5",
-            "timeframe": "5m",
-        },
-    },
-    "T1083": {
-        "process_creation": {
-            "selection": {"CommandLine|contains|any": ["dir ", "ls -", "find /"]},
-            "condition": "selection",
-        },
-    },
-    "T1082": {
-        "process_creation": {
-            "selection": {"CommandLine|contains|any": ["systeminfo", "uname -a", "hostname"]},
-            "condition": "selection",
-        },
-    },
-    "T1190": {
-        "network_connection": {
-            "selection": {"dst_port": [80, 443, 8080, 8443], "bytes_in|gt": 100000},
-            "condition": "selection",
-        },
-        "application": {
-            "selection": {"Message|contains|any": ["SQL syntax", "UNION SELECT", "../", "%2e%2e"]},
-            "condition": "selection",
-        },
-    },
-    "T1021": {
-        "network_connection": {
-            "selection": {"dst_port": [22, 3389, 5985, 5986]},
-            "filter": {"src_ip|cidr": "10.0.0.0/8"},
-            "condition": "selection and not filter",
-        },
-    },
-    "T1071": {
-        "network_connection": {
-            "selection": {"dst_port": [443, 80], "bytes_out|gt": 50000},
-            "condition": "selection",
-        },
-    },
-}
+# Detection snippets keyed by (tid, logsource category) and the tactic lookup
+# map are derived from tools/observability_canvas/mitre_catalog.py so the three
+# historically-drifted catalogs stay consolidated. _TECHNIQUE_DETECTIONS keeps
+# its public name (imported by replay_verify._sigma_known_ttps).
+from tools.observability_canvas.mitre_catalog import (
+    DEFAULT_TACTIC as _DEFAULT_TACTIC,
+    build_canvas_detections as _build_canvas_detections,
+    build_tactic_map as _build_tactic_map,
+)
 
-# Tactic per technique (MITRE ATT&CK v14 subset for deterministic lookup)
-_TECHNIQUE_TACTIC: dict[str, str] = {
-    "T1059":    "execution",
-    "T1059.001": "execution",
-    "T1059.003": "execution",
-    "T1566":    "initial-access",
-    "T1566.001": "initial-access",
-    "T1078":    "defense-evasion",
-    "T1003":    "credential-access",
-    "T1003.001": "credential-access",
-    "T1110":    "credential-access",
-    "T1110.001": "credential-access",
-    "T1083":    "discovery",
-    "T1082":    "discovery",
-    "T1046":    "discovery",
-    "T1021":    "lateral-movement",
-    "T1021.001": "lateral-movement",
-    "T1055":    "defense-evasion",
-    "T1218":    "defense-evasion",
-    "T1027":    "defense-evasion",
-    "T1053":    "persistence",
-    "T1053.005": "persistence",
-    "T1098":    "persistence",
-    "T1547":    "persistence",
-    "T1190":    "initial-access",
-    "T1133":    "initial-access",
-    "T1071":    "command-and-control",
-    "T1071.001": "command-and-control",
-    "T1041":    "exfiltration",
-    "T1048":    "exfiltration",
-}
-_DEFAULT_TACTIC = "defense-evasion"
+_TECHNIQUE_DETECTIONS: dict[str, dict[str, dict]] = _build_canvas_detections()
+
+# Tactic per technique (MITRE ATT&CK subset, hyphen form) — derived from catalog.
+_TECHNIQUE_TACTIC: dict[str, str] = _build_tactic_map()
 
 
 # ---------------------------------------------------------------------------
@@ -327,77 +221,32 @@ def generate_sigma_rules(graph: dict, design_name: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# SIEM format converters (best-effort, non-lossy intent)
+# SIEM format converters
 # ---------------------------------------------------------------------------
+# These thin adapters delegate to the field-mapped exporters/ modules
+# (ECS/CIM/Sentinel-table aware). They keep their historical names and
+# list[str] -> str signatures so blueprint.py's export route and the
+# generate_sigma_rules() response envelope stay unchanged.
 
 def _to_splunk(yaml_rules: list[str]) -> str:
-    lines = ['| comment "ICDEV ODC Twin — Sigma to Splunk SPL"']
-    for raw in yaml_rules:
-        try:
-            rule = yaml.safe_load(raw)
-            tid_tag = next((t for t in rule.get("tags", []) if t.startswith("attack.t")), "")
-            title = rule.get("title", "rule")
-            sel = (rule.get("detection") or {}).get("selection", {})
-            parts = []
-            for k, v in sel.items():
-                field = k.split("|")[0]
-                if isinstance(v, list):
-                    parts.append(f"({' OR '.join(f'{field}={x!r}' for x in v)})")
-                else:
-                    parts.append(f"{field}={v!r}")
-            filter_str = " ".join(parts) or "*"
-            lines.append(f"| search {filter_str}  /* {title} [{tid_tag}] */")
-        except Exception:
-            continue
-    return "\n".join(lines)
+    """Convert Sigma YAML rules to a Splunk SPL script (CIM field-mapped)."""
+    from tools.observability_canvas.exporters.splunk import batch_to_spl
+
+    return batch_to_spl(yaml_rules)
 
 
 def _to_elastic(yaml_rules: list[str]) -> str:
-    parts = []
-    for raw in yaml_rules:
-        try:
-            rule = yaml.safe_load(raw)
-            sel = (rule.get("detection") or {}).get("selection", {})
-            kql = []
-            for k, v in sel.items():
-                field = k.split("|")[0]
-                if isinstance(v, list):
-                    inner = " OR ".join(f'{field}: "{x}"' for x in v)
-                    kql.append(f"({inner})")
-                else:
-                    kql.append(f'{field}: "{v}"')
-            parts.append(" AND ".join(kql) if kql else "*")
-        except Exception:
-            continue
-    return "\n// ---\n".join(parts) if parts else "// No rules"
+    """Convert Sigma YAML rules to Elasticsearch Query DSL JSON (ECS field-mapped)."""
+    from tools.observability_canvas.exporters.elastic import batch_to_eql
+
+    return batch_to_eql(yaml_rules)
 
 
 def _to_sentinel(yaml_rules: list[str]) -> str:
-    _TABLE = {
-        "process_creation": "SecurityEvent",
-        "authentication": "SigninLogs",
-        "firewall": "AzureNetworkAnalytics_CL",
-        "cloud": "AWSCloudTrail",
-        "container": "ContainerLog",
-        "database": "AzureDiagnostics",
-        "application": "AppServiceConsoleLogs",
-        "network_connection": "AzureNetworkAnalytics_CL",
-        "vulnerability_scan": "SecurityRecommendations",
-        "metrics": "InsightsMetrics",
-    }
-    lines = []
-    for raw in yaml_rules:
-        try:
-            rule = yaml.safe_load(raw)
-            title = rule.get("title", "rule")
-            cat = (rule.get("logsource") or {}).get("category", "")
-            table = _TABLE.get(cat, "CommonSecurityLog")
-            lines.append(
-                f"// Rule: {title}\n{table}\n| where TimeGenerated > ago(1h)\n| limit 100\n"
-            )
-        except Exception:
-            continue
-    return "\n".join(lines) if lines else "// No rules"
+    """Convert Sigma YAML rules to Microsoft Sentinel KQL queries (table-mapped)."""
+    from tools.observability_canvas.exporters.sentinel import batch_to_kql
+
+    return batch_to_kql(yaml_rules)
 
 
 # ---------------------------------------------------------------------------

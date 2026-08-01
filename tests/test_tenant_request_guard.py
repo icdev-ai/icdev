@@ -6,6 +6,7 @@ Phase B1 — Enterprise Configurable Platform: tenant_override=disabled → 403.
 
 import os
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,9 +21,20 @@ class TestTenantOverrideGuard:
     """Test that guard_component_access respects per-tenant overrides."""
 
     def _make_mock_registry(self, *, tenant_enabled: bool):
-        """Return a mock registry where is_enabled_for_tenant returns the given value."""
+        """Return a mock registry where is_enabled_for_tenant returns the given value.
+
+        ``get()`` must return a component definition with a *real* ``min_tier``
+        string. The guard grew a tier gate (canvas_access._guard) that runs
+        before the tenant check and does ``TIER_ORDER.index(min_tier)``; a bare
+        MagicMock attribute raises ValueError there, so tier_satisfies() returns
+        False and every one of these tests dies on TierAccessDenied before
+        reaching the tenant-override logic under test. 'community' is the
+        lowest tier, so the gate always passes and the tenant path is what the
+        assertions actually exercise.
+        """
         mock_reg = MagicMock()
         mock_reg.is_enabled_for_tenant.return_value = tenant_enabled
+        mock_reg.get.return_value = SimpleNamespace(key="idc", min_tier="community")
         return mock_reg
 
     def test_tenant_override_disabled_raises_403(self):
@@ -66,11 +78,11 @@ class TestTenantOverrideGuard:
                     from tools.security.canvas_access import guard_component_access
 
                     guard_fn = guard_component_access("idc", min_il="IL4")
-                    try:
-                        guard_fn()
-                    except Exception as exc:
-                        code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-                        assert code != 403, f"Tenant guard blocked an enabled component: {exc}"
+                    # Assert outright that nothing is raised. The previous form
+                    # caught Exception and only checked `code != 403`, which any
+                    # exception without a `.code` (e.g. TierAccessDenied) passes
+                    # vacuously — the test stayed green while the guard aborted.
+                    guard_fn()
 
     def test_tenant_override_skipped_when_no_tenant_id(self, monkeypatch):
         """When g.tenant_id is absent, tenant override check should be skipped (not called)."""
@@ -117,11 +129,10 @@ class TestTenantOverrideGuard:
                     from tools.security.canvas_access import guard_component_access
 
                     guard_fn = guard_component_access("idc", min_il="IL4")
-                    try:
-                        guard_fn()
-                    except Exception as exc:
-                        code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-                        assert code != 403, f"Registry failure incorrectly blocked the request: {exc}"
+                    # Fail-open is the whole claim here, so assert it directly
+                    # rather than through a `code != 403` filter that lets any
+                    # code-less exception through.
+                    guard_fn()
 
 
 class TestComponentRegistryTenantOverride:

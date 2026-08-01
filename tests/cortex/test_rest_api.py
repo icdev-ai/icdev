@@ -126,6 +126,7 @@ ENDPOINTS = [
     "/cortex/api/v1/search",
     "/cortex/api/v1/ask",
     "/cortex/api/v1/complete",
+    "/cortex/api/v1/reason",
     "/cortex/api/v1/classify",
     "/cortex/api/v1/extract",
     "/cortex/api/v1/govern",

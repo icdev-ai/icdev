@@ -19,6 +19,39 @@ from tools.document_intelligence import ingest_orchestrator as orch
 from tools.document_intelligence.ingest_orchestrator import ingest_file
 
 
+@pytest.fixture(autouse=True)
+def isolated_db(tmp_path: Path, monkeypatch):
+    """Give each test a private SQLite file, with the schema already created.
+
+    These tests used to run against the shared ``data/icdev.db`` and were red for
+    two reasons that are really one:
+
+    * On a fresh checkout the tables did not exist yet. The cleanup blocks below
+      ran BEFORE the first ``ingest_file`` call — which is what creates the schema
+      via ``_ensure_schema`` — so the test died on ``no such table:
+      dic_chunk_links`` and never reached the code it was meant to exercise.
+    * On a used database the tables existed but with the WRONG shape: several
+      ``tests/docmod/*`` files create their own ``dic_documents``, and
+      ``CREATE TABLE IF NOT EXISTS`` will not add a missing column to an existing
+      table. Whichever test ran first won, and this one failed on
+      ``no such column: content_sha256``.
+
+    So the result depended on execution order and on leftover state — the schema
+    belonged to whoever got there first. Owning the database makes these tests
+    deterministic, and stops them writing fixture rows ('test_collection',
+    'cli_collection', tenant 'acme') into whatever database the developer happens
+    to have configured.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "icdev.db"))
+    conn = get_connection()
+    try:
+        orch._ensure_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 @pytest.fixture
 def sample_doc(tmp_path: Path) -> Path:
     p = tmp_path / "policy.md"
@@ -57,17 +90,8 @@ def test_html_extractor_strips_tags(tmp_path: Path):
 
 
 def test_ingest_writes_dic_rows_with_stamps(sample_doc: Path):
-    # Clean up any prior test run residue in the shared DB.
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM dic_chunk_links WHERE doc_id LIKE 'dic_doc_%'")
-        cur.execute("DELETE FROM dic_versions WHERE doc_id LIKE 'dic_doc_%'")
-        cur.execute("DELETE FROM dic_documents WHERE collection_id = ?", ("test_collection",))
-        conn.commit()
-    finally:
-        conn.close()
-
+    # No cleanup block: isolated_db gives this test an empty database of its own,
+    # so there is no prior-run residue to delete.
     outcome = ingest_file(
         str(sample_doc),
         "test_collection",
@@ -153,17 +177,7 @@ def test_missing_file_raises():
 
 
 def test_cli_json(sample_doc: Path, capsys):
-    # Clean up any prior test run residue in the shared DB.
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM dic_chunk_links WHERE doc_id LIKE 'dic_doc_%'")
-        cur.execute("DELETE FROM dic_versions WHERE doc_id LIKE 'dic_doc_%'")
-        cur.execute("DELETE FROM dic_documents WHERE collection_id = ?", ("cli_collection",))
-        conn.commit()
-    finally:
-        conn.close()
-
+    # No cleanup block — see isolated_db.
     from tools.document_intelligence.__main__ import main
 
     rc = main(
@@ -208,7 +222,10 @@ def test_pdf_text_path_returns_first_available_provider(tmp_path: Path):
         pytest.skip("constitution.pdf not available")
 
     extraction = _extract_pdf(pdf_path)
-    assert extraction.provider in ("pymupdf", "pdfplumber", "pypdf")
+    # A provider may augment itself ("pymupdf+tables" when table extraction also
+    # ran). The chain position is what this pins, not the augmentation, so
+    # compare the base provider.
+    assert extraction.provider.split("+")[0] in ("pymupdf", "pdfplumber", "pypdf")
     assert len(extraction.text) > 1000
     assert extraction.page_count == 19
 

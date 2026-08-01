@@ -16,6 +16,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from tools.dashboard.auth import require_role  # noqa: E402
 from tools.studio.workflow_editor import (  # noqa: E402
     create_workflow,
     delete_workflow,
@@ -30,6 +31,17 @@ from tools.studio.workflow_editor import (  # noqa: E402
 )
 
 studio_api = Blueprint("studio_api", __name__, url_prefix="/api/studio")
+
+# Roles allowed to install/publish marketplace (SkillHub) assets. nav-intel-01:
+# the install endpoint was previously unauthenticated — any caller could pull
+# and install arbitrary marketplace assets into the environment.
+_MARKETPLACE_MUTATION_ROLES = ("admin", "pm")
+
+#: Binding an event source to a workflow, and firing a simulate that starts a
+#: real run, are workflow-authoring actions. ``admin`` is listed explicitly:
+#: ``require_role`` is an exact membership test with no hierarchy, so a bare
+#: ("developer",) locks the administrator out of their own instance.
+_TRIGGER_MUTATION_ROLES = ("admin", "developer")
 
 
 # ── Workflow CRUD ──────────────────────────────────────────
@@ -247,7 +259,11 @@ def api_marketplace_assets():
 
         query = request.args.get("q", "")
         category = request.args.get("category", "")
-        assets = list_assets()
+        # nav-intel-01: list_assets() returns {"assets": [...], "total": ...};
+        # unwrap to the list before filtering (previously iterated the dict keys
+        # and 500'd whenever q/category filters were supplied).
+        _res = list_assets()
+        assets = _res.get("assets", []) if isinstance(_res, dict) else (_res or [])
         # Client-side filtering if params provided
         if query:
             q_lower = query.lower()
@@ -267,7 +283,8 @@ def api_marketplace_categories():
     try:
         from tools.marketplace.catalog_manager import list_assets
 
-        assets = list_assets()
+        _res = list_assets()
+        assets = _res.get("assets", []) if isinstance(_res, dict) else (_res or [])
         cats = sorted({a.get("category", "uncategorized") for a in assets})
         return jsonify({"categories": cats})
     except ImportError:
@@ -289,6 +306,7 @@ def api_marketplace_asset_detail(asset_id: str):
 
 
 @studio_api.route("/marketplace/assets/<asset_id>/install", methods=["POST"])
+@require_role(*_MARKETPLACE_MUTATION_ROLES)
 def api_marketplace_install(asset_id: str):
     """Install a marketplace asset."""
     try:
@@ -675,6 +693,18 @@ def api_simulate_automation(auto_id: str):
     return jsonify(simulate_automation(auto_id, data.get("test_event")))
 
 
+@studio_api.route("/automations/<auto_id>/trigger", methods=["POST"])
+def api_trigger_automation(auto_id: str):
+    """Fire an automation for a real event — actions execute for real."""
+    from tools.studio.automation_builder import trigger_automation
+
+    data = request.get_json(silent=True) or {}
+    result = trigger_automation(auto_id, data.get("event"))
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
 @studio_api.route("/automations/runs", methods=["GET"])
 def api_automation_runs():
     from tools.studio.automation_builder import list_automation_runs
@@ -903,7 +933,116 @@ def api_get_run(run_id: str):
     if not run:
         return jsonify({"error": "Run not found"}), 404
     run["steps"] = get_run_steps(run_id)
+
+    # dwo-evt-04-d5: what started this run.
+    #
+    # The `trigger_event` key is not a new contract — workflow-studio-exec.js
+    # has rendered `_triggerBadge(run.trigger_event)` since dwo-vv-03-d3, but
+    # nothing on the server ever set it, so the badge was unreachable code that
+    # silently resolved to '' on every run. This is the missing half.
+    #
+    # Absent (not null) for a manual run: the badge renders on presence. Never
+    # fatal — a run detail that 500s because its provenance lookup failed is a
+    # worse outcome than a run detail with no badge.
+    try:
+        from tools.studio.event_sources import trigger_event_for_run
+
+        trigger_event = trigger_event_for_run(run_id)
+        if trigger_event:
+            run["trigger_event"] = trigger_event
+    except Exception:
+        pass
+
     return jsonify(run)
+
+
+# ── Workflow triggers panel (dwo-evt-04-d5) ────────────────
+
+
+@studio_api.route("/workflows/<workflow_id>/triggers", methods=["GET"])
+def api_workflow_triggers(workflow_id: str):
+    """Sources + bound triggers for the editor's Triggers tab."""
+    from tools.studio.workflow_editor import build_triggers_panel
+
+    return jsonify(build_triggers_panel(workflow_id))
+
+
+@studio_api.route("/workflows/<workflow_id>/triggers", methods=["POST"])
+@require_role(*_TRIGGER_MUTATION_ROLES)
+def api_create_workflow_trigger(workflow_id: str):
+    """Bind an event source to this workflow.
+
+    ``event_filter`` and ``input_mapping`` are accepted as already-parsed JSON:
+    the panel parses the textareas client-side so a malformed filter is caught
+    while the user is still looking at it, rather than becoming a trigger that
+    silently never matches.
+    """
+    from tools.studio.event_sources import create_workflow_trigger
+
+    data = request.get_json(silent=True) or {}
+    source_id = (data.get("source_id") or "").strip()
+    if not source_id:
+        return jsonify({"error": "source_id is required"}), 400
+
+    event_filter = data.get("event_filter")
+    if event_filter not in (None, "") and not isinstance(event_filter, list):
+        return jsonify({"error": "event_filter must be a list of conditions"}), 400
+    input_mapping = data.get("input_mapping")
+    if input_mapping not in (None, "") and not isinstance(input_mapping, dict):
+        return jsonify({"error": "input_mapping must be an object"}), 400
+
+    try:
+        trigger = create_workflow_trigger(
+            workflow_id,
+            source_id,
+            event_type=(data.get("event_type") or "").strip(),
+            event_filter=event_filter or None,
+            input_mapping=input_mapping or None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"status": "ok", "trigger": trigger}), 201
+
+
+@studio_api.route("/workflows/<workflow_id>/triggers/simulate", methods=["POST"])
+@require_role(*_TRIGGER_MUTATION_ROLES)
+def api_simulate_workflow_trigger(workflow_id: str):
+    """Feed a test payload through the real dispatch path.
+
+    Deliberately calls ``dispatch_event`` rather than starting a run directly.
+    A simulate button that reimplemented matching would answer a question about
+    itself instead of about the trigger: filter evaluation, input mapping, the
+    audit row and the run all have to be the production code path, or a green
+    simulate proves nothing about what a live webhook will do.
+    """
+    from tools.studio.event_sources import dispatch_event
+
+    data = request.get_json(silent=True) or {}
+    source_id = (data.get("source_id") or "").strip()
+    if not source_id:
+        return jsonify({"error": "source_id is required"}), 400
+    payload = data.get("payload")
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "payload must be an object"}), 400
+
+    try:
+        result = dispatch_event(
+            source_id,
+            (data.get("event_type") or "").strip(),
+            payload,
+            project_id=(data.get("project_id") or "default"),
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    # The dispatch fans out to every trigger on the source; the panel only cares
+    # about the ones pointing at the workflow being edited.
+    result["workflow_id"] = workflow_id
+    return jsonify(result), 200
 
 
 @studio_api.route("/workflows/runs/<run_id>/steps/<step_run_id>/approve", methods=["POST"])
@@ -927,6 +1066,37 @@ def api_reject_step(run_id: str, step_run_id: str):
     if not ok:
         return jsonify({"error": "No pending approval for this step — it may have already been resolved or timed out"}), 404
     return jsonify({"status": "rejected", "step_run_id": step_run_id})
+
+
+@studio_api.route("/runs/<run_id>/resume", methods=["POST"])
+@studio_api.route("/workflows/runs/<run_id>/resume", methods=["POST"])
+def api_resume_run(run_id: str):
+    """Continue a run left mid-flight (dwo-dur-03).
+
+    Steps already recorded success/approved/skipped are replayed, not
+    re-executed, and the run continues in place rather than forking a new row.
+    """
+    from tools.studio.workflow_runner import (
+        RESUMABLE_RUN_STATUSES,
+        RESUME_MODE,
+        get_run,
+        resume_run,
+    )
+
+    run = get_run(run_id)
+    if not run:
+        return jsonify({"error": "Run not found"}), 404
+    status = run.get("status")
+    if status not in RESUMABLE_RUN_STATUSES:
+        return jsonify({
+            "error": f"Run is '{status}' — only {', '.join(RESUMABLE_RUN_STATUSES)} runs can be resumed"
+        }), 409
+    if not resume_run(run_id):
+        return jsonify({
+            "error": "Run could not be resumed — a live worker may already own it, "
+                     "or its workflow no longer exists"
+        }), 409
+    return jsonify({"status": "resuming", "run_id": run_id, "mode": RESUME_MODE}), 202
 
 
 @studio_api.route("/workflows/runs/<run_id>", methods=["DELETE"])

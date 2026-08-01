@@ -15,9 +15,23 @@
   </div>
 </div>
 
-{% if not stats.available %}
+{% if stats.status == 'unavailable' %}
+<div style="background:#2a0f14;border:1px solid #7f1d1d;border-radius:8px;padding:24px;color:#fca5a5;text-align:center;">
+  <strong>Metrics unavailable.</strong><br>
+  The <code style="color:#fecaca;">cortex_audit</code> trail could not be read — the table is missing or the query failed.
+  This is a fault, not an idle system. On a fresh database the table is created on the first governed call.
+</div>
+{% elif stats.status == 'idle' %}
 <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:24px;color:#7a8cb0;text-align:center;">
-  No Cortex audit data yet — metrics populate as governed calls run. (The <code>cortex_audit</code> table may not exist on a fresh database until the first call.)
+  <strong style="color:#b8d0e8;">Idle</strong> — the audit trail is readable but recorded no governed calls in the last {{ stats.window_hours }}h.<br>
+  {% if stats.last_call_at %}
+  Last governed call: <code style="color:#b8d0e8;">{{ stats.last_call_at }}</code>.
+  History outside this window is still there —
+  <a href="?hours=168" style="color:#5aa9e6;">last 7 days</a> ·
+  <a href="?hours=720" style="color:#5aa9e6;">last 30 days</a>.
+  {% else %}
+  No governed calls have ever been recorded.
+  {% endif %}
 </div>
 {% else %}
 {% set s = stats.summary %}

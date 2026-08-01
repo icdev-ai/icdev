@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from tools.db.storage import get_connection
-
-_IS_PG = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() == "postgresql"
 
 
 # ─── Sessions ────────────────────────────────────────────────────────────────
@@ -59,12 +56,12 @@ def list_sessions(
     sql = "SELECT * FROM idr_sessions WHERE 1=1"
     params: list[Any] = []
     if domain:
-        sql += " AND domain = ?"
+        sql += " AND domain = %s"
         params.append(domain)
     if tenant_id:
-        sql += " AND tenant_id = ?"
+        sql += " AND tenant_id = %s"
         params.append(tenant_id)
-    sql += " ORDER BY created_at DESC LIMIT ?"
+    sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
     with get_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
@@ -88,7 +85,7 @@ def set_field(session_id: str, **kwargs: Any) -> bool:
         return False
     now = datetime.now(timezone.utc).isoformat()
     kwargs["updated_at"] = now
-    set_clause = ", ".join(f"{k} = ?" for k in kwargs)
+    set_clause = ", ".join(f"{k} = %s" for k in kwargs)
     values = list(kwargs.values()) + [session_id]
     with get_connection() as conn:
         cur = conn.execute(
@@ -121,31 +118,22 @@ def add_upload(
 ) -> dict[str, Any]:
     upload_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    # cnr-doc-04: single insert matching the canonical idr_uploads schema
+    # (migration 211) on BOTH backends. The previous _IS_PG branch inserted
+    # upload_id/collection_id/filepath columns that no migration ever creates
+    # (the "DIC canvas creates the table" comment was false) — so every PG upload
+    # raised UndefinedColumn. Those columns were write-only and read nowhere.
     with get_connection() as conn:
-        if _IS_PG:
-            # PG table created by DIC canvas — upload_id is PK, collection_id NOT NULL
-            conn.execute(
-                """
-                INSERT INTO idr_uploads
-                  (upload_id, id, session_id, collection_id, filename, upload_type,
-                   file_path, filepath, file_hash, status, tenant_id, uploaded_at,
-                   created_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s,%s,%s)
-                """,
-                (upload_id, upload_id, session_id, session_id, filename, upload_type,
-                 file_path, file_path, file_hash, tenant_id, now, now),
-            )
-        else:
-            conn.execute(
-                """
-                INSERT INTO idr_uploads
-                  (id, session_id, filename, upload_type, file_path, file_hash,
-                   status, tenant_id, uploaded_at)
-                VALUES (%s,%s,%s,%s,%s,%s,'pending',%s,%s)
-                """,
-                (upload_id, session_id, filename, upload_type,
-                 file_path, file_hash, tenant_id, now),
-            )
+        conn.execute(
+            """
+            INSERT INTO idr_uploads
+              (id, session_id, filename, upload_type, file_path, file_hash,
+               status, tenant_id, uploaded_at)
+            VALUES (%s,%s,%s,%s,%s,%s,'pending',%s,%s)
+            """,
+            (upload_id, session_id, filename, upload_type,
+             file_path, file_hash, tenant_id, now),
+        )
         conn.commit()
     return get_upload(upload_id)
 
@@ -178,7 +166,7 @@ def set_upload_status(
         updates["dic_doc_id"] = dic_doc_id
     if error_msg is not None:
         updates["error_msg"] = error_msg
-    set_clause = ", ".join(f"{k}=?" for k in updates)
+    set_clause = ", ".join(f"{k}=%s" for k in updates)
     values = list(updates.values()) + [upload_id]
     with get_connection() as conn:
         cur = conn.execute(
@@ -289,7 +277,7 @@ def resolve_conflict(
 
 
 def list_conflicts(session_id: str, pending_only: bool = False) -> list[dict[str, Any]]:
-    sql = "SELECT * FROM idr_conflicts WHERE session_id=?"
+    sql = "SELECT * FROM idr_conflicts WHERE session_id=%s"
     params: list[Any] = [session_id]
     if pending_only:
         sql += " AND resolved_at IS NULL"
@@ -340,6 +328,56 @@ def add_artifact(
             "SELECT * FROM idr_artifacts WHERE id=%s", (artifact_id,)
         ).fetchone()
     return dict(row)
+
+
+# ─── Publish gate audit (cnr-doc-01, append-only) ────────────────────────────
+
+def record_publish_audit(
+    session_id: str,
+    gate: str,
+    reviewer: str,
+    findings: Any,
+    tenant_id: str | None = None,
+) -> str | None:
+    """Persist a HITL force-override of the TRUST publish gate (append-only).
+
+    Called when an operator publishes past a ``citation_guard`` / ``placeholder_guard``
+    defect via ``force_*``. Best-effort: never raises (a failed audit write must not
+    block the operator), but returns the row id when it succeeds so callers can assert.
+    """
+    audit_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        detail = findings if isinstance(findings, str) else json.dumps(findings)
+    except (TypeError, ValueError):
+        detail = str(findings)
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO idr_publish_audit
+                  (id, session_id, gate, reviewer, findings, tenant_id, created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """,
+                (audit_id, session_id, gate, reviewer, detail, tenant_id, now),
+            )
+            conn.commit()
+        return audit_id
+    except Exception:
+        return None
+
+
+def list_publish_audit(session_id: str) -> list[dict[str, Any]]:
+    """Return append-only publish-gate override rows for a session (newest first)."""
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM idr_publish_audit WHERE session_id=%s ORDER BY created_at DESC",
+                (session_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
 
 
 def get_artifact(artifact_id: str) -> dict[str, Any] | None:

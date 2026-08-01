@@ -87,6 +87,8 @@ def _is_sqlite(conn: Any) -> bool:
 def _get_tables_with_tenant_id(conn: Any) -> list[str]:
     """Return names of all tables that have a tenant_id column."""
     if _is_sqlite(conn):
+        # pg-portability: sqlite-only path — the PostgreSQL branch below uses
+        # information_schema; sqlite_master / PRAGMA table_info run only on SQLite.
         all_tables = [
             row[0]
             for row in conn.execute(
@@ -116,6 +118,7 @@ def _get_tables_with_tenant_id(conn: Any) -> list[str]:
 def _get_pii_cols(conn: Any, table: str) -> list[str]:
     """Return PII column names present in *table*."""
     if _is_sqlite(conn):
+        # pg-portability: sqlite-only path — PG branch below uses information_schema.
         cols = {
             row[1]
             for row in conn.execute(f"PRAGMA table_info({table})").fetchall()

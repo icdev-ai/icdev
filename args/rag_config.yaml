@@ -68,6 +68,22 @@ enabled_sources:
 - icdev_db_tables
 - icdev_tool_categories
 rag:
+  # Adaptive complexity pre-routing (agx-rag-01). Route retrieval strategy by
+  # assessed query complexity BEFORE retrieving. Default DISABLED = current
+  # behavior (always single-pass); enabling is an explicit opt-in.
+  # SAFETY: the 'none'/skip route is enforced-unavailable in code for any
+  # surface that requires citations — do not rely on config to make it safe.
+  adaptive_routing:
+    enabled: false
+    use_llm_classifier: true      # false = heuristic-only (fully offline)
+    complex_top_k: 10             # widened single-pass fallback when no decompose_fn injected
+  # Self-RAG per-document reflective reranking (agx-rag-02). Scores each
+  # candidate along separate RELEVANT/SUPPORTS/USEFUL enum axes and composes the
+  # ordering in Python, instead of one blended rerank score. Default DISABLED =
+  # current behavior. Bounded to the post-vector candidate set + cheap-tier.
+  reflective_rerank:
+    enabled: false
+    max_candidates: 20            # bound per-document LLM calls (cost control)
   auto_indexer:
     cui_boundary_enforcement: true
     enabled: false
@@ -95,6 +111,23 @@ rag:
     chunk_size_tokens: 2000
     overlap_pct: 0.1
     short_threshold_tokens: 500
+  # Contextual retrieval (rce-ctx-01) — Anthropic "contextual retrieval" pattern.
+  # Before embedding, prepend a ~50-100 token context prefix that situates each
+  # chunk within its source document; the EMBEDDING is computed on the
+  # contextualized text while the stored/cited content stays original.
+  # Shipped ON as of rce-eval-04 — KEEP decision backed by a measured
+  # +0.0151 recall@5 / +0.0202 MRR against data/rag/rce_baseline_compliance.json
+  # (see docs/features/phase-rce-rag-context-engineering.md). Air-gap safe: LLM
+  # prefix routes through the cheap-tier function (never a hardcoded model); if
+  # the provider is unavailable it degrades to the deterministic heuristic
+  # (or "") without blocking ingestion.
+  contextual_retrieval:
+    enabled: true             # master toggle — ON, measured (rce-eval-04)
+    function: rag_evaluate    # LLM router function (cheap tier) — no hardcoded model
+    max_tokens: 120           # LLM generation budget for the prefix
+    token_budget: 100         # cap the stored prefix to ~this many tokens
+    fallback_heuristic: true  # use a deterministic source_type/metadata prefix when no LLM
+    prompt_version: ctx-v1    # bump when the prompt template changes (provenance)
   critique_integration:
     enabled: true
     max_critique_context_chars: 3000
@@ -193,6 +226,48 @@ rag:
   provenance:
     enabled: true
     record_query_content: false
+  quantization:
+    # SQLite vector-store write precision (rce-quant-01). Reads are always
+    # back-compat: float16, float32, and legacy headerless float32 all decode.
+    # float16 halves storage/IO at ~2e-3 per-element error (retrieval order
+    # preserved). Set to float32 for exact storage.
+    sqlite_dtype: float16
+    # Binary-quantization Hamming pre-filter (rce-quant-02). Optional second
+    # tier for large air-gap corpora: a cheap Hamming distance on 1-bit/dim
+    # sign vectors pre-selects top-(final_top_k * candidate_multiplier)
+    # candidates, which are then re-ranked with full-precision cosine. Default
+    # OFF, so search behaviour is unchanged. Only worth enabling above the
+    # min_corpus_size threshold (below it, brute-force cosine is faster).
+    binary_prefilter:
+      enabled: false
+      candidate_multiplier: 4
+      min_corpus_size: 512
+  raptor:
+    # RCE (RAG Capability Evolution): RAPTOR summary hierarchy above rag_chunks.
+    # Default OFF — when off, retrieval + existing tests are byte-for-byte the
+    # flat-leaf path. Summaries are LLM-generated (graceful no-op when the LLM
+    # is unavailable) and MUST NOT be surfaced as citation sources.
+    # rce-eval-05-d4/d5: measured DROP — raptor ON added 0.0 recall@5 / 0.0 MRR
+    # and −0.0005 ndcg@5 vs OFF on the compliance golden set; kept OFF.
+    #
+    # SUPERSEDED (oss-meas-01-d3, 2026-07-26). That DROP is not safe to rely on.
+    # It was measured on the v1 33-query golden set, where 29 of 33 queries were
+    # already at BOTH perfect recall and perfect MRR — four queries of headroom in
+    # the whole instrument, so ~0.0 was close to the only reachable answer.
+    # Re-measured on the v2 48-query set against the SAME corpus (4,111 chunks /
+    # 3,830 summaries / 2 levels — identical to the rce-eval-05 environment
+    # block), raptor ON measures +0.0208 recall@5 / +0.0093 MRR / +0.0103 ndcg@5.
+    # That does not make it good: the delta is one query out of 48, and no
+    # latency was captured, which a corpus-wide summarisation pass needs to
+    # justify. It does mean the DROP has no evidence behind it.
+    # Stays OFF pending a decision with latency attached — see
+    # docs/features/oss-meas-01-retrieval-toggle-benchmark.md.
+    enabled: false
+    group_size: 5           # sibling leaves summarized into one level-1 parent
+    llm_function: rag_evaluate  # LLMRouter function for cheap-LLM summarization
+    max_levels: 2           # 1 = parent summaries; 2 = + root/document summary
+    summary_max_tokens: 512
+    summary_top_k: 10       # summaries fetched and merged into the leaf pool
   rerank:
     bge_model: bge-reranker-v2-m3
     enabled: false

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
+import types
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import yaml
 
@@ -149,14 +150,45 @@ class TestSkillPromoterRun:
 
 
 class TestSIPAFallback:
-    def test_sipa_import_error_returns_clean(self, tmp_path):
-        from icdev.tools.ace.skill_promoter import _run_sipa
+    """SIPA must fail CLOSED.
+
+    This gate stands between an LLM-authored role spec and a promoted,
+    staffable role. It previously returned ("clean", 0.0) whenever the scanner
+    was absent or errored, so an unvetted candidate was promoted on the strength
+    of the scanner not being installed — the gate was strongest exactly when it
+    was working and absent when it was not. These tests pin the inverse.
+    """
+
+    def test_sipa_import_error_fails_closed(self, tmp_path):
+        from icdev.tools.ace.skill_promoter import (
+            _PROMOTABLE_VERDICTS,
+            _VERDICT_UNAVAILABLE,
+            _run_sipa,
+        )
 
         with patch.dict("sys.modules", {"tools.integrity.engine": None}):
             verdict, score = _run_sipa("role_id: x\n", "test_role")
 
-        assert verdict == "clean"
+        assert verdict == _VERDICT_UNAVAILABLE
+        assert verdict not in _PROMOTABLE_VERDICTS
         assert score == 0.0
+
+    def test_sipa_assessment_error_fails_closed(self, tmp_path):
+        """A scanner that raises has vetted nothing — same rule as absent."""
+        from icdev.tools.ace.skill_promoter import (
+            _PROMOTABLE_VERDICTS,
+            _VERDICT_UNAVAILABLE,
+            _run_sipa,
+        )
+
+        engine = types.ModuleType("tools.integrity.engine")
+        engine.assess = MagicMock(side_effect=RuntimeError("scanner exploded"))
+
+        with patch.dict("sys.modules", {"tools.integrity.engine": engine}):
+            verdict, score = _run_sipa("role_id: x\n", "test_role")
+
+        assert verdict == _VERDICT_UNAVAILABLE
+        assert verdict not in _PROMOTABLE_VERDICTS
 
 
 # ---------------------------------------------------------------------------

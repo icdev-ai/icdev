@@ -8,6 +8,19 @@
     <p class="page-subtitle">Quantify the time and cost savings delivered by ICDEV™ automation across your team.</p>
 </div>
 
+{% if state != 'ok' %}
+<div class="roi-empty-state" id="roi-empty-state">
+    <div class="roi-empty-icon">{% if state == 'error' %}⚠️{% else %}📊{% endif %}</div>
+    <div class="roi-empty-title">
+        {% if state == 'error' %}ROI data unavailable{% else %}No ROI data yet{% endif %}
+    </div>
+    <div class="roi-empty-msg">{{ message or 'No ROI events recorded yet' }}</div>
+    {% if state != 'error' %}
+    <div class="roi-empty-hint">Automation events are recorded as ICDEV™ tools run (self-healing, compliance checks, security scans, and more). Metrics will populate here once events are logged.</div>
+    {% endif %}
+</div>
+{% else %}
+
 <!-- Hero Hours-Saved Card -->
 <div class="roi-hero" id="roi-hero-card">
     <div class="roi-hero-main">
@@ -94,10 +107,23 @@
         </tbody>
     </table>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block styles %}
 <style>
+.roi-empty-state {
+    text-align: center;
+    padding: 64px 32px;
+    background: var(--bg-card);
+    border: 1px dashed var(--border);
+    border-radius: 16px;
+    margin-top: 24px;
+}
+.roi-empty-icon { font-size: 3rem; line-height: 1; }
+.roi-empty-title { font-size: 1.3rem; font-weight: 700; margin-top: 16px; }
+.roi-empty-msg { font-size: 0.95rem; color: var(--text-dim); margin-top: 8px; }
+.roi-empty-hint { font-size: 0.83rem; color: var(--text-dim); margin: 16px auto 0; max-width: 520px; }
 .roi-hero {
     display: flex;
     align-items: center;

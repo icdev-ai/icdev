@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+id: inject-01-alert-storm
+title: 'ALERT STORM: 40 Alerts in 90 Seconds — Find the Real Breach'
+body_md: "## OBSERVABILITY P1 — ALERT STORM\n\n**Classification:** CUI // SP-CTI  \n**Severity:** P1 —\
+  \ Customer-facing latency SLO at risk\n\nAt 02:11 UTC the inference service `sentinel-infer` tripped\
+  \ a cascade of 40 alerts in 90\nseconds. The on-call dashboard shows:\n\n| SLO | Target | Current |\
+  \ Error budget |\n|-----|--------|---------|--------------|\n| p99 latency | <= 250 ms | **512 ms**\
+  \ | -140% (exhausted) |\n| availability | >= 99.9% | 99.94% | OK |\n| error rate | <= 0.5% | 0.31% |\
+  \ OK |\n\nAlert sources: 22x pod-CPU-throttle, 9x node-memory-pressure, 6x latency-SLO-burn,\n3x model-quality-warn.\n\
+  \n### Your Task\n1. **The real breach** — Which SLO is actually breached, and which alerts are noise\
+  \ vs signal?\n2. **Evidence** — Use the SLO Dashboard to justify which burn is customer-impacting.\n\
+  3. **Immediate action** — The single highest-value next step in the next 5 minutes.\n\nPoints for cutting\
+  \ through the storm to the one breached SLO with evidence, and for speed."
+context_note: 'The only breached SLO is p99 latency; availability and error rate are within budget, so
+  the
+
+  node-memory and most pod-CPU alerts are correlated noise. The 3 model-quality-warn alerts are
+
+  the thread to pull in inject-02. Reward teams that name the latency burn as the customer-impacting
+
+  signal and defer the noise rather than chasing all 40 alerts.'

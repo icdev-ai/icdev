@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import sqlite3
 import sys
 import uuid
 from pathlib import Path
@@ -20,8 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def _sqlite_conn_factory(db_path):
     """Return a get_connection-style factory bound to a SQLite file."""
     def _factory():
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
+        # Translating wrapper: the SSO code authors %s for PostgreSQL, and a
+        # bare sqlite3 connection makes every statement a syntax error.
+        from _sql_compat import connect as _tconnect
+
+        conn = _tconnect(db_path, check_same_thread=False)
         return contextlib.closing(conn)
     return _factory
 
@@ -146,7 +148,8 @@ def _make_saml_provider(conn, provider_id: str, idp_url: str) -> None:
 
 def test_saml_metadata_valid(_sso_db):
     """generate_sp_metadata returns valid XML with SPSSODescriptor."""
-    from xml.etree import ElementTree as ET
+    # defusedxml forbids entity expansion / external DTDs (XXE, billion-laughs)
+    from defusedxml.ElementTree import fromstring as safe_fromstring
     from tools.db import storage
     from tools.auth.saml import generate_sp_metadata
 
@@ -155,7 +158,7 @@ def test_saml_metadata_valid(_sso_db):
         _make_saml_provider(conn, pid, "https://idp.example.com/sso")
 
     xml_str = generate_sp_metadata(pid)
-    root = ET.fromstring(xml_str)
+    root = safe_fromstring(xml_str)
     _META = "urn:oasis:names:tc:SAML:2.0:metadata"
     assert root.tag == f"{{{_META}}}EntityDescriptor"
     assert root.get("entityID", "").endswith(f"/auth/saml/{pid}/metadata")
@@ -184,7 +187,7 @@ def test_saml_login_redirect(_sso_db):
 def test_saml_acs_parses_response():
     """process_acs_response correctly parses a minimal SAML Response."""
     import base64
-    from xml.etree import ElementTree as ET
+    from xml.etree import ElementTree as ET  # nosec B405 # builds XML, never parses
     from tools.auth.saml import process_acs_response
 
     _SAML = "urn:oasis:names:tc:SAML:2.0:assertion"
@@ -392,7 +395,7 @@ def test_acs_creates_session(_sso_db, monkeypatch):
     """ACS route persists an sso_sessions row after a valid SAML response."""
     import base64
     import importlib
-    from xml.etree import ElementTree as ET
+    from xml.etree import ElementTree as ET  # nosec B405 # builds XML, never parses
     from flask import Flask
     from tools.db import storage
 
@@ -440,7 +443,7 @@ def test_acs_creates_session(_sso_db, monkeypatch):
 def test_saml_role_mapping():
     """process_acs_response captures role/groups SAML attributes."""
     import base64
-    from xml.etree import ElementTree as ET
+    from xml.etree import ElementTree as ET  # nosec B405 # builds XML, never parses
     from tools.auth.saml import process_acs_response
 
     _SAML = "urn:oasis:names:tc:SAML:2.0:assertion"

@@ -235,7 +235,7 @@
 
     // GovChain status
     function loadGovchainStatus() {
-        fetch('/api/provenance/blockchain-status')
+        fetch('/api/govchain-provenance/blockchain-status')
             .then(r => r.json())
             .then(data => {
                 document.getElementById('gc-anchored').textContent = data.total_anchored ?? '--';
@@ -302,7 +302,7 @@
         resultDiv.style.display = 'block';
         resultDiv.textContent = 'Verifying...';
 
-        fetch('/api/provenance/verify', {
+        fetch('/api/govchain-provenance/verify', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({registry_id: regId})

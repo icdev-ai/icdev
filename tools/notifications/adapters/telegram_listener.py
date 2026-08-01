@@ -97,9 +97,21 @@ def _write_hitl_decision_to_db(step_run_id: str, action: str, reason: str = "") 
                 "SELECT status FROM studio_workflow_run_steps WHERE step_run_id=%s",
                 (step_run_id,),
             ).fetchone()
-            return updated and updated["status"] == new_status
+            released = bool(updated and updated["status"] == new_status)
         finally:
             conn.close()
+
+        # This path writes the gate decision straight to the DB rather than
+        # going through workflow_runner.approve_step, so it must close out the
+        # mirrored workflow_hitl external step itself — otherwise a Telegram
+        # approval leaves an orphan in the reviewer inbox (dwo-dur-04).
+        if released:
+            try:
+                from tools.studio import gate_bridge
+                gate_bridge.complete_external_step(step_run_id, new_status, "telegram")
+            except Exception:
+                pass
+        return released
     except Exception:
         return False
 

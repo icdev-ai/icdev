@@ -36,7 +36,7 @@ def prediction_exists(lens_id: str, subject_id: str, prediction_type: str,
     conn = get_connection()
     row = conn.execute(
         "SELECT id FROM fa_oracle_predictions "
-        "WHERE lens_id=? AND subject_id=? AND prediction_type=? AND created_at>?",
+        "WHERE lens_id=%s AND subject_id=%s AND prediction_type=%s AND created_at>%s",
         (lens_id, subject_id, prediction_type, cutoff),
     ).fetchone()
     return row is not None
@@ -64,7 +64,7 @@ def insert_prediction(
         "INSERT INTO fa_oracle_predictions "
         "(id,lens_id,lens_name,subject_type,subject_id,prediction_type,"
         "prediction_text,confidence,severity,horizon_days,evidence_json,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             row_id, lens_id, lens_name, subject_type, subject_id,
             prediction_type, prediction_text, confidence, severity,
@@ -103,7 +103,7 @@ def list_predictions(
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     params.append(limit)
     rows = conn.execute(
-        f"SELECT * FROM fa_oracle_predictions {where} ORDER BY created_at DESC LIMIT ?",
+        f"SELECT * FROM fa_oracle_predictions {where} ORDER BY created_at DESC LIMIT %s",
         params,
     ).fetchall()
     return [dict(r) for r in rows]
@@ -111,7 +111,7 @@ def list_predictions(
 
 def update_prediction_outcome(pred_id: str, outcome: str) -> None:
     conn = get_connection()
-    conn.execute("UPDATE fa_oracle_predictions SET outcome=? WHERE id=?", (outcome, pred_id))
+    conn.execute("UPDATE fa_oracle_predictions SET outcome=%s WHERE id=%s", (outcome, pred_id))
     conn.commit()
 
 
@@ -179,7 +179,7 @@ def insert_convergence(
     conn.execute(
         "INSERT INTO fa_oracle_convergence_events "
         "(id,subject_type,subject_id,lens_count,consensus_score,severity,summary,recommended_action,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (row_id, subject_type, subject_id, lens_count, consensus_score,
          severity, summary, recommended_action, _utcnow()),
     )
@@ -191,7 +191,7 @@ def list_convergence_events(limit: int = 20, conn=None) -> list[dict]:
     conn = conn or get_connection()
     rows = conn.execute(
         "SELECT * FROM fa_oracle_convergence_events WHERE resolved_at IS NULL "
-        "ORDER BY created_at DESC LIMIT ?",
+        "ORDER BY created_at DESC LIMIT %s",
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]

@@ -26,7 +26,6 @@ Usage:
 
 import argparse
 import json
-import logging
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -39,7 +38,8 @@ if str(_ROOT) not in sys.path:
 from tools.db.storage import get_connection  # noqa: E402
 
 # Default indirect rates (DCAA-typical for mid-tier GovCon)
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+logger = get_logger("icdev.govcon.rate_benchmarker")
 
 DEFAULT_RATES = {
     "fringe_pct": 0.32,
@@ -77,10 +77,9 @@ def _audit(conn, event_type, action, details, opportunity_id=None):
     """
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, "
-            "project_id, session_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, "
+            "project_id, session_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                _gen_id("aud"),
                 _now(),
                 event_type,
                 "rate_benchmarker",

@@ -509,3 +509,101 @@ class TestRepresentativeToolCalls:
         ):
             result = handler({})
             assert "total_spans" in result
+
+
+# ── NOVA Skill Generator Dispatch (hcx-rt-07) ────────────────────
+
+
+class TestNovaSkillGeneratorDispatch:
+    """Regression: the three NOVA skill-generator tools must dispatch via
+    gap_handler wrappers, not directly at tools.nova.skill_generator.
+
+    The gateway invokes handlers as ``handler(args_dict)``. The underlying
+    skill_generator functions take keyword args (``analyze_patterns(limit,
+    min_count)`` etc.), so a direct binding passed the whole dict as the first
+    positional (``limit`` / ``pattern``) — crashing with TypeError/AttributeError
+    or silently ignoring the args. These tests pin the args-dict adapter.
+    """
+
+    NOVA_TOOLS = ("nova_analyze_patterns", "nova_generate_skill", "nova_list_skill_queue")
+
+    @pytest.fixture
+    def server(self):
+        from tools.mcp.unified_server import create_server
+
+        return create_server()
+
+    def test_registry_points_at_gap_handlers(self):
+        """All three tools must route through tools.mcp.gap_handlers."""
+        expected = {
+            "nova_analyze_patterns": "handle_nova_analyze_patterns",
+            "nova_generate_skill": "handle_nova_generate_skill",
+            "nova_list_skill_queue": "handle_nova_list_skill_queue",
+        }
+        for name, handler_name in expected.items():
+            entry = TOOL_REGISTRY[name]
+            assert entry["module"] == "tools.mcp.gap_handlers", (
+                f"{name} should route through gap_handlers, got {entry['module']}"
+            )
+            assert entry["handler"] == handler_name
+
+    def test_gap_handler_functions_exist(self):
+        """Each referenced handler must exist in gap_handlers with (args) signature."""
+        import tools.mcp.gap_handlers as gh
+
+        for name in self.NOVA_TOOLS:
+            handler_name = TOOL_REGISTRY[name]["handler"]
+            assert hasattr(gh, handler_name), f"gap_handlers missing {handler_name}"
+
+    def test_dispatch_accepts_args_dict_without_crashing(self, server):
+        """The lazy dispatch must accept an args dict and return a dict (no TypeError).
+
+        The underlying skill_generator functions are patched so the test stays
+        hermetic (no LLM/DB); the point is that the args-dict adapter binds cleanly.
+        """
+        payloads = {
+            "nova_analyze_patterns": {"limit": 5, "min_count": 2},
+            "nova_generate_skill": {"pattern": "python tools/x.py", "dry_run": True},
+            "nova_list_skill_queue": {"limit": 5},
+        }
+        with patch("tools.nova.skill_generator.analyze_patterns", return_value=[]), \
+             patch("tools.nova.skill_generator.generate_skill_spec", return_value={"skill_id": "x"}), \
+             patch("tools.nova.skill_generator.list_queued", return_value=[]):
+            for name, args in payloads.items():
+                handler = server._tools[name]["handler"]
+                result = handler(args)
+                assert isinstance(result, dict), f"{name} returned {type(result)}"
+                # A stub (bad module) would set status=pending; the real handler must not.
+                assert result.get("status") != "pending", f"{name} resolved to stub: {result}"
+
+    def test_generate_skill_requires_pattern(self, server):
+        """nova_generate_skill must validate the required pattern arg."""
+        handler = server._tools["nova_generate_skill"]["handler"]
+        result = handler({})
+        assert result.get("error") == "pattern required"
+
+    def test_analyze_patterns_passes_kwargs_through(self, server):
+        """Args dict keys must reach the underlying kwargs, not the first positional."""
+        handler = server._tools["nova_analyze_patterns"]["handler"]
+        with patch("tools.nova.skill_generator.analyze_patterns", return_value=[]) as mock_fn:
+            result = handler({"limit": 7, "min_count": 3})
+            mock_fn.assert_called_once_with(limit=7, min_count=3)
+            assert result == {"patterns": [], "total": 0}
+
+    def test_generate_skill_passes_kwargs_through(self, server):
+        """Pattern/category/dry_run must reach generate_skill_spec as kwargs."""
+        handler = server._tools["nova_generate_skill"]["handler"]
+        with patch(
+            "tools.nova.skill_generator.generate_skill_spec", return_value={"skill_id": "x"}
+        ) as mock_fn:
+            result = handler({"pattern": "python tools/y.py", "category": "memory", "dry_run": True})
+            mock_fn.assert_called_once_with("python tools/y.py", category="memory", dry_run=True)
+            assert result == {"skill_id": "x"}
+
+    def test_list_skill_queue_passes_kwargs_through(self, server):
+        """limit must reach list_queued as a kwarg."""
+        handler = server._tools["nova_list_skill_queue"]["handler"]
+        with patch("tools.nova.skill_generator.list_queued", return_value=[]) as mock_fn:
+            result = handler({"limit": 9})
+            mock_fn.assert_called_once_with(limit=9)
+            assert result == {"queued": [], "total": 0}

@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     acceptance_criteria   TEXT,
     triage_prompt         TEXT,
     loop_type             TEXT DEFAULT 'deterministic',
-    adversarial_enabled   INTEGER DEFAULT 0
+    adversarial_enabled   INTEGER DEFAULT 0,
+    due_date              TEXT,
+    sla_hours             INTEGER
 )
 """
 
@@ -168,6 +170,12 @@ _KANBAN_TASKS_EXTRA_COLUMNS = [
     ("last_run_metadata",   "ALTER TABLE kanban_tasks ADD COLUMN last_run_metadata    TEXT"),
     # Phase 250b8557 — per-task runtime limit, acceptance criteria, triage prompt
     ("max_runtime_seconds", "ALTER TABLE kanban_tasks ADD COLUMN max_runtime_seconds  INTEGER"),
+    # Observed wall-clock runtime, written by _record_execution_seconds on
+    # completion. _detect_execution_anomalies reads it to derive an adaptive
+    # timeout ceiling; the column was missing on BOTH backends, so that whole
+    # feature silently returned {} and fell back to static constants.
+    # PostgreSQL gets it via migration 319.
+    ("execution_seconds",   "ALTER TABLE kanban_tasks ADD COLUMN execution_seconds    REAL"),
     ("acceptance_criteria", "ALTER TABLE kanban_tasks ADD COLUMN acceptance_criteria  TEXT"),
     ("triage_prompt",       "ALTER TABLE kanban_tasks ADD COLUMN triage_prompt        TEXT"),
     # Trace linkage. PostgreSQL got these via migration; the init fallback never
@@ -175,6 +183,9 @@ _KANBAN_TASKS_EXTRA_COLUMNS = [
     # every child and silently decomposed batches into zero children.
     ("trace_id",            "ALTER TABLE kanban_tasks ADD COLUMN trace_id             TEXT"),
     ("span_id",             "ALTER TABLE kanban_tasks ADD COLUMN span_id              TEXT"),
+    # crx-kan-01 — SLA / due-date tracking (nullable; opt-in per task).
+    ("due_date",            "ALTER TABLE kanban_tasks ADD COLUMN due_date             TEXT"),
+    ("sla_hours",           "ALTER TABLE kanban_tasks ADD COLUMN sla_hours            INTEGER"),
 ]
 
 # Same conditional-ALTER contract as _KANBAN_TASKS_EXTRA_COLUMNS.
@@ -222,6 +233,8 @@ def _existing_columns(conn, table: str) -> set:
             ).fetchall()
             key, idx = "column_name", 0
         else:
+            # pg-portability: sqlite-only path — SQLite branch of an explicit
+            # is_pg(conn) guard (the PG branch above uses information_schema).
             rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
             key, idx = "name", 1
     except Exception:

@@ -48,8 +48,26 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.db.storage import get_connection
+from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 from tools.rag.chunker import chunk_content
+from tools.rag.chunking_templates import suggest_template
+
+
+def _resolve_chunk_template(text: str, explicit: str | None) -> tuple[str, str]:
+    """Resolve which chunking template a DIC document should use (oss2-fix-02, D2).
+
+    An explicit ``chunk_template`` always wins. Otherwise ``suggest_template`` scores
+    the text against each template's detect patterns; it is advisory and safely
+    returns the default (``general``) when nothing clears its ``min_score``, so a
+    confident OSCAL/STIG/RFP match gets structural chunking while ambiguous text is
+    unchanged. Returns ``(template_name, reason)``; the reason is surfaced to the
+    operator (progress event + persisted chunk metadata) rather than applied silently.
+    """
+    if explicit:
+        return explicit, "explicit"
+    sugg = suggest_template(text)
+    return (sugg.get("suggested") or "general"), f"auto ({sugg.get('reason', 'detected')})"
 
 logger = get_logger(__name__)
 
@@ -159,6 +177,22 @@ def _try_provider_package(path: Path, ext: str) -> Extraction | None:
 # --------------------------------------------------------------------------- #
 
 _SCHEMA = [
+    # Declared here because ingest_file WRITES this table (via ensure_collection):
+    # a document whose collection has no row is invisible in the Collections UI,
+    # which enumerates dic_collections rather than dic_documents. Mirrors the
+    # SQLite branch of tools/document_intelligence/db/init_db.py.
+    """
+    CREATE TABLE IF NOT EXISTS dic_collections (
+        collection_id   TEXT PRIMARY KEY,
+        name            TEXT NOT NULL,
+        description     TEXT DEFAULT '',
+        owner_id        TEXT DEFAULT '',
+        retention_days  INTEGER DEFAULT 90,
+        classification  TEXT DEFAULT 'CUI',
+        tenant_id       TEXT DEFAULT 'default',
+        created_at      TEXT DEFAULT (datetime('now'))
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS dic_documents (
         doc_id          TEXT PRIMARY KEY,
@@ -203,6 +237,12 @@ _SCHEMA = [
         chunk_index     INTEGER NOT NULL,
         page            INTEGER,
         section         TEXT,
+        -- The cited chunk's content hash AT LINK TIME. This is the evidence
+        -- baseline: if rag_chunks.content_hash later differs, the source this
+        -- document was built from has changed underneath it (see
+        -- packs/evidence_currency.py). Without it there is no baseline and
+        -- evidence drift is undetectable. Migration 267 adds it to existing DBs.
+        chunk_hash      TEXT,
         created_at      TEXT NOT NULL,
         tenant_id       TEXT,
         classification  TEXT
@@ -1480,6 +1520,7 @@ def ingest_file(
     detect_near_duplicates: bool = False,
     detect_anomalies: bool = True,
     workflow_custom_fields: list[dict] | None = None,
+    chunk_template: str | None = None,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1713,16 +1754,35 @@ def ingest_file(
 
         # 2) Chunk (reuse chunker). chunk_content returns VectorChunk objects whose
         #    .chunk_id is the canonical rag_chunks id used by the vector store + KG.
-        _emit("chunking", "Splitting into chunks…", 15)
+        #
+        # oss2-fix-02 (D2): template chunking (oscal_catalog/stig_checklist/rfp_sow/…)
+        # shipped but the DIC pipeline it was built for never passed template=, so
+        # every document fell back to general sliding-window chunking and structured
+        # controls were split mid-control. Resolve a template here: an explicit
+        # chunk_template always wins; otherwise auto-detect. suggest_template is
+        # advisory and safely returns the default ("general") when nothing scores
+        # above its min_score, so a confident OSCAL/STIG match gets structural
+        # chunking while ambiguous text is unchanged. The choice is surfaced to the
+        # operator (progress + persisted template_type) so it is not silent.
+        resolved_template, template_reason = _resolve_chunk_template(text, chunk_template)
+        _emit("chunking", f"Splitting into chunks (template: {resolved_template})…", 15)
         chunks = chunk_content(
             text,
             source_type="dic_document",
             source_id=source_id,
             source_table="dic_documents",
-            metadata={"filename": p.name, "collection_id": collection_id},
+            metadata={
+                "filename": p.name,
+                "collection_id": collection_id,
+                # Record which template was used (and why) on every chunk, so the
+                # choice is auditable without touching the dic_documents insert.
+                "chunk_template": resolved_template,
+                "chunk_template_reason": template_reason,
+            },
             tenant_id=tid,
             project_id=collection_id,
             classification=cls,
+            template=resolved_template,
         )
         # Scope the content hash to the collection so identical text uploaded to
         # different collections gets distinct rag_chunks rows tied to each
@@ -1763,6 +1823,12 @@ def ingest_file(
         now = _now()
         version_id = f"{doc_id}_v1"
         cur = conn.cursor()
+
+        # The container must exist before the document, or the document is
+        # ingested successfully and then is unreachable in the Collections UI —
+        # which enumerates dic_collections, not dic_documents. Same transaction,
+        # so the pair lands together.
+        ensure_collection(conn, collection_id, tenant_id=tid, classification=cls)
 
         cur.execute(
             """
@@ -1809,19 +1875,43 @@ def ingest_file(
             page = md.get("page")
             section = md.get("section") or md.get("heading")
             link_id = f"{version_id}_link_{i}"
+            # Capture the cited chunk's hash AT LINK TIME — the evidence baseline
+            # this document was built from. A later divergence from
+            # rag_chunks.content_hash means the source changed underneath the
+            # document (packs/evidence_currency.py). content_hash is
+            # collection-scoped above, matching the resolved rag_chunks row.
+            chunk_hash = getattr(chunk, "content_hash", None)
             cur.execute(
                 """
                 INSERT OR REPLACE INTO dic_chunk_links
                     (link_id, doc_id, version_id, rag_chunk_id, collection_id,
-                     chunk_index, page, section, created_at, tenant_id, classification)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     chunk_index, page, section, chunk_hash, created_at,
+                     tenant_id, classification)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     link_id, doc_id, version_id, rag_chunk_id, collection_id,
-                    chunk_index, page, section, now, tid, cls,
+                    chunk_index, page, section, chunk_hash, now, tid, cls,
                 ),
             )
         conn.commit()
+
+        # Inter-document cross-reference extraction (dmx-ref-01, best-effort).
+        # Deterministic regex over the extracted text — records "see Section N of
+        # <Doc>" style references into dic_cross_references for later resolution
+        # and cascade flagging. Never fails the ingest.
+        try:
+            from tools.document_intelligence.cross_reference_tracker import (
+                store_references_from_text,
+            )
+
+            store_references_from_text(
+                conn, doc_id, text, source_section="",
+                tenant_id=tid, classification=cls,
+            )
+            conn.commit()
+        except Exception as e:  # pragma: no cover - defensive
+            errors.append(f"cross-reference extraction failed: {e}")
 
         # Near-duplicate title detection (best-effort): compare this document's
         # title against existing titles in the same collection.

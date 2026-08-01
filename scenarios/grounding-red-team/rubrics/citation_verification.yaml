@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+name: Citation Verification Rubric
+inject_type: citation_verification
+description: Evaluates detection of spoofed citations that point at real-but-wrong passages.
+max_score: 100
+dimensions:
+- id: spoof_detection
+  weight: 0.45
+  prompt: Did Blue catch all 3 spoofs (Q1-vs-Q2, in-transit-vs-at-rest, CVEs-present) with the specific
+    cited-says-vs-claim mismatch? 10 = all 3 with evidence; 6 = 2; 3 = 1; 0 = none.
+- id: policy_articulation
+  weight: 0.25
+  prompt: Did the team explain why 'page exists' is insufficient and specify a grounding-threshold / semantic
+    check? 10 = clear policy fix; 5 = vague; 0 = none.
+- id: evidence_grounding
+  weight: 0.2
+  prompt: Were the mismatches grounded in retrieved passage text? 10 = quoted evidence per spoof; 5 =
+    partial; 0 = assertion only.
+- id: ai_tool_quality
+  weight: 0.1
+  prompt: Were provenance/grounded receipts used? 10 = yes; 5 = present, unused; 0 = none.

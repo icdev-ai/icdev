@@ -1,0 +1,15 @@
+# CUI // SP-CTI
+label: Compliance / TRUST Officer
+description: Owns the citation gate, HITL override discipline, and audit evidence.
+attributes:
+- organization
+- compliance framework familiarity (NIST 800-53, RMF)
+- audit/records background
+- authority to gate promote/export
+- clearance level
+prompt_hint: 'Generate a compliance officer who enforces the TRUST citation gate: ungrounded claims block
+  promote unless an audited HITL force override is recorded. They insist on attached provenance records
+  and name residual risk. Mention the Academy trust-grounding bonus.'
+academy_relevant_missions:
+- compliance-fundamentals
+- trust-grounding

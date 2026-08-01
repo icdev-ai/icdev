@@ -25,6 +25,7 @@ import sqlite3
 
 import pytest
 
+from tools.db.storage import StorageConnection
 from tools.integrity import engine, scanners
 from tools.integrity.db import init_db as init_db_mod
 
@@ -100,11 +101,19 @@ def backdoor_source(tmp_path):
 
 @pytest.fixture
 def conn():
-    c = sqlite3.connect(":memory:")
-    c.row_factory = sqlite3.Row
-    init_db_mod.init_db(c)
-    yield c
-    c.close()
+    """A SQLite connection wrapped as production hands one to the SIPA engine.
+
+    The engine authors its SQL PostgreSQL-first (``%s`` placeholders). A bare
+    sqlite3.Connection rejects those outright — capability_extractor._persist()
+    died with ``near "%": syntax error``. Production is unaffected because
+    get_connection() returns a StorageConnection, whose translate_sql rewrites
+    ``%s`` -> ``?`` for SQLite.
+    """
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    init_db_mod.init_db(raw)
+    yield StorageConnection(raw, "sqlite")
+    raw.close()
 
 
 @pytest.fixture
