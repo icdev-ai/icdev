@@ -96,6 +96,14 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # discriminates. dynamic_findings itself is mutable (status transitions)
         # and is deliberately NOT listed here.
         "finding_replay_attempts",
+        # BOM Evidence Engine (migration 322).
+        # bom_match_decisions holds a human's reconciliation verdicts, keyed on a
+        # pair of line hashes. Clusters are a projection recomputed OVER these on
+        # every run — the decisions are the ONLY durable record of what a person
+        # actually approved. Edit one and you have silently rewritten a judgement
+        # the customer's budget was signed off against.
+        "bom_match_decisions",
+        "bom_audit",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
         # FORGE Academy XP provenance (aca-int-07, migration 315). An award is an

@@ -3582,6 +3582,42 @@ def icdev_db(tmp_path):
 
 
 @pytest.fixture
+def bom_db(tmp_path, monkeypatch):
+    """SQLite DB with the BOM Evidence Engine tables (migration 267).
+
+    Built by running tools.bom.db.init_db.SCHEMA_PG rather than by pasting the
+    DDL in here. That is deliberate: the CHECK constraints are derived from the
+    tuples in tools/bom/constants.py, and a hand-copied schema in the test
+    harness is exactly how a test starts passing against a table shape that no
+    longer exists in production.
+
+    Goes through storage.get_connection() (not raw sqlite3) so DML in tests hits
+    the same %s->? translation the real code does — a test that talks straight to
+    sqlite3 can pass while the production query it is meant to be guarding is
+    broken.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "bom_test.db"))
+    from tools.bom.db.init_db import init_db
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    init_db(conn)
+    try:
+        yield conn
+    finally:
+        # Close the write transaction the tests leave open. This fixture was
+        # written before the transaction-leak guard landed on main, and a bare
+        # `yield conn` left one open per test — 53 of them, all reported as
+        # "Transaction leak" rather than as anything to do with BOM.
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
+
+
+@pytest.fixture
 def nocc_db(tmp_path, monkeypatch):
     """In-memory SQLite NOCC DB for unit tests."""
     db_path = tmp_path / "noc_canvas.db"

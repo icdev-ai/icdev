@@ -240,3 +240,6 @@ frontend/node_modules/
 
 # oss-redteam-02: authorization records + finding triage are operational, never source
 data/redteam/
+# Live BOM plan config — names real people, real committed dates, a real task
+# list. ICDEV is public. Ship args/bom_plan.example.yaml; keep the real one out.
+args/bom_plan.yaml

@@ -83,11 +83,18 @@ DASHBOARD_SCOPES = ("cortex:dashboard",)
 # cpmp_contracts row with real money and CLINs against it. A key that can price a bid
 # must not silently also be able to declare it won and open a contract.
 AWARD_SCOPES = ("cortex:award",)
+# The BOM Evidence Engine. Granted explicitly, never by default, and the reason is
+# the payload rather than the write: a caller hands over the CONTENTS of their
+# uploaded documents — bills of materials, quotes, architecture drawings, asset
+# inventories — which is the most commercially sensitive material a customer has.
+# A key that can search the platform must not silently also be able to post a
+# competitor's pricing into it.
+BOM_SCOPES = ("cortex:bom",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
                      "databridge:icdev_demand:read",
                      "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
 ALL_SCOPES = (CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + STAFFING_SCOPES
-              + PRICING_SCOPES + DASHBOARD_SCOPES + AWARD_SCOPES
+              + PRICING_SCOPES + DASHBOARD_SCOPES + AWARD_SCOPES + BOM_SCOPES
               + DATABRIDGE_SCOPES)
 
 # Default scopes for a newly created key: the core REST operations (the

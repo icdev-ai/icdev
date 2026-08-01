@@ -5500,6 +5500,49 @@ projects:
   default_open: true
   briefs:
   - 'gate: manual gate held in_progress — PG migrations are false-positive heavy and need per-file verification (pgrt-gate-00)'
+- key: bom_engine
+  name: BOM Evidence Engine (ICDEV core)
+  description: "Open-source engine under tools/bom/ — cell-grid extraction (formulas + coordinates preserved), hidden-data forensics, source credibility, derivative detection, declared-scope coverage, baseline-architecture conformance, reconciliation, cross-tab pivot, themed exports. Exposed via the /bom canvas, Cortex REST and MCP. Nothing in it is IRAD-specific."
+  task_prefix: bom-
+  default_open: true
+  briefs: []
+  epics:
+  - key: schema
+    title: Schema + migration
+    priority: high
+  - key: extract
+    title: Cell-grid extraction
+    priority: high
+  - key: forensic
+    title: Hidden-data forensics
+    priority: high
+  - key: cred
+    title: Credibility + derivative detection
+    priority: high
+  - key: find
+    title: Deterministic findings engine
+    priority: high
+  - key: conform
+    title: Baseline + scope conformance
+    priority: high
+  - key: recon
+    title: Reconciliation (LLM adjudication)
+    priority: medium
+  - key: pivot
+    title: Cross-tab pivot
+    priority: medium
+  - key: export
+    title: XLSX + themed deck export
+    priority: medium
+  - key: cortex
+    title: Cortex REST + MCP surface
+    priority: medium
+- key: concord
+  name: CONCORD — Evidence-to-Investment Studio
+  description: "Standalone premium app at C:/AI/standalone/concord (FastAPI 8020 / React 5175). Owns intent capture, upload, review + approval queues, taxonomy editor, findings register, pivot UI, deck theming and the compass/idea_lab integrations. Calls the ICDEV BOM engine over Cortex REST — no ICDEV imports."
+  task_prefix: cncd-
+  default_open: true
+  briefs: []
   epics:
   - key: gate
     title: Manual gate
@@ -7034,3 +7077,15 @@ projects:
   - key: perf
     title: Further Gate Performance
     priority: low
+  - key: app
+    title: App scaffold + Cortex client
+    priority: high
+  - key: ui
+    title: Review, findings + pivot UI
+    priority: high
+  - key: deck
+    title: Narrative + deck builder
+    priority: medium
+  - key: integ
+    title: Compass + idea_lab integrations
+    priority: medium

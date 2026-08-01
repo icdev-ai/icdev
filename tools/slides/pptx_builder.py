@@ -704,6 +704,121 @@ def _table_fit(n_body_rows: int, has_hf: int, avail_h) -> tuple[int, int]:
     hf_row_in = (pt * 1.28) / 72.0 + 0.10
     max_body = max(1, int((avail - has_hf * hf_row_in) / body_row_in))
     return pt, max_body
+# "No Style, No Grid" — the one built-in table style that imposes nothing.
+_NO_TABLE_STYLE = "{2D5ABB26-0587-4C30-8999-92F81FD0307C}"
+
+# How many rows fit between the title band and the footer without PowerPoint
+# growing them past the bottom of the slide. Measured, not derived: a 10pt row with
+# one line of text is about 0.30", and there is roughly 5.4" to play with.
+_MAX_TABLE_ROWS = 14
+
+
+def _fit_rows(all_rows, headers, footer):
+    """Trim a table to what will physically fit. Returns (rows, footer, dropped).
+
+    The header and the footer are never dropped — the header says what the columns
+    mean and the footer usually carries the total, and a table missing either is
+    not a shorter table, it is a broken one.
+    """
+    has_header = bool(headers)
+    has_footer = bool(footer)
+
+    body_start = 1 if has_header else 0
+    body_end = len(all_rows) - (1 if has_footer else 0)
+    body = all_rows[body_start:body_end]
+
+    room = _MAX_TABLE_ROWS - (1 if has_header else 0) - (1 if has_footer else 0)
+    dropped = max(0, len(body) - room)
+    if dropped:
+        body = body[:room]
+
+    out = ([all_rows[0]] if has_header else []) + body
+    if has_footer:
+        out.append(all_rows[-1])
+    return out, (all_rows[-1] if has_footer else None), dropped
+
+
+def _fit_font(num_rows: int, num_cols: int) -> int:
+    """Smaller type for busier tables. A wall of 12pt text is a wall."""
+    if num_rows > 10 or num_cols > 5:
+        return 9
+    if num_rows > 7 or num_cols > 4:
+        return 10
+    return 12
+
+
+def _clip(text: str, num_cols: int, font_pt: int) -> str:
+    """Keep a cell to roughly one line.
+
+    A cell that wraps to three lines makes PowerPoint grow the row, and a few of
+    those push the table off the slide. The full text is in the workbook; the slide
+    is for the argument, not the archive.
+    """
+    usable_in = 12.0 / max(num_cols, 1)          # the content width, in inches
+    chars = int(usable_in * (96 / (font_pt * 0.62)))
+    return text if len(text) <= chars else text[: max(chars - 1, 8)].rstrip() + "…"
+
+
+def _readable(fg, bg, fallback):
+    """The more legible of two colours against this background.
+
+    Two of the shipped themes put their accent on a dark header fill at under
+    4.5:1, which is below what a person at the back of a room can resolve. Rather
+    than hand-tuning palettes, pick whichever of the two candidate colours a human
+    can actually read — the theme keeps its character and the table stays legible.
+    """
+    def lum(c):
+        def chan(x):
+            x /= 255
+            return x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4
+        return 0.2126 * chan(c[0]) + 0.7152 * chan(c[1]) + 0.0722 * chan(c[2])
+
+    def ratio(a, b):
+        la, lb = lum(a), lum(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+    bg_t = (bg[0], bg[1], bg[2])
+    if ratio((fg[0], fg[1], fg[2]), bg_t) >= 4.5:
+        return fg
+    return fallback
+
+
+def _neutralize_table_style(tbl) -> None:
+    """Stop PowerPoint's default table style from overriding our colours.
+
+    python-pptx creates every table with "Medium Style 2 - Accent 1", which brings
+    its own banding and — fatally — its own text colours. Those are applied at the
+    run level and beat anything set on the paragraph, so a builder that paints a
+    dark fill and asks for white text gets the table style's DARK text on that dark
+    fill, and the table renders as an empty box.
+
+    Nothing about that failure is visible from Python: the text is present in the
+    XML, python-pptx reads it back happily, and every automated check passes. It is
+    only wrong on a screen.
+
+    So: drop the style, and turn off the banding and first-row emphasis that came
+    with it. Explicit formatting is then the only formatting there is.
+    """
+    from pptx.oxml.ns import qn
+
+    tbl_pr = tbl._tbl.find(qn("a:tblPr"))
+    if tbl_pr is None:
+        return
+
+    for style_id in tbl_pr.findall(qn("a:tableStyleId")):
+        tbl_pr.remove(style_id)
+
+    style = tbl_pr.makeelement(qn("a:tableStyleId"), {})
+    style.text = _NO_TABLE_STYLE
+    tbl_pr.append(style)
+
+    # These flags tell PowerPoint to apply the style's special formatting to the
+    # header row and to alternate rows. With no style they are meaningless; with
+    # one they are how the colours come back.
+    tbl_pr.set("firstRow", "0")
+    tbl_pr.set("bandRow", "0")
+    tbl_pr.set("firstCol", "0")
+    tbl_pr.set("bandCol", "0")
 
 
 def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
@@ -765,6 +880,8 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
     tbl = tbl_shape.table
     tbl.first_row = bool(headers)         # let the table style bar the header row
 
+    _neutralize_table_style(tbl)
+
     for ri, row_data in enumerate(all_rows):
         is_header = ri == 0 and bool(headers)
         is_footer = ri == len(all_rows) - 1 and bool(footer)
@@ -780,12 +897,36 @@ def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dic
             cell.margin_bottom = Inches(0.03)
             tf = cell.text_frame
             tf.word_wrap = True
-            para = tf.paragraphs[0]
-            para.font.size = Pt(font_pt - 1 if band else font_pt)
-            para.font.bold = band
-            para.font.color.rgb = band_c if band else text_c
+
+            fill = dark if band else _rgb(palette, "bg")
             cell.fill.solid()
-            cell.fill.fore_color.rgb = dark if band else _rgb(palette, "bg")
+            cell.fill.fore_color.rgb = fill
+
+            # Banded rows take the theme accent — unless a human cannot read it
+            # against this fill, in which case they get the body colour. Two of
+            # the shipped themes put their accent on the dark header at under
+            # 4.5:1, and a header nobody can read is not a header.
+            colour = _readable(band_c, fill, text_c) if band else text_c
+            size = Pt(font_pt - 1 if band else font_pt)
+
+            para = tf.paragraphs[0]
+            para.font.size = size
+            para.font.bold = band
+            para.font.color.rgb = colour
+
+            # Set the colour on the RUN as well, not only the paragraph.
+            #
+            # A paragraph-level colour is a DEFAULT, and a PowerPoint table's own
+            # style supplies run-level formatting that beats it. Without this the
+            # builder painted a dark fill, set light paragraph text, and
+            # PowerPoint rendered the table style's dark text on top: every table
+            # came out black-on-black. The data was all in the XML, which is why
+            # it survived — reading a .pptx back with python-pptx shows you the
+            # text and tells you nothing about whether a human can SEE it.
+            for run in para.runs:
+                run.font.size = size
+                run.font.bold = band
+                run.font.color.rgb = colour
 
     if dropped:
         _box(s, LM, H - Inches(0.5), CW, Inches(0.22),

@@ -68,6 +68,12 @@ _SPEC_KEYS = {
 }
 _MAX_TILES = 40
 
+# BOM Evidence Engine limits. A corpus is a folder somebody dragged in, not a data
+# lake — and every byte here is parsed, so the ceilings are about protecting the
+# host as much as the caller.
+_MAX_BOM_DOCUMENTS = 40
+_MAX_BOM_BYTES = 25 * 1024 * 1024
+
 
 # ---------------------------------------------------------------------------
 # Identity — derived server-side, never from the client body
@@ -795,6 +801,207 @@ def api_v1_award(data):
     return result
 
 
+@_cortex_api
+def api_v1_bom(data):
+    """Reconcile a pile of documents into one defensible bill of materials.
+
+    The caller posts the CONTENTS of their documents, base64-encoded, and gets
+    back the reconciled lines, the findings, the credibility ladder and the
+    pivots. No LLM runs on this path unless the caller opts into adjudication —
+    the deterministic engine finds the double-counted licences, the subtotals that
+    stopped tracking their own inputs, the line that looks costed and costs
+    nothing, and the copy of a workbook that would have doubled every figure in it.
+
+    SECURITY. Documents arrive as BYTES, never as paths. A remote endpoint that
+    accepted a filesystem path would be an arbitrary-file-read primitive dressed
+    up as a convenience — the caller names /etc/passwd and we obligingly parse it
+    into a bill of materials and hand it back. The same trap the /slides surface
+    already guards against, and it is worth the extra base64.
+
+    Everything is parsed in a temporary directory and deleted. Nothing a caller
+    uploads is persisted here; persistence is the calling product's business, and
+    that product knows whose data it is.
+    """
+    import base64
+    import binascii
+    import tempfile
+    from pathlib import Path
+
+    from tools.bom.credibility import assess
+    from tools.bom.derivative import find_derivatives
+    from tools.bom.extract_grid import extract_grid
+    from tools.bom.findings import analyze_document
+    from tools.bom.forensics import analyze as run_forensics
+    from tools.bom.lines import extract_lines
+    from tools.bom.pivot import build_dataset, pivot as build_pivot, suggest_pivots
+    from tools.bom.reconcile import Source, reconcile
+
+    if not isinstance(data, dict):
+        raise validators.CortexValidationError("body must be a JSON object")
+
+    documents = data.get("documents")
+    if not isinstance(documents, list) or not documents:
+        raise validators.CortexValidationError("documents must be a non-empty list")
+    if len(documents) > _MAX_BOM_DOCUMENTS:
+        raise validators.CortexValidationError(
+            f"too many documents ({len(documents)}); max is {_MAX_BOM_DOCUMENTS}")
+
+    with tempfile.TemporaryDirectory(prefix="icdev_bom_") as tmp:
+        root = Path(tmp)
+        extractions = []
+        declared: dict[str, dict] = {}
+
+        for i, doc in enumerate(documents):
+            if not isinstance(doc, dict):
+                raise validators.CortexValidationError(f"document {i} must be an object")
+
+            name = str(doc.get("filename") or "").strip()
+            if not name:
+                raise validators.CortexValidationError(f"document {i} needs a filename")
+            # The filename is a LABEL, never a path. Basename it: a caller that
+            # sends "../../etc/passwd" gets a file called "passwd" in a temp dir,
+            # which is exactly as interesting as it deserves to be.
+            name = Path(name).name
+
+            try:
+                blob = base64.b64decode(str(doc.get("content_base64") or ""), validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise validators.CortexValidationError(
+                    f"document {i} ({name}): content_base64 is not valid base64"
+                ) from exc
+
+            if not blob:
+                raise validators.CortexValidationError(f"document {i} ({name}) is empty")
+            if len(blob) > _MAX_BOM_BYTES:
+                raise validators.CortexValidationError(
+                    f"document {i} ({name}) is {len(blob):,} bytes; max is "
+                    f"{_MAX_BOM_BYTES:,}")
+
+            path = root / name
+            path.write_bytes(blob)
+
+            declared[name] = {
+                # Only a human's designation binds. The caller passes theirs
+                # through; where they have not ruled, the engine proposes and says
+                # it is proposing.
+                "role": str(doc.get("role") or "").strip(),
+                "credibility_tier": str(doc.get("credibility_tier") or "").strip(),
+            }
+            extractions.append(extract_grid(path))
+
+        derivations = {d.derived: d for d in find_derivatives(extractions)}
+
+        sources: dict[str, Source] = {}
+        source_report = []
+        for ext in extractions:
+            fx = run_forensics(root / ext.filename)
+            proposal = assess(
+                ext, fx, derivative_of=(
+                    derivations[ext.filename].original
+                    if ext.filename in derivations else ""
+                ),
+            )
+            said = declared.get(ext.filename, {})
+            tier = said.get("credibility_tier") or proposal.tier
+            role = said.get("role") or proposal.role
+            set_by = "human" if said.get("credibility_tier") else "ai_proposed"
+
+            sources[ext.filename] = Source(
+                source_id=ext.filename,
+                filename=ext.filename,
+                credibility_tier=tier,
+                role=role,
+            )
+            source_report.append({
+                "filename": ext.filename,
+                "credibility_tier": tier,
+                "role": role,
+                "set_by": set_by,
+                "rationale": proposal.rationale,
+                "derived_from": (
+                    derivations[ext.filename].original
+                    if ext.filename in derivations else ""
+                ),
+                "warnings": ext.warnings,
+            })
+
+        lines = []
+        findings = []
+        for ext in extractions:
+            lines += extract_lines(ext, source_id=ext.filename)
+            findings += analyze_document(ext)
+
+        # No adjudicator is passed. The REST surface runs the engine in --no-llm
+        # mode: it cannot hallucinate, because there is nothing in it that could.
+        # Adjudication of the ambiguous band is a separate, opt-in call.
+        result = reconcile(lines, sources)
+        findings += result.findings
+
+        dataset = build_dataset(result.clusters, lines, sources)
+        pivots = []
+        for spec in suggest_pivots(dataset):
+            p = build_pivot(
+                dataset,
+                rows=spec["rows"], cols=spec["cols"],
+                measure=spec["measure"], agg=spec["agg"],
+            )
+            pivots.append({
+                "title": spec["title"],
+                "rows": spec["rows"],
+                "cols": spec["cols"],
+                "table": p.as_table(),
+                "note": p.reconciliation_note,
+            })
+
+    return {
+        "sources": source_report,
+        "line_count": len(dataset.rows),
+        "cluster_count": len(result.clusters),
+        # The honest headline. When several documents each claim to price the same
+        # project, this is FALSE and committed_total is a sum rather than a total —
+        # and the caller is told so rather than shown a tidy number.
+        "is_a_total": not dataset.competing_claims,
+        "competing_claims": sorted(dataset.claim_sources) if dataset.competing_claims else [],
+        "committed_total": round(dataset.committed_total, 2),
+        "open_total": round(dataset.open_total, 2),
+        "open_count": sum(1 for r in dataset.rows if not r.committed),
+        "lines": [
+            {
+                "description": r.description,
+                "qty": r.qty,
+                "unit_price": r.unit_price,
+                "extended_price": r.extended_price,
+                "committed": r.committed,
+                "excluded_reason": r.excluded_reason,
+                "dims": r.dims,
+            }
+            for r in dataset.rows
+        ],
+        "findings": [
+            {
+                "type": f.finding_type,
+                "kind": f.kind,
+                "severity": f.severity,
+                "title": f.title,
+                "detail": f.detail,
+                "impact_usd": f.impact_usd,
+                "detector": f.detector,
+                "evidence": [e.as_dict() for e in f.evidence],
+            }
+            for f in sorted(
+                findings,
+                key=lambda f: (
+                    ["critical", "high", "medium", "low", "info"].index(f.severity),
+                    -(f.impact_usd or 0.0),
+                ),
+            )
+        ],
+        "pending_decisions": len(result.pending),
+        "pivots": pivots,
+        "llm_calls": result.llm_calls,
+    }
+
+
 def api_v1_health():
     """Liveness probe — config + air-gap posture, no LLM call, no auth.
 
@@ -811,9 +1018,7 @@ def api_v1_health():
             "status": "healthy",
             "airgap": bool(airgap_active(None)),
             "operations": [
-                "search", "ask", "complete", "reason", "classify", "extract",
-                "govern", "intake", "slides", "win_themes", "staffing_matrix",
-                "cost_volume", "dashboard", "award",
+                "search", "ask", "complete", "reason", "classify", "extract", "govern", "intake", "slides", "win_themes", "staffing_matrix", "cost_volume", "dashboard", "award", "bom",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -841,6 +1046,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("cost_volume", api_v1_cost_volume),
         ("dashboard", api_v1_dashboard),
         ("award", api_v1_award),
+        ("bom", api_v1_bom),
     ):
         cortex_bp.add_url_rule(
             f"{_API_V1}/{name}", f"api_v1_{name}", view, methods=["POST"]

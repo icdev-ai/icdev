@@ -73,8 +73,29 @@ def parse_drawio(xml_str: str) -> dict:
             "parse_error": str(exc),
         }
 
-    # Locate <root> element (direct child of <mxGraphModel>, or the root itself)
+    # Locate the <root> element holding the cells.
+    #
+    # Three shapes arrive here. A bare <root>. An <mxGraphModel> whose direct
+    # child is <root> — which is what every existing caller passes. And an actual
+    # file saved by draw.io, which is <mxfile> → <diagram> → <mxGraphModel> →
+    # <root>: two levels deeper than find() looks.
+    #
+    # That third case used to fall through to the best-effort branch below, where
+    # findall("mxCell") on the <mxfile> element matched nothing and the parser
+    # returned an empty graph with no error. A real diagram read as "no
+    # components", which is worse than a crash: an empty architecture looks like
+    # a diagram nobody drew anything in, and it is indistinguishable from one
+    # that genuinely has nothing in it.
+    #
+    # Note this returns the FIRST <root> only. A .drawio file with several tabs
+    # (floor plan / topology / rack elevation) has one per tab, and collapsing
+    # them into a single node list would lose which drawing a component came
+    # from. Callers that need that distinction should iterate <diagram> elements
+    # themselves and hand each <mxGraphModel> in separately — see
+    # tools/bom/extract_grid.py::_extract_drawio.
     mx_root = root if root.tag == "root" else root.find("root")
+    if mx_root is None:
+        mx_root = root.find(".//root")  # <mxfile>/<diagram>/<mxGraphModel>/<root>
     if mx_root is None:
         mx_root = root  # best-effort fallback
 
