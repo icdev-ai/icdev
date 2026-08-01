@@ -241,21 +241,31 @@ jobs:
             exit 0
           fi
           echo "present=true" >> "$GITHUB_OUTPUT"
-          docker compose -f docker-compose.ci.yml up -d --wait --timeout 120
-        timeout-minutes: 5
+          docker compose -f docker-compose.ci.yml up -d --wait --timeout 180
+        # Raised from 5: this step now also BUILDS the dashboard image. The
+        # images from build-images are not reachable here — that job runs on a
+        # different runner and only `load`s them locally (it pushes to GHCR on
+        # main alone), so compose builds its own.
+        timeout-minutes: 20
 
+      # /health does not exist on the dashboard — the app serves /api/health
+      # (app.py, the load-balancer probe that also runs a SELECT 1). The old
+      # path returned 404 on every attempt, so this step would have failed even
+      # against a perfectly healthy stack. It had never run to find out.
       - name: Wait for dashboard health endpoint
         if: steps.stack.outputs.present == 'true'
         run: |
           for i in $(seq 1 24); do
-            if curl -sf http://localhost:5050/health > /dev/null 2>&1; then
+            if curl -sf http://localhost:5050/api/health > /dev/null 2>&1; then
               echo "Dashboard is healthy"
               break
             fi
             echo "Attempt $i/24 — waiting 5s..."
             sleep 5
           done
-          curl -sf http://localhost:5050/health | python -m json.tool
+          # Unpiped and unguarded on purpose: if the endpoint is still not
+          # answering after the loop, this is what fails the step.
+          curl -sf http://localhost:5050/api/health | python -m json.tool
 
       - name: Run Python health check
         run: python tools/testing/health_check.py --json

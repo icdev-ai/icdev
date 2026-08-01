@@ -48,8 +48,14 @@ ENV PYTHONUNBUFFERED=1
 # STIG: Run as non-root
 USER icdev
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:5000/health || exit 1
+# /health is not a route on this app — it served 404, so every container built
+# from this image reported `unhealthy` forever, which also fails
+# `docker compose up --wait`. /login is the right probe for the IMAGE default:
+# it is in dashboard auth's PUBLIC_ENDPOINTS, so it answers 200 without
+# credentials. The richer /api/health (which also checks the DB) requires auth
+# and is used by docker-compose.ci.yml, where ICDEV_AUTH_BYPASS is set.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -sf http://localhost:5000/login || exit 1
 
 EXPOSE 5000
 

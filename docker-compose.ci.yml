@@ -1,0 +1,90 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ CI Integration Stack
+#
+# Consumed only by .github/workflows/infrastructure-ci.yml (provision-ci-stack).
+# That job referenced this file from the day it was written, but the file was
+# never added — see #911. The reference stayed invisible because build-images
+# always failed first, so the job was permanently `skipped`.
+#
+# Deliberately minimal. This stack exists to answer one question: does a
+# freshly built dashboard image boot, initialize its database, and serve
+# traffic? It is NOT a miniature of docker-compose.yml and should not grow into
+# one — the 16-agent A2A mesh adds many minutes of build time and nothing the
+# provision job actually asserts.
+#
+# No PostgreSQL service: the job writes ICDEV_STORAGE_BACKEND=sqlite into .env
+# and sets it in the job env, so a Postgres container would start, be paid for
+# in wall-clock, and never receive a query. Add one only alongside a job step
+# that actually exercises it.
+
+services:
+
+  # Web dashboard — the single service the provision job probes.
+  icdev-dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dashboard
+      # No `target:` — unlike docker-compose.yml, which requests a
+      # `debian-runtime` stage that Dockerfile.dashboard does not define.
+      # Its stages are `builder` and an unnamed final stage; naming a
+      # nonexistent target fails the build outright.
+    image: icdev/dashboard:ci
+    container_name: icdev-dashboard-ci
+    ports:
+      # The workflow curls host :5050. app.py's own default is 5050; the
+      # Dockerfile CMD overrides it to 5000, and `command:` below puts it back
+      # so host and container ports agree and the mapping stays obvious.
+      - "5050:5050"
+    environment:
+      ICDEV_DB_PATH: /app/data/icdev.db
+      ICDEV_PROJECT_ROOT: /app
+      PORT: "5050"
+      ICDEV_STORAGE_BACKEND: sqlite
+      # Same posture as the E2E job (.github/workflows/icdev-ci.yml) and
+      # playwright.config.ts: /api/health is NOT in dashboard auth's
+      # PUBLIC_ENDPOINTS, so without this the probe gets 401 and the container
+      # never turns healthy.
+      ICDEV_AUTH_BYPASS: "true"
+      # Defaults keep `docker compose config` valid in validate-compose, which
+      # only does `touch .env` and exports nothing.
+      ICDEV_DASHBOARD_SECRET: ${ICDEV_DASHBOARD_SECRET:-ci-test-secret-32chars-minimum!!}
+      ICDEV_CLASSIFICATION: ${ICDEV_CLASSIFICATION:-CUI}
+      IMPACT_LEVEL: ${IMPACT_LEVEL:-IL4}
+      ICDEV_CUI_BANNER_ENABLED: "true"
+    volumes:
+      - icdev-ci-data:/app/data
+    tmpfs:
+      # Dockerfile creates /app/.tmp, but /app is chmod 750 and the process runs
+      # as the non-root `icdev` user; mirror docker-compose.yml's overlay.
+      - /app/.tmp:size=256m,mode=1777
+    healthcheck:
+      # Overrides the image HEALTHCHECK. /api/health is the real probe — it runs
+      # a SELECT 1, so healthy means the DB answered, not merely that Flask
+      # bound a port.
+      test: ["CMD", "curl", "-sf", "http://localhost:5050/api/health"]
+      interval: 10s
+      timeout: 5s
+      # First boot runs migrations against an empty SQLite file; a short
+      # start_period would mark the container unhealthy mid-init and fail
+      # `up --wait`.
+      start_period: 90s
+      retries: 12
+    # Schema init and serve in one service. A separate one-shot init container
+    # would be closer to docker-compose.yml, but `up --wait` treats a service
+    # that exits as a failure to become healthy, so the one-shot has to be
+    # folded in here. `exec` keeps the server as PID 1 so compose stop signals
+    # reach it instead of the shell.
+    command:
+      - sh
+      - -c
+      - "python tools/db/init_icdev_db.py && exec python tools/dashboard/app.py --port 5050"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: "no"
+
+volumes:
+  icdev-ci-data:
+    driver: local
