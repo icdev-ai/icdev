@@ -57,8 +57,8 @@ def _audit(conn, action, details="", actor="award_tracker"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.award_tracking", actor, action, details, "govcon"),
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.award_tracking", actor, action, details, "govcon"),
         )
     except Exception:
         pass
@@ -257,7 +257,6 @@ def _register_competitor(conn, award):
             "(id, name, domain, source, description, website, status, created_at, updated_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
-                str(uuid.uuid4()),
                 name,
                 "govcon",
                 "sam_gov",

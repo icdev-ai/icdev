@@ -106,7 +106,6 @@ def _audit(conn, action: str, details: str = "", opportunity_id: str = "") -> No
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, project_id, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                str(uuid.uuid4()),
                 _now(),
                 "govcon.program_bridge",
                 "program_bridge",

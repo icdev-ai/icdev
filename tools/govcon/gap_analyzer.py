@@ -27,7 +27,6 @@ import argparse
 import json
 import os
 import sys
-import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,8 +53,8 @@ def _audit(conn, action, details="", actor="gap_analyzer"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.gap_analysis", actor, action, details, "govcon"),
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.gap_analysis", actor, action, details, "govcon"),
         )
     except Exception:
         pass
@@ -363,7 +362,6 @@ def register_gaps_as_innovation_signals():
                 "raw_score, composite_score, keywords, content_hash, status, created_at, metadata) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    str(uuid.uuid4()),
                     "govcon_gap",
                     gap["pattern_id"],
                     f"GovCon Gap: {gap['pattern_name']}",

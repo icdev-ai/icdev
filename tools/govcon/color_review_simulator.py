@@ -118,7 +118,7 @@ def _audit(conn, action: str, details: str = "", actor: str = "color_review_simu
     try:
         conn.execute(
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (generate_id("aud"), _now(), "govcon.color_review", actor, action, details, "govcon"),
         )
     except Exception:

@@ -111,8 +111,8 @@ def _audit(conn, action: str, details: str) -> None:
     try:
         conn.execute(
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.key_personnel", "key_personnel",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (_now(), "govcon.key_personnel", "key_personnel",
              action, details, "proposal_genesis"),
         )
     except Exception:
