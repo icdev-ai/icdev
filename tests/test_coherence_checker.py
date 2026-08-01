@@ -527,14 +527,86 @@ class TestCoherenceReport:
         assert report.checks[0].status == "warn"
 
     @pytest.mark.timeout(300)
-    def test_autofix_mode(self):
-        """Test that --fix mode runs without error and includes total_fixes."""
-        report = run_checks(autofix=True)
+    def test_autofix_mode(self, monkeypatch):
+        """--fix mode runs and plumbs total_fixes through — without touching the tree.
+
+        The real fixers mutate tracked files (``_autofix_manifest`` appends to
+        ``tools/manifest.md``, ``_autofix_append_only`` rewrites
+        ``.claude/hooks/pre_tool_use.py``, ``_autofix_imports`` shells out to
+        ``ruff --fix`` over ``tools/``), so running them here left the working
+        tree dirty. Stub the handlers: this test owns the autofix *plumbing*,
+        not the individual fixers.
+        """
+        applied: list = []
+
+        def _stub_fixer(check):
+            applied.append(check.check_id)
+            return [f"stub fix for {check.check_id}"]
+
+        globals_ = run_checks.__globals__
+        stub_handlers = {check_id: _stub_fixer for check_id in globals_["_AUTOFIX_HANDLERS"]}
+        # setitem on the module globals is shim-proof: it is the same dict
+        # _apply_fixes resolves _AUTOFIX_HANDLERS from at call time.
+        monkeypatch.setitem(globals_, "_AUTOFIX_HANDLERS", stub_handlers)
+
+        report = run_checks(selected=["append_only", "manifest"], autofix=True)
         assert isinstance(report, CoherenceReport)
         assert hasattr(report, "total_fixes")
         assert report.total_fixes >= 0
+        assert report.total_fixes == sum(len(c.fixes_applied) for c in report.checks)
+        # Only failed/warned checks may be fixed, and only via the stubs.
+        assert all(c.status in ("fail", "warn") for c in report.checks if c.fixes_applied)
+        assert set(applied) <= {"append_only", "manifest"}
         d = report.to_dict()
         assert "total_fixes" in d
+
+    def test_autofix_dispatches_to_registered_handler(self, monkeypatch):
+        """A failing check with an ``auto`` tier routes through its handler."""
+        globals_ = run_checks.__globals__
+        seen = []
+
+        def _stub_fixer(check):
+            seen.append(check)
+            return ["stub fix"]
+
+        monkeypatch.setitem(globals_, "_AUTOFIX_HANDLERS", {"manifest": _stub_fixer})
+
+        check = CoherenceCheck(
+            check_id="manifest",
+            check_name="Manifest",
+            status="fail",
+            expected=[],
+            actual=[],
+            missing=["tools/foo/bar.py"],
+            extra=[],
+            message="missing",
+        )
+        updated = globals_["_apply_fixes"](check)
+        assert seen == [check]
+        assert updated.fixes_applied == ["stub fix"]
+        assert "1 auto-fixed" in updated.message
+
+    def test_autofix_skips_non_auto_tier(self, monkeypatch):
+        """A ``skip``-tier check never reaches a fixer, even when it fails."""
+        globals_ = run_checks.__globals__
+        assert globals_["_FIX_REGISTRY"]["nav_sync"] == "skip"
+
+        def _boom(check):  # pragma: no cover — must never be called
+            raise AssertionError("skip-tier check must not be auto-fixed")
+
+        monkeypatch.setitem(globals_, "_AUTOFIX_HANDLERS", {"nav_sync": _boom})
+
+        check = CoherenceCheck(
+            check_id="nav_sync",
+            check_name="Nav Sync",
+            status="fail",
+            expected=[],
+            actual=[],
+            missing=["x"],
+            extra=[],
+            message="missing",
+        )
+        assert globals_["_apply_fixes"](check).fixes_applied == []
 
     def test_fixes_applied_field(self):
         """Test that checks include fixes_applied list."""
