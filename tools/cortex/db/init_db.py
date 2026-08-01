@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from typing import Optional
 
@@ -338,4 +339,4 @@ def record_audit(payload: dict, conn=None) -> str:
 
 if __name__ == "__main__":
     init_db()
-    print("[init_db] Cortex session + audit schema ready")
+    print("[init_db] Cortex session + audit schema ready", file=sys.stderr)
