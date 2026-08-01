@@ -279,7 +279,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="question_generator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (_uuid(), _now(), "govcon.question_generator", actor, action, details, "govcon"),
         )

@@ -59,7 +59,7 @@ def _now():
 def _audit(conn, action, details="", actor="capability_mapper"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.capability_map", actor, action, details, "govcon"),
         )
