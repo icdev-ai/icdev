@@ -221,12 +221,31 @@ jobs:
           ICDEV_CUI_BANNER_ENABLED=true
           EOF
 
+      # docker-compose.ci.yml has never existed in this repo. This job could not
+      # reveal that until now: build-images always failed first (see #911), so
+      # provision-ci-stack was permanently `skipped` and its reference to a
+      # missing file went unnoticed. validate-compose already guards the same
+      # filename; this mirrors that guard for the steps that actually run it.
+      #
+      # The notice is deliberate. Skipping silently would make this job report
+      # green while exercising no integration stack at all — a job that claims
+      # to provision infrastructure and quietly provisions nothing is worse than
+      # a red one. Write the compose file to turn the real stack on; nothing
+      # else needs to change.
       - name: Start CI infrastructure stack
+        id: stack
         run: |
+          if [ ! -f docker-compose.ci.yml ]; then
+            echo "::notice title=CI stack not exercised::docker-compose.ci.yml is not present in this repo — the dashboard/Postgres integration stack was NOT started. Steps depending on a live stack are skipped; local health, schema and unit-test steps still run."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
           docker compose -f docker-compose.ci.yml up -d --wait --timeout 120
         timeout-minutes: 5
 
       - name: Wait for dashboard health endpoint
+        if: steps.stack.outputs.present == 'true'
         run: |
           for i in $(seq 1 24); do
             if curl -sf http://localhost:5050/health > /dev/null 2>&1; then
@@ -258,11 +277,11 @@ jobs:
         continue-on-error: true
 
       - name: Collect docker logs on failure
-        if: failure()
+        if: failure() && steps.stack.outputs.present == 'true'
         run: docker compose -f docker-compose.ci.yml logs --tail=100
 
       - name: Tear down CI stack
-        if: always()
+        if: always() && steps.stack.outputs.present == 'true'
         run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
 
   # ── Deploy: push IaC artifacts (main branch only) ──────────────────────
