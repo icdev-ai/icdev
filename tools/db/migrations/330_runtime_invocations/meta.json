@@ -1,5 +1,5 @@
 {
-  "id": "329_runtime_invocations",
+  "id": "330_runtime_invocations",
   "description": "Record what the runtime actually ran — one telemetry table covering MCP tools, agents, personas and roles (surface discriminator). Arg KEYS only, never values.",
   "tables_affected": ["runtime_invocations"],
   "reversible": true

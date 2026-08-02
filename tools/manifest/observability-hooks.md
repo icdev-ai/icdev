@@ -49,7 +49,7 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 | odc_otel_events | OTel-format detection events (append-only) |
 | odc_sdc_verifications | SDC closed-loop attack path verification results |
 
-## Runtime Invocation Telemetry (migration 329)
+## Runtime Invocation Telemetry (migration 330)
 
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|

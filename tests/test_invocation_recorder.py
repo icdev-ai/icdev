@@ -15,12 +15,12 @@ import pytest
 from tools.observability import invocation_recorder as R
 
 _MIGRATION = (Path(__file__).resolve().parent.parent
-              / "tools/db/migrations/329_runtime_invocations/up.py")
+              / "tools/db/migrations/330_runtime_invocations/up.py")
 
 
 @pytest.fixture()
 def obs_db(tmp_path, monkeypatch):
-    """Isolated SQLite DB with migration 329 applied."""
+    """Isolated SQLite DB with migration 330 applied."""
     db = tmp_path / "obs.db"
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("ICDEV_DB_PATH", str(db))
@@ -32,7 +32,7 @@ def obs_db(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "DB_PATH", str(db), raising=False)
     monkeypatch.setattr(storage, "_BACKEND", "sqlite", raising=False)
 
-    spec = importlib.util.spec_from_file_location("m329", _MIGRATION)
+    spec = importlib.util.spec_from_file_location("m330", _MIGRATION)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.up()
