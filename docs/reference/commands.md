@@ -4011,3 +4011,38 @@ python -m tools.iqe.run --query-string \
 
 Adding a rule or a level is a YAML edit under `args/scorecards/` — no Python
 change. `python tools/idp/scorecard.py --list` reflects it immediately.
+
+### Score history (idp-score-03)
+
+`scorecard.py` computes a standing and throws it away. `score_history.py` keeps
+it, so "is this component getting better or worse" becomes answerable. One row
+per component per evaluation in the append-only `idp_scorecard_history`, each
+carrying the attained ladder level — a promotion or demotion is a comparison of
+two adjacent rows, not a re-evaluation of historical rule sets.
+
+```bash
+# Record a point for every scorecard (always writes)
+python tools/idp/score_history.py --record
+
+# Record only if the scorecard's evaluation.window has rolled over —
+# how the scheduled reflex calls it, so a 3h cadence feeds a 24h window
+# without writing eight identical rows a day
+python tools/idp/score_history.py --record --if-due
+
+# One scorecard only
+python tools/idp/score_history.py --record --scorecard component-readiness
+
+# Read one component's series back (oldest-first, with delta and direction)
+python tools/idp/score_history.py --trend ndc
+python tools/idp/score_history.py --trend ndc --json --limit 30
+
+# Every ladder promotion/demotion across the estate
+python tools/idp/score_history.py --level-changes
+python tools/idp/score_history.py --level-changes --since 2026-08-01 --json
+```
+
+An explicit `--record` always writes, so re-scoring right after a fix shows the
+improvement immediately instead of waiting out the window. The scheduled writer
+is the Genesis reflex `idp_score_recorder` (3h, GREEN tier — see
+`args/genesis_config.yaml`); the window in `args/scorecards/<key>.yaml` decides
+whether each cycle actually records, so changing granularity is a YAML edit.

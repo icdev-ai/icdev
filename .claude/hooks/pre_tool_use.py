@@ -493,6 +493,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Awareness run log + health snapshots (NIST AU, append-only)
         "awareness_run_log",
         "awareness_component_health",
+        # IDP per-component scorecard history (idp-score-03, migration
+        # 20260802222900). A trend line you can UPDATE is not a trend line —
+        # a wrong point is corrected by recording a new one, never by editing
+        # the old one, or "is this component getting better" stops being
+        # answerable from the data.
+        "idp_scorecard_history",
         # Observability Canvas integration (D-OC audit trail, NIST AU)
         "od_audit",
         "nc_audit",
