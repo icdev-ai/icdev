@@ -180,7 +180,10 @@ def test_council_query_is_governed_audited_and_redacted(monkeypatch):
     monkeypatch.setattr(gov, "_gate_redact_output",
                         lambda t: (t.replace("result", "[REDACTED]"), ["fake-pii"]))
 
-    out = gap_handlers.handle_council_query({"question": "Should we ship?"})
+    # A question distinct from the sibling tests': the response cache is opt-in
+    # and off by default, but if it were on, an identical (operation, text, ctx)
+    # would serve a cached result and never reach the router or the audit gate.
+    out = gap_handlers.handle_council_query({"question": "Is the council governed?"})
 
     assert out["verdict"] == "invoke_council [REDACTED]"
     assert len(audited) == 1
@@ -189,7 +192,7 @@ def test_council_query_is_governed_audited_and_redacted(monkeypatch):
     assert payload["redactions_applied"] == 1
     assert payload["classification"] == "CUI"
     # The question was screened on the way in, not only on the way out.
-    assert any("Should we ship?" in t for t in screened)
+    assert any("Is the council governed?" in t for t in screened)
 
 
 def test_council_query_requires_a_question():
