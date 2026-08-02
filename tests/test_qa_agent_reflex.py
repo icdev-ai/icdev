@@ -74,6 +74,22 @@ class TestPendingGapTaskExists(unittest.TestCase):
 
 
 class TestRunReflex(unittest.TestCase):
+    # Every test in this class calls run(), and run() calls _run_route_smoke(),
+    # which sweeps all of NAV_ROUTES over real HTTP against a DASHBOARD THAT
+    # MUST ALREADY BE LISTENING on http://localhost:5050. That is an ambient
+    # dependency on the developer's machine, not fixture state: with a dashboard
+    # up the class passes (slowly); with none up urllib blocks on connect for
+    # every route in turn and the file times out rather than failing — which is
+    # why it reads as a hang, not as a missing stub. None of these tests are
+    # about route smoke; the sweep is stubbed out so the class exercises the
+    # reflex's own DB/gap logic only.
+    _SMOKE = "tools.genesis.reflexes.qa_agent_reflex._run_route_smoke"
+
+    def setUp(self):
+        _p = patch(self._SMOKE, return_value=[])
+        _p.start()
+        self.addCleanup(_p.stop)
+
     def _mock_conn(self, sweep_pending=False, gap_pending=False):
         conn = MagicMock()
 
