@@ -3936,3 +3936,40 @@ page's own parser:
 The middle one is the state that had `/updates` advertising 1.2.37 while the
 package shipped 1.2.39. The last exists because notes that read as written but
 say nothing are worse than none.
+
+---
+
+## IDP Scorecard-as-Code (idp-score-02)
+
+Grades every component in `args/component_registry.yaml` against a ladder of
+ranked levels. Rules are **IQE queries**, not a bespoke DSL — see
+[tools/manifest/idp-scorecards.md](../../tools/manifest/idp-scorecards.md).
+
+```bash
+# List the shipped scorecards, their ladders, and how many rules gate them
+python tools/idp/scorecard.py --list
+python tools/idp/scorecard.py --list --json
+
+# Evaluate every scorecard in args/scorecards/ (human table)
+python tools/idp/scorecard.py
+
+# One scorecard, machine-readable — per-entity level, score, and rule outcomes
+python tools/idp/scorecard.py --scorecard component-readiness --json
+
+# Why is one component stuck at its level?
+python tools/idp/scorecard.py --scorecard component-readiness --component ndc
+
+# Evaluate scorecards from somewhere else (a tenant overlay, a test fixture)
+python tools/idp/scorecard.py --dir /path/to/scorecards --json
+```
+
+Any rule expression is a standalone IQE query, so it can be run by hand against
+the same collection the scorecard grades:
+
+```bash
+python -m tools.iqe.run --query-string \
+  'foreach c in idp.components where c.has_e2e_spec == true select c.key'
+```
+
+Adding a rule or a level is a YAML edit under `args/scorecards/` — no Python
+change. `python tools/idp/scorecard.py --list` reflects it immediately.
