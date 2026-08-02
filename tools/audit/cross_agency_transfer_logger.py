@@ -212,17 +212,18 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
                 "event_log_id": event_id,
             }
         )
-        import uuid as _uuid
-        audit_id = str(_uuid.uuid4())
+        # audit_trail.id is a SERIAL/AUTOINCREMENT integer and the timestamp
+        # column is created_at — this wrote a uuid string into id and named a
+        # recorded_at column that does not exist, so the mirror always raised
+        # and was swallowed by the except below.
         conn.execute(
             """
             INSERT INTO audit_trail
-                (id, event_type, actor, action, project_id, details,
-                 classification, recorded_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (event_type, actor, action, project_id, details,
+                 classification, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                audit_id,
                 event_type,
                 kwargs.get("actor", "system"),
                 action,

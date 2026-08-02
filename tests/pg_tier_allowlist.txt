@@ -24,3 +24,9 @@ tests/pg_tier/test_pg_backend_sentinel.py
 tests/cortex/test_api_governed.py
 tests/cortex/test_governance_pipeline.py
 tests/cortex/test_api_core.py
+
+# swp-audit-01: the deployed audit_trail event_type CHECK must admit exactly
+# VALID_EVENT_TYPES. On SQLite that assertion skips (no audit_trail in the
+# per-test DB), so this tier is the only place the REAL constraint is compared
+# against the constant — which is how the 221-vs-189 drift went unnoticed.
+tests/test_audit_event_type_parity.py

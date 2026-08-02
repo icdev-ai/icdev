@@ -551,13 +551,24 @@ def test_status_reports_budget_and_policy():
 
 def test_browser_event_types_pass_the_audit_trail_check_constraint():
     """The reused event types must exist in BOTH the Python constant and the
-    SQL CHECK — the failure mode is a row that silently never lands."""
-    from tools.audit import audit_logger
+    SQL CHECK — the failure mode is a row that silently never lands.
 
-    ddl = (ROOT / "tools" / "db" / "init_icdev_db.py").read_text(encoding="utf-8")
+    The CHECK is now generated: init_icdev_db.py carries an
+    ``@@AUDIT_EVENT_TYPES@@`` placeholder that is substituted from
+    VALID_EVENT_TYPES at import time, so the literals are no longer in the
+    file's source text. Reading the source found nothing and failed a schema
+    that is in fact correct-by-construction. Assert against the generated
+    SCHEMA_SQL, which is what init_db actually executes.
+    """
+    from tools.audit import audit_logger
+    from tools.db.init_icdev_db import SCHEMA_SQL
+
+    assert "@@AUDIT_EVENT_TYPES@@" not in SCHEMA_SQL, (
+        "the audit event-type placeholder was left unsubstituted"
+    )
     for event_type in ("agent_task_completed", "agent_task_failed"):
         assert event_type in audit_logger.VALID_EVENT_TYPES
-        assert f"'{event_type}'" in ddl
+        assert f"'{event_type}'" in SCHEMA_SQL
 
 
 def test_audit_row_lands_in_audit_trail(tmp_path, monkeypatch):

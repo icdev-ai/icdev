@@ -517,15 +517,31 @@ CREATE TABLE IF NOT EXISTS mfa_attempts (
     ip_address TEXT,
     recorded_at TEXT NOT NULL
 );
+-- audit_trail mirrors the LIVE table (information_schema.columns on the
+-- primary PostgreSQL backend), not the older shape this fixture used to carry.
+-- It previously declared (id TEXT, tenant_id, user_id, resource, recorded_at
+-- NOT NULL) -- four columns the live table does not have, and it omitted the
+-- NOT NULL event_type/actor it does. That inversion is not cosmetic: it made
+-- the fixture reward exactly the INSERTs that are dead in production. An audit
+-- write naming `resource`/`recorded_at` passed here and raised on live PG,
+-- where the caller's best-effort `except` swallowed it, so tools/govcon and
+-- cross_agency_transfer_logger recorded nothing while their tests stayed green.
+-- Keep this in step with tools/db/init_icdev_db.py's audit_trail DDL.
 CREATE TABLE IF NOT EXISTS audit_trail (
-    id TEXT PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
     action TEXT NOT NULL,
-    resource TEXT,
     details TEXT,
+    affected_files TEXT,
     classification TEXT DEFAULT 'CUI',
-    recorded_at TEXT NOT NULL
+    ip_address TEXT,
+    session_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    hash TEXT,
+    previous_hash TEXT,
+    signature TEXT
 );
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,

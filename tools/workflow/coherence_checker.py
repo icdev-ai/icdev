@@ -5860,8 +5860,41 @@ def _is_sqlite_connect(call: ast.AST) -> bool:
     )
 
 
+def _safe_connection_names(tree: ast.AST, safe_factories: Set[str]) -> Set[str]:
+    """Extend the safe factories with local names bound to a translating connection.
+
+    ``real_conn = _storage_conn(db_path)`` followed by
+    ``recording_conn = _RecordingConn(real_conn)`` is the SQL-recorder pattern:
+    the proxy sits in FRONT of the storage wrapper, so what reaches runtime code
+    still translates ``%s``. Resolving only the factory call would flag the
+    proxy — rejecting the remedy again, one indirection later.
+
+    Propagation is transitive but bounded, and an assignment that reaches
+    ``sqlite3.connect`` anywhere in its value stays raw, so wrapping a raw
+    connection in a proxy is still caught.
+    """
+    safe = set(safe_factories)
+    for _ in range(3):  # factory -> connection -> proxy is the deepest real chain
+        grew = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not targets or all(t in safe for t in targets):
+                continue
+            if any(_is_sqlite_connect(sub) for sub in ast.walk(node.value)):
+                continue
+            refs = {sub.id for sub in ast.walk(node.value) if isinstance(sub, ast.Name)}
+            if refs & safe:
+                safe.update(targets)
+                grew = True
+        if not grew:
+            break
+    return safe
+
+
 def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
-    """Names of local factories that hand back a ``tests/_sql_compat`` connection.
+    """Names of local factories that hand back a placeholder-translating connection.
 
     ``_sql_compat.connect``/``translating`` ARE the sanctioned wrapper — they
     delegate to the same ``translate_sql`` the runtime uses. A file that fixes one
@@ -5869,14 +5902,29 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
     elsewhere for schema setup or for its own assertions, and that residue must
     not keep the file flagged: doing so makes the gate reject its own remedy.
 
+    ``tools.db.storage.get_connection`` counts for the same reason, and more
+    strongly: it is not a stand-in for the runtime wrapper, it IS the runtime
+    wrapper, so a fixture built on it cannot drift from production at all. A
+    factory returning one was still being flagged, which is the remedy-rejection
+    this function exists to prevent.
+
     Only the factory actually named in the patch call is cleared. A second,
     still-raw factory in the same file stays a violation.
     """
     compat_calls: Set[str] = set()
+    # Names bound to the real storage factory: `from tools.db.storage import
+    # get_connection as _real` and `import tools.db.storage as s` both appear.
+    storage_calls: Set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("_sql_compat"):
-            for alias in node.names:
-                compat_calls.add(alias.asname or alias.name)
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module.endswith("_sql_compat"):
+                for alias in node.names:
+                    compat_calls.add(alias.asname or alias.name)
+            elif module.endswith("db.storage"):
+                for alias in node.names:
+                    if alias.name in ("get_connection", "get_canvas_connection"):
+                        storage_calls.add(alias.asname or alias.name)
 
     def _returns_compat(fn: ast.AST) -> bool:
         raw = False
@@ -5886,13 +5934,18 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
                 raw = True
             elif isinstance(sub, ast.Call):
                 fname = sub.func
-                if isinstance(fname, ast.Name) and fname.id in compat_calls:
+                if isinstance(fname, ast.Name) and fname.id in (compat_calls | storage_calls):
                     compat = True
                 elif (
                     isinstance(fname, ast.Attribute)
                     and fname.attr in ("connect", "translating")
                     and isinstance(fname.value, ast.Name)
                     and fname.value.id.endswith("_sql_compat")
+                ):
+                    compat = True
+                elif isinstance(fname, ast.Attribute) and fname.attr in (
+                    "get_connection",
+                    "get_canvas_connection",
                 ):
                     compat = True
         return compat and not raw
@@ -5905,11 +5958,24 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
 
 
 def _patch_replacement_names(node: ast.Call) -> Set[str]:
-    """Names supplied as the replacement in a patch/setattr call."""
+    """Names supplied as the replacement in a patch/setattr call.
+
+    The replacement is usually the factory itself (``side_effect=_conn``), but
+    a factory that needs the tmp path is passed wrapped —
+    ``side_effect=lambda *a, **kw: _storage_conn(db_path)``. Both name the same
+    safe factory, so the wrapped form is unwrapped by collecting the names it
+    calls; treating it as unrecognised flags the fix as the bug.
+    """
     names: Set[str] = set()
     for kw in node.keywords:
-        if kw.arg in ("side_effect", "new", "return_value") and isinstance(kw.value, ast.Name):
+        if kw.arg not in ("side_effect", "new", "return_value"):
+            continue
+        if isinstance(kw.value, ast.Name):
             names.add(kw.value.id)
+        elif isinstance(kw.value, (ast.Lambda, ast.Call)):
+            for sub in ast.walk(kw.value):
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name):
+                    names.add(sub.func.id)
     # monkeypatch.setattr(target, "get_connection", _conn) — trailing positional.
     for arg in node.args:
         if isinstance(arg, ast.Name):
@@ -5968,7 +6034,7 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
         # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
         # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
         # runtime %s query then hits an untranslated raw sqlite3 connection.
-        safe_factories = _sql_compat_factory_names(tree)
+        safe_factories = _safe_connection_names(tree, _sql_compat_factory_names(tree))
 
         flagged = False
         for node in ast.walk(tree):
