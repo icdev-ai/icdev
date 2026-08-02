@@ -388,12 +388,12 @@ def init_studio_tables(*, verbose: bool = False) -> dict:
             if _table_exists(conn, name):
                 skipped.append(name)
                 if verbose:
-                    print(f"  exists: {name}")
+                    print(f"  exists: {name}", file=sys.stderr)
             else:
                 conn.execute(ddl)
                 created.append(name)
                 if verbose:
-                    print(f"  created: {name}")
+                    print(f"  created: {name}", file=sys.stderr)
         conn.commit()
     finally:
         conn.close()
