@@ -124,7 +124,7 @@ Each was verified by opening the other database and confirming the column exists
 | `tools/ais/ais_importer.py` | `sg_tracks` | `get_connection` is imported from `apps.geosigint.models`, **not** `tools.db.storage`. Verified: `geosigint.db` has the AIS shape. |
 | `tools/rag/sqlite_vector_store.py` | `rag_chunks` | `_get_conn()` is deliberately pinned to its own `.db` file and documents at length why it must never resolve to PostgreSQL. `sign_bits` is a SQLite-only quantisation column. |
 | `tools/appforge/reflexes/build.py` | `kg_edges` | The INSERT lives inside an f-string that is **generated child-app source**. It is never executed by this module; it targets the generated app's own database. |
-| `tools/ndc/seed_dewie_demo.py` | `ni_devices` | Opens `sqlite3.connect("data/network_canvas.db")` at module level — a dedicated file, never the icdev instance. |
+| `tools/ndc/seed_dewie_demo.py` | `ni_devices` | Opens `sqlite3.connect("data/network_canvas.db")` at module level — a dedicated file, never the icdev instance. **No longer reported:** migration 329 added `downstream_count` / `properties_json` / `annual_maintenance_cost` to the *icdev* copy of `ni_devices`, which already carried `rack_location` and `criticality_score`, so that table became a superset of what the seed writes and the scanner fell silent. The classification stands; it is simply not in the regression allowlist, because an allowlist entry asserts that a finding still fires. |
 | `tools/playground/seed_data.py` | `projects`, `poam_items` | `seed_playground_db()` takes an explicit `db_path` and `CREATE`s both tables — with `compliance_score`, `finding`, `milestone`, `due_date` — in the same `executescript`. |
 | `tools/finetune/doc_extractor.py` | `rag_ingestion_log` | `_get_db()` takes a caller-supplied `db_path` and returns a `sqlite3.Connection` (`PRAGMA journal_mode=WAL`, `INSERT OR IGNORE`). |
 | `tools/kanban/seed_dsyn_kanban.py` | `canvas_events` | **Not SQL at all.** The text sits inside a kanban task *description* telling a future session what to write. The AST walk cannot distinguish prose-in-a-string from a query. |
@@ -144,10 +144,15 @@ are already persisted in `ad_macro_context.context_json` by `save_macro_context(
 `tests/test_insert_column_schema_parity.py` holds the line in two ways:
 
 1. **`test_no_new_insert_column_drift`** re-runs the scanner against the live schema and
-   asserts the surviving `column_absent` findings are *exactly* the twelve category-(iii)
-   sites plus the one documented skip. Adding a column to an INSERT without adding it to
-   the schema fails here — and so does reverting any fix. The allowlist is asserted in
+   asserts the surviving `column_absent` findings are *exactly* eleven of the twelve
+   category-(iii) sites plus the one documented skip — twelve entries in all. The twelfth
+   category-(iii) site, `seed_dewie_demo.py::ni_devices`, is deliberately absent from the
+   allowlist because migration 329 made the icdev table a superset of what it writes, so
+   it no longer reports. Adding a column to an INSERT without adding it to the schema fails
+   here — and so does reverting any fix. The allowlist is asserted in
    both directions, so an entry that stops firing also fails rather than quietly rotting.
+   That is not hypothetical: this exact assertion is what caught the `ni_devices` entry
+   going stale once the migration was applied to the live instance.
    PostgreSQL-only: under the SQLite test backend the fixture DB is minimal, so every
    table would report absent and the comparison would be meaningless.
 2. **The migration round-trip** builds each affected table in its *pre*-329 shape on a
@@ -156,6 +161,13 @@ are already persisted in `ad_macro_context.context_json` by `save_macro_context(
    `nc_simulation_results` carry-across are asserted alongside.
 
 All 8 pass against live PostgreSQL; 6 pass / 2 skip under the default SQLite backend.
+
+To run the PG-only pair you need `ICDEV_PYTEST_PG=1` as well as a PostgreSQL backend —
+`conftest.py` forces `ICDEV_STORAGE_BACKEND=sqlite` otherwise, and the two tests then skip
+rather than fail, which is easy to mistake for a pass. `test_no_new_insert_column_drift`
+carries an explicit `@pytest.mark.timeout(300)`: the scan AST-parses every file under
+`tools/` and takes ~25s warm but exceeds the project-wide 30s budget on a cold filesystem
+cache, so without the marker it is intermittently red rather than merely slow.
 
 **What actually runs in CI, and what does not.** The six round-trip / idempotency tests run
 in the normal suite on every PR — they are what guard the fixes. The two PG-only tests,
@@ -175,6 +187,25 @@ watches is worse than one that is honestly scoped.
 
 * **200 `table_absent` statements** — deferred by the task. A missing table is a
   never-run `init_db.py`, not a code/schema disagreement.
+* **~106 now-stale entries in `args/insert_schema_gate.yaml`.** With these fixes in place
+  the coherence gate reports that many grandfathered mismatches no longer fire
+  (`insert_schema_parity`: *"No NEW INSERT/schema mismatches — 7 grandfathered mismatch(es)
+  remain; 106 stale allowlist entry(ies) can be removed"*). They are **not** pruned here.
+  That staleness was measured against a *locally migrated* PostgreSQL; on a fresh database
+  that has not had migration 329 applied, most of them would still fire. Pruning on that
+  basis would encode a fact about one machine into a repo-wide gate. The gate passes either
+  way — it fails only on *new* findings, and treats stale entries as a warning — so the
+  correct time to prune is a follow-up run against a freshly migrated instance.
+* **Twelve other recent migrations are missing from the `icdev/` mirror.** Migration 329
+  is mirrored to `icdev/tools/db/migrations/` because the two runners do not read the same
+  directory: `MIGRATIONS_DIR` is `BASE_DIR / "tools" / "db" / "migrations"` in both copies,
+  but `BASE_DIR` is `Path(__file__).resolve().parent.parent.parent` — the repo root for
+  `tools/`, and `icdev/` for `icdev/tools/`. So `icdev.tools.db.migration_runner` — the
+  *canonical* namespace per CLAUDE.md — only ever sees the mirror, and an unmirrored
+  migration is silently invisible to it rather than failing. 374 of 377 migrations are
+  mirrored, but 310, 315–326 and 329 were not; 327 and 328 were. Only 329 is fixed here.
+  The other twelve are a pre-existing drift that predates this task and are left for a
+  sweep that can verify each one applies cleanly, rather than copied in blind.
 * `tools/ndc/seed_dewie_demo.py` hardcodes the relative path `data/network_canvas.db`,
   which resolves against the current working directory.
 * `tools/finetune/doc_extractor.py::_get_db()` calls `get_connection(db_path=str(db_path))`

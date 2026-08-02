@@ -79,10 +79,16 @@ ACCEPTED_COLUMN_ABSENT: dict[str, str] = {
         "The INSERT lives inside an f-string that is generated child-app "
         "source. It is never executed here; it targets the generated app's DB."
     ),
-    "tools/ndc/seed_dewie_demo.py::ni_devices": (
-        "Opens sqlite3.connect('data/network_canvas.db') at module level — a "
-        "dedicated SQLite file, never the icdev instance."
-    ),
+    # tools/ndc/seed_dewie_demo.py::ni_devices is NOT listed, and deliberately
+    # so. It is still a category (iii) site — it opens
+    # sqlite3.connect('data/network_canvas.db') at module level and never
+    # touches the icdev instance — but it no longer produces a finding to
+    # accept. Migration 329 added downstream_count / properties_json /
+    # annual_maintenance_cost to the icdev copy of ni_devices, which already
+    # carried rack_location and criticality_score, so the icdev table became a
+    # superset of what the seed writes and the scanner fell silent. An entry
+    # here would assert a finding that no longer fires, which is exactly the
+    # rot the expected-minus-actual half of this test exists to catch.
     "tools/playground/seed_data.py::projects": (
         "seed_playground_db() takes an explicit db_path and CREATEs projects "
         "with compliance_score in the same executescript."
@@ -123,6 +129,11 @@ def _live_backend_is_postgres() -> bool:
         "as absent and the comparison would be meaningless."
     ),
 )
+# The scan AST-parses every .py file under tools/ — ~25s on a warm filesystem
+# cache and over the project-wide 30s budget on a cold one. Without this the
+# test is not slow, it is *intermittently red*, which is worse. The ceiling is
+# generous on purpose: it exists to catch a hang, not to police the runtime.
+@pytest.mark.timeout(300)
 def test_no_new_insert_column_drift():
     """Surviving column_absent findings must be exactly the accepted set."""
     from tools.lint.insert_column_linter import load_live_schema, scan

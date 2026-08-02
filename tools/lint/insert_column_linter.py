@@ -144,11 +144,12 @@ def load_live_schema() -> dict[str, set[str]]:
 
     conn = get_connection()
     # This reads information_schema/sqlite_master only — catalog metadata, never tenant
-    # rows — and the scan is worthless unless it sees every table.
-    # rls-bypass: catalog-metadata read only — required for swp-scan-01 because the RLS
-    # predicate references classification/tenant_id columns that system catalogs do not
-    # have, so leaving the context attached raises UndefinedColumn on the catalog read.
-    conn.set_security_context(None)
+    # rows — and the scan is worthless unless it sees every table. The RLS predicate
+    # references classification/tenant_id columns that system catalogs do not have, so
+    # leaving the context attached raises UndefinedColumn on the catalog read.
+    # The annotation must sit on the call line itself: check_security_context_wiring
+    # skips comment-only lines, so a preceding block does not register.
+    conn.set_security_context(None)  # rls-bypass: catalog-metadata read only — swp-scan-01
     cursor = conn.cursor()
     schema: dict[str, set[str]] = {}
     backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()

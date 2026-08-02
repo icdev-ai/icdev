@@ -407,6 +407,12 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 #: is inert — the opposite of what the pinning is for.
 _SCHEMA_CODE_BACKEND_PINNED = frozenset({
     "tools/rag/sqlite_vector_store.py",
+    # Builds each affected table in its *pre*-migration-329 shape on a throwaway
+    # SQLite database in order to assert the INSERT fails before the migration and
+    # succeeds after. Its simulation_results INSERT names the Network Canvas columns
+    # on purpose — that is the shape being migrated away from, so measuring it
+    # against the post-migration DDL in init_icdev_db.py is the wrong comparison.
+    "tests/test_insert_column_schema_parity.py",
 })
 
 
