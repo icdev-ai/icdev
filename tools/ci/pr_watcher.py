@@ -235,6 +235,58 @@ def _enforced_done_ok(get_connection, task_id: str) -> Tuple[bool, str]:
     return False, f"enforced gate: verification not yet passed (result={result or 'pending'})"
 
 
+def _latest_verification(get_connection, task_id: str) -> Optional[dict]:
+    """The row `_enforced_done_ok` will read, or None. Never raises."""
+    try:
+        cur = get_connection().cursor()
+        cur.execute(
+            "SELECT result, review_passed, reason FROM kanban_verifications "
+            "WHERE task_id = %s ORDER BY verified_at DESC LIMIT 1",
+            (task_id,),
+        )
+        row = cur.fetchone()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pr_watcher: could not read verification for %s: %s", task_id, exc)
+        return None
+    if not row:
+        return None
+    if isinstance(row, dict):
+        return row
+    return {"result": row[0], "review_passed": row[1], "reason": row[2]}
+
+
+def reverify_is_allowed(latest: Optional[dict], *, allow_when_missing: bool) -> Tuple[bool, str]:
+    """Whether re-verifying this task could only refresh a verdict, never launder one.
+
+    Re-verification recomputes "does this branch carry work" and writes a row with
+    ``review_passed`` NULL. `_enforced_done_ok` reads NULL as "not judged, allowed",
+    so appending one **clears** whatever the previous row said. That makes two cases
+    unsafe:
+
+    * ``review_passed == 0`` — conformance genuinely failed. A fresh NULL row would
+      overwrite a real judgment with no judgment and merge the PR. Never do this.
+    * no row at all — the task has never been verified. Manufacturing a passing
+      verdict from git state would let a PR merge with no conformance review at all,
+      which is precisely the gate this whole mechanism exists to enforce. Off by
+      default; ``reverify_when_missing`` opts in for operators who accept that.
+
+    The case this IS for: a row that FAILED for a reason unrelated to conformance —
+    the dispatch-time verifier reads process-local dicts and reports "No git commits
+    found on task branch" whenever the daemon restarted mid-flight. That verdict is
+    an artifact of process lifetime, and refreshing it is exactly right.
+    """
+    if latest is None:
+        return (allow_when_missing,
+                "no prior verification — task never judged"
+                if not allow_when_missing else "no prior verification (opted in)")
+    if latest.get("review_passed") == 0:
+        return False, "conformance review_passed=false — a refresh would launder it"
+    result = str(latest.get("result") or "").lower()
+    if result in ("pass", "passed", "bypassed"):
+        return False, "already passing — nothing to refresh"
+    return True, f"prior verification result={result or 'unknown'}, not a conformance failure"
+
+
 def list_pr_tasks(
     get_connection,
     task_id: Optional[str] = None,
@@ -527,6 +579,11 @@ class PRWatcher:
             default_branch_resolver or repo_default_branch
         )
         self._default_branch_cache: Optional[str] = None
+        # Re-verification attempts per task, for the life of this watcher.
+        # Bounded so a task whose verification genuinely fails cannot spin: it is
+        # re-checked once, and if it still fails the PR stays held until a human
+        # or a dispatch changes something.
+        self._reverify_attempts: Dict[str, int] = {}
 
     # ── helpers ─────────────────────────────────────────────────────
 
@@ -616,6 +673,52 @@ class PRWatcher:
                 )
                 self._default_branch_cache = "main"
         return self._default_branch_cache
+
+    def _maybe_reverify(self, get_conn, task_id: str) -> bool:
+        """Refresh a stale verification once. Returns True if a new row was written.
+
+        Exists because the enforced done-gate has no way to be *un*-blocked: it
+        reads only the latest kanban_verifications row and nothing writes one
+        except a dispatch, so a green PR whose verification went stale waits
+        forever, then ages into is_stale -> FAILED and gets re-dispatched — which
+        opens a second PR instead of merging the first.
+
+        Deliberately narrow. See `reverify_is_allowed`: a conformance failure is
+        never refreshed, and a task with no verification at all stays held unless
+        an operator opts in, because inventing a first verdict from git state
+        would merge PRs that no conformance review ever saw.
+        """
+        if not self.config.get("reverify_on_hold", True):
+            return False
+        cap = int(self.config.get("reverify_max_attempts_per_task", 1))
+        if self._reverify_attempts.get(task_id, 0) >= cap:
+            return False
+
+        latest = _latest_verification(get_conn, task_id)
+        allowed, why = reverify_is_allowed(
+            latest,
+            allow_when_missing=bool(self.config.get("reverify_when_missing", False)),
+        )
+        if not allowed:
+            logger.debug("pr_watcher: not re-verifying %s — %s", task_id, why)
+            return False
+
+        self._reverify_attempts[task_id] = self._reverify_attempts.get(task_id, 0) + 1
+        if self.dry_run:
+            logger.info("pr_watcher: would re-verify %s (%s)", task_id, why)
+            return False
+        try:
+            from tools.kanban.reverify import reverify
+
+            verdict = reverify(task_id, get_conn)
+        except Exception as exc:  # noqa: BLE001 — must never stop the poll
+            logger.warning("pr_watcher: re-verify failed for %s: %s", task_id, exc)
+            return False
+        logger.info(
+            "pr_watcher: re-verified %s -> %s (%s)",
+            task_id, verdict.get("result"), str(verdict.get("reason"))[:120],
+        )
+        return bool(verdict.get("written"))
 
     def _auto_merge(self, pr_url: str) -> bool:
         if self.dry_run:
@@ -897,6 +1000,10 @@ class PRWatcher:
                     # ICDEV verification (conformance + gates) has PASSED — CI
                     # green alone is not enough.
                     gate_ok, gate_reason = _enforced_done_ok(get_conn, task["id"])
+                    if not gate_ok and self._maybe_reverify(get_conn, task["id"]):
+                        # A fresh verdict landed — ask the gate again rather than
+                        # waiting a whole cycle to notice.
+                        gate_ok, gate_reason = _enforced_done_ok(get_conn, task["id"])
                     if not gate_ok:
                         action = WatcherAction(
                             task_id=task["id"], pr_url=pr_url,
