@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     session_id    TEXT,
     source_ip     TEXT,
     recorded_at   TEXT,
+    -- See tests/services/ingestion/test_hook_transfer.py: the AU-2 mirror
+    -- INSERT names ``created_at``. Without this column the INSERT raised
+    -- "no such column: created_at" inside the logger's ``except Exception``
+    -- and test_dual_write_to_audit_trail asserted against 0 rows.
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     timestamp     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """

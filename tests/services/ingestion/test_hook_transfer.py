@@ -457,7 +457,14 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     classification TEXT DEFAULT 'CUI',
     ip_address TEXT,
     session_id TEXT,
-    recorded_at TEXT
+    recorded_at TEXT,
+    -- The AU-2 mirror in cross_agency_transfer_logger writes ``created_at``,
+    -- not ``recorded_at`` (swp-scan-01: recorded_at exists only in the SQLite
+    -- init DDL, never on PostgreSQL). Omitting it here made every mirror
+    -- INSERT raise "no such column: created_at" into the logger's
+    -- ``except Exception`` — the dual-write asserted below silently found 0
+    -- rows. Keep this column in step with the live audit_trail schema.
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
 
