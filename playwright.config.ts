@@ -74,7 +74,24 @@ const config = defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Use a SYSTEM-INSTALLED browser instead of Playwright's downloaded
+        // Chromium. Enclaves that cannot pull the ~267MB browser bundle can
+        // still run E2E against the Chrome or Edge already on the box:
+        //
+        //   ICDEV_PLAYWRIGHT_CHANNEL=chrome    (or msedge / chrome-beta / msedge-dev)
+        //   ICDEV_PLAYWRIGHT_EXECUTABLE=C:/Program Files/.../chrome.exe
+        //
+        // Unset (the default) keeps bundled Chromium, so connected machines and
+        // CI are unaffected. See docs/ops/airgap-runbook.md §11.
+        ...(process.env.ICDEV_PLAYWRIGHT_CHANNEL
+          ? { channel: process.env.ICDEV_PLAYWRIGHT_CHANNEL }
+          : {}),
+        ...(process.env.ICDEV_PLAYWRIGHT_EXECUTABLE
+          ? { launchOptions: { executablePath: process.env.ICDEV_PLAYWRIGHT_EXECUTABLE } }
+          : {}),
+      },
     },
     // firefox and webkit removed for demo run — chromium covers all functional checks
   ],
