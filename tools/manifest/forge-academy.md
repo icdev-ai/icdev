@@ -42,6 +42,31 @@ caller to pass.
   completable (reading is real work) but never described as an assessment
 - A `coding` step with **no stored test is ungraded, not passed** (`reason="ungraded_no_test"`)
 
+### `apps/forge_academy/xapi.py` — xAPI 1.0.3 export for an external LMS (aca-trn-05)
+Renders `fa_*` records as xAPI statements so Academy results can count as training of record.
+Hard-depends on the INT epic: without server-authoritative grading and the provenance chain
+there is nothing here worth exporting.
+- `build_statements(*, user_id=None, since=None, include_unverified=False, tenant_id=None)`
+  → `{statements, excluded, counts, generated_at, activity_base}`
+- One statement per **verified** step (`passed`), mission (`completed`) and certificate
+  (`earned`); each is matched to its provenance row — `fa_xp_ledger` for step/mission,
+  `fa_certificate_evidence` for a certificate — **before** it is emitted
+- A record with no provenance row, or one flagged `verified=0` by the 315 backfill, is
+  withheld and counted in `excluded`; `include_unverified=True` emits it stamped
+  `verified: false` in the statement's own provenance extension. There is no mode in which
+  an unverifiable completion is presented as a verified one.
+- Statement IDs are UUIDv5 over activity+actor+verb+timestamp, so re-POSTing an export to the
+  same LRS is idempotent rather than duplicating the learner's history
+- Actor is `mbox` when the learner has an email, otherwise an `account` scoped to
+  `ICDEV_XAPI_ACTIVITY_BASE` — a local identity is never dressed up as an email. A learner with
+  neither is excluded, not anonymised.
+- **SCORM is deliberately not implemented.** SCORM's unit of record is one rolled-up
+  completion per launch, which discards the per-step granularity that makes this export worth
+  having. Wrap these statements when a named target LMS demands it.
+- CLI: `python -m apps.forge_academy.xapi --statements-only --out feed.json`
+- Env: `ICDEV_XAPI_ACTIVITY_BASE` (default `https://icdev.ai/xapi/forge-academy`) — two
+  deployments feeding one LRS must not both claim the same activity IRIs
+
 ### `apps/forge_academy/db.py` — data access, PG-native (aca-hyg-05)
 Runtime SQL is authored for PostgreSQL (`%s` placeholders). Key entry points:
 - XP provenance — `record_xp(...)` (keyword-only `reason`, **no default**), `earned_xp(user_id)`
@@ -133,7 +158,7 @@ persisted to `fa_oracle_predictions` / `fa_oracle_convergence_events`. Driven by
 
 `/forge-academy` and `/forge-academy/<path>` redirect to the `/academy` equivalents (legacy prefix).
 
-## API routes (21)
+## API routes (22)
 
 | Route | Method | Notes |
 |-------|--------|-------|
@@ -158,6 +183,7 @@ persisted to `fa_oracle_predictions` / `fa_oracle_convergence_events`. Driven by
 | `/api/academy/health` | GET | |
 | `/api/academy/certificate/<cert_key>/issue` | POST | snapshots evidence into `fa_certificate_evidence` |
 | `/api/academy/learning-path` | GET | projected view; does not leak internal columns (aca-hyg-03) |
+| `/api/academy/export/xapi` | GET | xAPI 1.0.3 statements; `@require_org_intel`; withholds unverified records (aca-trn-05) |
 
 ---
 
@@ -190,4 +216,5 @@ E2E: `.claude/commands/e2e/forge_academy.md` (picked up automatically by `e2e_ru
 Feature docs: [docs/features/forge-academy-assessment-integrity.md](../../docs/features/forge-academy-assessment-integrity.md),
 [forge-academy-aca-ux-07-rank-xp-split.md](../../docs/features/forge-academy-aca-ux-07-rank-xp-split.md),
 [forge-academy-phase5-credential-multimodal.md](../../docs/features/forge-academy-phase5-credential-multimodal.md),
-[forge-academy-phase6-auto-currency.md](../../docs/features/forge-academy-phase6-auto-currency.md).
+[forge-academy-phase6-auto-currency.md](../../docs/features/forge-academy-phase6-auto-currency.md),
+[forge-academy-aca-trn-05-xapi-export.md](../../docs/features/forge-academy-aca-trn-05-xapi-export.md).
