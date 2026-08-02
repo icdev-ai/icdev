@@ -633,6 +633,69 @@ class PRWatcher:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False
 
+    def reclaim_worktree(self, task_id: str) -> dict:
+        """Remove a task's worktree once its PR is merged.
+
+        Creation was bounded; reclamation was not. Measured 2026-08-02: 122
+        registered worktrees, recursively nested, several locked — the leak
+        undercuts the delivery pipeline, which is otherwise the platform's
+        strongest differentiator.
+
+        SAFETY, in order. Each check exists because a worktree can hold the only
+        copy of a session's work, and a removed commit that is not on a branch
+        is not recoverable by any ordinary means:
+
+          * merged-ness is the caller's precondition, but it is re-checked here
+            against origin rather than trusted;
+          * a worktree with uncommitted changes is left alone — someone may be
+            mid-edit even after the PR merged;
+          * commits not reachable from the default branch hold it;
+          * ``--force`` is NEVER used, so git's own refusal is a final backstop.
+
+        Returns a verdict dict rather than a bool so the reason is auditable.
+        """
+        import subprocess
+        from pathlib import Path
+
+        def _git(*args, cwd=None):
+            proc = subprocess.run(
+                ["git", *(["-C", cwd] if cwd else []), *args],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120,
+            )
+            return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+
+        try:
+            from tools.genesis.reflexes.kanban import _task_worktree_path
+            path = Path(_task_worktree_path(task_id))
+        except Exception as exc:  # noqa: BLE001
+            return {"reclaimed": False, "reason": f"path resolution failed: {exc}"}
+
+        if not path.exists():
+            _git("worktree", "prune")
+            return {"reclaimed": False, "reason": "already gone", "pruned": True}
+
+        code, dirty, _ = _git("status", "--porcelain", cwd=str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": "status unreadable"}
+        if dirty:
+            return {"reclaimed": False, "reason": "uncommitted changes present"}
+
+        base = self._default_branch()
+        code, ahead, _ = _git("rev-list", "--count", f"origin/{base}..HEAD", cwd=str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": "ahead-count unreadable"}
+        if ahead != "0":
+            return {"reclaimed": False, "reason": f"{ahead} commits not on origin/{base}"}
+
+        code, _, err = _git("worktree", "remove", str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": f"git refused: {err.splitlines()[-1][:120] if err else '?'}"}
+
+        _git("worktree", "prune")
+        logger.info("pr_watcher: reclaimed worktree for %s at %s", task_id, path)
+        return {"reclaimed": True, "path": str(path)}
+
     def _resume_cycle(self, task_id: str) -> int:
         """Best-effort count of prior pr_watcher resume events for this
         task. Reads audit_trail details JSON."""
@@ -763,6 +826,21 @@ class PRWatcher:
                 merged = (
                     (state.get("state") or "").upper() == "MERGED"
                 )
+                if merged:
+                    # Reclaim here rather than at task-done: this is the point
+                    # where the watcher OBSERVES the merge, and it is the only
+                    # place that knows the PR actually landed. Best-effort —
+                    # a failed reclaim must never hold up the done transition.
+                    try:
+                        verdict = self.reclaim_worktree(task["id"])
+                        if not verdict.get("reclaimed"):
+                            logger.debug(
+                                "pr_watcher: worktree for %s not reclaimed (%s)",
+                                task["id"], verdict.get("reason"),
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("pr_watcher: worktree reclaim errored: %s", exc)
+
                 if merged or not self.config.get("auto_merge_enabled", False):
                     action_label = "merge" if merged else "wait"
                     reason = (
