@@ -152,6 +152,11 @@ CREATE TABLE IF NOT EXISTS studio_run_memory (
     key        TEXT NOT NULL,
     value_json TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    -- RLS columns (migration 326). Must mirror tools/studio/init_db.py or a
+    -- test that runs inside a request context hits the same
+    -- "no such column: classification" the migration exists to fix.
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id      TEXT,
     PRIMARY KEY (run_id, key)
 );
 CREATE TABLE IF NOT EXISTS studio_event_sources (
