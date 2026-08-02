@@ -854,6 +854,13 @@
     "rule": "/network/api/export/<topo_id>/vsdx"
   },
   {
+    "endpoint": "network_canvas.nc_api_export_pptx",
+    "methods": [
+      "GET"
+    ],
+    "rule": "/network/api/export/pptx/<topo_id>"
+  },
+  {
     "endpoint": "network_canvas.nc_api_create_facility",
     "methods": [
       "POST"
