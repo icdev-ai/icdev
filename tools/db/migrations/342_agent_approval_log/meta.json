@@ -1,0 +1,6 @@
+{
+  "id": "342_agent_approval_log",
+  "description": "Append-only record of every approval-gate decision for an irreversible or unenumerated agent tool call (ars-appr-01). Actor + reason, argument KEYS only.",
+  "tables_affected": ["agent_approval_log"],
+  "reversible": true
+}

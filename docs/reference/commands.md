@@ -299,6 +299,46 @@ finally:
 
 ---
 
+## Agent Approval Gate — Irreversible Action Confirmation (ars-appr-01)
+
+Classifies an agent tool call by **reversibility** and halts the irreversible
+ones for confirmation. Policy: `args/agent_approval_policy.yaml`.
+
+```bash
+# Classify a tool call (exit 0; read the JSON for the verdict)
+python tools/agent_runtime/approval_gate.py --classify git_push --json
+python tools/agent_runtime/approval_gate.py --classify run_command \
+    --input '{"command": "git push --force"}' --json
+python tools/agent_runtime/approval_gate.py --list-policy --json
+```
+
+Tiers: `reversible` and `recoverable` run unattended; `irreversible` and
+`unknown` halt. **A tool must be named in the policy to run unattended** —
+`default_tier` is `unknown` and `unknown` requires approval, so an allowlist gap
+fails closed rather than open. A missing or unreadable policy file makes every
+tool `unknown`.
+
+Wire it into a loop with `approval_gate=True`, or set the env var:
+
+```python
+from icdev.tools.llm.agent_loop import run_agent_loop
+
+run_agent_loop(router, system_prompt=..., user_prompt=..., tools=..., 
+               tool_handlers=..., approval_gate=True)      # or a custom hook
+```
+
+```bash
+export ICDEV_AGENT_APPROVAL_MODE=enforce   # enforce (default) | dry_run | off
+export ICDEV_APPROVAL_ACTOR="jane.doe"     # recorded with every decision
+```
+
+Every approval **and** denial is appended to `agent_approval_log` (migration
+342, append-only) with the actor and the reason. Argument **values are never
+stored** — only argument key names and a SHA-256 of the input, because tool
+arguments can carry CUI. `dry_run` and `off` still write the audit row.
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
