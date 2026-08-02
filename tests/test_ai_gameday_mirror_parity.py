@@ -22,13 +22,18 @@ endings do not.
 SCOPE: ai_gameday only, by design. Generalising content parity to every canvas
 is a separate card.
 
-CI WIRING — FOLLOW-ON. This file is deliberately NOT yet in the pytest allowlist
-of the ``Test`` job in ``.github/workflows/icdev-ci.yml``: it is RED against the
-current mirror, which is the point (gdx-vv-01's acceptance criterion), and
-adding it now would block every unrelated PR. Whoever lands gdx-mir-01 should
-add ``tests/test_ai_gameday_mirror_parity.py`` to that list in the same PR,
-alongside the sibling guards ``test_data_canvas_mirror_parity.py`` and
-``test_quality_monitor_parity.py``. Until then this guard only runs locally.
+CI WIRING — DONE (gdx-mir-01). This file is now in the pytest allowlist of the
+``Test`` job in ``.github/workflows/icdev-ci.yml``, alongside the sibling guards
+``test_data_canvas_mirror_parity.py`` and ``test_quality_monitor_parity.py``. It
+was held out of that list while it was RED (gdx-vv-01's acceptance criterion),
+because adding it then would have blocked every unrelated PR.
+
+The content drift itself was closed by ``9cab8c3ca`` (``fix(tsr-core-01-d5):
+resync the icdev/ mirror so the wheel ships current data``), a run of the mirror
+SYNC tooling rather than a hand-copy — the two templates were restored as part
+of a whole-tree resync, which is why no gdx-mir-01 commit touches them. Wiring
+this guard into CI is what stops the next divergence shipping silently: without
+it, parity holds only until the next unmirrored edit, exactly as before.
 """
 from __future__ import annotations
 
