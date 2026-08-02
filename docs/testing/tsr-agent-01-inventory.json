@@ -1,0 +1,1412 @@
+{
+ "task": "tsr-agent-01-d1",
+ "epic": "agent",
+ "root": "C:\\AI\\ICDev\\.tmp\\worktrees\\tsr-agent-01-d1",
+ "regex": "(?<![\\w.])(?:icdev\\.)?tools\\.(?:ace|agent_runtime|a2a|agents|mcp)(?![\\w])",
+ "packages_named_by_task": [
+  "ace",
+  "agent_runtime",
+  "a2a",
+  "agents",
+  "mcp"
+ ],
+ "packages_in_scope": [
+  "ace",
+  "agent_runtime",
+  "a2a",
+  "agents",
+  "mcp"
+ ],
+ "packages_named_but_absent": {},
+ "scope_notes": {
+  "tools/agent": "Real 20-module package (a2a_discovery_server, agent_executor, mailbox, team_orchestrator, ...) NOT named by the task regex. 21 test files import it, 18 of them outside this slice. Reported, not merged \u2014 scope call for the card owner."
+ },
+ "counts": {
+  "files_total": 123,
+  "files_import": 115,
+  "files_reference_only": 8,
+  "exclusive": 101,
+  "per_package_any_reference": {
+   "ace": 70,
+   "agent_runtime": 18,
+   "a2a": 6,
+   "agents": 1,
+   "mcp": 33
+  },
+  "per_package_real_import": {
+   "ace": 64,
+   "agent_runtime": 17,
+   "a2a": 4,
+   "agents": 1,
+   "mcp": 32
+  }
+ },
+ "overlap_with_prior_slices": {
+  "canv": [
+   "tests/test_component_registry.py",
+   "tests/test_dsoc_canvas.py",
+   "tests/test_nav_llm_01_router_invoke.py",
+   "tests/test_network_doc_lifecycle.py"
+  ],
+  "comp": [
+   "tests/studio/test_mcp_executor_audit.py",
+   "tests/studio/test_mcp_executor_rbac.py",
+   "tests/test_ace_behavioral_monitor.py",
+   "tests/test_ace_skill_promoter.py",
+   "tests/test_component_registry.py",
+   "tests/test_docgen.py",
+   "tests/test_integrity_mcp.py"
+  ],
+  "core": [
+   "tests/test_component_registry.py",
+   "tests/test_pkg_subprocess_namespace.py"
+  ],
+  "dash": [
+   "tests/test_nav_intel_07_stub_honesty.py",
+   "tests/test_nav_llm_01_router_invoke.py"
+  ],
+  "doc": [
+   "tests/cortex/test_search_adapters.py",
+   "tests/docmod/test_domain_packs.py",
+   "tests/test_clx_control_loop.py",
+   "tests/test_docgen.py",
+   "tests/test_dvg_wire04_mcp.py",
+   "tests/test_network_doc_lifecycle.py",
+   "tests/test_wiki_integrations.py"
+  ],
+  "flow": [
+   "tests/test_ace_hitl_resolve_endpoint.py",
+   "tests/test_ace_qa_workflow.py",
+   "tests/test_arr_error_recovery.py",
+   "tests/test_clx_control_loop.py",
+   "tests/test_component_registry.py",
+   "tests/test_kanban_mcp_delete_task.py",
+   "tests/test_nav_llm_01_router_invoke.py",
+   "tests/test_wiki_integrations.py"
+  ],
+  "intel": [
+   "tests/test_nav_llm_01_router_invoke.py",
+   "tests/test_penta_gd_freshness.py",
+   "tests/test_pkg_subprocess_namespace.py"
+  ],
+  "net": [
+   "tests/test_component_registry.py",
+   "tests/test_network_doc_lifecycle.py"
+  ]
+ },
+ "files": {
+  "tests/ace/test_step_executor.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_checkpoints.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_cli.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_commands.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_cron.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_delegation.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_discovery.py": {
+   "packages": [
+    "agent_runtime",
+    "mcp"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [
+    "mcp"
+   ],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_profile_memory.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_profiles.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_runtime.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_safety.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_search_stream.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_skills_lifecycle.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/agent_runtime/test_toolsets_dispatch.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/browser/test_four_seams.py": {
+   "packages": [
+    "ace",
+    "mcp"
+   ],
+   "imported": [
+    "ace",
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/cortex/test_mcp_tools.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/cortex/test_search_adapters.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/docmod/test_domain_packs.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/docmod/test_mcp_tools.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/e2e/test_ace_session_resume.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/e2e/test_derivative_classifier_lifecycle.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/e2e/test_intel_report_lifecycle.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/e2e/test_remote_agent_dispatch.py": {
+   "packages": [
+    "a2a"
+   ],
+   "imported": [
+    "a2a"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_compliance_server.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_controller.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_coworker_thread.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_evaluator.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_gap_handlers.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_icdev_callback_client.py": {
+   "packages": [
+    "a2a"
+   ],
+   "imported": [
+    "a2a"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_nova_e2e.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_soul_manager.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_tool_registry.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/genesis_auto/test_trust_calibrator.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/mcp/test_registry_handler_coverage.py": {
+   "packages": [
+    "agent_runtime",
+    "mcp"
+   ],
+   "imported": [
+    "agent_runtime",
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/mcp/test_toolset_profiles.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/rag/test_rag_server_search.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/studio/test_mcp_executor.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/studio/test_mcp_executor_approval.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/studio/test_mcp_executor_audit.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/studio/test_mcp_executor_rbac.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_a2a_registry.py": {
+   "packages": [
+    "agents"
+   ],
+   "imported": [
+    "agents"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_a2a_server.py": {
+   "packages": [
+    "a2a",
+    "ace"
+   ],
+   "imported": [
+    "a2a"
+   ],
+   "reference_only": [
+    "ace"
+   ],
+   "kind": "import"
+  },
+  "tests/test_ace_agent_mode.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_behavioral_monitor.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_canvas_role_gap.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_chat_endpoint.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_chat_integration.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_chat_result.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_chat_trigger.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_event_bus.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_evidence_report.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_file_access.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_foundation.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_hitl_resolve_endpoint.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_listen_topics_guard.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_memory_persistence.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_mirror_parity.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [],
+   "reference_only": [
+    "ace"
+   ],
+   "kind": "reference-only"
+  },
+  "tests/test_ace_nova_state_endpoint.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_persona_generator.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_persona_query.py": {
+   "packages": [
+    "ace",
+    "mcp"
+   ],
+   "imported": [
+    "ace",
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_phase_d_roles.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_produces_output.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_qa_manager_role.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_qa_workflow.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_role_loader.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_role_loader_default_dir.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_role_loader_shared.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_roles.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_runtime.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_session_persistence.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_skill_promoter.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_sme_gap_detector.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_sme_registry.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_step_executor.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_team_proposal.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_tool_runner.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ace_webhook_delivery.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_agent_coordination.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_agent_evaluator.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_agent_loop.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_agent_loop_wiring.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [],
+   "reference_only": [
+    "ace"
+   ],
+   "kind": "reference-only"
+  },
+  "tests/test_agent_patch_file.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_agent_search_tools.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_arr_error_recovery.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_auto_resolver_heartbeat.py": {
+   "packages": [
+    "a2a"
+   ],
+   "imported": [],
+   "reference_only": [
+    "a2a"
+   ],
+   "kind": "reference-only"
+  },
+  "tests/test_chat_cli_bridge_coworker.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_clx_control_loop.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_co_learning_store.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [],
+   "reference_only": [
+    "ace"
+   ],
+   "kind": "reference-only"
+  },
+  "tests/test_compass_client.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_component_registry.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [],
+   "reference_only": [
+    "ace"
+   ],
+   "kind": "reference-only"
+  },
+  "tests/test_context_server.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_coworker_stats_api.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_cross_grader.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_databridge_broker.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_docgen.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [],
+   "reference_only": [
+    "ace"
+   ],
+   "kind": "reference-only"
+  },
+  "tests/test_dsoc_canvas.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_dvg_wire04_mcp.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_dwo_mcp_palette.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_eval_compare_rerun.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_eval_suggestions.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_eval_trends.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_foundry_mcp.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_gateway_agent_mode.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [
+    "agent_runtime"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_heartbeat_a2a_health.py": {
+   "packages": [
+    "a2a"
+   ],
+   "imported": [],
+   "reference_only": [
+    "a2a"
+   ],
+   "kind": "reference-only"
+  },
+  "tests/test_integrity_mcp.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_kanban_mcp_delete_task.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_markov_sequencer.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_mcp_client.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_mcp_instrumentation.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_nav_intel_07_stub_honesty.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_nav_llm_01_router_invoke.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_network_doc_lifecycle.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_nova_reflexion_trigger.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_parallel_agents.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_penta_gd_content.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_penta_gd_freshness.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_pkg_subprocess_namespace.py": {
+   "packages": [
+    "agent_runtime"
+   ],
+   "imported": [],
+   "reference_only": [
+    "agent_runtime"
+   ],
+   "kind": "reference-only"
+  },
+  "tests/test_provision_dev_certs.py": {
+   "packages": [
+    "a2a"
+   ],
+   "imported": [
+    "a2a"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_second_brain.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_ski_roles_lifecycle.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_step_executor.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_unified_server.py": {
+   "packages": [
+    "mcp"
+   ],
+   "imported": [
+    "mcp"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  },
+  "tests/test_wiki_integrations.py": {
+   "packages": [
+    "ace"
+   ],
+   "imported": [
+    "ace"
+   ],
+   "reference_only": [],
+   "kind": "import"
+  }
+ },
+ "tools_agent_singular_candidates": [
+  "tests/ci/workflows/test_icdev_sdlc.py",
+  "tests/genesis_auto/test_agent_server.py",
+  "tests/genesis_auto/test_skill_router.py",
+  "tests/genesis_auto/test_topology.py",
+  "tests/test_a2a_discovery.py",
+  "tests/test_agent_mailbox_placeholders.py",
+  "tests/test_anvil_critique.py",
+  "tests/test_bedrock_client.py",
+  "tests/test_collaboration_triggers.py",
+  "tests/test_dispatcher_mode.py",
+  "tests/test_gsd_adaptations.py",
+  "tests/test_lpx_proxy_reconcile.py",
+  "tests/test_nav_sec_09_usage_attribution.py",
+  "tests/test_prompt_chain_executor.py",
+  "tests/test_session_purpose.py",
+  "tests/test_skill_selector.py",
+  "tests/test_team_orchestrator.py",
+  "tests/tools/llm/reasoned_codegen_test.py"
+ ],
+ "modules_never_named_by_any_test": {
+  "tools/ace": [
+   "tools/ace/profile_generator.py",
+   "tools/ace/simulate_roles.py",
+   "tools/ace/skill_adapter.py"
+  ],
+  "tools/agent_runtime": [
+   "tools/agent_runtime/__main__.py"
+  ],
+  "tools/a2a": [
+   "tools/a2a/agent_client.py",
+   "tools/a2a/agent_entrypoint.py",
+   "tools/a2a/agent_server.py",
+   "tools/a2a/task.py",
+   "tools/a2a/task_lease.py"
+  ],
+  "tools/agents": [
+   "tools/agents/adapter_base.py",
+   "tools/agents/adapters/claude_cli.py",
+   "tools/agents/adapters/codex_cli.py",
+   "tools/agents/adapters/copilot_cli.py",
+   "tools/agents/adapters/local_llm_router.py",
+   "tools/agents/registry.py"
+  ],
+  "tools/mcp": [
+   "tools/mcp/a2a_bridge_server.py",
+   "tools/mcp/builder_server.py",
+   "tools/mcp/devsecops_server.py",
+   "tools/mcp/generate_registry.py",
+   "tools/mcp/infra_server.py",
+   "tools/mcp/integration_server.py",
+   "tools/mcp/llm_proxy_server.py",
+   "tools/mcp/lsp_server.py",
+   "tools/mcp/maintenance_server.py",
+   "tools/mcp/marketplace_server.py",
+   "tools/mcp/mbse_server.py",
+   "tools/mcp/mcp_debug_wrapper.py",
+   "tools/mcp/mcp_scanner.py",
+   "tools/mcp/modernization_server.py",
+   "tools/mcp/ontology_server.py",
+   "tools/mcp/requirements_server.py",
+   "tools/mcp/research_server.py",
+   "tools/mcp/simulation_server.py",
+   "tools/mcp/standalone/builder.py",
+   "tools/mcp/standalone/compliance.py",
+   "tools/mcp/standalone/core.py",
+   "tools/mcp/standalone/knowledge.py",
+   "tools/mcp/standalone/maintenance.py",
+   "tools/mcp/supply_chain_server.py"
+  ]
+ }
+}
