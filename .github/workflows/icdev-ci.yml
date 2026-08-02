@@ -106,6 +106,7 @@ jobs:
             tests/test_code_analyzer.py \
             tests/test_component_registry.py \
             tests/test_component_registry_ownership.py \
+            tests/test_idp_portal.py \
             tests/test_migration_version_uniqueness.py \
             tests/ci/test_error_classifier.py \
             tests/kanban/test_pr_linker.py \

@@ -3963,6 +3963,34 @@ python tools/idp/scorecard.py --scorecard component-readiness --component ndc
 python tools/idp/scorecard.py --dir /path/to/scorecards --json
 ```
 
+### Portal surface (idp-ui-02)
+
+The same catalog and scorecards rendered as a dashboard page, mounted at the
+`url_prefix` declared in `args/component_registry.yaml`. It grades itself: the
+portal appears in its own catalog and passes the 8-point completeness gate it
+surfaces for every other canvas.
+
+| Route | Purpose |
+|-------|---------|
+| `/idp/` | Ladder, rule coverage, catalog, and the portal's own grade |
+| `/idp/catalog` | Same page, catalog section |
+| `/idp/scorecards` | Same page, scorecard section |
+| `/idp/component/<key>` | One component: facts, per-rule outcomes, 8-point breakdown |
+| `GET /idp/api/catalog` | JSON catalog (`?scorecard=`, `?refresh=1`) |
+| `GET /idp/api/scorecard` | JSON scorecard report |
+| `GET /idp/api/component/<key>` | JSON component detail |
+| `POST /idp/api/iqe-query` | IQE natural-language query over `idp.components` |
+
+The view models are a library, not a CLI — import them:
+
+```python
+from tools.idp.portal import portal_overview, component_detail, self_check
+
+portal_overview()               # everything /idp renders
+component_detail("ndc")         # one component's facts, rules and 8 points
+self_check()["completeness"]    # the portal's own 8-point breakdown
+```
+
 Any rule expression is a standalone IQE query, so it can be run by hand against
 the same collection the scorecard grades:
 

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.display_name or detail.key }} — Developer Portal{% endblock %}
+{% block content %}
+<div class="cui-banner">CUI // SP-CTI</div>
+
+<div class="container-fluid py-3">
+  <a href="/idp/" class="small">&larr; Developer Portal</a>
+
+  {% if not detail.found %}
+  <div class="alert alert-warning mt-3">
+    No component <code>{{ detail.key }}</code> in <code>args/component_registry.yaml</code>.
+  </div>
+  {% else %}
+
+  <div class="d-flex align-items-center flex-wrap gap-2 mt-2 mb-3">
+    <h2 class="mb-0">{{ detail.display_name }}</h2>
+    <span class="text-muted font-monospace">{{ detail.key }}</span>
+    {% if detail.level %}
+      <span class="badge bg-dark">{{ detail.level }}</span>
+    {% else %}
+      <span class="badge bg-secondary">unranked</span>
+    {% endif %}
+    {% if detail.score is not none %}
+      <span class="badge bg-primary">{{ detail.score | round(0) | int }}%</span>
+    {% endif %}
+    {% if detail.facts.route %}
+      <a href="{{ detail.facts.route }}" class="btn btn-sm btn-outline-primary ms-auto">Open {{ detail.facts.route }} &rarr;</a>
+    {% endif %}
+  </div>
+
+  {% if detail.scorecard_error %}
+  <div class="alert alert-danger py-2">
+    <strong>Scorecard could not be evaluated.</strong>
+    <div class="small font-monospace mt-1">{{ detail.scorecard_error }}</div>
+  </div>
+  {% endif %}
+
+  <div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card h-100">
+        <div class="card-header py-2"><strong>Registry facts</strong></div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0">
+            <tbody>
+              {% for name, value in detail.facts | dictsort %}
+              <tr>
+                <td class="font-monospace small text-muted">{{ name }}</td>
+                <td class="small">
+                  {% if value is sameas true %}✅ true
+                  {% elif value is sameas false %}❌ false
+                  {% elif value == '' or value is none %}<span class="text-muted">&mdash;</span>
+                  {% else %}{{ value }}{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card mb-3">
+        <div class="card-header py-2"><strong>Scorecard rules</strong></div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0 align-middle">
+            <tbody>
+              {% for outcome in detail.outcomes %}
+              <tr>
+                <td style="width:110px;">
+                  <span class="badge {{ {'pass':'bg-success','fail':'bg-danger','exempt':'bg-info text-dark'}.get(outcome.status, 'bg-secondary') }}">
+                    {{ 'n/a' if outcome.status == 'not_applicable' else outcome.status }}
+                  </span>
+                </td>
+                <td>
+                  <strong>{{ outcome.title or outcome.identifier }}</strong>
+                  <div class="text-muted small font-monospace">{{ outcome.identifier }}{% if outcome.level %} &middot; gates {{ outcome.level }}{% endif %} &middot; weight {{ outcome.weight }}</div>
+                  {% if outcome.message %}<div class="small text-danger mt-1">{{ outcome.message }}</div>{% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td class="text-muted small p-3">Not graded by this scorecard.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header py-2">
+          <strong>8-point completeness gate</strong>
+          {% if detail.completeness.declared %}
+            {% if detail.completeness.passed %}
+              <span class="badge bg-success ms-2">pass</span>
+            {% else %}
+              <span class="badge bg-danger ms-2">fail</span>
+            {% endif %}
+          {% else %}
+            <span class="badge bg-secondary ms-2">not a canvas — out of scope</span>
+          {% endif %}
+        </div>
+        <div class="card-body p-0">
+          {% if detail.completeness['items'] %}
+          <table class="table table-sm mb-0">
+            <tbody>
+              {% for item in detail.completeness['items'] %}
+              <tr>
+                <td style="width:40px;" class="text-center">
+                  {% if item.present %}✅{% elif item.required %}❌{% else %}➖{% endif %}
+                </td>
+                <td class="font-monospace small">{{ item.point }}</td>
+                <td class="small text-muted">{{ item.message }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="p-3 text-muted small">
+            The 8-point gate applies to dashboard-page canvases only.
+            {% if detail.completeness.error %}<div class="font-monospace mt-1">{{ detail.completeness.error }}</div>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="text-muted small mt-3">
+    JSON: <code>/idp/api/component/{{ detail.key }}</code>
+  </div>
+  {% endif %}
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

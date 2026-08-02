@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}Internal Developer Portal{% endblock %}
+{% block content %}
+<div class="cui-banner">CUI // SP-CTI</div>
+
+<div class="container-fluid py-3">
+
+  <div class="d-flex align-items-center flex-wrap mb-2 gap-2">
+    <h2 class="mb-0">Internal Developer Portal</h2>
+    <span class="badge bg-secondary fs-6">{{ totals.components }} components</span>
+    <span class="badge bg-primary fs-6">{{ totals.graded }} graded</span>
+    <span class="badge bg-warning text-dark fs-6">{{ totals.unowned }} unowned</span>
+    <span class="text-muted small ms-auto">
+      {{ scorecard_name }}{% if evaluated_on %} &middot; evaluated {{ evaluated_on }}{% endif %}{% if window %} &middot; window {{ window }}{% endif %}
+    </span>
+    <a href="/idp/?scorecard={{ scorecard_key }}&amp;refresh=1" class="btn btn-sm btn-outline-secondary">Refresh facts</a>
+  </div>
+
+  <p class="text-muted small mb-3">
+    Catalog and scorecards over ICDEV's own registered components. Facts come from
+    <code>args/component_registry.yaml</code> and the repo tree via the IQE collection
+    <code>idp.components</code>; grades come from <code>args/scorecards/{{ scorecard_key }}.yaml</code>.
+    Adding a rule or a level is a YAML edit — see
+    <a href="/health/canvases">Canvas Health</a> for the file-existence view of the same tree.
+  </p>
+
+  {% if scorecards | length > 1 %}
+  <div class="mb-3">
+    {% for sc in scorecards %}
+      <a href="/idp/?scorecard={{ sc.key }}"
+         class="btn btn-sm {% if sc.key == scorecard_key %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ sc.name }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if scorecard_error %}
+  <div class="alert alert-danger py-2 mb-3">
+    <strong>Scorecard could not be evaluated.</strong>
+    <div class="small font-monospace mt-1">{{ scorecard_error }}</div>
+    <div class="small mt-1">The catalog below still lists every registered component; only the grades are missing.</div>
+  </div>
+  {% endif %}
+
+  <!-- ── The portal's own grade (dogfood) ──────────────────────────────── -->
+  <div class="card mb-3 border-info">
+    <div class="card-body py-2">
+      <div class="d-flex align-items-center flex-wrap gap-2">
+        <strong class="me-1">This page grades itself</strong>
+        {% if self_report.in_catalog %}
+          <span class="badge bg-success">in its own catalog</span>
+        {% else %}
+          <span class="badge bg-danger">missing from its own catalog</span>
+        {% endif %}
+        {% if self_report.level %}
+          <span class="badge" style="background-color: {{ self_report.row.level_color }}; color:#111;">{{ self_report.level }}</span>
+        {% else %}
+          <span class="badge bg-secondary">unranked</span>
+        {% endif %}
+        {% if self_report.score is not none %}
+          <span class="badge bg-dark">{{ self_report.score | round(0) | int }}%</span>
+        {% endif %}
+        {% if self_report.completeness_passed %}
+          <span class="badge bg-success">8-point gate: pass</span>
+        {% else %}
+          <span class="badge bg-danger">8-point gate: fail</span>
+        {% endif %}
+        <a href="/idp/component/{{ self_report.key }}" class="btn btn-sm btn-outline-info ms-auto">Full breakdown &rarr;</a>
+      </div>
+      {% if self_report.completeness.items %}
+      <div class="mt-2 small">
+        {% for item in self_report.completeness['items'] %}
+          <span class="me-2" title="{{ item.message }}">
+            {% if item.present %}✅{% elif item.required %}❌{% else %}➖{% endif %}
+            <span class="font-monospace">{{ item.point }}</span>
+          </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Ladder ────────────────────────────────────────────────────────── -->
+  <div class="d-flex flex-wrap gap-2 mb-3" id="ladder">
+    {% for level in ladder %}
+      <div class="card flex-fill" style="min-width:180px;">
+        <div class="card-body py-2">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge" style="background-color: {{ level.color or '#6c757d' }}; color:#111;">{{ level.name }}</span>
+            <span class="fs-5 fw-bold">{{ level_distribution.get(level.name, 0) }}</span>
+          </div>
+          <div class="text-muted small mt-1">{{ level.description }}</div>
+        </div>
+      </div>
+    {% else %}
+      <div class="text-muted small">No ladder — the scorecard did not load.</div>
+    {% endfor %}
+    <div class="card flex-fill" style="min-width:180px;">
+      <div class="card-body py-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-secondary">unranked</span>
+          <span class="fs-5 fw-bold">{{ level_distribution.get('unranked', 0) }}</span>
+        </div>
+        <div class="text-muted small mt-1">Has not cleared the lowest rung.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Signal availability ───────────────────────────────────────────── -->
+  {% if schema_status %}
+  <div class="mb-3 small">
+    <span class="text-muted me-2">Backing signals:</span>
+    {% for row in schema_status %}
+      <span class="badge {% if row.present %}bg-success{% else %}bg-secondary{% endif %} me-1"
+            title="{{ row.purpose }}{% if row.error %} — {{ row.error }}{% endif %}">
+        {{ row.table }}{% if not row.present %} (absent){% endif %}
+      </span>
+    {% endfor %}
+    <span class="text-muted">A signal that is absent renders as "not measured", never as a pass.</span>
+  </div>
+  {% endif %}
+
+  <!-- ── Rules ─────────────────────────────────────────────────────────── -->
+  <h5 class="mt-4" id="scorecard">Rules &mdash; {{ scorecard_name }}</h5>
+  <div class="table-responsive mb-4">
+    <table class="table table-sm table-hover align-middle border">
+      <thead class="table-dark">
+        <tr>
+          <th>Rule</th>
+          <th>Gates</th>
+          <th class="text-end">Weight</th>
+          <th class="text-end">Passing</th>
+          <th class="text-end">Applicable</th>
+          <th style="width:22%;">Coverage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rule in rules %}
+        <tr>
+          <td>
+            <strong>{{ rule.title or rule.identifier }}</strong>
+            <div class="text-muted small font-monospace">{{ rule.identifier }}</div>
+          </td>
+          <td>
+            {% if rule.gates_ladder %}
+              <span class="badge bg-dark">{{ rule.level }}</span>
+            {% else %}
+              <span class="text-muted small">scores only</span>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ rule.weight }}</td>
+          <td class="text-end">{{ rule.passing }}</td>
+          <td class="text-end">{{ rule.applicable }}</td>
+          <td>
+            {% set _pct = (rule.passing / rule.applicable * 100) if rule.applicable else 0 %}
+            <div class="progress" style="height:14px;">
+              <div class="progress-bar {% if _pct >= 80 %}bg-success{% elif _pct >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                   style="width: {{ _pct | round(0) | int }}%;">{{ _pct | round(0) | int }}%</div>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-muted">No rules loaded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Catalog ───────────────────────────────────────────────────────── -->
+  <h5 class="mt-4" id="catalog">Component catalog</h5>
+  <p class="text-muted small mb-2">
+    {{ totals.canvases }} canvases are in scope for the 8-point dashboard-page gate;
+    {{ totals.completeness_passing }} pass it. Components outside that scope are not graded on it.
+  </p>
+  {% for group in groups %}
+  <h6 class="mt-3 text-muted">{{ group.label }} <span class="badge bg-secondary">{{ group.rows | length }}</span></h6>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle border">
+      <thead class="table-dark">
+        <tr>
+          <th>Component</th>
+          <th>Level</th>
+          <th class="text-end">Score</th>
+          {% for col_key, col_header, col_bool in columns %}
+            <th {% if col_bool %}class="text-center"{% endif %}>{{ col_header }}</th>
+          {% endfor %}
+          <th>Failing rules</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in group.rows %}
+        <tr>
+          <td>
+            <a href="/idp/component/{{ row.key }}"><strong>{{ row.display_name }}</strong></a>
+            <div class="text-muted small font-monospace">{{ row.key }}</div>
+          </td>
+          <td>
+            {% if row.level %}
+              <span class="badge" style="background-color: {{ row.level_color }}; color:#111;">{{ row.level }}</span>
+            {% elif row.graded %}
+              <span class="badge bg-secondary">unranked</span>
+            {% else %}
+              <span class="text-muted small">not graded</span>
+            {% endif %}
+          </td>
+          <td class="text-end">{% if row.score is not none %}{{ row.score | round(0) | int }}%{% else %}&mdash;{% endif %}</td>
+          {% for col_key, col_header, col_bool in columns %}
+            {% if col_bool %}
+              <td class="text-center">{% if row.facts.get(col_key) %}✅{% else %}❌{% endif %}</td>
+            {% elif col_key == 'route' %}
+              <td>{% if row.route %}<a href="{{ row.route }}" class="font-monospace small">{{ row.route }}</a>{% else %}<span class="text-muted small">&mdash;</span>{% endif %}</td>
+            {% elif col_key == 'owner' %}
+              <td class="small">{% if row.owner %}{{ row.owner }}{% else %}<span class="text-warning">unowned</span>{% endif %}</td>
+            {% else %}
+              <td class="small">{{ row.facts.get(col_key) or '—' }}</td>
+            {% endif %}
+          {% endfor %}
+          <td class="small text-muted">
+            {% if row.failures %}{{ row.failures | join(', ') }}{% else %}&mdash;{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-warning py-2">
+    No components found. <code>args/component_registry.yaml</code> could not be read.
+  </div>
+  {% endfor %}
+
+  <div class="text-muted small mt-3">
+    Facts are memoized per process; <a href="/idp/?scorecard={{ scorecard_key }}&amp;refresh=1">refresh</a> re-reads the registry and the tree.
+    JSON: <code>/idp/api/catalog</code>, <code>/idp/api/scorecard</code>, <code>/idp/api/component/&lt;key&gt;</code>.
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+{# /idp/catalog and /idp/scorecards are the same page with a different entry
+   point — three nav links, one template, one set of facts. Jumping to the
+   section beats maintaining three near-identical templates that drift. #}
+{% if focus in ('catalog', 'scorecard') %}
+<script>
+  (function () {
+    var el = document.getElementById({{ focus | tojson }});
+    if (el) el.scrollIntoView();
+  })();
+</script>
+{% endif %}
+{% endblock %}
