@@ -32,7 +32,12 @@
           {
             "type": "command",
             "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py || true"
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
           {
             "type": "command",
             "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/coordination.py --event pre_tool_use || true"
