@@ -7209,3 +7209,30 @@ projects:
   - key: gov
     title: Governance - gates, delivery, claim accuracy
     priority: medium
+- key: cxo
+  name: 'CXO — Cortex Optimization'
+  description: 'Repair and optimize the ICDEV Cortex unified AI facade (tools/cortex/). Root finding, measured against the live DB — the provenance gate has never written a row: governance.py passes citation_type="cortex", which is absent from CITATION_TYPES, so register_citation raises ValueError, the gate swallows it and records warn. 95 warn vs 14 pass in cortex_audit; 0 of 285 source_citation_registry rows are type cortex. The identical bug exists independently in tools/blockchain/asset_ledger.py (citation_type="asset_token"), where GovChain asset tokenization has therefore never anchored to the chain. Two subsystems shipping the same silent failure makes this a missing gate, not two bugs. Three further dead or ungoverned paths were measured: cot_invoke and cod_invoke resolve to error stubs because their module-level handlers do not exist and never have; nlq_query returns a canned string and never invokes an LLM; council_query and chat_router.intent_classifier._llm_classify call providers directly with no gateway check, redaction, provenance or audit. Also covers scoped performance defects (shadow config loader, uncached llm_config parse under air-gap, two DB connections per governed call, unbounded metrics scan, serial governed-LLM loops), the deferred chat_manager adoption that commit 9ec85e124 already built the facade for, and manifest hygiene. Governance stays fail-open — flipping enforcement is a separate decision. MANUAL-ONLY: every task gated behind cxo-gate-00 via depends_on_task_id.'
+  task_prefix: cxo-
+  default_open: false
+  briefs:
+  - 'gate: manual gate held in_progress; every task carries depends_on_task_id=cxo-gate-00 (cxo-gate-00)'
+  - 'trust: add cortex + asset_token to CITATION_TYPES with a migration rendered from check_constraint_sql(); add the static gate that makes an unknown citation_type unshippable; narrow the swallow; tests that assert the row actually landed'
+  - 'perf: delete the shadow config loader, mtime-cache _load_llm_config, reuse one connection per governed call, bound and memoize the metrics scan, parallelize the docgen and bom serial loops'
+  - 'adopt: route the chat_manager plain branch through cortex_api.complete (history+model landed in 9ec85e124); grade grounded chat turns instead of always skipping; retarget the 4 dead or ungoverned MCP tools to Cortex adapters and leave the 5 retrieval-only tools alone; fix the direct provider call in intent_classifier'
+  - 'doc: delete the 7 stale duplicate rows in tools/manifest/cortex.md; reconcile the hard-coded icdev.* imports inside tools/cortex/'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: trust
+    title: TRUST — make the provenance chain actually write
+    priority: critical
+  - key: perf
+    title: PERF — reduce the cost of being governed
+    priority: high
+  - key: adopt
+    title: ADOPT — close the real governance bypasses
+    priority: high
+  - key: doc
+    title: DOC — manifest and namespace hygiene
+    priority: medium
