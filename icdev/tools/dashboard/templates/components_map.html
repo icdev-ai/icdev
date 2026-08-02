@@ -612,7 +612,42 @@ function renderDrawer(nd) {
     '<div class="drawer-field"><label>Last indexed</label><div class="val">' + escHtml(lastIdx) + '</div></div>' +
     (props.description ? '<div class="drawer-field"><label>Description</label><div class="val" style="color:#444;line-height:1.45;">' + escHtml(props.description) + '</div></div>' : '') +
     (nd.centrality !== undefined ? '<div class="drawer-field"><label>Centrality</label><div class="val">' + (nd.centrality || 0).toFixed(4) + '</div></div>' : '') +
-    '<div class="drawer-field"><label>Node ID</label><div class="val" style="font-family:monospace;font-size:0.73rem;color:#999;">' + escHtml(nd.id) + '</div></div>';
+    '<div class="drawer-field"><label>Node ID</label><div class="val" style="font-family:monospace;font-size:0.73rem;color:#999;">' + escHtml(nd.id) + '</div></div>' +
+    '<div class="drawer-field" id="drawer-blast"><label>Blast radius</label><div class="val" style="color:#94a3b8;">loading…</div></div>';
+
+  loadBlastRadius(nd.id);
+}
+
+/* ── Blast radius ────────────────────────────────────────────────────────────
+   "What breaks if this changes" — direct dependents from the mechanically
+   derived edges (imports, uses_table, invokes, ...). Each row shows the
+   derivation that produced it; non-mechanical (keyword-inferred) rows are
+   marked so a reader never mistakes a guess for a parsed fact. */
+function loadBlastRadius(id) {
+  fetch('/api/components-map/dependents/' + encodeURIComponent(id) + '?depth=1')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var box = document.getElementById('drawer-blast');
+      if (!box) return;
+      if (data.error) {
+        box.innerHTML = '<label>Blast radius</label><div class="val" style="color:#94a3b8;">—</div>';
+        return;
+      }
+      var rows = (data.direct || []).slice(0, 12).map(function(d) {
+        var flag = d.mechanical ? '' : ' <span style="color:#b45309;" title="inferred from similarity, not parsed">~guess</span>';
+        return '<div style="font-size:0.74rem;line-height:1.5;">' +
+          '<span style="color:#64748b;font-family:monospace;">' + escHtml(d.relationship) + '</span> ' +
+          escHtml(d.label) +
+          '<span style="color:#94a3b8;"> (' + escHtml(d.derivation) + ')</span>' + flag +
+          '</div>';
+      }).join('');
+      var more = data.direct_count > 12
+        ? '<div style="font-size:0.72rem;color:#94a3b8;">… ' + (data.direct_count - 12) + ' more</div>'
+        : '';
+      box.innerHTML = '<label>Blast radius — ' + data.direct_count + ' direct dependent(s)</label>' +
+        '<div class="val">' + (rows || '<span style="color:#94a3b8;">nothing depends on this</span>') + more + '</div>';
+    })
+    .catch(function(err) { console.error('Blast radius error:', err); });
 }
 
 /* ── Neighbor expand ─────────────────────────────────────────────────────── */

@@ -149,6 +149,7 @@ jobs:
             tests/test_coherence_swallowed_persistence.py \
             tests/test_analyzer_contract.py \
             tests/test_cxo_adopt_04_mcp_cortex_adapters.py \
+            tests/test_awareness_edge_deriver.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries

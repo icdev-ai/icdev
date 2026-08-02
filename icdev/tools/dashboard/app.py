@@ -6204,8 +6204,15 @@ def create_app(testing: bool = False) -> Flask:
     _COMPONENTS_MAP_GRAPH_ID = "kg-icdev-self-awareness"
 
     def _cmap_conn():
-        """Return a connection for components-map queries (PG or SQLite)."""
-        return get_connection("icdev")
+        """Return a connection for components-map queries (PG or SQLite).
+
+        `get_connection`'s only positional argument is `db_path`, so the former
+        `get_connection("icdev")` was a no-op on PostgreSQL (where the arg is
+        ignored) but told SQLite to open a file literally named `icdev` — every
+        components-map API 500'd with "unable to open database file" whenever
+        the install fell back to SQLite. Pass nothing and let the resolver pick.
+        """
+        return get_connection()
 
     _cmap_pg = _cmap_conn  # backward-compat alias used by API routes
 
@@ -6216,10 +6223,14 @@ def create_app(testing: bool = False) -> Flask:
         try:
             conn = _cmap_conn()
             _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
-            stats["total"] = (conn.execute(
+            # dict() first: sqlite3.Row has no .get(), so the SQLite path used
+            # to raise here and fall into the swallowing except below, which
+            # rendered the header as "0 components" on a populated graph.
+            _total_row = conn.execute(
                 "SELECT COUNT(*) AS n FROM kg_nodes WHERE graph_id = %s",
                 (_COMPONENTS_MAP_GRAPH_ID,),
-            ).fetchone() or {}).get("n", 0)
+            ).fetchone()
+            stats["total"] = dict(_total_row).get("n", 0) if _total_row else 0
             if _pg:
                 row = conn.execute(
                     "SELECT "
@@ -6235,7 +6246,8 @@ def create_app(testing: bool = False) -> Flask:
                     "SUM(CASE WHEN json_extract(properties, '$.enabled') != 'false' THEN 1 ELSE 0 END) AS en "  # pg-ok: SQLite fallback; is_pg branch above uses (properties::jsonb)->>
                     "FROM kg_nodes WHERE graph_id = %s",
                     (_COMPONENTS_MAP_GRAPH_ID,),
-                ).fetchone() or {}
+                ).fetchone()
+            row = dict(row) if row else {}
             stats["enabled"] = int(row.get("en") or stats["total"])
             stats["disabled"] = int(row.get("dis") or 0)
             conn.close()
@@ -6278,9 +6290,19 @@ def create_app(testing: bool = False) -> Flask:
         Query params:
           scope=<entity_type>  -- filter to one category
           show_disabled=1      -- include disabled nodes (omitted by default)
+          max_edges=<n>        -- cap the edge payload (default 2000)
+
+        The edge cap exists because the graph carries five figures of derived
+        dependency edges (idp-cat-02); rendering all of them unscoped would
+        wedge the browser. Highest-weight (most mechanical) edges are kept
+        first and `edges_truncated` reports what was dropped.
         """
         scope = flask_request.args.get("scope", "").strip() or None
         show_disabled = flask_request.args.get("show_disabled", "0") == "1"
+        try:
+            max_edges = max(0, int(flask_request.args.get("max_edges", 2000)))
+        except (TypeError, ValueError):
+            max_edges = 2000
         cells: list = []
         try:
             conn = _cmap_pg()
@@ -6309,23 +6331,40 @@ def create_app(testing: bool = False) -> Flask:
                     "centrality": r["centrality"] or 0.0,
                 })
             cur.execute(
-                "SELECT id, source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id=%s",
+                "SELECT id, source_id, target_id, relationship, weight, properties "
+                "FROM kg_edges WHERE graph_id=%s ORDER BY weight DESC",
                 (_COMPONENTS_MAP_GRAPH_ID,),
             )
+            edge_total = 0
             for e in cur.fetchall():
-                if e["source_id"] in node_ids and e["target_id"] in node_ids:
-                    cells.append({
-                        "type": "edge",
-                        "id": e["id"],
-                        "source": e["source_id"],
-                        "target": e["target_id"],
-                        "label": e["relationship"] or "",
-                        "weight": e["weight"] or 1.0,
-                    })
+                if e["source_id"] not in node_ids or e["target_id"] not in node_ids:
+                    continue
+                edge_total += 1
+                if edge_total > max_edges:
+                    continue
+                try:
+                    eprops = json.loads(e["properties"]) if e["properties"] else {}
+                except (TypeError, ValueError):
+                    eprops = {}
+                cells.append({
+                    "type": "edge",
+                    "id": e["id"],
+                    "source": e["source_id"],
+                    "target": e["target_id"],
+                    "label": e["relationship"] or "",
+                    "weight": e["weight"] or 1.0,
+                    "derivation": eprops.get("derivation", ""),
+                    "mechanical": bool(eprops.get("mechanical", False)),
+                })
             conn.close()
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
-        return jsonify({"cells": cells, "count": len(cells)})
+        return jsonify({
+            "cells": cells,
+            "count": len(cells),
+            "edge_total": edge_total,
+            "edges_truncated": max(0, edge_total - max_edges),
+        })
 
     @app.route("/api/components-map/node/<path:node_id>")
     def api_cmap_node(node_id: str):
@@ -6346,7 +6385,10 @@ def create_app(testing: bool = False) -> Flask:
                 "SELECT COUNT(*) AS n FROM kg_edges WHERE graph_id=%s AND (source_id=%s OR target_id=%s)",
                 (_COMPONENTS_MAP_GRAPH_ID, node_id, node_id),
             )
-            rel_count = (cur.fetchone() or {}).get("n", 0)
+            # sqlite3.Row has no .get() — go through dict() so this works on
+            # both backends instead of 500ing on the SQLite fallback.
+            _rc = cur.fetchone()
+            rel_count = dict(_rc).get("n", 0) if _rc else 0
             conn.close()
             props = json.loads(row["properties"]) if row["properties"] else {}
             return jsonify({
@@ -6355,7 +6397,13 @@ def create_app(testing: bool = False) -> Flask:
                 "entity_type": row["entity_type"] or "other",
                 "properties": props,
                 "centrality": row["centrality"] or 0.0,
-                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                # PG hands back a datetime, SQLite a plain string — normalise
+                # rather than assuming .isoformat() exists (it 500'd on SQLite).
+                "created_at": (
+                    row["created_at"].isoformat()
+                    if hasattr(row["created_at"], "isoformat")
+                    else (str(row["created_at"]) if row["created_at"] else None)
+                ),
                 "last_indexed_at": props.get("last_indexed_at"),
                 "relationships_count": rel_count,
                 "health": props.get("health", "unknown"),
@@ -6363,19 +6411,35 @@ def create_app(testing: bool = False) -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # A hub like tools/db/storage.py has >1,000 direct edges now that the graph
+    # carries real dependencies. Expanding all of them at once both wedges the
+    # JointJS canvas and blows SQLite's 999-parameter limit on the IN clause
+    # below, so cap the hop and report the overflow.
+    _CMAP_MAX_NEIGHBORS = 300
+
     @app.route("/api/components-map/neighbors/<path:node_id>")
     def api_cmap_neighbors(node_id: str):
-        """GET /api/components-map/neighbors/<id> -- 1-hop subgraph for expansion."""
+        """GET /api/components-map/neighbors/<id> -- 1-hop subgraph for expansion.
+
+        Capped at `_CMAP_MAX_NEIGHBORS` highest-weight edges; `truncated`
+        reports how many were dropped. Use /api/components-map/dependents for
+        the full, unrendered list.
+        """
         cells: list = []
+        truncated = 0
         try:
             conn = _cmap_pg()
             cur = conn.cursor()
             cur.execute(
                 "SELECT id, source_id, target_id, relationship, weight "
-                "FROM kg_edges WHERE graph_id=%s AND (source_id=%s OR target_id=%s)",
+                "FROM kg_edges WHERE graph_id=%s AND (source_id=%s OR target_id=%s) "
+                "ORDER BY weight DESC",
                 (_COMPONENTS_MAP_GRAPH_ID, node_id, node_id),
             )
             edges = cur.fetchall()
+            if len(edges) > _CMAP_MAX_NEIGHBORS:
+                truncated = len(edges) - _CMAP_MAX_NEIGHBORS
+                edges = edges[:_CMAP_MAX_NEIGHBORS]
             neighbor_ids: set = {node_id}
             for e in edges:
                 neighbor_ids.add(e["source_id"])
@@ -6412,7 +6476,41 @@ def create_app(testing: bool = False) -> Flask:
             conn.close()
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
-        return jsonify({"cells": cells, "count": len(cells)})
+        return jsonify({"cells": cells, "count": len(cells), "truncated": truncated})
+
+    @app.route("/api/components-map/dependents/<path:node_ref>")
+    def api_cmap_dependents(node_ref: str):
+        """GET /api/components-map/dependents/<ref> -- blast radius for a component.
+
+        `ref` is a node id, a repo-relative file path, or a node label. Answers
+        "what breaks if this changes" from the mechanically-derived edges
+        (imports, uses_table, invokes, ...). Every returned row carries the
+        `derivation` that produced it plus `mechanical`, so a caller can tell a
+        parsed import from an inferred keyword match.
+
+        Query params:
+          depth=<n>          -- traversal depth (default 1 = direct dependents)
+          direction=deps     -- invert: what this component depends on
+          mechanical_only=1  -- drop similarity-inferred edges
+        """
+        try:
+            from tools.awareness import edge_deriver
+        except ImportError:
+            return jsonify({"error": "edge_deriver not available"}), 503
+        try:
+            depth = max(1, min(5, int(flask_request.args.get("depth", 1))))
+        except (TypeError, ValueError):
+            depth = 1
+        mechanical_only = flask_request.args.get("mechanical_only", "0") == "1"
+        inverted = flask_request.args.get("direction", "").lower() in ("deps", "dependencies")
+        query = edge_deriver.get_dependencies if inverted else edge_deriver.get_dependents
+        try:
+            result = query(node_ref, depth=depth, mechanical_only=mechanical_only)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        if result.get("error"):
+            return jsonify(result), 404 if "no node matches" in result["error"] else 500
+        return jsonify(result)
 
     @app.route("/api/components-map/refresh", methods=["POST"])
     @require_role("admin", "pm")
