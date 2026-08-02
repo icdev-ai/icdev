@@ -756,7 +756,9 @@ class PRWatcher:
             if state.get("statusCheckRollup"):
                 ci_logs = self._fetch_logs(pr_url, max_chars=ci_log_max)
 
-            classification = ec.classify_pr_state(state, ci_logs=ci_logs)
+            classification = ec.classify_pr_state(
+                state, ci_logs=ci_logs, require_approval=require_approval,
+            )
             cycle = self._resume_cycle(task["id"])
 
             if classification == KanbanState.DONE:
@@ -905,10 +907,20 @@ class PRWatcher:
                 continue
 
             if classification == KanbanState.PR_OPENED:
+                # Report why we are actually waiting. PR_OPENED is also the
+                # default fall-through, so a flat "CI still running" here
+                # misreports a green-but-unapproved PR as mid-CI and hides the
+                # real blocker.
+                if ec.is_in_progress(state):
+                    wait_reason = "CI still running"
+                elif ec.is_passing(state):
+                    wait_reason = "CI green; awaiting approving review"
+                else:
+                    wait_reason = "awaiting CI results"
                 action = WatcherAction(
                     task_id=task["id"], pr_url=pr_url,
                     classification=classification.value,
-                    action="wait", reason="CI still running",
+                    action="wait", reason=wait_reason,
                     resume_cycle=cycle,
                 )
                 report.actions.append(action)

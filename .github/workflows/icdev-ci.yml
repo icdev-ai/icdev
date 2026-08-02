@@ -107,6 +107,7 @@ jobs:
             tests/test_component_registry.py \
             tests/test_component_registry_ownership.py \
             tests/test_migration_version_uniqueness.py \
+            tests/ci/test_error_classifier.py \
             tests/test_verifier_contract.py \
             tests/test_dic_chat_memory_schema.py \
             tests/test_dic_chat_surfaces_send_session_id.py \
