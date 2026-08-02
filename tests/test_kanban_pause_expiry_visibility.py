@@ -12,7 +12,8 @@ with the report. The module docstring already warns that "a pause control that
 reports success without pausing is worse than no pause control at all" — this is
 the temporal version of the same failure.
 
-Every test redirects _FLAG to a scratch path. None of them touch the live board.
+Every test redirects the sentinel to a scratch path via KANBAN_PAUSE_FLAG. None
+of them touch the live board.
 """
 from __future__ import annotations
 
@@ -27,15 +28,39 @@ from tools.kanban import scheduler_control as sc
 
 @pytest.fixture
 def flag(tmp_path, monkeypatch):
-    """Point the sentinel at a scratch file, never the real one."""
+    """Point the sentinel at a scratch file, never the real one.
+
+    The module-level ``_FLAG`` constant became the cached ``_flag_path()`` when
+    the sentinel was re-anchored to the canonical repo root. Setting the removed
+    attribute raised at fixture setup, so every test here errored — and had the
+    monkeypatch been written with ``raising=False`` it would have passed the
+    redirect straight through and paused the LIVE board instead. Override the
+    documented ``KANBAN_PAUSE_FLAG`` escape hatch and clear the cache around it,
+    matching ``tests/kanban/test_scheduler_pause_controls.py::isolated_flag``.
+    """
     path = tmp_path / "kanban_scheduler.paused"
-    monkeypatch.setattr(sc, "_FLAG", path)
-    return path
+    monkeypatch.setenv("KANBAN_PAUSE_FLAG", str(path))
+    sc._flag_path.cache_clear()
+    yield path
+    sc._flag_path.cache_clear()
 
 
 def _age_flag(path, minutes: int) -> None:
+    """Rewind the sentinel as if it had been written *minutes* ago.
+
+    Both stamps move. ``expires_at`` was added when the deadline stopped being
+    recomputed from the reader's own KANBAN_PAUSE_MAX_MINUTES (a worktree has no
+    .env, so it expired pauses taken under a longer ceiling). Aging only
+    ``since`` therefore aged nothing the module still reads: the pause stayed
+    live no matter how far back it was pushed, and the expiry tests below could
+    not fail.
+    """
     meta = json.loads(path.read_text(encoding="utf-8"))
-    meta["since"] = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    delta = timedelta(minutes=minutes)
+    meta["since"] = (datetime.now(timezone.utc) - delta).isoformat()
+    if meta.get("expires_at"):
+        deadline = datetime.fromisoformat(str(meta["expires_at"]).replace("Z", "+00:00"))
+        meta["expires_at"] = (deadline - delta).strftime("%Y-%m-%dT%H:%M:%SZ")
     path.write_text(json.dumps(meta), encoding="utf-8")
 
 
