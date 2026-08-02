@@ -15,6 +15,8 @@ tests/ci/workflows/test_icdev_plan.py
 tests/ci/workflows/test_icdev_review.py
 tests/ci/workflows/test_icdev_sdlc.py
 tests/ci/workflows/test_icdev_test.py
+tests/e2e_devops_twin.py
+tests/e2e_network_nl_query.py
 tests/genesis_auto/test_ato_generator.py
 tests/genesis_auto/test_cloud_architecture.py
 tests/genesis_auto/test_compliance.py
