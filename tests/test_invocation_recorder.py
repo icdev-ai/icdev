@@ -14,8 +14,15 @@ import pytest
 
 from tools.observability import invocation_recorder as R
 
-_MIGRATION = (Path(__file__).resolve().parent.parent
-              / "tools/db/migrations/341_runtime_invocations/up.py")
+# Resolved by GLOB, not by a pinned version number. This migration has been
+# renumbered three times as collisions were found (329 -> 333 -> 341) and each
+# rename silently broke this hardcoded path — the same failure that let the
+# citation_types guardrail rot when migration 295 became 297 and nobody updated
+# the test pinning it by filename.
+_MIGRATION = next(
+    (Path(__file__).resolve().parent.parent / "tools/db/migrations")
+    .glob("*_runtime_invocations/up.py")
+)
 
 
 @pytest.fixture()
