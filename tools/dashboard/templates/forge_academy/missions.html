@@ -68,6 +68,15 @@
 .fa-type-badge.chat     { background:rgba(255,184,0,.12); color:var(--fa-gold); }
 .fa-type-badge.design   { background:rgba(10,132,255,.12); color:#58a6ff; }
 .fa-card-tag { font-size:.78rem; color:var(--text-secondary); margin-bottom:.8rem; line-height:1.4; }
+/* aca-trn-03: the objective reads as substance, not chrome — a left rule and a
+   quieter label, so it separates from the tagline above without competing with
+   the mission title. Clamped to three lines: extraction already trims to a
+   sentence boundary, and this keeps one long objective from unbalancing the grid. */
+.fa-card-objective { font-size:.74rem; color:var(--text-primary); line-height:1.45;
+  margin:0 0 .7rem; padding-left:.6rem; border-left:2px solid var(--fa-cyan);
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.fa-card-objective-label { display:block; font-size:.6rem; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--fa-cyan); opacity:.85; margin-bottom:.15rem; }
 .fa-card-ft { display:flex; justify-content:space-between; align-items:center; gap:.5rem; flex-wrap:wrap; }
 .fa-xp-badge { font-size:.72rem; color:var(--fa-gold); font-weight:600; }
 .fa-diff { font-size:.6rem; text-transform:uppercase; letter-spacing:.1em; padding:2px 7px; border-radius:4px; }
@@ -156,6 +165,24 @@
         {% endif %}
       </div>
       <p class="fa-card-tag">{{ m.tagline|default('') }}</p>
+      {# aca-trn-03: the card advertised three costs — XP, minutes, difficulty — and
+         never what the learner walks away able to DO. For training used in a
+         compliance context that is the auditable unit, so it belongs above the
+         costs, not beside them. Rendered only where the authored content states
+         one: the column is NULL otherwise and the line is omitted, because an
+         absent objective is a visible content gap and an invented one is an
+         invisible false record. Distinguished from the tagline above it — that is
+         marketing copy, this is the claim an auditor reads. #}
+      {% if m.learning_objective %}
+      <div class="fa-card-objective">
+        {# "Objective", not "You'll be able to": the extracted text is authored in
+           whichever register its section used — declarative ("A GoalValidator
+           that…") or imperative ("Design a 3-stage pipeline…") — and a label that
+           only fits one of them would misread half the catalogue. #}
+        <span class="fa-card-objective-label">Objective</span>
+        {{ m.learning_objective }}
+      </div>
+      {% endif %}
       {# aca-ux-06: 86 of 122 missions declare prerequisites and none were shown, so a
          122-mission catalogue had no visible ordering. Advisory, not a gate — the card
          still navigates, matching the locked-but-readable choice made in aca-ux-04. #}
