@@ -135,8 +135,40 @@ def _run(cmd: List[str], cwd: str, timeout: int = 60) -> subprocess.CompletedPro
     )
 
 
+def _on_default_branch(cwd: str) -> bool:
+    """True when *cwd* has the repo's default branch checked out.
+
+    Every remediation here is meant to run in a task worktree. The caller
+    resolves cwd from an in-memory dict with ``or str(BASE_DIR)`` as the
+    fallback, so a scheduler restart makes that lookup miss and cwd becomes the
+    SHARED CHECKOUT — which sits on main.
+
+    Fails CLOSED. ``_run`` does not raise on a non-zero git exit — it returns a
+    CompletedProcess with empty stdout — so a bare ``== default_branch`` compare
+    reads "" != "main" and authorises the write in exactly the situation we
+    understand least (not a repo, detached HEAD, git missing). An unreadable
+    HEAD is therefore treated as the default branch.
+    """
+    try:
+        head = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd, timeout=10)
+        current = (head.stdout or "").strip()
+        if head.returncode != 0 or not current or current == "HEAD":
+            return True  # unreadable or detached — refuse
+        return current == default_branch(cwd)
+    except Exception:  # noqa: BLE001 — a failed probe must not authorise a write
+        return True
+
+
 def _git_commit_amend(cwd: str, files: List[str]) -> bool:
-    """Stage files and amend the last commit (keeps message)."""
+    """Stage files and amend the last commit (keeps message).
+
+    Refuses on the default branch. Amending there rewrites a commit already on
+    main — strictly worse than the sibling defect in
+    ``remediate_uncommitted_changes``, which only *added* one. Neither is ever
+    the intent: these remediations exist to fix a task branch.
+    """
+    if _on_default_branch(cwd):
+        return False
     if files:
         _run(["git", "add"] + files, cwd)
     else:
@@ -478,9 +510,28 @@ def remediate_uncommitted_changes(cwd: str, task_id: str) -> Tuple[bool, str]:
     After this commit exists, _run_full_verification re-runs on the committed state.
     If coherence still fails on the committed code, the task goes to backlog with a
     real reason — but the loop terminates because branch_commits_ahead > 0 on retry.
+
+    SAFETY: this refuses unless *cwd* is actually checked out on the task branch.
+    It measures ``kanban/<task_id>`` but stages and commits in *cwd*, and those
+    were not guaranteed to be the same tree. The caller resolves cwd as
+    ``_worktrees.get(task_id) or str(BASE_DIR)`` and ``_worktrees`` is an
+    in-memory dict, so after any scheduler restart the lookup misses and cwd
+    falls back to the SHARED CHECKOUT — which sits on main. ``git add -A`` then
+    swept up whatever every other concurrent session had left uncommitted there
+    and committed it to local main, which blocked every later fast-forward.
+    Observed twice on 2026-08-02, both times bundling unrelated PDC canvas
+    artifacts into a "wip: auto-stage N change(s)" commit on main.
     """
     branch = f"kanban/{task_id}"
     try:
+        head = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd, timeout=10)
+        current = (head.stdout or "").strip()
+        if current != branch:
+            return False, (
+                f"refusing to commit: {cwd} is on '{current}', not '{branch}'. "
+                "Staging here would commit unrelated work to the wrong branch."
+            )
+
         db = default_branch(cwd)
         ahead = _run(
             ["git", "rev-list", "--count", f"{db}..{branch}"],
