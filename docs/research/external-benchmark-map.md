@@ -186,14 +186,32 @@ with `kanban_tasks` at 2,586 rows and `kanban_verifications` at 2,372 — a real
 ledger. Cortex.io's 2026 positioning is "mission control for the AI software factory";
 ICDEV *operates* one.
 
-**But the hygiene is poor, and measurably so.** 109 registered git worktrees, recursively
-nested, several locked — creation is bounded, reclamation is not. And **59% of
-`kanban_verifications` are `bypassed`**, because the pipeline gates are non-blocking unless
-`KANBAN_PIPELINE_ENFORCE=1`. A verification ledger that bypasses more than half its checks
-is recording activity, not enforcing quality.
+**One hygiene problem, measurably so.** 109 registered git worktrees, recursively nested,
+several locked — creation is bounded, reclamation is not. Re-measured hours later: **117**.
+The leak is ongoing.
 
-**Adapt.** Nothing external. Fix the hygiene — that is `ars-wt-01`, and the bypass rate
-deserves its own decision.
+**Correction — the verification-bypass finding was wrong.** The first pass of this document
+reported "59% of `kanban_verifications` are `bypassed`, because the gates are non-blocking
+unless `KANBAN_PIPELINE_ENFORCE=1`". That aggregate is real but it is *historical*, and the
+stated cause was false: `KANBAN_PIPELINE_ENFORCE=1` **is** set in `.env`. Broken down by
+month:
+
+| Month | Verifications | Bypassed |
+|---|---|---|
+| 2026-06 | 1,991 | 1,321 (66%) |
+| 2026-07 | 297 | 70 (24%) |
+| 2026-08 | 86 | **0 (0%)** |
+
+Enforcement is working. August shows zero bypasses, and 32 of 86 verifications **failed** —
+the gate is biting rather than waving work through. The 59% figure was dominated by June,
+before the flag was set, and quoting the lifetime aggregate as a current state
+misrepresented a subsystem that had already been fixed.
+
+Worth keeping as a method note: a lifetime aggregate over a ledger that spans a policy
+change describes the policy change, not the present.
+
+**Adapt.** Nothing external. The one real fix is worktree reclamation — `ars-wt-01`. The
+bypass rate needs no decision; it was already made.
 
 ---
 
@@ -266,8 +284,9 @@ if IaC policy scanning becomes a priority.
    every other subsystem's health legible.
 3. **Evaluation is the most underweight subsystem relative to risk.** 2 modules guarding
    LLM output that lands in compliance artifacts. Cheap to start with promptfoo's model.
-4. **Fix pipeline hygiene before scaling the pipeline.** 109 leaked worktrees and a 59%
-   verification-bypass rate undercut the strongest differentiator in the list.
+4. **Reclaim leaked worktrees.** 117 registered and climbing, recursively nested — the one
+   hygiene problem that genuinely undercuts the strongest differentiator in the list. The
+   verification-bypass rate is *not* a second one; see the correction in §7.
 5. **`anz` and `ars` are well-scoped and independent** — they can run whenever there is
    capacity.
 6. **Defer** RAG/GraphRAG community detection (blocked on edges), MISP/STIX alignment, and
