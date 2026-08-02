@@ -656,22 +656,41 @@ def calibrate_from_outcome(bid_decision_id, outcome):
     conn = _get_db()
     _ensure_tables(conn)
 
-    # Ensure win_loss table exists
+    # Ensure win_loss table exists. This declaration is aligned with the
+    # canonical table (swp-scan-01): the previous one named `recorded_at` and
+    # omitted the NOT NULL `opportunity_id`, and being IF NOT EXISTS it silently
+    # no-opped against the real table — so the INSERT below raised
+    # UndefinedColumn on every call and no outcome was ever recorded. The
+    # read at ``ORDER BY created_at`` above was already using the live name.
     conn.execute("""
         CREATE TABLE IF NOT EXISTS pg_win_loss_records (
             id TEXT PRIMARY KEY,
-            bid_decision_id TEXT NOT NULL,
+            opportunity_id TEXT NOT NULL,
             outcome TEXT NOT NULL CHECK (outcome IN ('win', 'loss', 'no_decision', 'protest')),
+            bid_decision_id TEXT,
             debrief_notes TEXT,
-            recorded_at TEXT NOT NULL
+            created_at TEXT NOT NULL
         )
     """)
 
+    # opportunity_id is NOT NULL and is only reachable through the decision.
+    row = conn.execute(
+        "SELECT opportunity_id FROM pg_bid_decisions WHERE id = %s", (bid_decision_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {
+            "status": "error",
+            "message": f"Bid decision {bid_decision_id} not found",
+        }
+    opportunity_id = row["opportunity_id"] if not isinstance(row, tuple) else row[0]
+
     wl_id = _gen_id("wl")
     conn.execute(
-        "INSERT INTO pg_win_loss_records (id, bid_decision_id, outcome, debrief_notes, recorded_at) "
-        "VALUES (%s, %s, %s, %s, %s)",
-        (wl_id, bid_decision_id, outcome, None, _now()),
+        "INSERT INTO pg_win_loss_records "
+        "(id, opportunity_id, bid_decision_id, outcome, debrief_notes, created_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (wl_id, opportunity_id, bid_decision_id, outcome, None, _now()),
     )
     _audit(
         conn, "bid_scoring.calibrate", f"Recorded outcome: {outcome} for {bid_decision_id}", {"outcome": outcome}, None

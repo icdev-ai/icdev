@@ -88,8 +88,10 @@ def index_session_turn(
     conn = _get_conn()
     try:
         conn.execute(
+            # `topics`, not `tags` (swp-scan-01) — every indexed session turn
+            # raised UndefinedColumn, so the session index was always empty.
             """INSERT INTO memory_entries
-               (id, type, content, importance, tags, classification, created_at)
+               (id, type, content, importance, topics, classification, created_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (id) DO NOTHING""",
             (entry_id, entry_type, content, importance, tags, classification, now),

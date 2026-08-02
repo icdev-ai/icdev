@@ -233,7 +233,11 @@ def test_chat_session_persists_history(client, ace_db):
     # Inspect stored session directly
     conn = sqlite3.connect(str(ace_db))
     row = conn.execute(
-        "SELECT history_json, turn_count FROM ace_sessions WHERE session_id = ?", (sid,)
+        # conversation_history, not history_json: the latter never existed on the
+        # live PG table, so asserting on it passed only against the SQLite-only
+        # column and would have masked the endpoint failing outright (swp-scan-01).
+        "SELECT conversation_history, turn_count FROM ace_sessions WHERE session_id = ?",
+        (sid,),
     ).fetchone()
     conn.close()
 

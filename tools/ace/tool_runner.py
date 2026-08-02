@@ -267,8 +267,11 @@ class ToolRunner:
             try:
                 conn.execute(
                     """
+                    -- ace_artifacts splits content_md / content_json; there is no
+                    -- bare `content`. The payload below is JSON, so it belongs in
+                    -- content_json (swp-scan-01).
                     INSERT INTO ace_artifacts
-                        (id, instance_id, coworker_id, artifact_type, content, created_at)
+                        (id, instance_id, coworker_id, artifact_type, content_json, created_at)
                     VALUES (%s, %s, %s, 'tool_output', %s, %s)
                     """,
                     (

@@ -152,15 +152,27 @@ def scan_awards():
                 continue
 
             award_id = str(uuid.uuid4())
+            # awardee_cage, contract_type and description are not columns on
+            # govcon_awards, and period_of_performance is split into
+            # _start/_end (swp-scan-01) — every award write raised
+            # UndefinedColumn. The three orphaned fields are folded into
+            # metadata so no scraped data is lost; period_of_performance is
+            # dropped because _extract_award_data always sets it to "".
+            metadata = dict(award.get("metadata", {}) or {})
+            metadata.update(
+                {
+                    "awardee_cage": award.get("awardee_cage", ""),
+                    "contract_type": award.get("contract_type", ""),
+                    "description": (award.get("description", "") or "")[:5000],
+                }
+            )
             conn.execute(
                 "INSERT INTO govcon_awards "
                 "(id, sam_opportunity_id, solicitation_number, title, agency, "
-                "awardee_name, awardee_duns, awardee_cage, "
+                "awardee_name, awardee_duns, "
                 "award_amount, award_date, naics_code, set_aside_type, "
-                "contract_type, period_of_performance, "
-                "description, content_hash, "
-                "metadata, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "content_hash, metadata, discovered_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     award_id,
                     award.get("notice_id", ""),
@@ -169,16 +181,12 @@ def scan_awards():
                     award.get("agency", ""),
                     award.get("awardee_name", ""),
                     award.get("awardee_duns", ""),
-                    award.get("awardee_cage", ""),
                     award.get("award_amount", 0),
                     award.get("award_date", ""),
                     award.get("naics_code", ""),
                     award.get("set_aside_type", ""),
-                    award.get("contract_type", ""),
-                    award.get("period_of_performance", ""),
-                    (award.get("description", "") or "")[:5000],
                     chash,
-                    json.dumps(award.get("metadata", {})),
+                    json.dumps(metadata),
                     _now(),
                 ),
             )
@@ -255,18 +263,29 @@ def _register_competitor(conn, award):
         return  # Already tracked
 
     try:
+        # description/website/created_at/updated_at are not columns on
+        # creative_competitors (swp-scan-01); the live shape carries
+        # metadata/source_url/discovered_at. The statement was doubly broken —
+        # it also bound only 8 values to 9 columns, so `name` was landing in
+        # `id` and every subsequent value was shifted one column left.
         conn.execute(
             "INSERT INTO creative_competitors "
-            "(id, name, domain, source, description, website, status, created_at, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "(id, name, domain, source, metadata, source_url, status, discovered_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
+                str(uuid.uuid4()),
                 name,
                 "govcon",
                 "sam_gov",
-                f"Discovered from SAM.gov award: {award.get('title', '')[:200]}",
+                json.dumps(
+                    {
+                        "description": (
+                            f"Discovered from SAM.gov award: {award.get('title', '')[:200]}"
+                        )
+                    }
+                ),
                 "",
                 "discovered",
-                _now(),
                 _now(),
             ),
         )
