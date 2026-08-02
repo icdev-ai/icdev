@@ -370,6 +370,11 @@ known_safe_dynamic_import_modules:
   - tools/genesis/reflexes/kanban.py  # Channel-listener poll: loads notification adapter listeners (teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_channel_listeners); module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-CHANNEL-LISTENER-01.
   - genesis/reflexes/kanban.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/network/routes/pna.py  # pna_predict_all(): importlib.import_module(module_path) iterates a hardcoded FORGE-internal tuple list of 6 predictor module names (eol_predictor, bgp_predictor, compliance_drift_predictor, capacity_predictor, change_failure_predictor, supply_chain_risk_scorer); module_path is not user-controlled — values are string literals defined 2 lines above the import call. Authorized by REQ-PNA-DYNAMIC-IMPORT-01 (assessment-115 review, 2026-06-27).
+  # ── Added for the 2026-08-02 dynamic_import triage (task-568e508fbd, assessment 203) ──
+  # Same already-authorized pattern: the import target comes from a module-level
+  # literal collection, never from user input.
+  - tools/platform_connectors/connector_registry.py  # _load_default_adapters(): importlib.import_module(f"tools.platform_connectors.adapters.{module_name}") where module_name iterates _ADAPTER_MODULES, a module-level literal tuple of 5 names (github, hackernews, reddit, stackoverflow, youtube). No caller can influence the value — the registry deliberately discovers classes by subclass scan rather than by name, so nothing is derived from input. Each import is wrapped in try/except so one unimportable adapter cannot take the registry down. Authorized by REQ-CONNECTOR-REGISTRY-DYNAMIC-IMPORT-01.
+  - platform_connectors/connector_registry.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - network/routes/pna.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   # ── Added for assessment-115 (req-sipa-dynamic-import-auth-115) ──────────────
   # Pattern: all entries below use importlib.import_module / __import__ with a
