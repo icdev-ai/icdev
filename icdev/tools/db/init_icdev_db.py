@@ -8935,6 +8935,46 @@ CREATE TABLE IF NOT EXISTS win_loss_feature_impacts (
 );
 CREATE INDEX IF NOT EXISTS idx_wl_feature_impacts_run ON win_loss_feature_impacts(run_id);
 
+-- Voice-of-customer documents (transcript_ingestor.py) — insert-only.
+-- Also created by migration 069_voc_signals; declared here because the SQLite
+-- seed path builds from this file alone and never runs migrations, so without
+-- these two the ingestor's INSERTs raise inside its best-effort except and the
+-- engine reports "0 job statements" instead of an error.
+CREATE TABLE IF NOT EXISTS voc_documents (
+    id                  TEXT PRIMARY KEY,
+    filename            TEXT NOT NULL,
+    source_type         TEXT NOT NULL,
+    ingested_at         TEXT NOT NULL,
+    word_count          INTEGER,
+    job_statement_count INTEGER,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
+
+-- Voice-of-customer job statements (voc_engine.py). Mutable by design, unlike
+-- voc_documents: the ingestor INSERTs each statement, then
+-- VOCEngine._cluster_and_signal() UPDATEs job_category, frequency, the three
+-- score columns and creative_gap_id in place. Migration 069_voc_signals'
+-- docstring describes both tables as write-once; that holds for voc_documents
+-- only, so this table is deliberately absent from APPEND_ONLY_TABLES in
+-- .claude/hooks/pre_tool_use.py — listing it would block the engine's own
+-- scoring pass.
+CREATE TABLE IF NOT EXISTS voc_job_statements (
+    id                  TEXT PRIMARY KEY,
+    document_id         TEXT NOT NULL,
+    raw_text            TEXT NOT NULL,
+    job_category        TEXT,
+    frequency           INTEGER,
+    severity_score      REAL,
+    strategic_fit_score REAL,
+    composite_score     REAL,
+    creative_gap_id     TEXT,
+    analyzed_at         TEXT NOT NULL,
+    classification      TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_voc_score ON voc_job_statements(composite_score);
+CREATE INDEX IF NOT EXISTS idx_voc_document_id ON voc_job_statements(document_id);
+CREATE INDEX IF NOT EXISTS idx_voc_category ON voc_job_statements(job_category);
+
 -- CRM accounts (R4 Engage — Phase C)
 CREATE TABLE IF NOT EXISTS pg_crm_accounts (
     id              TEXT PRIMARY KEY,
