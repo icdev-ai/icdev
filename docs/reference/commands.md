@@ -3579,6 +3579,29 @@ python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"
 # Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
 ```
 
+## FORGE Academy — xAPI Export (aca-trn-05)
+
+```bash
+# Export Academy completions as xAPI 1.0.3 statements so they can feed an external LMS/LRS.
+# Only records with a verified provenance row (fa_xp_ledger for step/mission,
+# fa_certificate_evidence for a certificate) are emitted; the rest are withheld and named
+# in the `excluded` block rather than silently dropped.
+python -m apps.forge_academy.xapi --json                                   # full envelope: statements + excluded + counts
+python -m apps.forge_academy.xapi --statements-only --out academy_feed.json  # bare array an LRS POST /statements expects
+python -m apps.forge_academy.xapi --user-id 1 --since 2026-01-01T00:00:00Z   # one learner, incremental
+python -m apps.forge_academy.xapi --include-unverified                       # also emit unverifiable records, each stamped verified:false
+
+# Library API
+python -c "from apps.forge_academy.xapi import build_statements; import json; print(json.dumps(build_statements()['counts']))"
+
+# HTTP (org-leadership gated, same tier as Oracle / Org Readiness)
+#   GET /api/academy/export/xapi[?user_id=&since=&include_unverified=1&statements_only=1]
+# Env: ICDEV_XAPI_ACTIVITY_BASE (default https://icdev.ai/xapi/forge-academy) — two deployments
+#   feeding the same LRS must not both claim the same activity IRIs.
+# SCORM is deliberately NOT implemented: it records one rolled-up completion per launch and would
+#   discard the per-step granularity that makes this export worth having.
+```
+
 ## Agent Browser — Indexed-Element Page Representation (tools/browser/)
 
 ```bash
