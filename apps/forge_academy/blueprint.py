@@ -18,7 +18,8 @@ from .db import (
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
-    record_user_competency,
+    record_mission_competencies, get_competency_profile, competency_chain_status,
+    seed_mission_ontology_mappings, backfill_user_competencies,
 )
 from .content_loader import get_mission_with_steps, seed_mission_catalog
 from .gamification import (
@@ -98,6 +99,18 @@ def _ensure_init():
         try:
             migrate()
             seed_mission_catalog()
+            # aca-trn-02: the ontology mapping runs HERE, after the catalog is
+            # seeded — inside migrate() it ran against an empty fa_missions on a
+            # fresh install and mapped nothing. Missions and steps must carry a
+            # competency class before completing them can demonstrate anything,
+            # so a mapping failure is an init failure, not a debug log.
+            mapping = seed_mission_ontology_mappings()
+            _INIT_HEALTH["ontology_mapping"] = mapping
+            if mapping.get("errors"):
+                raise RuntimeError(
+                    "ontology mapping failed: " + "; ".join(mapping["errors"]))
+            # Completions that predate a working recorder still deserve a record.
+            _INIT_HEALTH["competency_backfill"] = backfill_user_competencies()
             count = _mission_count()
             _INIT_HEALTH["mission_count"] = count
             if count <= 0:
@@ -436,6 +449,9 @@ def profile():
         fa_user=fa_user,
         roles=ROLES,
         levels=LEVELS,
+        # aca-trn-02: the training record belongs where the learner's identity
+        # is, not on a page of its own that nobody would find.
+        competency_profile=get_competency_profile(fa_user["id"]) if fa_user else None,
         level_ctx=_level_ctx(fa_user) if fa_user else {},
     )
 
@@ -678,23 +694,26 @@ def api_step_submit():
         resp["mission_complete"] = True
         resp["mission_xp"] = mission_xp_event
         resp["mission_achievements"] = mission_ach
-        # Record competency ontology edges
+        # aca-trn-02: recording the competency is part of completing the mission,
+        # not a side effect of it. The outcome goes back to the client with the
+        # rest of the completion, so a chain that records nothing is visible in
+        # the response instead of only in a log nobody reads.
         try:
-            if mission:
-                from .ontology import get_tier_competency
-                record_user_competency(
-                    user_id=fa_user["id"],
-                    competency_class=get_tier_competency(mission.get("tier", 1)),
-                    source_mission_id=mission_id,
-                    evidence={"mission_slug": mission_slug, "score": 100},
-                )
-        except Exception:
-            # fga-fix-05 precedent: a swallowed warning never reaches a health
-            # check. Competency recording has never produced a row in production
-            # (aca-trn-02) — log loudly enough to find out why.
+            competency = record_mission_competencies(
+                user_id=fa_user["id"], mission_id=mission_id,
+                score=100, hints_used=hints_used)
+        except Exception as exc:
             import logging
             logging.getLogger(__name__).exception(
                 "competency recording failed for mission %s", mission_id)
+            competency = {"recorded": [], "classes": [], "errors": [str(exc)],
+                          "unmapped": False}
+        resp["competencies"] = competency
+        if competency.get("errors") or competency.get("unmapped"):
+            import logging
+            logging.getLogger(__name__).error(
+                "competency chain incomplete for mission %s: unmapped=%s errors=%s",
+                mission_id, competency.get("unmapped"), competency.get("errors"))
 
     return jsonify(resp)
 
@@ -1293,10 +1312,30 @@ def api_academy_health():
 
     Returns 200 when the mission catalog seeded successfully, 503 when init/seed
     failed — so an empty catalog is observable instead of silently served.
+
+    aca-trn-02 adds the competency chain to the same probe. A training record
+    that quietly writes nothing looks exactly like one with nothing to say yet,
+    which is how it stayed empty: 503 when the chain is stalled (missions have
+    been completed and produced no competency at all), and unmapped counts in
+    the body either way so partial catalog coverage is visible before a learner
+    finishes one of the missions it is missing.
     """
     _ensure_init()
     health = get_init_health()
-    return jsonify(health), (200 if health.get("initialized") else 503)
+    chain = competency_chain_status()
+    health["competency_chain"] = chain
+    ok = health.get("initialized") and not chain.get("stalled") and chain.get("ok", True)
+    return jsonify(health), (200 if ok else 503)
+
+
+@bp.route("/api/academy/competencies")
+def api_competencies():
+    """The signed-in learner's competency profile."""
+    _ensure_init()
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 404
+    return jsonify(get_competency_profile(fa_user["id"]))
 
 
 # ---------------------------------------------------------------------------
