@@ -20612,6 +20612,20 @@ CREATE TABLE public.nc_simulation_artifacts (
 
 
 --
+-- Name: nc_simulation_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_simulation_results (
+    id text NOT NULL,
+    topology_id text,
+    sim_type text NOT NULL,
+    input_json text DEFAULT '{}'::text,
+    result_json text DEFAULT '{}'::text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: nc_simulation_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -42852,6 +42866,14 @@ ALTER TABLE ONLY public.nc_simulation_artifacts
 
 
 --
+-- Name: nc_simulation_results nc_simulation_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_simulation_results
+    ADD CONSTRAINT nc_simulation_results_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: nc_simulation_runs nc_simulation_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -61714,6 +61736,14 @@ ALTER TABLE ONLY public.mission_versions
 
 ALTER TABLE ONLY public.nc_simulation_artifacts
     ADD CONSTRAINT nc_simulation_artifacts_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.nc_simulation_runs(id);
+
+
+--
+-- Name: nc_simulation_results nc_simulation_results_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_simulation_results
+    ADD CONSTRAINT nc_simulation_results_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
 
 
 --

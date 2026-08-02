@@ -1,0 +1,6 @@
+{
+  "id": "327_nc_simulation_results_rename",
+  "description": "Resolve the simulation_results name collision: Network Canvas moves to nc_simulation_results, Digital Program Twin keeps simulation_results",
+  "tables_affected": ["simulation_results", "nc_simulation_results"],
+  "reversible": true
+}

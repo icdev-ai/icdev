@@ -14,7 +14,7 @@ Targets
   /network/ (NDC index, tools/network/blueprint.py:181)
     - topologies          (3 enterprise graphs w/ EOL-bearing nodes)
     - nc_project_topologies (link 5 projects to topologies; fix orphan bug)
-    - simulation_results  (6 sims)
+    - nc_simulation_results  (6 sims)
     - nc_board_reviews    (4 pending)
     - nc_compliance_checks (8 mixed pass/fail)
     - nc_peering_agreements (6 operational, 1 with contract_end < 90d)
@@ -807,7 +807,7 @@ def ensure_simulations(conn) -> dict:
         })
         try:
             conn.execute(
-                """INSERT OR IGNORE INTO simulation_results
+                """INSERT OR IGNORE INTO nc_simulation_results
                    (id, topology_id, sim_type, input_json, result_json, ran_at)
                    VALUES (?, ?, ?, '{}', ?, ?)""",
                 (sim_id, topo_id, sim_type, result, NOW_ISO),
@@ -816,7 +816,7 @@ def ensure_simulations(conn) -> dict:
                 inserted += 1
         except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
             logger.warning(
-                "ensure_simulations: best-effort INSERT into simulation_results failed (non-blocking): %s",
+                "ensure_simulations: best-effort INSERT into nc_simulation_results failed (non-blocking): %s",
                 exc,
             )
     conn.commit()
@@ -1105,7 +1105,7 @@ def run() -> dict:
             "nc_project_topologies": _row_count(conn, "nc_project_topologies"),
             "ni_devices": _row_count(conn, "ni_devices"),
             "ni_device_configs": _row_count(conn, "ni_device_configs"),
-            "simulation_results": _row_count(conn, "simulation_results"),
+            "nc_simulation_results": _row_count(conn, "nc_simulation_results"),
             "nc_board_reviews": _row_count(conn, "nc_board_reviews"),
             "nc_compliance_checks": _row_count(conn, "nc_compliance_checks"),
             "nc_peering_agreements": _row_count(conn, "nc_peering_agreements"),
