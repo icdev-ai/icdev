@@ -184,10 +184,57 @@ card's two-line substantive fix in 172 lines of whitespace.
 | `tests/unit/test_audit_trail.py` | d3 |
 | `tests/test_workflow_hitl_engine.py` | d4 |
 
+## Re-verification against the current `main` (2026-08-02)
+
+The measurements above were taken against `origin/main` at `80a8a46f1`. The whole
+slice was re-run after rebasing this branch onto `1639fecd8`, against the same
+seeded DB shape (**541 tables / 16 `studio_*`**, confirmed before the run), one
+pytest process per file. Every count reproduced:
+
+| File / arrangement | Re-run result |
+|---|---|
+| `tests/services/ingestion/test_hook_transfer.py` | 24 passed (17.9s) |
+| `tests/test_cross_agency_transfer_api.py` | 7 passed (17.7s) |
+| `tests/unit/test_audit_trail.py` | 19 passed (7.2s) |
+| `tests/compliance/audit_nist.py` | 34 passed (17.7s) |
+| `tests/test_workflow_hitl_engine.py` alone | 23 passed (20.7s) |
+| `test_workflow_hitl_api.py` then engine | 41 passed (17.3s) |
+
+**125/125 passing, 0 failed, 0 errored.** `ruff check` re-run over all seven
+touched files: `All checks passed!` under both the CI command and the repo
+default config.
+
+One run-condition caveat worth recording, because it reads as a failure and is
+not one: on the *first* invocation in a cold worktree, `test_cross_agency_transfer_api.py`
+and `test_audit_trail.py` both tripped the configured `pytest-timeout` **during
+module import**, with the traceback ending in `importlib._bootstrap_external.get_code`
+— i.e. the timer expired while Python was compiling `.pyc` files, before a single
+test ran. Both passed on the immediately following invocation with no code change
+(`-o timeout=900`). The timeout is charged against import, not against the tests.
+CI does not hit this: its `Test` job logs `PytestConfigWarning: Unknown config
+option: timeout`, so the plugin is absent there and the setting is inert.
+
+## External blocker (not a slice failure)
+
+`main` is currently red for a reason unrelated to this epic, and it blocks this
+PR from merging along with every other open PR:
+
+```
+FAILED tests/test_migration_version_uniqueness.py::test_no_new_duplicate_migration_versions
+AssertionError: New duplicate migration version(s) detected:
+  {'333': ['333_runtime_invocations', '333_sharepoint']}
+```
+
+Both directories are tracked at `origin/main` (`1639fecd8`), so the collision is
+on the trunk, not introduced here — this branch touches no migration. **PR #1206
+(`fix/migration-333-collision`) is already in flight to renumber it.** This card's
+`Test` check will stay red until that lands, and no change on this branch can
+clear it.
+
 ## Acceptance criterion
 
 | Requirement | Status |
 |---|---|
 | PR body contains before/after pass-fail counts per file | ✅ table above, per file, both halves |
-| All touched files are ruff-clean | ✅ `All checks passed!` under the CI command |
-| Remaining failures listed with cause | ✅ **none remain**; the two that existed on merge are named, root-caused to a measured `OperationalError`, and fixed |
+| All touched files are ruff-clean | ✅ `All checks passed!` under the CI command and the repo default, re-run on the current base |
+| Remaining failures listed with cause | ✅ **none remain in the slice**; the two that existed on merge are named, root-caused to a measured `OperationalError`, and fixed. The one red check is `test_no_new_duplicate_migration_versions`, external to the slice, owned by PR #1206 |
