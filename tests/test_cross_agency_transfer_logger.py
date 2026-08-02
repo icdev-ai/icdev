@@ -53,17 +53,25 @@ CREATE TABLE IF NOT EXISTS cross_agency_transfers (
     details             TEXT,
     occurred_at         TEXT NOT NULL
 );
+-- Shaped like the LIVE audit_trail: an INTEGER identity id, created_at rather
+-- than recorded_at, and no source_ip. The previous shape accepted the mirror
+-- write's uuid-into-id and recorded_at, which is why that write looked healthy
+-- here and raised on live PostgreSQL.
 CREATE TABLE IF NOT EXISTS audit_trail (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT,
     event_type TEXT NOT NULL,
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
-    project_id TEXT,
     details TEXT,
+    affected_files TEXT,
     classification TEXT DEFAULT 'CUI',
+    ip_address TEXT,
     session_id TEXT,
-    source_ip TEXT,
-    recorded_at TEXT NOT NULL DEFAULT ''
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    hash TEXT,
+    previous_hash TEXT,
+    signature TEXT
 );
 """
 
@@ -549,7 +557,7 @@ class TestTransferLifecycle:
 
         conn = make_conn()
         audit_rows = conn.execute(
-            "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY recorded_at ASC",
+            "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY id ASC",
             (f"%{tid}%",),
         ).fetchall()
         conn.close()

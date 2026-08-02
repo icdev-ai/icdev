@@ -56,18 +56,9 @@ def _make_db(tmp_path):
         "checksum TEXT, duration_ms INTEGER, rejection_reason TEXT, error_code TEXT, "
         "details TEXT, occurred_at TEXT NOT NULL)"
     )
-    # Add missing columns to audit_trail (production schema has event_type, actor, created_at)
-    for col_def in [
-        ("event_type", "TEXT"),
-        ("actor", "TEXT"),
-        ("created_at", "TEXT"),
-        ("project_id", "TEXT"),
-        ("affected_files", "TEXT"),
-    ]:
-        try:
-            conn.execute(f"ALTER TABLE audit_trail ADD COLUMN {col_def[0]} {col_def[1]}")
-        except Exception:
-            pass  # column already exists
+    # audit_trail now comes from MINIMAL_ICDEV_SCHEMA already shaped like the
+    # live table, so the event_type/actor/created_at columns no longer have to
+    # be bolted on here.
     conn.commit()
     return db_path, conn
 
@@ -290,8 +281,12 @@ def test_degrades_gracefully_when_table_missing(tmp_path):
     from tools.audit.cross_agency_transfer_logger import CrossAgencyTransferLogger
 
     logger = CrossAgencyTransferLogger()
-    empty_conn2 = sqlite3.connect(str(db_path))
-    empty_conn2.row_factory = sqlite3.Row
+    # Storage connection, not a raw sqlite3 one. On a raw connection the %s
+    # placeholders never translate, so log_initiated() returns "" because of
+    # `near "%": syntax error` rather than because the table is missing -- the
+    # assertion below would hold for the wrong reason and this test would go on
+    # passing even if the missing-table path were deleted.
+    empty_conn2 = _storage_conn(db_path)
 
     with patch(
         "tools.audit.cross_agency_transfer_logger.get_connection",
@@ -539,7 +534,7 @@ def test_lifecycle_initiated_to_completed(tmp_path):
     assert dict(rows[1])["id"] == eid2
 
     audit = conn2.execute(
-        "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY recorded_at ASC",
+        "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY id ASC",
         ("%xfr-life-01%",),
     ).fetchall()
     conn2.close()

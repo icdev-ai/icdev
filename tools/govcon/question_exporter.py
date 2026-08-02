@@ -22,7 +22,6 @@ import argparse
 import json
 import os
 import sys
-import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,16 +54,12 @@ def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _uuid():
-    return str(uuid.uuid4())
-
-
 def _audit(conn, action, details="", actor="question_exporter"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
-            (_uuid(), _now(), "govcon.question_export", actor, action, details, "govcon"),
+            (_now(), "govcon.question_export", actor, action, details, "govcon"),
         )
     except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
