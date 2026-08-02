@@ -64,6 +64,29 @@ CATALOG_COLUMNS = (
 #: that was never measured must not read as healthy.
 NOT_APPLICABLE_LABEL = "n/a"
 
+#: Shown wherever a component or a dimension has no score at all — no rule
+#: applied, so nothing measured it. The word matters: "Not assessed" is an
+#: admission, "0%" and "F" are findings, and the page must never print the
+#: second when it means the first.
+UNASSESSED_LABEL = "Not assessed"
+
+#: Letter grade → bootstrap badge class. Keys are the letters
+#: ``developer_scorecards.letter_grade`` is declared to hold; the bands
+#: themselves live in ``args/scorecards/*.yaml`` under ``grading.bands``, so a
+#: scorecard that rebands its grades needs no change here.
+GRADE_BADGE = {
+    "A": "bg-success",
+    "B": "bg-success",
+    "C": "bg-warning text-dark",
+    "D": "bg-warning text-dark",
+    "F": "bg-danger",
+}
+
+#: Badge class for an unassessed score. Deliberately NOT bg-danger: an
+#: unassessed component is not a failing one, and colouring it red would make
+#: the page assert something it has no evidence for.
+UNASSESSED_BADGE = "bg-secondary"
+
 #: Rule status → bootstrap badge class. Mirrors tools/idp/scorecard.py's
 #: RuleOutcome.status vocabulary (pass | fail | exempt | not_applicable).
 STATUS_BADGE = {
