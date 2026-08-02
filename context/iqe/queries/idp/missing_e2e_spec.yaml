@@ -1,0 +1,14 @@
+# CUI // SP-CTI
+collection: idp.components
+query: "Which components have no Playwright E2E spec?"
+description: >-
+  A component with no tests/e2e/<key>*.spec.ts has never been proven to render.
+  This is the highest-weight Gold rule in component-readiness and the largest
+  single readiness gap in the platform.
+iqe: >-
+  foreach c in idp.components where c.has_e2e_spec == false
+  select c.key, c.kind, c.route
+example_questions:
+  - "What has no E2E test?"
+  - "List components without a Playwright spec"
+  - "Which canvases are unproven?"

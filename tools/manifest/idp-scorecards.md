@@ -19,6 +19,25 @@ pins it.
 | Scorecard evaluator | tools/idp/scorecard.py | Loads `args/scorecards/*.yaml`, runs one IQE query per rule (plus one per `filter`) over the declared collection, and assigns every entity a weighted score and a ladder level. Public API: `load_scorecards(dir)`, `load_scorecard(key, dir)`, `parse_scorecard(mapping)`, `evaluate(scorecard, conn) -> report dict`, `evaluate_all(dir, conn)`. Raises `ScorecardError` on a malformed file, an unknown level, a duplicate rule identifier, an unparseable expression, or a rule that reads a collection the scorecard does not declare. | `--list \| --scorecard <key> \| --component <key> \| --dir <path> \| --json` | JSON report or human table |
 | IDP component facts | tools/iqe/adapters/idp.py | Registers the IQE collection `idp.components` — one row per entry in `args/component_registry.yaml` (all kinds), carrying the facts a rule can assert on: ownership (`has_owner`, `owner`, `owner_contact`, `on_call`, `has_owner_contact`), wiring (`has_blueprint`, `has_e2e_spec`, `has_iqe_adapter`, `has_seed_queries`, `has_nav`, `iqe_collections`), the 8-point gate (`completeness_declared`, `completeness_passed`, `completeness_points`), and live signals (`rls_clean`, `failing_probes`, `health_probed`). Memoized per process; call `reset_cache()` after changing registry or tree state. Mirrored to `icdev/tools/iqe/adapters/idp.py` (mirror-parity root). | (auto-registered) | list[dict] |
 
+## Portal surface (Phase: idp-ui)
+
+The dashboard page that renders the catalog and the scorecards, at `/idp`.
+Registered entirely from `args/component_registry.yaml` — blueprint mount, nav
+entry, CLI toggle, `/api/iqe/dispatch` mapping and the client-side
+`PATH_CANVAS` regex are all derived, with no Python list edited in `app.py`,
+`cli/enable.py` or `base.html`.
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Portal view models | tools/idp/portal.py | Joins `idp.components` facts with a scorecard evaluation into template-ready shapes. Public API: `component_facts(conn, refresh)`, `scorecard_report(key, conn)`, `build_catalog(facts, report)`, `group_by_kind(rows)`, `portal_overview(scorecard_key, conn, refresh)`, `component_detail(key)`, `completeness_points(key)`, `self_check()`, `schema_status()`. Every entry point degrades instead of raising — a malformed scorecard or an unreachable DB costs the page its grades, not its catalog. An ungraded component keeps `score=None`, never `0`. | (library) | dict / list[dict] |
+| Portal blueprint | tools/idp/blueprint.py | `bp` — `/idp/`, `/idp/catalog`, `/idp/scorecards`, `/idp/component/<key>`, plus JSON `/idp/api/catalog`, `/idp/api/scorecard`, `/idp/api/component/<key>` and `POST /idp/api/iqe-query`. Declares no `url_prefix` of its own; the registry supplies it. | HTTP | HTML / JSON |
+| Portal constants | tools/idp/constants.py | Default scorecard key, IQE wiring for the query widget, catalog columns, status→badge map. Deliberately holds no ladder or rule data — that lives in YAML. | (library) | constants |
+| Schema dependency probe | tools/idp/db/init_db.py | The portal creates **no** tables. Reports which optional backing tables exist (`developer_scorecards`, `awareness_component_health`, `kg_edges`) in one catalog query, so an absent signal renders as "not measured" rather than as a passing zero. Uses `get_canvas_connection()` per the CLAUDE.md canvas-RLS rule. Public API: `schema_status(conn)`, `init_db()`, `OPTIONAL_TABLES`. | (library) | list[dict] |
+
+Seed queries: `context/iqe/queries/idp/` (catalog overview, canvases failing the
+8-point gate, unowned components, components with no E2E spec).
+E2E: `tests/e2e/idp_portal.spec.ts`. Unit: `tests/test_idp_portal.py`.
+
 ### Scorecard schema (`args/scorecards/<key>.yaml`)
 
 | Key | Meaning |
