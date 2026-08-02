@@ -23,6 +23,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -37,7 +38,40 @@ from tools.db.storage import get_connection  # noqa: E402
 from tools.strategos import tier_resolver  # noqa: E402
 
 PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
-WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
+
+
+def _canonical_repo_root() -> Path:
+    """The MAIN worktree's root, even when this module runs inside a linked one.
+
+    BASE_DIR comes from ``__file__``, so a dispatch triggered from inside a
+    worktree resolved WORKTREE_BASE to *that worktree* and created the next
+    worktree at ``<worktree>/.tmp/worktrees/<id>``. Nested worktrees are how the
+    leak compounded — measured 2026-08-02 at 122 registered worktrees including
+    paths three levels deep such as
+    ``.tmp/worktrees/tsh-e2e-01-d4/.tmp/worktrees/tsh-e2e-01-d4/.tmp/worktrees/tsr-gen-01-d4``.
+
+    ``git rev-parse --git-common-dir`` reports the MAIN repository's .git from
+    anywhere in the family, which is exactly the "resolve the repo root from a
+    known location, never from cwd or a linked checkout" rule in CLAUDE.md.
+    Falls back to BASE_DIR when git is unavailable, preserving today's behavior
+    rather than failing dispatch.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(BASE_DIR), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            common = Path(out.stdout.strip())
+            if not common.is_absolute():
+                common = (BASE_DIR / common).resolve()
+            return common.parent
+    except Exception as exc:  # noqa: BLE001 - git absent or not a repo
+        logger.debug("canonical repo root resolution failed (%s) — using BASE_DIR", exc)
+    return BASE_DIR
+
+
+WORKTREE_BASE = _canonical_repo_root() / ".tmp" / "worktrees"
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +277,15 @@ QUARANTINE_REVIVE_COOLDOWN_MIN = _int_env("KANBAN_REVIVE_COOLDOWN_MIN", 30)
 # PATTERNS routes `codelens|coherence|companion` to SCAN and `pytest|e2e|...` to
 # PYTEST, so a tier below the default would SHORTEN those tasks' budgets — which
 # is exactly what happened when the default was raised on its own.
+# Turn ceiling for a dispatched Claude CLI session. This is a HARD cutoff: the
+# CLI stops mid-task with "Error: Reached max turns (N)" and whatever the agent
+# had not yet committed is discarded, so the whole session is re-dispatched from
+# a cold worktree. At the previous hardcoded 50 that was firing on 14 of the 92
+# task logs written in the last two days — 15% of dispatches thrown away for
+# want of turns, not for want of time (the separate 1800s wall-clock budget
+# below is what should be bounding a runaway task).
+# Override via KANBAN_MAX_TURNS env var.
+MAX_TURNS = _int_env("KANBAN_MAX_TURNS", 200)
 MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 1800)
 MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1800)
 # Full-suite tasks legitimately run past an hour; they should still set
@@ -806,6 +849,33 @@ def _clear_resume_at(task_id: str):
     resume_file = PROMPT_DIR / f"{task_id}.resume_at"
     if resume_file.exists():
         resume_file.unlink(missing_ok=True)
+
+
+# Backoff ladder for a token-exhaustion retry whose DISPATCH failed (as opposed
+# to a task that ran and hit the token limit again). Capped so a task that will
+# never dispatch cannot hold the single per-cycle retry slot indefinitely.
+# Override via KANBAN_TOKEN_RETRY_BACKOFF_MIN / _MAX_MIN env vars.
+TOKEN_RETRY_BACKOFF_BASE_MIN = _int_env("KANBAN_TOKEN_RETRY_BACKOFF_MIN", 5)
+TOKEN_RETRY_BACKOFF_MAX_MIN = _int_env("KANBAN_TOKEN_RETRY_BACKOFF_MAX_MIN", 60)
+
+
+def _token_retry_backoff(task_id: str, retry_count: int) -> None:
+    """Push a token-exhausted task's resume_at out after a failed dispatch.
+
+    Without this the task keeps its already-elapsed resume_at, so it is handed
+    straight back on the next 60s cycle and re-consumes the one token-retry the
+    cycle permits — starving every other parked task behind it.
+    """
+    minutes = min(
+        TOKEN_RETRY_BACKOFF_BASE_MIN * max(1, retry_count + 1),
+        TOKEN_RETRY_BACKOFF_MAX_MIN,
+    )
+    resume_at = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    _save_resume_at(task_id, resume_at)
+    print(
+        f"  Kanban: token retry dispatch failed for {task_id} "
+        f"— backing off {minutes} min (resume_at={resume_at.isoformat()})"
+    )
 
 
 def _get_retry_count(task_id: str) -> int:
@@ -1680,7 +1750,25 @@ def _remove_worktree(path) -> bool:
     that the directory has not been touched for _WORKTREE_STALE_AGE_DAYS. A lock on a
     worktree in that state is a leftover from a run that ended days ago, not a live
     agent's claim. We do not unlock anything else.
+
+    ## A directory git has never heard of is still ours to delete
+
+    Reporting the failure fixed the lie but not the leak. ``git worktree remove`` also
+    refuses a directory that is not a registered worktree at all:
+
+        fatal: 'C:/AI/ICDev/.tmp/worktrees/foo' is not a working tree   (rc=128)
+
+    That happens whenever the registration is dropped while the directory survives — a
+    ``git worktree prune`` after a partial Windows rmtree, a repo re-clone, a crash between
+    ``add`` and first write. git will never reclaim those, so returning False left them on
+    disk to be re-attempted on the next sweep, forever. 334 of them had accumulated against
+    28 live registrations, and 13,095 log lines were this one refusal repeating.
+
+    So: when git says the path is not a working tree, there is no registration to protect
+    and nothing for git to do. Delete the directory ourselves. The caller's staleness and
+    not-in_progress checks are what make that safe, exactly as they are for the unlock above.
     """
+    import shutil as _shutil
     import subprocess as _sp
 
     result = _sp.run(
@@ -1690,7 +1778,9 @@ def _remove_worktree(path) -> bool:
     if result.returncode == 0:
         return True
 
-    if "locked" in (result.stderr or "").lower():
+    stderr = (result.stderr or "").lower()
+
+    if "locked" in stderr:
         _sp.run(["git", "worktree", "unlock", str(path)],
                 cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30)
         result = _sp.run(
@@ -1700,6 +1790,20 @@ def _remove_worktree(path) -> bool:
         if result.returncode == 0:
             logger.info("Sweep: unlocked stale worktree %s before removing it", path)
             return True
+        stderr = (result.stderr or "").lower()
+
+    # Orphan: on disk but not a registered worktree. git cannot help; we can.
+    if "is not a working tree" in stderr:
+        _shutil.rmtree(str(path), ignore_errors=True)
+        if not Path(path).exists():
+            logger.info(
+                "Sweep: removed orphan worktree dir %s (not registered with git)", path,
+            )
+            return True
+        logger.warning(
+            "Sweep: orphan worktree dir %s survived rmtree (file lock?) — will retry", path,
+        )
+        return False
 
     # Say what happened. The previous code's silence here is the whole bug.
     logger.warning(
@@ -2629,32 +2733,150 @@ def _run_gate_step(slug: str, work_dir: str, task_id: str) -> Tuple[bool, str]:
     return True, f"unknown gate step '{slug}' — skipped"
 
 
+# ---------------------------------------------------------------------------
+# Deterministic tool tasks (the non-phase-gate shape)
+# ---------------------------------------------------------------------------
+# A board task whose entire job is one documented `python tools/...` scan does
+# not need a 900-1800s LLM dispatch wrapped around a ~40s subprocess. Such a
+# task opts in with a marker line anywhere in its description:
+#
+#     TOOL-RUNNER: python tools/testing/health_check.py --json
+#
+# The marker only SELECTS from the closed set below — it cannot introduce a new
+# command, and that distinction is the entire point. Task descriptions are
+# written by an LLM, so a prefix-only check ("starts with python tools/") would
+# let anything in the tree run unattended, `tools/db/init_icdev_db.py` included.
+# Two gates apply, in order:
+#
+#   1. tools/skills/invoke.py::_is_safe_command — the shared prefix allowlist,
+#      reused rather than re-implemented (tools/agent_runtime/cron.py reuses the
+#      same one for its script jobs).
+#   2. _TOOL_RUNNER_COMMANDS — this module's closed set, compared on the
+#      canonical argv tuple so that spacing, `python3`, or a backslash path
+#      cannot smuggle an unlisted command past a string compare.
+#
+# Membership is deliberately limited to read-only scans. A command that fails
+# either gate is REFUSED, not run: the task falls through to the normal LLM
+# executor chain, which is exactly the pre-existing behaviour for every task.
+_TOOL_RUNNER_COMMANDS: frozenset = frozenset({
+    ("python", "tools/testing/health_check.py", "--json"),
+    ("python", "tools/db/storage.py", "--health", "--json"),
+    ("python", "tools/awareness/health_prober.py", "--run-all", "--json"),
+    ("python", "tools/awareness/drift_detector.py", "--detect", "--json"),
+    ("python", "tools/awareness/gap_detector.py", "--detect", "--json"),
+    ("python", "tools/workflow/coherence_checker.py", "--all", "--gate"),
+})
+
+_TOOL_RUNNER_MARKER_RE = re.compile(
+    r"^[ \t]*(?:[-*][ \t]*)?TOOL-RUNNER:[ \t]*`?(?P<cmd>[^`\r\n]+?)`?[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _canonical_command(cmd: str) -> Optional[Tuple[str, ...]]:
+    """Normalise a command string to an argv tuple for allowlist comparison."""
+    import shlex  # noqa: PLC0415
+
+    try:
+        parts = shlex.split(cmd.strip(), posix=False)
+    except ValueError:
+        return None
+    if not parts:
+        return None
+    if parts[0] in ("python3", "py"):
+        parts[0] = "python"
+    return tuple(p.replace("\\", "/") for p in parts)
+
+
+def _tool_runner_command(description: str) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve a TOOL-RUNNER marker against the allowlist.
+
+    Returns ``(command, refusal_reason)``:
+      ``(None, None)``   — no marker; not a tool-runner task at all.
+      ``(None, reason)`` — marked as one, but the command is refused.
+      ``(cmd, None)``    — cleared both gates and may run.
+    """
+    match = _TOOL_RUNNER_MARKER_RE.search(description or "")
+    if not match:
+        return None, None
+    raw = match.group("cmd").strip()
+
+    from tools.skills.invoke import _is_safe_command  # noqa: PLC0415
+
+    # Normalise FIRST so both gates judge one string rather than two spellings
+    # of it. This cannot widen anything: gate 2 is exact set membership, and
+    # `python3 x` / `tools\x` are the same invocation as `python x` / `tools/x`.
+    canonical = _canonical_command(raw)
+    if canonical is None:
+        return None, f"command could not be parsed: {raw[:200]}"
+    normalised = " ".join(canonical)
+
+    if not _is_safe_command(normalised):
+        return None, ("prefix not in the shared allowlist "
+                      f"(python tools/, python -m tools, python -c): {raw[:200]}")
+
+    if canonical not in _TOOL_RUNNER_COMMANDS:
+        return None, f"command not in the tool_runner allowlist: {raw[:200]}"
+    return normalised, None
+
+
+def _run_tool_command(cmd: str, work_dir: str) -> Tuple[bool, str]:
+    """Execute one already-allowlisted command via the shared skill invoker."""
+    from tools.skills.invoke import run_command  # noqa: PLC0415
+
+    res = run_command(cmd, [], timeout=MAX_EXECUTION_SECONDS_SCAN, cwd=work_dir)
+    if res.get("skipped"):
+        return False, res.get("reason", "command skipped")
+    if res.get("error"):
+        return False, f"{cmd} errored: {res['error']}"
+    rc = res.get("returncode", 1)
+    out = ((res.get("stdout") or "") + (res.get("stderr") or "")).strip()
+    return rc == 0, f"$ {cmd}\nexit={rc}\n{out[-3000:]}"
+
+
 def _dispatch_via_tool_runner(task: dict, work_dir: str, task_log: Path) -> bool:
-    """Run a deterministic gate sub-task in-process. Returns True if handled."""
+    """Run a deterministic task in-process. Returns True if handled.
+
+    Two shapes qualify: an auto-decomposed phase-gate child (matched on task id)
+    and a task carrying a TOOL-RUNNER marker naming an allowlisted read-only
+    scan. Everything else — including a marker naming an unlisted command —
+    returns False and takes the normal LLM executor chain.
+    """
     task_id = task["id"]
     slug = _gate_step_slug(task_id)
-    if not slug:
-        return False
+
+    if slug:
+        kind, label = "gate step", slug
+    else:
+        cmd, refusal = _tool_runner_command(task.get("description") or "")
+        if refusal:
+            logger.warning("kanban: tool_runner REFUSED %s — %s", task_id, refusal)
+            print(f"  Kanban: tool_runner refused {task_id} — {refusal}")
+            return False
+        if not cmd:
+            return False
+        kind, label = "tool command", cmd
 
     started = time.monotonic()
     try:
-        ok, detail = _run_gate_step(slug, work_dir, task_id)
+        ok, detail = (_run_gate_step(slug, work_dir, task_id) if slug
+                      else _run_tool_command(cmd, work_dir))
     except Exception as exc:
-        ok, detail = False, f"gate step raised: {exc}"
+        ok, detail = False, f"{kind} raised: {exc}"
     elapsed = round(time.monotonic() - started, 1)
 
     try:
         task_log.write_text(
             f"[tool-runner dispatch — task {task_id}]\n"
             f"[work_dir {work_dir}]\n"
-            f"[step {slug}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
+            f"[{kind} {label}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
             encoding="utf-8", errors="replace",
         )
     except Exception as exc:
-        logger.debug("kanban: gate-step log write failed for %s: %s", task_id, exc)
+        logger.debug("kanban: tool-runner log write failed for %s: %s", task_id, exc)
 
     _set_executor_type(task_id, "tool_runner")
-    print(f"  Kanban: gate step {task_id} ({slug}) "
+    print(f"  Kanban: {kind} {task_id} ({label}) "
           f"{'PASSED' if ok else 'FAILED'} in {elapsed}s via tool_runner")
     if ok:
         _move_task(task_id, "done", actor="tool_runner", reason=detail[:400])
@@ -4305,7 +4527,7 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
             claude_cli,
             "--dangerously-skip-permissions",
             "--max-turns",
-            "50",
+            str(MAX_TURNS),
             "--output-format",
             "text",
         ]
@@ -4855,7 +5077,11 @@ def _poll_github_actions_completions() -> None:
                     logger.warning(
                         "kanban: GA run %s for %s conclusion=%s → backlog", run_id, task_id, _conclusion
                     )
-                    _move_task(task_id, "backlog")
+                    _move_task(
+                        task_id, "backlog", actor="scheduler",
+                        reason=f"GitHub Actions run {run_id} concluded "
+                               f"'{_conclusion or 'unknown'}'",
+                    )
                 _ga_last_polled.pop(task_id, None)
         except Exception as _exc:
             logger.warning("kanban: GA poll error for %s: %s", task_id, _exc)
@@ -5152,7 +5378,13 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
 
 
 def _set_executor_type(task_id: str, executor_type: str) -> None:
-    """Stamp executor_type on the task row so the UI badge is accurate."""
+    """Stamp executor_type on the task row so the UI badge is accurate.
+
+    Also opens the task's kanban_executions row. This is the one place every
+    executor tier passes through exactly once on a successful dispatch, so it is
+    where "a dispatch started, at this time, via this executor" is true for all
+    of them — rather than four call sites that would drift apart.
+    """
     try:
         with get_connection() as conn:
             conn.execute(
@@ -5161,6 +5393,100 @@ def _set_executor_type(task_id: str, executor_type: str) -> None:
             )
     except Exception as exc:
         logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
+
+    _open_execution(task_id, executor_type)
+
+
+def _open_execution(task_id: str, executor_type: str) -> Optional[str]:
+    """Open a kanban_executions row for this dispatch. Returns its id, or None.
+
+    ``kanban_executions`` has had exactly the columns needed to answer "how long
+    does a task actually take" since migration 010, and zero rows for its entire
+    existence — nothing ever wrote to it. That is why ``execution_seconds`` is
+    populated on 7 of 2,586 tasks and ``_detect_execution_anomalies`` has been
+    falling back to the static timeout constants instead of adapting.
+
+    Columns here are the LIVE ones (migration 010 + later additions), not the
+    stale set in tools/kanban/init_db.py — an INSERT naming a column that only
+    exists in some DDL fails at runtime and gets swallowed by the except below,
+    which is precisely how a table ends up with no rows and nobody notices.
+    """
+    execution_id = f"exec-{task_id}-{uuid.uuid4().hex[:8]}"
+    try:
+        with get_connection() as conn:
+            # Close any row this task left open. A task can be re-dispatched
+            # without its previous execution ever being closed — the scheduler
+            # restarts, or startup recovery resets it to backlog and it is
+            # promoted again — and _close_execution only ever closes the MOST
+            # RECENT open row. Without this, every such re-dispatch strands a
+            # row in 'running' forever, so "what is running now" drifts further
+            # from the truth the longer the board runs. Observed immediately
+            # after the first restart that enabled this telemetry: two tasks
+            # each had two rows in 'running'.
+            conn.execute(
+                "UPDATE kanban_executions SET status = %s, completed_at = %s "
+                "WHERE task_id = %s AND completed_at IS NULL",
+                ("superseded", _utcnow_iso(), task_id),
+            )
+            conn.execute(
+                "INSERT INTO kanban_executions "
+                "(id, task_id, executor_type, execution_id, started_at, status) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (execution_id, task_id, executor_type, execution_id,
+                 _utcnow_iso(), "running"),
+            )
+            conn.execute(
+                "UPDATE kanban_tasks SET execution_id = %s WHERE id = %s",
+                (execution_id, task_id),
+            )
+        return execution_id
+    except Exception as exc:  # noqa: BLE001 — telemetry must never block dispatch
+        logger.warning("kanban: could not open execution row for %s: %s", task_id, exc)
+        return None
+
+
+def _close_execution(task_id: str, status: str, exit_code: Optional[int] = None,
+                     output_summary: str = "") -> None:
+    """Close the task's open execution row and stamp kanban_tasks.execution_seconds.
+
+    Best-effort and idempotent-ish: if no open row exists (scheduler restarted
+    mid-task, telemetry insert failed) this is a no-op rather than an error.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, started_at FROM kanban_executions "
+                "WHERE task_id = %s AND completed_at IS NULL "
+                "ORDER BY started_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                return
+            d = dict(row)
+            conn.execute(
+                "UPDATE kanban_executions SET completed_at = %s, status = %s, "
+                "exit_code = %s, output_summary = %s WHERE id = %s",
+                (now.isoformat(), status, exit_code,
+                 (output_summary or "")[:2000], d["id"]),
+            )
+
+            started = d.get("started_at")
+            if started:
+                try:
+                    text = str(started).replace("Z", "+00:00")
+                    start_dt = datetime.fromisoformat(text)
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    seconds = max(0.0, (now - start_dt).total_seconds())
+                    conn.execute(
+                        "UPDATE kanban_tasks SET execution_seconds = %s WHERE id = %s",
+                        (seconds, task_id),
+                    )
+                except (ValueError, TypeError) as exc:
+                    logger.debug("kanban: unparseable started_at for %s: %s", task_id, exc)
+    except Exception as exc:  # noqa: BLE001 — telemetry must never block completion
+        logger.warning("kanban: could not close execution row for %s: %s", task_id, exc)
 
 
 def _get_executor_type(task_id: str) -> str | None:
@@ -8331,7 +8657,11 @@ def _check_completed():
                         f"moved to suggested"
                     )
                 else:
-                    _move_task(task_id, "backlog")
+                    _move_task(
+                        task_id, "backlog", actor="scheduler",
+                        reason=f"timeout {_tout_count}/{MAX_TIMEOUT_RETRIES} — "
+                               + _timeout_reason,
+                    )
                     # Backoff delay: 5 min × retry count before next dispatch.
                     # Prevents a structurally-slow task from immediately burning
                     # another 900 s slot on the very next scheduler cycle.
@@ -8432,6 +8762,19 @@ def _check_completed():
             except Exception:
                 pass
 
+            # Close the execution row here, at the point the subprocess exits —
+            # before verification, remediation or merge, which can each take
+            # minutes and are not the agent's build time. This is what makes
+            # execution_seconds mean "how long the agent ran" and lets
+            # _detect_execution_anomalies adapt timeouts instead of falling back
+            # to the static constants.
+            _close_execution(
+                task_id,
+                status="completed" if ret == 0 else "failed",
+                exit_code=ret,
+                output_summary=claude_output[-2000:] if claude_output else "",
+            )
+
             # Build task dict with title from DB or fallback
             task_dict = {"id": task_id, "title": task_id}
             try:
@@ -8456,7 +8799,11 @@ def _check_completed():
                 retry_count = _increment_retry_count(task_id)
                 if retry_count >= TOKEN_MAX_RETRY_COUNT:
                     # Exceeded max retries — move to backlog, give up
-                    _move_task(task_id, "backlog")
+                    _move_task(
+                        task_id, "backlog", actor="scheduler",
+                        reason=f"token exhaustion: gave up after {retry_count} "
+                               f"retries (max {TOKEN_MAX_RETRY_COUNT})",
+                    )
                     _clear_retry_count(task_id)
                     _clear_resume_at(task_id)
                     _send_notification(task_dict, event="failed")
@@ -8807,7 +9154,11 @@ def _check_completed():
                 if task_id in _worktrees:
                     print(f"  Kanban: preserving worktree for failed task {task_id}")
                 try:
-                    _move_task(task_id, "backlog")
+                    _move_task(
+                        task_id, "backlog", actor="scheduler",
+                        reason=(f"claude CLI exited {ret}"
+                                + (f": {error_tail.strip()[:300]}" if error_tail.strip() else "")),
+                    )
                     _send_notification(task_dict, event="failed")
                 except Exception as _ll_exc:
                     logger.warning("lesson_learned hook failed: %s", _ll_exc)
@@ -8901,7 +9252,11 @@ def _check_token_exhausted_tasks() -> list:
                     task_id,
                     TOKEN_MAX_RETRY_COUNT,
                 )
-                _move_task(task_id, "backlog")
+                _move_task(
+                    task_id, "backlog", actor="scheduler",
+                    reason=f"token-retry budget exhausted: {retry_count} retries "
+                           f"(max {TOKEN_MAX_RETRY_COUNT})",
+                )
                 _clear_retry_count(task_id)
                 _clear_resume_at(task_id)
                 _send_notification(task, event="retry_exhausted")
@@ -9696,22 +10051,24 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 except Exception as _ll_exc:
                     logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
-        # Stale cleanup happened — defer promotion to the next cycle so the
-        # quarantine state written by check_and_diagnose has time to settle
-        # before the scheduler considers the task eligible for re-dispatch.
+        # Stale cleanup happened. This used to `return` here, deferring ALL
+        # promotion to the next cycle so the quarantine state written by
+        # check_and_diagnose could settle before the cleaned task was eligible
+        # for re-dispatch again.
+        #
+        # The settling is already guaranteed, and more precisely, by the backlog
+        # cooldown in _get_due_tasks: a task whose updated_at is within the last
+        # 2 minutes is not selectable, and a task that was just cleaned always
+        # is. (Verified against the live PostgreSQL board — the predicate
+        # discriminates correctly rather than being a SQLite-ism that no-ops.)
+        #
+        # So the return bought nothing for the cleaned task and cost a full 60s
+        # dispatch slot for every OTHER task on the board — which is the wrong
+        # trade on a queue that is already idle 75% of the time. Cleanup is
+        # reported; the cycle continues.
         if stale_info:
-            print(f"  Kanban: stale-cleanup finished ({len(stale_info)} task(s)) "
-                  f"— deferring promotion to next cycle")
-            return {
-                "success": True,
-                "metric_value": len(completed),
-                "details": {
-                    "status": "stale_cleanup",
-                    "cleaned": [t for t, _ in stale_info],
-                    "completed_this_cycle": completed,
-                    "telegram_commands": len(tg_results),
-                },
-            }
+            print(f"  Kanban: stale-cleanup finished ({len(stale_info)} task(s)): "
+                  f"{', '.join(t for t, _ in stale_info)} — continuing this cycle")
 
     # 3b. Concurrency gate — only block when we are at MAX_IN_PROGRESS.
     # With worktree isolation, multiple Claude CLI subprocesses can run
@@ -9756,9 +10113,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 _send_notification(task, event="in_progress")
                 token_retry_dispatched = True
             else:
-                print(f"  Kanban: token retry dispatch failed for {task['id']}")
+                # A failed dispatch used to change nothing at all: the task
+                # stayed token_exhausted with its resume_at already in the past,
+                # so _check_token_exhausted_tasks handed back the SAME task on
+                # the very next cycle, and the one token-retry this cycle allows
+                # was spent on it again. One task did that 212 times in the
+                # current log while every other parked task waited behind it.
+                # Push resume_at out so the retry backs off and the queue moves.
+                _token_retry_backoff(task["id"], retry_count)
         except Exception as e:
             print(f"  Kanban: token retry error for {task['id']}: {e}")
+            try:
+                _token_retry_backoff(task["id"], retry_count)
+            except Exception:  # noqa: BLE001 — backoff must never break the cycle
+                pass
 
     # If a token retry consumed the last available slot, skip normal promotion.
     if len(_running) >= MAX_IN_PROGRESS:

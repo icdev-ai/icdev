@@ -29787,7 +29787,7 @@ CREATE TABLE public.source_citation_registry (
     project_id text,
     trust_score real DEFAULT 0.0,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text])))
+    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text, 'cortex'::text, 'asset_token'::text])))
 );
 
 

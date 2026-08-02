@@ -23,7 +23,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tests._sql_compat import connect as translating_connect  # noqa: E402
 from tools.audit.audit_logger import log_event, atomic_log_event  # noqa: E402
 from tools.audit.cross_agency_transfer_logger import (  # noqa: E402
     CrossAgencyTransferLogger,
@@ -111,10 +110,18 @@ def db(tmp_path):
 
 @pytest.fixture
 def audit_conn(db):
-    """Connection factory patched into audit_logger."""
+    """Connection factory patched into audit_logger.
+
+    Stands in for ``get_connection``, so what it returns goes to production
+    code, which authors ``%s`` placeholders for PostgreSQL and relies on that
+    layer to rewrite them. A bare ``sqlite3.connect`` raises ``near "%":
+    syntax error`` on every such statement. The raw connections elsewhere in
+    this file stay raw — they only serve SQL written here.
+    """
+    from _sql_compat import connect as _tconnect
 
     def _make():
-        return translating_connect(db)
+        return _tconnect(db)
 
     with patch(f"{_MODULE_AUDIT}.get_connection", side_effect=_make):
         yield _make
@@ -122,17 +129,11 @@ def audit_conn(db):
 
 @pytest.fixture
 def cat_logger(db):
-    """CrossAgencyTransferLogger patched to the temp DB.
-
-    ``CrossAgencyTransferLogger._insert`` writes PostgreSQL-style ``%s``
-    placeholders and swallows failures ("degrading gracefully"), so a bare
-    ``sqlite3.connect`` here makes every write raise ``near "%": syntax
-    error`` inside that except block and return an empty id — the tests then
-    assert against a no-op they caused themselves.
-    """
+    """CrossAgencyTransferLogger patched to the temp DB (translating — see above)."""
+    from _sql_compat import connect as _tconnect
 
     def _make():
-        return translating_connect(db)
+        return _tconnect(db)
 
     with patch(f"{_MODULE_CAT}.get_connection", side_effect=_make):
         yield CrossAgencyTransferLogger(), _make
@@ -300,16 +301,6 @@ class TestCrossAgencyTransferCapture:
 # ---------------------------------------------------------------------------
 
 
-#: ``RAISE(ABORT, …)`` in a trigger returns ``SQLITE_CONSTRAINT_TRIGGER``, which
-#: modern CPython maps to :class:`sqlite3.IntegrityError`; older interpreters
-#: surfaced the same abort as :class:`sqlite3.OperationalError`. CI runs 3.11
-#: and developers run 3.14, so pinning either subclass makes the suite pass on
-#: one and fail on the other. The invariant under test is that the append-only
-#: trigger fired with its message — which ``match=`` asserts — not which DBAPI
-#: subclass wraps it.
-_TRIGGER_ABORT = (sqlite3.IntegrityError, sqlite3.OperationalError)
-
-
 class TestAppendOnlyImmutability:
     """Verify that UPDATE and DELETE are rejected or ignored on audit tables."""
 
@@ -321,7 +312,7 @@ class TestAppendOnlyImmutability:
             db_path=db,
         )
         conn = sqlite3.connect(str(db))
-        with pytest.raises(_TRIGGER_ABORT, match="append-only.*UPDATE forbidden"):
+        with pytest.raises(sqlite3.IntegrityError, match="append-only.*UPDATE forbidden"):
             conn.execute("UPDATE audit_trail SET actor='attacker' WHERE id=?", (entry_id,))
         conn.close()
 
@@ -333,7 +324,7 @@ class TestAppendOnlyImmutability:
             db_path=db,
         )
         conn = sqlite3.connect(str(db))
-        with pytest.raises(_TRIGGER_ABORT, match="append-only.*DELETE forbidden"):
+        with pytest.raises(sqlite3.IntegrityError, match="append-only.*DELETE forbidden"):
             conn.execute("DELETE FROM audit_trail WHERE id=?", (entry_id,))
         conn.close()
 
@@ -341,7 +332,7 @@ class TestAppendOnlyImmutability:
         cat, _make = cat_logger
         eid = cat.log_initiated("t-up", "A", "B", "d", "u")
         conn = sqlite3.connect(str(db))
-        with pytest.raises(_TRIGGER_ABORT, match="append-only.*UPDATE forbidden"):
+        with pytest.raises(sqlite3.IntegrityError, match="append-only.*UPDATE forbidden"):
             conn.execute("UPDATE cross_agency_transfers SET actor='attacker' WHERE id=?", (eid,))
         conn.close()
 
@@ -349,7 +340,7 @@ class TestAppendOnlyImmutability:
         cat, _make = cat_logger
         eid = cat.log_initiated("t-del", "A", "B", "d", "u")
         conn = sqlite3.connect(str(db))
-        with pytest.raises(_TRIGGER_ABORT, match="append-only.*DELETE forbidden"):
+        with pytest.raises(sqlite3.IntegrityError, match="append-only.*DELETE forbidden"):
             conn.execute("DELETE FROM cross_agency_transfers WHERE id=?", (eid,))
         conn.close()
 

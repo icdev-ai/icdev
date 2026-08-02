@@ -32,6 +32,7 @@
 - [eMASS Integration](manifest/emass-integration.md)
 - [Builder (TDD)](manifest/builder.md)
 - [Security Scanning](manifest/security-scanning.md)
+- [Analyzer / Responder Contract (ANZ)](manifest/analyzer-contract.md)
 - [Showcase](manifest/showcase.md)
 - [Deploy](manifest/deploy.md)
 - [Infrastructure](manifest/infrastructure.md)

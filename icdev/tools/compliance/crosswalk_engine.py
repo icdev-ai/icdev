@@ -596,9 +596,12 @@ def compute_crosswalk_coverage(project_id, db_path=None):
                 gate = "in_progress"
 
             conn.execute(
+                # `implemented_controls` is not a column — the live column is
+                # `implemented_count` (swp-scan-01), so no framework coverage
+                # row was ever written.
                 """INSERT OR REPLACE INTO project_framework_status
                    (project_id, framework_id, total_controls,
-                    implemented_controls, coverage_pct, gate_status,
+                    implemented_count, coverage_pct, gate_status,
                     last_assessed, updated_at)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                 (

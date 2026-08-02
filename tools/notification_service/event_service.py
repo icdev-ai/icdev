@@ -219,9 +219,11 @@ def notify_kanban_event(
         for ch in channels:
             if ch == "audit":
                 conn.execute(
-                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('kanban_notification', %s, %s, 'system', %s)",
-                    (task_id, event_type, rendered),
+                    # See alert_service — resource_type/resource_id/event/detail do
+                    # not exist on audit_trail (swp-scan-01).
+                    "INSERT INTO audit_trail (event_type, action, actor, details) "
+                    "VALUES ('kanban_notification', %s, 'system', %s)",
+                    (event_type, json.dumps({"task_id": task_id, "rendered": rendered})),
                 )
                 conn.commit()
                 receipts[ch] = "inserted"
@@ -320,9 +322,9 @@ def notify_genesis_milestone(
         for ch in channels:
             if ch == "audit":
                 conn.execute(
-                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('genesis_notification', %s, %s, 'system', %s)",
-                    (design_id, milestone_type, rendered),
+                    "INSERT INTO audit_trail (event_type, action, actor, details) "
+                    "VALUES ('genesis_notification', %s, 'system', %s)",
+                    (milestone_type, json.dumps({"design_id": design_id, "rendered": rendered})),
                 )
                 conn.commit()
                 receipts[ch] = "inserted"
@@ -421,9 +423,9 @@ def notify_oracle_alert(
         for ch in channels:
             if ch == "audit":
                 conn.execute(
-                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('oracle_notification', %s, %s, 'oracle', %s)",
-                    (lens_id, alert_type, json.dumps({"rendered": rendered, "pred_ids": prediction_ids})),
+                    "INSERT INTO audit_trail (event_type, action, actor, details) "
+                    "VALUES ('oracle_notification', %s, 'oracle', %s)",
+                    (alert_type, json.dumps({"lens_id": lens_id, "rendered": rendered, "pred_ids": prediction_ids})),
                 )
                 conn.commit()
                 receipts[ch] = "inserted"

@@ -187,3 +187,97 @@ def test_classify_ci_log_failure_label():
     assert ec.classify_ci_log_failure("bandit issue: B608") == "security_failure"
     assert ec.classify_ci_log_failure("") is None
     assert ec.classify_ci_log_failure("totally clean output") is None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Unattended-merge policy (require_approval)
+#
+# Regression guard: `require_approval=True` was hardcoded into the DONE path via
+# is_approved_and_passing(), so a green-but-unapproved PR could never reach DONE
+# no matter what the caller's merge config said. The caller's own
+# `auto_merge_require_approval: false` was only read *inside* the DONE branch —
+# unreachable. Real kanban PRs sat green for 14h+ and then aged into FAILED.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _green_unapproved_pr():
+    """9 CheckRuns green (one SKIPPED), no reviews — the real #1151 shape."""
+    return {
+        "state": "OPEN",
+        "mergeable": "MERGEABLE",
+        "reviews": [],
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "statusCheckRollup": [
+            {"name": "Lint", "conclusion": "SUCCESS"},
+            {"name": "Test", "conclusion": "SUCCESS"},
+            {"name": "Security Scan", "conclusion": "SUCCESS"},
+            {"name": "Docker Build", "conclusion": "SKIPPED"},
+        ],
+    }
+
+
+def test_green_unapproved_is_not_done_when_approval_required():
+    assert ec.classify_pr_state(_green_unapproved_pr()) == KanbanState.PR_OPENED
+
+
+def test_green_unapproved_is_done_when_approval_not_required():
+    assert ec.classify_pr_state(
+        _green_unapproved_pr(), require_approval=False
+    ) == KanbanState.DONE
+
+
+def test_require_approval_false_still_respects_ci_failure():
+    pr = _green_unapproved_pr()
+    pr["statusCheckRollup"].append({"name": "E2E", "conclusion": "FAILURE"})
+    assert ec.classify_pr_state(pr, require_approval=False) == KanbanState.CI_FAILED
+
+
+def test_require_approval_false_still_respects_merge_conflict():
+    pr = _green_unapproved_pr()
+    pr["mergeable"] = "CONFLICTING"
+    assert ec.classify_pr_state(
+        pr, require_approval=False
+    ) == KanbanState.MERGE_CONFLICT
+
+
+def test_require_approval_false_still_respects_changes_requested():
+    pr = _green_unapproved_pr()
+    pr["reviews"] = [{"state": "CHANGES_REQUESTED", "author": "a"}]
+    assert ec.classify_pr_state(
+        pr, require_approval=False
+    ) == KanbanState.CHANGES_REQUESTED
+
+
+def test_running_ci_is_not_done_even_without_approval_requirement():
+    pr = _green_unapproved_pr()
+    pr["statusCheckRollup"].append({"name": "E2E", "state": "IN_PROGRESS"})
+    assert ec.classify_pr_state(pr, require_approval=False) == KanbanState.PR_OPENED
+
+
+# ── is_passing ──────────────────────────────────────────────────────────────
+
+
+def test_is_passing_treats_skipped_and_neutral_as_green():
+    assert ec.is_passing({"statusCheckRollup": [
+        {"conclusion": "SUCCESS"}, {"conclusion": "SKIPPED"},
+        {"conclusion": "NEUTRAL"},
+    ]})
+
+
+def test_is_passing_false_on_empty_rollup():
+    # No CI reported yet is "unknown", not "green" — must not auto-merge.
+    assert not ec.is_passing({"statusCheckRollup": []})
+    assert not ec.is_passing({})
+
+
+def test_is_passing_handles_status_context_shape():
+    # StatusContext entries carry `state` and no `conclusion`.
+    assert ec.is_passing({"statusCheckRollup": [{"context": "ci", "state": "SUCCESS"}]})
+    assert not ec.is_passing({"statusCheckRollup": [{"context": "ci", "state": "PENDING"}]})
+
+
+def test_is_approved_and_passing_still_requires_both():
+    green = _green_unapproved_pr()
+    assert not ec.is_approved_and_passing(green)
+    green["reviews"] = [{"state": "APPROVED", "author": "b"}]
+    assert ec.is_approved_and_passing(green)

@@ -32,13 +32,12 @@ __all__ = ["TranslatingConnection", "TranslatingCursor", "translating", "connect
 class TranslatingCursor:
     """Wraps a sqlite3 cursor, applying %s -> ? before every statement.
 
-    Production code often goes through ``conn.cursor()`` rather than
-    ``conn.execute()`` — ``tools/memory/memory_write.py`` is one such caller.
-    ``StorageConnection.cursor()`` returns a translating ``StorageCursor``, so
-    without this class a ``TranslatingConnection`` would hand back a *raw*
-    cursor and silently drop translation for exactly those call sites. The
-    fixture would then look converted while still raising ``near "%": syntax
-    error`` — the failure mode this module exists to remove.
+    Production code reaches for ``conn.cursor()`` as often as ``conn.execute``
+    — ``tools/ci/pr_watcher.py::_enforced_done_ok`` is one of several. Without
+    this, ``__getattr__`` handed back the *raw* sqlite3 cursor, which does not
+    translate, so a ``%s`` query issued through it still raised
+    ``near "%": syntax error`` inside the caller's ``except`` — the same silent
+    no-op this module exists to prevent, one layer down.
     """
 
     def __init__(self, cursor: sqlite3.Cursor):
@@ -56,6 +55,8 @@ class TranslatingCursor:
         return self
 
     def executescript(self, sql: str):
+        # Not translated: executescript takes DDL/seed scripts, which carry no
+        # bound parameters, and sqlite3 rejects a parameterized script anyway.
         self._cursor.executescript(sql)
         return self
 

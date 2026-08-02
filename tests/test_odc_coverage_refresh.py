@@ -30,6 +30,8 @@ import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from tests import _sql_compat
+
 _MODPATH = "tools.genesis.reflexes.odc_coverage_refresh"
 
 # Minimal SQLite DDL for the four tables the reflex + compute_gap_score touch
@@ -83,35 +85,6 @@ _RICH_GRAPH = {
     "edges": [],
 }
 _EMPTY_GRAPH = {"nodes": [], "edges": []}  # no signal sources → coverage_pct 0
-
-
-class _FakeConn:
-    """sqlite3 wrapper translating PostgreSQL %s placeholders to ? (shim for the
-    canvas StorageConnection). Supports both `with` and explicit close."""
-
-    def __init__(self, path):
-        self._c = sqlite3.connect(str(path))
-        self._c.row_factory = sqlite3.Row
-
-    def execute(self, sql, params=()):
-        return self._c.execute(sql.replace("%s", "?"), params)
-
-    def commit(self):
-        self._c.commit()
-
-    def close(self):
-        self._c.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if exc_type is None:
-            self._c.commit()
-        else:
-            self._c.rollback()
-        self._c.close()
-        return False
 
 
 def _make_db(db_path) -> None:
@@ -168,7 +141,12 @@ def _patch(monkeypatch, db_path, cfg=None):
     # init_db.get_connection is imported (deferred) by BOTH the reflex and
     # mitre_coverage_twin._persist_gap_score — one patch covers both.
     init_db = importlib.import_module("tools.observability_canvas.db.init_db")
-    monkeypatch.setattr(init_db, "get_connection", lambda *a, **k: _FakeConn(db_path), raising=True)
+    monkeypatch.setattr(
+        init_db,
+        "get_connection",
+        lambda *a, **k: _sql_compat.connect(db_path),
+        raising=True,
+    )
 
     if cfg is not None:
         monkeypatch.setattr(mod, "_load_config", lambda: cfg)

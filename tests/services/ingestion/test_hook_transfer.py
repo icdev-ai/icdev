@@ -457,7 +457,14 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     classification TEXT DEFAULT 'CUI',
     ip_address TEXT,
     session_id TEXT,
-    recorded_at TEXT
+    recorded_at TEXT,
+    -- The AU-2 mirror in cross_agency_transfer_logger writes ``created_at``,
+    -- not ``recorded_at`` (swp-scan-01: recorded_at exists only in the SQLite
+    -- init DDL, never on PostgreSQL). Omitting it here made every mirror
+    -- INSERT raise "no such column: created_at" into the logger's
+    -- ``except Exception`` — the dual-write asserted below silently found 0
+    -- rows. Keep this column in step with the live audit_trail schema.
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -485,15 +492,22 @@ class TestNistAu2Au9RealDb:
 
     @staticmethod
     def _make_conn(db_path):
-        # cross_agency_transfer_logger authors %s placeholders for PostgreSQL and
-        # swallows write errors in a best-effort except, so a bare sqlite3
-        # connection turns every INSERT into a silent no-op and these AU-2/AU-9
-        # assertions fail against a gap the fixture created. See tests/_sql_compat.
-        from _sql_compat import translating
+        """Connection factory — also stands in for ``get_connection``.
 
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        return translating(conn)
+        What this returns is handed to production code (via the
+        ``get_connection`` patches below), and that code authors ``%s``
+        placeholders for PostgreSQL, relying on the StorageConnection layer to
+        rewrite them for SQLite. A bare ``sqlite3.connect`` raises
+        ``near "%": syntax error`` on every such statement, which the logger's
+        best-effort ``except`` swallows — the row never lands and the test
+        reads as a missing feature. See tests/_sql_compat.py.
+
+        The same factory also serves SQL authored in this file, which uses
+        ``?`` and is left untouched by the translation.
+        """
+        from _sql_compat import connect as _tconnect
+
+        return _tconnect(db_path)
 
     @staticmethod
     def _fetch_cat_row(db_path, event_id):
@@ -682,18 +696,19 @@ class TestNistAu2Au9RealDb:
                 executed_sql.append(sql.strip().upper())
                 return self._real.execute(sql, *args, **kwargs)
 
+            def cursor(self):
+                # ``storage.table_exists`` probes via ``conn.cursor()``. Without
+                # this the AttributeError is swallowed by that helper's
+                # ``except Exception: return False``, the logger concludes the
+                # table is missing and returns before issuing any INSERT — so
+                # this test recorded no SQL at all and asserted its own no-op.
+                return self._real.cursor()
+
             def commit(self):
                 return self._real.commit()
 
             def close(self):
                 return self._real.close()
-
-            def __getattr__(self, name):
-                # storage.table_exists() reaches for ``_conn`` to run its
-                # existence probe on a raw cursor. Without delegation the probe
-                # raises, the logger reports "table missing" and skips the
-                # INSERT, so executed_sql stays empty.
-                return getattr(self._real, name)
 
         real_conn = self._make_conn(real_db)
         recording = _RecordingConn(real_conn)

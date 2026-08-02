@@ -73,7 +73,8 @@ def _load_memory_entries() -> list[dict]:
         from tools.db.storage import get_connection
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, type, content, tags, metadata, classification, created_at "
+            # `topics`, not `tags` — see the re-import below (swp-scan-01).
+            "SELECT id, type, content, topics, metadata, classification, created_at "
             "FROM memory_entries ORDER BY created_at ASC"
         ).fetchall()
         conn.close()
@@ -224,13 +225,18 @@ def import_vault(vault_zip: Path, dry_run: bool = False) -> dict:
                     conn = get_connection()
                     for row in rows:
                         conn.execute(
+                            # `tags` is not a column on memory_entries — the
+                            # live column is `topics` (swp-scan-01). Every
+                            # vault re-import raised UndefinedColumn and was
+                            # swallowed by the except below, so no memory row
+                            # was ever restored.
                             """INSERT INTO memory_entries
-                               (id, type, content, tags, metadata, classification, created_at)
+                               (id, type, content, topics, metadata, classification, created_at)
                                VALUES (%s, %s, %s, %s, %s, %s, %s)
                                ON CONFLICT (id) DO NOTHING""",
                             (
                                 row.get("id"), row.get("type"), row.get("content"),
-                                row.get("tags"), row.get("metadata"),
+                                row.get("topics", row.get("tags")), row.get("metadata"),
                                 row.get("classification", "CUI"), row.get("created_at"),
                             ),
                         )
