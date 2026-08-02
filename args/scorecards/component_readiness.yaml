@@ -1,0 +1,206 @@
+# CUI // SP-CTI
+# Component Readiness — scorecard-as-code (idp-score-02)
+#
+# Evaluated by tools/idp/scorecard.py over the `idp.components` IQE collection,
+# which is one fact row per component in args/component_registry.yaml.
+#
+#   python -m tools.idp.scorecard --scorecard component-readiness
+#   python -m tools.idp.scorecard --scorecard component-readiness --failures
+#
+# ── Adding a rule ────────────────────────────────────────────────────────────
+# Append an entry to `rules` below. No Python change is required: `expression`
+# is an ordinary IQE query, the same language the canvases expose in their
+# query widgets. Write the query so it returns the components that PASS:
+#
+#   - identifier: has-nav-link
+#     title: Reachable from the navigation menu
+#     weight: 1
+#     expression: foreach c in idp.components where c.has_nav_link == true select c.key
+#
+# The query MUST project the entity key (`select c.key`) — that is how the
+# engine knows which component each returned row is about.
+#
+# `python -m tools.idp.scorecard --list` shows every scorecard in this directory.
+# Fields available to rules are the keys produced by
+# tools/idp/component_facts.py::build_component_facts.
+#
+# ── level vs no level ────────────────────────────────────────────────────────
+# A rule WITH a `level` gates ladder progression: fail it and the component
+# cannot reach that level or any level above it. A rule WITHOUT a `level` still
+# contributes its weight to the numeric score but never blocks the ladder. Keep
+# that distinction — it is what makes the ladder usable instead of one big
+# pass/fail. Use a level for "this must be true to call the component ready at
+# this tier", and omit it for signals that are worth points but not a gate.
+#
+# ── filter ───────────────────────────────────────────────────────────────────
+# `filter` is a second IQE query returning the components the rule APPLIES to.
+# A component outside the filter is not_applicable: it neither passes nor fails
+# and the rule's weight is left out of its score. Use it whenever a rule is only
+# meaningful for part of the catalog — the 8-point completeness gate is written
+# for dashboard canvases, so failing 30 features against it would be noise, not
+# a finding.
+
+key: component-readiness
+name: Component Readiness
+description: >-
+  Grades every component registered in args/component_registry.yaml on whether
+  it can be owned, operated, queried and verified. Every rule below is measurable
+  today from data the platform already produces — the registry itself, the
+  tests/e2e specs, the 8-point completeness gate, the canvas RLS coherence check
+  and the awareness health probes. Nothing here is aspirational.
+
+# The IQE collection to grade, and the field identifying each entity in it.
+collection: idp.components
+entity_key: key
+
+evaluation:
+  # Evidence window for time-series facts (health probes). Older probes are not
+  # counted. Applied once when the catalog snapshot is fetched, so it shapes
+  # every rule without any rule mentioning it. Accepts 90, "90d", "12w", "48h".
+  window: 90d
+
+# ── Ladder ───────────────────────────────────────────────────────────────────
+# Higher rank is better. A component attains the highest level whose gating
+# rules — and the gating rules of every level below it — all pass. A component
+# that has not cleared rank 1 is reported as "Unrated".
+ladder:
+  levels:
+    - name: Bronze
+      rank: 1
+      color: "#cd7f32"
+      description: >-
+        Someone answers for it and it does not violate the platform's data-access
+        rules. This is the floor for operating a component in production: an
+        unowned component routes its incidents to nobody.
+    - name: Silver
+      rank: 2
+      color: "#9aa5b1"
+      description: >-
+        It can be inspected and it is verified end to end — an IQE adapter makes
+        its state queryable, and an E2E spec proves the surface actually loads.
+    - name: Gold
+      rank: 3
+      color: "#d4a017"
+      description: >-
+        It is complete and healthy — it satisfies the 8-point dashboard-page
+        completeness gate and its probed routes are passing.
+
+# ── Rules ────────────────────────────────────────────────────────────────────
+rules:
+
+  # --- Bronze: can this component be operated at all? ---
+
+  - identifier: has-owner
+    title: Declares an accountable owner
+    level: Bronze
+    weight: 3
+    expression: foreach c in idp.components where c.owned == true select c.key
+    failure_message: >-
+      No accountable owner. Add owner / owner_contact / on_call to this
+      component's entry in args/component_registry.yaml. The fields are optional
+      in the registry on purpose, so an unowned component is reported rather
+      than attributed to a default team — a wrong owner routes an incident to
+      nobody while reading as answered.
+
+  - identifier: coherence-clean
+    title: No canvas RLS-bypass coherence violation
+    level: Bronze
+    weight: 3
+    expression: foreach c in idp.components where c.coherence_clean == true select c.key
+    failure_message: >-
+      The canvas RLS-bypass coherence check flags this component. Canvas tables
+      carry no classification/tenant_id columns, so a canvas db/init_db.py must
+      use get_canvas_connection() — get_connection() attaches the global RLS
+      predicate and raises UndefinedColumn on every query. See
+      tools/ai_augmentation/db/init_db.py for the canonical pattern.
+
+  # --- Silver: can it be inspected and is it verified? ---
+
+  - identifier: has-iqe-adapter
+    title: Exposes an IQE adapter
+    level: Silver
+    weight: 2
+    filter: foreach c in idp.components where c.kind == 'canvas' select c.key
+    expression: foreach c in idp.components where c.has_iqe_adapter == true select c.key
+    failure_message: >-
+      No IQE adapter declared. Add an `iqe:` block (adapter_module + collections)
+      to this component's registry entry and register the collections in
+      tools/iqe/adapters/<key>.py — point 8 of the completeness gate.
+
+  - identifier: has-e2e-spec
+    title: Has an end-to-end spec
+    level: Silver
+    weight: 2
+    filter: foreach c in idp.components where c.kind == 'canvas' select c.key
+    expression: foreach c in idp.components where c.has_e2e_spec == true select c.key
+    failure_message: >-
+      No tests/e2e/ spec named for this component's key or its package. A
+      missing E2E spec is the single largest driver of amber canvas health,
+      because nothing proves the page still renders after a change.
+
+  # --- Gold: is it complete and healthy? ---
+
+  - identifier: completeness-gate
+    title: Passes the 8-point dashboard-page completeness gate
+    level: Gold
+    weight: 3
+    # The gate is defined for dashboard canvases, so features, child apps and
+    # core extensions are out of scope rather than failed against it.
+    filter: foreach c in idp.components where c.completeness_checked == true select c.key
+    expression: foreach c in idp.components where c.completeness_passed == true select c.key
+    failure_message: >-
+      Fails the 8-point new-page completeness gate (template, icdev mirror,
+      route, backing module, constants, migration, nav link, IQE integration).
+      Run the gate for detail:
+      python -c "from tools.config.component_registry import validate_canvas_completeness as v; print(v('<key>'))"
+
+  - identifier: no-failing-health-probes
+    title: No failing health probes in the evaluation window
+    level: Gold
+    weight: 2
+    # Only components the awareness prober actually reached are graded. A
+    # component with no probes is not awarded a level for absence of evidence.
+    filter: foreach c in idp.components where c.health_probed == true select c.key
+    expression: foreach c in idp.components where c.health_probe_failures == 0 select c.key
+    failure_message: >-
+      One or more routes under this component's url_prefix failed an awareness
+      health probe inside the evaluation window. Re-run
+      `python tools/awareness/health_prober.py --run-all --json` and fix the
+      failing routes.
+
+  # --- Score-only: worth points, never a gate ---
+  # These deliberately carry no `level`. They sharpen the score without holding
+  # a component off Bronze for a contact handle.
+
+  - identifier: owner-is-reachable
+    title: The owner has a contact handle
+    weight: 1
+    expression: foreach c in idp.components where c.has_owner_contact == true select c.key
+    failure_message: >-
+      An owner is named but there is no way to reach them. Add owner_contact
+      (email, chat handle, distribution list or URL) to the registry entry.
+
+  - identifier: has-on-call
+    title: Declares an on-call or escalation handle
+    weight: 1
+    expression: foreach c in idp.components where c.has_on_call == true select c.key
+    failure_message: >-
+      No on_call rotation or escalation handle. Add on_call to the registry
+      entry so a production issue has somewhere to go outside working hours.
+
+# ── Exemptions ───────────────────────────────────────────────────────────────
+# An exemption removes one (rule, component) pair from scoring AND from ladder
+# gating. Use it for a component where the rule is genuinely wrong, never to get
+# a red board green. An `expires` date in the past is ignored, so an exemption
+# that is never renewed lapses on its own.
+#
+# Approval workflow and audit logging are idp-score-04; the schema is here so
+# exemptions written now keep working when that lands.
+#
+# Example:
+#   - rule: has-e2e-spec
+#     component: some_key
+#     reason: Headless component with no rendered surface to drive.
+#     approved_by: platform-team
+#     expires: 2027-01-01
+exemptions: []

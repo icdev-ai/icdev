@@ -164,6 +164,7 @@
 - [Manifest Gap Fill (2026-04-12)](manifest/manifest-gap-fill.md)
 - [AISG — AI Strategy Guide Tools](manifest/aisg.md)
 - [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
+- [IDP — Scorecard-as-code (ladder + IQE rules)](manifest/idp-scorecard.md)
 - [Kanban System](manifest/kanban.md)
 - [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
 - [Voice-of-Customer (VOC) Signal Capture (pint-voc)](manifest/voc.md)

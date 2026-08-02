@@ -6492,6 +6492,30 @@ TOOL_REGISTRY = {
             "required": ["project_id"],
         },
     },
+    "idp_scorecard": {
+        "category": "canvas",
+        "module": "tools.idp.scorecard",
+        "handler": "evaluate_named",
+        "description": (
+            "Evaluate an IDP scorecard-as-code definition (args/scorecards/*.yaml) over the "
+            "component catalog. Returns a ladder level, weighted score and per-rule pass/fail "
+            "for every registered component. Rules are IQE expressions; adding one is a YAML edit."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "scorecard": {
+                    "type": "string",
+                    "description": "Scorecard key or filename stem (default: component-readiness)",
+                },
+                "failures_only": {
+                    "type": "boolean",
+                    "description": "Return only components with at least one failing rule",
+                },
+            },
+            "required": [],
+        },
+    },
     "canvas_kg_rebuild": {
         "category": "canvas",
         "module": "tools.mcp.gap_handlers",

@@ -265,6 +265,31 @@ python tools/analyzers/contract.py --check-sql observable_type   # CHECK clause 
 
 ---
 
+## IDP Scorecard-as-code (idp-score-02)
+
+A scorecard is DATA — `args/scorecards/<key>.yaml`. It pairs a `ladder` of
+ranked levels with `rules`, and **each rule's `expression` is an ordinary IQE
+query** over the `idp.components` collection, returning the components that
+PASS. Adding, removing or re-weighting a rule is a YAML edit; there is no
+Python change, no dispatch table and no scorecard DSL to learn — IQE already
+is one.
+
+A rule with a `level` gates ladder progression; a rule without one still scores
+but never blocks. A rule's optional `filter` (a second IQE query) marks which
+components it applies to — everything else is `not_applicable`, not failed.
+
+```bash
+python -m tools.idp.scorecard --list                                   # scorecards in args/scorecards/
+python -m tools.idp.scorecard --scorecard component-readiness          # ladder + per-component grade
+python -m tools.idp.scorecard --scorecard component-readiness --failures  # only what is failing
+python -m tools.idp.scorecard --scorecard component-readiness --json   # full report, machine-readable
+```
+
+MCP tool: `idp_scorecard` — params `scorecard` (string, default
+`component-readiness`), `failures_only` (bool).
+
+---
+
 ## Browser Automation & Agent Scope Controls
 ```bash
 # Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
