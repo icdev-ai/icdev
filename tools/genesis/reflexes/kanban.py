@@ -1771,6 +1771,12 @@ def _remove_worktree(path) -> bool:
     import shutil as _shutil
     import subprocess as _sp
 
+    # Whether there was anything here to begin with. The orphan branch below
+    # reports success when the directory is gone afterwards — which is also true
+    # of a path that never existed, so a phantom path counted as a removal and
+    # re-inflated the sweep total this function exists to make honest.
+    _existed = Path(path).exists()
+
     result = _sp.run(
         ["git", "worktree", "remove", str(path), "--force"],
         cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
@@ -1794,6 +1800,13 @@ def _remove_worktree(path) -> bool:
 
     # Orphan: on disk but not a registered worktree. git cannot help; we can.
     if "is not a working tree" in stderr:
+        if not _existed:
+            # Nothing was here. Deleting nothing is not a removal — saying so
+            # would put phantom entries back into the sweep count.
+            logger.warning(
+                "Sweep: %s is neither a worktree nor a directory — nothing to remove", path,
+            )
+            return False
         _shutil.rmtree(str(path), ignore_errors=True)
         if not Path(path).exists():
             logger.info(
