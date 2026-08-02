@@ -7329,3 +7329,30 @@ projects:
   - key: wt
     title: WT — Worktree lifecycle and reclamation
     priority: high
+- key: xbm
+  name: 'XBM — External Benchmark Monitor'
+  description: 'Make external-project benchmarking a STANDING capability instead of a manual research exercise, by waking and extending machinery that already exists. SCOPE CORRECTED AGAINST THE CODE 2026-08-02 — this is not a build. tools/genesis/reflexes/scout.py already monitors competitor and adjacent GitHub repos for releases, star velocity and README changes; it is marked IMPLEMENTATION_STATUS = "full", uses only the public GitHub API, is scanner-tier (zero LLM tokens) and air-gap safe. Its watchlist is already config, not code: context/genesis/competitors.yaml carries 16 categorised targets including oscal-compass/compliance-trestle, SigNoz, opentofu. args/innovation_config.yaml has a config-driven sources.github block on a 6h interval with trending-repo, issue and discussion targets. innovation_signals holds 1,179 rows including 16 external_repo_scouting and 63 external_framework_analysis. The capability is DORMANT, not missing: genesis_reflex_state shows scout last ran 2026-06-28 and research 2026-06-13, while 69 of 90 reflexes have run. The real gaps are that the watchlist predates the benchmark map so it misses most of the projects that actually matter (Backstage, TheHive Cortex, LangGraph, Temporal, OpenLineage, promptfoo, DeepEval, Langfuse, cortexproject, Crossplane), nothing compares an external finding against ICDEV''s own subsystem inventory, seed_external_repos.py hardcodes a 9-repo list in Python instead of reading the config, and kanban_promoter.py exists but is referenced by nothing. Reference: docs/research/external-benchmark-map.md and docs/research/canvas-engine-sweep.md. MANUAL-ONLY: every task gated behind xbm-gate-00 via depends_on_task_id.'
+  task_prefix: xbm-
+  default_open: false
+  briefs:
+  - 'gate: manual gate held in_progress; every task carries depends_on_task_id=xbm-gate-00 (xbm-gate-00)'
+  - 'wake: find out why scout has not run since 2026-06-28 and restore its cadence — the reflex is complete, it simply stopped'
+  - 'list: refresh context/genesis/competitors.yaml with the projects the benchmark map identified, each tagged to the ICDEV subsystem it benchmarks'
+  - 'cmp: compare an external finding against ICDEV''s own inventory rather than reporting it in isolation — the map and sweep are the reference the comparison should reproduce'
+  - 'promote: wire the existing kanban_promoter.py so a benchmark finding becomes work, rate-limited and human-confirmed'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: wake
+    title: WAKE — Restore the dormant scout cadence
+    priority: high
+  - key: list
+    title: LIST — Watchlist aligned to the benchmark map
+    priority: high
+  - key: cmp
+    title: CMP — Compare findings against ICDEV's own inventory
+    priority: medium
+  - key: promote
+    title: PROMOTE — Findings become work
+    priority: medium
