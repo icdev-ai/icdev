@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Migration 330 — one place that records what the runtime actually ran.
+"""Migration 333 — one place that records what the runtime actually ran.
 
 MEASURED 2026-08-02 against the live PostgreSQL board:
 
@@ -48,7 +48,7 @@ from __future__ import annotations
 from tools.db.storage import get_connection, table_exists
 
 _TABLE = "runtime_invocations"
-_TAG = "[330_runtime_invocations]"
+_TAG = "[333_runtime_invocations]"
 
 # Kept in sync with SURFACES in tools/observability/invocation_recorder.py.
 # CLAUDE.md: derive CHECK constraints from the Python constant, never hardcode a

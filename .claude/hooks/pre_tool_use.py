@@ -715,7 +715,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # inserts, every other reference is a SELECT). Rows never UPDATE/DELETE.
         "ttx_api_log",
     ]
-    # NOTE: runtime_invocations (migration 330) is deliberately NOT listed. It
+    # NOTE: runtime_invocations (migration 333) is deliberately NOT listed. It
     # is telemetry with a genuine lifecycle — the recorder opens a row 'running'
     # and UPDATEs it closed with duration and status — so it is not append-only
     # and claiming otherwise here would both misdescribe it and block legitimate

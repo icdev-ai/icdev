@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Migration 330 rollback — drop runtime_invocations.
+"""Migration 333 rollback — drop runtime_invocations.
 
 Safe to drop: the table is telemetry, not evidence. Nothing reads it except the
 observability surfaces added alongside it, and no other table references it.
