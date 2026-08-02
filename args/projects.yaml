@@ -7236,3 +7236,38 @@ projects:
   - key: doc
     title: DOC — manifest and namespace hygiene
     priority: medium
+- key: idp
+  name: 'IDP — Internal Developer Portal'
+  description: 'Give ICDEV a catalog-plus-scorecard surface over its OWN 66 registered components, modelled on cortex.io (catalog, scorecards, golden paths, engineering intelligence). Serves BOTH inward (ICDEV governing its canvases, child apps and autonomous build pipeline) and outward (the same surface offered to customers over their services). This is a NEW surface — it does not change the ICDEV Cortex AI facade, which stays governed plumbing; the name collision with cortex.io is coincidental and deliberate-to-ignore. Grounded in a measured inventory 2026-08-02, and the headline is that the scorecard schema ALREADY EXISTS and is dead: developer_scorecards (overall_score REAL, letter_grade A-F, five dimensions, dimension_details, 3 indexes) has ZERO writers, ZERO readers and 0 rows anywhere in the codebase. So this card populates what was already designed rather than designing it again. The fuel already exists too — awareness_component_health holds 458,789 probe rows across 1,574 runs, the richest per-component signal in the platform, and nothing grades on it. The rule language already exists as IQE. What is genuinely missing: any notion of OWNERSHIP (no owner/team/on-call field for any ICDEV component, anywhere), kg_edges (2,432 awareness nodes with 0 edges, so no blast radius), persisted per-component score history, and any deploy/incident/pipeline data for DORA (correct code, 0 input rows). The loop cortex.io cannot close but ICDEV can: a failing scorecard rule becomes a kanban task and gets built. MANUAL-ONLY: every task gated behind idp-gate-00 via depends_on_task_id.'
+  task_prefix: idp-
+  default_open: false
+  briefs:
+  - 'gate: manual gate held in_progress; every task carries depends_on_task_id=idp-gate-00 (idp-gate-00)'
+  - 'cat: ownership fields on the component registry (the single biggest IDP gap), populate kg_edges so blast radius is possible, and register /components-map in the registry it renders'
+  - 'score: re-key and populate the dead developer_scorecards table per component; scorecard-as-code YAML with a ladder, IQE rule expressions, weights and exemptions; persisted score history'
+  - 'gap: a failing rule seeds a kanban task via task_factory — the remediation loop an IDP vendor cannot close for you'
+  - 'ui: the portal surface itself, satisfying the 8-point new-page completeness gate including IQE'
+  - 'intel: emit deploy/incident/pipeline events so the already-correct DORA endpoint stops returning Not Assessed'
+  - 'mt: tenant scoping for the scoring tables, since this ships outward as well as inward'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: cat
+    title: CAT — Catalog, ownership and the dependency graph
+    priority: critical
+  - key: score
+    title: SCORE — Populate the scorecard that already exists
+    priority: critical
+  - key: gap
+    title: GAP — Failing rules become work
+    priority: high
+  - key: ui
+    title: UI — The portal surface
+    priority: high
+  - key: intel
+    title: INTEL — Give DORA something to measure
+    priority: medium
+  - key: mt
+    title: MT — Tenant scoping for the outward-facing half
+    priority: medium
