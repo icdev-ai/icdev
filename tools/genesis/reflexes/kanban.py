@@ -38,7 +38,40 @@ from tools.db.storage import get_connection  # noqa: E402
 from tools.strategos import tier_resolver  # noqa: E402
 
 PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
-WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
+
+
+def _canonical_repo_root() -> Path:
+    """The MAIN worktree's root, even when this module runs inside a linked one.
+
+    BASE_DIR comes from ``__file__``, so a dispatch triggered from inside a
+    worktree resolved WORKTREE_BASE to *that worktree* and created the next
+    worktree at ``<worktree>/.tmp/worktrees/<id>``. Nested worktrees are how the
+    leak compounded — measured 2026-08-02 at 122 registered worktrees including
+    paths three levels deep such as
+    ``.tmp/worktrees/tsh-e2e-01-d4/.tmp/worktrees/tsh-e2e-01-d4/.tmp/worktrees/tsr-gen-01-d4``.
+
+    ``git rev-parse --git-common-dir`` reports the MAIN repository's .git from
+    anywhere in the family, which is exactly the "resolve the repo root from a
+    known location, never from cwd or a linked checkout" rule in CLAUDE.md.
+    Falls back to BASE_DIR when git is unavailable, preserving today's behavior
+    rather than failing dispatch.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(BASE_DIR), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            common = Path(out.stdout.strip())
+            if not common.is_absolute():
+                common = (BASE_DIR / common).resolve()
+            return common.parent
+    except Exception as exc:  # noqa: BLE001 - git absent or not a repo
+        logger.debug("canonical repo root resolution failed (%s) — using BASE_DIR", exc)
+    return BASE_DIR
+
+
+WORKTREE_BASE = _canonical_repo_root() / ".tmp" / "worktrees"
 
 
 # ---------------------------------------------------------------------------
