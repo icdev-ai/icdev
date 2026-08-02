@@ -83,16 +83,18 @@ def _patch_attr(module_path: str, attr: str, value):
 class TestOpenHitlTaskExists:
     def test_returns_false_when_no_tasks(self):
         shim = _make_shim()
-        with _patch_attr("tools.genesis.reflexes.dic_review_cadence", "get_connection",
+        # Patch where the function LOOKS. `_open_hitl_task_exists` opens with
+        # `from tools.kanban.task_factory import get_connection as _kconn`, so
+        # an attribute set on the reflex module is never consulted — that
+        # patch was a no-op and the call fell through to the REAL board. With
+        # nothing intercepted, `assert isinstance(result, bool)` held for any
+        # outcome, so the test could not fail. Patch task_factory and assert
+        # the actual answer instead.
+        with _patch_attr("tools.kanban.task_factory", "get_connection",
                          MagicMock(return_value=shim)):
             from tools.genesis.reflexes.dic_review_cadence import _open_hitl_task_exists
-            # No _os to patch: the reflex reads no environment here, it just
-            # queries kanban_tasks through two deferred get_connection imports.
-            result = _open_hitl_task_exists.__wrapped__("col-001", "Test Collection") \
-                if hasattr(_open_hitl_task_exists, "__wrapped__") \
-                else _open_hitl_task_exists("col-001", "Test Collection")
-        # Should not raise; function falls back gracefully
-        assert isinstance(result, bool)
+            result = _open_hitl_task_exists("col-001", "Test Collection")
+        assert result is False, "no seeded task, so no open task can be found"
 
     def test_returns_false_when_no_open_task(self):
         shim = _make_shim()

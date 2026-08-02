@@ -38,6 +38,17 @@ if _PYTEST_PG:
     os.environ["ICDEV_PG_NO_FALLBACK"] = "1"
 else:
     os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
+    # Make the backend guard's documented pytest exemption real. Its docstring
+    # says "tests/conftest.py forces sqlite for the whole pytest suite and is
+    # right to — those are short-lived, isolated databases"; the guard only means
+    # to fire where something *serves* on the fallback. Nothing implemented that,
+    # though: the exemption held only because ICDEV_PG_NO_FALLBACK is usually
+    # absent from the environment. A session spawned by the kanban scheduler
+    # inherits it from .env, and every test that builds the dashboard app then
+    # errored at create_app() with SqliteServerRefused — a pass/fail that depends
+    # on who launched pytest. This line asserts the choice the two lines above
+    # just made.
+    os.environ.setdefault("ICDEV_ALLOW_SQLITE_SERVER", "1")
     os.environ["NOCC_STORAGE_BACKEND"] = "sqlite"
     os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
     os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
