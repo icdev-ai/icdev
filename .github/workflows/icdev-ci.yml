@@ -112,6 +112,7 @@ jobs:
             tests/kanban/test_pr_linker.py \
             tests/kanban/test_reverify.py \
             tests/kanban/test_reverify_selfheal.py \
+            tests/kanban/test_reverify_roundtrip.py \
             tests/kanban/test_cli_reverify.py \
             tests/test_verifier_contract.py \
             tests/test_dic_chat_memory_schema.py \

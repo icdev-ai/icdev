@@ -34,9 +34,12 @@ import logging
 import subprocess
 import sys
 from datetime import datetime, timezone
+import uuid
 from typing import Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 DEFAULT_BASE = "origin/main"
 BRANCH_PREFIX = "kanban/"
@@ -202,10 +205,11 @@ def reverify(
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "INSERT INTO kanban_verifications "
-            "(task_id, verified_at, result, reason, git_commits, "
+            "(id, task_id, verified_at, result, reason, git_commits, "
             " dispatch_source, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
+                f"rvfy-{uuid.uuid4().hex[:12]}",
                 task_id, now, verdict["result"], verdict["reason"],
                 verdict["commits"], DISPATCH_SOURCE, now,
             ),
