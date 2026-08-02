@@ -26,6 +26,7 @@ from tools.workflow.coherence_checker import (
     check_ruff_lint,
     check_schema_code,
     check_signature_call,
+    check_test_db_isolation,
     run_checks,
 )
 from tools.workflow.impact_analyzer import (
@@ -736,3 +737,148 @@ class TestImpactAnalyzer:
     def test_analyze_impact_table_change(self):
         result = analyze_impact(changed_tables=["chat_contexts"])
         assert "affected_subsystems" in result
+
+
+class TestCheckTestDbIsolation:
+    """The gate must reject bare sqlite3 fixtures — and accept its own remedy."""
+
+    @staticmethod
+    def _write(tmp_path, body: str) -> Path:
+        # The check only scans paths with a "tests" path segment.
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir(exist_ok=True)
+        path = tests_dir / "test_sample.py"
+        path.write_text(textwrap.dedent(body), encoding="utf-8")
+        return path
+
+    def test_flags_bare_sqlite3_fixture(self, tmp_path):
+        path = self._write(tmp_path, """
+            import sqlite3
+            from unittest.mock import patch
+
+            def mem_db():
+                return sqlite3.connect(":memory:")
+
+            def test_it(mem_db):
+                with patch("tools.x.get_connection", return_value=mem_db):
+                    mem_db.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "fail"
+        assert any("monkeypatches a DB connection factory" in v for v in result.extra)
+
+    def test_accepts_translating_wrapper_around_raw_connect(self, tmp_path):
+        # ``translating()`` takes a raw sqlite3 handle by design — the fixture
+        # needs one to create its schema. That input is not residue.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from unittest.mock import patch
+
+            from tests._sql_compat import translating
+
+            def mem_db():
+                conn = sqlite3.connect(":memory:")
+                conn.execute("CREATE TABLE t (a TEXT)")
+                return translating(conn, unclosable=True)
+
+            def test_it(mem_db):
+                with patch("tools.x.get_connection", return_value=mem_db):
+                    mem_db.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "pass", result.extra
+
+    def test_accepts_lambda_replacement_naming_a_compat_fixture(self, tmp_path):
+        # patch(target, lambda: shim) — the fixture is named in the lambda body.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from unittest.mock import patch
+
+            from tests._sql_compat import translating
+
+            def shim():
+                db = sqlite3.connect(":memory:")
+                return translating(db, unclosable=True)
+
+            def test_it(shim):
+                with patch("tools.x.get_canvas_connection", lambda: shim):
+                    shim.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "pass", result.extra
+
+    def test_still_flags_second_unwrapped_factory_in_same_file(self, tmp_path):
+        # One fixed fixture must not launder a raw one alongside it.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from unittest.mock import patch
+
+            from tests._sql_compat import translating
+
+            def good_db():
+                return translating(sqlite3.connect(":memory:"))
+
+            def raw_db():
+                return sqlite3.connect(":memory:")
+
+            def test_it(raw_db):
+                with patch("tools.x.get_connection", return_value=raw_db):
+                    raw_db.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "fail"
+
+    def test_accepts_contextmanager_indirection_to_a_compat_fixture(self, tmp_path):
+        # The name in the patch call (_gc) is two hops from translating():
+        # _gc yields shim -> shim returns _shim_conn() -> _shim_conn wraps.
+        # This is the shape the merged canvas emitter fixtures actually use.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from contextlib import contextmanager
+            from unittest.mock import patch
+
+            from tests import _sql_compat
+
+            def _shim_conn():
+                raw = sqlite3.connect(":memory:")
+                return _sql_compat.translating(raw, unclosable=True)
+
+            def shim():
+                return _shim_conn()
+
+            @contextmanager
+            def _patch(shim):
+                @contextmanager
+                def _gc(): yield shim
+                with patch("tools.x.get_canvas_connection", _gc): yield shim
+
+            def test_it(shim):
+                with _patch(shim):
+                    shim.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "pass", result.extra
+
+    def test_indirection_does_not_launder_a_raw_factory(self, tmp_path):
+        # Same contextmanager shape, but the factory hands back a BARE
+        # connection — indirection must not turn that into a pass.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from contextlib import contextmanager
+            from unittest.mock import patch
+
+            def _shim_conn():
+                return sqlite3.connect(":memory:")
+
+            def shim():
+                return _shim_conn()
+
+            @contextmanager
+            def _gc(shim): yield shim
+
+            def test_it(shim):
+                with patch("tools.x.get_connection", _gc):
+                    shim.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "fail"
