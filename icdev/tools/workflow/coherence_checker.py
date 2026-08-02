@@ -7545,11 +7545,30 @@ def _run_one_check(
     return result
 
 
+def _timed_out_check(check_id: str, budget: float) -> CoherenceCheck:
+    """A check that never returned inside the sweep budget."""
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_id,
+        status="warn",
+        expected=[],
+        actual=[],
+        missing=[],
+        extra=[],
+        message=(
+            f"timed out — did not finish within the {budget:g}s sweep budget. "
+            "Reported as warn so the sweep still returns a verdict for every "
+            "other check; re-run this one alone to see what it is doing."
+        ),
+    )
+
+
 def run_checks(
     selected: Optional[List[str]] = None,
     changed_files: Optional[List[Path]] = None,
     autofix: bool = False,
     tier: Optional[str] = None,
+    timeout_sec: Optional[float] = None,
 ) -> CoherenceReport:
     """Run selected coherence checks and produce aggregate report.
 
@@ -7563,6 +7582,23 @@ def run_checks(
     subprocess, file I/O, and imports, all of which release the GIL. Autofix
     forces the serial path because fixers mutate the tree and two of them
     landing at once is not something the fix registry is written for.
+
+    ``timeout_sec`` (gpx-perf-01) puts a hard ceiling on the concurrent phase.
+    It is opt-in and off by default: enforcing it requires running the checks in
+    *processes* rather than threads, because a thread cannot be killed, and
+    ``ThreadPoolExecutor`` joins its non-daemon workers at interpreter exit — so
+    a genuinely hung check hangs the process on the way out no matter what the
+    caller does with the futures. Processes can be terminated.
+
+    Any check that has not returned when the budget expires is reported as
+    ``warn: timed out`` rather than being dropped, so the sweep still returns a
+    verdict for every other check instead of one pathological check taking the
+    whole run down with it.
+
+    The default stays on threads deliberately. The gate runs on every commit,
+    and moving it to multi-process by default changes DB connection fan-out and
+    Windows spawn behaviour for every caller — not a trade to make silently for
+    a ceiling almost no run needs. Callers that want the ceiling ask for it.
     """
     if selected:
         checks_to_run = list(selected)
@@ -7573,27 +7609,54 @@ def run_checks(
     workers = 1 if autofix else min(_check_workers(), max(1, len(checks_to_run)))
 
     if workers > 1:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        hard_timeout = bool(timeout_sec and timeout_sec > 0 and not autofix)
+        pool_cls = (
+            concurrent.futures.ProcessPoolExecutor
+            if hard_timeout
+            else concurrent.futures.ThreadPoolExecutor
+        )
+        by_id: Dict[str, CoherenceCheck] = {}
+        pool = pool_cls(max_workers=workers)
+        try:
             futures = {
                 pool.submit(_run_one_check, check_id, changed_files): check_id
                 for check_id in checks_to_run
             }
-            by_id: Dict[str, CoherenceCheck] = {}
-            for future in concurrent.futures.as_completed(futures):
-                check_id = futures[future]
-                try:
-                    by_id[check_id] = future.result()
-                except Exception as exc:  # pragma: no cover — defensive
-                    by_id[check_id] = CoherenceCheck(
-                        check_id=check_id,
-                        check_name=check_id,
-                        status="warn",
-                        expected=[],
-                        actual=[],
-                        missing=[],
-                        extra=[],
-                        message=f"Check error: {exc}",
-                    )
+            try:
+                for future in concurrent.futures.as_completed(
+                    futures, timeout=timeout_sec if hard_timeout else None
+                ):
+                    check_id = futures[future]
+                    try:
+                        by_id[check_id] = future.result()
+                    except Exception as exc:  # pragma: no cover — defensive
+                        by_id[check_id] = CoherenceCheck(
+                            check_id=check_id,
+                            check_name=check_id,
+                            status="warn",
+                            expected=[],
+                            actual=[],
+                            missing=[],
+                            extra=[],
+                            message=f"Check error: {exc}",
+                        )
+            except concurrent.futures.TimeoutError:
+                # Budget blown. Everything still outstanding is reported as a
+                # timeout rather than silently omitted from the report.
+                for check_id in checks_to_run:
+                    if check_id not in by_id:
+                        by_id[check_id] = _timed_out_check(check_id, float(timeout_sec))
+        finally:
+            if hard_timeout:
+                # Kill the workers outright: shutdown(wait=True) would block on
+                # the very check that just blew the budget, which is the whole
+                # thing this is meant to prevent.
+                for proc in list(getattr(pool, "_processes", {}).values()):
+                    if proc.is_alive():
+                        proc.terminate()
+                pool.shutdown(wait=False, cancel_futures=True)
+            else:
+                pool.shutdown(wait=True)
         # Preserve registry order regardless of completion order.
         results = [by_id[check_id] for check_id in checks_to_run if check_id in by_id]
     else:
@@ -7707,6 +7770,17 @@ def main() -> None:
         action="store_true",
         help="Print the check ids the selected tier would run, then exit",
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help=(
+            "Hard ceiling in seconds on the concurrent phase. Runs the checks in "
+            "processes (threads cannot be killed) and reports anything still "
+            "outstanding as 'warn: timed out' instead of letting one pathological "
+            "check block the sweep. Off by default; ignored with --fix."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -7747,7 +7821,9 @@ def main() -> None:
     _real_stdout = sys.stdout
     try:
         sys.stdout = sys.stderr
-        report = run_checks(selected, changed, autofix=args.fix, tier=tier)
+        report = run_checks(
+            selected, changed, autofix=args.fix, tier=tier, timeout_sec=args.timeout
+        )
     finally:
         sys.stdout = _real_stdout
 
