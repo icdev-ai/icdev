@@ -767,6 +767,16 @@ python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis 
 # Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
 python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
 
+# Kanban — clear a stale done-gate block without re-dispatching (kpr-rvfy-02)
+python tools/kanban/cli.py --reverify <task-id> --dry-run     # Compute the verdict, write nothing
+python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh verification row
+# Exit 0=passed, 1=failed, 2=no such task. pr_watcher's enforced done-gate reads only the
+# LATEST kanban_verifications row and nothing writes one except a dispatch, so a task that
+# verified badly once cannot auto-merge until it is re-dispatched — which opens a SECOND PR.
+# This recomputes the verdict from the branch's real state (remote refs only, so it does not
+# depend on the dispatching process still being alive) and appends it. It does not weaken the
+# gate: a branch with no work still fails.
+
 # Kanban task_factory — loop_type and adversarial fields
 # Create a looping task (loop_type: "fixed" | "adaptive" | "gepa")
 python -c "
