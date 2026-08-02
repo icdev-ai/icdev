@@ -65,7 +65,7 @@ os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
--- Runtime invocation telemetry (migration 333). Present here so any test that
+-- Runtime invocation telemetry (migration 341). Present here so any test that
 -- exercises an instrumented path (MCP dispatch, execute_agent, an ACE role
 -- step) records rather than tripping the recorder's missing-table latch.
 CREATE TABLE IF NOT EXISTS runtime_invocations (

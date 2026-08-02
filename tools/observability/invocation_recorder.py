@@ -56,7 +56,7 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
 
-#: Surfaces. Kept in sync with the CHECK-free `surface` column in migration 333;
+#: Surfaces. Kept in sync with the CHECK-free `surface` column in migration 341;
 #: this tuple is the single source of truth for what a valid surface is.
 SURFACE_MCP = "mcp"
 SURFACE_AGENT = "agent"
