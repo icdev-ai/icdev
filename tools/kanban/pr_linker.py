@@ -37,7 +37,9 @@ import subprocess
 import sys
 from typing import Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 BRANCH_PREFIX = "kanban/"
 _PR_URL_RE = re.compile(r"https?://[^\s]*/pull/\d+")

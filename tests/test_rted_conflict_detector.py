@@ -1,6 +1,5 @@
 # CUI // SP-CTI
 """Tests for the DIC conflict detector (rted-conf-01)."""
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -8,6 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests import _sql_compat  # noqa: E402
 from tools.document_intelligence.conflict_detector import (  # noqa: E402
     compute_hash,
     check_conflict,
@@ -15,30 +15,21 @@ from tools.document_intelligence.conflict_detector import (  # noqa: E402
 )
 
 
-# ── Minimal in-memory SQLite fixture ─────────────────────────────────────────
-
-class _FakeConn:
-    """Minimal conn shim; conflict_detector uses ? placeholders via existing conn."""
-
-    def __init__(self, db):
-        self._db = db
-        self._db.row_factory = sqlite3.Row
-
-    def execute(self, sql, params=()):
-        # conflict_detector passes its caller's conn which uses ?
-        return self._db.execute(sql, params)
-
-    def commit(self):
-        self._db.commit()
-
-    def close(self):
-        pass
-
+# ── Minimal on-disk SQLite fixture ───────────────────────────────────────────
 
 @pytest.fixture()
 def conn(tmp_path):
-    db = sqlite3.connect(str(tmp_path / "conf_test.db"))
-    db.row_factory = sqlite3.Row
+    """A translating connection, standing in for the caller's ``get_connection()``.
+
+    ``conflict_detector`` authors PG-native ``%s`` placeholders and runs them on
+    whatever connection its caller hands it. At runtime that is a
+    ``StorageConnection``, which rewrites ``%s`` -> ``?`` on SQLite. A bare
+    ``sqlite3`` connection has no such layer, so every query raised
+    ``sqlite3.OperationalError: near "%": syntax error`` — 7 of this file's 11
+    tests. ``_sql_compat`` delegates to the same ``translate_sql`` the runtime
+    uses, so this fixture cannot drift from the behaviour it stands in for.
+    """
+    db = _sql_compat.connect(tmp_path / "conf_test.db")
     db.execute("""
         CREATE TABLE dic_sections (
             section_id TEXT PRIMARY KEY,
@@ -46,8 +37,7 @@ def conn(tmp_path):
         )
     """)
     db.commit()
-    c = _FakeConn(db)
-    yield c
+    yield db
     db.close()
 
 
