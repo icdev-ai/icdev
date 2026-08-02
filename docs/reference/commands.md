@@ -415,6 +415,10 @@ python tools/dev/check_swallowed_inserts.py
 python tools/dev/check_swallowed_inserts.py --json
 python tools/dev/check_swallowed_inserts.py --path tools/govcon   # scope one subtree (~1s)
 ```
+CI runs the standalone check as the `Swallowed-INSERT gate` step in the `test` job of
+`.github/workflows/icdev-ci.yml` — after `lint`, before pytest — so a reintroduced silent
+write fails the build in about a minute instead of at the end of the suite. Run the same
+command locally before pushing.
 
 ---
 
