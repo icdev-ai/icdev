@@ -7101,3 +7101,111 @@ projects:
   - key: integ
     title: Compass + idea_lab integrations
     priority: medium
+- key: sbx
+  name: SBX - SBOM 2026 Minimum Elements Conformance
+  description: 'Bring ICDEV SBOM generation into conformance with the 2026 Minimum
+    Elements for a Software Bill of Materials, published 2026-07-29 by CISA with NSA,
+    FBI and 16 international partners (document version 2.1, TLP-CLEAR). That
+    document REPLACES the 2021 NTIA minimum elements rather than amending them, so
+    the 2021 baseline ICDEV was built against is now superseded. Full field-by-field
+    gap analysis lives at docs/compliance/sbom-2026-minimum-elements-gap-analysis.md
+    and every task below cites it. Measured starting position - of the 17 required
+    data fields ICDEV fully emits 2 (SBOM Data Format Name, SBOM Tool Name),
+    partially emits 7, and is missing 8 outright; of the 7 practices, 0 are fully
+    met. The three structural gaps are Coverage (the generator parses DECLARED
+    dependency manifests, so it captures direct dependencies only for every ecosystem
+    except npm, while the standard now demands all transitive components with no
+    minimum depth), Component Dependency Relationship (output is a FLAT component
+    list with no CycloneDX dependencies array, so no dependency graph can be built
+    from it at all), and Component Hash Value plus Hash Algorithm (the generator
+    never touches artifacts, only manifests, so no hash is computable on the current
+    design). Also missing entirely - SBOM Author, SBOM Author Signature, SBOM
+    Generation Context, Component Producer (which REPLACES Supplier Name) and
+    Component License. Two pre-existing defects surfaced during analysis and are
+    carded here because everything else builds on them - tools/compliance/
+    sbom_generator.py is stamped DEPRECATED, unused as of 2026-05-09, remove after
+    2026-08-01, yet roughly 25 live call sites depend on it including MCP
+    sbom_generate, the CI comply workflow, GovCon CDRL generation, production_audit,
+    IronBank metadata and a BLOCKING bdc_canvas gate; and tools/sbom/sbom_generator.py
+    does not exist but is cited as a real path in three ACE role cards. SCOPE BOUNDARY
+    - the 2026 document deliberately introduces NO AI-specific elements (the G7 SBOM
+    for AI minimum elements is a separate standard and a separate card if wanted), no
+    SaaS-specific elements, and no VEX or CSAF work since ICDEV already has
+    vex_generate. Do not gold-plate into those. MANUAL-ONLY - every task is gated
+    behind sbx-gate-00 held in_progress AND carries depends_on_task_id pointing at it,
+    so the kanban runner cannot dispatch any of them; worktree plus push plus PR, no
+    auto-merge.'
+  task_prefix: sbx-
+  default_open: false
+  briefs:
+  - 'FND: unblock the ground first. sbom_generator.py carries a removal date that has
+    already passed while being load-bearing for about 25 callers - decide and record
+    whether it is canonical (it is the only SBOM producer in the tree), strip the
+    false marker, fix the three ACE role cards pointing at the non-existent
+    tools/sbom/ path, and correct the manifest shard. Then land the schema migration
+    that gives the new elements somewhere to live. Per the repo INSERT-schema-parity
+    rule this MUST be a new numbered migration, never an edit to CREATE TABLE in
+    init_icdev_db.py. Note sbom_components (migration 209) already has license and
+    vendor columns that the generator has never written to (sbx-fnd-01, sbx-fnd-02)'
+  - 'FLD: the 17 data fields. Metadata block first because it is cheap and
+    self-contained - SBOM Author as an entity distinct from the tool, Data Format Name
+    and Version, Generation Context (ICDEV parses source manifests, so it is before
+    build and that is knowable today), RFC 9557 timestamps, a real Tool Version
+    instead of the hardcoded 1.0.0 constant, and an SBOM Version that reconciles the
+    documents always-1 version field with the independently counting
+    sbom_records.version. Then component fields - Component Producer with the
+    unknown-provenance fallback, hash value and IANA-named hash algorithm, SPDX
+    license identifiers, the full identifier set (purl plus CPE for NVD lookup plus
+    UUID, commit hash, SWHID, OmniBOR - the standard says include ALL of them, not
+    one), alternate component names, and killing the literal unspecified and managed
+    version strings (sbx-fld-01..06)'
+  - 'COV: the expensive workstream and the one the standard changed most decisively.
+    Replace declared-manifest parsing with RESOLVED dependency sets per ecosystem and
+    emit a real CycloneDX dependencies graph. Resolution is also what unlocks hashes,
+    since it yields artifact locations - so sbx-cov-01 gates sbx-fld-03. Multiple
+    instances of a component with differing metadata must be listed separately with
+    their own dependency relationship (sbx-cov-01, sbx-cov-02)'
+  - 'PRC and SIG and FMT: practices, signature and formats. Unknown information must
+    now distinguish unknown-to-the-author from withheld-by-the-author, which the
+    current unspecified literal conflates, and a documented process is required for
+    recipients to query redactions. Frequency must move from the enforced 30-day
+    staleness threshold to per-build-or-release. Sign with the existing and currently
+    unused tools/crypto/attestation_signer.py and key_manager.py primitives - note
+    ICDEV emits cosign attest steps in CI YAML it generates for OTHER projects while
+    shipping unsigned SBOMs itself. Add an SPDX writer - the standard names SPDX and
+    CycloneDX as the two widely used formats and ICDEV has neither an SPDX generator
+    nor an SPDX parser, while GovCon proposal and knowledge-base seed content already
+    tells customers it produces both (sbx-prc-01..02, sbx-sig-01..02, sbx-fmt-01..02)'
+  - 'GOV: make conformance enforced rather than assumed. Every existing SBOM gate in
+    args/security_gates.yaml - sbom_not_generated, sbom_attestation_missing,
+    sbom_stale_over_30_days, sbom_generation_failed - is a presence, freshness or
+    exit-code check. None validates conformance. Wire the new
+    sbom_minimum_elements_validator into the deployment, swft and devsecops gates,
+    give SBOMs a version-specific retrieval URL to satisfy Distribution and Delivery,
+    and correct the customer-facing SPDX overclaim until sbx-fmt-01 actually lands
+    (sbx-gov-01..03)'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: fnd
+    title: Foundation - deprecation resolution and schema
+    priority: critical
+  - key: fld
+    title: Data Fields - the 17 minimum elements
+    priority: high
+  - key: cov
+    title: Coverage - transitive resolution and dependency graph
+    priority: high
+  - key: prc
+    title: Practices - unknowns, frequency, updates
+    priority: medium
+  - key: sig
+    title: Signature and conformance validation
+    priority: high
+  - key: fmt
+    title: Formats - SPDX output and ingest parity
+    priority: medium
+  - key: gov
+    title: Governance - gates, delivery, claim accuracy
+    priority: medium
