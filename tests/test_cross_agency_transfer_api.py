@@ -72,12 +72,23 @@ _LOGGER_MODULE = "tools.audit.cross_agency_transfer_logger"
 
 @pytest.fixture()
 def db(tmp_path):
+    """Schema-loaded connection, shared with the code under test.
+
+    This connection is handed straight to production code via the
+    ``get_connection`` patches below, and that code authors ``%s`` placeholders
+    for PostgreSQL. A bare ``sqlite3.connect`` raises ``near "%": syntax
+    error`` on every such statement. ``unclosable`` keeps the shared handle
+    alive across the ``with get_connection() as conn:`` blocks the request path
+    uses, which would otherwise close it after the first write.
+    """
+    from _sql_compat import translating
+
     path = tmp_path / "test_api.db"
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
     conn.commit()
-    return conn, str(path)
+    return translating(conn, unclosable=True), str(path)
 
 
 @pytest.fixture()

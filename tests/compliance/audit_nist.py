@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     classification TEXT DEFAULT 'CUI',
     ip_address TEXT,
     session_id TEXT,
+    recorded_at TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -103,12 +104,18 @@ def db(tmp_path):
 
 @pytest.fixture()
 def logger(db):
-    """CrossAgencyTransferLogger mocked to the temp DB."""
+    """CrossAgencyTransferLogger mocked to the temp DB.
+
+    ``_make_conn`` stands in for ``get_connection``, so its result goes to
+    production code, which authors ``%s`` placeholders for PostgreSQL and
+    relies on that layer to rewrite them. A bare ``sqlite3.connect`` raises
+    ``near "%": syntax error`` on every such statement. The raw connections
+    elsewhere in this file stay raw — they only serve SQL written here.
+    """
+    from _sql_compat import connect as _tconnect
 
     def _make_conn():
-        c = sqlite3.connect(str(db))
-        c.row_factory = sqlite3.Row
-        return c
+        return _tconnect(db)
 
     with patch(f"{_MODULE}.get_connection", side_effect=_make_conn):
         yield CrossAgencyTransferLogger(), db, _make_conn
