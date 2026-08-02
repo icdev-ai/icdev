@@ -7356,3 +7356,41 @@ projects:
   - key: promote
     title: PROMOTE — Findings become work
     priority: medium
+- key: kpr
+  name: KPR — Kanban Pipeline Repair
+  task_prefix: kpr-
+  description: 'Close the remaining self-blocking failures in the Governed Delivery
+    Pipeline. Two were already fixed on 2026-08-02: PR #1219 (the watcher could never
+    auto-merge an unapproved PR because require_approval was hardcoded into the DONE
+    path, defeating auto_merge_require_approval) and PR #1226 (a task''s PR was
+    invisible unless executor_url happened to be written by the one path that writes
+    it, so 10 green PRs were stranded). This card covers what those two exposed. The
+    core defect: _enforced_done_ok reads only the LATEST kanban_verifications row,
+    and nothing can write a fresh one except a new dispatch — so a task that verifies
+    badly once is blocked until it is re-dispatched, and re-dispatch opens a NEW PR
+    on a suffixed branch instead of reusing the old one. gdx-aud-01 carrying three
+    open PRs (#1135, #1220, #1221) is that loop made visible. Measured blocks as of
+    2026-08-02: tsr-core-01-d5 held by "No git commits found on task branch" while
+    PR #1146 is green with real changes, and gdx-aud-01 held by an auto-remediation
+    that committed 400 uncommitted files.'
+  briefs:
+  - 'reverify: recompute a task verification against current branch state and write a
+    fresh row, so a stale or failed record can be cleared without re-dispatching'
+  - 'dedupe: a retry must reuse the task''s existing PR rather than open another one'
+  - 'unblock: clear the PRs already green and waiting'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: rvfy
+    title: RVFY — Re-verification path
+    priority: critical
+  - key: dup
+    title: DUP — One task, one PR
+    priority: high
+  - key: fix
+    title: FIX — Repair the one genuinely failing PR
+    priority: high
+  - key: stale
+    title: STALE — Refresh green PRs gone stale against main
+    priority: medium
