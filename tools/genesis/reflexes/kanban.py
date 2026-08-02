@@ -23,6 +23,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -5226,7 +5227,13 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
 
 
 def _set_executor_type(task_id: str, executor_type: str) -> None:
-    """Stamp executor_type on the task row so the UI badge is accurate."""
+    """Stamp executor_type on the task row so the UI badge is accurate.
+
+    Also opens the task's kanban_executions row. This is the one place every
+    executor tier passes through exactly once on a successful dispatch, so it is
+    where "a dispatch started, at this time, via this executor" is true for all
+    of them — rather than four call sites that would drift apart.
+    """
     try:
         with get_connection() as conn:
             conn.execute(
@@ -5235,6 +5242,86 @@ def _set_executor_type(task_id: str, executor_type: str) -> None:
             )
     except Exception as exc:
         logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
+
+    _open_execution(task_id, executor_type)
+
+
+def _open_execution(task_id: str, executor_type: str) -> Optional[str]:
+    """Open a kanban_executions row for this dispatch. Returns its id, or None.
+
+    ``kanban_executions`` has had exactly the columns needed to answer "how long
+    does a task actually take" since migration 010, and zero rows for its entire
+    existence — nothing ever wrote to it. That is why ``execution_seconds`` is
+    populated on 7 of 2,586 tasks and ``_detect_execution_anomalies`` has been
+    falling back to the static timeout constants instead of adapting.
+
+    Columns here are the LIVE ones (migration 010 + later additions), not the
+    stale set in tools/kanban/init_db.py — an INSERT naming a column that only
+    exists in some DDL fails at runtime and gets swallowed by the except below,
+    which is precisely how a table ends up with no rows and nobody notices.
+    """
+    execution_id = f"exec-{task_id}-{uuid.uuid4().hex[:8]}"
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO kanban_executions "
+                "(id, task_id, executor_type, execution_id, started_at, status) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (execution_id, task_id, executor_type, execution_id,
+                 _utcnow_iso(), "running"),
+            )
+            conn.execute(
+                "UPDATE kanban_tasks SET execution_id = %s WHERE id = %s",
+                (execution_id, task_id),
+            )
+        return execution_id
+    except Exception as exc:  # noqa: BLE001 — telemetry must never block dispatch
+        logger.warning("kanban: could not open execution row for %s: %s", task_id, exc)
+        return None
+
+
+def _close_execution(task_id: str, status: str, exit_code: Optional[int] = None,
+                     output_summary: str = "") -> None:
+    """Close the task's open execution row and stamp kanban_tasks.execution_seconds.
+
+    Best-effort and idempotent-ish: if no open row exists (scheduler restarted
+    mid-task, telemetry insert failed) this is a no-op rather than an error.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, started_at FROM kanban_executions "
+                "WHERE task_id = %s AND completed_at IS NULL "
+                "ORDER BY started_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                return
+            d = dict(row)
+            conn.execute(
+                "UPDATE kanban_executions SET completed_at = %s, status = %s, "
+                "exit_code = %s, output_summary = %s WHERE id = %s",
+                (now.isoformat(), status, exit_code,
+                 (output_summary or "")[:2000], d["id"]),
+            )
+
+            started = d.get("started_at")
+            if started:
+                try:
+                    text = str(started).replace("Z", "+00:00")
+                    start_dt = datetime.fromisoformat(text)
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    seconds = max(0.0, (now - start_dt).total_seconds())
+                    conn.execute(
+                        "UPDATE kanban_tasks SET execution_seconds = %s WHERE id = %s",
+                        (seconds, task_id),
+                    )
+                except (ValueError, TypeError) as exc:
+                    logger.debug("kanban: unparseable started_at for %s: %s", task_id, exc)
+    except Exception as exc:  # noqa: BLE001 — telemetry must never block completion
+        logger.warning("kanban: could not close execution row for %s: %s", task_id, exc)
 
 
 def _get_executor_type(task_id: str) -> str | None:
@@ -8509,6 +8596,19 @@ def _check_completed():
                     claude_output = task_log.read_text(encoding="utf-8", errors="replace").strip()
             except Exception:
                 pass
+
+            # Close the execution row here, at the point the subprocess exits —
+            # before verification, remediation or merge, which can each take
+            # minutes and are not the agent's build time. This is what makes
+            # execution_seconds mean "how long the agent ran" and lets
+            # _detect_execution_anomalies adapt timeouts instead of falling back
+            # to the static constants.
+            _close_execution(
+                task_id,
+                status="completed" if ret == 0 else "failed",
+                exit_code=ret,
+                output_summary=claude_output[-2000:] if claude_output else "",
+            )
 
             # Build task dict with title from DB or fallback
             task_dict = {"id": task_id, "title": task_id}
