@@ -26,7 +26,44 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-__all__ = ["TranslatingConnection", "translating", "connect"]
+__all__ = ["TranslatingConnection", "TranslatingCursor", "translating", "connect"]
+
+
+class TranslatingCursor:
+    """Wraps a sqlite3 cursor, applying %s -> ? before every statement.
+
+    Production code often goes through ``conn.cursor()`` rather than
+    ``conn.execute()`` — ``tools/memory/memory_write.py`` is one such caller.
+    ``StorageConnection.cursor()`` returns a translating ``StorageCursor``, so
+    without this class a ``TranslatingConnection`` would hand back a *raw*
+    cursor and silently drop translation for exactly those call sites. The
+    fixture would then look converted while still raising ``near "%": syntax
+    error`` — the failure mode this module exists to remove.
+    """
+
+    def __init__(self, cursor: sqlite3.Cursor):
+        self._cursor = cursor
+
+    def execute(self, sql: str, params: Any = None):
+        if params is None:
+            self._cursor.execute(TranslatingConnection._t(sql))
+        else:
+            self._cursor.execute(TranslatingConnection._t(sql), params)
+        return self
+
+    def executemany(self, sql: str, seq: Any):
+        self._cursor.executemany(TranslatingConnection._t(sql), seq)
+        return self
+
+    def executescript(self, sql: str):
+        self._cursor.executescript(sql)
+        return self
+
+    def __iter__(self):
+        return iter(self._cursor)
+
+    def __getattr__(self, name: str):
+        return getattr(self._cursor, name)
 
 
 class TranslatingConnection:
@@ -53,6 +90,9 @@ class TranslatingConnection:
 
     def executemany(self, sql: str, seq: Any):
         return self._conn.executemany(self._t(sql), seq)
+
+    def cursor(self):
+        return TranslatingCursor(self._conn.cursor())
 
     def close(self):
         # In-memory databases die with their connection, so a fixture that

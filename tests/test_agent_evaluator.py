@@ -7,24 +7,31 @@ import sqlite3
 
 import pytest
 
+from tests._sql_compat import translating
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+# Mirrors migration 220_agent_loop_sessions.sql. The previous hand-rolled
+# version drifted from it — it carried a ``done``/``session_json`` pair the real
+# table never had and omitted ``messages_json``, which score_session() selects.
+# Every SELECT therefore died on "no such column: messages_json".
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS agent_loop_sessions (
-    session_id TEXT PRIMARY KEY,
-    coworker_id TEXT,
-    instance_id TEXT,
-    llm_function TEXT,
-    turns INTEGER DEFAULT 0,
-    total_input_tokens INTEGER DEFAULT 0,
-    total_output_tokens INTEGER DEFAULT 0,
-    total_cost_usd REAL DEFAULT 0.0,
-    result_subtype TEXT,
-    done INTEGER DEFAULT 0,
-    created_at TEXT,
-    session_json TEXT
+    session_id        TEXT PRIMARY KEY,
+    instance_id       TEXT NOT NULL DEFAULT '',
+    coworker_id       TEXT NOT NULL DEFAULT '',
+    llm_function      TEXT NOT NULL DEFAULT '',
+    result_subtype    TEXT NOT NULL DEFAULT '',
+    turns             INTEGER NOT NULL DEFAULT 0,
+    total_input_tokens  INTEGER NOT NULL DEFAULT 0,
+    total_output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_cost_usd    REAL NOT NULL DEFAULT 0.0,
+    messages_json     TEXT NOT NULL DEFAULT '[]',
+    system_prompt     TEXT NOT NULL DEFAULT '',
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS agent_evals (
     id TEXT PRIMARY KEY,
@@ -55,22 +62,19 @@ CREATE TABLE IF NOT EXISTS agent_evals (
 """
 
 
-class _NoClose:
-    def __init__(self, c):
-        self._c = c
-
-    def __getattr__(self, n):
-        return getattr(self._c, n)
-
-    def close(self):
-        pass
-
-
 def _make_conn():
+    # agent_evaluator authors PostgreSQL ``%s`` placeholders and relies on
+    # StorageConnection to rewrite them for SQLite. A bare sqlite3 connection
+    # removes that layer, so score_from_db()/save_evaluation() raise
+    # ``near "%": syntax error`` on every statement.
+    #
+    # unclosable=True keeps the previous _NoClose behaviour: the module closes
+    # the connection it is handed, which would destroy this in-memory DB before
+    # the test can read it back.
     conn = sqlite3.connect(":memory:")
     conn.executescript(_SCHEMA)
     conn.commit()
-    return _NoClose(conn)
+    return translating(conn, unclosable=True)
 
 
 def _make_session(session_id="s1", turns=3, done=True, subtype="success",
@@ -95,6 +99,26 @@ def _make_session(session_id="s1", turns=3, done=True, subtype="success",
         "result_subtype": subtype, "done": 1 if done else 0,
         "session_json": json.dumps(msgs),
     }
+
+
+def _insert_session(conn, sess):
+    """Insert *sess* into agent_loop_sessions, naming every column.
+
+    The columns are named rather than relying on ``VALUES (?, ?, …)`` ordinals
+    so this stays correct if migration 220 gains a column. ``done`` is not
+    persisted — the real table has no such column and score_session() derives
+    it from ``result_subtype``.
+    """
+    conn.execute(
+        "INSERT INTO agent_loop_sessions "
+        "(session_id, instance_id, coworker_id, llm_function, result_subtype, "
+        " turns, total_input_tokens, total_output_tokens, total_cost_usd, messages_json) "
+        "VALUES (%s, 'i1', %s, 'code', %s, %s, %s, %s, %s, %s)",
+        (sess["session_id"], sess["coworker_id"], sess["result_subtype"],
+         sess["turns"], sess["total_input_tokens"], sess["total_output_tokens"],
+         sess["total_cost_usd"], sess["session_json"]),
+    )
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -285,14 +309,7 @@ class TestScoreFromDB:
         import icdev.tools.ace.evaluator as _m
         conn = _make_conn()
         sess = _make_session("sess-db-1", turns=4, done=True, subtype="success")
-        conn._c.execute(
-            "INSERT INTO agent_loop_sessions VALUES (?, ?, 'i1', 'code', ?, ?, ?, ?, ?, ?, datetime('now'), ?)",
-            (sess["session_id"], sess["coworker_id"], sess["turns"],
-             sess["total_input_tokens"], sess["total_output_tokens"],
-             sess["total_cost_usd"], sess["result_subtype"], sess["done"],
-             sess["session_json"]),
-        )
-        conn._c.commit()
+        _insert_session(conn, sess)
         monkeypatch.setattr(_m, "_get_conn", lambda: conn)
 
         eval_r = _m.score_session("sess-db-1")
@@ -318,14 +335,7 @@ class TestScoreFromDB:
         import icdev.tools.ace.evaluator as _m
         conn = _make_conn()
         sess = _make_session("sess-eff-1", turns=6, done=True, subtype="success")
-        conn._c.execute(
-            "INSERT INTO agent_loop_sessions VALUES (?, ?, 'i1', 'code', ?, ?, ?, ?, ?, ?, datetime('now'), ?)",
-            (sess["session_id"], sess["coworker_id"], sess["turns"],
-             sess["total_input_tokens"], sess["total_output_tokens"],
-             sess["total_cost_usd"], sess["result_subtype"], sess["done"],
-             sess["session_json"]),
-        )
-        conn._c.commit()
+        _insert_session(conn, sess)
         monkeypatch.setattr(_m, "_get_conn", lambda: conn)
 
         eval_r = _m.score_session("sess-eff-1", max_iterations=12)
