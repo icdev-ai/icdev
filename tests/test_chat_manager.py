@@ -290,6 +290,23 @@ def _patch_router(monkeypatch, invoke_fn):
         if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
             monkeypatch.setattr(_mod, "LLMRouter", _Router)
 
+    # Patching the CLASS is not enough for the plain chat branch. Since
+    # cxo-adopt-01 that branch runs through `cortex_api.complete`, whose
+    # `_get_router()` calls `tools.llm.get_router()` — a module-level SINGLETON
+    # that caches the first `LLMRouter` it builds. Once any earlier test has
+    # warmed that cache, the real router is already instantiated and rebinding
+    # the class name affects nothing, so the stub was silently ignored and the
+    # turn fell through to the echo fallback. Patch the getter itself (the
+    # shim-aware pattern `tools/cortex/api.py::_get_router` documents).
+    _stub = _Router()
+    for _name in ("tools.llm", "icdev.tools.llm"):
+        try:
+            monkeypatch.setattr(
+                importlib.import_module(_name), "get_router", lambda config_path=None: _stub
+            )
+        except ImportError:
+            pass
+
 
 class TestPendingPlaceholder:
     def test_persist_pending_placeholder_returns_dict(self, manager):

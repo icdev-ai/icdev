@@ -2718,29 +2718,38 @@ def handle_council_query(args: dict) -> dict:
     peer-review each other, and a chairman synthesizes a structured verdict.
     See tools.llm.chain_orchestrator.ChainOrchestrator.invoke_council. Primary
     caller is cross-repo (e.g. idea_lab), pressure-testing a validated idea
-    before committing to it."""
+    before committing to it.
+
+    Routed through the governed ``cortex.reason`` facade (mode="council") rather
+    than calling ``router.invoke_council`` directly, so the call carries the full
+    TRUST chain — input injection screen + input redaction, output redaction,
+    provenance record, and an append-only cortex_audit row — instead of being an
+    ungoverned LLM egress. ``reason`` resolves "council" to the same
+    ``invoke_council`` orchestration and the same ``idealab_council_query``
+    routing function, and the response shape here is unchanged for the live
+    cross-repo callers: the chairman verdict is ``result.text``, and the chain
+    telemetry is on ``result.data``."""
     try:
         question = (args.get("question") or "").strip()
         context = args.get("context") or ""
         if not question:
             return {"error": "question is required"}
 
-        from tools.llm import get_router
-        from tools.llm.provider import LLMRequest
+        from tools.cortex import api as cortex_api
 
-        router = get_router()
         user_content = f"Context:\n{context}\n\nQuestion:\n{question}" if context else question
-        response = router.invoke_council(
-            "idealab_council_query",
-            LLMRequest(messages=[{"role": "user", "content": user_content}]),
+        result = cortex_api.reason(
+            user_content,
+            mode="council",
+            function="idealab_council_query",
         )
         return {
-            "verdict": (response.content or "").strip(),
+            "verdict": (result.text or "").strip(),
             "advisor_rounds": [
-                r for r in (getattr(response, "chain_rounds", None) or [])
+                r for r in (result.data.get("chain_rounds") or [])
                 if str(r.get("step", "")).startswith("advisor:")
             ],
-            "stop_reason": response.stop_reason,
+            "stop_reason": result.data.get("stop_reason"),
         }
     except Exception as exc:
         logger.warning("handle_council_query: %s", exc)
