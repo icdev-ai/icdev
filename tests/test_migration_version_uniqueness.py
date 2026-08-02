@@ -150,9 +150,15 @@ def test_discover_handles_missing_directory(tmp_path: pathlib.Path):
 @pytest.mark.parametrize(
     "version,shadowed_file",
     [
-        ("283", "283_soar_playbook_runs.sql"),
+        # 283_soar_playbook_runs.sql and 289_twin_compat_reports.sql used to be
+        # pinned here. Both were renumbered (to 340 and 332) once their tables
+        # were confirmed missing from the live database and each was verified to
+        # apply, so they are no longer shadowed — which is this pin working as
+        # designed: it failed, and the fix was to remove the entry rather than
+        # to weaken the check.
         ("282", "282_insider_risk_uba.sql"),
-        ("289", "289_twin_compat_reports.sql"),
+        ("18", "018_reflex_observations.py"),
+        ("19", "019_kanban_verifications"),
     ],
 )
 def test_known_shadowed_migrations_are_visible(version: str, shadowed_file: str):
