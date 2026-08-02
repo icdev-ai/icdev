@@ -1169,6 +1169,37 @@ CREATE TABLE IF NOT EXISTS creative_feature_gaps (
     classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_cfg_gap ON creative_feature_gaps(gap_score);
+-- Voice-of-customer signal capture (tools/voc/). DDL mirrors migration
+-- 069_voc_signals plus the classification column PG carries on
+-- voc_job_statements. Both tables are append-only. TranscriptIngestor.ingest()
+-- and VOCEngine._cluster_and_signal() wrap their writes in a best-effort
+-- except, so a missing table here reads as "extracted zero job statements"
+-- rather than as an error.
+CREATE TABLE IF NOT EXISTS voc_documents (
+    id                  TEXT PRIMARY KEY,
+    filename            TEXT NOT NULL,
+    source_type         TEXT NOT NULL,
+    ingested_at         TEXT NOT NULL,
+    word_count          INTEGER,
+    job_statement_count INTEGER,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE TABLE IF NOT EXISTS voc_job_statements (
+    id                  TEXT PRIMARY KEY,
+    document_id         TEXT NOT NULL,
+    raw_text            TEXT NOT NULL,
+    job_category        TEXT,
+    frequency           INTEGER,
+    severity_score      REAL,
+    strategic_fit_score REAL,
+    composite_score     REAL,
+    creative_gap_id     TEXT,
+    analyzed_at         TEXT NOT NULL,
+    classification      TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_voc_score ON voc_job_statements(composite_score);
+CREATE INDEX IF NOT EXISTS idx_voc_document_id ON voc_job_statements(document_id);
+CREATE INDEX IF NOT EXISTS idx_voc_category ON voc_job_statements(job_category);
 CREATE TABLE IF NOT EXISTS dic_handoff_sessions (
     session_id          TEXT    PRIMARY KEY,
     departing_owner_id  TEXT    NOT NULL,

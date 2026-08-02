@@ -75,6 +75,54 @@ class TestInitDb:
         assert "mosa_enabled" in col_names  # MOSA
 
 
+    def test_init_db_creates_voc_tables(self, db_path):
+        """init_db should create the VOC tables tools/voc writes to.
+
+        These were declared only in migration 069_voc_signals. The SQLite seed
+        path builds from SCHEMA_SQL and returns early once schema_migrations
+        exists, so 069 has never applied on SQLite — the shared dev DB has 926
+        tables and neither voc table among them. TranscriptIngestor.ingest()
+        and VOCEngine._cluster_and_signal() wrap their writes in a best-effort
+        except, so the missing tables surfaced as "0 job statements extracted"
+        rather than as an error (tsr-gov-01-d4 / triage P4).
+        """
+        tables = init_db(db_path=db_path)
+        assert {"voc_documents", "voc_job_statements"}.issubset(set(tables))
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            stmt_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(voc_job_statements)")
+            }
+            doc_cols = {row[1] for row in conn.execute("PRAGMA table_info(voc_documents)")}
+        finally:
+            conn.close()
+
+        # Every column TranscriptIngestor and VOCEngine name in their INSERT /
+        # UPDATE statements. A subset assertion here is what turns the next
+        # swallowed INSERT into a red test instead of a silent no-op.
+        assert {
+            "id",
+            "document_id",
+            "raw_text",
+            "job_category",
+            "frequency",
+            "severity_score",
+            "strategic_fit_score",
+            "composite_score",
+            "creative_gap_id",
+            "analyzed_at",
+        }.issubset(stmt_cols)
+        assert {
+            "id",
+            "filename",
+            "source_type",
+            "ingested_at",
+            "word_count",
+            "job_statement_count",
+        }.issubset(doc_cols)
+
+
 class TestHasMigrationSystem:
     """Tests for _has_migration_system helper."""
 
