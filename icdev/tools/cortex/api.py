@@ -613,6 +613,14 @@ def reason(
     methods take no ``exclude_model_ids``, so per-call air-gap relies on the
     global ICDEV_AIRGAP config; ``context.air_gap`` is still recorded for audit.
     Router errors propagate. ``result.metadata['reason_mode']`` records the mode.
+
+    ``result.data`` carries the chain telemetry the orchestration methods hang
+    on the response and ``_result_from_response`` drops: ``chain_rounds`` (one
+    entry per step — ``step``/``model_id``/tokens/cost/duration, no model prose)
+    and ``stop_reason`` (``completed``, ``timeout``, ``all_advisors_failed``, …).
+    Callers that need the per-step view read them there — e.g. the
+    ``council_query`` MCP tool derives its ``advisor_rounds`` from
+    ``chain_rounds``.
     """
     method_name = _REASON_MODES.get((mode or "cot").strip().lower())
     if method_name is None:
@@ -634,6 +642,9 @@ def reason(
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     result = _result_from_response(response, elapsed_ms=elapsed_ms)
     result.metadata["reason_mode"] = (mode or "cot").strip().lower()
+    rounds = getattr(response, "chain_rounds", None)
+    result.data["chain_rounds"] = list(rounds) if isinstance(rounds, list) else []
+    result.data["stop_reason"] = getattr(response, "stop_reason", "") or ""
     return result
 
 
