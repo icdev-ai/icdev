@@ -28,7 +28,21 @@ def manager():
     mgr._db_create_task = MagicMock()
     mgr._db_complete_task = MagicMock()
     mgr._db_fail_task = MagicMock()
-    return mgr
+    yield mgr
+
+    # create_context() always starts a daemon _agent_loop thread per context, and
+    # nothing in these tests stops it. Left running, each one polls its queue for
+    # the rest of the pytest session and writes governance audit rows from a
+    # background thread — which trips the transaction-leak guard in whichever
+    # test happens to be finishing when the write lands. That is why the reported
+    # test moved between runs: the thread, not the test, was the leaker.
+    contexts = list(mgr._contexts.values())
+    for ctx in contexts:
+        ctx._stop_event.set()
+    for ctx in contexts:
+        thread = getattr(ctx, "_thread", None)
+        if thread is not None:
+            thread.join(timeout=5)
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +269,11 @@ _CM = importlib.import_module("tools.dashboard.chat_manager")
 
 
 def _make_ctx(manager, **kw):
-    """Build an active context on the manager without starting its thread."""
+    """Build an active context on the manager.
+
+    create_context() DOES start the agent-loop thread; the `manager` fixture's
+    teardown is what stops it.
+    """
     res = manager.create_context("user-1", **kw)
     return manager._contexts[res["context_id"]]
 

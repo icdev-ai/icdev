@@ -275,38 +275,53 @@ class TestCacheSavingsDashboard:
         spec = importlib.util.find_spec("tools.cache_savings.savings")
         assert spec is not None, (
             "tools/cache_savings/savings.py must exist. "
-            "Implement get_savings_stats() returning hit_count, tokens_saved, cost_usd_saved."
+            "Implement get_savings_stats() returning a summary block with "
+            "hit_count, tokens_saved and cost_usd_saved."
         )
 
+    # The three tests below were written TDD-first against a flat return shape
+    # (hit_count etc. at the top level). The shipped implementation groups the
+    # platform totals under "summary" and adds a per-function breakdown, and every
+    # consumer reads that shape: blueprint.py's /api/cache-savings/tile does
+    # stats["summary"][...], cache_savings/page.html renders stats.summary.*, and
+    # the IQE adapter reads stats["by_function"]. The nested contract is the real
+    # one — these assert it rather than the shape that was only ever proposed.
+
     def test_get_savings_stats_returns_expected_keys(self):
-        """get_savings_stats() must return a dict with required metric keys."""
+        """get_savings_stats() must return the shape its consumers destructure."""
         from tools.cache_savings.savings import get_savings_stats
 
         stats = get_savings_stats()
-        required_keys = {"hit_count", "miss_count", "hit_rate_pct", "tokens_saved", "cost_usd_saved"}
-        missing = required_keys - set(stats.keys())
-        assert not missing, (
-            f"get_savings_stats() missing required keys: {missing}. "
+        top_missing = {"enabled", "backend", "summary", "by_function"} - set(stats.keys())
+        assert not top_missing, (
+            f"get_savings_stats() missing required top-level keys: {top_missing}. "
             f"Got: {list(stats.keys())}"
         )
 
+        required_keys = {"hit_count", "miss_count", "hit_rate_pct", "tokens_saved", "cost_usd_saved"}
+        missing = required_keys - set(stats["summary"].keys())
+        assert not missing, (
+            f"get_savings_stats()['summary'] missing required keys: {missing}. "
+            f"Got: {list(stats['summary'].keys())}"
+        )
+
     def test_get_savings_stats_numeric_values(self):
-        """get_savings_stats() numeric fields must be non-negative numbers."""
+        """summary numeric fields must be non-negative numbers."""
         from tools.cache_savings.savings import get_savings_stats
 
-        stats = get_savings_stats()
+        summary = get_savings_stats()["summary"]
         for key in ("hit_count", "miss_count", "tokens_saved", "cost_usd_saved"):
-            val = stats.get(key, -1)
+            val = summary.get(key, -1)
             assert isinstance(val, (int, float)) and val >= 0, (
-                f"get_savings_stats()['{key}'] must be a non-negative number, got: {val!r}"
+                f"get_savings_stats()['summary']['{key}'] must be a non-negative "
+                f"number, got: {val!r}"
             )
 
     def test_hit_rate_pct_range(self):
         """hit_rate_pct must be between 0.0 and 100.0."""
         from tools.cache_savings.savings import get_savings_stats
 
-        stats = get_savings_stats()
-        rate = stats.get("hit_rate_pct", -1)
+        rate = get_savings_stats()["summary"].get("hit_rate_pct", -1)
         assert isinstance(rate, (int, float)) and 0.0 <= rate <= 100.0, (
             f"hit_rate_pct must be in [0, 100], got: {rate!r}"
         )

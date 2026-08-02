@@ -178,18 +178,26 @@ class TestDiagnoseFallback:
             self_debug, "snapshot",
             lambda task_id, cwd, reason: {"reason": reason, "task_id": task_id},
         )
-        # Stub self_debug.diagnose so we can assert it was called.
+        # Stub self_debug.diagnose so we can assert it was called. It must accept
+        # chain_mode — diagnose_task forwards it on every fallback branch, and a
+        # one-arg stub turns the fallback into a TypeError instead of a result.
         called = {}
-        def fake_diag(snap):
+        def fake_diag(snap, chain_mode=""):
             called["yes"] = True
             return {"root_cause": "fallback", "recommendation": "quarantine",
                     "confidence": 0.4, "_source": "heuristic"}
         monkeypatch.setattr(self_debug, "diagnose", fake_diag)
 
         # Stub the LLM path to raise LLMUnavailableError.
-        import tools.llm.router as router_mod
-        class _Unavailable(router_mod.LLMUnavailableError):
-            pass
+        #
+        # importlib, NOT `import tools.llm.router as router_mod`: tools/llm/router.py
+        # is a real module, but tools/__init__.py's _ToolsRedirect resolves the
+        # attribute traversal in the `import a.b.c as x` form to
+        # icdev.tools.llm.router — a DIFFERENT class object from the one
+        # `from tools.llm.router import LLMRouter` inside diagnose_task binds.
+        # Patching that one silently missed, and this test made a real LLM call.
+        import importlib
+        router_mod = importlib.import_module("tools.llm.router")
         def boom(self, function, request):
             raise router_mod.LLMUnavailableError(
                 "no provider", function=function, chain=[], no_llm_mode=False,
