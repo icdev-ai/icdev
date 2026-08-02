@@ -1,0 +1,269 @@
+# CUI // SP-CTI
+# ICDEV™ analyzer/responder contract (anz-con-01).
+#
+# WHAT THIS IS
+# ------------
+# The contract that ICDEV's ~79 analyzer-shaped modules (tools/strategos/,
+# tools/security/, tools/supply_chain/, tools/dsoc_canvas/) never had: each
+# analyzer declares the observable types it accepts, the taxonomy it emits, its
+# rate limit and its sandbox posture — as DATA. Adapted from TheHive Project's
+# Cortex (github.com/TheHive-Project/Cortex), whose value is the contract, not
+# the 39 analyzers that implement it.
+#
+# WHAT THIS IS NOT
+# ----------------
+# Deliberately NOT a base class analyzers must inherit. 79 modules will not all
+# be refactored, and a contract that requires rewriting to adopt does not get
+# adopted. Declaring an analyzer here changes no analyzer code. The precedent is
+# args/component_registry.yaml and args/mirror_parity.yaml: adding an entry
+# needs no code change.
+#
+# HOW TO ADD AN ANALYZER
+# ----------------------
+#   1. append an entry under `analyzers:` below
+#   2. every value in `accepts:` must already exist under `observable_types:`
+#   3. run `python tools/analyzers/contract.py --validate`
+# There is no step 4. No blueprint edit, no dispatch table, no base class.
+#
+# WHY THE VOCABULARY IS CLOSED
+# ----------------------------
+# This repo has already been bitten twice by an open-looking vocabulary that was
+# actually closed: `register_citation` raised on an unknown `citation_type`,
+# every caller swallowed the raise, and two subsystems (Cortex governance,
+# GovChain asset tokenization) wrote ZERO provenance rows for their entire
+# existence while the gate reported "warn". See tools/provenance/citation_types.py.
+#
+# So: an unknown observable type is rejected when this file is LOADED — loudly,
+# with the offending analyzer key and the legal values — not silently at
+# dispatch time. tools/analyzers/contract.py::load_contract raises
+# UnknownObservableType; nothing catches it. The same constant renders the
+# CHECK clause for any column that stores an observable type
+# (`check_constraint_sql()` / `sqlite_check_clause()`), so the DB and the
+# declaration cannot disagree.
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# Closed vocabulary: observable types
+# ---------------------------------------------------------------------------
+# CLOSED SET. An `accepts:` value not listed here fails at load.
+# Every entry names the ICDEV module that handles that type today — a type with
+# no consumer is dead vocabulary and does not belong here.
+observable_types:
+  ip:
+    description: IPv4 or IPv6 address.
+    consumers: [tools/dsoc_canvas/rtbh_manager.py, tools/security_canvas/threat_intel_engine.py]
+  cidr:
+    description: Network prefix in CIDR notation.
+    consumers: [tools/dsoc_canvas/rtbh_manager.py, tools/dsoc_canvas/flowspec_engine.py]
+  asn:
+    description: Autonomous system number.
+    consumers: [tools/dsoc_canvas/bgp_hijack_detector.py]
+  bgp_prefix:
+    description: BGP-announced prefix with its origin AS.
+    consumers: [tools/dsoc_canvas/bgp_hijack_detector.py]
+  domain:
+    description: DNS domain or fully-qualified hostname used as an indicator.
+    consumers: [tools/security_canvas/threat_intel_engine.py]
+  url:
+    description: Absolute URL.
+    consumers: [tools/chat_router/url_analyzer.py, tools/security_canvas/threat_intel_engine.py]
+  email:
+    description: Email address.
+    consumers: [tools/security_canvas/threat_intel_engine.py]
+  file_hash:
+    description: MD5, SHA-1 or SHA-256 digest of a file.
+    consumers: [tools/security_canvas/threat_intel_engine.py]
+  file_path:
+    description: Path to a file or directory in a checkout.
+    consumers: [tools/security/secret_detector.py, tools/security/sast_runner.py]
+  repository:
+    description: Source repository (URL or local path).
+    consumers: [tools/security/secret_detector.py, tools/strategos/gitlab_osint_collector.py]
+  container_image:
+    description: OCI image reference.
+    consumers: [tools/security/container_scanner.py]
+  package:
+    description: Dependency identified by ecosystem plus name plus version.
+    consumers: [tools/security/osv_scanner.py, tools/security/dependency_auditor.py]
+  purl:
+    description: Package URL (purl) identifier.
+    consumers: [tools/compliance/sbom_generator.py]
+  cpe:
+    description: Common Platform Enumeration identifier.
+    consumers: [tools/security/vuln_scanner.py]
+  cve:
+    description: CVE identifier.
+    consumers: [tools/supply_chain/cve_triager.py, tools/supply_chain/cve_passive_watcher.py, tools/strategos/cisa_kev_importer.py]
+  sbom:
+    description: An SBOM document (CycloneDX or SPDX).
+    consumers: [tools/compliance/sbom_generator.py]
+  vendor:
+    description: Supplier or company name.
+    consumers: [tools/supply_chain/ndaa_889_screener.py, tools/supply_chain/scrm_assessor.py]
+  hostname:
+    description: Host or endpoint identity inside an assessed boundary.
+    consumers: [tools/security/endpoint_security_scanner.py]
+  mmsi:
+    description: AIS Maritime Mobile Service Identity of a vessel.
+    consumers: [tools/strategos/ais_importer.py]
+  icao24:
+    description: ADS-B 24-bit ICAO aircraft address.
+    consumers: [tools/strategos/adsb_importer.py]
+  callsign:
+    description: Aircraft or unit callsign.
+    consumers: [tools/strategos/adsb_importer.py]
+  geo_point:
+    description: Latitude/longitude point.
+    consumers: [tools/strategos/acled_importer.py, tools/strategos/osm_importer.py]
+  stix_bundle:
+    description: STIX 2.x bundle.
+    consumers: [tools/strategos/stix_importer.py]
+  text:
+    description: Free-text blob to be analyzed (OSINT snippet, chat turn, report body).
+    consumers: [tools/strategos/osint_analyzer.py]
+  document:
+    description: A document artifact (PDF, DOCX, MD) to be analyzed as a whole.
+    consumers: [tools/doc_modernization/scanner.py]
+
+# ---------------------------------------------------------------------------
+# Closed vocabulary: output taxonomy
+# ---------------------------------------------------------------------------
+# A report is tagged {namespace, predicate, level, value} — the Cortex shape.
+# `level` and `namespace` are closed; `predicates` are the analyzer's own
+# vocabulary, declared per analyzer so they stay machine-readable.
+taxonomy:
+  levels:
+    info: Neutral observation. Carries no verdict.
+    safe: Observable assessed as benign.
+    suspicious: Observable warrants review but is not confirmed malicious.
+    malicious: Observable assessed as hostile.
+  namespaces:
+    ICDEV: Platform-wide analyzers with no narrower home.
+    SECURITY: tools/security/ — SAST, secrets, dependency and container scanning.
+    SUPPLYCHAIN: tools/supply_chain/ — SCRM, CVE triage, Section 889 screening.
+    DSOC: tools/dsoc_canvas/ — DDoS, BGP and network-defence analyzers.
+    STRATEGOS: tools/strategos/ — intelligence feeds, importers and OSINT.
+
+# ---------------------------------------------------------------------------
+# Closed vocabulary: sandbox posture
+# ---------------------------------------------------------------------------
+# Same four decisions as docs/security/sandbox-coverage.md (OPT-58, D-SEC-11),
+# so a declaration here and the sandbox-coverage doc use one vocabulary.
+# Enforcement lands in anz-rate-01 and reuses the existing sandbox_execute MCP
+# tool (Docker, resource limits, network isolation, D-SEC-10) rather than
+# inventing a second isolation path.
+sandbox_postures:
+  sandboxed: Must run inside sandbox_execute. Ingests untrusted content.
+  sandboxed_on_demand: Runs in-process by default; sandboxed when input is untrusted.
+  trusted_first_party: Reads only first-party data. No sandbox required.
+  bypass_documented: Deliberately unsandboxed; rationale recorded in docs/security/sandbox-coverage.md.
+
+# ---------------------------------------------------------------------------
+# Defaults applied to any analyzer that does not override them
+# ---------------------------------------------------------------------------
+# Fail-safe by construction: an analyzer that declares nothing gets the
+# strictest posture (sandboxed) and a conservative rate limit.
+defaults:
+  rate_limit:
+    max_calls: 60
+    per_seconds: 3600
+  sandbox: sandboxed
+  timeout_seconds: 120
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Declarations
+# ---------------------------------------------------------------------------
+# `module`/`entrypoint` name the callable that already implements the analysis.
+# The contract does not change that callable's signature — argument adaptation
+# is anz-disp-01's job. Declaring an analyzer here today buys: a machine-readable
+# statement of what it accepts and emits, and a rate limit and sandbox posture
+# that anz-rate-01 can enforce without touching the module.
+#
+# The seed set below is deliberately small. It exists to prove the mechanism
+# against real modules, not to port all 79 (that is anz-mig-*).
+analyzers:
+  - key: cve_triage
+    kind: analyzer
+    display_name: CVE Triage
+    description: Scores a CVE against the project dependency graph and computes blast radius.
+    module: tools.supply_chain.cve_triager
+    entrypoint: triage_cve
+    accepts: [cve]
+    taxonomy:
+      namespace: SUPPLYCHAIN
+      predicates: [cve-severity, blast-radius]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 240
+      per_seconds: 3600
+
+  - key: section_889_screen
+    kind: analyzer
+    display_name: NDAA Section 889 Screen
+    description: Screens a vendor against Section 889 Part A/B covered-entity lists.
+    module: tools.supply_chain.ndaa_889_screener
+    entrypoint: screen_item
+    accepts: [vendor]
+    taxonomy:
+      namespace: SUPPLYCHAIN
+      predicates: [section-889]
+      levels: [safe, suspicious, malicious]
+    sandbox: trusted_first_party
+
+  - key: threat_intel_match
+    kind: analyzer
+    display_name: Threat Intel Match
+    description: Matches an observable against ingested threat-intel indicators.
+    module: tools.security_canvas.threat_intel_engine
+    entrypoint: match_observable
+    accepts: [ip, domain, url, email, file_hash]
+    taxonomy:
+      namespace: SECURITY
+      predicates: [ioc-match, feed-confidence]
+      levels: [info, safe, suspicious, malicious]
+    sandbox: trusted_first_party
+
+  - key: secret_scan
+    kind: analyzer
+    display_name: Secret Detection
+    description: Scans a checkout for committed credentials.
+    module: tools.security.secret_detector
+    entrypoint: scan
+    accepts: [file_path, repository]
+    taxonomy:
+      namespace: SECURITY
+      predicates: [secret-found]
+      levels: [safe, suspicious, malicious]
+    sandbox: sandboxed_on_demand
+
+  - key: stix_ingest
+    kind: analyzer
+    display_name: STIX Bundle Ingest
+    description: Parses a STIX 2.x bundle into indicators, techniques and relationships.
+    module: tools.strategos.stix_importer
+    entrypoint: parse_bundle
+    accepts: [stix_bundle]
+    taxonomy:
+      namespace: STRATEGOS
+      predicates: [stix-object-count]
+      levels: [info]
+    sandbox: sandboxed
+
+  - key: rtbh_blackhole
+    kind: responder
+    display_name: RTBH Blackhole
+    description: Triggers remotely-triggered black-hole routing for a hostile source.
+    module: tools.dsoc_canvas.rtbh_manager
+    entrypoint: trigger_rtbh
+    accepts: [ip, cidr]
+    taxonomy:
+      namespace: DSOC
+      predicates: [rtbh-triggered]
+      levels: [info]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 10
+      per_seconds: 3600

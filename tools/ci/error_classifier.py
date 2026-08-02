@@ -86,24 +86,42 @@ def is_changes_requested(pr_json: dict) -> bool:
     return False
 
 
-def is_approved_and_passing(pr_json: dict) -> bool:
-    """Approved AND all checks SUCCESS."""
-    approved = False
-    for review in pr_json.get("reviews") or []:
-        state = (review.get("state") or "").upper()
-        if state == "APPROVED":
-            approved = True
-            break
-    if not approved:
-        return False
+def is_passing(pr_json: dict) -> bool:
+    """True if every check in the rollup finished green. Approval not considered.
+
+    SKIPPED/NEUTRAL count as green: a skipped conditional job is a *conclusive*
+    non-failure, not a pending one (`Docker Build` skips on doc-only PRs). An
+    empty rollup is NOT passing — it means no CI has reported yet, which is
+    "unknown", not "green".
+
+    Handles both rollup shapes `gh` emits: CheckRun entries carry `conclusion`
+    and no `state`; StatusContext entries carry `state` and no `conclusion`.
+    """
     rollup = _rollup(pr_json)
     if not rollup:
         return False
     for check in rollup:
         conclusion = (check.get("conclusion") or "").upper()
-        if conclusion not in ("SUCCESS", "NEUTRAL", "SKIPPED"):
+        state = (check.get("state") or "").upper()
+        if conclusion:
+            if conclusion not in ("SUCCESS", "NEUTRAL", "SKIPPED"):
+                return False
+        elif state != "SUCCESS":
             return False
     return True
+
+
+def is_approved(pr_json: dict) -> bool:
+    """True if at least one review is APPROVED."""
+    for review in pr_json.get("reviews") or []:
+        if (review.get("state") or "").upper() == "APPROVED":
+            return True
+    return False
+
+
+def is_approved_and_passing(pr_json: dict) -> bool:
+    """Approved AND all checks green."""
+    return is_approved(pr_json) and is_passing(pr_json)
 
 
 def is_in_progress(pr_json: dict) -> bool:
@@ -143,6 +161,7 @@ def classify_pr_state(
     ci_logs: str = "",
     *,
     max_age_hours: int = 24,
+    require_approval: bool = True,
 ) -> KanbanState:
     """Return the KanbanState that best describes the PR.
 
@@ -151,10 +170,17 @@ def classify_pr_state(
         2. explicit merge-conflict → MERGE_CONFLICT
         3. reviewer requested changes → CHANGES_REQUESTED
         4. CI failed → CI_FAILED
-        5. approved + all green → DONE
+        5. green (+ approved, when ``require_approval``) → DONE
         6. still running checks → PR_OPENED
         7. stale → FAILED
         8. default → PR_OPENED
+
+    ``require_approval`` mirrors the caller's merge policy. It defaults to True
+    (unchanged behavior), but a caller configured for unattended merge must pass
+    False: without it a green, unapproved PR can never reach DONE, so the caller
+    never evaluates its own approval config and the PR waits until it ages into
+    ``is_stale`` → FAILED and gets pointlessly retried. That is exactly what
+    stranded kanban PR #1151 for 14h with 9/9 checks green.
     """
     top_state = (pr_json.get("state") or "").upper()
     if top_state == "MERGED":
@@ -177,7 +203,7 @@ def classify_pr_state(
     if ci_logs and _CI_LOG_HINTS["test_failure"].search(ci_logs):
         return KanbanState.CI_FAILED
 
-    if is_approved_and_passing(pr_json):
+    if is_approved_and_passing(pr_json) if require_approval else is_passing(pr_json):
         return KanbanState.DONE
 
     if is_in_progress(pr_json):

@@ -27,6 +27,7 @@ inline ``app.py`` routes).
 """
 from __future__ import annotations
 
+import importlib
 import os
 import sqlite3
 import sys
@@ -306,11 +307,22 @@ def aisg_client(tmp_path, monkeypatch):
     monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "aisg.db"))
 
     try:
-        from tools.aisg.blueprint import bp
+        import tools.aisg.blueprint as _aisg_mod
     except ImportError as exc:  # pragma: no cover
         pytest.skip(f"aisg blueprint not importable: {exc}")
 
-    app = _fake_auth_app(lambda a: a.register_blueprint(bp))
+    # Reload for a pristine blueprint. ``create_app()`` — which the module-scoped
+    # ``app_db`` fixture above runs — attaches ``guard_component_access`` to this
+    # module-level blueprint *singleton* (tools/dashboard/lazy_canvas.py). That
+    # mutation outlives the app it was made for, so a bare Flask app registering
+    # the same object inherits a canvas-access guard that 403s every aisg route,
+    # including the deliberately-open reads. These tests would then measure the
+    # guard rather than ``require_role``, and their result depended on whether
+    # anything had built the dashboard first — which is exactly what happened
+    # once app_db stopped erroring out at create_app().
+    importlib.reload(_aisg_mod)
+
+    app = _fake_auth_app(lambda a: a.register_blueprint(_aisg_mod.bp))
     with app.test_client() as c:
         yield c
 

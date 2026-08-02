@@ -246,6 +246,25 @@ python tools/integrity/pr_gates.py --base origin/main --gate            # CI gat
 
 ---
 
+## Analyzer / Responder Contract (anz-con-01)
+
+The contract is DATA — `args/analyzer_contract.yaml`. A new analyzer is declared
+entirely there (accepted observable types, output taxonomy, rate limit, sandbox
+posture); no base class, no dispatch table, no blueprint edit. An unknown
+observable type is rejected when the file is LOADED, naming the offending
+analyzer and the legal values — not swallowed at dispatch time the way an
+unknown `citation_type` was.
+
+```bash
+python tools/analyzers/contract.py --validate            # load + validate; exit 1 on any defect
+python tools/analyzers/contract.py --list                # declared analyzers and responders
+python tools/analyzers/contract.py --json                # whole contract, machine-readable
+python tools/analyzers/contract.py --observable cve      # who accepts this observable type
+python tools/analyzers/contract.py --check-sql observable_type   # CHECK clause for a migration
+```
+
+---
+
 ## Browser Automation & Agent Scope Controls
 ```bash
 # Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
@@ -1399,7 +1418,11 @@ python tools/db/migrate.py --status [--json]                      # Show migrati
 python tools/db/migrate.py --up [--target 005] [--dry-run]        # Apply pending migrations
 python tools/db/migrate.py --down [--target 003]                  # Roll back migrations
 python tools/db/migrate.py --validate [--json]                    # Validate checksums
-python tools/db/migrate.py --create "add_feature_table"           # Scaffold new migration
+python tools/db/migrate.py --create "add_feature_table"           # Scaffold new migration (allocates a YYYYMMDDHHMMSS version)
+# ALWAYS scaffold with --create. Migration ids are UTC timestamps, not a
+# sequence: hand-picking "highest + 1" is a read-modify-write across every
+# concurrent session and produced three collisions in one session on
+# 2026-08-02, one of which broke main. The legacy 001-341 range is closed.
 python tools/db/migrate.py --mark-applied 001                    # Mark existing DB as migrated
 python tools/db/migrate.py --up --all-tenants                    # Apply to all tenant DBs
 
@@ -3577,6 +3600,29 @@ python -c "from tools.twin_core import observe; import json; print(json.dumps(ob
 python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"  # registered twins
 # Config/registry: adapters self-register from tools/twin_core/adapters/*.py
 # Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
+```
+
+## FORGE Academy — xAPI Export (aca-trn-05)
+
+```bash
+# Export Academy completions as xAPI 1.0.3 statements so they can feed an external LMS/LRS.
+# Only records with a verified provenance row (fa_xp_ledger for step/mission,
+# fa_certificate_evidence for a certificate) are emitted; the rest are withheld and named
+# in the `excluded` block rather than silently dropped.
+python -m apps.forge_academy.xapi --json                                   # full envelope: statements + excluded + counts
+python -m apps.forge_academy.xapi --statements-only --out academy_feed.json  # bare array an LRS POST /statements expects
+python -m apps.forge_academy.xapi --user-id 1 --since 2026-01-01T00:00:00Z   # one learner, incremental
+python -m apps.forge_academy.xapi --include-unverified                       # also emit unverifiable records, each stamped verified:false
+
+# Library API
+python -c "from apps.forge_academy.xapi import build_statements; import json; print(json.dumps(build_statements()['counts']))"
+
+# HTTP (org-leadership gated, same tier as Oracle / Org Readiness)
+#   GET /api/academy/export/xapi[?user_id=&since=&include_unverified=1&statements_only=1]
+# Env: ICDEV_XAPI_ACTIVITY_BASE (default https://icdev.ai/xapi/forge-academy) — two deployments
+#   feeding the same LRS must not both claim the same activity IRIs.
+# SCORM is deliberately NOT implemented: it records one rolled-up completion per launch and would
+#   discard the per-step granularity that makes this export worth having.
 ```
 
 ## Agent Browser — Indexed-Element Page Representation (tools/browser/)
