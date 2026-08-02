@@ -1,0 +1,173 @@
+// CUI // SP-CTI
+/**
+ * ICDEV™ E2E API auth bootstrap — CSRF double-submit (tsh-e2e-01-d2)
+ *
+ * THE FAILURE THIS FIXES
+ * ----------------------
+ * Every mutating API call made through Playwright's `request` fixture came back
+ * `403 {"code":"CSRF_FAILED"}` locally while passing in CI. Measured on
+ * `cpmp_portfolio.spec.ts` against a locally running dashboard: 10 failed,
+ * 14 passed, and all ten failures were the same 403 on a POST or a PUT. Every
+ * GET in the same spec returned 200 — so this was never a login problem, and
+ * there is no pre-seeded auth file to copy from CI.
+ *
+ * WHY CI PASSES AND LOCAL DOES NOT
+ * --------------------------------
+ * `tools/security/csrf.py::csrf_protect` rejects a mutating request that carries
+ * a cookie session but neither a matching `X-CSRF-Token` header nor a browser
+ * `Sec-Fetch-Site` header. It returns early — no rejection — in two cases that
+ * matter here:
+ *
+ *   1. `ICDEV_AUTH_BYPASS` is truthy.          ← what CI relies on
+ *   2. `session['user_id']` is unset.          ← nothing to forge, nothing to check
+ *
+ * CI sets `ICDEV_AUTH_BYPASS: "true"` in `jobs.e2e.env`, so CSRF never engages
+ * there. Locally, `playwright.config.ts` sets the same flag — but only inside
+ * `webServer.env`, which applies **only when Playwright starts the dashboard
+ * itself**. `reuseExistingServer: true` means a dashboard already listening on
+ * the port is used as-is, and that server (started by `/start`, the kanban
+ * runner, or a plain `python tools/dashboard/app.py`) has no bypass flag. It
+ * does have dev auto-login, so `session['user_id']` IS set — which is precisely
+ * the combination `csrf_protect` is built to reject.
+ *
+ * Confirmed against a live local dashboard before writing this file:
+ *
+ *   POST /api/cpmp/contracts                          → 403 CSRF_FAILED
+ *   POST /api/cpmp/contracts  + X-CSRF-Token: <cookie> → 201
+ *
+ * THE FIX — DO WHAT THE APP'S OWN JAVASCRIPT DOES
+ * -----------------------------------------------
+ * `base.html` wraps `fetch`/`XMLHttpRequest` and attaches the `icdev_csrf`
+ * cookie value as the `X-CSRF-Token` header on every same-origin mutating
+ * request. `request` is a bare HTTP client, so it never ran that wrapper. This
+ * module performs the same double-submit handshake:
+ *
+ *   1. GET `/` in a throwaway context — dev auto-login establishes the session,
+ *      and the `after_request` hook in `csrf.py` issues the `icdev_csrf` cookie.
+ *   2. Read that cookie out of the context's storage state.
+ *   3. Build the real request context from the same cookie jar, with the token
+ *      pinned as a default header.
+ *
+ * NOT taken: sending a bare `Sec-Fetch-Site: same-origin` header. The server
+ * accepts it (branch 2 of `csrf_protect`) and it is one line, but it is a header
+ * a browser stamps and page code cannot forge — spoofing it from a test client
+ * would mean the suite could no longer tell a working CSRF implementation from a
+ * broken one. The double-submit path is the one real clients actually use.
+ *
+ * NOT taken: setting `ICDEV_AUTH_BYPASS` for local runs. That would match CI,
+ * but it matches CI by turning the check off — the local suite would keep
+ * exercising strictly less of the app than it appears to. Bootstrapping a real
+ * token means these specs now pass **with CSRF enforced**, which is more than
+ * CI does today.
+ *
+ * WORKS IN BOTH ENVIRONMENTS
+ * --------------------------
+ * Under `ICDEV_AUTH_BYPASS` (CI) no `icdev_csrf` cookie is issued, no header is
+ * attached, and `csrf_protect` exits before it would look for one — so this is a
+ * no-op there rather than a second code path to keep working.
+ *
+ * USAGE — import `test`/`expect` from here instead of `@playwright/test`:
+ *
+ *   import { test, expect } from './fixtures/auth';
+ *
+ * The `request` fixture is then CSRF-bootstrapped. Nothing else about a spec
+ * changes; `page` is untouched, since a real browser context already gets both
+ * the cookie and `Sec-Fetch-Site` for free.
+ */
+
+import { test as base, expect, type APIRequestContext } from '@playwright/test';
+
+/** Set by `tools/security/csrf.py::register_csrf`; readable by page JS by design. */
+export const CSRF_COOKIE = 'icdev_csrf';
+
+/** The header `csrf_protect` compares against the session token. */
+export const CSRF_HEADER = 'X-CSRF-Token';
+
+/**
+ * Same resolution `playwright.config.ts` and `fixtures/govcon_cpmp.ts` use, so a
+ * spec and its auth bootstrap can never end up pointed at different servers.
+ */
+export const DEFAULT_BASE_URL =
+  process.env.ICDEV_DASHBOARD_URL || `http://localhost:${process.env.ICDEV_DASHBOARD_PORT || '5050'}`;
+
+/** The `playwright` worker fixture — typed structurally to avoid a deep import. */
+type PlaywrightFixture = {
+  request: { newContext(options?: Record<string, unknown>): Promise<APIRequestContext> };
+};
+
+function truthy(value: string | undefined): boolean {
+  return ['1', 'true', 'yes', 'on'].includes((value ?? '').trim().toLowerCase());
+}
+
+let warned = false;
+
+/** One line per process — a warning repeated by 24 tests is noise, not a signal. */
+function warnOnce(message: string): void {
+  if (warned) return;
+  warned = true;
+  console.log(`  ! E2E auth bootstrap: ${message}`);
+}
+
+/**
+ * Build an `APIRequestContext` that can perform mutating requests against a
+ * CSRF-enforcing dashboard.
+ *
+ * Never throws on a bootstrap failure: it falls back to a plain context so the
+ * run fails at the assertion that actually cares, with that test's own error,
+ * rather than collapsing every spec into an opaque fixture error.
+ */
+export async function createAuthedRequestContext(
+  playwright: PlaywrightFixture,
+  baseURL: string = DEFAULT_BASE_URL,
+): Promise<APIRequestContext> {
+  const probe = await playwright.request.newContext({ baseURL });
+  let storageState: unknown;
+  let token = '';
+
+  try {
+    // Dev auto-login sets session['user_id']; the after_request hook in csrf.py
+    // then issues `icdev_csrf`. Both land in this context's cookie jar.
+    await probe.get('/', { failOnStatusCode: false });
+    const state = (await probe.storageState()) as { cookies: Array<{ name: string; value: string }> };
+    storageState = state;
+    token = state.cookies.find((c) => c.name === CSRF_COOKIE)?.value ?? '';
+  } catch (err) {
+    warnOnce(`could not reach ${baseURL} (${(err as Error).message}) — continuing without a CSRF token`);
+  } finally {
+    await probe.dispose();
+  }
+
+  if (!token && !truthy(process.env.ICDEV_AUTH_BYPASS)) {
+    // Expected under ICDEV_AUTH_BYPASS (no session cookie is issued and CSRF is
+    // off). Without it, an absent token means the mutating specs are about to
+    // 403 — say so here rather than let it surface as 24 unexplained failures.
+    warnOnce(
+      `no ${CSRF_COOKIE} cookie from ${baseURL} and ICDEV_AUTH_BYPASS is unset — ` +
+        'mutating requests will 403 CSRF_FAILED if that server has a login session',
+    );
+  }
+
+  return playwright.request.newContext({
+    baseURL,
+    storageState,
+    extraHTTPHeaders: token ? { [CSRF_HEADER]: token } : undefined,
+  });
+}
+
+/**
+ * Drop-in replacement for `@playwright/test`'s `test`, with `request` overridden
+ * by the bootstrapped context above.
+ */
+export const test = base.extend<{ request: APIRequestContext }>({
+  request: async ({ playwright, baseURL }, use) => {
+    const context = await createAuthedRequestContext(
+      playwright as unknown as PlaywrightFixture,
+      baseURL ?? DEFAULT_BASE_URL,
+    );
+    await use(context);
+    await context.dispose();
+  },
+});
+
+export { expect };
+// CUI // SP-CTI
