@@ -54,6 +54,27 @@ os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+-- Runtime invocation telemetry (migration 329). Present here so any test that
+-- exercises an instrumented path (MCP dispatch, execute_agent, an ACE role
+-- step) records rather than tripping the recorder's missing-table latch.
+CREATE TABLE IF NOT EXISTS runtime_invocations (
+    id TEXT PRIMARY KEY,
+    surface TEXT NOT NULL,
+    name TEXT NOT NULL,
+    session_id TEXT,
+    project_id TEXT,
+    parent_id TEXT,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    duration_ms INTEGER,
+    status TEXT NOT NULL DEFAULT 'running',
+    error_class TEXT,
+    error_message TEXT,
+    arg_keys TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL DEFAULT 'unknown',
