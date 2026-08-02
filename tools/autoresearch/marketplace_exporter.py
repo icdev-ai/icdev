@@ -143,14 +143,11 @@ def export_experiment_as_asset(
             asset_id = _gen_id("mka")
             try:
                 conn.execute(
-                    # The column is publisher_tenant_id, not tenant_id, and
-                    # current_version is NOT NULL without a default — so this
-                    # export never wrote a row (swp-scan-01).
                     "INSERT INTO marketplace_assets "
-                    "(id, publisher_tenant_id, name, asset_type, description, slug, "
+                    "(id, tenant_id, name, asset_type, description, slug, "
                     "publisher_user, impact_level, status, classification, "
-                    "current_version, created_at, updated_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "created_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         asset_id,
                         tenant_id,
@@ -162,7 +159,6 @@ def export_experiment_as_asset(
                         "IL4",
                         "draft",
                         "CUI",
-                        "1.0.0",
                         now_iso(),
                         now_iso(),
                     ),

@@ -95,11 +95,11 @@ def register_pages_routes(bp, nc_config=None):
             _row_to_dict(r)
             for r in conn.execute(
                 "SELECT sr.id, sr.sim_type, sr.ran_at, t.name AS topology_name, sr.result_json "
-                "FROM nc_simulation_results sr JOIN topologies t ON t.id=sr.topology_id "
+                "FROM simulation_results sr JOIN topologies t ON t.id=sr.topology_id "
                 "ORDER BY sr.ran_at DESC LIMIT 10"
             ).fetchall()
         ]
-        total_sims = conn.execute("SELECT COUNT(*) FROM nc_simulation_results").fetchone()[0]
+        total_sims = conn.execute("SELECT COUNT(*) FROM simulation_results").fetchone()[0]
         # Load projects list for filter dropdown
         all_projects = [
             _row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()
@@ -331,7 +331,7 @@ def register_pages_routes(bp, nc_config=None):
         conn = get_connection()
         _ph = sql_placeholder(conn)
         row = conn.execute(
-            "SELECT sr.*, t.name AS topology_name FROM nc_simulation_results sr "
+            "SELECT sr.*, t.name AS topology_name FROM simulation_results sr "
             f"JOIN topologies t ON t.id=sr.topology_id WHERE sr.id={_ph}",
             (sim_id,),
         ).fetchone()
@@ -741,7 +741,7 @@ def register_pages_routes(bp, nc_config=None):
             p["total_edges"] = total_edges
             # Last simulation date
             sim_row = conn.execute(
-                "SELECT MAX(ran_at) FROM nc_simulation_results WHERE topology_id IN "
+                "SELECT MAX(ran_at) FROM simulation_results WHERE topology_id IN "
                 f"(SELECT topology_id FROM nc_project_topologies WHERE project_id={_ph})",
                 (pid,),
             ).fetchone()

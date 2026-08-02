@@ -24,7 +24,6 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -350,12 +349,9 @@ def register_gaps_as_innovation_signals():
         if gap["priority"] < 3.0:
             continue
 
-        # Check if already registered. `source_url` is not a column on
-        # innovation_signals — the live column is `url` (swp-scan-01), so this
-        # lookup used to raise UndefinedColumn and the whole gap was skipped by
-        # the except-handler below on the very next statement.
+        # Check if already registered
         existing = conn.execute(
-            "SELECT id FROM innovation_signals WHERE source_type = 'govcon_gap' AND url = %s",
+            "SELECT id FROM innovation_signals WHERE source_type = 'govcon_gap' AND source_url = %s",
             (gap["pattern_id"],),
         ).fetchone()
 
@@ -363,22 +359,12 @@ def register_gaps_as_innovation_signals():
             continue
 
         try:
-            # The column list named 13 columns and the value tuple carried 12:
-            # `id` had no value, so every subsequent value was shifted one
-            # column left. `source` and `discovered_at` are NOT NULL and were
-            # never supplied at all. Both are fixed here alongside the rename.
-            signal_id = hashlib.sha256(
-                f"govcon_gap:{gap['pattern_id']}".encode()
-            ).hexdigest()[:20]
             conn.execute(
                 "INSERT INTO innovation_signals "
-                "(id, source, source_type, url, title, description, category, "
-                "raw_score, composite_score, keywords, content_hash, status, "
-                "discovered_at, created_at, metadata) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "(id, source_type, source_url, title, description, category, "
+                "raw_score, composite_score, keywords, content_hash, status, created_at, metadata) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    signal_id,
-                    "gap_analyzer",
                     "govcon_gap",
                     gap["pattern_id"],
                     f"GovCon Gap: {gap['pattern_name']}",
@@ -388,9 +374,8 @@ def register_gaps_as_innovation_signals():
                     gap["priority"] / 10.0,
                     gap["priority"] / 10.0,
                     json.dumps([gap["domain"], gap["pattern_name"]]),
-                    signal_id,
+                    "",
                     "new",
-                    _now(),
                     _now(),
                     json.dumps(
                         {

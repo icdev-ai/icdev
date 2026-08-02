@@ -1,10 +1,5 @@
 # CUI // SP-CTI
-"""Tests for dsyn-emit-01: NDC canvas_events emission on topology/config changes.
-
-tsr-canv-01-d4: 5 failed / 3 passed -> 0 failed / 8 passed. The emitter writes
-through get_canvas_connection() (canvas_events has no RLS predicate to satisfy),
-so patching get_connection raised AttributeError on every DB-touching test.
-"""
+"""Tests for dsyn-emit-01: NDC canvas_events emission on topology/config changes."""
 from __future__ import annotations
 
 import json
@@ -17,8 +12,6 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from tests import _sql_compat  # noqa: E402
 
 # ── Minimal in-memory SQLite DB for canvas_events ────────────────────────────
 
@@ -37,41 +30,47 @@ CREATE TABLE IF NOT EXISTS canvas_events (
 """
 
 
-def _shim_conn():
-    """In-memory canvas_events DB that translates %s -> ? the way the runtime does.
+class _ShimConn:
+    """Thin wrapper: translates %s → ? so PG-style calls work on SQLite."""
 
-    ``unclosable`` because the emitter writes through ``with get_canvas_connection()``
-    and the wrapper's ``__exit__`` would otherwise close the connection — taking the
-    in-memory database with it before the test can read the row back.
-    """
-    raw = sqlite3.connect(":memory:")
-    raw.row_factory = sqlite3.Row
-    conn = _sql_compat.translating(raw, unclosable=True)
-    conn.execute(_SCHEMA)
-    conn.commit()
-    return conn
+    def __init__(self):
+        self._db = sqlite3.connect(":memory:")
+        self._db.row_factory = sqlite3.Row
+        self._db.execute(_SCHEMA)
+        self._db.commit()
+
+    def execute(self, sql, params=()):
+        translated = sql.replace("%s", "?")
+        return self._db.execute(translated, params)
+
+    def commit(self):
+        self._db.commit()
+
+    def close(self):
+        self._db.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.commit()
 
 
 @pytest.fixture
 def shim():
-    return _shim_conn()
+    return _ShimConn()
 
 
 @contextmanager
 def _patch_get_conn(shim):
-    """Patch the emitter's canvas connection getter to yield the shim.
-
-    canvas_events carries no RLS predicate to satisfy, so the emitter uses
-    get_canvas_connection(); patching get_connection raises AttributeError
-    because the module no longer imports it.
-    """
+    """Patch tools.db.storage.get_connection to yield the shim."""
     from contextlib import contextmanager as _cm
 
     @_cm
     def _fake_gc():
         yield shim
 
-    with patch("tools.ndc.event_emitter.get_canvas_connection", _fake_gc):
+    with patch("tools.ndc.event_emitter.get_connection", _fake_gc):
         yield shim
 
 
@@ -139,7 +138,7 @@ def test_emit_failure_returns_false_and_does_not_raise(shim):
 
     @contextmanager
     def _exploding_gc():
-        cm = _shim_conn()
+        cm = _ShimConn()
 
         def _bad_execute(*_a, **_kw):
             raise RuntimeError("simulated DB failure")
@@ -147,7 +146,7 @@ def test_emit_failure_returns_false_and_does_not_raise(shim):
         cm.execute = _bad_execute
         yield cm
 
-    with patch("tools.ndc.event_emitter.get_canvas_connection", _exploding_gc):
+    with patch("tools.ndc.event_emitter.get_connection", _exploding_gc):
         result = event_emitter.emit_topology_change("t1", "change")
     assert result is False
 

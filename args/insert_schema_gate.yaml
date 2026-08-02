@@ -170,15 +170,42 @@ grandfathered:
   "tools/security_canvas/twin.py:sdc_attack_snapshots:label": "swp-scan-01 backlog — baselined 2026-08-01"
   "tools/security_canvas/twin.py:sdc_attack_snapshots:node_count": "swp-scan-01 backlog — baselined 2026-08-01"
   "tools/security_canvas/twin.py:sdc_attack_snapshots:path_count": "swp-scan-01 backlog — baselined 2026-08-01"
-  # tools/simulation/{coa_generator,scenario_manager,simulation_engine}.py were
-  # grandfathered here on 2026-08-01 with 36 entries covering every column of
-  # the Digital Program Twin's simulation_results INSERTs. They were never a
-  # backlog of missing columns: the Twin's columns were correct, but Network
-  # Canvas had taken the table name in the shared database (both subsystems used
-  # CREATE TABLE IF NOT EXISTS, NC's init won), so the gate compared the Twin's
-  # INSERTs against NC's topology-shaped table and every column looked absent.
-  # Migration 327_nc_simulation_results_rename moved NC to nc_simulation_results
-  # and gave the Twin its table back, so these now pass on their own merits.
+  # tools/simulation/coa_generator.py
+  "tools/simulation/coa_generator.py:simulation_results:baseline_value": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:calculated_at": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:confidence": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:delta": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:delta_pct": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:details": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:dimension": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:impact_tier": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:metric_name": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:scenario_id": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/coa_generator.py:simulation_results:simulated_value": "swp-scan-01 backlog — baselined 2026-08-01"
+  # tools/simulation/scenario_manager.py
+  "tools/simulation/scenario_manager.py:simulation_results:baseline_value": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:calculated_at": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:confidence": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:delta": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:delta_pct": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:details": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:dimension": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:impact_tier": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:metric_name": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:scenario_id": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:simulated_value": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/scenario_manager.py:simulation_results:visualizations": "swp-scan-01 backlog — baselined 2026-08-01"
+  # tools/simulation/simulation_engine.py
+  "tools/simulation/simulation_engine.py:simulation_results:baseline_value": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:calculated_at": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:delta": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:delta_pct": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:details": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:dimension": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:metric_name": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:scenario_id": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:simulated_value": "swp-scan-01 backlog — baselined 2026-08-01"
+  "tools/simulation/simulation_engine.py:simulation_results:visualizations": "swp-scan-01 backlog — baselined 2026-08-01"
   # tools/strategos/interdiction_ranker.py
   "tools/strategos/interdiction_ranker.py:sg_interdiction_results:affected_units_json": "swp-scan-01 backlog — baselined 2026-08-01"
   "tools/strategos/interdiction_ranker.py:sg_interdiction_results:composite_score": "swp-scan-01 backlog — baselined 2026-08-01"

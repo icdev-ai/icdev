@@ -247,16 +247,18 @@ def _module_to_path(module: str) -> Optional[Path]:
     return None
 
 
-def _imports_of_source(source: str) -> Set[str]:
-    """``_imports_of`` for source already in memory.
+def _imports_of(path: Path) -> Set[str]:
+    """Every ``tools.*`` module imported by *path*, including inside functions.
 
-    Split out so ``_repo_importers`` can read each file once and reuse the text
-    for both its prefilter and this parse, instead of reading it twice.
+    Deferred imports are the norm in this package (``from tools.rag.reranker
+    import rerank_results`` sits inside the branch that uses it), so a top-level
+    scan would miss the wiring that actually exists and report every toggle as
+    dead. ``ast.walk`` covers both.
     """
     found: Set[str] = set()
     try:
-        tree = ast.parse(source)
-    except SyntaxError:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except (SyntaxError, OSError):
         return found
 
     for node in ast.walk(tree):
@@ -275,20 +277,6 @@ def _imports_of_source(source: str) -> Set[str]:
             for alias in node.names:
                 found.add(f"{mod}.{alias.name}")
     return found
-
-
-def _imports_of(path: Path) -> Set[str]:
-    """Every ``tools.*`` module imported by *path*, including inside functions.
-
-    Deferred imports are the norm in this package (``from tools.rag.reranker
-    import rerank_results`` sits inside the branch that uses it), so a top-level
-    scan would miss the wiring that actually exists and report every toggle as
-    dead. ``ast.walk`` covers both.
-    """
-    try:
-        return _imports_of_source(path.read_text(encoding="utf-8", errors="replace"))
-    except OSError:
-        return set()
 
 
 @functools.lru_cache(maxsize=None)
@@ -319,37 +307,13 @@ def _repo_importers(module: str) -> frozenset:
     Used for wrapper-shaped consumers, where the closure walk asks the wrong
     question. Skips ``tests/`` (a test import is not adoption) and the mirrored
     ``icdev/`` tree (a copy importing a copy proves nothing).
-
-    Cost note (tsh-kill-01): this used to ``ast.parse`` + ``ast.walk`` every one
-    of ~3,750 files under ``tools/`` — ~13s warm and ~49s cold, which blew the
-    30s per-test timeout and killed a full ``pytest tests/`` run partway through.
-
-    Two changes fix that without altering the answer:
-
-    * A substring prefilter on the module's last component. Every form that can
-      contribute *module* to ``_imports_of`` — ``import tools.a.b``,
-      ``from tools.a.b import x``, and ``from tools.a import b`` — contains that
-      component literally, so skipping files without it cannot produce a false
-      negative. For the one wrapper toggle this runs on it takes 3,759 files
-      down to 2.
-    * ``target_path.resolve()`` was recomputed on every iteration despite being
-      loop-invariant. (It is a minor cost, not the cause — the original report
-      blamed the realpath walk, but that measured 0.26s of the 49s.)
     """
     found: Set[str] = set()
     target_path = _module_to_path(module)
-    target_resolved = target_path.resolve() if target_path else None
-    leaf = module.rpartition(".")[2]
     for path in (BASE_DIR / "tools").rglob("*.py"):
-        try:
-            source = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        if target_path and path.resolve() == target_path.resolve():
             continue
-        if leaf and leaf not in source:
-            continue
-        if target_resolved is not None and path.resolve() == target_resolved:
-            continue
-        if module in _imports_of_source(source):
+        if module in _imports_of(path):
             rel = path.relative_to(BASE_DIR).with_suffix("")
             found.add(".".join(rel.parts))
     return frozenset(found)

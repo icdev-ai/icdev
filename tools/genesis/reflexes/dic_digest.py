@@ -126,17 +126,13 @@ def _write_notification(conn, digest_text: str, tenant_id: str, new_doc_count: i
     try:
         conn.execute(
             """
-            -- `event_type`, not `type` (swp-scan-01). `adapter` is NOT NULL
-            -- with no default and was never supplied, so this write could not
-            -- have landed even after the rename.
             INSERT INTO notification_log
-                (id, event_type, adapter, title, body, tenant_id, classification, created_at)
+                (id, type, title, body, tenant_id, classification, created_at)
             VALUES
-                (gen_random_uuid()::text, %s, %s, %s, %s, %s, %s, %s)
+                (gen_random_uuid()::text, %s, %s, %s, %s, %s, %s)
             """,
             (
                 "dic_digest",
-                "digest",
                 f"DIC Weekly Digest — {new_doc_count} new docs",
                 digest_text[:4000],
                 tenant_id,

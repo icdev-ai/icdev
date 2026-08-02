@@ -26,39 +26,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-__all__ = ["TranslatingConnection", "TranslatingCursor", "translating", "connect"]
-
-
-class TranslatingCursor:
-    """Wraps a sqlite3 cursor, applying %s -> ? before every statement.
-
-    Production code reaches for ``conn.cursor()`` as often as ``conn.execute``
-    — ``tools/ci/pr_watcher.py::_enforced_done_ok`` is one of several. Without
-    this, ``__getattr__`` handed back the *raw* sqlite3 cursor, which does not
-    translate, so a ``%s`` query issued through it still raised
-    ``near "%": syntax error`` inside the caller's ``except`` — the same silent
-    no-op this module exists to prevent, one layer down.
-    """
-
-    def __init__(self, cursor: sqlite3.Cursor):
-        self._cursor = cursor
-
-    def execute(self, sql: str, params: Any = None):
-        if params is None:
-            self._cursor.execute(TranslatingConnection._t(sql))
-        else:
-            self._cursor.execute(TranslatingConnection._t(sql), params)
-        return self
-
-    def executemany(self, sql: str, seq: Any):
-        self._cursor.executemany(TranslatingConnection._t(sql), seq)
-        return self
-
-    def __iter__(self):
-        return iter(self._cursor)
-
-    def __getattr__(self, name: str):
-        return getattr(self._cursor, name)
+__all__ = ["TranslatingConnection", "translating", "connect"]
 
 
 class TranslatingConnection:
@@ -85,9 +53,6 @@ class TranslatingConnection:
 
     def executemany(self, sql: str, seq: Any):
         return self._conn.executemany(self._t(sql), seq)
-
-    def cursor(self):
-        return TranslatingCursor(self._conn.cursor())
 
     def close(self):
         # In-memory databases die with their connection, so a fixture that

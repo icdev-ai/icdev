@@ -881,9 +881,8 @@ def _insert_devices(conn, topologies: list[dict], reset: bool) -> int:
     conn.executemany(
         """INSERT OR REPLACE INTO ni_devices
         (id,topology_id,node_id,label,device_type,vendor,model,firmware_version,eol_date,eos_date,
-         -- rack/criticality, not rack_location/criticality_score (swp-scan-01)
-         purchase_date,purchase_cost,annual_maintenance_cost,replacement_cost,site,rack,
-         criticality,downstream_count,notes,properties_json)
+         purchase_date,purchase_cost,annual_maintenance_cost,replacement_cost,site,rack_location,
+         criticality_score,downstream_count,notes,properties_json)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         rows,
     )

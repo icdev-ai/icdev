@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -228,67 +227,6 @@ def _derive_url_prefix(key: str, explicit: str | None) -> str:
     return f"/{key.replace('_', '-')}"
 
 
-
-# CLI kind spelling -> args/component_registry.yaml `kind:` vocabulary.
-_REGISTRY_KIND = {"canvas": "canvas", "child-app": "child_app", "core": "core_extension"}
-
-
-def _insert_into_components(raw_text: str, rendered_entry: str) -> str:
-    """Splice *rendered_entry* onto the end of the ``components:`` list.
-
-    Text-level on purpose: the registry is hand-maintained and its comments are
-    load-bearing documentation, so the file is never round-tripped through
-    ``yaml.dump``. The components list runs to EOF unless another top-level key
-    follows it, so the insertion point is the last line before that key —
-    skipping back over the comment block that documents it, which belongs to the
-    FOLLOWING key and must stay attached to it.
-
-    Line endings are preserved by splitting with ``keepends`` and never
-    re-joining with a literal ``"\\n"``.
-    """
-    lines = raw_text.splitlines(keepends=True)
-    eol = "\n"
-    for line in lines:
-        if line.endswith("\r\n"):
-            eol = "\r\n"
-            break
-        if line.endswith("\n"):
-            break
-
-    # First top-level key AFTER `components:` bounds the list.
-    top_level = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*:")
-    start = next(
-        (i for i, ln in enumerate(lines) if ln.startswith("components:")), None
-    )
-    if start is None:
-        raise ValueError("component_registry.yaml has no top-level 'components:' key")
-
-    end = len(lines)
-    for i in range(start + 1, len(lines)):
-        if top_level.match(lines[i]):
-            end = i
-            break
-
-    # Walk back over the comment/blank block introducing the next key.
-    while end > start + 1:
-        prev = lines[end - 1].strip()
-        if prev.startswith("#") or not prev:
-            end -= 1
-        else:
-            break
-
-    block = [ln if ln.endswith(("\n", "\r\n")) else ln + eol
-             for ln in rendered_entry.replace("\r\n", "\n").splitlines(keepends=True)]
-    if eol == "\r\n":
-        block = [ln.replace("\n", "\r\n").replace("\r\r\n", "\r\n") for ln in block]
-
-    # Guarantee the preceding line is terminated so the splice cannot glue onto it.
-    if end > 0 and lines[end - 1] and not lines[end - 1].endswith(("\n", "\r\n")):
-        lines[end - 1] += eol
-
-    return "".join(lines[:end] + block + lines[end:])
-
-
 def _register_component(
     kind: str,
     key: str,
@@ -307,15 +245,11 @@ def _register_component(
     if not REGISTRY_PATH.exists():
         return {"registered": False, "error": f"Registry not found: {REGISTRY_PATH}"}
 
-    raw_text = REGISTRY_PATH.read_text(encoding="utf-8")
-    data = yaml.safe_load(raw_text) or {}
+    with open(REGISTRY_PATH, "r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
 
-    # The registry has ONE component list — `components:` — and the entry's own
-    # `kind` field distinguishes canvas / child_app / core_extension.
-    # ComponentRegistry._load_components() reads data["components"] and nothing
-    # else, so writing to per-kind top-level keys registered a component into a
-    # list that is never loaded (the scaffolded component silently did not exist).
-    entries = data.get("components") or []
+    kind_key = "canvases" if kind == "canvas" else ("child_apps" if kind == "child-app" else "core_extensions")
+    entries = data.setdefault(kind_key, [])
 
     # Skip if already registered
     if any(e.get("key") == key for e in entries):
@@ -352,11 +286,7 @@ def _register_component(
 
     new_entry = {
         "key": key,
-        # CLI kind -> registry kind. The CLI spells it "child-app"; the registry
-        # vocabulary is child_app (Component.kind, and iter_child_apps() filters
-        # on kind="child_app"), so writing the hyphenated form registered a child
-        # app that iter_child_apps() could never return.
-        "kind": _REGISTRY_KIND.get(kind, kind),
+        "kind": kind if kind != "core" else "core_extension",
         "display_name": display_name,
         "cli_name": cli_name,
         "description": f"{display_name} (scaffolded)",
@@ -384,16 +314,9 @@ def _register_component(
     if dry_run:
         return {"registered": False, "dry_run": True, "would_add": new_entry}
 
-    # Append as TEXT, not by re-dumping the parsed document. args/component_registry.yaml
-    # is hand-maintained and carries ~190 comment lines (section banners, per-entry
-    # rationale, the iqe_path_canvas ordering rules); yaml.dump(data) would silently
-    # delete every one of them.
-    rendered = yaml.dump(
-        [new_entry], default_flow_style=False, allow_unicode=True, sort_keys=False, indent=2
-    )
-    REGISTRY_PATH.write_text(
-        _insert_into_components(raw_text, rendered), encoding="utf-8", newline=""
-    )
+    entries.append(new_entry)
+    with open(REGISTRY_PATH, "w", encoding="utf-8") as fh:
+        yaml.dump(data, fh, default_flow_style=False, allow_unicode=True, sort_keys=False, indent=2)
 
     # Log to component_audit_log
     try:
@@ -407,7 +330,7 @@ def _register_component(
     except Exception:
         pass
 
-    return {"registered": True, "key": key, "kind": new_entry["kind"]}
+    return {"registered": True, "key": key, "kind": kind_key}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -204,13 +204,7 @@ CREATE TABLE IF NOT EXISTS nc_template_docs (
     FOREIGN KEY (template_id) REFERENCES nc_templates(id)
 );
 
--- Named nc_simulation_results, not simulation_results: the unprefixed name
--- belongs to the Digital Program Twin (tools/simulation/*, declared in
--- tools/db/init_icdev_db.py with a completely different shape). Both used
--- CREATE TABLE IF NOT EXISTS, so in the shared PostgreSQL database whichever
--- init ran first silently took the name from the other. See migration
--- 327_nc_simulation_results_rename.
-CREATE TABLE IF NOT EXISTS nc_simulation_results (
+CREATE TABLE IF NOT EXISTS simulation_results (
     id          TEXT PRIMARY KEY,
     topology_id TEXT REFERENCES topologies(id),
     sim_type    TEXT NOT NULL,

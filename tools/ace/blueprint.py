@@ -1802,11 +1802,7 @@ def api_ace_chat():
             conn.execute(
                 _q(
                     conn,
-                    # history_json does not exist on ace_sessions; selecting it
-                    # raised UndefinedColumn on PG exactly as the INSERT did, so
-                    # no session ever resumed. conversation_history is the column
-                    # that actually carries the turns (swp-scan-01).
-                    "SELECT conversation_history, turn_count, resume_token "
+                    "SELECT conversation_history, history_json, turn_count, resume_token "
                     "FROM ace_sessions WHERE session_id = ? AND instance_id = ?",
                 ),
                 (session_id, _CHAT_INSTANCE_ID),
@@ -1814,7 +1810,7 @@ def api_ace_chat():
         )
 
         if row:
-            raw_history = row.get("conversation_history") or "[]"
+            raw_history = row.get("history_json") or row.get("conversation_history") or "[]"
             try:
                 history = json.loads(raw_history) if raw_history else []
             except (TypeError, ValueError):
@@ -1858,16 +1854,14 @@ def api_ace_chat():
         conn.execute(
             _q(
                 conn,
-                # history_json does not exist on ace_sessions and never has; the
-                # same value was written twice, so the whole statement failed and
-                # no chat turn was ever persisted (swp-scan-01).
-                "INSERT INTO ace_sessions (session_id, instance_id, conversation_history, resume_token, turn_count) "
-                "VALUES (?, ?, ?, ?, ?) "
+                "INSERT INTO ace_sessions (session_id, instance_id, conversation_history, history_json, resume_token, turn_count) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(session_id) DO UPDATE SET "
                 "  conversation_history = excluded.conversation_history, "
+                "  history_json = excluded.history_json, "
                 "  turn_count = excluded.turn_count",
             ),
-            (session_id, _CHAT_INSTANCE_ID, history_json, resume_token, turn_count),
+            (session_id, _CHAT_INSTANCE_ID, history_json, history_json, resume_token, turn_count),
         )
         conn.commit()
 

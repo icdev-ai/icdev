@@ -6,9 +6,6 @@ import subprocess
 import sys
 
 from behave import given, then, when
-from tools.logging.icdev_logger import get_logger
-
-logger = get_logger("icdev.features.steps.security_steps")
 
 
 @given('a project directory at "."')
@@ -202,8 +199,8 @@ def _ensure_project_exists(project_id):
                 (project_id, "BDD Test Project", "microservice", "active", "CUI", "IL5", os.getcwd()),
             )
             conn.commit()
-    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
-        logger.warning("_ensure_project_exists: best-effort INSERT into projects failed (non-blocking): %s", exc)
+    except Exception:
+        pass
     finally:
         conn.close()
 

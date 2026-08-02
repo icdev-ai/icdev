@@ -9,9 +9,6 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from tools.logging.icdev_logger import get_logger
-
-logger = get_logger("icdev.apps.autonomous_coder.governance.audit_logger")
 
 
 _DB_PATH = Path(__file__).parent.parent / "data" / "audit.db"
@@ -65,9 +62,8 @@ class AuditLogger:
                 )
                 conn.commit()
                 conn.close()
-            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
-                # never block execution due to logging failure
-                logger.warning("log: best-effort INSERT into audit_log failed (non-blocking): %s", exc)
+            except Exception:
+                pass  # never block execution due to logging failure
 
     def get_log(self) -> list[dict[str, Any]]:
         return list(self._entries)

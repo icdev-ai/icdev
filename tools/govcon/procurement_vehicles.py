@@ -133,25 +133,28 @@ def _now() -> str:
 def _audit(action: str, details: str, project_id: str = "") -> None:
     try:
         conn = get_connection()
-        # Neither statement here could ever run (swp-scan-01): tenant_id, user_id
-        # and resource are not columns; recorded_at is created_at; and id is a
-        # SERIAL integer, so a uuid string is the wrong type for it. The
-        # "in case schema differs" fallback was chasing exactly this bug, and
-        # since it named the same absent columns it failed identically — the
-        # bare `except: pass` is what kept it quiet. actor is NOT NULL, so the
-        # previously-hardcoded None would have failed even after the renames.
         conn.execute(
             "INSERT INTO audit_trail "
-            "(event_type, actor, action, details, project_id, classification, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            ("procurement_vehicles", "system", action,
-             details, project_id, "CUI", _now()),
+            "(id, tenant_id, user_id, action, resource, details, project_id, classification, recorded_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (str(uuid.uuid4()), None, None, action,
+             "procurement_vehicles", details, project_id, "CUI", _now()),
         )
         conn.commit()
-    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
-        logger.warning(
-            "_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc
-        )
+    except Exception:
+        # Fallback: insert without project_id column in case schema differs
+        try:
+            conn = get_connection()
+            conn.execute(
+                "INSERT INTO audit_trail "
+                "(id, tenant_id, user_id, action, resource, details, classification, recorded_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (str(uuid.uuid4()), None, None, action,
+                 "procurement_vehicles", details, "CUI", _now()),
+            )
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _validate_create(

@@ -66,38 +66,15 @@
     {% set gates = ev | selectattr('evidence_type', 'equalto', 'gate') | list %}
     {% set missions = ev | selectattr('evidence_type', 'equalto', 'mission') | list %}
     {% set steps = ev | selectattr('evidence_type', 'equalto', 'step') | list %}
-    {% set competencies = ev | selectattr('evidence_type', 'equalto', 'competency') | list %}
 
     <div class="verify-field" style="margin-top:1.5rem;">
       <div class="verify-label">Evidence recorded at issue</div>
       <div class="verify-value" style="font-size:.8rem;">
         {{ gates|length }} requirement{{ '' if gates|length == 1 else 's' }},
-        {{ competencies|length }} competenc{{ 'y' if competencies|length == 1 else 'ies' }},
         {{ missions|length }} mission{{ '' if missions|length == 1 else 's' }},
         {{ steps|length }} verified step{{ '' if steps|length == 1 else 's' }}
       </div>
     </div>
-
-    {# aca-trn-02: the competency classes come FIRST, above the missions and steps.
-       Missions and steps say what the learner did; a competency says what that work
-       is evidence OF, in the platform's shared ontology vocabulary — which is the
-       part a reader outside the Academy can act on. Recording the row and then
-       filtering it out of the one page a verifier actually reads would leave the
-       training record real but unciteable. #}
-    {% if competencies %}
-    <div style="margin-top:1rem;text-align:left;" class="fa-cert-competencies">
-      <div class="verify-label" style="margin-bottom:.4rem;">Competencies demonstrated</div>
-      {% for c in competencies %}
-      <div style="font-size:.8rem;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.06);">
-        <strong>{{ c.label }}</strong>
-        {% if c.detail %}<span style="opacity:.75;"> — {{ c.detail }}</span>{% endif %}
-        {% if c.demonstrated_at %}
-        <span style="opacity:.55;float:right;">{{ c.demonstrated_at[:10] }}</span>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
 
     {% if gates %}
     <div style="margin-top:1rem;text-align:left;">

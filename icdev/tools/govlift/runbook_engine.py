@@ -138,9 +138,8 @@ def create_runbook(template_id: str, name: str | None = None) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            # The live column is steps_count, not step_count (swp-scan-01).
             "INSERT INTO govlift_runbooks "
-            "(id, template_id, name, status, steps_count, created_at, updated_at) "
+            "(id, template_id, name, status, step_count, created_at, updated_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (rb_id, template_id, rb_name, "draft", len(steps), now, now),
         )
@@ -219,11 +218,9 @@ def start_execution(runbook_id: str) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            # govlift_runbook_executions has no created_at — started_at is the
-            # creation stamp (swp-scan-01).
-            "INSERT INTO govlift_runbook_executions (id, runbook_id, status, started_at) "
-            "VALUES (%s,%s,%s,%s)",
-            (exec_id, runbook_id, "running", now),
+            "INSERT INTO govlift_runbook_executions (id, runbook_id, status, started_at, created_at) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (exec_id, runbook_id, "running", now, now),
         )
         for i, step in enumerate(steps, start=1):
             step_status = "running" if i == 1 else "pending"

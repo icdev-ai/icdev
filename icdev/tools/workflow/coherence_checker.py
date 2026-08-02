@@ -238,16 +238,6 @@ def _blueprint_has_route(bp_file: Path) -> bool:
 def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
     """Extract table_name → [column_names] from SQL CREATE TABLE statements."""
     tables: Dict[str, List[str]] = {}
-    # Drop comment-only lines BEFORE matching. The body capture below is
-    # non-greedy up to the first `);`, so a `);` occurring inside a `--` comment
-    # ends the match early and silently truncates the column list — every column
-    # after the comment then reads as "not in the schema". Stripping the comments
-    # afterwards (as the per-segment pass does) is too late to help. Only whole
-    # comment lines are removed, never a mid-line `--`, which could sit inside a
-    # Python string literal in the surrounding source (swp-scan-01).
-    sql_text = "\n".join(
-        line for line in sql_text.splitlines() if not line.lstrip().startswith("--")
-    )
     pattern = re.compile(
         r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\);",
         re.DOTALL | re.IGNORECASE,
@@ -417,12 +407,6 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 #: is inert — the opposite of what the pinning is for.
 _SCHEMA_CODE_BACKEND_PINNED = frozenset({
     "tools/rag/sqlite_vector_store.py",
-    # Builds each affected table in its *pre*-migration-329 shape on a throwaway
-    # SQLite database in order to assert the INSERT fails before the migration and
-    # succeeds after. Its simulation_results INSERT names the Network Canvas columns
-    # on purpose — that is the shape being migrated away from, so measuring it
-    # against the post-migration DDL in init_icdev_db.py is the wrong comparison.
-    "tests/test_insert_column_schema_parity.py",
 })
 
 
@@ -5103,29 +5087,8 @@ def check_spec_discipline(changed_files: Optional[List[Path]] = None) -> Coheren
         and "test" not in f.name.lower()
         and f.exists()
         and str(f).startswith(str(PROJECT_ROOT / "tools"))
-        # Migrations are exempt. Every migration is `<n>_<slug>/up.py`, so the
-        # basename rule below demands `test_up.py` for all of them — one
-        # filename that cannot serve more than one migration. Migration 309,
-        # long merged, fails this rule identically, and no migration in this
-        # repo has ever had a test_up.py. A migration is verified by applying
-        # it and by the schema invariants its feature tests assert, not by a
-        # same-named file.
-        and "db/migrations/" not in f.as_posix()
     ]
     test_files = {f.stem for f in changed_files if f.name.startswith("test_")}
-
-    # Text of every changed test file, so coverage can be judged by whether a
-    # test actually references the module rather than by whether someone
-    # happened to name the file test_<basename>.py. The basename rule alone is
-    # a lottery for any name that repeats across the tree — `init_db.py` exists
-    # in ~10 canvases and they cannot all map to one `test_init_db.py`.
-    changed_test_text = ""
-    for f in changed_files:
-        if f.name.startswith("test_") and f.exists():
-            try:
-                changed_test_text += f.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                pass
 
     for impl in impl_files:
         # (b) Beyoncé Rule — new functions without a test file
@@ -5138,21 +5101,10 @@ def check_spec_discipline(changed_files: Optional[List[Path]] = None) -> Coheren
             ]
             if new_fns:
                 expected_test = f"test_{impl.stem}"
-                try:
-                    rel = impl.relative_to(PROJECT_ROOT).as_posix()
-                except ValueError:
-                    rel = impl.as_posix()
-                module_path = rel[:-3].replace("/", ".")  # tools/a/b.py -> tools.a.b
-                referenced = (
-                    rel in changed_test_text
-                    or module_path in changed_test_text
-                    or any(fn in changed_test_text for fn in new_fns)
-                )
-                if expected_test not in test_files and not referenced:
+                if expected_test not in test_files:
                     failures.append(
                         f"[beyonce-rule] {impl.name}: {len(new_fns)} public function(s) "
-                        f"but no {expected_test}.py in changed files, and no changed "
-                        f"test references {module_path}"
+                        f"but no {expected_test}.py in changed files"
                     )
         except (SyntaxError, OSError):
             pass
@@ -5926,106 +5878,42 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
             for alias in node.names:
                 compat_calls.add(alias.asname or alias.name)
 
-    def _is_compat_call(sub: ast.AST) -> bool:
-        if not isinstance(sub, ast.Call):
-            return False
-        fname = sub.func
-        if isinstance(fname, ast.Name) and fname.id in compat_calls:
-            return True
-        return (
-            isinstance(fname, ast.Attribute)
-            and fname.attr in ("connect", "translating")
-            and isinstance(fname.value, ast.Name)
-            and fname.value.id.endswith("_sql_compat")
-        )
-
-    def _has_unwrapped_raw_connect(fn: ast.AST) -> bool:
-        # ``translating(conn)`` takes a raw sqlite3 handle by design — the
-        # fixture needs one anyway to create its schema. Counting the wrapper's
-        # own INPUT as residue made this gate reject the remedy it prescribes,
-        # so a raw connect is only residue when nothing wraps it.
-        wrapped_nodes: Set[int] = set()
-        wrapped_names: Set[str] = set()
+    def _returns_compat(fn: ast.AST) -> bool:
+        raw = False
+        compat = False
         for sub in ast.walk(fn):
-            if not _is_compat_call(sub):
-                continue
-            for arg in sub.args:
-                if _is_sqlite_connect(arg):
-                    wrapped_nodes.add(id(arg))
-                elif isinstance(arg, ast.Name):
-                    wrapped_names.add(arg.id)
+            if _is_sqlite_connect(sub):
+                raw = True
+            elif isinstance(sub, ast.Call):
+                fname = sub.func
+                if isinstance(fname, ast.Name) and fname.id in compat_calls:
+                    compat = True
+                elif (
+                    isinstance(fname, ast.Attribute)
+                    and fname.attr in ("connect", "translating")
+                    and isinstance(fname.value, ast.Name)
+                    and fname.value.id.endswith("_sql_compat")
+                ):
+                    compat = True
+        return compat and not raw
 
-        # Names bound to a raw connect that is later handed to the wrapper.
-        bound: dict[int, str] = {}
-        for sub in ast.walk(fn):
-            if isinstance(sub, ast.Assign) and _is_sqlite_connect(sub.value):
-                for tgt in sub.targets:
-                    if isinstance(tgt, ast.Name):
-                        bound[id(sub.value)] = tgt.id
-
-        for sub in ast.walk(fn):
-            if not _is_sqlite_connect(sub):
-                continue
-            if id(sub) in wrapped_nodes:
-                continue
-            if bound.get(id(sub)) in wrapped_names:
-                continue
-            return True  # a raw connect nothing wraps — still a violation
-        return False
-
-    funcs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    safe: Set[str] = {
-        fn.name for fn in funcs
-        if any(_is_compat_call(sub) for sub in ast.walk(fn)) and not _has_unwrapped_raw_connect(fn)
-    }
-
-    # A helper that hands back what a safe factory produced is itself safe:
-    # ``def shim(): return _shim_conn()`` and the contextmanager
-    # ``def _gc(): yield shim`` are both one level removed from the wrapper, and
-    # it is _gc that gets named in the patch call. Without this the gate flags a
-    # fixture that IS correctly wrapped, just indirectly — which is exactly how
-    # the already-merged canvas emitter fixtures still read as violations.
-    # The unwrapped-raw-connect guard still applies, so indirection cannot
-    # launder a factory that really does hand out a bare sqlite3 handle.
-    changed = True
-    while changed:
-        changed = False
-        for fn in funcs:
-            if fn.name in safe or _has_unwrapped_raw_connect(fn):
-                continue
-            for sub in ast.walk(fn):
-                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name):
-                    ref = sub.func.id
-                elif isinstance(sub, (ast.Return, ast.Yield)) and isinstance(sub.value, ast.Name):
-                    ref = sub.value.id
-                else:
-                    continue
-                if ref in safe:
-                    safe.add(fn.name)
-                    changed = True
-                    break
+    safe: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _returns_compat(node):
+            safe.add(node.name)
     return safe
 
 
 def _patch_replacement_names(node: ast.Call) -> Set[str]:
     """Names supplied as the replacement in a patch/setattr call."""
     names: Set[str] = set()
-
-    def _add(value: ast.AST) -> None:
-        if isinstance(value, ast.Name):
-            names.add(value.id)
-        elif isinstance(value, ast.Lambda):
-            # patch(target, lambda: shim) — the fixture is named in the body.
-            for sub in ast.walk(value.body):
-                if isinstance(sub, ast.Name):
-                    names.add(sub.id)
-
     for kw in node.keywords:
-        if kw.arg in ("side_effect", "new", "return_value"):
-            _add(kw.value)
+        if kw.arg in ("side_effect", "new", "return_value") and isinstance(kw.value, ast.Name):
+            names.add(kw.value.id)
     # monkeypatch.setattr(target, "get_connection", _conn) — trailing positional.
     for arg in node.args:
-        _add(arg)
+        if isinstance(arg, ast.Name):
+            names.add(arg.id)
     return names
 
 
@@ -7657,30 +7545,11 @@ def _run_one_check(
     return result
 
 
-def _timed_out_check(check_id: str, budget: float) -> CoherenceCheck:
-    """A check that never returned inside the sweep budget."""
-    return CoherenceCheck(
-        check_id=check_id,
-        check_name=check_id,
-        status="warn",
-        expected=[],
-        actual=[],
-        missing=[],
-        extra=[],
-        message=(
-            f"timed out — did not finish within the {budget:g}s sweep budget. "
-            "Reported as warn so the sweep still returns a verdict for every "
-            "other check; re-run this one alone to see what it is doing."
-        ),
-    )
-
-
 def run_checks(
     selected: Optional[List[str]] = None,
     changed_files: Optional[List[Path]] = None,
     autofix: bool = False,
     tier: Optional[str] = None,
-    timeout_sec: Optional[float] = None,
 ) -> CoherenceReport:
     """Run selected coherence checks and produce aggregate report.
 
@@ -7694,23 +7563,6 @@ def run_checks(
     subprocess, file I/O, and imports, all of which release the GIL. Autofix
     forces the serial path because fixers mutate the tree and two of them
     landing at once is not something the fix registry is written for.
-
-    ``timeout_sec`` (gpx-perf-01) puts a hard ceiling on the concurrent phase.
-    It is opt-in and off by default: enforcing it requires running the checks in
-    *processes* rather than threads, because a thread cannot be killed, and
-    ``ThreadPoolExecutor`` joins its non-daemon workers at interpreter exit — so
-    a genuinely hung check hangs the process on the way out no matter what the
-    caller does with the futures. Processes can be terminated.
-
-    Any check that has not returned when the budget expires is reported as
-    ``warn: timed out`` rather than being dropped, so the sweep still returns a
-    verdict for every other check instead of one pathological check taking the
-    whole run down with it.
-
-    The default stays on threads deliberately. The gate runs on every commit,
-    and moving it to multi-process by default changes DB connection fan-out and
-    Windows spawn behaviour for every caller — not a trade to make silently for
-    a ceiling almost no run needs. Callers that want the ceiling ask for it.
     """
     if selected:
         checks_to_run = list(selected)
@@ -7721,54 +7573,27 @@ def run_checks(
     workers = 1 if autofix else min(_check_workers(), max(1, len(checks_to_run)))
 
     if workers > 1:
-        hard_timeout = bool(timeout_sec and timeout_sec > 0 and not autofix)
-        pool_cls = (
-            concurrent.futures.ProcessPoolExecutor
-            if hard_timeout
-            else concurrent.futures.ThreadPoolExecutor
-        )
-        by_id: Dict[str, CoherenceCheck] = {}
-        pool = pool_cls(max_workers=workers)
-        try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
                 pool.submit(_run_one_check, check_id, changed_files): check_id
                 for check_id in checks_to_run
             }
-            try:
-                for future in concurrent.futures.as_completed(
-                    futures, timeout=timeout_sec if hard_timeout else None
-                ):
-                    check_id = futures[future]
-                    try:
-                        by_id[check_id] = future.result()
-                    except Exception as exc:  # pragma: no cover — defensive
-                        by_id[check_id] = CoherenceCheck(
-                            check_id=check_id,
-                            check_name=check_id,
-                            status="warn",
-                            expected=[],
-                            actual=[],
-                            missing=[],
-                            extra=[],
-                            message=f"Check error: {exc}",
-                        )
-            except concurrent.futures.TimeoutError:
-                # Budget blown. Everything still outstanding is reported as a
-                # timeout rather than silently omitted from the report.
-                for check_id in checks_to_run:
-                    if check_id not in by_id:
-                        by_id[check_id] = _timed_out_check(check_id, float(timeout_sec))
-        finally:
-            if hard_timeout:
-                # Kill the workers outright: shutdown(wait=True) would block on
-                # the very check that just blew the budget, which is the whole
-                # thing this is meant to prevent.
-                for proc in list(getattr(pool, "_processes", {}).values()):
-                    if proc.is_alive():
-                        proc.terminate()
-                pool.shutdown(wait=False, cancel_futures=True)
-            else:
-                pool.shutdown(wait=True)
+            by_id: Dict[str, CoherenceCheck] = {}
+            for future in concurrent.futures.as_completed(futures):
+                check_id = futures[future]
+                try:
+                    by_id[check_id] = future.result()
+                except Exception as exc:  # pragma: no cover — defensive
+                    by_id[check_id] = CoherenceCheck(
+                        check_id=check_id,
+                        check_name=check_id,
+                        status="warn",
+                        expected=[],
+                        actual=[],
+                        missing=[],
+                        extra=[],
+                        message=f"Check error: {exc}",
+                    )
         # Preserve registry order regardless of completion order.
         results = [by_id[check_id] for check_id in checks_to_run if check_id in by_id]
     else:
@@ -7882,17 +7707,6 @@ def main() -> None:
         action="store_true",
         help="Print the check ids the selected tier would run, then exit",
     )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=None,
-        help=(
-            "Hard ceiling in seconds on the concurrent phase. Runs the checks in "
-            "processes (threads cannot be killed) and reports anything still "
-            "outstanding as 'warn: timed out' instead of letting one pathological "
-            "check block the sweep. Off by default; ignored with --fix."
-        ),
-    )
 
     args = parser.parse_args()
 
@@ -7933,9 +7747,7 @@ def main() -> None:
     _real_stdout = sys.stdout
     try:
         sys.stdout = sys.stderr
-        report = run_checks(
-            selected, changed, autofix=args.fix, tier=tier, timeout_sec=args.timeout
-        )
+        report = run_checks(selected, changed, autofix=args.fix, tier=tier)
     finally:
         sys.stdout = _real_stdout
 

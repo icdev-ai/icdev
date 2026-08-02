@@ -233,11 +233,9 @@ def deliver_canvas_report(
         for ch in channels:
             if ch == "audit":
                 conn.execute(
-                    # See alert_service — resource_type/resource_id/event/detail do
-                    # not exist on audit_trail (swp-scan-01).
-                    "INSERT INTO audit_trail (event_type, action, actor, details) "
-                    "VALUES ('canvas_report', 'report_delivered', 'system', %s)",
-                    (json.dumps({"assessment_id": assessment_id, "rendered": rendered}),),
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('canvas_report', %s, 'report_delivered', 'system', %s)",
+                    (assessment_id, rendered),
                 )
                 conn.commit()
                 receipts["audit"] = "inserted"
@@ -359,11 +357,9 @@ def deliver_assessment_summary(
         for ch in channels:
             if ch == "audit":
                 conn.execute(
-                    # Here the resource id IS a project, so it lands in the real
-                    # project_id column rather than in details (swp-scan-01).
-                    "INSERT INTO audit_trail (event_type, action, actor, details, project_id) "
-                    "VALUES ('compliance_report', %s, 'system', %s, %s)",
-                    (f"{framework}_summary", rendered, project_id),
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('compliance_report', %s, %s, 'system', %s)",
+                    (project_id, f"{framework}_summary", rendered),
                 )
                 conn.commit()
                 receipts["audit"] = "inserted"
@@ -464,9 +460,9 @@ def deliver_posture_digest(
         for ch in channels:
             if ch == "audit":
                 conn.execute(
-                    "INSERT INTO audit_trail (event_type, action, actor, details) "
-                    "VALUES ('posture_digest', %s, 'system', %s)",
-                    (digest_type, json.dumps({"scope": "global", "rendered": rendered})),
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('posture_digest', 'global', %s, 'system', %s)",
+                    (digest_type, rendered),
                 )
                 conn.commit()
                 receipts["audit"] = "inserted"
@@ -595,9 +591,9 @@ def deliver_aiify_phase_report(
         for ch in channels:
             if ch == "audit":
                 conn.execute(
-                    "INSERT INTO audit_trail (event_type, action, actor, details) "
-                    "VALUES ('aiify_phase_report', 'report_delivered', 'system', %s)",
-                    (json.dumps({"roadmap_id": roadmap_id, "rendered": rendered}),),
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('aiify_phase_report', %s, 'report_delivered', 'system', %s)",
+                    (roadmap_id, rendered),
                 )
                 conn.commit()
                 receipts["audit"] = "inserted"

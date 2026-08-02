@@ -105,21 +105,26 @@ def sync_peers_to_pmc(pmc_conn) -> dict:
             ipv4_count = int(asn_rec.get("ipv4_max_prefixes", 0) or 0)
             ipv6_count = int(asn_rec.get("ipv6_max_prefixes", 0) or 0)
 
-            # swp-scan-01: there is no `peeringdb_sync` column — the live one is
-            # `peeringdb_synced_at`, a timestamp, so the literal 0 was wrong in
-            # type as well as name. "Not yet synced from PeeringDB" is NULL, and
-            # the column is nullable, so it is simply left out. The retry that
-            # used to wrap this re-issued a byte-identical statement, so it could
-            # only ever raise the same error twice; it is gone.
-            pmc_conn.execute(
-                """INSERT INTO peering_peers
-                   (asn, org_name, peer_type, policy, status,
-                    ipv4_prefix_count, ipv6_prefix_count, irr_as_set,
-                    classification)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (asn, org_name, "public", "selective", "evaluation",
-                 ipv4_count, ipv6_count, irr_as_set, "CUI"),
-            )
+            try:
+                pmc_conn.execute(
+                    """INSERT INTO peering_peers
+                       (asn, org_name, peer_type, policy, status,
+                        ipv4_prefix_count, ipv6_prefix_count, irr_as_set,
+                        peeringdb_sync, classification)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (asn, org_name, "public", "selective", "evaluation",
+                     ipv4_count, ipv6_count, irr_as_set, 0, "CUI"),
+                )
+            except Exception:
+                pmc_conn.execute(
+                    """INSERT INTO peering_peers
+                       (asn, org_name, peer_type, policy, status,
+                        ipv4_prefix_count, ipv6_prefix_count, irr_as_set,
+                        peeringdb_sync, classification)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (asn, org_name, "public", "selective", "evaluation",
+                     ipv4_count, ipv6_count, irr_as_set, 0, "CUI"),
+                )
             inserted += 1
         except Exception:
             errors += 1

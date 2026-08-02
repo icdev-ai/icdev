@@ -38,17 +38,6 @@ if _PYTEST_PG:
     os.environ["ICDEV_PG_NO_FALLBACK"] = "1"
 else:
     os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
-    # Make the backend guard's documented pytest exemption real. Its docstring
-    # says "tests/conftest.py forces sqlite for the whole pytest suite and is
-    # right to — those are short-lived, isolated databases"; the guard only means
-    # to fire where something *serves* on the fallback. Nothing implemented that,
-    # though: the exemption held only because ICDEV_PG_NO_FALLBACK is usually
-    # absent from the environment. A session spawned by the kanban scheduler
-    # inherits it from .env, and every test that builds the dashboard app then
-    # errored at create_app() with SqliteServerRefused — a pass/fail that depends
-    # on who launched pytest. This line asserts the choice the two lines above
-    # just made.
-    os.environ.setdefault("ICDEV_ALLOW_SQLITE_SERVER", "1")
     os.environ["NOCC_STORAGE_BACKEND"] = "sqlite"
     os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
     os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
@@ -65,27 +54,6 @@ os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
--- Runtime invocation telemetry (migration 341). Present here so any test that
--- exercises an instrumented path (MCP dispatch, execute_agent, an ACE role
--- step) records rather than tripping the recorder's missing-table latch.
-CREATE TABLE IF NOT EXISTS runtime_invocations (
-    id TEXT PRIMARY KEY,
-    surface TEXT NOT NULL,
-    name TEXT NOT NULL,
-    session_id TEXT,
-    project_id TEXT,
-    parent_id TEXT,
-    started_at TEXT NOT NULL,
-    completed_at TEXT,
-    duration_ms INTEGER,
-    status TEXT NOT NULL DEFAULT 'running',
-    error_class TEXT,
-    error_message TEXT,
-    arg_keys TEXT,
-    classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
-);
-
 CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL DEFAULT 'unknown',
@@ -184,11 +152,6 @@ CREATE TABLE IF NOT EXISTS studio_run_memory (
     key        TEXT NOT NULL,
     value_json TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    -- RLS columns (migration 326). Must mirror tools/studio/init_db.py or a
-    -- test that runs inside a request context hits the same
-    -- "no such column: classification" the migration exists to fix.
-    classification TEXT NOT NULL DEFAULT 'CUI',
-    tenant_id      TEXT,
     PRIMARY KEY (run_id, key)
 );
 CREATE TABLE IF NOT EXISTS studio_event_sources (

@@ -169,24 +169,14 @@ def tmp_db(tmp_path):
     # Only modules already in sys.modules are patched, so this neither forces
     # imports nor depends on file order: anything imported later re-reads the
     # (patched) attribute from tools.db.storage.
-    #
-    # Both namespaces are swept. `tools/` is a shim over `icdev.tools`, but it
-    # keeps its own __path__, so `import tools.workflow_hitl.team_manager` and
-    # `import icdev.tools.workflow_hitl.team_manager` load the file TWICE into
-    # two distinct module objects, each with its own get_connection binding.
-    # Matching only "tools.workflow_hitl" would leave the canonical copy bound
-    # to the ambient DB the moment this file (or a module it exercises) follows
-    # the CLAUDE.md rule that new code imports `icdev.tools.*`.
     import sys
     from contextlib import ExitStack
-
-    _PKG_SUFFIX = "tools.workflow_hitl"
 
     _targets = ["tools.db.storage.get_connection"]
     _targets += [
         f"{name}.get_connection"
         for name, mod in list(sys.modules.items())
-        if (name.startswith(_PKG_SUFFIX) or name.startswith(f"icdev.{_PKG_SUFFIX}"))
+        if name.startswith("tools.workflow_hitl")
         and mod is not None
         and hasattr(mod, "get_connection")
     ]

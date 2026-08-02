@@ -369,10 +369,9 @@ class BaseAssessor(ABC):
 
             try:
                 conn.execute(
-                    # The column is implemented_count (swp-scan-01).
                     """INSERT OR REPLACE INTO project_framework_status
                        (project_id, framework_id, total_controls,
-                        implemented_count, coverage_pct, gate_status,
+                        implemented_controls, coverage_pct, gate_status,
                         last_assessed, updated_at)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (

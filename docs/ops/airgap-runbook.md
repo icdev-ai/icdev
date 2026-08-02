@@ -275,107 +275,7 @@ If all tiers are unavailable (inbox empty, GitLab unreachable, internet disabled
 
 ---
 
-## 11. Playwright MCP without `npx`
-
-`.mcp.json` runs the Playwright MCP server as `node <cli.js>` rather than
-`npx -y @playwright/mcp@latest`. `npx` needs a registry round-trip to resolve the
-package (and re-resolves a `@latest` dist-tag on **every** session start), which an
-enclave cannot do. `node` against an already-installed path needs nothing.
-
-The path is overridable, so each enclave points at wherever it installed the package:
-
-```json
-"playwright": {
-  "command": "node",
-  "args": ["${PLAYWRIGHT_MCP_CLI:-C:/Users/schuo/AppData/Roaming/npm/node_modules/@playwright/mcp/cli.js}"]
-}
-```
-
-```bash
-# In the enclave, from a downloaded tarball (no registry):
-npm install -g ./playwright-mcp-0.0.78.tgz
-export PLAYWRIGHT_MCP_CLI=/opt/node/lib/node_modules/@playwright/mcp/cli.js
-```
-
-Measured on a connected host, same 24-tool surface either way:
-
-| | to `initialize` + `tools/list` |
-|---|---|
-| `node <cli.js>` | **0.43 s** |
-| `npx -y @playwright/mcp@0.0.78` | 1.55 s |
-
-### The browser is a separate, larger problem
-
-The MCP server is only the driver. It cannot do anything without a browser binary, and
-that is **not** shippable inside a Python wheel:
-
-| component | size |
-|---|---|
-| `@playwright/mcp` + bundled `playwright-core` | 13.0 MB |
-| `chromium_headless_shell` (minimum viable) | **267.3 MB** |
-| full `chromium` | 412.2 MB |
-
-PyPI's default per-file limit is 100 MB and browser builds are per-platform/arch, so
-vendoring the stack into the ICDEV distribution is not an option.
-
-**Option A — use the Chrome or Edge already on the box (no download at all).**
-Preferred when the enclave cannot pull the browser bundle but ships a managed browser:
-
-```bash
-# E2E test runner (playwright.config.ts)
-export ICDEV_PLAYWRIGHT_CHANNEL=chrome        # or msedge, chrome-beta, msedge-dev
-# ...or point straight at the binary if it is not in a standard location:
-export ICDEV_PLAYWRIGHT_EXECUTABLE="C:/Program Files/Google/Chrome/Application/chrome.exe"
-
-# Playwright MCP server (.mcp.json)
-export PLAYWRIGHT_MCP_BROWSER=chrome          # or msedge
-```
-
-Verified on a machine with both installed — Playwright drives them with no bundled
-Chromium present:
-
-| channel | launched | version |
-|---|---|---|
-| `chrome` | yes | 150.0.7871.187 |
-| `msedge` | yes | 151.0.4129.59 |
-
-Leaving both variables unset keeps bundled Chromium, so connected machines and CI are
-unaffected.
-
-**Option B — pre-stage the Playwright browser bundle:**
-
-```bash
-# On a connected host, then copy the directory into the enclave:
-npx playwright install --with-deps chromium
-# In the enclave:
-export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
-```
-
-If no browser can be staged or reused, leave the `playwright` entry out of `.mcp.json`.
-The E2E **verification gate** (`tools/workflow/validated_commit.py::_run_e2e`) shells out
-to Playwright separately and degrades to `not_run` on its own; only the interactive
-`mcp__playwright__*` V&V step in the ANVIL commands is lost.
-
-### The E2E test runner resolves the same way
-
-`tools/testing/e2e_runner.py` used to invoke `npx playwright test`, which resolves a
-missing package by fetching it. It now resolves the CLI from disk, in order:
-
-1. `ICDEV_PLAYWRIGHT_CLI` — an absolute path to the playwright binary or its `cli.js`.
-   Set but non-existent is a hard error, not a silent fall-through to the network.
-2. `node_modules/.bin/playwright`, walking **up** from the project root — a kanban task
-   runs from `.tmp/worktrees/<id>`, which has no `node_modules` of its own but sits under
-   a checkout that does.
-3. `npx --no-install playwright` — may only run what is already installed; it errors
-   instead of reaching for the registry.
-
-There is deliberately no bare `playwright`-on-PATH fallback: on a machine with the
-**Python** `playwright` package installed, that resolves to its console script, which is a
-different program that does not implement the `test` subcommand.
-
----
-
-## 12. Escape hatches
+## 11. Escape hatches
 
 | Variable | Effect |
 |---|---|
@@ -383,11 +283,5 @@ different program that does not implement the `test` subcommand.
 | `ICDEV_KANBAN_VERIFY_GATE=false` | Dashboard `/move` skips the done-gate (bulk migrations) |
 | `ICDEV_KANBAN_VERIFY_BUDGET_SEC` | Overrides the 300s per-task verification budget |
 | `ICDEV_PG_NO_FALLBACK=true` | Crash instead of falling back to SQLite when PG is unreachable |
-| `PLAYWRIGHT_MCP_CLI` | Path to `@playwright/mcp/cli.js` for the MCP server (avoids `npx`; see §11) |
-| `PLAYWRIGHT_MCP_BROWSER` | MCP server browser/channel — `chromium` (default), `chrome`, `msedge` |
-| `ICDEV_PLAYWRIGHT_CLI` | Path to the playwright CLI for the E2E runner (avoids `npx`; see §11) |
-| `ICDEV_PLAYWRIGHT_CHANNEL` | E2E runner browser channel — unset = bundled Chromium; `chrome` / `msedge` use the system browser |
-| `ICDEV_PLAYWRIGHT_EXECUTABLE` | E2E runner explicit browser binary path (overrides channel lookup) |
-| `PLAYWRIGHT_BROWSERS_PATH` | Pre-staged browser cache directory (see §11) |
 
 Never set the first three in production.

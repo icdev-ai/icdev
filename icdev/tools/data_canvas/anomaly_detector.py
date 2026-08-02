@@ -274,11 +274,9 @@ def save_anomaly_run(
 
     conn = _get_conn()
     try:
-        # The live columns are id and created_at, not run_id and run_at
-        # (swp-scan-01) — every anomaly run failed to persist.
         conn.execute(
             "INSERT INTO dd_anomaly_runs "
-            "(id, profile_id, overall_risk, findings_json, classification, created_at) "
+            "(run_id, profile_id, overall_risk, findings_json, classification, run_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (run_id, profile_id, result.get("overall_risk", "none"), payload, classification, now),
         )

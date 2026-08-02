@@ -248,14 +248,9 @@ def create_patch_plan(approved_by: str | None = None) -> dict:
                 for dev in cluster_devices:
                     risk_reduction = round(priority_score * (dev.get("surface_score") or 0.5), 4)
                     conn.execute(
-                        # maintenance_window_id is window_id. action and
-                        # blast_radius_json are real patch-plan attributes with no
-                        # live column at all, so migration 329 adds them rather
-                        # than folding them into simulation_json, which means
-                        # something else (swp-scan-01).
                         """INSERT INTO nc_patch_plans
                            (plan_id, batch_id, advisory_id, device_name, action,
-                            scheduled_at, window_id, blast_radius_json,
+                            scheduled_at, maintenance_window_id, blast_radius_json,
                             simulation_status, risk_reduction, approved_by, created_at)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (

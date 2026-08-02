@@ -143,13 +143,10 @@ def subscribe_to_product(product_id: str, subscriber: dict) -> dict:
     try:
         sub_id = str(uuid.uuid4())
         with get_connection() as conn:
-            # subscriber_team/approved are not columns (swp-scan-01): the live
-            # shape is subscriber plus a status string, so the boolean
-            # approved=0 becomes status='pending'.
             conn.execute(
                 """INSERT INTO dm_product_subscriptions
-                   (id, product_id, subscriber, purpose, status, created_at)
-                   VALUES (?,?,?,?,'pending',?)""",
+                   (id, product_id, subscriber_team, purpose, approved, created_at)
+                   VALUES (?,?,?,?,0,?)""",
                 (
                     sub_id,
                     product_id,

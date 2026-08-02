@@ -146,34 +146,31 @@ def _create_kanban_suggestion(orphans: List[Dict[str, Any]]) -> Optional[str]:
         f"referencing model IDs not in FOUNDATION_MODELS catalog: {ids_str}. "
         "Update node properties_json to use a valid catalog model_id."
     )
-    # swp-scan-01: this wrote to `tasks`, which is an 8-column legacy table with
-    # no description/task_type/source/scheduled_at. The Kanban board is
-    # `kanban_tasks`. Every write raised UndefinedColumn into the `except` below,
-    # so no suggestion was ever recorded. task_factory is the sanctioned writer
-    # (CLAUDE.md: never raw-INSERT a kanban task) and dedupes on id.
+    conn = None
     try:
-        from tools.kanban.task_factory import create_tasks
-
-        created = create_tasks(
-            [
-                {
-                    "id": task_id,
-                    "title": title,
-                    "description": description,
-                    "status": "suggested",
-                    "task_type": "chore",
-                    "priority": "medium",
-                    "dispatch_source": "aimc_orphan_refs",
-                }
-            ]
+        conn = _main_conn()
+        conn.execute(
+            "INSERT INTO tasks "
+            "(id, title, description, status, task_type, priority, source, scheduled_at, created_at) "
+            "VALUES (%s, %s, %s, 'suggested', 'chore', 'medium', 'aimc_orphan_refs', %s, %s)",
+            (task_id, title, description, _utcnow_iso(), _utcnow_iso()),
         )
-        if not created:
-            return None
+        conn.commit()
         print(f"  [aimc_orphan_refs] Kanban suggestion created: {task_id}")
         return task_id
     except Exception as exc:
         print(f"  [aimc_orphan_refs] WARNING: Kanban suggestion failed: {exc}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------

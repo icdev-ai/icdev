@@ -110,18 +110,12 @@ def db(tmp_path):
 
 @pytest.fixture
 def audit_conn(db):
-    """Connection factory patched into audit_logger.
-
-    Stands in for ``get_connection``, so what it returns goes to production
-    code, which authors ``%s`` placeholders for PostgreSQL and relies on that
-    layer to rewrite them. A bare ``sqlite3.connect`` raises ``near "%":
-    syntax error`` on every such statement. The raw connections elsewhere in
-    this file stay raw — they only serve SQL written here.
-    """
-    from _sql_compat import connect as _tconnect
+    """Connection factory patched into audit_logger."""
 
     def _make():
-        return _tconnect(db)
+        c = sqlite3.connect(str(db))
+        c.row_factory = sqlite3.Row
+        return c
 
     with patch(f"{_MODULE_AUDIT}.get_connection", side_effect=_make):
         yield _make
@@ -129,11 +123,12 @@ def audit_conn(db):
 
 @pytest.fixture
 def cat_logger(db):
-    """CrossAgencyTransferLogger patched to the temp DB (translating — see above)."""
-    from _sql_compat import connect as _tconnect
+    """CrossAgencyTransferLogger patched to the temp DB."""
 
     def _make():
-        return _tconnect(db)
+        c = sqlite3.connect(str(db))
+        c.row_factory = sqlite3.Row
+        return c
 
     with patch(f"{_MODULE_CAT}.get_connection", side_effect=_make):
         yield CrossAgencyTransferLogger(), _make
@@ -312,7 +307,7 @@ class TestAppendOnlyImmutability:
             db_path=db,
         )
         conn = sqlite3.connect(str(db))
-        with pytest.raises(sqlite3.IntegrityError, match="append-only.*UPDATE forbidden"):
+        with pytest.raises(sqlite3.OperationalError, match="append-only.*UPDATE forbidden"):
             conn.execute("UPDATE audit_trail SET actor='attacker' WHERE id=?", (entry_id,))
         conn.close()
 
@@ -324,7 +319,7 @@ class TestAppendOnlyImmutability:
             db_path=db,
         )
         conn = sqlite3.connect(str(db))
-        with pytest.raises(sqlite3.IntegrityError, match="append-only.*DELETE forbidden"):
+        with pytest.raises(sqlite3.OperationalError, match="append-only.*DELETE forbidden"):
             conn.execute("DELETE FROM audit_trail WHERE id=?", (entry_id,))
         conn.close()
 
@@ -332,7 +327,7 @@ class TestAppendOnlyImmutability:
         cat, _make = cat_logger
         eid = cat.log_initiated("t-up", "A", "B", "d", "u")
         conn = sqlite3.connect(str(db))
-        with pytest.raises(sqlite3.IntegrityError, match="append-only.*UPDATE forbidden"):
+        with pytest.raises(sqlite3.OperationalError, match="append-only.*UPDATE forbidden"):
             conn.execute("UPDATE cross_agency_transfers SET actor='attacker' WHERE id=?", (eid,))
         conn.close()
 
@@ -340,7 +335,7 @@ class TestAppendOnlyImmutability:
         cat, _make = cat_logger
         eid = cat.log_initiated("t-del", "A", "B", "d", "u")
         conn = sqlite3.connect(str(db))
-        with pytest.raises(sqlite3.IntegrityError, match="append-only.*DELETE forbidden"):
+        with pytest.raises(sqlite3.OperationalError, match="append-only.*DELETE forbidden"):
             conn.execute("DELETE FROM cross_agency_transfers WHERE id=?", (eid,))
         conn.close()
 

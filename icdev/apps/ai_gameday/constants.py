@@ -121,25 +121,3 @@ def catalog_for_render() -> list:
     player console previously linked all 34 entries regardless of method.
     """
     return [{**t, "navigable": tool_is_navigable(t)} for t in AI_TOOLS_CATALOG]
-
-
-# ── Registration / scenario recommendation (gdx-reg-01) ─────────────────────
-# Vocabulary that marks a role as hands-on-technical, used by
-# registration.technical_ratio() to tell a facilitator what kind of room they
-# have before they pick a scenario.
-#
-# This is the one place a word list is unavoidable: "technical" is a judgement
-# about language, not something the scenario packs declare. It is deliberately
-# NOT a per-role or per-scenario weighting table (the earlier design sketched
-# ROLE_TECH_WEIGHTS / SCENARIO_TECH_PROFILES) — keying on role ids or scenario
-# slugs would hardcode both, and every new scenario pack would need an entry
-# here before it scored correctly. Matching on the scenario's OWN wording means
-# a new pack works with no change to this file.
-TECHNICAL_MARKERS = frozenset({
-    "engineer", "engineering", "developer", "devops", "sre", "sysadmin",
-    "administrator", "architect", "analyst", "forensics", "malware", "reverse",
-    "network", "packet", "firewall", "kernel", "database", "sql", "python",
-    "code", "coding", "script", "scripting", "api", "cloud", "kubernetes",
-    "container", "terraform", "pipeline", "telemetry", "siem", "detection",
-    "threat", "hunting", "incident", "vulnerability", "exploit", "patch",
-})

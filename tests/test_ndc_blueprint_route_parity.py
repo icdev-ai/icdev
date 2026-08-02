@@ -8,14 +8,6 @@ surface (path + methods + endpoint) captured from the pre-split blueprint into
 ``tests/fixtures/ndc_route_inventory.json`` and asserts the assembled blueprint
 still produces exactly that set — no route added, dropped, renamed, or
 re-methoded by the refactor (or any future edit to the route groups).
-
-The fixture is a drift guard, not a ban on new routes: when a route is added
-*intentionally* (e.g. ``nc_api_export_pptx`` in ndc-brg-04, which landed one day
-after the freeze and left this test red), re-baseline by appending the new
-``{endpoint, methods, rule}`` entry to the fixture, keeping it sorted by
-``(rule, endpoint)`` and serialized with ``json.dumps(..., indent=2)``. A
-failure you cannot trace to a deliberate route change is real drift — fix the
-blueprint, not the fixture.
 """
 from __future__ import annotations
 

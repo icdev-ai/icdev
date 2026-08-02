@@ -11,7 +11,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import _sql_compat  # noqa: E402  (tests/ is on sys.path via tests/conftest.py)
 from tools.ci import pr_watcher as pw  # noqa: E402
 from tools.kanban.state_machine import KanbanState  # noqa: E402
 
@@ -38,50 +37,9 @@ class _FakeCursor:
 
 
 class _FakeConnection:
-    """SQL-sniffing stand-in for the task reads, with a *real* DB behind
-    ``cursor()``.
-
-    ``_enforced_done_ok`` reads ``kanban_verifications`` through
-    ``conn.cursor()``, which this class did not implement. Under
-    ``KANBAN_PIPELINE_ENFORCE`` the resulting AttributeError was swallowed by
-    the gate's fail-closed ``except`` and every auto-merge decision became
-    "hold" — so the base-branch guard tests below passed or failed depending on
-    whether the launcher exported that variable. A developer's shell leaves it
-    unset (gate skipped, tests green); a kanban-scheduler session inherits
-    ``KANBAN_PIPELINE_ENFORCE=1`` from .env and the same three tests failed.
-
-    Backing ``cursor()`` with a temporary in-memory database via
-    ``tests/_sql_compat`` makes the gate run for real in both environments, so
-    what these tests assert no longer depends on who started pytest.
-    """
-
-    def __init__(self, tasks, verifications=()):
+    def __init__(self, tasks):
         self._tasks = tasks
         self._audit = []
-        self._db = _sql_compat.connect(":memory:")
-        self._db.execute(
-            """
-            CREATE TABLE kanban_verifications (
-                id           TEXT PRIMARY KEY,
-                task_id      TEXT NOT NULL,
-                verified_at  TEXT NOT NULL,
-                result       TEXT NOT NULL,
-                review_passed INTEGER
-            )
-            """
-        )
-        for i, v in enumerate(verifications):
-            self._db.execute(
-                "INSERT INTO kanban_verifications "
-                "(id, task_id, verified_at, result, review_passed) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                (f"v{i}", v["task_id"], v.get("verified_at", "2026-08-01T00:00:00Z"),
-                 v["result"], v.get("review_passed")),
-            )
-        self._db.commit()
-
-    def cursor(self):
-        return self._db.cursor()
 
     def execute(self, sql, params=()):
         sql_upper = sql.upper()
@@ -103,14 +61,12 @@ class _FakeConnection:
         pass
 
     def close(self):
-        # The in-memory verification DB dies with its connection and the
-        # watcher closes what it is given, so keep it alive for the assertions.
         pass
 
 
-def _fake_connection_factory(tasks, verifications=()):
+def _fake_connection_factory(tasks):
     def _make():
-        return _FakeConnection(tasks, verifications)
+        return _FakeConnection(tasks)
     return _make
 
 
@@ -424,14 +380,7 @@ def _build_merge_watcher(base_ref, merge_calls):
             "auto_merge_require_approval": False,
             "max_resume_cycles_per_task": 5,
         },
-        # A PASSED done-verification, so the enforced gate is satisfied and the
-        # base-branch guard is what decides — which is what these tests assert.
-        # Without it the gate holds every merge under KANBAN_PIPELINE_ENFORCE=1
-        # and the guard is never reached.
-        get_connection=_fake_connection_factory(
-            tasks,
-            verifications=[{"task_id": "task-m", "result": "pass", "review_passed": 1}],
-        ),
+        get_connection=_fake_connection_factory(tasks),
         queue_message=lambda *a, **kw: {"queued": True},
         fetch_state=lambda url, **kw: state_map[url],
         fetch_logs=lambda url, **kw: "",

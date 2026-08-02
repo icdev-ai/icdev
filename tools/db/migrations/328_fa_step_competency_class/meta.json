@@ -1,6 +1,0 @@
-{
-  "id": "328_fa_step_competency_class",
-  "description": "Give a mission step a competency class of its own so a certificate can cite the specific submissions behind a claim (aca-trn-02)",
-  "tables_affected": ["fa_step_ontology"],
-  "reversible": true
-}

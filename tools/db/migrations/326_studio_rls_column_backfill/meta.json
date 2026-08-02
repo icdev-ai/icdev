@@ -1,7 +1,0 @@
-{
-  "id": "326_studio_rls_column_backfill",
-  "description": "Finish the studio_* RLS column backfill that 305/309/311 started. studio_run_memory had NEITHER classification nor tenant_id, so get_connection()'s global predicate made every read and write in tools/studio/run_memory.py fail inside a request context — the same 'no such column: classification' shape 309 fixed for the run tables, and invisible to pytest because RLS is only injected under a request context. Nine further studio_* tables (cases, forms, automations, dashboards, heal log and friends) have classification but no tenant_id, so they are green single-tenant and broken for every tenant-scoped caller. Both severities were measured against the live database with a real SecurityContext, not inferred from the schema. Surfaced by the tsr-canv-01-d2 seed-verification evidence (PR #1140), which flagged studio_run_memory as out of scope",
-  "created": "2026-08-02",
-  "targets": ["icdev.db"],
-  "adrs": []
-}

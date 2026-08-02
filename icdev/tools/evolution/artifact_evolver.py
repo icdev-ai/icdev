@@ -189,18 +189,13 @@ def _create_evolution_suggestion(
         conn = _conn()
         conn.execute(
             """
-            -- target -> subject_id and rationale -> prediction_text
-            -- (swp-scan-01). lens_id/lens_name are NOT NULL with no default
-            -- and were never supplied, so no SELA prediction was ever recorded.
             INSERT INTO oracle_predictions
-                (id, lens_id, lens_name, prediction_type, subject_id, confidence,
-                 prediction_text, suggested_action, status, created_at, expires_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)
+                (id, prediction_type, target, confidence, rationale,
+                 suggested_action, status, created_at, expires_at)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s)
             """,
             (
                 pred_id,
-                "sela",
-                "SELA Skill Evolution",
                 "gap::skill_evolution",
                 f"{artifact_type}:{skill_name}",
                 round(winner_score, 3),

@@ -9,8 +9,6 @@ import inspect
 import sqlite3
 from unittest.mock import MagicMock
 
-from tests import _sql_compat
-
 
 # ── Shared SQLite shim ─────────────────────────────────────────────────────────
 
@@ -30,12 +28,8 @@ def _make_raw_conn():
             decision TEXT NOT NULL, decided_by TEXT, decided_at TEXT NOT NULL,
             note TEXT, tenant_id TEXT, classification TEXT DEFAULT 'CUI'
         )""",
-        # dic_team_access is the real membership table (pg_consolidated.sql);
-        # the notification path reads editors/reviewers from it.
-        """CREATE TABLE dic_team_access (
-            access_id TEXT PRIMARY KEY, collection_id TEXT, user_id TEXT,
-            role TEXT DEFAULT 'viewer', granted_by TEXT DEFAULT '',
-            tenant_id TEXT DEFAULT 'default', created_at TEXT
+        """CREATE TABLE dic_collection_members (
+            member_id TEXT PRIMARY KEY, collection_id TEXT, user_id TEXT, role TEXT
         )""",
         """CREATE TABLE notification_log (
             id TEXT PRIMARY KEY, event_type TEXT, adapter TEXT, severity TEXT,
@@ -47,15 +41,26 @@ def _make_raw_conn():
     return conn
 
 
-def _make_shim(raw=None):
-    """Translating wrapper over the in-memory DIC DB.
+class _ShimConn:
+    """Wraps sqlite3 connection and translates %s→? for compatibility with PG-style code."""
+    def __init__(self, conn):
+        self._conn = conn
 
-    ``unclosable`` because the code under test writes through
-    ``with get_connection() as conn:`` and the wrapper's ``__exit__`` would
-    otherwise close the handle — taking the in-memory database with it before
-    the test can read the row back.
-    """
-    return _sql_compat.translating(raw or _make_raw_conn(), unclosable=True)
+    def execute(self, sql, params=()):
+        return self._conn.execute(sql.replace("%s", "?"), params)
+
+    def commit(self):
+        self._conn.commit()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+
+def _make_shim(raw=None):
+    return _ShimConn(raw or _make_raw_conn())
 
 
 @contextlib.contextmanager
@@ -139,7 +144,7 @@ class TestSuggestionNotifications:
     def _seed_members(self, shim, roles):
         for i, role in enumerate(roles):
             shim.execute(
-                "INSERT INTO dic_team_access (access_id, collection_id, user_id, role)"
+                "INSERT INTO dic_collection_members (member_id, collection_id, user_id, role)"
                 " VALUES (?,?,?,?)",
                 (f"mem-{i}", "col-001", f"user-{i}", role),
             )

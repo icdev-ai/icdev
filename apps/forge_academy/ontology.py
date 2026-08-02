@@ -157,37 +157,6 @@ STEP_TYPE_ONTOLOGY = {
 }
 
 
-# ---------------------------------------------------------------------------
-# What a passed step is evidence OF  (aca-trn-02)
-# ---------------------------------------------------------------------------
-# A competency record is worth exactly as much as the thing it was inferred from,
-# so the step type decides what may be claimed:
-#
-#   "domain" — the learner produced something in the mission's subject area, so
-#              the mission's topic class is demonstrated.
-#   "tier"   — the learner was assessed rather than building, so the mission's
-#              depth is demonstrated but not its subject.
-#   None     — passive. Watching a walkthrough is being shown a topic, not
-#              evidence of it, and a record built from it overstates the learner.
-#
-# `configure` is deliberately domain work: it is the graded activity on the
-# guided (non-technical) role tracks, and excluding it would leave that half of
-# the audience with an empty training record no matter how much they finished.
-#
-# An unrecognised step type maps to None rather than to a default class. A step
-# type nobody has classified is not evidence of anything, and inventing a
-# competency for it is the failure mode this whole chain exists to prevent.
-STEP_TYPE_EVIDENCE: dict[str, str | None] = {
-    "coding": "domain",
-    "configure": "domain",
-    "deploy": "domain",
-    "design": "domain",
-    "verify": "tier",
-    "reflect": "tier",
-    "watch": None,
-}
-
-
 def get_mission_ontology_class(mission_type: str) -> str:
     return MISSION_TYPE_ONTOLOGY.get(mission_type, "icdev:Lesson")
 
@@ -225,40 +194,9 @@ def build_mission_ontology_id(slug: str, mission_type: str, topic: str, title: s
     }
 
 
-def build_mission_competency_classes(topic_class: str, tier: int) -> list[str]:
-    """Every competency class a completed mission demonstrates, in order.
-
-    Two claims, not one. The tier class says how deep the work was; the topic
-    class says what it was about. Recording only the tier — which is what
-    happened before aca-trn-02 — produces a training record that cannot
-    distinguish a learner who hardened a boundary from one who wrote a prompt,
-    and so cannot answer the only question a training record is ever asked.
-
-    The topic classes are drawn from the same vocabulary as
-    PREREQ_ONTOLOGY_PATHS, so a demonstrated competency is directly checkable
-    against the prerequisites of the missions the learner has not attempted yet.
-    """
-    classes = [get_tier_competency(tier)]
-    if topic_class and topic_class not in classes:
-        classes.append(topic_class)
-    return classes
-
-
-def get_step_competency_class(step_type: str, topic_class: str, tier: int) -> str | None:
-    """The competency class a *passed* step demonstrates, or None if it is passive."""
-    kind = STEP_TYPE_EVIDENCE.get((step_type or "").lower())
-    if kind == "domain":
-        return topic_class or "core:Concept"
-    if kind == "tier":
-        return get_tier_competency(tier)
-    return None
-
-
-def build_step_ontology_id(mission_slug: str, step_num: int, step_type: str,
-                            topic_class: str = "", tier: int = 1) -> dict:
+def build_step_ontology_id(mission_slug: str, step_num: int, step_type: str) -> dict:
     """Build a complete ontology descriptor for a step."""
     return {
         "ontology_id": f"icdev:mission:{mission_slug}:step:{step_num}",
         "step_class": get_step_ontology_class(step_type),
-        "competency_class": get_step_competency_class(step_type, topic_class, tier),
     }

@@ -7,8 +7,6 @@ import importlib
 import sqlite3
 from unittest.mock import MagicMock
 
-from tests import _sql_compat
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -34,15 +32,10 @@ def _make_raw_conn():
             edited_at TEXT NOT NULL, tenant_id TEXT, collection_id TEXT,
             classification TEXT DEFAULT 'CUI'
         )""",
-        # consumed_at is named by _propagate_consistency_flags' INSERT. Without
-        # it the statement raised "no such column", the best-effort except
-        # swallowed it, and the test read 0 events back — a no-op it caused
-        # itself, indistinguishable from an unimplemented feature.
         """CREATE TABLE canvas_events (
             id TEXT PRIMARY KEY, source_canvas TEXT, target_canvas TEXT,
             event_type TEXT, payload_json TEXT, created_at TEXT,
-            tenant_id TEXT, classification TEXT DEFAULT 'CUI',
-            consumed_at TEXT
+            tenant_id TEXT, classification TEXT DEFAULT 'CUI'
         )""",
     ]:
         conn.execute(ddl)
@@ -50,15 +43,24 @@ def _make_raw_conn():
     return conn
 
 
-def _make_shim(raw=None):
-    """Translating wrapper over the in-memory DIC DB.
+class _ShimConn:
+    def __init__(self, conn):
+        self._conn = conn
 
-    ``unclosable`` because the code under test writes through
-    ``with get_connection() as conn:`` and the wrapper's ``__exit__`` would
-    otherwise close the handle — taking the in-memory database with it before
-    the test can read the row back.
-    """
-    return _sql_compat.translating(raw or _make_raw_conn(), unclosable=True)
+    def execute(self, sql, params=()):
+        return self._conn.execute(sql.replace("%s", "?"), params)
+
+    def commit(self):
+        self._conn.commit()
+
+    def cursor(self):
+        return self._conn.cursor()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
 
 
 @contextlib.contextmanager
@@ -150,7 +152,7 @@ class TestFindRelatedDocs:
         shim.commit()
 
     def test_finds_doc_sharing_concept(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         self._seed(shim, shared_concept="authentication")
         with _patch_attr("tools.document_intelligence.consistency_checker", "get_connection",
                          MagicMock(return_value=shim)):
@@ -161,7 +163,7 @@ class TestFindRelatedDocs:
         assert "doc-src" not in doc_ids
 
     def test_excludes_source_doc(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         self._seed(shim)
         with _patch_attr("tools.document_intelligence.consistency_checker", "get_connection",
                          MagicMock(return_value=shim)):
@@ -171,7 +173,7 @@ class TestFindRelatedDocs:
         assert "doc-src" not in doc_ids
 
     def test_returns_empty_for_no_concepts(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         with _patch_attr("tools.document_intelligence.consistency_checker", "get_connection",
                          MagicMock(return_value=shim)):
             from tools.document_intelligence.consistency_checker import find_related_docs
@@ -179,7 +181,7 @@ class TestFindRelatedDocs:
         assert results == []
 
     def test_returns_empty_when_no_overlap(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         self._seed(shim, shared_concept="firewall")
         with _patch_attr("tools.document_intelligence.consistency_checker", "get_connection",
                          MagicMock(return_value=shim)):
@@ -188,7 +190,7 @@ class TestFindRelatedDocs:
         assert results == []
 
     def test_result_has_required_fields(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         self._seed(shim, shared_concept="encryption")
         with _patch_attr("tools.document_intelligence.consistency_checker", "get_connection",
                          MagicMock(return_value=shim)):
@@ -202,7 +204,7 @@ class TestFindRelatedDocs:
             assert "matching_concepts" in r
 
     def test_respects_limit(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         # Seed 5 related docs, all sharing "zero-trust"
         for i in range(5):
             did = f"doc-r{i}"
@@ -228,7 +230,7 @@ class TestFindRelatedDocs:
 
 class TestConsistencyFlagPropagation:
     def test_flag_emitted_when_char_delta_large(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         before = "Short text."
         after = "This section now covers zero-trust authentication, network segmentation, " \
                 "firewall rules, access control lists, and multi-factor authentication requirements."
@@ -240,15 +242,8 @@ class TestConsistencyFlagPropagation:
         orig_fr = cc.find_related_docs
         cc.find_related_docs = MagicMock(return_value=fake_related)
         try:
-            # record_edit writes edit history through get_connection() but
-            # _propagate_consistency_flags writes canvas_events through
-            # get_canvas_connection() (canvas_events has no RLS predicate).
-            # Patching only get_connection sent the event to the real DB, so
-            # the test read 0 rows back and looked like a missing feature.
             with _patch_attr("tools.document_intelligence.history_recorder", "get_connection",
-                             MagicMock(return_value=shim)), \
-                 _patch_attr("tools.document_intelligence.history_recorder",
-                             "get_canvas_connection", MagicMock(return_value=shim)):
+                             MagicMock(return_value=shim)):
                 from tools.document_intelligence.history_recorder import record_edit
                 record_edit("sec-001", "editor", before, after, doc_id="doc-src")
         finally:
@@ -260,7 +255,7 @@ class TestConsistencyFlagPropagation:
         assert len(events) >= 1
 
     def test_flag_not_emitted_when_char_delta_small(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         before = "This is some text."
         after = "This is some text!"  # tiny change
         find_calls = []
@@ -299,7 +294,7 @@ class TestConsistencyFlagPropagation:
         assert callable(history_recorder._propagate_consistency_flags)
 
     def test_record_edit_still_returns_edit_id(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         with _patch_attr("tools.document_intelligence.history_recorder", "get_connection",
                          MagicMock(return_value=shim)):
             from tools.document_intelligence.history_recorder import record_edit

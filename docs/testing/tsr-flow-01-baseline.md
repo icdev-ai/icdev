@@ -68,14 +68,6 @@ epic. The failure signature is also **not stable across runs** — it surfaced a
 which is consistent with shared-DB teardown order rather than a fixed schema gap. Isolating the
 polluter is the first FLOW work item; it is worth 11 of the epic's 36 failures on its own.
 
-> **RESOLVED** (`0393c7808`, `tsr-flow-01-d2`, 2026-08-01; re-verified under `tsr-agent-01-d4`).
-> The polluter was `test_workflow_hitl_api.py`, and the cause was not teardown order: the `tmp_db`
-> fixture patched only `tools.db.storage.get_connection`, so modules that had already run
-> `from tools.db.storage import get_connection` kept the original function object and read the
-> ambient DB. The unstable signature follows from that — the failure mode is "wrong database", so
-> the error depends on the ambient DB's state. Now **23 passed** solo and order-independent.
-> Full analysis: [`tsr-agent-01-d4-hitl-pollution.md`](tsr-agent-01-d4-hitl-pollution.md).
-
 ### `tools.kanban` — 5 files, 14 failed + 9 errors
 
 | file | failed | errors | passed | root cause |
@@ -164,12 +156,3 @@ Per the TSR card: several of these need a judgment call about whether the test o
 wrong. In particular #2 and #3 could each be "fixed" by weakening an assertion about
 merge-gating or pause behaviour — both are areas with known board bugs, so the code side should
 be checked first.
-
----
-
-> **EPIC CLOSED** (`tsr-flow-01-d5`, 2026-08-02). All 36 baseline failures across all 7 files
-> above are resolved: **1,071 passed / 2 failed / 0 errors** on the same 78-file slice. The 2
-> remaining failures were green at this baseline and fail identically on unmodified `main` —
-> they are drift from other epics, not this subsystem. Full before/after, the `ruff format`
-> decision, and the `tools/kanban/cli.py` import regression found en route:
-> [`tsr-flow-01-d5-verification.md`](tsr-flow-01-d5-verification.md).

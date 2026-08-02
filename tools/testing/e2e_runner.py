@@ -257,66 +257,10 @@ def _npx_cmd() -> str:
     return get_npx_cmd()
 
 
-_playwright_cmd_cache: Optional[List[str]] = None
-
-
-def _playwright_cmd() -> List[str]:
-    """Resolve the Playwright CLI WITHOUT ever letting npx install it.
-
-    An enclave has no registry, so a bare ``npx playwright`` is a hang or a
-    failure waiting to happen: npx resolves a missing package by fetching it.
-    Resolution order here is "already on disk" first, and the npx fallback is
-    pinned to ``--no-install`` so it can only use what is already installed.
-
-    Override with ``ICDEV_PLAYWRIGHT_CLI`` — an absolute path to the playwright
-    binary or to its ``cli.js`` — to point at a pre-staged install. See
-    docs/ops/airgap-runbook.md §11.
-    """
-    global _playwright_cmd_cache
-    if _playwright_cmd_cache is not None:
-        return list(_playwright_cmd_cache)
-
-    explicit = os.environ.get("ICDEV_PLAYWRIGHT_CLI", "").strip()
-    if explicit:
-        path = Path(explicit)
-        if path.is_file():
-            cmd = ["node", str(path)] if path.suffix == ".js" else [str(path)]
-            _playwright_cmd_cache = cmd
-            return list(cmd)
-        # A set-but-wrong override is a misconfiguration, not a reason to go
-        # silently fetch from the network instead.
-        raise FileNotFoundError(
-            f"ICDEV_PLAYWRIGHT_CLI={explicit!r} does not exist. Point it at an "
-            f"installed playwright CLI (or unset it to use a local/global install)."
-        )
-
-    # node_modules/.bin, walking up from PROJECT_ROOT the way node resolution
-    # does. The walk is required, not a nicety: a kanban task runs from
-    # .tmp/worktrees/<id>, which has no node_modules of its own (it is
-    # gitignored) but sits under a checkout that does.
-    for parent in (PROJECT_ROOT, *PROJECT_ROOT.parents):
-        for name in ("playwright.cmd", "playwright"):
-            local = parent / "node_modules" / ".bin" / name
-            if local.is_file():
-                _playwright_cmd_cache = [str(local)]
-                return list(_playwright_cmd_cache)
-
-    # Deliberately NO bare shutil.which("playwright") fallback. On any machine
-    # with the PYTHON playwright package installed, that resolves to its
-    # console script — which is a different program that does not implement the
-    # `test` subcommand, so it would fail in a confusing way instead of falling
-    # through to something that works.
-    #
-    # Last resort: npx pinned to --no-install, so it may only run what is
-    # already on disk and errors rather than reaching for the registry.
-    _playwright_cmd_cache = [_npx_cmd(), "--no-install", "playwright"]
-    return list(_playwright_cmd_cache)
-
-
 def check_playwright_installed() -> bool:
     try:
         proc = subprocess.run(
-            _playwright_cmd() + ["--version"],
+            [_npx_cmd(), "playwright", "--version"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -325,7 +269,7 @@ def check_playwright_installed() -> bool:
             cwd=str(PROJECT_ROOT),
         )
         return proc.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 
@@ -386,8 +330,8 @@ def run_playwright_native(
     results_dir = ensure_run_dir(run_id)
     (results_dir / "screenshots").mkdir(parents=True, exist_ok=True)
 
-    cmd = _playwright_cmd() + [
-        "test",
+    cmd = [
+        _npx_cmd(), "playwright", "test",
         "--project", project,
         "--reporter", "json",
     ]

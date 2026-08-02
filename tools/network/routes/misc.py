@@ -1038,9 +1038,7 @@ def register_misc_routes(bp):
             from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             conn.execute(
-                # `nql_generated`, not `nql_query` (swp-scan-01) — every NQE
-                # audit write raised UndefinedColumn into a bare except.
-                "INSERT INTO nc_nqe_audit_log (action, nql_generated, user_confirmed, created_at) "
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
                 "VALUES (%s, %s, %s, NOW())",
                 ("translate", nql, False),
             )
@@ -1116,8 +1114,7 @@ def register_misc_routes(bp):
                 from tools.db.storage import get_canvas_connection
                 conn = get_canvas_connection("NC_STORAGE_BACKEND")
                 conn.execute(
-                    # `nql_generated`, not `nql_query` (swp-scan-01).
-                    "INSERT INTO nc_nqe_audit_log (action, nql_generated, user_confirmed, row_count, created_at) "
+                    "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, row_count, created_at) "
                     "VALUES (%s, %s, %s, %s, NOW())",
                     ("run", nql, True, len(rows)),
                 )
@@ -1178,9 +1175,7 @@ def register_misc_routes(bp):
             from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             cur = conn.execute(
-                # `nql_generated`, not `nql_query` (swp-scan-01) — every NQE
-                # audit write raised UndefinedColumn into a bare except.
-                "INSERT INTO nc_nqe_audit_log (action, nql_generated, user_confirmed, created_at) "
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
                 "VALUES (%s, %s, %s, NOW()) RETURNING id",
                 (action, nql, user_confirmed),
             )
@@ -1276,9 +1271,7 @@ def register_misc_routes(bp):
             from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             conn.execute(
-                # `nql_generated`, not `nql_query` (swp-scan-01) — every NQE
-                # audit write raised UndefinedColumn into a bare except.
-                "INSERT INTO nc_nqe_audit_log (action, nql_generated, user_confirmed, created_at) "
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
                 "VALUES (%s, %s, %s, NOW())",
                 ("hitl_approve", audit_payload, True),
             )

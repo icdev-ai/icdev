@@ -48,7 +48,6 @@ Subcommands:
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
   audit export             Export SOC 2 (and future framework) evidence reports.
-  audit tail [--follow]    Tail the audit feed (audit_trail + hook_events).
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).

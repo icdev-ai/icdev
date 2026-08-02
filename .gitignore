@@ -243,12 +243,3 @@ data/redteam/
 # Live BOM plan config — names real people, real committed dates, a real task
 # list. ICDEV is public. Ship args/bom_plan.example.yaml; keep the real one out.
 args/bom_plan.yaml
-
-# Per-session daily memory logs. CLAUDE.md's session protocol reads these, but
-# they are local working notes — zero have ever been tracked, and they land as
-# untracked noise in every `git status`, which is how scratch files get swept
-# into an auto-commit.
-memory/logs/
-
-# Hermes' private plan/scratch directory. Never tracked; tool-local state.
-.hermes/

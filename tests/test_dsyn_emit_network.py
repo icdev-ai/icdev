@@ -1,10 +1,5 @@
 # CUI // SP-CTI
-"""Tests for dsyn-emit-02: Network Canvas canvas_events emission.
-
-tsr-canv-01-d4: 4 failed / 0 passed -> 0 failed / 4 passed. Same cause as
-test_dsyn_emit_ndc.py — patched get_connection, emitter uses
-get_canvas_connection().
-"""
+"""Tests for dsyn-emit-02: Network Canvas canvas_events emission."""
 from __future__ import annotations
 import json
 import sqlite3
@@ -16,8 +11,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tests import _sql_compat  # noqa: E402
-
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS canvas_events (
     id TEXT PRIMARY KEY, source_canvas TEXT, target_canvas TEXT,
@@ -26,31 +19,26 @@ CREATE TABLE IF NOT EXISTS canvas_events (
 );
 """
 
-def _shim_conn():
-    """In-memory canvas_events DB that translates %s -> ? like the runtime does.
-
-    ``unclosable`` because the emitter writes through ``with get_canvas_connection()``
-    and the wrapper's ``__exit__`` would otherwise close the connection — taking the
-    in-memory database with it before the test can read the row back.
-    """
-    raw = sqlite3.connect(":memory:")
-    raw.row_factory = sqlite3.Row
-    conn = _sql_compat.translating(raw, unclosable=True)
-    conn.execute(_SCHEMA)
-    conn.commit()
-    return conn
+class _ShimConn:
+    def __init__(self):
+        self._db = sqlite3.connect(":memory:")
+        self._db.row_factory = sqlite3.Row
+        self._db.execute(_SCHEMA); self._db.commit()
+    def execute(self, sql, params=()):
+        return self._db.execute(sql.replace("%s", "?"), params)
+    def commit(self): self._db.commit()
+    def close(self): self._db.close()
+    def __enter__(self): return self
+    def __exit__(self, *_): self.commit()
 
 @pytest.fixture
-def shim(): return _shim_conn()
+def shim(): return _ShimConn()
 
 @contextmanager
 def _patch(shim):
     @contextmanager
     def _gc(): yield shim
-    # canvas_events has no tenant_id/classification predicate to satisfy, so the
-    # emitter writes through get_canvas_connection() (RLS disabled) — patch that,
-    # not get_connection, which the module no longer imports.
-    with patch("tools.network.event_emitter.get_canvas_connection", _gc): yield shim
+    with patch("tools.network.event_emitter.get_connection", _gc): yield shim
 
 def test_emit_migration_phase_complete(shim):
     from tools.network import event_emitter
@@ -77,10 +65,10 @@ def test_emit_failure_returns_false(shim):
     from tools.network import event_emitter
     @contextmanager
     def _boom():
-        c = _shim_conn()
+        c = _ShimConn()
         c.execute = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("fail"))
         yield c
-    with patch("tools.network.event_emitter.get_canvas_connection", _boom):
+    with patch("tools.network.event_emitter.get_connection", _boom):
         assert event_emitter.emit_migration_phase_complete("p", "m") is False
 
 def test_source_and_target_canvas(shim):

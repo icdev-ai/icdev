@@ -473,23 +473,20 @@ def _ensure_hitl_circuit_card(
     )
     try:
         ph = sql_placeholder(conn)
-        # kanban_tasks has no tenant_id column (swp-scan-01); the board is not
-        # tenant-scoped. Writing it raised UndefinedColumn, so the circuit
-        # breaker never actually raised a HITL card.
         conn.execute(
             f"""
             INSERT OR IGNORE INTO kanban_tasks
                 (id, title, description, task_type, priority, status,
                  hitl_stage, dispatch_source, created_at, updated_at,
-                 classification)
+                 tenant_id, classification)
             VALUES ({ph}, {ph}, {ph}, 'hitl', 'critical', 'backlog',
-                    'circuit_breaker', 'foundry_circuit_breaker', {ph}, {ph}, {ph})
+                    'circuit_breaker', 'foundry_circuit_breaker', {ph}, {ph}, {ph}, {ph})
             """,
             (
                 card_id,
                 f"[ACF] Circuit breaker open — {stats['fail_rate']:.0%} V&V fail rate",
                 desc,
-                now, now, classification,
+                now, now, tenant_id, classification,
             ),
         )
         conn.commit()

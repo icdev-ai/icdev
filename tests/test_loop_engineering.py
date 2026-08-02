@@ -15,24 +15,37 @@ import importlib
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _shim(conn):
-    """Translate %s → ? for a connection handed to production code.
+class _ShimConn:
+    """Wraps a raw SQLite connection, translating %s → ? so PG-style code works."""
 
-    Was a hand-rolled ``_ShimConn`` whose ``__exit__`` neither committed nor
-    rolled back — unlike ``StorageConnection``, which production code relies on
-    to commit its ``with get_connection() as conn:`` blocks. Delegates to
-    ``tests/_sql_compat``, which wraps the same ``translate_sql`` the runtime
-    uses, so this can never drift from the behaviour it stands in for.
+    def __init__(self, conn):
+        self._conn = conn
 
-    ``unclosable`` keeps the underlying in-memory database alive for the
-    post-call assertions: it dies with its connection, and production code
-    closes what it is given.
-    """
-    from _sql_compat import TranslatingConnection, translating
+    def execute(self, sql, params=()):
+        import re
+        sql = sql.replace("%s", "?")
+        sql = re.sub(r"::\w+", "", sql)
+        if params is None:
+            return self._conn.execute(sql)
+        return self._conn.execute(sql, params)
 
-    if isinstance(conn, TranslatingConnection):
-        return conn
-    return translating(conn, unclosable=True)
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
+    def close(self):
+        pass  # keep the raw conn alive for post-call assertions
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
 
 
 def _patch_storage(monkeypatch, conn):
@@ -42,7 +55,7 @@ def _patch_storage(monkeypatch, conn):
     icdev/ canonical). Patch both so whichever from-import fires at call-time
     gets the ShimConn.
     """
-    factory = lambda: _shim(conn)  # noqa: E731
+    factory = lambda: _ShimConn(conn)  # noqa: E731
     for mod_name in ("tools.db.storage", "icdev.tools.db.storage"):
         try:
             mod = importlib.import_module(mod_name)
@@ -69,15 +82,7 @@ def _patch_init_kanban(monkeypatch):
 
 
 def _make_conn():
-    """In-memory SQLite with the minimal kanban schema, %s-translating.
-
-    Returned already wrapped because the GEPA tests below hand this connection
-    straight to production code. ``_get_pending_artifacts`` runs a ``%s`` query
-    inside ``except Exception: return []``, so a bare ``sqlite3.connect`` made
-    every one of those statements raise ``near "%": syntax error`` where nothing
-    surfaced — the filter/trace-count tests were asserting against a no-op the
-    fixture itself caused.
-    """
+    """Return an in-memory SQLite connection with the minimal kanban schema."""
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.execute(
@@ -99,7 +104,6 @@ def _make_conn():
             max_runtime_seconds  INTEGER,
             loop_type            TEXT DEFAULT 'deterministic',
             adversarial_enabled  INTEGER DEFAULT 0,
-            acceptance_criteria  TEXT,
             created_at           TEXT,
             updated_at           TEXT
         )
@@ -122,7 +126,7 @@ def _make_conn():
         """
     )
     conn.commit()
-    return _shim(conn)
+    return conn
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -206,7 +210,7 @@ def _patch_kanban_conn(monkeypatch, raw_conn):
     directly (importlib-loaded) ensures the already-bound name is updated.
     """
     mod = _import_kanban_reflex()
-    monkeypatch.setattr(mod, "get_connection", lambda: _shim(raw_conn))
+    monkeypatch.setattr(mod, "get_connection", lambda: _ShimConn(raw_conn))
     return mod
 
 

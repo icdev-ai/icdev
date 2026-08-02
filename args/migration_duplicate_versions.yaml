@@ -42,15 +42,19 @@ grandfathered:
   "23":
     - 023_ad_news_patterns
     - 023_sg_socmint_signals.py
+    - 023_sharepoint
   "24":
     - 024_ad_news_catalysts
     - 024_telegram_inbox.py
   "27":
     - 027_ad_coach_alerts
     - 027_compliance_snapshots
+    - 027_compliance_twin_schema
+    - 027_pipeline_snapshots
   "28":
     - 028_attack_graph
     - 028_idc_infra_tables
+    - 028_odc_mitre_coverage
   "31":
     - 031_ddc_twin_tables
     - 031_network_twin_snapshots
@@ -82,6 +86,9 @@ grandfathered:
   "78":
     - 078_ad_decision_audit
     - 078_workflow_hitl
+  "82":
+    - 082_sg_intelligence_briefs_wargame_cols
+    - 082_sg_orbat_strengths
   "83":
     - 083_cyber_ext_columns
     - 083_sg_multidomain_tracks
@@ -130,6 +137,7 @@ grandfathered:
     - 163_groups_canvas_access.sql
   "173":
     - 173_cpmp_obligation_periods.py
+    - 173_create_documents_table.sql
     - 173_white_team_review_type.py
   "179":
     - 179_integrity_tables.py
@@ -144,12 +152,18 @@ grandfathered:
   "189":
     - 189_dd_pii_scans.sql
     - 189_genesis_phase_log
+  "193":
+    - 193_entitlements.sql
+    - 193_gate_failures.sql
   "207":
     - 207_mcip_dat_tables.sql
     - 207_tenant_component_overrides
   "210":
     - 210_showcase_apps.sql
     - 210_sso
+  "211":
+    - 211_idr_tables.sql
+    - 211_soc2_evidence
   "212":
     - 212_data_residency
     - 212_idr_suggested_classification.sql
@@ -175,3 +189,9 @@ grandfathered:
   "282":
     - 282_docmod_nist_pubs.sql
     - 282_insider_risk_uba.sql
+  "283":
+    - 283_dic_claims.sql
+    - 283_soar_playbook_runs.sql
+  "289":
+    - 289_agent_cron_jobs.sql
+    - 289_twin_compat_reports.sql

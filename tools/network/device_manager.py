@@ -81,8 +81,7 @@ def upsert_device(topology_id: str, node_id: str, conn=None, **kwargs) -> dict:
             "INSERT INTO ni_devices (id, topology_id, node_id, label, device_type, "
             "vendor, model, firmware_version, eol_date, eos_date, purchase_date, "
             "purchase_cost, annual_maintenance_cost, replacement_cost, site, "
-            # `rack`, not `rack_location` (swp-scan-01).
-            "rack, notes, properties_json, created_at, updated_at) "
+            "rack_location, notes, properties_json, created_at, updated_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 device_id, topology_id, node_id,

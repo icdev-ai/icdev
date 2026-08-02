@@ -45,20 +45,6 @@ CITATION_TYPES: Tuple[str, ...] = (
     # inline [source: ...] citations validate against a persisted provenance
     # record. Fetch specifics live in web_fetch_provenance.
     "web",
-    # cxo-trust-01: the Cortex governance pipeline's provenance gate. It has
-    # passed citation_type="cortex" since it shipped, which is not in this
-    # vocabulary, so register_citation() raised ValueError, governance.py caught
-    # it and recorded provenance="warn". Measured 2026-08-02: 0 of 285 registry
-    # rows were type 'cortex' and no Cortex operation had ever cleanly passed
-    # governance. Because governance.fail_closed ships false, nothing blocked
-    # and nothing alerted.
-    "cortex",
-    # cxo-trust-01: GovChain asset tokenization, the SAME bug found
-    # independently. tools/blockchain/asset_ledger.py passes "asset_token"; the
-    # raise is swallowed by a try/except with an `if reg_id:` guard, so reg_id
-    # stayed None, anchor_status stayed "skipped", and the registry_id/tx_id
-    # back-fill never ran — asset tokenization has never anchored to the chain.
-    "asset_token",
 )
 
 #: Types whose provenance detail lives in a companion table.

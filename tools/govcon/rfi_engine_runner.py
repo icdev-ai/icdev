@@ -14,7 +14,6 @@ string is injected into the LLM prompt in generate_section_content().
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -602,24 +601,11 @@ def trigger_engine_seed(session_id: str, source_key: str, topic: str) -> dict:
 def _seed_innovation(topic: str) -> dict:
     db = _get_db()
     uid = _uid()
-    # fitness_score is not a column on innovation_signals (swp-scan-01); the
-    # live score column is innovation_score. source/source_type/content_hash/
-    # discovered_at are NOT NULL with no default, so the statement could never
-    # have run even before the rename.
     db.execute(
-        "INSERT INTO innovation_signals "
-        "(id, source, source_type, title, description, status, gotcha_layer, "
-        "innovation_score, content_hash, discovered_at, created_at) "
-        "VALUES (%s,'rfi_engine','govcon',%s,%s,'approved','govcon',0.75,%s,%s,%s) "
+        "INSERT INTO innovation_signals (id, title, description, status, gotcha_layer, fitness_score, created_at) "
+        "VALUES (%s,%s,%s,'approved','govcon',0.75,%s) "
         "ON CONFLICT (id) DO NOTHING",
-        (
-            uid,
-            f"RFI Signal: {topic[:80]}",
-            f"Innovation signal seeded from RFI topic: {topic[:400]}",
-            hashlib.sha256(f"rfi_engine|{uid}".encode("utf-8")).hexdigest(),
-            _now(),
-            _now(),
-        ),
+        (uid, f"RFI Signal: {topic[:80]}", f"Innovation signal seeded from RFI topic: {topic[:400]}", _now()),
     )
     db.commit()
     return {"ok": True, "seeded": uid}
@@ -628,22 +614,11 @@ def _seed_innovation(topic: str) -> dict:
 def _seed_creative(topic: str) -> dict:
     db = _get_db()
     uid = _uid()
-    # executive_summary/pain_score are not columns on creative_specs
-    # (swp-scan-01); the live shape carries spec_content/composite_score.
-    # justification and estimated_effort are NOT NULL with no default.
     db.execute(
-        "INSERT INTO creative_specs "
-        "(id, title, spec_content, status, composite_score, justification, "
-        "estimated_effort, created_at) "
-        "VALUES (%s,%s,%s,'published',0.7,%s,'unknown',%s) "
+        "INSERT INTO creative_specs (id, title, executive_summary, status, pain_score, created_at) "
+        "VALUES (%s,%s,%s,'published',0.7,%s) "
         "ON CONFLICT (id) DO NOTHING",
-        (
-            uid,
-            f"GovCon Spec: {topic[:80]}",
-            f"Creative spec seeded from RFI topic: {topic[:400]}",
-            "Seeded by the RFI demand loop from a GovCon topic.",
-            _now(),
-        ),
+        (uid, f"GovCon Spec: {topic[:80]}", f"Creative spec seeded from RFI topic: {topic[:400]}", _now()),
     )
     db.commit()
     return {"ok": True, "seeded": uid}
@@ -652,24 +627,11 @@ def _seed_creative(topic: str) -> dict:
 def _seed_research(session_id: str, topic: str) -> dict:
     db = _get_db()
     uid = _uid()
-    # research_dossiers keys by vertical_id, not vertical_name, and stamps
-    # generated_at rather than created_at (swp-scan-01). session_id, title and
-    # content are NOT NULL with no default.
-    summary = f"Research dossier seeded from RFI session {session_id}: {topic[:400]}"
     db.execute(
-        "INSERT INTO research_dossiers "
-        "(id, session_id, vertical_id, title, content, executive_summary, generated_at) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+        "INSERT INTO research_dossiers (id, vertical_name, executive_summary, created_at) "
+        "VALUES (%s,%s,%s,%s) "
         "ON CONFLICT (id) DO NOTHING",
-        (
-            uid,
-            session_id,
-            f"govcon:{topic[:60]}",
-            f"GovCon: {topic[:60]}",
-            summary,
-            summary,
-            _now(),
-        ),
+        (uid, f"GovCon: {topic[:60]}", f"Research dossier seeded from RFI session {session_id}: {topic[:400]}", _now()),
     )
     db.commit()
     return {"ok": True, "seeded": uid}

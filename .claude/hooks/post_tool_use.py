@@ -13,10 +13,6 @@ if str(HOOKS_DIR) not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Tools the awareness subscriber actually handles — must stay in sync with
-# _TRACKED_TOOLS in tools/awareness/hooks.py.
-_AWARENESS_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit"})
-
 
 def dispatch_extension_hook(tool_name: str, tool_input: dict, tool_output: str):
     """Best-effort dispatch of TOOL_EXECUTE_AFTER extension point (Phase 44 Feature 2).
@@ -28,16 +24,10 @@ def dispatch_extension_hook(tool_name: str, tool_input: dict, tool_output: str):
     context dict including the full tool_input so subscribers (like
     the awareness component indexer) can extract file paths.
     """
-    # Only import the awareness subscriber for the tools it actually handles.
-    # ``tools/awareness/hooks.py`` filters on _TRACKED_TOOLS = {Edit, Write,
-    # NotebookEdit, MultiEdit}, so importing it for a Read or a Bash call paid
-    # ~90 ms of import cost — on every tool call — to register a handler that
-    # would immediately filter the event out.
-    if tool_name in _AWARENESS_TOOLS:
-        try:
-            import tools.awareness.hooks  # noqa: F401  — registers subscriber on first import
-        except Exception:
-            pass  # Awareness hook optional
+    try:
+        import tools.awareness.hooks  # noqa: F401  — registers subscriber on first import
+    except Exception:
+        pass  # Awareness hook optional
 
     try:
         from tools.extensions.extension_manager import extension_manager, ExtensionPoint

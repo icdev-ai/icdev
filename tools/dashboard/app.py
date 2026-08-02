@@ -2365,11 +2365,6 @@ def create_app(testing: bool = False) -> Flask:
             "ROLE_VIEWS": ROLE_VIEWS,
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
-            # Registry-driven enablement for ANY component, so a home tile can
-            # gate on whether its blueprint is actually mounted. One helper for
-            # all 66 registered components rather than a 67th `_HAS_*` boolean —
-            # registration is derived from args/component_registry.yaml.
-            "component_enabled": _REGISTRY.is_enabled,
             "strategos_enabled": _HAS_STRATEGOS,
             "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
             "network_enabled": _HAS_NETWORK,

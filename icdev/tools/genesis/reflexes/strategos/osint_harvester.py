@@ -655,33 +655,18 @@ def _queue_kg_enrichment(kg_delta: Any) -> None:
         if not nodes:
             return
         conn = get_connection()
-        # This statement named `node_type` (the live column is `entity_type`)
-        # and omitted `id` and `graph_id`, both NOT NULL with no default
-        # (swp-scan-01). Every enrichment node raised UndefinedColumn and was
-        # swallowed by the bare except below, so the OSINT harvester has never
-        # actually queued a single KG node. Nodes belong to the STRATEGOS war
-        # graph, whose kg_graphs row must exist before the FK will accept them.
-        from tools.strategos.war_kg import ensure_war_graph
-
-        graph_id = ensure_war_graph(conn)
-        cols = "(id, graph_id, label, entity_type, created_at)"
         if is_pg():
-            kg_query = f"INSERT INTO kg_nodes {cols} VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING"
+            kg_query = "INSERT INTO kg_nodes (node_type, label, created_at) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING"
         else:
-            kg_query = f"INSERT OR IGNORE INTO kg_nodes {cols} VALUES (?,?,?,?,?)"
+            kg_query = "INSERT OR IGNORE INTO kg_nodes (node_type, label, created_at) VALUES (?,?,?)"
         now = _utcnow_iso()
         for node in nodes:
             node_type = (node.get("type") or "osint_signal").strip()
             label = (node.get("label") or node.get("name") or "").strip()
             if not label:
                 continue
-            # Deterministic id so re-harvesting the same signal is idempotent
-            # rather than duplicating the node on every run.
-            node_id = "osint-" + hashlib.sha256(
-                f"{graph_id}:{node_type}:{label}".encode()
-            ).hexdigest()[:16]
             try:
-                conn.execute(kg_query, (node_id, graph_id, label, node_type, now))
+                conn.execute(kg_query, (node_type, label, now))
             except Exception:
                 pass
         conn.commit()

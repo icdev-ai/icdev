@@ -69,32 +69,18 @@ CREATE TABLE IF NOT EXISTS kanban_task_deps (
 
 _KANBAN_EXECUTIONS_DDL = """
 CREATE TABLE IF NOT EXISTS kanban_executions (
-    id             TEXT PRIMARY KEY,
-    task_id        TEXT NOT NULL,
-    executor_type  TEXT NOT NULL DEFAULT 'claude_cli',
-    execution_id   TEXT,
-    started_at     TEXT NOT NULL,
-    completed_at   TEXT,
-    status         TEXT NOT NULL DEFAULT 'running',
-    exit_code      INTEGER,
-    output_summary TEXT,
-    executor_url   TEXT,
-    created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
-    run_summary    TEXT,
-    run_metadata   TEXT
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL,
+    status       TEXT DEFAULT 'pending',
+    started_at   TEXT,
+    finished_at  TEXT,
+    output       TEXT,
+    error        TEXT,
+    run_summary  TEXT,
+    run_metadata TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
 )
 """
-# NOTE: the column list above is the LIVE schema (migration 010 plus the later
-# run_summary/run_metadata additions), verified against information_schema on
-# the production PostgreSQL database.
-#
-# It previously read `finished_at / output / error` — three columns that have
-# never existed in any migration. On a real database that mismatch is invisible,
-# because CREATE TABLE IF NOT EXISTS is a no-op once migration 010 has run. On a
-# fresh SQLite database (CI, a cold worktree) this DDL runs FIRST, creates the
-# wrong shape, and then migration 010's own IF NOT EXISTS becomes the no-op — so
-# the wrong schema is what sticks, and every INSERT written against the real
-# column names fails there and only there.
 
 # Full schema from migration 019 — includes all audit columns
 _KANBAN_VERIFICATIONS_DDL = """

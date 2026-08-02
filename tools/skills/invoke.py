@@ -69,16 +69,8 @@ def _substitute_args(cmd: str, args: list[str]) -> str:
     return cmd.replace("$ARGUMENTS", joined).replace("${ARGUMENTS}", joined)
 
 
-def run_command(cmd: str, args: list[str], *, timeout: int = 600,
-                cwd: str | Path | None = None) -> dict[str, Any]:
-    """Run a single documented command. Returns a dict with exit code + output.
-
-    ``cwd`` overrides the checkout the command runs in — callers dispatching on
-    behalf of a git worktree (see tools/genesis/reflexes/kanban.py) must pass it,
-    or the scan silently reports on the shared checkout instead of the branch
-    under test. It sets PYTHONPATH too, so `import tools.x` resolves to the same
-    tree the command is reading.
-    """
+def run_command(cmd: str, args: list[str], *, timeout: int = 600) -> dict[str, Any]:
+    """Run a single documented command. Returns a dict with exit code + output."""
     expanded = _substitute_args(cmd, args)
     if not _is_safe_command(expanded):
         return {
@@ -86,18 +78,17 @@ def run_command(cmd: str, args: list[str], *, timeout: int = 600,
             "skipped": True,
             "reason": "command prefix not in allowlist (python tools/, python -m tools, python -c)",
         }
-    root = str(Path(cwd).resolve()) if cwd else str(BASE_DIR)
     try:
         # Propagate PYTHONPATH so child `python tools/...` invocations can
         # import from this repo (mirrors how Claude Code launches them).
         env = os.environ.copy()
         existing = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = (root + os.pathsep + existing
-                             if existing else root)
+        env["PYTHONPATH"] = (str(BASE_DIR) + os.pathsep + existing
+                             if existing else str(BASE_DIR))
         env.setdefault("PYTHONIOENCODING", "utf-8")
         result = subprocess.run(  # nosec B603 — invocation is allowlisted
             shlex.split(expanded, posix=False),
-            capture_output=True, text=True, cwd=root,
+            capture_output=True, text=True, cwd=str(BASE_DIR),
             timeout=timeout, encoding="utf-8", errors="replace", env=env,
         )
         return {

@@ -8,8 +8,6 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock
 
-from tests import _sql_compat
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -29,16 +27,9 @@ def _make_raw_conn(with_collections=True):
             event_type TEXT, payload_json TEXT, created_at TEXT,
             consumed_at TEXT
         )""",
-        # dic_team_access is the real membership table (pg_consolidated.sql);
-        # _emit_notifications reads editors/reviewers from it. An earlier
-        # fixture invented "dic_collection_members", so the SELECT raised
-        # "no such table", the best-effort except swallowed it, and the test
-        # asserted 0 notifications against a no-op it had caused itself.
-        """CREATE TABLE dic_team_access (
-            access_id TEXT PRIMARY KEY, collection_id TEXT,
-            user_id TEXT, role TEXT DEFAULT 'viewer',
-            granted_by TEXT DEFAULT '', tenant_id TEXT DEFAULT 'default',
-            created_at TEXT
+        """CREATE TABLE dic_collection_members (
+            member_id TEXT PRIMARY KEY, collection_id TEXT,
+            user_id TEXT, role TEXT
         )""",
         """CREATE TABLE notification_log (
             id TEXT PRIMARY KEY, event_type TEXT, adapter TEXT, severity TEXT,
@@ -50,19 +41,26 @@ def _make_raw_conn(with_collections=True):
     return conn
 
 
-def _make_shim(raw=None):
-    """Translating wrapper over the in-memory DIC DB.
+class _ShimConn:
+    def __init__(self, conn):
+        self._conn = conn
 
-    The previous hand-rolled shim also stripped PG cast operators (``::text``).
-    ``dic_review_cadence`` emits no casts, so that was dead code standing
-    between the test and the runtime's own translate_sql; dropping it means
-    this harness cannot drift from the behaviour it stands in for.
+    def execute(self, sql, params=()):
+        # Translate %s→? and strip PG cast operators (::text, ::date)
+        sql = sql.replace("%s", "?")
+        # SQLite doesn't support ::cast — strip them for tests
+        import re
+        sql = re.sub(r"::\w+", "", sql)
+        return self._conn.execute(sql, params)
 
-    ``unclosable`` because the reflex writes through ``with get_connection()``
-    and the wrapper's ``__exit__`` would otherwise close the handle, taking the
-    in-memory database with it before the test can read the row back.
-    """
-    return _sql_compat.translating(raw or _make_raw_conn(), unclosable=True)
+    def commit(self):
+        self._conn.commit()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
 
 
 @contextlib.contextmanager
@@ -152,7 +150,7 @@ class TestOverdueDetection:
         shim.commit()
 
     def test_overdue_collection_is_detected(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         self._seed(shim, "col-overdue", interval_days=30, last_review_days_ago=45)
         from tools.genesis.reflexes.dic_review_cadence import _fetch_overdue_collections
         with _patch_attr("tools.genesis.reflexes.dic_review_cadence", "get_connection",
@@ -162,7 +160,7 @@ class TestOverdueDetection:
         assert "col-overdue" in ids
 
     def test_within_interval_not_overdue(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         self._seed(shim, "col-fresh", interval_days=90, last_review_days_ago=10)
         from tools.genesis.reflexes.dic_review_cadence import _fetch_overdue_collections
         with _patch_attr("tools.genesis.reflexes.dic_review_cadence", "get_connection",
@@ -172,7 +170,7 @@ class TestOverdueDetection:
         assert "col-fresh" not in ids
 
     def test_no_review_ever_is_overdue(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         self._seed(shim, "col-never", interval_days=90, last_review_days_ago=None)
         from tools.genesis.reflexes.dic_review_cadence import _fetch_overdue_collections
         with _patch_attr("tools.genesis.reflexes.dic_review_cadence", "get_connection",
@@ -182,7 +180,7 @@ class TestOverdueDetection:
         assert "col-never" in ids
 
     def test_collection_without_interval_skipped(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         shim.execute(
             "INSERT INTO dic_collections (collection_id, name, review_interval_days)"
             " VALUES (?,?,?)", ("col-no-interval", "C", None),
@@ -202,7 +200,7 @@ class TestOverdueDetection:
 
 class TestEventEmission:
     def test_run_emits_canvas_event_for_overdue(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         shim.execute(
             "INSERT INTO dic_collections (collection_id, name, review_interval_days)"
             " VALUES (?,?,?)", ("col-a", "Col A", 30),
@@ -221,7 +219,7 @@ class TestEventEmission:
         assert len(events) >= 1
 
     def test_run_does_not_double_emit_same_day(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         shim.execute(
             "INSERT INTO dic_collections (collection_id, name, review_interval_days)"
             " VALUES (?,?,?)", ("col-b", "Col B", 30),
@@ -249,13 +247,13 @@ class TestEventEmission:
         assert len(events) == 1  # only the pre-seeded one
 
     def test_run_notifies_editors(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         shim.execute(
             "INSERT INTO dic_collections (collection_id, name, review_interval_days)"
             " VALUES (?,?,?)", ("col-c", "Col C", 30),
         )
         shim.execute(
-            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role)"
+            "INSERT INTO dic_collection_members (member_id, collection_id, user_id, role)"
             " VALUES (?,?,?,?)", ("m1", "col-c", "editor1", "editor"),
         )
         shim.commit()
@@ -269,7 +267,7 @@ class TestEventEmission:
         assert len(notifs) >= 1
 
     def test_run_returns_success_with_no_overdue(self):
-        shim = _make_shim()
+        shim = _ShimConn(_make_raw_conn())
         # No collections at all
         with _patch_attr("tools.genesis.reflexes.dic_review_cadence", "get_connection",
                          MagicMock(return_value=shim)):

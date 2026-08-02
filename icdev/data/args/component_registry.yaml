@@ -26,28 +26,6 @@
 #   - min_il + default_roles: RBAC metadata mirrored from args/canvas_registry.yaml.
 #   - completeness: 8-point canvas completeness gate requirements.
 #
-# Ownership (idp-cat-01) — ALL THREE FIELDS ARE OPTIONAL:
-#   - owner:         team or individual ACCOUNTABLE for the component.
-#   - owner_contact: how to reach them — email, chat handle, list, or URL.
-#   - on_call:       rotation or escalation handle for production issues.
-#
-#   `owner` is NOT `default_roles`. default_roles is an RBAC access list (who
-#   may USE the canvas); owner is who answers for it when it breaks.
-#
-#   The fields are optional on purpose: making one required would fail the
-#   whole registry load for every entry that has no owner yet. A component that
-#   omits them — or that carries a placeholder such as "TBD", "unassigned" or
-#   "none" — is reported as UNOWNED by
-#   `ComponentRegistry.list_unowned()` / `get_ownership_summary()`. It is never
-#   attributed to a default team, because a wrong owner routes an incident to
-#   nobody while reading as answered.
-#
-#   Current state: 0 of 66 components declare an owner. That is a measured
-#   baseline, not an oversight — this repository has no CODEOWNERS file, no
-#   team roster and no maintainer metadata beyond a single pyproject author, so
-#   there was nothing to backfill from without guessing. Populate these fields
-#   as real accountability is assigned; the IDP scorecard grades the gap.
-#
 # Phase 5 update: nav.links added for all Canvases-menu entries so the dashboard
 # menu is data-driven instead of hardcoded in base.html.
 

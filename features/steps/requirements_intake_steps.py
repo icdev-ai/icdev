@@ -11,9 +11,6 @@ import uuid
 from pathlib import Path
 
 from behave import given, then, when
-from tools.logging.icdev_logger import get_logger
-
-logger = get_logger("icdev.features.steps.requirements_intake_steps")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -62,8 +59,8 @@ def _create_test_project(db_path=None):
                 (project_id, "Test Intake Project", "microservice", "active", "CUI", "IL5"),
             )
             conn.commit()
-        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
-            logger.warning("_create_test_project: best-effort INSERT into projects failed (non-blocking): %s", exc)
+        except Exception:
+            pass
     finally:
         conn.close()
     return project_id

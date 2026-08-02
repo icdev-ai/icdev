@@ -250,16 +250,12 @@ def add_team_member(
     effective_status = _determine_status(member_data)
 
     try:
-        # cert_expiry/cage_code are not columns (swp-scan-01); the live names
-        # are certification_expiry/team_member_cage. checked_at is NOT NULL with
-        # no default, so the row failed on that too — and the `except` below
-        # only logs, so no team member was ever recorded.
         conn.execute(
             "INSERT INTO pg_cmmc_supply_chain "
             "(id, opportunity_id, team_member_name, role, required_cmmc_level, actual_cmmc_level, "
-            "sprs_score, assessment_type, poam_status, certification_expiry, team_member_cage, "
-            "compliance_status, checked_at, created_at, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "sprs_score, assessment_type, poam_status, cert_expiry, cage_code, "
+            "compliance_status, created_at, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 member_id,
                 opportunity_id,
@@ -273,7 +269,6 @@ def add_team_member(
                 cert_expiry,
                 cage,
                 effective_status,
-                now,
                 now,
                 now,
             ),

@@ -165,10 +165,7 @@ CREATE TABLE IF NOT EXISTS ace_sessions (
     session_id            TEXT PRIMARY KEY,
     instance_id           TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
     conversation_history  TEXT NOT NULL DEFAULT '[]',
-    -- No history_json here: it never existed on the live PG table, and the chat
-    -- endpoint wrote the same value to both columns. Declaring it only in SQLite
-    -- made the read path prefer an always-empty column, so every resumed session
-    -- replayed as blank (swp-scan-01).
+    history_json          TEXT NOT NULL DEFAULT '[]',
     resume_token          TEXT NOT NULL UNIQUE,
     -- The last turn on each side, denormalised so resuming a session does not
     -- have to parse the whole history blob. Defined by the original

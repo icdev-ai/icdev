@@ -79,40 +79,6 @@
   background:var(--fa-card); border:1px solid var(--fa-border); border-radius:10px;
   padding:1.2rem; display:flex; gap:1.5rem; flex-wrap:wrap; align-items:center;
 }
-/* aca-trn-02 — competency record */
-.fa-comp-intro { font-size:.8rem; color:var(--text-secondary); margin:0 0 .8rem; }
-.fa-comp-empty {
-  background:var(--fa-card); border:1px dashed var(--fa-border); border-radius:10px;
-  padding:1.2rem; font-size:.82rem; color:var(--text-secondary);
-}
-.fa-comp-grid {
-  display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:1rem;
-}
-.fa-comp-card {
-  background:var(--fa-card); border:1px solid var(--fa-border); border-radius:10px;
-  padding:1rem;
-}
-.fa-comp-head { display:flex; align-items:baseline; gap:.5rem; margin-bottom:.25rem; }
-.fa-comp-label { font-size:.95rem; font-weight:700; color:var(--fa-cyan); }
-.fa-comp-ns {
-  font-size:.62rem; text-transform:uppercase; letter-spacing:.04em;
-  color:var(--text-secondary); border:1px solid var(--fa-border);
-  border-radius:4px; padding:.1rem .35rem;
-}
-.fa-comp-depth {
-  font-size:.7rem; color:var(--text-secondary); text-transform:uppercase;
-  letter-spacing:.03em; margin-bottom:.6rem;
-}
-.fa-comp-evidence { list-style:none; margin:0; padding:0; }
-.fa-comp-evidence li {
-  font-size:.78rem; padding:.3rem 0; border-top:1px solid var(--fa-border);
-}
-.fa-comp-evidence a { color:var(--text-primary); text-decoration:none; }
-.fa-comp-evidence a:hover { color:var(--fa-gold); text-decoration:underline; }
-.fa-comp-tier, .fa-comp-steps {
-  font-size:.62rem; color:var(--text-secondary); margin-left:.35rem;
-}
-.fa-comp-more { color:var(--text-secondary); font-style:italic; }
 </style>
 {% include "forge_academy/partials/_chrome_clearance.html" %}
 {% endblock %}
@@ -159,59 +125,6 @@
         <a href="/academy" class="btn" style="font-size:.75rem;">← Back to Hub</a>
       </div>
     </div>
-  </div>
-
-  {# aca-trn-02: the training record. XP says how much a learner did; this says
-     what that work is evidence OF, and names the missions it rests on. Every
-     claim is shown with its evidence attached — a competency with nothing under
-     it is an assertion, which is what this chain exists to stop producing. #}
-  <div class="fa-section">
-    <h2>Competency Record</h2>
-    {% if competency_profile and competency_profile.competencies %}
-      <p class="fa-comp-intro">
-        {{ competency_profile.total_classes }} competenc{{ 'y' if competency_profile.total_classes == 1 else 'ies' }}
-        demonstrated across {{ competency_profile.total_records }} verified mission completion{{ '' if competency_profile.total_records == 1 else 's' }}.
-      </p>
-      <div class="fa-comp-grid">
-        {% for c in competency_profile.competencies %}
-        <div class="fa-comp-card">
-          <div class="fa-comp-head">
-            <span class="fa-comp-label">{{ c.label }}</span>
-            <span class="fa-comp-ns">{{ c.namespace }}</span>
-          </div>
-          <div class="fa-comp-depth">
-            {{ c.mission_count }} of {{ c.catalog_missions or c.mission_count }} mission{{ '' if c.catalog_missions == 1 else 's' }} in the catalog
-          </div>
-          <ul class="fa-comp-evidence">
-            {% for e in c.evidence[:5] %}
-            <li>
-              {% if e.mission_slug %}
-              <a href="/academy/mission/{{ e.mission_slug }}">{{ e.mission_title or e.mission_slug }}</a>
-              {% else %}{{ e.mission_title or 'Mission' }}{% endif %}
-              {% if e.tier %}<span class="fa-comp-tier">T{{ e.tier }}</span>{% endif %}
-              {% if e.verified_step_ids %}
-              <span class="fa-comp-steps">{{ e.verified_step_ids|length }} verified step{{ '' if e.verified_step_ids|length == 1 else 's' }}</span>
-              {% endif %}
-            </li>
-            {% endfor %}
-            {% if c.evidence|length > 5 %}
-            <li class="fa-comp-more">+{{ c.evidence|length - 5 }} more</li>
-            {% endif %}
-          </ul>
-        </div>
-        {% endfor %}
-      </div>
-    {% elif competency_profile and competency_profile.error %}
-      {# Never render an empty record when the query failed — "you have earned
-         nothing" and "we could not read it" must not look the same. #}
-      <p class="fa-comp-empty">Competency record unavailable right now.</p>
-    {% else %}
-      <p class="fa-comp-empty">
-        No competencies recorded yet. Complete a mission &mdash; every verified
-        completion adds what it demonstrates here, and certificates cite it.
-        <a href="/academy/missions">Browse missions →</a>
-      </p>
-    {% endif %}
   </div>
   {% endif %}
 

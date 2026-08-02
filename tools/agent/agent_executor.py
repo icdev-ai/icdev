@@ -17,10 +17,6 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.agent.agent_models import AgentPromptRequest, AgentPromptResponse, RetryCode  # noqa: E402
-from tools.observability.invocation_recorder import (  # noqa: E402
-    SURFACE_AGENT as _SURFACE_AGENT,
-)
-from tools.observability.invocation_recorder import record as _record_invocation  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 OUTPUT_DIR = BASE_DIR / "agents"
@@ -158,28 +154,9 @@ def parse_jsonl_output(output_path: Path) -> AgentPromptResponse:
 
 
 def execute_agent(request: AgentPromptRequest, max_retries: int = 3, retry_delays: list = None) -> AgentPromptResponse:
-    """Execute a Claude Code CLI agent with retry logic and audit trail.
-
-    Wrapped in invocation telemetry: this module already writes
-    ``agent_execution_*`` audit events, but only 3 of the 16 declared agent
-    event types were ever observed on the live board (56 rows total), so the
-    audit trail alone did not answer "which agents ran, how long, how often did
-    they fail". The recorder answers that uniformly with the other three
-    surfaces. It never raises and re-raises anything the body raises unchanged.
-    """
+    """Execute a Claude Code CLI agent with retry logic and audit trail."""
     if retry_delays is None:
         retry_delays = [1, 3, 5]
-    with _record_invocation(
-        _SURFACE_AGENT,
-        getattr(request, "agent_id", None) or getattr(request, "model", "agent"),
-        project_id=getattr(request, "project_id", "") or "",
-    ):
-        return _execute_agent_inner(request, max_retries, retry_delays)
-
-
-def _execute_agent_inner(request: AgentPromptRequest, max_retries: int,
-                         retry_delays: list) -> AgentPromptResponse:
-    """The original execute_agent body — see the wrapper above."""
 
     execution_id = str(uuid.uuid4())
     prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()

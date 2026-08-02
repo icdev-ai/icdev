@@ -100,18 +100,6 @@ icdev status                      # Show active toggles
 icdev status --json               # Machine-readable status
 icdev list                        # List supported toggles
 
-# Audit feed — read audit_trail + hook_events from the terminal.
-# NOTE: `icdev status` above reports TOGGLES, not health. For health use
-# `python tools/testing/health_check.py --json`.
-icdev audit tail                          # Last 50 events (oldest-first on screen)
-icdev audit tail --limit 200
-icdev audit tail --follow                 # Poll for new events; Ctrl-C exits 0
-icdev audit tail --json                   # One JSON object per line (jq-able)
-icdev audit tail --list-types             # Event types this deployment emits, with counts
-icdev audit tail --project <id> --event-type <type> --since <iso8601>
-icdev audit tail --source hook_events     # Restrict source (repeatable)
-icdev audit export --framework soc2 --tenant-id <tid> --output report.html
-
 # Core enterprise profiles
 icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)
@@ -422,15 +410,7 @@ python tools/refactor/fix_swallowed_persistence.py --write --json
 python tools/refactor/fix_swallowed_persistence.py --write --path tools/govcon --path icdev/tools/govcon
 # The gate that fails the build if the pattern is reintroduced (fast + full tier)
 python tools/workflow/coherence_checker.py --check swallowed_persistence --json
-# Standalone check with file:line output — exit 0 clean, 1 violations, 2 detector missing
-python tools/dev/check_swallowed_inserts.py
-python tools/dev/check_swallowed_inserts.py --json
-python tools/dev/check_swallowed_inserts.py --path tools/govcon   # scope one subtree (~1s)
 ```
-CI runs the standalone check as the `Swallowed-INSERT gate` step in the `test` job of
-`.github/workflows/icdev-ci.yml` — after `lint`, before pytest — so a reintroduced silent
-write fails the build in about a minute instead of at the end of the suite. Run the same
-command locally before pushing.
 
 ---
 
@@ -3577,29 +3557,6 @@ python -c "from tools.twin_core import observe; import json; print(json.dumps(ob
 python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"  # registered twins
 # Config/registry: adapters self-register from tools/twin_core/adapters/*.py
 # Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
-```
-
-## FORGE Academy — xAPI Export (aca-trn-05)
-
-```bash
-# Export Academy completions as xAPI 1.0.3 statements so they can feed an external LMS/LRS.
-# Only records with a verified provenance row (fa_xp_ledger for step/mission,
-# fa_certificate_evidence for a certificate) are emitted; the rest are withheld and named
-# in the `excluded` block rather than silently dropped.
-python -m apps.forge_academy.xapi --json                                   # full envelope: statements + excluded + counts
-python -m apps.forge_academy.xapi --statements-only --out academy_feed.json  # bare array an LRS POST /statements expects
-python -m apps.forge_academy.xapi --user-id 1 --since 2026-01-01T00:00:00Z   # one learner, incremental
-python -m apps.forge_academy.xapi --include-unverified                       # also emit unverifiable records, each stamped verified:false
-
-# Library API
-python -c "from apps.forge_academy.xapi import build_statements; import json; print(json.dumps(build_statements()['counts']))"
-
-# HTTP (org-leadership gated, same tier as Oracle / Org Readiness)
-#   GET /api/academy/export/xapi[?user_id=&since=&include_unverified=1&statements_only=1]
-# Env: ICDEV_XAPI_ACTIVITY_BASE (default https://icdev.ai/xapi/forge-academy) — two deployments
-#   feeding the same LRS must not both claim the same activity IRIs.
-# SCORM is deliberately NOT implemented: it records one rolled-up completion per launch and would
-#   discard the per-step granularity that makes this export worth having.
 ```
 
 ## Agent Browser — Indexed-Element Page Representation (tools/browser/)

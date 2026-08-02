@@ -237,13 +237,9 @@ def escalate_cat1_finding(
                 receipts[ch] = "published"
             elif ch == "audit":
                 conn.execute(
-                    # audit_trail has no resource_type/resource_id/event/detail —
-                    # the live vocabulary is event_type/action/actor/details, so
-                    # every one of these writes raised and no CAT1 escalation was
-                    # ever audited. The resource id moves into details (swp-scan-01).
-                    "INSERT INTO audit_trail (event_type, action, actor, details) "
-                    "VALUES ('cat1_escalation', 'escalated', 'alert_service', %s)",
-                    (json.dumps({"finding_id": finding_id, "rendered": rendered, "recipients": recipients}),),
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('cat1_escalation', %s, 'escalated', 'alert_service', %s)",
+                    (finding_id, json.dumps({"rendered": rendered, "recipients": recipients})),
                 )
                 conn.commit()
                 receipts["audit"] = "inserted"
@@ -293,11 +289,8 @@ def dispatch_stig_alert(
             "SELECT name, classification, owner FROM govlift_workloads WHERE id = %s",
             (workload_id,),
         ).fetchone()
-        # The column is weakness_id, not finding_ref — this dedup lookup raised
-        # alongside the INSERT below, so it could never suppress a duplicate
-        # POA&M even once the write was fixed (swp-scan-01).
         existing_poam = conn.execute(
-            "SELECT id FROM poam_items WHERE weakness_id = %s LIMIT 1",
+            "SELECT id FROM poam_items WHERE finding_ref = %s LIMIT 1",
             (check_id,),
         ).fetchone()
 
@@ -342,22 +335,12 @@ def dispatch_stig_alert(
         # --- Auto-create POA&M if needed ---
         poam_id = None
         if auto_create_poam and not existing_poam and check_row["status"] == "open":
-            # Four separate reasons this never created a POA&M (swp-scan-01):
-            #   - finding_ref/title/workload_id/due_date are not columns; the live
-            #     names are weakness_id/weakness_description/project_id/milestone_date
-            #   - project_id and source are NOT NULL with no default, so a pure
-            #     rename would still have failed
-            #   - DATE('now', '+90 days') is SQLite syntax and does not parse on PG
-            #   - psycopg2 does not populate lastrowid, so poam_id was never the
-            #     new row's id even in the branch that appeared to succeed
-            poam_row = conn.execute(
-                "INSERT INTO poam_items "
-                "(project_id, weakness_id, weakness_description, severity, source, status, milestone_date) "
-                "VALUES (%s, %s, %s, %s, 'stig_check', 'open', CURRENT_DATE + INTERVAL '90 days') "
-                "RETURNING id",
-                (workload_id, check_id, check_row["check_name"], check_row["severity"]),
-            ).fetchone()
-            poam_id = dict(poam_row).get("id") if poam_row else None
+            poam_cursor = conn.execute(
+                "INSERT INTO poam_items (finding_ref, title, severity, status, workload_id, due_date) "
+                "VALUES (%s, %s, %s, 'open', %s, DATE('now', '+90 days'))",
+                (check_id, check_row["check_name"], check_row["severity"], workload_id),
+            )
+            poam_id = poam_cursor.lastrowid
             conn.commit()
 
         # --- Dispatch ---
@@ -378,9 +361,9 @@ def dispatch_stig_alert(
                 receipts[ch] = "published"
             elif ch == "audit":
                 conn.execute(
-                    "INSERT INTO audit_trail (event_type, action, actor, details) "
-                    "VALUES ('stig_alert', 'dispatched', 'alert_service', %s)",
-                    (json.dumps({"check_id": check_id, "rendered": rendered}),),
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('stig_alert', %s, 'dispatched', 'alert_service', %s)",
+                    (check_id, rendered),
                 )
                 conn.commit()
                 receipts["audit"] = "inserted"
@@ -495,9 +478,9 @@ def send_poam_reminder(
                 receipts[ch] = "dispatched"
             elif ch == "audit":
                 conn.execute(
-                    "INSERT INTO audit_trail (event_type, action, actor, details) "
-                    "VALUES ('poam_reminder', 'reminder_sent', 'system', %s)",
-                    (json.dumps({"poam_id": poam_id, "rendered": rendered}),),
+                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
+                    "VALUES ('poam_reminder', %s, 'reminder_sent', 'system', %s)",
+                    (poam_id, rendered),
                 )
                 conn.commit()
                 receipts["audit"] = "inserted"

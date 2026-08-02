@@ -55,14 +55,7 @@ STUDIO_TABLES: dict[str, str] = {
             updated_at    TEXT DEFAULT (datetime('now')),
             version       INTEGER DEFAULT 1,
             status        TEXT DEFAULT 'draft'
-                          CHECK(status IN ('draft','published','archived')),
-            -- RLS columns (migration 326). get_connection() attaches the global
-            -- tenant/classification predicate inside a request context; without
-            -- these every authenticated read of this table raises
-            -- "no such column: classification" while the same read from a script
-            -- succeeds — the trap migration 309 documented.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT
+                          CHECK(status IN ('draft','published','archived'))
         )
     """,
     "studio_form_submissions": """
@@ -71,14 +64,7 @@ STUDIO_TABLES: dict[str, str] = {
             form_id       TEXT NOT NULL REFERENCES studio_forms(form_id),
             data_json     TEXT NOT NULL,
             submitted_by  TEXT,
-            submitted_at  TEXT DEFAULT (datetime('now')),
-            -- RLS columns (migration 326). get_connection() attaches the global
-            -- tenant/classification predicate inside a request context; without
-            -- these every authenticated read of this table raises
-            -- "no such column: classification" while the same read from a script
-            -- succeeds — the trap migration 309 documented.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT
+            submitted_at  TEXT DEFAULT (datetime('now'))
         )
     """,
     # ── Cases ──────────────────────────────────────────────
@@ -87,14 +73,7 @@ STUDIO_TABLES: dict[str, str] = {
             type_id        TEXT PRIMARY KEY,
             name           TEXT NOT NULL,
             lifecycle_json TEXT NOT NULL,
-            created_at     TEXT DEFAULT (datetime('now')),
-            -- RLS columns (migration 326). get_connection() attaches the global
-            -- tenant/classification predicate inside a request context; without
-            -- these every authenticated read of this table raises
-            -- "no such column: classification" while the same read from a script
-            -- succeeds — the trap migration 309 documented.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT
+            created_at     TEXT DEFAULT (datetime('now'))
         )
     """,
     "studio_cases": """
@@ -111,14 +90,7 @@ STUDIO_TABLES: dict[str, str] = {
             created_at         TEXT DEFAULT (datetime('now')),
             updated_at         TEXT DEFAULT (datetime('now')),
             due_date           TEXT,
-            form_submission_id TEXT REFERENCES studio_form_submissions(submission_id),
-            -- RLS columns (migration 326). get_connection() attaches the global
-            -- tenant/classification predicate inside a request context; without
-            -- these every authenticated read of this table raises
-            -- "no such column: classification" while the same read from a script
-            -- succeeds — the trap migration 309 documented.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT
+            form_submission_id TEXT REFERENCES studio_form_submissions(submission_id)
         )
     """,
     # APPEND-ONLY — audit trail
@@ -130,14 +102,7 @@ STUDIO_TABLES: dict[str, str] = {
             to_state   TEXT NOT NULL,
             changed_by TEXT,
             changed_at TEXT DEFAULT (datetime('now')),
-            comment    TEXT,
-            -- RLS columns (migration 326). get_connection() attaches the global
-            -- tenant/classification predicate inside a request context; without
-            -- these every authenticated read of this table raises
-            -- "no such column: classification" while the same read from a script
-            -- succeeds — the trap migration 309 documented.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT
+            comment    TEXT
         )
     """,
     # ── Automations ────────────────────────────────────────
@@ -151,14 +116,7 @@ STUDIO_TABLES: dict[str, str] = {
             action_json    TEXT NOT NULL,
             enabled        INTEGER DEFAULT 1,
             created_by     TEXT,
-            created_at     TEXT DEFAULT (datetime('now')),
-            -- RLS columns (migration 326). get_connection() attaches the global
-            -- tenant/classification predicate inside a request context; without
-            -- these every authenticated read of this table raises
-            -- "no such column: classification" while the same read from a script
-            -- succeeds — the trap migration 309 documented.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT
+            created_at     TEXT DEFAULT (datetime('now'))
         )
     """,
     # APPEND-ONLY — audit trail
@@ -171,14 +129,7 @@ STUDIO_TABLES: dict[str, str] = {
                               'triggered','running','success','failed','skipped')),
             result_json   TEXT,
             started_at    TEXT DEFAULT (datetime('now')),
-            completed_at  TEXT,
-            -- RLS columns (migration 326). get_connection() attaches the global
-            -- tenant/classification predicate inside a request context; without
-            -- these every authenticated read of this table raises
-            -- "no such column: classification" while the same read from a script
-            -- succeeds — the trap migration 309 documented.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT
+            completed_at  TEXT
         )
     """,
     # ── Workflow Runs (APPEND-ONLY — audit trail) ──────────
@@ -233,15 +184,6 @@ STUDIO_TABLES: dict[str, str] = {
             key        TEXT NOT NULL,
             value_json TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            -- RLS columns (migration 326). Every statement in
-            -- tools/studio/run_memory.py goes through get_connection(), which
-            -- attaches the global tenant/classification predicate inside a
-            -- request context. This table had NEITHER column, so run memory was
-            -- unreadable and unwritable from any authenticated request while the
-            -- same calls succeeded from a script — which is why the pytest layer
-            -- never caught it. Same trap as migration 309.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT,
             PRIMARY KEY (run_id, key)
         )
     """,
@@ -338,14 +280,7 @@ STUDIO_TABLES: dict[str, str] = {
             created_by   TEXT,
             created_at   TEXT DEFAULT (datetime('now')),
             updated_at   TEXT DEFAULT (datetime('now')),
-            shared       INTEGER DEFAULT 0,
-            -- RLS columns (migration 326). get_connection() attaches the global
-            -- tenant/classification predicate inside a request context; without
-            -- these every authenticated read of this table raises
-            -- "no such column: classification" while the same read from a script
-            -- succeeds — the trap migration 309 documented.
-            classification TEXT NOT NULL DEFAULT 'CUI',
-            tenant_id      TEXT
+            shared       INTEGER DEFAULT 0
         )
     """,
 }

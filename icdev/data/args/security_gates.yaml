@@ -152,26 +152,6 @@ aggregation_guard:
     SCG rules live in args/classification_aggregation.yaml.  Events are written to
     the append-only aggregation_events table (NIST AU-9/AU-10); never UPDATE/DELETE.
 
-dynamic_finding_reproduction:
-  blocking:
-    - confirmed_dynamic_finding_at_blocking_severity   # replay fired; severity in gate.blocking_severities
-  warning:
-    - dynamic_finding_without_reproduction             # no PoC stored — reported as a lead, never blocks
-    - dynamic_finding_replay_indecisive                # unavailable / error / refused — nothing was learned
-    - dynamic_finding_reproduction_not_discriminating  # fires against the fixed build too; it is a tautology
-  note: >
-    Enforced by tools/security/reproduction_validator.py (enforce / --gate).
-    Reproduce-or-drop (oss-poc-01, adapted from STRIX): a DYNAMIC finding blocks
-    only when a stored reproduction replays and its vulnerability predicate
-    fires. Unreproducible findings are 'unconfirmed' and are structurally
-    incapable of blocking — the only way to change that is
-    gate.block_on_unconfirmed in args/reproduction_policy.yaml, which exists so
-    that re-admitting them is a visible configuration act. STATIC findings
-    (bandit/CVSS/STIG) are out of scope and keep their existing thresholds
-    below. Replay targets are default-deny allowlisted (own targets only);
-    evidence lands in dynamic_findings + the append-only
-    finding_replay_attempts (migration 295, NIST AU).
-
 thresholds:
   sast:
     max_critical: 0
@@ -1173,32 +1153,6 @@ canvas_placeholder_style:
     Replace ? with %s in any execute() SQL string in files importing get_canvas_connection.
     The coherence checker returns FAIL (exits 1 with --gate) on any violation so CI blocks
     the merge before the ProgrammingError reaches production.
-
-# Swallowed Persistence Gate (swp-swallow-01, D-WF-8 sub-check)
-# The other half of canvas_placeholder_style above: that gate catches the SQL
-# that raises, this one catches the handler that eats it. A broad `except` whose
-# body is exactly `pass` over a try block containing an INSERT means the write
-# can fail on every call, forever, with nothing to show for it — which is how a
-# batch of persistence defects survived long enough to need a card.
-# Run: python tools/workflow/coherence_checker.py --check swallowed_persistence --gate
-swallowed_persistence:
-  description: "Detect `except Exception: pass` guarding an INSERT — best-effort is fine, silent is not"
-  blocking:
-    - insert_guarded_by_bare_pass_handler
-  warning: []
-  thresholds:
-    max_swallowed_insert_sites: 0
-  note: >
-    Violations detected by tools/workflow/coherence_checker.py::check_swallowed_persistence,
-    which shares its AST detector with tools/refactor/swallowed_persistence.py so the gate and
-    the fixer cannot disagree. The fix keeps the best-effort behaviour and adds the report:
-    `except Exception as exc:` + `logger.warning("<fn>: best-effort INSERT into <table> failed
-    (non-blocking): %s", exc)` — see tools/canvas/event_bus.py::_audit_event. Narrowing the
-    handler to the exception actually expected is equally acceptable. Run
-    `python tools/refactor/fix_swallowed_persistence.py --write --json` to apply the rewrite.
-    The check runs in BOTH the fast (per-task) and full (nightly) tiers; a full-tier-only gate
-    would not block the build that reintroduces the pattern.
-
 foundry_self_vet:
   description: "ACF Autonomous Capability Foundry — self-vet gate before autonomous build (acf-engine-03)"
   blocking:

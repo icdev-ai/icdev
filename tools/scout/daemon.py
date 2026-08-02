@@ -24,7 +24,6 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import sys
 import time
@@ -143,34 +142,22 @@ def _feed_innovation_signals(findings: List[dict], config: dict) -> int:
             if f.get("relevance_score", 0) < min_score:
                 continue
             try:
-                now = _now()
-                url = f.get("url", "")
-                title = f.get("title", "")[:500]
-                # score/raw_data are not columns on innovation_signals
-                # (swp-scan-01); the live names are raw_score/metadata. And
-                # content_hash/discovered_at are NOT NULL with no default, so
-                # omitting them failed the row on its own. Every miss landed in
-                # the bare `except: pass` below, so Scout has never fed a single
-                # signal to the Innovation Engine.
                 conn.execute(
                     """INSERT INTO innovation_signals
                        (id, source, source_type, title, description, url,
-                        category, raw_score, metadata, content_hash,
-                        discovered_at, status, created_at)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s)""",
+                        category, score, raw_data, status, created_at)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s)""",
                     (
                         f.get("id", f"scout-sig-{uuid.uuid4().hex[:12]}"),
                         "scout_daemon",
                         f.get("category", "scout"),
-                        title,
+                        f.get("title", "")[:500],
                         f.get("description", "")[:2000],
-                        url,
+                        f.get("url", ""),
                         f.get("category", "scout"),
                         f.get("relevance_score", 0),
                         json.dumps(f.get("metadata", {})),
-                        hashlib.sha256(f"{url}|{title}".encode("utf-8")).hexdigest(),
-                        now,
-                        now,
+                        _now(),
                     ),
                 )
                 count += 1
@@ -200,16 +187,13 @@ def _update_heartbeat(config: dict, findings_count: int, duration_ms: int) -> No
         now = _now()
         # Upsert heartbeat check
         conn.execute(
-            # The live column is result_summary, not details (swp-scan-01) —
-            # the bare `except: pass` below meant no scout heartbeat ever
-            # landed.
-            """INSERT INTO heartbeat_checks (check_type, last_run, next_run, status, duration_ms, result_summary)
+            """INSERT INTO heartbeat_checks (check_type, last_run, next_run, status, duration_ms, details)
                VALUES (%s, %s, %s, 'healthy', %s, %s)
                ON CONFLICT(check_type) DO UPDATE SET
                    last_run = excluded.last_run,
                    status = 'healthy',
                    duration_ms = excluded.duration_ms,
-                   result_summary = excluded.result_summary""",
+                   details = excluded.details""",
             (check_name, now, now, duration_ms, json.dumps({"findings": findings_count, "scan_date": now[:10]})),
         )
         conn.commit()

@@ -19,10 +19,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tests._sql_compat import translating  # noqa: E402
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
+
+
+class _UnclosableConnection:
+    """Wrapper that ignores .close() so in-memory DB survives ingest_diagram's finally block."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def close(self) -> None:
+        pass  # Intentionally ignored
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
 
 
 @pytest.fixture
@@ -56,11 +67,8 @@ def mem_db():
         )
     """)
     conn.commit()
-    # ``ingest_diagram`` closes the connection in a finally block and writes
-    # PostgreSQL-style ``%s`` placeholders, so the fixture must both survive
-    # close() and translate — a bare sqlite3 connection raises
-    # ``near "%": syntax error`` on the first INSERT.
-    yield translating(conn, unclosable=True)
+    wrapper = _UnclosableConnection(conn)
+    yield wrapper
     conn.close()
 
 

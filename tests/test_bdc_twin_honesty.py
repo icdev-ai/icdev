@@ -28,12 +28,9 @@ TWIN_PY = ROOT / "tools" / "boundary_canvas" / "twin.py"
 _DDL = """
 CREATE TABLE project_controls (project_id TEXT);
 CREATE TABLE evidence (project_id TEXT);
--- `status`, not `implementation_status`: this fixture encoded a column the live
--- table has never had, so it kept asserting against the same wrong name the
--- snapshot INSERT used and could not see that INSERT failing (swp-scan-01).
 CREATE TABLE compliance_snapshots (
     snapshot_id TEXT, project_id TEXT, framework_id TEXT, control_id TEXT,
-    status TEXT, evidence_ref TEXT, taken_at TEXT
+    implementation_status TEXT, evidence_ref TEXT, taken_at TEXT
 );
 """
 

@@ -7,10 +7,7 @@
       "Glob",
       "Grep",
       "Bash(*)",
-      "PowerShell(*)",
-      "Bash(git worktree remove:*)",
-      "Bash(git worktree prune:*)",
-      "Bash(git worktree list:*)"
+      "PowerShell(*)"
     ],
     "deny": [
       "Bash(git push --force*)",
@@ -19,8 +16,6 @@
       "Bash(git branch -D *)",
       "Bash(git branch --delete *)",
       "Bash(rm -rf *)",
-      "Bash(git worktree remove --force*)",
-      "Bash(git worktree remove -f*)",
       "Bash(git reset --hard*)",
       "Bash(DROP TABLE*)",
       "Bash(TRUNCATE*)",
@@ -37,12 +32,7 @@
           {
             "type": "command",
             "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py || true"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/coordination.py --event pre_tool_use || true"

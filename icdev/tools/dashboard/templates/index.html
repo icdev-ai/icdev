@@ -866,13 +866,7 @@ document.addEventListener('DOMContentLoaded', function() {
             Loading…
         </div>
     </div>
-    {# Cortex Governance tile (governed AI facade: usage, block rate, spend).
-       Gated on the component actually being enabled: when ICDEV_CORTEX_ENABLED
-       is off the blueprint is never registered, /cortex/api/metrics/tile 404s,
-       and the tile rendered "Cortex metrics unavailable" — reporting a fault for
-       a canvas that is merely switched off. A disabled optional component is
-       neither idle nor broken, and the tile had no third state for it. #}
-    {% if component_enabled is not defined or component_enabled('cortex') %}
+    <!-- Cortex Governance tile (governed AI facade: usage, block rate, spend) -->
     <div class="card" style="padding: 20px;">
         <div class="card-label">Cortex Governance
             <span class="help-icon" title="Governed AI facade over the last 24h (from cortex_audit): calls, block rate, redactions, spend, and facade cache hits. Not the LLM prompt cache.">?</span>
@@ -881,7 +875,6 @@ document.addEventListener('DOMContentLoaded', function() {
             Loading…
         </div>
     </div>
-    {% endif %}
 </div>
 
 {# ── Recent Task Events — rendered below monitor cards by refreshProjectsInFlight() ── #}
@@ -1077,10 +1070,6 @@ document.addEventListener('DOMContentLoaded', function() {
 (function () {
     function renderCortexTile() {
         fetch('/cortex/api/metrics/tile').then(function (r) {
-            // 404 means the blueprint is not mounted (component disabled), which
-            // is NOT a fault — reporting it as one is what made a switched-off
-            // canvas look broken. Flagged separately from a genuine error.
-            if (r.status === 404) { var e = new Error('not-mounted'); e.notMounted = true; throw e; }
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
         }).then(function (d) {
@@ -1118,16 +1107,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 + '</div>'
                 + '<div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;">' + (d.blocked || 0) + ' blocked &middot; ' + (d.cache_hits || 0) + ' facade cache hits</div>'
                 + '<div style="margin-top:4px;"><a href="/cortex/metrics" class="btn" style="font-size:11px;padding:3px 10px;">View metrics</a></div>';
-        }).catch(function (err) {
+        }).catch(function () {
             var el = document.getElementById('tile-cortex');
-            if (!el) return;
-            if (err && err.notMounted) {
-                el.innerHTML = '<div style="color:var(--text-primary);font-size:12px;">Not enabled</div>'
-                    + '<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">The Cortex canvas is switched off, so no governance metrics are collected. Set <code>ICDEV_CORTEX_ENABLED=true</code> to enable it. This is not a fault.</div>';
-                return;
-            }
-            el.innerHTML = '<div style="color:#ef4444;font-size:12px;font-weight:600;">Metrics unavailable</div>'
-                + '<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">The tile request failed. This is a fault, not an idle or disabled system.</div>';
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Cortex metrics unavailable</div>';
         });
     }
     document.addEventListener('DOMContentLoaded', renderCortexTile);
