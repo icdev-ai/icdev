@@ -68,6 +68,14 @@ epic. The failure signature is also **not stable across runs** — it surfaced a
 which is consistent with shared-DB teardown order rather than a fixed schema gap. Isolating the
 polluter is the first FLOW work item; it is worth 11 of the epic's 36 failures on its own.
 
+> **RESOLVED** (`0393c7808`, `tsr-flow-01-d2`, 2026-08-01; re-verified under `tsr-agent-01-d4`).
+> The polluter was `test_workflow_hitl_api.py`, and the cause was not teardown order: the `tmp_db`
+> fixture patched only `tools.db.storage.get_connection`, so modules that had already run
+> `from tools.db.storage import get_connection` kept the original function object and read the
+> ambient DB. The unstable signature follows from that — the failure mode is "wrong database", so
+> the error depends on the ambient DB's state. Now **23 passed** solo and order-independent.
+> Full analysis: [`tsr-agent-01-d4-hitl-pollution.md`](tsr-agent-01-d4-hitl-pollution.md).
+
 ### `tools.kanban` — 5 files, 14 failed + 9 errors
 
 | file | failed | errors | passed | root cause |
