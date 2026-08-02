@@ -6034,7 +6034,12 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
         # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
         # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
         # runtime %s query then hits an untranslated raw sqlite3 connection.
-        safe_factories = _safe_connection_names(tree, _sql_compat_factory_names(tree))
+        # Trigger 1 wants the file-wide set: a patch replacement may name a
+        # connection bound anywhere in the file. Trigger 2 must NOT reuse it --
+        # it resolves per scope, and a file-wide set already contains the very
+        # names it needs to judge, which would clear every one of them.
+        compat_factories = _sql_compat_factory_names(tree)
+        safe_factories = _safe_connection_names(tree, compat_factories)
 
         flagged = False
         for node in ast.walk(tree):
@@ -6060,25 +6065,77 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
 
         # Trigger 2: a raw-sqlite-bound name passed as conn=<name> into a call while
         # %s SQL literals are present in the file.
+        #
+        # Resolved per function scope, not file-wide. `conn` is the obvious name for
+        # a connection, so one test binding it to sqlite3.connect for a read-only
+        # assertion and another binding it to a translating fixture is normal and
+        # correct. Pooling both into one set made the first taint the second and
+        # flagged the fixture that IS the fix -- the gate rejecting its own remedy,
+        # which is what tests/unit/test_audit_trail.py hit.
         if has_pct_s:
-            raw_names: Set[str] = set()
-            for node in ast.walk(tree):
+            # Module scope is the only shared scope: a name bound at module level IS
+            # visible to every function, so it is resolved once and inherited. Both
+            # halves -- raw and safe -- must come from `tree.body` alone. Reusing the
+            # file-wide `safe_factories` here would re-open the very leak this block
+            # closes, one level down: `conn = _factory()` inside ONE test would enter
+            # that set and clear `conn` for every other test in the file.
+            module_body = ast.Module(
+                body=[n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))],
+                type_ignores=[],
+            )
+            module_raw: Set[str] = set()
+            for node in module_body.body:
                 if isinstance(node, ast.Assign) and _is_sqlite_connect(node.value):
                     for tgt in node.targets:
                         if isinstance(tgt, ast.Name):
-                            raw_names.add(tgt.id)
-            if raw_names:
-                for node in ast.walk(tree):
-                    if not isinstance(node, ast.Call):
-                        continue
-                    for kw in node.keywords:
-                        if kw.arg == "conn" and isinstance(kw.value, ast.Name) and kw.value.id in raw_names:
-                            violations.append(
-                                f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
-                                f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
-                                f"Wrap in StorageConnection(conn, 'sqlite')."
-                            )
-                            break
+                            module_raw.add(tgt.id)
+            # Factory *functions* stay file-wide -- they are defs, not connections,
+            # so they cannot carry a per-test binding across scopes.
+            module_safe = _safe_connection_names(module_body, compat_factories)
+
+            # ast.walk is breadth-first, so the OUTERMOST enclosing function wins the
+            # setdefault. That is the conservative direction: a call inside a nested
+            # helper is judged against the whole outer test, whose scope walk already
+            # includes the helper's raw bindings.
+            enclosing: Dict[int, ast.AST] = {}
+            for fn in ast.walk(tree):
+                if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for sub in ast.walk(fn):
+                        enclosing.setdefault(id(sub), fn)
+
+            raw_cache: Dict[int, Set[str]] = {}
+
+            def _raw_in_scope(scope: ast.AST) -> Set[str]:
+                cached = raw_cache.get(id(scope))
+                if cached is not None:
+                    return cached
+                raw = set(module_raw)
+                if scope is not tree:
+                    for sub in ast.walk(scope):
+                        if isinstance(sub, ast.Assign) and _is_sqlite_connect(sub.value):
+                            for tgt in sub.targets:
+                                if isinstance(tgt, ast.Name):
+                                    raw.add(tgt.id)
+                    # A name rebound from a translating factory in this scope is not raw.
+                    raw -= _safe_connection_names(scope, module_safe)
+                raw_cache[id(scope)] = raw
+                return raw
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                for kw in node.keywords:
+                    if (
+                        kw.arg == "conn"
+                        and isinstance(kw.value, ast.Name)
+                        and kw.value.id in _raw_in_scope(enclosing.get(id(node), tree))
+                    ):
+                        violations.append(
+                            f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
+                            f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
+                            f"Wrap in StorageConnection(conn, 'sqlite')."
+                        )
+                        break
 
     if violations:
         tier = "fail" if changed_files else "warn"

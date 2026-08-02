@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Migration 325: re-derive audit_trail.event_type CHECK from VALID_EVENT_TYPES.
+"""Migration 327: re-derive audit_trail.event_type CHECK from VALID_EVENT_TYPES.
 
 Migration 318 reconciled the constraint with the constant. This run picks up
 the govcon event types added since, in two groups:
@@ -28,7 +28,7 @@ from tools.audit.audit_logger import (
 )
 from tools.db.storage import get_connection
 
-NAME = "325_audit_event_type_procurement_vehicle"
+NAME = "327_audit_event_type_procurement_vehicle"
 
 
 def up(conn=None) -> None:
