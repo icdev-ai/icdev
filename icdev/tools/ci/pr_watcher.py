@@ -711,6 +711,28 @@ class PRWatcher:
         )
 
         get_conn = self._connection()
+
+        # Reconcile task -> PR links before listing. `list_pr_tasks` can only
+        # see a PR via `executor_url`, which is written by exactly one path
+        # (kanban.py::_push_branch_and_open_pr) that requires a local
+        # `kanban/<id>` ref and the un-suffixed branch name. PRs opened any
+        # other way — notably retry branches like `kanban/<id>-r2` — were
+        # invisible here permanently. Best-effort: a linker failure must never
+        # stop the poll.
+        if self.config.get("link_prs_on_poll", True) and not task_id:
+            try:
+                from tools.kanban.pr_linker import link_open_prs
+
+                linked = link_open_prs(get_conn, dry_run=self.dry_run)
+                if linked["linked"]:
+                    logger.info(
+                        "pr_watcher: linked %d task(s) to their open PR: %s",
+                        len(linked["linked"]),
+                        ", ".join(e["task_id"] for e in linked["linked"]),
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("pr_watcher: PR link reconcile failed: %s", exc)
+
         try:
             tasks = list_pr_tasks(get_conn, task_id=task_id)
         except Exception as exc:
@@ -756,7 +778,9 @@ class PRWatcher:
             if state.get("statusCheckRollup"):
                 ci_logs = self._fetch_logs(pr_url, max_chars=ci_log_max)
 
-            classification = ec.classify_pr_state(state, ci_logs=ci_logs)
+            classification = ec.classify_pr_state(
+                state, ci_logs=ci_logs, require_approval=require_approval,
+            )
             cycle = self._resume_cycle(task["id"])
 
             if classification == KanbanState.DONE:
@@ -905,10 +929,20 @@ class PRWatcher:
                 continue
 
             if classification == KanbanState.PR_OPENED:
+                # Report why we are actually waiting. PR_OPENED is also the
+                # default fall-through, so a flat "CI still running" here
+                # misreports a green-but-unapproved PR as mid-CI and hides the
+                # real blocker.
+                if ec.is_in_progress(state):
+                    wait_reason = "CI still running"
+                elif ec.is_passing(state):
+                    wait_reason = "CI green; awaiting approving review"
+                else:
+                    wait_reason = "awaiting CI results"
                 action = WatcherAction(
                     task_id=task["id"], pr_url=pr_url,
                     classification=classification.value,
-                    action="wait", reason="CI still running",
+                    action="wait", reason=wait_reason,
                     resume_cycle=cycle,
                 )
                 report.actions.append(action)

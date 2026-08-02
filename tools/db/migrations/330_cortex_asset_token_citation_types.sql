@@ -1,5 +1,11 @@
 -- CUI // SP-CTI
--- Migration 329: 'cortex' + 'asset_token' citation types (cxo-trust-01).
+-- Renumbered 329 -> 330. Two other migrations already claimed 329
+-- (329_insert_column_schema_parity, merged first, and 329_runtime_invocations,
+-- in flight). schema_migrations.version is UNIQUE and the runner dedupes by
+-- version keeping the FIRST by sort order, so "329_cortex..." would have
+-- silently suppressed "329_insert..." forever on any fresh database.
+--
+-- Migration 330: 'cortex' + 'asset_token' citation types (cxo-trust-01).
 --
 -- Two subsystems have been writing provenance with a citation_type this
 -- vocabulary did not contain, and both failed silently for their entire

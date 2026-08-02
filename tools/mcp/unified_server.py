@@ -34,8 +34,22 @@ import importlib
 import json
 import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable, Dict
+
+# Invocation telemetry. Imported defensively: this server is the entry point for
+# every MCP client, and it must still start on a tree where the observability
+# package is unavailable (a partial checkout, an older wheel). Falling back to a
+# no-op context manager keeps the dispatch path identical in that case.
+try:
+    from tools.observability.invocation_recorder import SURFACE_MCP as _SURFACE_MCP
+    from tools.observability.invocation_recorder import record as _record_invocation
+except Exception:  # noqa: BLE001
+    _SURFACE_MCP = "mcp"
+
+    def _record_invocation(*_a, **_kw):  # type: ignore[misc]
+        return nullcontext()
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -164,7 +178,16 @@ class UnifiedMCPServer(MCPServer):
         def _make_handler(name: str, ent: dict) -> Callable:
             def lazy_handler(args: dict) -> Any:
                 handler = self._resolve_handler(name, ent)
-                return handler(args)
+                # Every one of the 512 registered tools passes through this
+                # closure, so this is the one place that can observe all of
+                # them. Before this, MCP had zero recorded invocations:
+                # measured 2026-08-02, `mcp_%`/`tool_%` events in audit_trail
+                # numbered 0 and no invocation table existed at all.
+                #
+                # Only argument KEY NAMES are recorded — never values. See
+                # tools/observability/invocation_recorder.py.
+                with _record_invocation(_SURFACE_MCP, name, arg_keys=args):
+                    return handler(args)
 
             return lazy_handler
 

@@ -27,6 +27,8 @@ from tools.aisg.sprint_seeder import seed_for_maturity
 # mirrors tests/test_nav_sec_06_mutation_rbac.py.
 pytestmark = pytest.mark.timeout(180)
 
+from _dashboard_auth_patch import dashboard_test_app_env  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Minimal schemas
 # ---------------------------------------------------------------------------
@@ -160,24 +162,32 @@ def aisg_app(tmp_path):
     conn.commit()
     conn.close()
 
-    import tools.dashboard.app as _app_mod
-    import tools.dashboard.auth as _auth_mod
-    import tools.dashboard.config as _cfg_mod
+    # dashboard_test_app_env() wraps the imports as well as create_app():
+    # tools/dashboard/app.py runs a module-level ``app = create_app()``, so the
+    # backend guard fires during the import below, not at the explicit call. It
+    # also patches get_user_by_id on both auth module spellings — the seeded
+    # dashboard_users row above is only reachable while the backend is SQLite, and
+    # the global auth hook (nav-sec-01) 401s every request without it. See
+    # tests/_dashboard_auth_patch.py.
+    with dashboard_test_app_env():
+        import tools.dashboard.app as _app_mod
+        import tools.dashboard.auth as _auth_mod
+        import tools.dashboard.config as _cfg_mod
 
-    with (
-        patch.object(_app_mod, "DB_PATH", db_path),
-        patch.object(_auth_mod, "DB_PATH", db_path),
-        patch.object(_cfg_mod, "DB_PATH", db_path),
-    ):
-        from tools.dashboard.app import create_app
-        app = create_app()
-        app.config["TESTING"] = True
+        with (
+            patch.object(_app_mod, "DB_PATH", db_path),
+            patch.object(_auth_mod, "DB_PATH", db_path),
+            patch.object(_cfg_mod, "DB_PATH", db_path),
+        ):
+            from tools.dashboard.app import create_app
+            app = create_app()
+            app.config["TESTING"] = True
 
-        if "aisg" not in app.blueprints:
-            from tools.aisg.blueprint import bp as _aisg_bp
-            app.register_blueprint(_aisg_bp)
+            if "aisg" not in app.blueprints:
+                from tools.aisg.blueprint import bp as _aisg_bp
+                app.register_blueprint(_aisg_bp)
 
-        yield app
+            yield app
 
 
 # ---------------------------------------------------------------------------

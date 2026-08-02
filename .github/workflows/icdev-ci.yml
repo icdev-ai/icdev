@@ -105,7 +105,10 @@ jobs:
             tests/test_session_context_builder.py \
             tests/test_code_analyzer.py \
             tests/test_component_registry.py \
+            tests/test_component_registry_ownership.py \
             tests/test_migration_version_uniqueness.py \
+            tests/ci/test_error_classifier.py \
+            tests/kanban/test_pr_linker.py \
             tests/test_verifier_contract.py \
             tests/test_dic_chat_memory_schema.py \
             tests/test_dic_chat_surfaces_send_session_id.py \
@@ -119,6 +122,7 @@ jobs:
             tests/test_freshness_guardian_parity.py \
             tests/test_data_canvas_mirror_parity.py \
             tests/test_quality_monitor_parity.py \
+            tests/test_ai_gameday_mirror_parity.py \
             tests/test_no_direct_provider_calls.py \
             tests/test_coordination_lease_namespaces.py \
             tests/test_dic_claim_grounding_wiring.py \
@@ -140,6 +144,7 @@ jobs:
             tests/test_context_budget.py \
             tests/test_init_goals_and_selective.py \
             tests/test_coherence_swallowed_persistence.py \
+            tests/test_analyzer_contract.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
