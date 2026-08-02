@@ -22,6 +22,11 @@ Usage:
     # CLI toggles
     toggles = registry.get_toggles()
 
+    # Ownership ("who owns this?" — the IDP catalog question)
+    registry.get_owner("ndc")            # -> str | None
+    registry.list_unowned()              # -> components nobody is accountable for
+    registry.get_ownership_summary()     # -> coverage counts for the scorecard
+
 The loader is deterministic and read-only: it only inspects the registry file
 and environment variables. It does not write files or mutate global state.
 """
@@ -60,6 +65,46 @@ def _find_repo_root() -> tuple[Path, Path]:
 
 
 BASE_DIR, DEFAULT_REGISTRY_PATH = _find_repo_root()
+
+
+# ---------------------------------------------------------------------------
+# Ownership
+# ---------------------------------------------------------------------------
+
+#: Values that look like an owner but assert nothing. A component carrying one
+#: of these is reported as UNOWNED, not as owned-by-"TBD". A wrong owner is
+#: worse than a blank one: it routes an incident to nobody while reading as
+#: answered.
+UNOWNED_SENTINELS = frozenset(
+    {
+        "",
+        "-",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "tbd",
+        "todo",
+        "unassigned",
+        "unknown",
+        "unowned",
+    }
+)
+
+
+def _clean_ownership_field(value: Any) -> str | None:
+    """Normalize one ownership field to a real value or ``None``.
+
+    Anything blank, non-scalar, or in :data:`UNOWNED_SENTINELS` becomes
+    ``None`` so that "declared but meaningless" and "not declared" collapse to
+    the single reportable state: unowned.
+    """
+    if value is None or isinstance(value, (dict, list, tuple, set)):
+        return None
+    text = str(value).strip()
+    if text.lower() in UNOWNED_SENTINELS:
+        return None
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +182,37 @@ class Component:
     iqe: dict[str, Any]
     completeness: dict[str, Any]
     raw: dict[str, Any]
+    # --- Ownership (all optional; declared last so existing positional
+    # construction of Component keeps working) --------------------------------
+    #: Team or individual accountable for this component. NOT the same thing as
+    #: ``default_roles``, which is an RBAC access list (who may *use* the
+    #: canvas), not who answers for it.
+    owner: str | None = None
+    #: How to reach the owner — email, chat handle, distribution list, URL.
+    owner_contact: str | None = None
+    #: On-call rotation or escalation handle for production issues.
+    on_call: str | None = None
+
+    @property
+    def is_owned(self) -> bool:
+        """True when a real owner is declared (sentinels do not count)."""
+        return self.owner is not None
+
+    def ownership(self) -> dict[str, Any]:
+        """Return this component's ownership record.
+
+        ``owned`` is the authoritative answer to "does anyone own this?" —
+        callers should branch on it rather than truth-testing ``owner``.
+        """
+        return {
+            "key": self.key,
+            "kind": self.kind,
+            "display_name": self.display_name,
+            "owned": self.is_owned,
+            "owner": self.owner,
+            "owner_contact": self.owner_contact,
+            "on_call": self.on_call,
+        }
 
     def is_enabled(self, env: dict[str, str] | None = None) -> bool:
         """Return True if the component's primary env flag is enabled.
@@ -297,6 +373,11 @@ class ComponentRegistry:
         nav = dict(raw.get("nav", {}) or {})
         iqe = dict(raw.get("iqe", {}) or {})
         completeness = dict(raw.get("completeness", {}) or {})
+        # Ownership is optional by design: a required field would fail the whole
+        # registry load for the entries that legitimately have no owner yet.
+        owner = _clean_ownership_field(raw.get("owner"))
+        owner_contact = _clean_ownership_field(raw.get("owner_contact"))
+        on_call = _clean_ownership_field(raw.get("on_call"))
 
         if kind not in ("feature", "core_extension"):
             if not module:
@@ -323,6 +404,9 @@ class ComponentRegistry:
             iqe=iqe,
             completeness=completeness,
             raw=raw,
+            owner=owner,
+            owner_contact=owner_contact,
+            on_call=on_call,
         )
 
     # ------------------------------------------------------------------
@@ -363,6 +447,55 @@ class ComponentRegistry:
     def iter_enabled(self, kind: str | None = None) -> Iterator[Component]:
         """Yield enabled components."""
         return iter(self.list_enabled(kind))
+
+    # ------------------------------------------------------------------
+    # Ownership
+    # ------------------------------------------------------------------
+
+    def get_owner(self, key: str) -> str | None:
+        """Return the declared owner of a component, or None if unowned.
+
+        Returns None both for an unowned component and for an unregistered
+        key. Use ``key in registry`` first when the distinction matters.
+        """
+        comp = self._by_key.get(key)
+        return comp.owner if comp is not None else None
+
+    def list_owned(self, kind: str | None = None) -> list[Component]:
+        """Return components that declare a real owner."""
+        return [c for c in self.list_all(kind) if c.is_owned]
+
+    def list_unowned(self, kind: str | None = None) -> list[Component]:
+        """Return components with no accountable owner.
+
+        This is the input to the IDP scorecard's ownership rule: an unowned
+        component is a finding, never a component silently attributed to a
+        default team.
+        """
+        return [c for c in self.list_all(kind) if not c.is_owned]
+
+    def get_ownership_map(self) -> dict[str, dict[str, Any]]:
+        """Return ``{component_key: ownership record}`` for every component."""
+        return {c.key: c.ownership() for c in self._components}
+
+    def get_ownership_summary(self, kind: str | None = None) -> dict[str, Any]:
+        """Return ownership coverage counts for scorecard reporting."""
+        components = self.list_all(kind)
+        unowned = [c.key for c in components if not c.is_owned]
+        total = len(components)
+        owned = total - len(unowned)
+        return {
+            "kind": kind,
+            "total": total,
+            "owned": owned,
+            "unowned": len(unowned),
+            "unowned_keys": sorted(unowned),
+            "coverage_pct": round(owned / total * 100, 1) if total else 0.0,
+            "with_contact": sum(
+                1 for c in components if c.owner_contact is not None
+            ),
+            "with_on_call": sum(1 for c in components if c.on_call is not None),
+        }
 
     def is_enabled(self, key: str) -> bool:
         """Return True if the named component is enabled by env/default."""

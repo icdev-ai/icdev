@@ -33,13 +33,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_items_source
 """
 
 
-def up() -> None:
-    with get_connection() as conn:
+def up(conn=None) -> dict:
+    """Create evidence_items.
+
+    The runner calls ``mod.up(conn)`` and owns the transaction. This previously
+    declared ``up()`` with no parameters and opened its own connection, so the
+    runner raised ``TypeError: up() takes 0 positional arguments but 1 was
+    given`` — it would have failed on first contact with the runner. Nobody
+    found out because migration 211 shares its version with
+    211_idr_tables.sql, which sorts first, so this one was never dispatched.
+
+    ``conn`` stays optional so the ``__main__`` path below still works
+    standalone; committing is left to the runner when it owns the connection.
+    """
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        created = 0
         for stmt in DDL.strip().split(";"):
             s = stmt.strip()
             if s:
                 conn.execute(s)
-        conn.commit()
+                created += 1
+        if own:
+            conn.commit()
+        return {"statements": created}
+    finally:
+        if own:
+            conn.close()
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
+from _dashboard_auth_patch import dashboard_test_app_env
+
 # ---------------------------------------------------------------------------
 # Minimal auth schema (mirrors test_aisg_wizard.py pattern)
 # ---------------------------------------------------------------------------
@@ -51,10 +53,19 @@ def ks_app(tmp_path):
     conn.commit()
     conn.close()
 
-    # Patch _auto_provision_env_key BEFORE the import so the module-level
-    # create_app() call (tools/dashboard/app.py:<module>) doesn't hit
-    # get_connection() before any test schema exists.
-    with patch("tools.dashboard.auth._auto_provision_env_key", return_value=None):
+    # dashboard_test_app_env() must be OUTERMOST: tools/dashboard/app.py runs a
+    # module-level ``app = create_app()``, so the backend guard fires during the
+    # import below — before any context manager entered after it. It also patches
+    # get_user_by_id on both auth module spellings; the seeded dashboard_users row
+    # above is only reachable while the backend is SQLite, and the global auth hook
+    # (nav-sec-01) 401s every request without it. See tests/_dashboard_auth_patch.py.
+    #
+    # Patch _auto_provision_env_key BEFORE the import too, so that module-level
+    # create_app() doesn't hit get_connection() before any test schema exists.
+    with (
+        dashboard_test_app_env(),
+        patch("tools.dashboard.auth._auto_provision_env_key", return_value=None),
+    ):
         import tools.dashboard.app as _app_mod
         import tools.dashboard.auth as _auth_mod
 
@@ -63,6 +74,7 @@ def ks_app(tmp_path):
             patch.object(_auth_mod, "DB_PATH", db_path),
             # Prevent 60+ PG queries from blocking the page load in unit tests.
             patch("tools.rag.ingestion_manager.get_status", return_value=None),
+            dashboard_test_app_env(),
         ):
             app = _app_mod.create_app()
             app.config["TESTING"] = True

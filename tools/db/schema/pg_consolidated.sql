@@ -20612,6 +20612,20 @@ CREATE TABLE public.nc_simulation_artifacts (
 
 
 --
+-- Name: nc_simulation_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_simulation_results (
+    id text NOT NULL,
+    topology_id text,
+    sim_type text NOT NULL,
+    input_json text DEFAULT '{}'::text,
+    result_json text DEFAULT '{}'::text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: nc_simulation_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -29773,7 +29787,7 @@ CREATE TABLE public.source_citation_registry (
     project_id text,
     trust_score real DEFAULT 0.0,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text])))
+    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text, 'cortex'::text, 'asset_token'::text])))
 );
 
 
@@ -42849,6 +42863,14 @@ ALTER TABLE ONLY public.nc_lab_clones
 
 ALTER TABLE ONLY public.nc_simulation_artifacts
     ADD CONSTRAINT nc_simulation_artifacts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_simulation_results nc_simulation_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_simulation_results
+    ADD CONSTRAINT nc_simulation_results_pkey PRIMARY KEY (id);
 
 
 --
@@ -61714,6 +61736,14 @@ ALTER TABLE ONLY public.mission_versions
 
 ALTER TABLE ONLY public.nc_simulation_artifacts
     ADD CONSTRAINT nc_simulation_artifacts_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.nc_simulation_runs(id);
+
+
+--
+-- Name: nc_simulation_results nc_simulation_results_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_simulation_results
+    ADD CONSTRAINT nc_simulation_results_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
 
 
 --

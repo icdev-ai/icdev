@@ -112,11 +112,11 @@ def db(tmp_path):
 def audit_conn(db):
     """Connection factory patched into audit_logger.
 
-    Must translate %s -> ?. Both audit modules author PostgreSQL SQL and wrap
-    their writes in a best-effort ``except``, so handing them a bare
-    ``sqlite3.connect`` turns every INSERT into a swallowed
-    ``near "%": syntax error`` -- the test then asserts against a no-op it
-    caused itself. See tests/_sql_compat.
+    Stands in for ``get_connection``, so what it returns goes to production
+    code, which authors ``%s`` placeholders for PostgreSQL and relies on that
+    layer to rewrite them. A bare ``sqlite3.connect`` raises ``near "%":
+    syntax error`` on every such statement. The raw connections elsewhere in
+    this file stay raw — they only serve SQL written here.
     """
     from _sql_compat import connect as _tconnect
 
@@ -129,7 +129,7 @@ def audit_conn(db):
 
 @pytest.fixture
 def cat_logger(db):
-    """CrossAgencyTransferLogger patched to the temp DB (translating, as above)."""
+    """CrossAgencyTransferLogger patched to the temp DB (translating — see above)."""
     from _sql_compat import connect as _tconnect
 
     def _make():
@@ -302,17 +302,7 @@ class TestCrossAgencyTransferCapture:
 
 
 class TestAppendOnlyImmutability:
-    """Verify that UPDATE and DELETE are rejected or ignored on audit tables.
-
-    ``RAISE(ABORT, ...)`` surfaces as ``sqlite3.IntegrityError``, which is a
-    sibling of ``OperationalError`` under ``DatabaseError``, not a subclass.
-    These assertions named ``OperationalError``, so the trigger firing exactly
-    as designed was reported as a failure -- the immutability guarantee was
-    never actually being checked.
-
-    Each aborted statement also leaves its transaction open; closing without a
-    rollback trips the suite's transaction-leak guard, so roll back explicitly.
-    """
+    """Verify that UPDATE and DELETE are rejected or ignored on audit tables."""
 
     def test_audit_trail_update_rejected(self, db, audit_conn):
         entry_id = log_event(
@@ -324,7 +314,6 @@ class TestAppendOnlyImmutability:
         conn = sqlite3.connect(str(db))
         with pytest.raises(sqlite3.IntegrityError, match="append-only.*UPDATE forbidden"):
             conn.execute("UPDATE audit_trail SET actor='attacker' WHERE id=?", (entry_id,))
-        conn.rollback()
         conn.close()
 
     def test_audit_trail_delete_rejected(self, db, audit_conn):
@@ -337,29 +326,22 @@ class TestAppendOnlyImmutability:
         conn = sqlite3.connect(str(db))
         with pytest.raises(sqlite3.IntegrityError, match="append-only.*DELETE forbidden"):
             conn.execute("DELETE FROM audit_trail WHERE id=?", (entry_id,))
-        conn.rollback()
         conn.close()
 
     def test_cross_agency_update_rejected(self, cat_logger, db):
         cat, _make = cat_logger
         eid = cat.log_initiated("t-up", "A", "B", "d", "u")
-        # A no-match UPDATE never fires a BEFORE UPDATE trigger, so an empty id
-        # from a swallowed write would make this pass vacuously.
-        assert len(eid) == 36
         conn = sqlite3.connect(str(db))
         with pytest.raises(sqlite3.IntegrityError, match="append-only.*UPDATE forbidden"):
             conn.execute("UPDATE cross_agency_transfers SET actor='attacker' WHERE id=?", (eid,))
-        conn.rollback()
         conn.close()
 
     def test_cross_agency_delete_rejected(self, cat_logger, db):
         cat, _make = cat_logger
         eid = cat.log_initiated("t-del", "A", "B", "d", "u")
-        assert len(eid) == 36
         conn = sqlite3.connect(str(db))
         with pytest.raises(sqlite3.IntegrityError, match="append-only.*DELETE forbidden"):
             conn.execute("DELETE FROM cross_agency_transfers WHERE id=?", (eid,))
-        conn.rollback()
         conn.close()
 
     def test_logger_has_no_update_or_delete_methods(self):

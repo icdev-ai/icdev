@@ -297,7 +297,7 @@ def register_topology_routes(bp):
             "nc_discovery_scans",
             "nc_mc_runs",
             "nc_mc_scenarios",
-            "simulation_results",
+            "nc_simulation_results",
             "nc_objects",
             "nc_circuits",
             "nc_cables",
@@ -334,7 +334,7 @@ def register_topology_routes(bp):
     @nc_login_required
     def nc_api_clear_all_simulations():
         conn = get_connection()
-        conn.execute("DELETE FROM simulation_results")
+        conn.execute("DELETE FROM nc_simulation_results")
         conn.execute("DELETE FROM nc_mc_runs")
         conn.execute("DELETE FROM nc_mc_scenarios")
         conn.commit()
@@ -938,7 +938,7 @@ def register_topology_routes(bp):
         conn = get_connection()
         _ph = sql_placeholder(conn)
         conn.execute(
-            "INSERT INTO simulation_results (id, topology_id, sim_type, input_json, result_json, ran_at) "
+            "INSERT INTO nc_simulation_results (id, topology_id, sim_type, input_json, result_json, ran_at) "
             f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
             (sim_id, topo_id, sim_type, json.dumps(data), json.dumps(result), now),
         )

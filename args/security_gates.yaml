@@ -88,6 +88,27 @@ db_abstraction_lint:
     backup_manager.py, */init_db.py.  Suppress a single line with # sqlite3-ok
     only when a direct connection genuinely cannot be avoided.
 
+# Citation-type vocabulary gate (cxo-trust-02) — blocks a citation_type literal
+# that is not in tools/provenance/citation_types.py::CITATION_TYPES.
+#
+# register_citation() validates the vocabulary BEFORE the INSERT and raises
+# ValueError; every caller swallows it, so an unknown value means the citation is
+# never written — silently, forever. Two subsystems shipped exactly that and
+# neither was noticed: tools/cortex/governance.py ("cortex") wrote 0 of 285
+# registry rows while its gate recorded "warn", and tools/blockchain/
+# asset_ledger.py ("asset_token") left anchor_status "skipped" so GovChain asset
+# tokenization never anchored. Two subsystems, one missing gate.
+# Run: python tools/lint/citation_type_linter.py --json --gate
+citation_type_vocabulary:
+  blocking:
+    - unknown_citation_type   # citation_type="..." absent from CITATION_TYPES
+  note: >
+    Detected by tools/lint/citation_type_linter.py. Fix by adding the value to
+    CITATION_TYPES and shipping a migration rendered from check_constraint_sql(),
+    or by correcting the typo — never by widening the linter. tests/ are exempt
+    (a test may assert a bogus type is rejected) and a single line can be
+    suppressed with # citation-type-ok when the value is validated elsewhere.
+
 # New Page Completeness Gate (TCH — True Completion Hardening)
 # Blocks merges when a new dashboard page ships without all 8 required components
 # (template, icdev/ mirror, blueprint route, backing module, nav link, IQE adapter,

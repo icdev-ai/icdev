@@ -160,8 +160,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     continue
                 task_id = "mc-reflex-" + uuid.uuid4().hex[:8]
                 ic.execute(
+                    # `source` is not a column — the live column is
+                    # `dispatch_source` (swp-scan-01), so no NMCE finding was
+                    # ever promoted to the board.
                     """INSERT OR IGNORE INTO kanban_tasks
-                       (id, title, description, status, priority, source, created_at, updated_at)
+                       (id, title, description, status, priority, dispatch_source, created_at, updated_at)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         task_id,

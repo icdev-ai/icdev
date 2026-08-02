@@ -26,6 +26,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tools.logging.icdev_logger import get_logger
+from tools.observability.invocation_recorder import (
+    SURFACE_PERSONA as _SURFACE_PERSONA,
+)
+from tools.observability.invocation_recorder import record as _record_invocation
 
 logger = get_logger("icdev.ace.controller")
 
@@ -370,7 +374,37 @@ class ACEController:
         webhook_url: str = "",
         role_ids: list[str] | None = None,
     ) -> None:
-        """Full orchestration pipeline executed in ThreadPoolExecutor."""
+        """Full orchestration pipeline executed in ThreadPoolExecutor.
+
+        Observed here rather than in ``launch()``: launch only submits to the
+        executor and returns immediately, so timing it would record ~0ms for
+        every persona run. This is where the work actually happens.
+
+        Before this, the persona surface emitted nothing at all — measured
+        2026-08-02, zero ``persona_*``/``coworker_*``/``ace_*`` events in
+        audit_trail and ``ace_sessions`` held 0 rows.
+        """
+        with _record_invocation(
+            _SURFACE_PERSONA,
+            f"{trigger_source}:{trigger_ref}"[:120] or instance_id,
+            project_id=project_id or "",
+            parent_id=instance_id,
+        ):
+            self._run_inner(instance_id, problem_text, trigger_source, trigger_ref,
+                            user_id, project_id, webhook_url, role_ids)
+
+    def _run_inner(
+        self,
+        instance_id: str,
+        problem_text: str,
+        trigger_source: str,
+        trigger_ref: str,
+        user_id: str,
+        project_id: str,
+        webhook_url: str = "",
+        role_ids: list[str] | None = None,
+    ) -> None:
+        """The original _run body — see the observed wrapper above."""
         self._emit_sse(instance_id, "assembling", "Classifying problem")
         try:
             # 0. Wiki context (Item 2): enrich problem_text with relevant wiki knowledge
@@ -717,8 +751,10 @@ class ACEController:
             conn = get_connection()
             conn.execute(
                 """
+                -- The column is dispatch_source; `source` has never existed on
+                -- kanban_tasks, so this card was never created (swp-scan-01).
                 INSERT INTO kanban_tasks
-                    (id, title, description, status, priority, source, created_at, updated_at)
+                    (id, title, description, status, priority, dispatch_source, created_at, updated_at)
                 VALUES (%s, %s, %s, 'backlog', 'high', 'ace_trust', %s, %s)
                 """,
                 (

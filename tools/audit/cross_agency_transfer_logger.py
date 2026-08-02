@@ -212,10 +212,13 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
                 "event_log_id": event_id,
             }
         )
-        # audit_trail.id is a SERIAL/AUTOINCREMENT integer and the timestamp
-        # column is created_at — this wrote a uuid string into id and named a
-        # recorded_at column that does not exist, so the mirror always raised
-        # and was swallowed by the except below.
+        # ``audit_trail.id`` is an autoincrementing integer key. Supplying a
+        # uuid string made every mirror INSERT raise "datatype mismatch",
+        # which the except below swallowed — the AU-2 dual-write never landed.
+        # Omit it, matching tools/audit/audit_logger.py. The timestamp column is
+        # created_at — recorded_at exists only in tools/db/init_icdev_db.py,
+        # never on PostgreSQL, so this mirror had never written a row
+        # (swp-scan-01).
         conn.execute(
             """
             INSERT INTO audit_trail
@@ -235,7 +238,7 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
         )
         conn.commit()
     except Exception:
-        log.warning("audit_trail mirror failed — cross_agency_transfers row still committed")
+        log.exception("audit_trail mirror failed — cross_agency_transfers row still committed")
 
 
 def query_by_transfer_id(transfer_id: str) -> list[dict]:

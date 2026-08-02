@@ -29,9 +29,6 @@ import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
-
-logger = get_logger("icdev.kanban.cli")
 
 _REPO_MARKERS = ("args/projects.yaml", "goals/manifest.md")
 
@@ -87,6 +84,16 @@ if str(_repo_root) not in sys.path:
 
 from dotenv import load_dotenv  # noqa: E402
 load_dotenv(_repo_root / ".env")
+
+# Must stay BELOW the sys.path bootstrap above. As a top-level import it ran
+# before the marker-walk had put the repo root on sys.path, so
+# `python tools/kanban/cli.py` — the invocation CLAUDE.md documents and worker
+# sessions use to report their own completion — died at import with
+# "ModuleNotFoundError: No module named 'tools'" whenever PYTHONPATH was unset.
+# Running the script by path puts tools/kanban/ on sys.path[0], never the root.
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+
+logger = get_logger("icdev.kanban.cli")
 
 # Import the repo-local shim (``tools.db.storage``) — NEVER ``icdev.tools.*``,
 # which a globally-installed editable ``icdev`` package from a foreign repo can

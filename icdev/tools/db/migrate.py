@@ -75,7 +75,10 @@ def main():
     parser.add_argument("--converge", action="store_true",
                         help="Apply in repeated passes until fixpoint (tolerates out-of-order migrations)")
     parser.add_argument("--validate", action="store_true", help="Validate migration checksums")
-    parser.add_argument("--create", metavar="NAME", help="Create new migration scaffold")
+    parser.add_argument("--create", metavar="NAME",
+                        help="Create new migration scaffold (allocates a "
+                             "YYYYMMDDHHMMSS version — always use this rather "
+                             "than hand-numbering)")
     parser.add_argument("--mark-applied", metavar="VERSION", help="Mark version as applied")
     parser.add_argument("--all-tenants", action="store_true", help="Apply to all tenant DBs too")
     parser.add_argument("--json", action="store_true", help="JSON output")

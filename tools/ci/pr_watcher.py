@@ -633,6 +633,69 @@ class PRWatcher:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False
 
+    def reclaim_worktree(self, task_id: str) -> dict:
+        """Remove a task's worktree once its PR is merged.
+
+        Creation was bounded; reclamation was not. Measured 2026-08-02: 122
+        registered worktrees, recursively nested, several locked — the leak
+        undercuts the delivery pipeline, which is otherwise the platform's
+        strongest differentiator.
+
+        SAFETY, in order. Each check exists because a worktree can hold the only
+        copy of a session's work, and a removed commit that is not on a branch
+        is not recoverable by any ordinary means:
+
+          * merged-ness is the caller's precondition, but it is re-checked here
+            against origin rather than trusted;
+          * a worktree with uncommitted changes is left alone — someone may be
+            mid-edit even after the PR merged;
+          * commits not reachable from the default branch hold it;
+          * ``--force`` is NEVER used, so git's own refusal is a final backstop.
+
+        Returns a verdict dict rather than a bool so the reason is auditable.
+        """
+        import subprocess
+        from pathlib import Path
+
+        def _git(*args, cwd=None):
+            proc = subprocess.run(
+                ["git", *(["-C", cwd] if cwd else []), *args],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120,
+            )
+            return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+
+        try:
+            from tools.genesis.reflexes.kanban import _task_worktree_path
+            path = Path(_task_worktree_path(task_id))
+        except Exception as exc:  # noqa: BLE001
+            return {"reclaimed": False, "reason": f"path resolution failed: {exc}"}
+
+        if not path.exists():
+            _git("worktree", "prune")
+            return {"reclaimed": False, "reason": "already gone", "pruned": True}
+
+        code, dirty, _ = _git("status", "--porcelain", cwd=str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": "status unreadable"}
+        if dirty:
+            return {"reclaimed": False, "reason": "uncommitted changes present"}
+
+        base = self._default_branch()
+        code, ahead, _ = _git("rev-list", "--count", f"origin/{base}..HEAD", cwd=str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": "ahead-count unreadable"}
+        if ahead != "0":
+            return {"reclaimed": False, "reason": f"{ahead} commits not on origin/{base}"}
+
+        code, _, err = _git("worktree", "remove", str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": f"git refused: {err.splitlines()[-1][:120] if err else '?'}"}
+
+        _git("worktree", "prune")
+        logger.info("pr_watcher: reclaimed worktree for %s at %s", task_id, path)
+        return {"reclaimed": True, "path": str(path)}
+
     def _resume_cycle(self, task_id: str) -> int:
         """Best-effort count of prior pr_watcher resume events for this
         task. Reads audit_trail details JSON."""
@@ -711,6 +774,28 @@ class PRWatcher:
         )
 
         get_conn = self._connection()
+
+        # Reconcile task -> PR links before listing. `list_pr_tasks` can only
+        # see a PR via `executor_url`, which is written by exactly one path
+        # (kanban.py::_push_branch_and_open_pr) that requires a local
+        # `kanban/<id>` ref and the un-suffixed branch name. PRs opened any
+        # other way — notably retry branches like `kanban/<id>-r2` — were
+        # invisible here permanently. Best-effort: a linker failure must never
+        # stop the poll.
+        if self.config.get("link_prs_on_poll", True) and not task_id:
+            try:
+                from tools.kanban.pr_linker import link_open_prs
+
+                linked = link_open_prs(get_conn, dry_run=self.dry_run)
+                if linked["linked"]:
+                    logger.info(
+                        "pr_watcher: linked %d task(s) to their open PR: %s",
+                        len(linked["linked"]),
+                        ", ".join(e["task_id"] for e in linked["linked"]),
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("pr_watcher: PR link reconcile failed: %s", exc)
+
         try:
             tasks = list_pr_tasks(get_conn, task_id=task_id)
         except Exception as exc:
@@ -756,13 +841,30 @@ class PRWatcher:
             if state.get("statusCheckRollup"):
                 ci_logs = self._fetch_logs(pr_url, max_chars=ci_log_max)
 
-            classification = ec.classify_pr_state(state, ci_logs=ci_logs)
+            classification = ec.classify_pr_state(
+                state, ci_logs=ci_logs, require_approval=require_approval,
+            )
             cycle = self._resume_cycle(task["id"])
 
             if classification == KanbanState.DONE:
                 merged = (
                     (state.get("state") or "").upper() == "MERGED"
                 )
+                if merged:
+                    # Reclaim here rather than at task-done: this is the point
+                    # where the watcher OBSERVES the merge, and it is the only
+                    # place that knows the PR actually landed. Best-effort —
+                    # a failed reclaim must never hold up the done transition.
+                    try:
+                        verdict = self.reclaim_worktree(task["id"])
+                        if not verdict.get("reclaimed"):
+                            logger.debug(
+                                "pr_watcher: worktree for %s not reclaimed (%s)",
+                                task["id"], verdict.get("reason"),
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("pr_watcher: worktree reclaim errored: %s", exc)
+
                 if merged or not self.config.get("auto_merge_enabled", False):
                     action_label = "merge" if merged else "wait"
                     reason = (
@@ -905,10 +1007,20 @@ class PRWatcher:
                 continue
 
             if classification == KanbanState.PR_OPENED:
+                # Report why we are actually waiting. PR_OPENED is also the
+                # default fall-through, so a flat "CI still running" here
+                # misreports a green-but-unapproved PR as mid-CI and hides the
+                # real blocker.
+                if ec.is_in_progress(state):
+                    wait_reason = "CI still running"
+                elif ec.is_passing(state):
+                    wait_reason = "CI green; awaiting approving review"
+                else:
+                    wait_reason = "awaiting CI results"
                 action = WatcherAction(
                     task_id=task["id"], pr_url=pr_url,
                     classification=classification.value,
-                    action="wait", reason="CI still running",
+                    action="wait", reason=wait_reason,
                     resume_cycle=cycle,
                 )
                 report.actions.append(action)

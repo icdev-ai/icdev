@@ -25,6 +25,39 @@ import sys
 from fnmatch import fnmatch
 from pathlib import Path
 
+# Cheap pre-guard for the append-only table check. Every protected-table pattern
+# requires one of these verbs, so a command containing none of them cannot match
+# and we can skip the (much larger) alternation entirely. The overwhelming
+# majority of Bash calls are not SQL at all.
+_SQL_MUTATION_VERB_RE = re.compile(r"\b(?:update|delete|drop|truncate)\b")
+
+# Built once per process from APPEND_ONLY_TABLES, then reused. Previously this
+# check compiled three f-string regexes per table per call — 350+ tables, so
+# ~1000 patterns per Bash call. re's internal cache holds 512, so it was blown
+# and flushed on every single invocation and nothing was ever reused.
+_APPEND_ONLY_PATTERNS = None
+
+
+def _append_only_patterns(tables):
+    """Compile (and memoize) the protected-table patterns.
+
+    One alternation per SQL shape instead of three regexes per table. Matching
+    is equivalent: the original returned True if ANY table matched ANY shape.
+    """
+    global _APPEND_ONLY_PATTERNS
+    if _APPEND_ONLY_PATTERNS is None:
+        # De-duplicated (the source list has a few repeats) and longest-first so
+        # the alternation prefers the most specific table name.
+        alt = "|".join(
+            re.escape(t) for t in sorted(set(tables), key=lambda t: (-len(t), t))
+        )
+        _APPEND_ONLY_PATTERNS = (
+            re.compile(rf"(?:update|delete)\s+(?:from\s+)?(?:{alt})"),
+            re.compile(rf"drop\s+table\s+.*(?:{alt})"),
+            re.compile(rf"truncate\s+.*(?:{alt})"),
+        )
+    return _APPEND_ONLY_PATTERNS
+
 
 def is_dangerous_rm_command(command: str) -> bool:
     """Detect dangerous rm commands."""
@@ -682,25 +715,48 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # inserts, every other reference is a SELECT). Rows never UPDATE/DELETE.
         "ttx_api_log",
     ]
+    # NOTE: runtime_invocations (migration 341) is deliberately NOT listed. It
+    # is telemetry with a genuine lifecycle — the recorder opens a row 'running'
+    # and UPDATEs it closed with duration and status — so it is not append-only
+    # and claiming otherwise here would both misdescribe it and block legitimate
+    # repair. Audit EVIDENCE belongs above; operational telemetry does not.
 
     if tool_name == "Bash":
         command = tool_input.get("command", "").lower()
-        for table in APPEND_ONLY_TABLES:
-            # Block SQL UPDATE/DELETE on protected table
-            if re.search(rf"(update|delete)\s+(from\s+)?{table}", command):
-                return True
-            # Block DROP TABLE on protected table
-            if re.search(rf"drop\s+table\s+.*{table}", command):
-                return True
-            # Block TRUNCATE on protected table
-            if re.search(rf"truncate\s+.*{table}", command):
+        # Every pattern below requires one of these verbs, so a command without
+        # any of them cannot match. Skipping the alternation here is what keeps
+        # this hook off the critical path for ordinary (non-SQL) shell commands.
+        if not _SQL_MUTATION_VERB_RE.search(command):
+            return False
+        # UPDATE/DELETE, DROP TABLE, and TRUNCATE against any protected table.
+        for pattern in _append_only_patterns(APPEND_ONLY_TABLES):
+            if pattern.search(command):
                 return True
 
     return False
 
 
+_FILE_ACCESS_TIERS_CACHE = None  # sentinel below distinguishes "not loaded" from "None"
+_FILE_ACCESS_TIERS_LOADED = False
+
+
 def _load_file_access_tiers():
-    """Load file access tier config from args/file_access_tiers.yaml."""
+    """Load file access tier config from args/file_access_tiers.yaml.
+
+    Memoized: this is called for every tool call, and re-parsing the YAML from
+    disk each time bought nothing — the hook is a short-lived process, so the
+    config cannot change underneath a single invocation.
+    """
+    global _FILE_ACCESS_TIERS_CACHE, _FILE_ACCESS_TIERS_LOADED
+    if _FILE_ACCESS_TIERS_LOADED:
+        return _FILE_ACCESS_TIERS_CACHE
+    _FILE_ACCESS_TIERS_LOADED = True
+    _FILE_ACCESS_TIERS_CACHE = _read_file_access_tiers()
+    return _FILE_ACCESS_TIERS_CACHE
+
+
+def _read_file_access_tiers():
+    """Uncached read of the tier config. Returns None when absent or disabled."""
     try:
         import yaml
     except ImportError:

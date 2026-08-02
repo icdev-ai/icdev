@@ -28,7 +28,7 @@ from tools.audit.audit_logger import (
 )
 from tools.db.storage import get_connection
 
-NAME = "327_audit_event_type_procurement_vehicle"
+NAME = "20260802205402_audit_event_type_procurement_vehicle"
 
 
 def up(conn=None) -> None:
