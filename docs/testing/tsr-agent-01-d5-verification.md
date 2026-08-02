@@ -238,3 +238,48 @@ clear it.
 | PR body contains before/after pass-fail counts per file | ✅ table above, per file, both halves |
 | All touched files are ruff-clean | ✅ `All checks passed!` under the CI command and the repo default, re-run on the current base |
 | Remaining failures listed with cause | ✅ **none remain in the slice**; the two that existed on merge are named, root-caused to a measured `OperationalError`, and fixed. The one red check is `test_no_new_duplicate_migration_versions`, external to the slice, owned by PR #1206 |
+
+---
+
+## Third independent pass — current `main` base `83584c22c` (2026-08-02)
+
+`main` advanced again after the second pass (`1639fecd8` → `83584c22c`, picking up
+#1204, #1205 and #1208). The whole slice was re-run a third time from a **cold,
+freshly-created worktree** on that base, with the two files this PR touches
+checked out over it, one pytest process per file.
+
+The DB in this worktree was seeded by `tools/db/init_icdev_db.py` alone
+(**525 tables**) — deliberately *not* topped up with the pending migrations that
+brought the earlier passes to 541. Every count still reproduced, which shows the
+slice's results do not depend on the extra 16 tables:
+
+| File / arrangement | Third pass |
+|---|---|
+| `tests/services/ingestion/test_hook_transfer.py` | 24 passed (5.0s) |
+| `tests/test_cross_agency_transfer_api.py` | 7 passed (3.0s) |
+| `tests/unit/test_audit_trail.py` | 19 passed (3.4s) |
+| `tests/compliance/audit_nist.py` | 34 passed (10.8s) |
+| `tests/test_workflow_hitl_engine.py` alone | 23 passed (21.7s) |
+| `test_workflow_hitl_api.py` then engine | 41 passed (14.9s) |
+
+**125/125 passing, 0 failed, 0 errored** — identical to both earlier passes.
+
+`ruff check tests/services/ingestion/test_hook_transfer.py
+tests/test_cross_agency_transfer_api.py` → `All checks passed!`
+
+Two corrections to the sections above, now that the base has moved:
+
+- The line "This card's `Test` check will stay red until that lands" is **no longer
+  true**. The 333 renumber has landed on `main`, and all nine checks on this PR are
+  green: Lint, Test, Test (PostgreSQL), Security Scan, Helm Lint, Doc Coherence
+  Gate, E2E (Playwright) and Two-Tier LLM Build all report SUCCESS (Docker Build is
+  skipped for a docs/tests change).
+- The cold-worktree `pytest-timeout`-during-import caveat did **not** reproduce on
+  this pass. It is a first-invocation `.pyc` compilation artifact, not a property
+  of these tests, so treat it as flaky-on-cold-cache rather than a known condition.
+
+### Caveat this pass adds
+
+`ruff format` remains **not applied**, for the reason given above: no workflow
+invokes it and `ruff format --check tests/` would rewrite the large majority of
+the tree. That is a deliberate scope decision, not an oversight.
