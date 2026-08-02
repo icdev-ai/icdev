@@ -485,9 +485,15 @@ class TestNistAu2Au9RealDb:
 
     @staticmethod
     def _make_conn(db_path):
+        # cross_agency_transfer_logger authors %s placeholders for PostgreSQL and
+        # swallows write errors in a best-effort except, so a bare sqlite3
+        # connection turns every INSERT into a silent no-op and these AU-2/AU-9
+        # assertions fail against a gap the fixture created. See tests/_sql_compat.
+        from _sql_compat import translating
+
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
-        return conn
+        return translating(conn)
 
     @staticmethod
     def _fetch_cat_row(db_path, event_id):
@@ -681,6 +687,13 @@ class TestNistAu2Au9RealDb:
 
             def close(self):
                 return self._real.close()
+
+            def __getattr__(self, name):
+                # storage.table_exists() reaches for ``_conn`` to run its
+                # existence probe on a raw cursor. Without delegation the probe
+                # raises, the logger reports "table missing" and skips the
+                # INSERT, so executed_sql stays empty.
+                return getattr(self._real, name)
 
         real_conn = self._make_conn(real_db)
         recording = _RecordingConn(real_conn)
