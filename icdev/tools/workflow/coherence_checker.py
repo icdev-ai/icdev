@@ -5923,25 +5923,21 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
             and fname.value.id.endswith("_sql_compat")
         )
 
-    def _returns_compat(fn: ast.AST) -> bool:
+    def _has_unwrapped_raw_connect(fn: ast.AST) -> bool:
         # ``translating(conn)`` takes a raw sqlite3 handle by design — the
         # fixture needs one anyway to create its schema. Counting the wrapper's
         # own INPUT as residue made this gate reject the remedy it prescribes,
         # so a raw connect is only residue when nothing wraps it.
         wrapped_nodes: Set[int] = set()
         wrapped_names: Set[str] = set()
-        compat = False
         for sub in ast.walk(fn):
             if not _is_compat_call(sub):
                 continue
-            compat = True
             for arg in sub.args:
                 if _is_sqlite_connect(arg):
                     wrapped_nodes.add(id(arg))
                 elif isinstance(arg, ast.Name):
                     wrapped_names.add(arg.id)
-        if not compat:
-            return False
 
         # Names bound to a raw connect that is later handed to the wrapper.
         bound: dict[int, str] = {}
@@ -5958,13 +5954,40 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
                 continue
             if bound.get(id(sub)) in wrapped_names:
                 continue
-            return False  # a raw connect nothing wraps — still a violation
-        return True
+            return True  # a raw connect nothing wraps — still a violation
+        return False
 
-    safe: Set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _returns_compat(node):
-            safe.add(node.name)
+    funcs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    safe: Set[str] = {
+        fn.name for fn in funcs
+        if any(_is_compat_call(sub) for sub in ast.walk(fn)) and not _has_unwrapped_raw_connect(fn)
+    }
+
+    # A helper that hands back what a safe factory produced is itself safe:
+    # ``def shim(): return _shim_conn()`` and the contextmanager
+    # ``def _gc(): yield shim`` are both one level removed from the wrapper, and
+    # it is _gc that gets named in the patch call. Without this the gate flags a
+    # fixture that IS correctly wrapped, just indirectly — which is exactly how
+    # the already-merged canvas emitter fixtures still read as violations.
+    # The unwrapped-raw-connect guard still applies, so indirection cannot
+    # launder a factory that really does hand out a bare sqlite3 handle.
+    changed = True
+    while changed:
+        changed = False
+        for fn in funcs:
+            if fn.name in safe or _has_unwrapped_raw_connect(fn):
+                continue
+            for sub in ast.walk(fn):
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name):
+                    ref = sub.func.id
+                elif isinstance(sub, (ast.Return, ast.Yield)) and isinstance(sub.value, ast.Name):
+                    ref = sub.value.id
+                else:
+                    continue
+                if ref in safe:
+                    safe.add(fn.name)
+                    changed = True
+                    break
     return safe
 
 

@@ -827,3 +827,58 @@ class TestCheckTestDbIsolation:
         """)
         result = check_test_db_isolation(changed_files=[path])
         assert result.status == "fail"
+
+    def test_accepts_contextmanager_indirection_to_a_compat_fixture(self, tmp_path):
+        # The name in the patch call (_gc) is two hops from translating():
+        # _gc yields shim -> shim returns _shim_conn() -> _shim_conn wraps.
+        # This is the shape the merged canvas emitter fixtures actually use.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from contextlib import contextmanager
+            from unittest.mock import patch
+
+            from tests import _sql_compat
+
+            def _shim_conn():
+                raw = sqlite3.connect(":memory:")
+                return _sql_compat.translating(raw, unclosable=True)
+
+            def shim():
+                return _shim_conn()
+
+            @contextmanager
+            def _patch(shim):
+                @contextmanager
+                def _gc(): yield shim
+                with patch("tools.x.get_canvas_connection", _gc): yield shim
+
+            def test_it(shim):
+                with _patch(shim):
+                    shim.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "pass", result.extra
+
+    def test_indirection_does_not_launder_a_raw_factory(self, tmp_path):
+        # Same contextmanager shape, but the factory hands back a BARE
+        # connection — indirection must not turn that into a pass.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from contextlib import contextmanager
+            from unittest.mock import patch
+
+            def _shim_conn():
+                return sqlite3.connect(":memory:")
+
+            def shim():
+                return _shim_conn()
+
+            @contextmanager
+            def _gc(shim): yield shim
+
+            def test_it(shim):
+                with patch("tools.x.get_connection", _gc):
+                    shim.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "fail"
