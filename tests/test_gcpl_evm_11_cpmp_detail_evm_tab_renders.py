@@ -103,6 +103,34 @@ _STUB_BASE = (
 # ---------------------------------------------------------------------------
 
 
+def _fake_url_for(endpoint, **values):
+    """Stand-in for Flask's url_for when rendering outside an app context."""
+    filename = values.get("filename", "")
+    return f"/{endpoint}/{filename}".rstrip("/")
+
+
+def _detail_context(contract=None, evm=None):
+    """Full render context for cpmp/detail.html.
+
+    ``milestones``/``milestone_deps`` feed ``{{ … | tojson }}`` in the Schedule
+    tab. Jinja's Undefined is not JSON-serializable, so omitting them raises a
+    TypeError during render rather than leaving a blank tab — which is how a
+    schedule-tab addition broke every EVM-tab test in this file.
+    """
+    return {
+        "contract": contract if contract is not None else _CONTRACT,
+        "clins": [],
+        "wbs_elements": [],
+        "deliverables": [],
+        "subcontractors": [],
+        "evm": evm if evm is not None else _EVM_SPI_YELLOW,
+        "cpars_prediction": {},
+        "cpars_assessments": [],
+        "milestones": [],
+        "milestone_deps": [],
+    }
+
+
 def _render_detail(contract=None, evm=None):
     """Render detail.html via Jinja2 with a stub base template."""
     from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, select_autoescape
@@ -114,17 +142,12 @@ def _render_detail(contract=None, evm=None):
         ]),
         autoescape=select_autoescape(["html"]),
     )
+    # detail.html calls url_for('static', ...); a bare Environment has no Flask
+    # app bound, so without this every render raises UndefinedError before a
+    # single EVM assertion runs.
+    env.globals["url_for"] = _fake_url_for
     tmpl = env.get_template("cpmp/detail.html")
-    return tmpl.render(
-        contract=contract if contract is not None else _CONTRACT,
-        clins=[],
-        wbs_elements=[],
-        deliverables=[],
-        subcontractors=[],
-        evm=evm if evm is not None else _EVM_SPI_YELLOW,
-        cpars_prediction={},
-        cpars_assessments=[],
-    )
+    return tmpl.render(**_detail_context(contract=contract, evm=evm))
 
 
 def _build_http_app():
@@ -141,17 +164,7 @@ def _build_http_app():
 
     @flask_app.route("/cpmp/<contract_id>")
     def cpmp_detail(contract_id):
-        return render_template(
-            "cpmp/detail.html",
-            contract=_CONTRACT,
-            clins=[],
-            wbs_elements=[],
-            deliverables=[],
-            subcontractors=[],
-            evm=_EVM_SPI_YELLOW,
-            cpars_prediction={},
-            cpars_assessments=[],
-        )
+        return render_template("cpmp/detail.html", **_detail_context())
 
     return flask_app
 
@@ -210,14 +223,22 @@ class TestEvmTabTemplateSource:
 
     def test_scurve_chart_element_present(self):
         source = self._source()
-        assert 'id="evm-scurve-chart"' in source, (
-            "detail.html must have <div id='evm-scurve-chart'> for S-curve rendering"
+        # The shipped S-curve is a sized #evm-scurve-loading placeholder plus the
+        # #evm-scurve-svg element renderScurveSvg() draws into — not the single
+        # #evm-scurve-chart div this test was originally written against.
+        assert 'id="evm-scurve-loading"' in source, (
+            "detail.html must have <div id='evm-scurve-loading'> for the S-curve placeholder"
+        )
+        assert 'id="evm-scurve-svg"' in source, (
+            "detail.html must have <svg id='evm-scurve-svg'> for S-curve rendering"
         )
 
     def test_data_contract_id_attribute_present(self):
         source = self._source()
-        assert "data-contract-id" in source, (
-            "detail.html evm-scurve-chart must have data-contract-id attribute"
+        # The chart is bound to its contract through the loader call, not a
+        # data- attribute.
+        assert "loadEvmScurve('{{ contract.id }}')" in source, (
+            "detail.html must bind the S-curve loader to contract.id"
         )
 
     def test_run_monte_carlo_function_present(self):
@@ -374,14 +395,14 @@ class TestEvmTabHTTPResponse:
         with http_app.test_client() as c:
             resp = c.get(f"/cpmp/{_CONTRACT_ID}")
         body = resp.get_data(as_text=True)
-        assert "evm-scurve-chart" in body, (
-            "HTTP response body must contain evm-scurve-chart element"
+        assert "evm-scurve-svg" in body, (
+            "HTTP response body must contain the evm-scurve-svg chart element"
         )
 
     def test_scurve_chart_data_contract_id_matches(self, http_app):
         with http_app.test_client() as c:
             resp = c.get(f"/cpmp/{_CONTRACT_ID}")
         body = resp.get_data(as_text=True)
-        assert _CONTRACT_ID in body, (
-            f"evm-scurve-chart data-contract-id must contain contract id '{_CONTRACT_ID}'"
+        assert f"loadEvmScurve('{_CONTRACT_ID}')" in body, (
+            f"S-curve loader must be bound to contract id '{_CONTRACT_ID}'"
         )
