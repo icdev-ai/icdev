@@ -3,7 +3,7 @@
     "icdev-unified": {
       "command": "python",
       "args": [
-        "C:/AI/ICDev/tools/mcp/mcp_debug_wrapper.py"
+        "C:/AI/ICDev/tools/mcp/unified_server.py"
       ],
       "env": {
         "ICDEV_DB_PATH": "C:/AI/ICDev/data/icdev.db",
@@ -12,7 +12,7 @@
     },
     "playwright": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@playwright/mcp@latest"]
+      "args": ["/c", "npx", "-y", "@playwright/mcp@0.0.78"]
     }
   }
 }
