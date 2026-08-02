@@ -511,3 +511,8 @@ def test_totals_separate_assessed_from_unassessed():
 
     totals = portal_overview()["totals"]
     assert totals["assessed"] + totals["unassessed"] == totals["components"]
+
+
+# The persisted-history half of the unassessed contract lives with the fixture
+# that applies the real migration:
+# tests/test_idp_score_history.py::test_unassessed_component_is_not_recorded_as_zero
