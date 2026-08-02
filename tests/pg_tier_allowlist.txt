@@ -24,3 +24,12 @@ tests/pg_tier/test_pg_backend_sentinel.py
 tests/cortex/test_api_governed.py
 tests/cortex/test_governance_pipeline.py
 tests/cortex/test_api_core.py
+
+# AuditStore / `icdev audit tail`. Qualifies on the rule above: the SQLite cases
+# inject their own connection_factory rather than forcing the ambient backend,
+# and the two test_pg_* cases read the AMBIENT connection via get_connection.
+# They exist specifically to catch a PG-only failure the SQLite cases cannot:
+# audit_trail.created_at is `timestamp WITHOUT time zone` on PG while the
+# --follow cursor is a tz-AWARE ISO string, so the comparison that drives
+# --follow is only ever exercised for real here.
+tests/test_audit_tail_cli.py
