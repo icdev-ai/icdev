@@ -4220,6 +4220,10 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     classification TEXT DEFAULT 'CUI',
     compartment TEXT DEFAULT '',
     tags TEXT,
+    -- The live column is `topics` (see db/schema/pg_consolidated.sql); this SQLite
+    -- init path still only declared the legacy `tags`, so a fresh SQLite database
+    -- lacked the column every memory writer actually names (swp-scan-01).
+    topics TEXT,
     metadata TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user

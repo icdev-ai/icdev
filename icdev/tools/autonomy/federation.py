@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -144,16 +145,27 @@ def route_signals(dry_run: bool = False) -> Dict[str, Any]:
         try:
             conn = _get_connection()
             try:
+                # raw_content/source_signal_id/created_at are not columns on
+                # creative_signals (swp-scan-01) — the live shape is
+                # body/content_hash/discovered_at, and source_type and
+                # content_hash are NOT NULL, so this write could never land.
+                # The originating signal id moves into metadata, which is what
+                # source_signal_id was carrying.
                 conn.execute(
                     "INSERT OR IGNORE INTO creative_signals "
-                    "(id, source, title, raw_content, source_signal_id, created_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    "(id, source, source_type, title, body, content_hash, "
+                    "metadata, discovered_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         f"cs-fed-{signal['id'][-10:]}",
                         "innovation_federation",
+                        "federation",
                         signal["title"],
                         json.dumps({"federated_from": "innovation_signals", "original_id": signal["id"]}),
-                        signal["id"],
+                        hashlib.sha256(
+                            f"innovation_federation|{signal['id']}".encode("utf-8")
+                        ).hexdigest(),
+                        json.dumps({"source_signal_id": signal["id"]}),
                         now_iso(),
                     ),
                 )

@@ -334,21 +334,25 @@ def _store_pair(pair: Dict, dataset_id: Optional[str] = None) -> bool:
         # Try to store in fine-tuning dataset if available
         if dataset_id:
             try:
+                # ft_dataset_examples has no status column — review state is
+                # the boolean `approved`, so "pending_review" is 0. id is a
+                # SERIAL integer, so the generated "ftex-…" string was the
+                # wrong type for it, and content_hash is NOT NULL (swp-scan-01).
                 conn.execute(
                     "INSERT INTO ft_dataset_examples "
-                    "(id, dataset_id, system_prompt, user_input, "
-                    "expected_output, source, status, quality_score, "
-                    "created_at) "
+                    "(dataset_id, system_prompt, user_input, "
+                    "expected_output, source, approved, quality_score, "
+                    "content_hash, created_at) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
-                        _generate_id("ftex"),
                         dataset_id,
                         pair.get("system_prompt", ""),
                         pair.get("user_input", ""),
                         pair.get("expected_output", ""),
                         f"pg_train_{pair.get('source_type', 'unknown')}",
-                        "pending_review",
+                        0,
                         None,
+                        ch,
                         now,
                     ),
                 )

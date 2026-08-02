@@ -60,16 +60,22 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
 
         with _nc() as db:
             db.execute(
+                # requested_by/requested_at are submitter_name/submitted_at, and
+                # change_type/risk_level have no columns of their own — they go in
+                # document_json, which exists for exactly this. Nothing here could
+                # be created before (swp-scan-01).
                 "INSERT INTO nc_change_requests "
-                "(id, topology_id, title, description, change_type, risk_level, status, "
-                "requested_by, requested_at, created_at, updated_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "(id, topology_id, title, description, document_json, status, "
+                "submitter_name, submitted_at, created_at, updated_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     cr_id, topo_id,
                     body["title"],
                     body.get("description", ""),
-                    body["change_type"],
-                    body.get("risk_level", "medium"),
+                    json.dumps({
+                        "change_type": body["change_type"],
+                        "risk_level": body.get("risk_level", "medium"),
+                    }),
                     "draft",
                     user_id, now, now, now,
                 ),
@@ -77,8 +83,10 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
             # Optional line items
             for item in body.get("items", []):
                 db.execute(
+                    # change_request_id/item_type/description/object_id are
+                    # cr_id/action_type/justification/entity_id (swp-scan-01).
                     "INSERT INTO nc_change_request_items "
-                    "(id, change_request_id, item_type, description, object_id, created_at) "
+                    "(id, cr_id, action_type, justification, entity_id, created_at) "
                     "VALUES (%s,%s,%s,%s,%s,%s)",
                     (
                         "cri-" + uuid.uuid4().hex[:10],
@@ -163,8 +171,12 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
 
         with _nc() as db:
             db.execute(
+                # enabled is is_active. rule_json and severity genuinely did not
+                # exist and are added by migration 323 — a policy without its rule
+                # is not a policy, and the validation route below reads rule_json
+                # back, so dropping them was not an option (swp-scan-01).
                 "INSERT INTO nc_intent_policies "
-                "(id, topology_id, name, description, rule_json, severity, enabled, created_at, updated_at) "
+                "(id, topology_id, name, description, rule_json, severity, is_active, created_at, updated_at) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     policy_id, topo_id,
@@ -222,11 +234,23 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
 
             val_id = "iv-" + uuid.uuid4().hex[:10]
             now = _now()
+            # The live table summarises constraint COUNTS (total/passed/failed)
+            # rather than storing a verdict string, so `result` cannot be written
+            # as-is. One rule evaluated == one constraint; anything that is not an
+            # explicit 'pass' counts as failed, which preserves the fail-closed
+            # contract above ('error' and 'unknown' must never read as passing).
+            # The verdict string itself is kept in violations_json (swp-scan-01).
+            passed_count = 1 if result == "pass" else 0
             db.execute(
                 "INSERT INTO nc_intent_validations "
-                "(id, topology_id, policy_id, result, detail, validated_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s)",
-                (val_id, topo_id, policy_id, result, json.dumps(detail), now),
+                "(id, topology_id, policy_id, total_constraints, passed, failed, violations_json, ran_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    val_id, topo_id, policy_id,
+                    1, passed_count, 1 - passed_count,
+                    json.dumps({"result": result, "detail": detail}),
+                    now,
+                ),
             )
             db.commit()
 

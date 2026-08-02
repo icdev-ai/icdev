@@ -441,8 +441,10 @@ class TrafficFlowEngine:
         self._ensure_tables(conn)
         flow_id = str(uuid.uuid4())
         conn.execute(
+            # src_zone/dst_zone/app_type are source_zone/destination_zone/
+            # application_type on the live table (swp-scan-01).
             """INSERT INTO nc_traffic_flows
-               (id, topology_id, name, src_zone, dst_zone, app_type, classification)
+               (id, topology_id, name, source_zone, destination_zone, application_type, classification)
                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (flow_id, topology_id, name, src_zone, dst_zone, app_type, classification),
         )
