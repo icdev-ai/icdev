@@ -4417,7 +4417,12 @@ TOOL_REGISTRY = {
         "category": "misc",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_nlq_query",
-        "description": "Run natural language compliance query (NLQ to SQL).",
+        "description": (
+            "Run a natural language compliance query (NLQ to SQL) via the governed Cortex "
+            "Analyst (cortex.ask mode='nlq') — SELECT-only safety screen + cortex_audit row "
+            "per call. project_id is accepted and IGNORED (no analyst seam); it is echoed "
+            "back in ignored_params."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {"query": {"type": "string"}, "project_id": {"type": "string"}},
@@ -7743,9 +7748,14 @@ RESOURCE_REGISTRY = {
     # ============================================================
     "cot_invoke": {
         "category": "llmops",
-        "module": "tools.llm.chain_orchestrator",
-        "handler": "invoke_chain_of_thought",
-        "description": "Invoke Chain of Thought multi-LLM reasoning chain.",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cot_invoke",
+        "description": (
+            "Invoke Chain of Thought multi-LLM reasoning via the governed Cortex facade "
+            "(cortex.reason mode='cot') — TRUST chain + cortex_audit row per call. "
+            "max_rounds / self_consistency_runs are accepted and IGNORED (no facade seam); "
+            "they are echoed back in ignored_params."
+        ),
         "input_schema": {
             "type": "object",
             "required": ["function", "prompt"],
@@ -7760,9 +7770,14 @@ RESOURCE_REGISTRY = {
     },
     "cod_invoke": {
         "category": "llmops",
-        "module": "tools.llm.chain_orchestrator",
-        "handler": "invoke_chain_of_debate",
-        "description": "Invoke Chain of Debate multi-LLM debate chain.",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cod_invoke",
+        "description": (
+            "Invoke Chain of Debate multi-LLM debate via the governed Cortex facade "
+            "(cortex.reason mode='debate') — TRUST chain + cortex_audit row per call. "
+            "num_debaters / debate_rounds are accepted and IGNORED (no facade seam); "
+            "they are echoed back in ignored_params."
+        ),
         "input_schema": {
             "type": "object",
             "required": ["function", "prompt"],

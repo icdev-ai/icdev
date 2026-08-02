@@ -125,13 +125,13 @@ migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
 | **Kanban** | `cot_enabled` flag + `cot_trace_id` in `TransitionResult` |
 | **Loop Engine** | `cot_config` in acceptance criteria |
 | **Auto-Remediate** | CoT reasoning stored in remediation decisions |
-| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`. `council_query` and `divergence_invoke` tools likewise (`gap_handlers.py::handle_council_query` / `handle_divergence_invoke`), primary caller cross-repo (idea_lab). |
+| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`, retargeted (cxo-adopt-04) onto the governed Cortex facade `cortex.reason(mode='cot'\|'debate')` so every call runs the TRUST chain and writes a `cortex_audit` row. `council_query` and `divergence_invoke` tools likewise (`gap_handlers.py::handle_council_query` / `handle_divergence_invoke`), primary caller cross-repo (idea_lab), still direct `ChainOrchestrator`. |
 | **Skill** | `icdev-divergence` (`.agents/skills/icdev-divergence/SKILL.md`) — interactive + headless via `python tools/skills/invoke.py --exec icdev-divergence`. |
 | **Knowledge Graph** | `reasoning_step` node type indexed by `kg_builder.py` with step_name, model_id, chain_mode, trace_id, round_num |
 | **Event Bus** | `cot_reasoning_completed` published after every chain invocation |
 | **Cost Intelligence** | `enable_cot` / `enable_cod` recommendation types for high-cost functions |
 | **Readiness Score** | 5th `explainability` dimension in `tools/canvas/orchestrator.py:compute_readiness()` |
-| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`. `council_query` tool likewise (`gap_handlers.py::handle_council_query`), primary caller cross-repo (idea_lab). |
+| **MCP** | `cot_invoke` + `cod_invoke` tools in `tool_registry.py`; handlers in `gap_handlers.py`, retargeted (cxo-adopt-04) onto the governed Cortex facade `cortex.reason(mode='cot'\|'debate')`. `council_query` tool likewise (`gap_handlers.py::handle_council_query`), primary caller cross-repo (idea_lab), still direct `ChainOrchestrator`. |
 
 ## FORGE Artifacts
 
