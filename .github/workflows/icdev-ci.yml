@@ -49,6 +49,21 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e . 2>/dev/null || true
+      # Runs AFTER lint (this job `needs: lint`) and BEFORE the pytest step, so a
+      # swallowed write fails in ~1 min instead of at the end of the suite. It
+      # lives in this job rather than in `lint` because the detector is reached
+      # through `tools/__init__.py`, which imports LLMRouter -> yaml/db at import
+      # time; the lint job installs only ruff, so the same command there would
+      # exit 2 (detector unimportable) and fail for the wrong reason.
+      #
+      # Exit codes are load-bearing: 0 clean, 1 violations, 2 the detector could
+      # not be imported. All three are honoured by not swallowing the status --
+      # do NOT add `|| true` here. A `2` must stay red, because a check that
+      # reports clean after its detector vanished is the exact silent failure
+      # this gate exists to close.
+      - name: Swallowed-INSERT gate
+        working-directory: ${{ github.workspace }}
+        run: python tools/dev/check_swallowed_inserts.py
       - name: Run core unit tests
         # NOTE: this list is a shell line-continuation chain -- do NOT put `#`
         # comments between the entries. A comment after a trailing `\` swallows
