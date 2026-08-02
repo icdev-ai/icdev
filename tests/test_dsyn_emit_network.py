@@ -11,6 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests._sql_compat import translating  # noqa: E402
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS canvas_events (
     id TEXT PRIMARY KEY, source_canvas TEXT, target_canvas TEXT,
@@ -19,26 +21,27 @@ CREATE TABLE IF NOT EXISTS canvas_events (
 );
 """
 
-class _ShimConn:
-    def __init__(self):
-        self._db = sqlite3.connect(":memory:")
-        self._db.row_factory = sqlite3.Row
-        self._db.execute(_SCHEMA); self._db.commit()
-    def execute(self, sql, params=()):
-        return self._db.execute(sql.replace("%s", "?"), params)
-    def commit(self): self._db.commit()
-    def close(self): self._db.close()
-    def __enter__(self): return self
-    def __exit__(self, *_): self.commit()
-
 @pytest.fixture
-def shim(): return _ShimConn()
+def shim():
+    """Translating in-memory connection standing in for get_canvas_connection().
+
+    ``unclosable`` because ``_emit`` exits the ``with`` block — which closes the
+    connection — before the test reads the row back, and an in-memory database
+    dies with its connection.
+    """
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute(_SCHEMA)
+    db.commit()
+    yield translating(db, unclosable=True)
+    db.close()
 
 @contextmanager
 def _patch(shim):
-    @contextmanager
-    def _gc(): yield shim
-    with patch("tools.network.event_emitter.get_connection", _gc): yield shim
+    # event_emitter uses get_canvas_connection (canvas_events has no
+    # tenant_id/classification columns, so RLS predicate injection must not run).
+    with patch("tools.network.event_emitter.get_canvas_connection", lambda: shim):
+        yield shim
 
 def test_emit_migration_phase_complete(shim):
     from tools.network import event_emitter
@@ -61,14 +64,11 @@ def test_emit_anomaly_detected(shim):
     p = json.loads(row["payload_json"])
     assert p["anomaly_type"] == "phase_rollback"
 
-def test_emit_failure_returns_false(shim):
+def test_emit_failure_returns_false(shim, monkeypatch):
     from tools.network import event_emitter
-    @contextmanager
-    def _boom():
-        c = _ShimConn()
-        c.execute = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("fail"))
-        yield c
-    with patch("tools.network.event_emitter.get_connection", _boom):
+    def _boom(*_a, **_k): raise RuntimeError("fail")
+    monkeypatch.setattr(shim, "execute", _boom)
+    with _patch(shim):
         assert event_emitter.emit_migration_phase_complete("p", "m") is False
 
 def test_source_and_target_canvas(shim):
