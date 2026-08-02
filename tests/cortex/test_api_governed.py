@@ -32,10 +32,12 @@ from tools.cortex import api
 from tools.cortex import governance
 from tools.cortex.governance import (
     GATE_CITATION_GROUNDING,
+    GATE_CONTENT_GROUNDING,
     GATE_OPERATION,
     GATE_PRE_CHECK,
     OUTCOME_FAIL,
     OUTCOME_PASS,
+    OUTCOME_SKIP,
     OUTCOME_WARN,
     GovernanceBlockedError,
 )
@@ -450,3 +452,81 @@ def test_agent_output_passes_output_redaction(gates, monkeypatch):
     )
     result = api.agent("get the value", ctx=CortexContext())
     assert result.text == "the value is [REDACTED]"
+
+
+# ---------------------------------------------------------------------------
+# Per-call retrieval escalation (cxo-adopt-02)
+#
+# `complete` is declared retrieval=False because most calls are generative, and
+# scoring an answer against no sources would manufacture a defect every time.
+# But that made the two grounding gates skip even on the calls that DID inject
+# evidence — a chat turn with RAG hits was governed for injection and redaction
+# and graded for nothing. `context_sources` escalates the posture per call.
+# ---------------------------------------------------------------------------
+def test_complete_without_sources_still_skips_the_grounding_gates(gates, install_router):
+    """The defended behaviour must survive: an ungrounded turn is not scored."""
+    install_router(FakeRouter(response=_response()))
+    result = api.complete("say hello")
+
+    assert result.governance.outcomes[GATE_CITATION_GROUNDING] == OUTCOME_SKIP
+    assert result.governance.outcomes[GATE_CONTENT_GROUNDING] == OUTCOME_SKIP
+
+
+def test_complete_with_sources_grades_instead_of_skipping(gates, install_router):
+    """The bug this closes: evidence injected, gates skipped anyway."""
+    install_router(
+        FakeRouter(response=_response(content="Titan is a moon of Saturn [source: 1]."))
+    )
+    result = api.complete(
+        "tell me about Titan",
+        context_sources=[
+            {"source_id": "1", "content": "Titan is a moon of Saturn."},
+        ],
+    )
+
+    assert result.governance.outcomes[GATE_CITATION_GROUNDING] != OUTCOME_SKIP
+    assert result.governance.outcomes[GATE_CONTENT_GROUNDING] != OUTCOME_SKIP
+    # The content gate actually scored the output against the snippet rather
+    # than falling through to the placeholder-only path.
+    assert result.governance.content_grounding.get("score") is not None
+
+
+def test_complete_sources_are_governance_only_and_never_reach_the_provider(
+    gates, install_router
+):
+    """`context_sources` declares what was ALREADY injected; it injects nothing.
+
+    If it leaked into the request the caller would send its RAG hits twice.
+    """
+    router = install_router(FakeRouter(response=_response()))
+    api.complete(
+        "tell me about Titan",
+        context_sources=[{"source_id": "1", "content": "SENTINEL-SNIPPET"}],
+    )
+
+    _function, request = router.calls[0]
+    assert "SENTINEL-SNIPPET" not in str(getattr(request, "messages", "") or "")
+    assert "SENTINEL-SNIPPET" not in (getattr(request, "prompt", "") or "")
+    assert "SENTINEL-SNIPPET" not in (getattr(request, "system_prompt", "") or "")
+
+
+def test_a_hallucinated_citation_is_recorded_but_does_not_block(gates, install_router):
+    """Fail-open stays fail-open — grading a turn must not start refusing them."""
+    install_router(FakeRouter(response=_response(content="Invented fact [source: 9].")))
+    result = api.complete(
+        "tell me about Titan",
+        context_sources=[{"source_id": "1", "content": "Titan is a moon of Saturn."}],
+    )
+
+    assert result.governance.outcomes[GATE_CITATION_GROUNDING] == OUTCOME_FAIL
+    assert result.governance.blocked is False
+    assert result.text  # the answer is still returned to the caller
+
+
+def test_escalation_is_scoped_to_facades_that_declare_a_sources_param(gates, install_router):
+    """classify/extract/reason keep skipping — they took no sources argument."""
+    install_router(FakeRouter(response=_response(content="positive")))
+    result = api.classify("great news", labels=["positive", "negative"])
+
+    assert result.governance.outcomes[GATE_CITATION_GROUNDING] == OUTCOME_SKIP
+    assert result.governance.outcomes[GATE_CONTENT_GROUNDING] == OUTCOME_SKIP
