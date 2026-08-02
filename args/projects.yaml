@@ -7271,3 +7271,61 @@ projects:
   - key: mt
     title: MT — Tenant scoping for the outward-facing half
     priority: medium
+- key: anz
+  name: 'ANZ — Unified Analyzer Contract'
+  description: 'Give ICDEV''s security and intelligence analyzers ONE declared plugin contract, adapted from TheHive Project''s Cortex (github.com/TheHive-Project/Cortex). Their value is not the 39 analyzers, it is the CONTRACT: every analyzer declares which observable types it accepts, runs containerized with a per-analyzer rate limit, and emits a taxonomy-tagged report — one REST API, N plugins, zero bespoke wiring. MEASURED 2026-08-02: ICDEV has ~79 analyzer-shaped modules across tools/strategos/, tools/security/ and tools/supply_chain/ and NO shared base class for any of them (the only *Analyzer classes in the tree are tools/analysis/code_analyzer.py, tools/trading/news/pattern_analyzer.py and tools/win_loss/pattern_analyzer.py — three unrelated domains). Every threat feed, importer, scorer and triage path is wired by hand, so adding a source means touching a blueprint, and the outputs share no vocabulary. The containerization half already exists as the sandbox_execute MCP tool (Docker, resource limits, network isolation, D-SEC-10). This card is about the interface, not about rewriting the analyzers. MANUAL-ONLY: every task gated behind anz-gate-00 via depends_on_task_id.'
+  task_prefix: anz-
+  default_open: false
+  briefs:
+  - 'gate: manual gate held in_progress; every task carries depends_on_task_id=anz-gate-00 (anz-gate-00)'
+  - 'con: declare the analyzer/responder contract — accepted observable types, output taxonomy, rate limit, sandbox posture — as data, not as a base class callers must inherit'
+  - 'disp: one dispatch path that takes an observable and returns taxonomy-tagged reports, so a new source needs no blueprint edit'
+  - 'mig: port the highest-value existing analyzers (dsoc_*, pvm_*, triage_cve, the strategos importers) onto the contract without changing their behavior'
+  - 'rate: per-analyzer rate limiting and sandbox enforcement, reusing sandbox_execute rather than inventing a second isolation path'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: con
+    title: CON — The analyzer/responder contract
+    priority: critical
+  - key: disp
+    title: DISP — Unified dispatch and taxonomy
+    priority: high
+  - key: mig
+    title: MIG — Port existing analyzers onto the contract
+    priority: high
+  - key: rate
+    title: RATE — Rate limiting and sandbox enforcement
+    priority: medium
+- key: ars
+  name: 'ARS — Agent Runtime Safety'
+  description: 'Close the runaway-agent gaps in ICDEV''s agent runtime, adapted from github.com/xichan96/cortex, whose distinctive parts are per-session budgets, semantic loop detection, approval workflows for risky operations, and filesystem skills whose YAML frontmatter constrains which PATHS and TOOLS they apply to. SCOPE CORRECTED AGAINST THE CODE 2026-08-02 — do not plan from the vendor comparison alone. icdev/tools/llm/agent_loop.py ALREADY has budgets and they are config-driven from args/llm_config.yaml under agent_loop.budgets: max_total_tokens, max_cost_usd, context_window_tokens, compression_budget_tokens, tool_timeout_seconds, llm_call_timeout_seconds, tool_result_max_chars, max_iterations and a stall_threshold, with a truncation_reason taxonomy (completed / max_iterations / error_max_budget_tokens / error_max_budget_cost). So token, cost, iteration and per-call timeout ceilings are DONE. What is genuinely absent, measured by grep over that file: semantic loop detection (0 hits for similar/loop_detect — stall_threshold detects no-progress, not semantic repetition), any approval workflow (0 hits for approval), and any SESSION wall-clock ceiling (0 hits for wall_clock/max_wall/elapsed — per-tool and per-LLM-call timeouts exist, total session wall time does not). Also absent: path/tool scoping in .agents/skills/*/SKILL.md frontmatter. These map onto failures that have already happened here — an unbounded seeder that produced 353 branches, dispatch into an already-live worktree, and a measured 109 registered git worktrees with recursive nesting. MANUAL-ONLY: every task gated behind ars-gate-00 via depends_on_task_id.'
+  task_prefix: ars-
+  default_open: false
+  briefs:
+  - 'gate: manual gate held in_progress; every task carries depends_on_task_id=ars-gate-00 (ars-gate-00)'
+  - 'loop: semantic loop detection — catch an agent repeating equivalent actions, which stall_threshold does not; budgets already exist and are NOT in scope'
+  - 'appr: an approval gate for irreversible operations, reusing the HITL and action_card precedents rather than a new mechanism'
+  - 'wall: a session wall-clock ceiling to complement the existing per-tool and per-call timeouts'
+  - 'scope: path and tool constraints in skill frontmatter, so a skill cannot act outside what it declares'
+  - 'wt: worktree lifecycle — 109 registered worktrees with recursive nesting is the live evidence that creation is bounded but reclamation is not'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: loop
+    title: LOOP — Semantic loop detection
+    priority: high
+  - key: appr
+    title: APPR — Approval gate for irreversible actions
+    priority: critical
+  - key: wall
+    title: WALL — Session wall-clock ceiling
+    priority: medium
+  - key: scope
+    title: SCOPE — Path and tool constraints on skills
+    priority: high
+  - key: wt
+    title: WT — Worktree lifecycle and reclamation
+    priority: high
