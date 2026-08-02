@@ -93,6 +93,12 @@ $ python -m pytest tests/tools/anvil/ --collect-only -q
 So those 6 tests **do** run in the suite; the file is not dead weight and needs no rename.
 d1's call to flag rather than rename was the right one, for a different reason than stated.
 
+The setting d1 cited is real, but lives elsewhere: the only `python_files = ["test_*.py"]`
+in the tree is inside `tools/project/project_scaffold.py` (L426, L694) — the `pyproject.toml`
+template written into **generated child projects**. It never applies to this repo. Worth
+knowing generally: grepping for a config key in this codebase can hit a scaffold template
+for downstream projects rather than the live config, so confirm with `--collect-only`.
+
 The other six files in that list are genuinely uncollected — they are `e2e_*`-prefixed,
 which matches neither default pattern. That part of the baseline stands.
 
