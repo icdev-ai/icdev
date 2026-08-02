@@ -1399,7 +1399,11 @@ python tools/db/migrate.py --status [--json]                      # Show migrati
 python tools/db/migrate.py --up [--target 005] [--dry-run]        # Apply pending migrations
 python tools/db/migrate.py --down [--target 003]                  # Roll back migrations
 python tools/db/migrate.py --validate [--json]                    # Validate checksums
-python tools/db/migrate.py --create "add_feature_table"           # Scaffold new migration
+python tools/db/migrate.py --create "add_feature_table"           # Scaffold new migration (allocates a YYYYMMDDHHMMSS version)
+# ALWAYS scaffold with --create. Migration ids are UTC timestamps, not a
+# sequence: hand-picking "highest + 1" is a read-modify-write across every
+# concurrent session and produced three collisions in one session on
+# 2026-08-02, one of which broke main. The legacy 001-341 range is closed.
 python tools/db/migrate.py --mark-applied 001                    # Mark existing DB as migrated
 python tools/db/migrate.py --up --all-tenants                    # Apply to all tenant DBs
 
