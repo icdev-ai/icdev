@@ -164,3 +164,12 @@ Per the TSR card: several of these need a judgment call about whether the test o
 wrong. In particular #2 and #3 could each be "fixed" by weakening an assertion about
 merge-gating or pause behaviour — both are areas with known board bugs, so the code side should
 be checked first.
+
+---
+
+> **EPIC CLOSED** (`tsr-flow-01-d5`, 2026-08-02). All 36 baseline failures across all 7 files
+> above are resolved: **1,071 passed / 2 failed / 0 errors** on the same 78-file slice. The 2
+> remaining failures were green at this baseline and fail identically on unmodified `main` —
+> they are drift from other epics, not this subsystem. Full before/after, the `ruff format`
+> decision, and the `tools/kanban/cli.py` import regression found en route:
+> [`tsr-flow-01-d5-verification.md`](tsr-flow-01-d5-verification.md).
