@@ -100,6 +100,18 @@ icdev status                      # Show active toggles
 icdev status --json               # Machine-readable status
 icdev list                        # List supported toggles
 
+# Audit feed — read audit_trail + hook_events from the terminal.
+# NOTE: `icdev status` above reports TOGGLES, not health. For health use
+# `python tools/testing/health_check.py --json`.
+icdev audit tail                          # Last 50 events (oldest-first on screen)
+icdev audit tail --limit 200
+icdev audit tail --follow                 # Poll for new events; Ctrl-C exits 0
+icdev audit tail --json                   # One JSON object per line (jq-able)
+icdev audit tail --list-types             # Event types this deployment emits, with counts
+icdev audit tail --project <id> --event-type <type> --since <iso8601>
+icdev audit tail --source hook_events     # Restrict source (repeatable)
+icdev audit export --framework soc2 --tenant-id <tid> --output report.html
+
 # Core enterprise profiles
 icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)

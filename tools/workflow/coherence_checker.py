@@ -238,6 +238,16 @@ def _blueprint_has_route(bp_file: Path) -> bool:
 def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
     """Extract table_name → [column_names] from SQL CREATE TABLE statements."""
     tables: Dict[str, List[str]] = {}
+    # Drop comment-only lines BEFORE matching. The body capture below is
+    # non-greedy up to the first `);`, so a `);` occurring inside a `--` comment
+    # ends the match early and silently truncates the column list — every column
+    # after the comment then reads as "not in the schema". Stripping the comments
+    # afterwards (as the per-segment pass does) is too late to help. Only whole
+    # comment lines are removed, never a mid-line `--`, which could sit inside a
+    # Python string literal in the surrounding source (swp-scan-01).
+    sql_text = "\n".join(
+        line for line in sql_text.splitlines() if not line.lstrip().startswith("--")
+    )
     pattern = re.compile(
         r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\);",
         re.DOTALL | re.IGNORECASE,
@@ -407,6 +417,12 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 #: is inert — the opposite of what the pinning is for.
 _SCHEMA_CODE_BACKEND_PINNED = frozenset({
     "tools/rag/sqlite_vector_store.py",
+    # Builds each affected table in its *pre*-migration-329 shape on a throwaway
+    # SQLite database in order to assert the INSERT fails before the migration and
+    # succeeds after. Its simulation_results INSERT names the Network Canvas columns
+    # on purpose — that is the shape being migrated away from, so measuring it
+    # against the post-migration DDL in init_icdev_db.py is the wrong comparison.
+    "tests/test_insert_column_schema_parity.py",
 })
 
 

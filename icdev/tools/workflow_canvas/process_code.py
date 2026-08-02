@@ -57,8 +57,10 @@ def import_chain_yaml(spec_yaml: str, conn) -> str:
         phase_yaml = yaml.dump(phase.get("workflow") or {}, allow_unicode=True)
         phase_id = str(uuid.uuid4())
         cc.execute(
+            # swp-scan-01: the live columns are `name` and `status`; the
+            # `phase_`-prefixed spellings exist only in this caller.
             f"""INSERT INTO wfc_chain_phases
-                (id, chain_id, phase_number, phase_name, workflow_snapshot_yaml, phase_status, created_at)
+                (id, chain_id, phase_number, name, workflow_snapshot_yaml, status, created_at)
                 VALUES ({cc_ph},{cc_ph},{cc_ph},{cc_ph},{cc_ph},{cc_ph},{cc_ph})""",
             (phase_id, chain_id, phase.get("phase_number") or 1,
              phase.get("phase_name") or "", phase_yaml,

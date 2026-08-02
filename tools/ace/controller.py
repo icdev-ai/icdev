@@ -751,8 +751,10 @@ class ACEController:
             conn = get_connection()
             conn.execute(
                 """
+                -- The column is dispatch_source; `source` has never existed on
+                -- kanban_tasks, so this card was never created (swp-scan-01).
                 INSERT INTO kanban_tasks
-                    (id, title, description, status, priority, source, created_at, updated_at)
+                    (id, title, description, status, priority, dispatch_source, created_at, updated_at)
                 VALUES (%s, %s, %s, 'backlog', 'high', 'ace_trust', %s, %s)
                 """,
                 (

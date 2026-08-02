@@ -446,9 +446,12 @@ def track_implementation(theme_id, section_id, status, density_score=None, notes
     now = _now()
 
     # Append-only tracking record (NIST AU-2)
+    # status/notes/created_at are not columns (swp-scan-01); the live names are
+    # implementation_status/reviewer_notes/checked_at. checked_at is also
+    # NOT NULL, so this append-only NIST AU-2 record never landed.
     conn.execute(
         "INSERT INTO pg_theme_tracking "
-        "(id, theme_id, section_id, status, density_score, notes, created_at) "
+        "(id, theme_id, section_id, implementation_status, density_score, reviewer_notes, checked_at) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (tracking_id, theme_id, section_id, status, density_score, notes, now),
     )

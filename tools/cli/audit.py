@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""`icdev audit` subcommand — compliance evidence export.
+"""`icdev audit` subcommands — compliance evidence export, and reading the feed.
 
 Usage:
     icdev audit export --framework soc2 --tenant-id <tid> --output report.html
     icdev audit export --framework soc2 --tenant-id <tid> --format json
+    icdev audit tail [--follow] [--json] [--project ID] [--event-type T]
 """
 from __future__ import annotations
 
@@ -13,11 +14,27 @@ import sys
 
 
 def main(argv: list[str] | None = None) -> int:
+    # `tail` owns a rich flag set of its own (--follow, --source, repeatable
+    # --event-type). Dispatching to it before argparse sees the arguments keeps
+    # the two subcommands' flags from having to coexist in one parser, and lets
+    # `icdev audit tail --help` show tail's own help rather than this one.
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "tail":
+        from tools.cli.audit_tail import main as tail_main
+
+        return tail_main(argv[1:])
+
     p = argparse.ArgumentParser(
         prog="icdev audit",
-        description="ICDEV™ compliance audit export commands.",
+        description="ICDEV™ audit commands: compliance export and feed tailing.",
+        epilog="tail: read the live audit feed — `icdev audit tail --help`",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    # Registered so it appears in `icdev audit --help`; actually handled by the
+    # early dispatch above.
+    sub.add_parser("tail", help="Tail the audit feed (see `icdev audit tail --help`).",
+                   add_help=False)
 
     exp = sub.add_parser("export", help="Export a compliance evidence report.")
     exp.add_argument("--framework", default="soc2", choices=["soc2"],

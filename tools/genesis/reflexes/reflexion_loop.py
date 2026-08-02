@@ -57,8 +57,10 @@ def _create_amendment_card(task_type: str, artifact_id: str, score: float) -> No
         )
         conn.execute(
             """
+            -- `dispatch_source`, not `source` (swp-scan-01): every amendment
+            -- card raised UndefinedColumn and was swallowed below.
             INSERT INTO kanban_tasks
-                (id, title, description, status, priority, source, created_at, updated_at)
+                (id, title, description, status, priority, dispatch_source, created_at, updated_at)
             VALUES (%s, %s, %s, 'suggested', 'medium', 'reflexion_loop_reflex', %s, %s)
             """,
             (task_id, title, body, _utcnow(), _utcnow()),

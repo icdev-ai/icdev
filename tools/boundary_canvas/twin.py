@@ -108,8 +108,10 @@ def take_snapshot(project_id: str, framework_id: str = "FedRAMP Moderate") -> di
     persisted = False
     try:
         conn.execute(
+            # The column is status; implementation_status has never existed here,
+            # so every snapshot INSERT raised and was logged as an error (swp-scan-01).
             """INSERT INTO compliance_snapshots
-               (snapshot_id, project_id, framework_id, control_id, implementation_status, evidence_ref, taken_at)
+               (snapshot_id, project_id, framework_id, control_id, status, evidence_ref, taken_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (snap_id, project_id, framework_id, "_meta", "snapshot", "", taken_at),
         )
