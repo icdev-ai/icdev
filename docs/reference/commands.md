@@ -246,6 +246,25 @@ python tools/integrity/pr_gates.py --base origin/main --gate            # CI gat
 
 ---
 
+## Analyzer / Responder Contract (anz-con-01)
+
+The contract is DATA — `args/analyzer_contract.yaml`. A new analyzer is declared
+entirely there (accepted observable types, output taxonomy, rate limit, sandbox
+posture); no base class, no dispatch table, no blueprint edit. An unknown
+observable type is rejected when the file is LOADED, naming the offending
+analyzer and the legal values — not swallowed at dispatch time the way an
+unknown `citation_type` was.
+
+```bash
+python tools/analyzers/contract.py --validate            # load + validate; exit 1 on any defect
+python tools/analyzers/contract.py --list                # declared analyzers and responders
+python tools/analyzers/contract.py --json                # whole contract, machine-readable
+python tools/analyzers/contract.py --observable cve      # who accepts this observable type
+python tools/analyzers/contract.py --check-sql observable_type   # CHECK clause for a migration
+```
+
+---
+
 ## Browser Automation & Agent Scope Controls
 ```bash
 # Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
