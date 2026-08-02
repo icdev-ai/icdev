@@ -94,6 +94,24 @@ def _e2e_spec_for(key: str, leaf: str, e2e_dir: Path) -> str:
     return ""
 
 
+#: awareness_component_health is an append-only snapshot log — it held 465k rows
+#: on 2026-08-02 and grows with every probe cycle. Only the newest cycle matters
+#: here, and a cycle is ~1 row per route, so read a bounded newest-first window
+#: instead of materializing the whole table. Sized well above the live route
+#: count so a full cycle always fits.
+_PROBE_WINDOW = 20000
+
+
+def _query_probe_rows(conn: Any) -> list[tuple[Any, Any, Any]]:
+    """Read the newest window of route probe snapshots. Raises on DB error."""
+    cur = conn.execute(
+        "SELECT node_id, status, probed_at FROM awareness_component_health "
+        "WHERE probe_type = 'http_head' "
+        f"ORDER BY probed_at DESC LIMIT {_PROBE_WINDOW}"  # noqa: S608
+    )
+    return [tuple(r)[:3] for r in cur.fetchall()]
+
+
 def _latest_failing_routes(conn: Any) -> tuple[set[str], bool]:
     """Return (failing route paths, probed) from awareness_component_health.
 
@@ -108,19 +126,28 @@ def _latest_failing_routes(conn: Any) -> tuple[set[str], bool]:
             if candidate is None:
                 from tools.db.storage import get_connection  # noqa: PLC0415
 
-                with get_connection() as fallback:
-                    cur = fallback.execute(
-                        "SELECT node_id, status, probed_at FROM awareness_component_health"
-                    )
-                    rows = [tuple(r)[:3] for r in cur.fetchall()]
+                fallback = get_connection()
+                try:
+                    rows = _query_probe_rows(fallback)
+                finally:
+                    try:
+                        fallback.close()
+                    except Exception:  # noqa: BLE001, S110
+                        pass
             else:
-                cur = candidate.execute(
-                    "SELECT node_id, status, probed_at FROM awareness_component_health"
-                )
-                rows = [tuple(r)[:3] for r in cur.fetchall()]
+                rows = _query_probe_rows(candidate)
             if rows:
                 break
         except Exception:
+            # A failed statement leaves a PostgreSQL transaction aborted, and
+            # every later query on that same connection then reports "relation
+            # does not exist" whether or not it does. Roll back so the caller's
+            # connection stays usable for the rest of the fact collection.
+            if candidate is not None:
+                try:
+                    candidate.rollback()
+                except Exception:  # noqa: BLE001, S110
+                    pass
             continue
 
     if not rows:
@@ -159,11 +186,12 @@ def _failing_probe_count(route: str, failing_routes: set[str]) -> int:
 # Collection adapter
 # ---------------------------------------------------------------------------
 
-# Collecting the facts walks the repo tree and AST-parses every canvas
-# blueprint (~18s for 66 components). A scorecard runs one IQE query per rule
-# against this same collection, so without a cache an 8-rule scorecard would
-# pay that cost 8 times. The facts are derived from files and registry YAML,
-# neither of which changes inside a single evaluation run.
+# Collecting the facts walks the repo tree, AST-parses every canvas blueprint
+# and reads a probe window from the DB (~0.6s for 66 components, measured
+# 2026-08-02). A scorecard runs one IQE query per rule against this same
+# collection, so an 11-rule scorecard would otherwise pay that cost 11 times.
+# The facts derive from files and registry YAML, neither of which changes
+# inside a single evaluation run.
 _CACHE: list[dict] | None = None
 
 
@@ -207,11 +235,18 @@ def _collect_components(conn: Any = None) -> list[dict]:
         leaf = _module_leaf(comp.module, root)
         route = comp.url_prefix or ""
 
-        # Ownership — read from raw so fields added by a later registry
-        # migration (idp-cat-01) are picked up with no change to this module.
-        owner = str(raw.get("owner") or "")
-        owner_team = str(raw.get("owner_team") or "")
-        on_call = str(raw.get("on_call") or "")
+        # Ownership (idp-cat-01). Read the *scrubbed* dataclass fields, never
+        # raw YAML: Component normalizes the UNOWNED_SENTINELS ('tbd', 'todo',
+        # 'unassigned', …) to None, so `owner: TBD` scores as unowned. Reading
+        # raw would grade a placeholder as a real owner — the precise failure
+        # idp-cat-01 set out to prevent. raw is only the fallback for a
+        # registry loaded by an older Component without these fields.
+        owner = str(getattr(comp, "owner", None) or "")
+        owner_contact = str(getattr(comp, "owner_contact", None) or "")
+        on_call = str(getattr(comp, "on_call", None) or "")
+        if not hasattr(comp, "is_owned"):
+            owner = str(raw.get("owner") or "")
+        has_owner = bool(getattr(comp, "is_owned", None) or (not hasattr(comp, "is_owned") and owner))
 
         iqe_block = comp.iqe or {}
         adapter_module = str(iqe_block.get("adapter_module") or "")
@@ -220,9 +255,17 @@ def _collect_components(conn: Any = None) -> list[dict]:
             adapter_leaf and (adapters_dir / f"{adapter_leaf}.py").is_file()
         )
 
+        # Seed queries ship as .iqe (295 files) with a handful of .yaml
+        # descriptors alongside; accept either rather than grading a canvas
+        # down for the extension its authors happened to use.
         seed_dirs = [d for d in (comp.key, leaf) if d]
         has_seed_queries = any(
-            (queries_dir / d).is_dir() and any((queries_dir / d).glob("*.iqe"))
+            (queries_dir / d).is_dir()
+            and any(
+                p
+                for ext in ("*.iqe", "*.yaml", "*.yml")
+                for p in (queries_dir / d).glob(ext)
+            )
             for d in seed_dirs
         )
 
@@ -233,9 +276,7 @@ def _collect_components(conn: Any = None) -> list[dict]:
             try:
                 report = validate_canvas_completeness(comp.key, registry=registry, repo_root=root)
                 completeness_passed = bool(report.passed)
-                completeness_points = sum(
-                    1 for item in report.items if item.present or not item.required
-                )
+                completeness_points = sum(1 for item in report.items if item.present)
             except Exception:
                 completeness_declared = False
 
@@ -254,9 +295,10 @@ def _collect_components(conn: Any = None) -> list[dict]:
             "min_tier": comp.min_tier or "",
             # ownership (idp-cat-01)
             "owner": owner,
-            "owner_team": owner_team,
+            "owner_contact": owner_contact,
             "on_call": on_call,
-            "has_owner": bool(owner or owner_team),
+            "has_owner": has_owner,
+            "has_owner_contact": bool(owner_contact),
             # wiring
             "has_blueprint": bool(comp.module) and _blueprint_present(comp.module, root),
             "has_e2e_spec": bool(e2e_spec),

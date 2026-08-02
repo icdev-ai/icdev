@@ -395,17 +395,20 @@ def test_placeholder_owner_does_not_satisfy_the_ownership_rule():
         def list_all(self, kind=None):
             return [real]
 
-    monkey = idp_adapter
-    monkey.reset_cache()
-    import tools.config.component_registry as registry_module
+    idp_adapter.reset_cache()
+    # Resolve via importlib, not `import tools.config...` — the root `tools`
+    # package is a shim onto `icdev.tools`, and the statement form binds a
+    # different object than the adapter's own import resolves to.
+    import importlib
 
+    registry_module = importlib.import_module("tools.config.component_registry")
     original = registry_module.get_registry
-    registry_module.get_registry = lambda *a, **k: _Registry()
+    setattr(registry_module, "get_registry", lambda *a, **k: _Registry())
     try:
-        rows = monkey._collect_components(None)
+        rows = idp_adapter._collect_components(None)
     finally:
-        registry_module.get_registry = original
-        monkey.reset_cache()
+        setattr(registry_module, "get_registry", original)
+        idp_adapter.reset_cache()
 
     assert len(rows) == 1
     assert rows[0]["has_owner"] is False
@@ -461,3 +464,29 @@ def test_never_probed_is_not_reported_as_healthy():
     routes, probed = _latest_failing_routes(conn)
     assert routes == set()
     assert probed is False
+
+
+def test_rls_fact_shares_the_dashboard_mapping():
+    """The scorecard grades the same keys Canvas Health shows.
+
+    `_rls_violations` was promoted to the public `rls_violation_keys()` so the
+    `rls-clean` rule reads one mapping rather than re-deriving canvas keys from
+    coherence paths. Two derivations of the same fact drift, and then the
+    dashboard and the scorecard disagree about which canvas is broken. The
+    private name stays as an alias so nothing that imported it breaks.
+    """
+    import importlib
+
+    health_data = importlib.import_module("tools.canvas_health.health_data")
+
+    assert callable(health_data.rls_violation_keys)
+    assert health_data._rls_violations is health_data.rls_violation_keys
+
+    keys = health_data.rls_violation_keys()
+    assert isinstance(keys, set)
+    assert all(isinstance(k, str) for k in keys)
+
+    # The adapter must route through that function, not its own copy.
+    from tools.iqe.adapters.idp import _rls_violation_keys
+
+    assert _rls_violation_keys() == keys
