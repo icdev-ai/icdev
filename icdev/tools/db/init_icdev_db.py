@@ -3434,6 +3434,13 @@ CREATE TABLE IF NOT EXISTS innovation_signals (
     category TEXT,
     score REAL,
     raw_data TEXT,
+    -- The live table carries `raw_score` / `keywords`, which migration 329 adds to
+    -- databases that already exist. Declaring them here too is what keeps a FRESH
+    -- database the same shape: without it the scout daemon's INSERT — corrected in
+    -- swp-scan-01 to name the columns the live schema really has — would match the
+    -- migrated instance and fail on a newly initialised one.
+    raw_score REAL,
+    keywords TEXT,
     innovation_score REAL,
     score_breakdown TEXT,
     implementation_status TEXT,
@@ -4220,9 +4227,11 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     classification TEXT DEFAULT 'CUI',
     compartment TEXT DEFAULT '',
     tags TEXT,
-    -- The live column is `topics` (see db/schema/pg_consolidated.sql); this SQLite
+    -- The live column is `topics` — see db/schema/pg_consolidated.sql. This SQLite
     -- init path still only declared the legacy `tags`, so a fresh SQLite database
     -- lacked the column every memory writer actually names (swp-scan-01).
+    -- Keep `);` out of DDL comments: regex schema readers capture the table body
+    -- non-greedily up to the first one and would truncate the column list here.
     topics TEXT,
     metadata TEXT
 );
