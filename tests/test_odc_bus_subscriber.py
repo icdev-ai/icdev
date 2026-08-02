@@ -92,6 +92,12 @@ def bus_env(tmp_path, monkeypatch):
     monkeypatch.setattr(event_bus, "_LISTENERS", {}, raising=True)
     # Bus writes canvas_events/audit_trail; handler writes observability_designs.
     monkeypatch.setattr(event_bus, "get_connection", _conn, raising=True)
+    # canvas_events has no tenant_id/classification columns (migration 039), so
+    # publish()/dispatch_pending() write it through get_canvas_connection() —
+    # RLS disabled. Patching only get_connection left those two call sites on
+    # the REAL database, where the table is absent: every publish raised
+    # "no such table: canvas_events" before the handler could ever fire.
+    monkeypatch.setattr(event_bus, "get_canvas_connection", _conn, raising=True)
     monkeypatch.setattr(init_db_mod, "get_connection", _conn, raising=True)
 
     return _conn, event_bus
