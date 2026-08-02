@@ -105,6 +105,17 @@ VALID_STATUSES = frozenset({
     "failed", "suggested", "needs_decomposition",
 })
 
+# Moving a task into one of these is a deliberate revival: whatever failure text
+# the row is carrying describes a run that is no longer the current attempt.
+# Leaving it behind keeps the task showing as broken in the dashboard's
+# Autonomous Recovery panel, which filters on `last_failure_reason IS NOT NULL`.
+# The scheduler already does this on re-dispatch (reflexes/kanban.py, the
+# `elif new_status == "in_progress"` branch); the CLI did not, so a task revived
+# from the CLI stayed "failed"-looking until it happened to be dispatched.
+# `failure_count` and `last_failure_at` are deliberately preserved — they are
+# real history and the circuit breaker reads the count.
+_REVIVAL_STATUSES = frozenset({"backlog", "scheduled", "in_progress"})
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -224,10 +235,21 @@ def cmd_set_status(
                     (status, now, now, tid),
                 )
             else:
-                conn.execute(
-                    "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
-                    (status, now, tid),
-                )
+                sql = "UPDATE kanban_tasks SET status = %s, updated_at = %s"
+                vals = [status, now]
+                if status in _REVIVAL_STATUSES:
+                    sql += ", last_failure_reason = NULL"
+                if status == "scheduled":
+                    # _get_due_tasks requires `scheduled_at IS NOT NULL AND
+                    # scheduled_at <= now()`. Moving a task to 'scheduled'
+                    # without stamping it leaves the row invisible to the
+                    # dispatcher — the same silent-failure gap documented in
+                    # reflexes/kanban.py's move-to-scheduled branch.
+                    sql += ", scheduled_at = COALESCE(scheduled_at, %s)"
+                    vals.append(now)
+                sql += " WHERE id = %s"
+                vals.append(tid)
+                conn.execute(sql, tuple(vals))
             if prior_row:
                 _record_manual_transition(
                     conn, tid, prior_status, status,
