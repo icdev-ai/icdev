@@ -1081,6 +1081,78 @@ CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
     tenant_id TEXT,
     classification TEXT DEFAULT 'CUI'
 );
+-- Win/loss analysis (tools/win_loss/win_loss_engine.py). DDL mirrors
+-- tools/db/init_icdev_db.py. WinLossEngine.run() writes all four in one
+-- transaction and swallows the exception on failure, so a single missing table
+-- here reads as "the engine ran and persisted nothing" rather than as an error.
+CREATE TABLE IF NOT EXISTS pg_win_loss_records (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK(outcome IN ('won', 'lost', 'no_award', 'cancelled')),
+    competitor_name TEXT,
+    competitor_strengths TEXT,
+    our_strengths   TEXT,
+    our_weaknesses  TEXT,
+    lessons_learned TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_pg_winloss_opp ON pg_win_loss_records(opportunity_id);
+CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
+    id              TEXT PRIMARY KEY,
+    win_loss_id     TEXT NOT NULL,
+    category        TEXT NOT NULL CHECK(category IN ('technical', 'management', 'pricing', 'past_performance', 'compliance', 'staffing', 'other')),
+    lesson          TEXT NOT NULL,
+    actionable      INTEGER NOT NULL DEFAULT 1,
+    applied         INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS win_loss_analysis_runs (
+    id                  TEXT PRIMARY KEY,
+    run_at              TEXT,
+    outcomes_analyzed   INTEGER,
+    patterns_found      INTEGER,
+    top_win_features    TEXT,
+    top_loss_features   TEXT,
+    result_json         TEXT,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE TABLE IF NOT EXISTS win_loss_feature_impacts (
+    id                      TEXT PRIMARY KEY,
+    run_id                  TEXT,
+    feature_tag             TEXT,
+    win_count               INTEGER,
+    loss_count              INTEGER,
+    win_rate                REAL,
+    impact_score            REAL,
+    innovation_signal_id    TEXT,
+    analyzed_at             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wl_feature_impacts_run ON win_loss_feature_impacts(run_id);
+-- Cross-registration target for high-impact win/loss features. init_icdev_db.py
+-- declares pain_point_id as REFERENCES creative_pain_points(id), a parent table
+-- that is not in this fixture, so the clause is dropped rather than left
+-- dangling.
+CREATE TABLE IF NOT EXISTS creative_feature_gaps (
+    id TEXT PRIMARY KEY,
+    pain_point_id TEXT,
+    feature_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    requested_by_count INTEGER DEFAULT 0,
+    competitor_coverage TEXT DEFAULT '{}',
+    gap_score REAL DEFAULT 0.0,
+    market_demand REAL DEFAULT 0.0,
+    signal_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'identified'
+        CHECK(status IN ('identified','validated','spec_generated','addressed','rejected')),
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cfg_gap ON creative_feature_gaps(gap_score);
 CREATE TABLE IF NOT EXISTS dic_handoff_sessions (
     session_id          TEXT    PRIMARY KEY,
     departing_owner_id  TEXT    NOT NULL,
