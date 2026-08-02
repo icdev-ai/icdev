@@ -414,3 +414,142 @@ def test_missing_cortex_degrades_to_the_ungoverned_call(monkeypatch):
         [{"role": "user", "content": "x"}], "x", _Ctx(), lambda p: f"ungoverned:{p}",
     )
     assert out == "ungoverned:x"
+
+
+# ---------------------------------------------------------------------------
+# Grounded turns are graded, not skipped (cxo-adopt-02)
+#
+# `governed_chat_invoke` hardcoded context_sources=None / retrieval=False, so
+# the citation and content grounding gates recorded `skip` on EVERY turn —
+# including the turns that had just injected RAG hits and a KG block into the
+# system message. The defence for skipping ("scoring an ungrounded reply against
+# no sources manufactures a defect every turn") is real, but it only covers the
+# ungrounded turns. These tests pin both halves.
+# ---------------------------------------------------------------------------
+
+
+def test_context_sources_are_numbered_to_match_the_prompt_labels():
+    """The prompt shows RAG hits as [1] [2]; a citation must validate against those."""
+    sources = cm._chat_context_sources(
+        [{"content": "alpha", "source_type": "doc"}, {"content": "beta", "source_type": "doc"}],
+    )
+    assert [s["source_id"] for s in sources] == ["1", "2"]
+    assert [s["content"] for s in sources] == ["alpha", "beta"]
+
+
+def test_extra_blocks_join_the_grounding_corpus_under_non_numeric_ids():
+    """KG/compliance text is grounding evidence, but was never offered as [N]."""
+    sources = cm._chat_context_sources(
+        [{"content": "alpha"}], ("kg", "graph facts"), ("compliance", ""),
+    )
+    assert [s["source_id"] for s in sources] == ["1", "kg"]
+    assert not any(s["source_id"].isdigit() for s in sources[1:]), (
+        "a non-RAG block must not occupy a numeric id the model could cite"
+    )
+
+
+def test_a_turn_with_no_retrieval_produces_no_sources():
+    """This is what keeps an ungrounded turn on the skip path."""
+    assert cm._chat_context_sources([], ("kg", ""), ("compliance", "")) == []
+    assert cm._chat_context_sources(None) == []
+
+
+def test_reasoned_branch_grades_a_turn_that_retrieved(ctx):
+    sources = [{"source_id": "1", "content": "alpha"}]
+    with patch("tools.cortex.governance.GovernancePipeline") as pipeline:
+        pipeline.return_value.wrap.return_value = ("x", MagicMock())
+        cm.governed_chat_invoke(lambda t: "x", "hello", ctx, sources)
+
+    kwargs = pipeline.return_value.wrap.call_args.kwargs
+    assert kwargs["retrieval"] is True, "a turn with RAG hits must be graded"
+    assert kwargs["context_sources"] == sources
+
+
+def test_reasoned_branch_still_skips_a_turn_that_did_not_retrieve(ctx):
+    """Empty is not "grade against nothing" — it is still skip."""
+    with patch("tools.cortex.governance.GovernancePipeline") as pipeline:
+        pipeline.return_value.wrap.return_value = ("x", MagicMock())
+        cm.governed_chat_invoke(lambda t: "x", "hello", ctx, [])
+
+    kwargs = pipeline.return_value.wrap.call_args.kwargs
+    assert kwargs["retrieval"] is False
+    assert kwargs["context_sources"] is None
+
+
+@pytest.fixture
+def fake_cortex_api(monkeypatch):
+    """Stub ``tools.cortex.api`` as the PACKAGE attribute.
+
+    ``complete_via_cortex`` does ``from tools.cortex import api``, which binds
+    the attribute on the package — patching sys.modules leaves the real facade
+    in place and the call reaches a live provider.
+    """
+    import importlib
+
+    fake = MagicMock()
+    fake.complete.return_value = SimpleNamespace(text="answer")
+    monkeypatch.setattr(importlib.import_module("tools.cortex"), "api", fake)
+    return fake
+
+
+def test_plain_branch_forwards_sources_to_the_facade(ctx, fake_cortex_api):
+    """complete() grades on `context_sources`; the facade is the plain path."""
+    sources = [{"source_id": "1", "content": "alpha"}]
+    reply = cm.complete_via_cortex(
+        [{"role": "user", "content": "hello"}], "hello", ctx,
+        lambda p: "fallback", sources,
+    )
+
+    assert reply == "answer"
+    assert fake_cortex_api.complete.call_args.kwargs["context_sources"] == sources
+
+
+def test_plain_branch_sends_none_when_nothing_was_retrieved(ctx, fake_cortex_api):
+    cm.complete_via_cortex(
+        [{"role": "user", "content": "hello"}], "hello", ctx,
+        lambda p: "fallback", [],
+    )
+
+    assert fake_cortex_api.complete.call_args.kwargs["context_sources"] is None
+
+
+def test_both_branches_receive_the_turns_evidence():
+    """The wiring in _process_message, not just the helpers' signatures."""
+    import inspect
+
+    source = inspect.getsource(cm.ChatManager._process_message)
+    assert "_chat_context_sources(" in source, "the turn's evidence is never collected"
+    dispatch = source[source.index('if reasoning_mode == "off"'):]
+    assert dispatch.count("context_sources") >= 2, (
+        "both the plain and the reasoned branch must be handed the evidence"
+    )
+
+
+def test_weak_grounding_warns_and_never_blocks(ctx, monkeypatch):
+    """The acceptance line: a grounding defect is signal, not a refusal.
+
+    Runs the REAL pipeline over an answer citing a source that was never
+    injected — the hardest grounding failure available — and asserts the reply
+    still reaches the user.
+    """
+    from tools.cortex import governance
+
+    monkeypatch.setattr(governance, "_gate_check_text", lambda t: {"allowed": True, "warnings": []})
+    monkeypatch.setattr(governance, "_gate_redact_input", lambda t, c: (t, 0))
+    monkeypatch.setattr(governance, "_gate_redact_output", lambda t: (t, []))
+    monkeypatch.setattr(governance, "_gate_register_provenance", lambda *a: "scr-1")
+
+    audits = []
+    monkeypatch.setattr(governance, "_gate_record_audit", audits.append)
+
+    reply, blocked = cm.governed_chat_invoke(
+        lambda t: "Invented fact [source: 9].", "hello", ctx,
+        [{"source_id": "1", "content": "alpha"}],
+    )
+
+    assert blocked is False, "a grounding defect must never block a conversation"
+    assert reply == "Invented fact [source: 9]."
+    outcomes = audits[-1]["outcomes"]
+    assert outcomes["citation_grounding"] == "fail"
+    assert outcomes["citation_grounding"] != "skip"
+    assert audits[-1]["blocked"] is False
