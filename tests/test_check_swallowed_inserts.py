@@ -145,6 +145,30 @@ def test_missing_detector_exits_2_not_0(monkeypatch, capsys):
     assert "cannot import" in capsys.readouterr().err
 
 
+def test_missing_path_exits_2_not_0(tmp_path, capsys):
+    """A mistyped --path must not be indistinguishable from a clean tree.
+
+    Same failure mode as the vanished detector above: nothing was scanned, so
+    reporting EXIT_CLEAN would launder a typo into a passing gate.
+    """
+    code = checker.main(["--path", str(tmp_path / "does_not_exist")])
+
+    assert code == checker.EXIT_CANNOT_RUN
+    err = capsys.readouterr().err
+    assert "no such path" in err
+    assert "nothing was scanned" in err
+
+
+def test_missing_path_reports_error_status_in_json(tmp_path, capsys):
+    """The JSON contract must surface the failure, not an empty clean result."""
+    code = checker.main(["--path", str(tmp_path / "nope"), "--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert code == checker.EXIT_CANNOT_RUN
+    assert payload["status"] == "error"
+    assert payload["violations"] == []
+
+
 # Deliberately absent: a whole-tree scan. `tools/` takes ~90s to walk, which
 # exceeds the per-test budget — and on Windows pytest-timeout only has the
 # thread method, so it kills the interpreter and blames the wrong file (TSH).

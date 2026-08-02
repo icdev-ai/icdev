@@ -20,10 +20,13 @@ here is the one change that would defeat the purpose of the check.
 Exit codes:
     0 — clean
     1 — violations found (each printed as ``file:line``)
-    2 — the shared detector could not be imported
+    2 — the check could not run (detector missing, or a ``--path`` that does
+        not exist)
 
 Exit 2 is distinct on purpose: a check that reports "clean" because its
-detector vanished is the exact silent-failure mode this card exists to close.
+detector vanished — or because the path it was pointed at was a typo — is the
+exact silent-failure mode this card exists to close. Both are "we did not
+look", which must never be reported as "we looked and it was fine".
 
 Usage::
 
@@ -49,7 +52,10 @@ if str(REPO_ROOT) not in sys.path:
 
 EXIT_CLEAN = 0
 EXIT_VIOLATIONS = 1
+#: Also covers a ``--path`` that does not exist: see the module docstring on why
+#: "we did not look" must not share an exit code with "we looked and it was fine".
 EXIT_NO_DETECTOR = 2
+EXIT_CANNOT_RUN = EXIT_NO_DETECTOR
 
 
 def _resolve_paths(raw: Sequence[str]) -> List[Path]:
@@ -75,11 +81,16 @@ def scan(paths: Sequence[Path]) -> List[dict]:
     """Return one dict per swallowed-INSERT site, sorted by file then line.
 
     :raises ImportError: if the shared detector is unavailable.
+    :raises FileNotFoundError: if any requested path does not exist. Skipping it
+        would report "clean" for a subtree that was never opened.
     """
     from tools.refactor.swallowed_persistence import find_sites
 
-    existing = [p for p in paths if p.exists()]
-    sites = find_sites(existing, REPO_ROOT)
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        raise FileNotFoundError(", ".join(_rel(p) for p in missing))
+
+    sites = find_sites(list(paths), REPO_ROOT)
     findings = [
         {
             "file": site.rel,
@@ -148,6 +159,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             print("ERROR: {}".format(message), file=sys.stderr)
         return EXIT_NO_DETECTOR
+    except FileNotFoundError as exc:
+        message = "no such path: {} — nothing was scanned".format(exc)
+        if args.json:
+            print(json.dumps({"status": "error", "error": message, "violations": []}, indent=2))
+        else:
+            print("ERROR: {}".format(message), file=sys.stderr)
+        return EXIT_CANNOT_RUN
 
     if args.json:
         print(
