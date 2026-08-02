@@ -14,13 +14,19 @@ import pytest
 
 from tools.observability import invocation_recorder as R
 
-_MIGRATION = (Path(__file__).resolve().parent.parent
-              / "tools/db/migrations/333_runtime_invocations/up.py")
+# Resolved by GLOB, not by a pinned version number. This migration has already
+# been renumbered twice (329 -> 333 -> 341) as collisions were found, and a
+# hardcoded path silently breaks on the next rename — the same failure that let
+# the citation_types guardrail rot when migration 295 became 297.
+_MIGRATION = next(
+    (Path(__file__).resolve().parent.parent / "tools/db/migrations")
+    .glob("*_runtime_invocations/up.py")
+)
 
 
 @pytest.fixture()
 def obs_db(tmp_path, monkeypatch):
-    """Isolated SQLite DB with migration 333 applied."""
+    """Isolated SQLite DB with the runtime_invocations migration applied."""
     db = tmp_path / "obs.db"
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("ICDEV_DB_PATH", str(db))
