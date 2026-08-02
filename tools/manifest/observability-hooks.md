@@ -48,3 +48,23 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 | odc_gap_scores | Aggregate gap score per assessment run |
 | odc_otel_events | OTel-format detection events (append-only) |
 | odc_sdc_verifications | SDC closed-loop attack path verification results |
+
+## Runtime Invocation Telemetry (migration 341)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Invocation Recorder | tools/observability/invocation_recorder.py | `record()` context manager observing MCP tools, agents, personas and roles. Never raises; records argument KEY NAMES only, never values. Disable with `ICDEV_OBS_INVOCATIONS=0`. | surface, name, arg_keys, session_id, project_id, parent_id | Row in `runtime_invocations` |
+| Invocation Summary | tools/observability/invocation_recorder.py::summary | Per-name rollup: calls, errors, avg/max duration | surface (optional), limit | List of rollup dicts |
+
+Instrumented choke points — one per surface, chosen so a single wrap covers everything on it:
+
+| Surface | Choke point | Covers |
+|---------|-------------|--------|
+| mcp | `tools/mcp/unified_server.py::_register_lazy_tool.lazy_handler` | all 512 registered tools |
+| agent | `tools/agent/agent_executor.py::execute_agent` | every Claude CLI agent execution |
+| persona | `tools/ace/controller.py::_run` | every ACE co-worker run (wraps `_run`, not `launch` — launch only submits) |
+| role | `tools/ace/coworker_thread.py::_run_step_mode` | every role step |
+
+| Table | Purpose |
+|-------|---------|
+| runtime_invocations | What actually ran: surface, name, duration, status, error class, arg keys. Telemetry, NOT append-only audit evidence — deliberately absent from APPEND_ONLY_TABLES. |
