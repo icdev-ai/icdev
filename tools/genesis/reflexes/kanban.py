@@ -5263,6 +5263,20 @@ def _open_execution(task_id: str, executor_type: str) -> Optional[str]:
     execution_id = f"exec-{task_id}-{uuid.uuid4().hex[:8]}"
     try:
         with get_connection() as conn:
+            # Close any row this task left open. A task can be re-dispatched
+            # without its previous execution ever being closed — the scheduler
+            # restarts, or startup recovery resets it to backlog and it is
+            # promoted again — and _close_execution only ever closes the MOST
+            # RECENT open row. Without this, every such re-dispatch strands a
+            # row in 'running' forever, so "what is running now" drifts further
+            # from the truth the longer the board runs. Observed immediately
+            # after the first restart that enabled this telemetry: two tasks
+            # each had two rows in 'running'.
+            conn.execute(
+                "UPDATE kanban_executions SET status = %s, completed_at = %s "
+                "WHERE task_id = %s AND completed_at IS NULL",
+                ("superseded", _utcnow_iso(), task_id),
+            )
             conn.execute(
                 "INSERT INTO kanban_executions "
                 "(id, task_id, executor_type, execution_id, started_at, status) "
