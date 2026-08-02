@@ -3,7 +3,7 @@
 # INSERT / schema parity — swp-scan-01
 
 **Task:** `swp-scan-01` · **Date:** 2026-08-02 · **Scanner:** `tools/lint/insert_column_linter.py`
-**Migration:** `tools/db/migrations/323_insert_column_schema_parity/` · **Test:** `tests/test_insert_column_schema_parity.py`
+**Migration:** `tools/db/migrations/329_insert_column_schema_parity/` · **Test:** `tests/test_insert_column_schema_parity.py`
 
 ---
 
@@ -50,7 +50,7 @@ migration adds it (50), **R4** table-name collision — two subsystems own one n
 database (11), **R5** the wrong table is targeted entirely (1). A table can carry more
 than one remedy, so these sum above 85.
 
-Fixes landed in two places: **44 tables / 108 columns** via migration 323, and **41
+Fixes landed in two places: **44 tables / 108 columns** via migration 329, and **41
 tables** in the calling module. The split is deliberate — see *Where each fix landed*.
 
 ### Out of scope
@@ -67,7 +67,7 @@ They remain visible in the scanner output and are **not** gated.
 
 The dividing line is **which side is wrong**, not which side is easier to change.
 
-* **The database was behind → migration 323.** The column is declared in the owning
+* **The database was behind → migration 329.** The column is declared in the owning
   `init_db.py` or an earlier migration, carries data with no live equivalent under
   another name, and simply never landed because `CREATE TABLE IF NOT EXISTS` does not
   alter a table that already exists.
@@ -76,7 +76,7 @@ The dividing line is **which side is wrong**, not which side is easier to change
   entirely (`tasks` vs `kanban_tasks`). Renaming a *live column* to match a caller would
   break every reader of that column; renaming the caller costs nothing.
 
-Migration 323 is idempotent on both backends: every add is guarded by a live column read
+Migration 329 is idempotent on both backends: every add is guarded by a live column read
 rather than `ADD COLUMN IF NOT EXISTS`, which SQLite does not support. Re-running is a
 no-op — verified against the live instance (`0 column(s) added, 108 already present`).
 
@@ -150,8 +150,8 @@ are already persisted in `ad_macro_context.context_json` by `save_macro_context(
    both directions, so an entry that stops firing also fails rather than quietly rotting.
    PostgreSQL-only: under the SQLite test backend the fixture DB is minimal, so every
    table would report absent and the comparison would be meaningless.
-2. **The migration round-trip** builds each affected table in its *pre*-323 shape on a
-   throwaway SQLite database, asserts the INSERT genuinely fails first, applies 323,
+2. **The migration round-trip** builds each affected table in its *pre*-329 shape on a
+   throwaway SQLite database, asserts the INSERT genuinely fails first, applies 329,
    writes a row naming the added columns, and reads it back. Idempotency and the
    `nc_simulation_results` carry-across are asserted alongside.
 
@@ -194,85 +194,85 @@ collision · **R5** the wrong table is targeted.
 | `ace_artifacts` | (i) | R1 | calling module | content -> content_md (live splits content_md / content_json). |
 | `ace_sessions` | (i) | R2 | calling module | The INSERT writes BOTH conversation_history and history_json; history_json is redundant. |
 | `ad_macro_indicators` | (i) | R4 | calling module | tools/trading/db.py CREATEs a run-scoped shape; the live table is the as_of_date/flags_json FathomDesk shape. One name, two schemas, one database. |
-| `ad_quality_scores` | (i) | R3 | migration 323 | model_version, updated_at have no live equivalent. |
-| `ad_ticker_performance` | (i) | R3 | migration 323 | is_anomaly has no live equivalent. |
+| `ad_quality_scores` | (i) | R3 | migration 329 | model_version, updated_at have no live equivalent. |
+| `ad_ticker_performance` | (i) | R3 | migration 329 | is_anomaly has no live equivalent. |
 | `audit_trail` | (i) | R1/R3 | calling module | recorded_at -> created_at; user_id -> actor; resource/resource_type/resource_id and tenant_id have no live equivalent. |
 | `canvas_events` | (i) | R1/R3 | calling module | payload -> payload_json; tenant_id absent. |
-| `child_capabilities` | (i) | R3 | migration 323 | metadata, updated_at absent. |
+| `child_capabilities` | (i) | R3 | migration 329 | metadata, updated_at absent. |
 | `cloud_provider_status` | (i) | R1 | calling module | error_message -> details. |
 | `compliance_snapshots` | (i) | R1 | calling module | implementation_status -> status. |
-| `control_crosswalk` | (i) | R3 | migration 323 | created_at absent. |
+| `control_crosswalk` | (i) | R3 | migration 329 | created_at absent. |
 | `creative_competitors` | (i) | R1/R3 | calling module | description/website/created_at/updated_at vs live metadata/source_url/discovered_at. |
 | `creative_signals` | (i) | R1/R3 | calling module | raw_content -> body; created_at -> discovered_at; source_signal_id absent. |
 | `creative_specs` | (i) | R3 | calling module | executive_summary, pain_score absent; live carries spec_content/composite_score. |
 | `dashboard_users` | (i) | R1 | calling module | name -> display_name. The audit user was never created, so every authenticated page check in production_audit.py silently degraded to an unauthenticated one. |
-| `data_classifications` | (i) | R3 | migration 323 | subcategory, confidence absent. |
+| `data_classifications` | (i) | R3 | migration 329 | subcategory, confidence absent. |
 | `dd_anomaly_runs` | (i) | R1 | calling module | run_id -> id; run_at -> created_at. |
-| `dic_doc_freshness` | (i) | R3 | migration 323 | score absent. |
-| `dic_documents` | (i) | R3 | migration 323 | origin, status absent — the DIC AI-provenance and review-gate fields are never persisted. |
+| `dic_doc_freshness` | (i) | R3 | migration 329 | score absent. |
+| `dic_documents` | (i) | R3 | migration 329 | origin, status absent — the DIC AI-provenance and review-gate fields are never persisted. |
 | `dm_product_subscriptions` | (i) | R1 | calling module | subscriber_team -> subscriber; approved -> status. |
-| `fairness_assessments` | (i) | R4 | migration 323 | The live table is one row per project (overall_score/assessment_data); the code writes one row per dimension. |
-| `foundry_signals` | (i) | R3 | migration 323 | content_hash absent — the dedup key itself. |
+| `fairness_assessments` | (i) | R4 | migration 329 | The live table is one row per project (overall_score/assessment_data); the code writes one row per dimension. |
+| `foundry_signals` | (i) | R3 | migration 329 | content_hash absent — the dedup key itself. |
 | `framework_applicability` | (i) | R1 | calling module | detection_confidence -> confidence; detection_reason -> detection_rule. |
 | `ft_dataset_examples` | (i) | R1 | calling module | status -> approved (live column is boolean). |
-| `gd_ai_training_pairs` | (i) | R4 | migration 323 | Live is game_key/round_id/member_role; the code writes tournament_id/artifact_type. |
+| `gd_ai_training_pairs` | (i) | R4 | migration 329 | Live is game_key/round_id/member_role; the code writes tournament_id/artifact_type. |
 | `govcon_awards` | (i) | R1/R3 | calling module | period_of_performance -> _start/_end; created_at -> discovered_at; awardee_cage, contract_type, description absent. |
 | `govlift_runbook_executions` | (i) | R1 | calling module | created_at -> started_at. |
-| `govlift_runbook_templates` | (i) | R3 | migration 323 | estimated_min absent. |
+| `govlift_runbook_templates` | (i) | R3 | migration 329 | estimated_min absent. |
 | `govlift_runbooks` | (i) | R1 | calling module | step_count -> steps_count. |
 | `heartbeat_checks` | (i) | R1 | calling module | details -> result_summary. |
-| `hook_events` | (i) | R3 | migration 323 | severity, message absent. |
-| `icdev_capability_map` | (i) | R1/R3 | migration 323 | created_at -> mapped_at; grade, metadata absent. |
-| `innovation_signals` | (i) | R1/R3 | migration 323 | source_url -> url; raw_score, keywords absent. |
+| `hook_events` | (i) | R3 | migration 329 | severity, message absent. |
+| `icdev_capability_map` | (i) | R1/R3 | migration 329 | created_at -> mapped_at; grade, metadata absent. |
+| `innovation_signals` | (i) | R1/R3 | migration 329 | source_url -> url; raw_score, keywords absent. |
 | `kanban_tasks` | (i) | R1 | calling module | source -> dispatch_source. |
 | `kg_edges` | (i) | R1/R3 | calling module | relation -> relationship; source_type, target_type absent. |
 | `kg_nodes` | (i) | R1 | calling module | node_type -> entity_type. |
 | `marketplace_assets` | (i) | R1 | calling module | tenant_id -> publisher_tenant_id. |
-| `mc_srv_inventory` | (i) | R4 | migration 323 | Live is a hardware-profile table (vcpus/ram_gb/os_family); the code writes an asset-inventory shape (hostname/ip_address/os). |
-| `memory_entries` | (i) | R1/R3 | migration 323 | tags -> topics; metadata absent. |
+| `mc_srv_inventory` | (i) | R4 | migration 329 | Live is a hardware-profile table (vcpus/ram_gb/os_family); the code writes an asset-inventory shape (hostname/ip_address/os). |
+| `memory_entries` | (i) | R1/R3 | migration 329 | tags -> topics; metadata absent. |
 | `nc_change_request_items` | (i) | R1 | calling module | change_request_id -> cr_id; object_id -> entity_id; item_type -> action_type; description -> justification. |
 | `nc_change_requests` | (i) | R1/R3 | calling module | requested_by -> submitter_name; requested_at -> submitted_at; change_type, risk_level absent. |
-| `nc_intent_policies` | (i) | R1/R3 | migration 323 | enabled -> is_active; rule_json, severity absent. |
+| `nc_intent_policies` | (i) | R1/R3 | migration 329 | enabled -> is_active; rule_json, severity absent. |
 | `nc_intent_validations` | (i) | R1 | calling module | result -> passed; detail -> violations_json; validated_at -> ran_at. |
-| `nc_nqe_audit_log` | (i) | R1/R3 | migration 323 | nql_query -> nql_generated; user_confirmed, row_count absent. |
-| `nc_patch_plans` | (i) | R1/R3 | migration 323 | maintenance_window_id -> window_id; action, blast_radius_json absent. |
+| `nc_nqe_audit_log` | (i) | R1/R3 | migration 329 | nql_query -> nql_generated; user_confirmed, row_count absent. |
+| `nc_patch_plans` | (i) | R1/R3 | migration 329 | maintenance_window_id -> window_id; action, blast_radius_json absent. |
 | `nc_traffic_flows` | (i) | R1 | calling module | src_zone -> source_zone; dst_zone -> destination_zone; app_type -> application_type. |
-| `ni_devices` | (i) | R1/R3 | migration 323 | rack_location -> rack; criticality_score -> criticality; downstream_count, properties_json absent. |
-| `notification_log` | (i) | R1/R3 | migration 323 | type -> event_type; body, tenant_id absent. |
+| `ni_devices` | (i) | R1/R3 | migration 329 | rack_location -> rack; criticality_score -> criticality; downstream_count, properties_json absent. |
+| `notification_log` | (i) | R1/R3 | migration 329 | type -> event_type; body, tenant_id absent. |
 | `od_audit` | (i) | R1 | calling module | user -> actor. `user` is also a reserved word in PostgreSQL, so the statement never parsed there and od_audit has stayed empty. |
-| `odc_twin_snapshots` | (i) | R3 | migration 323 | coverage_basis, payload_json absent. |
-| `oracle_predictions` | (i) | R1/R3 | migration 323 | target -> subject_id; rationale -> prediction_text; status, suggested_action, expires_at absent. |
+| `odc_twin_snapshots` | (i) | R3 | migration 329 | coverage_basis, payload_json absent. |
+| `oracle_predictions` | (i) | R1/R3 | migration 329 | target -> subject_id; rationale -> prediction_text; status, suggested_action, expires_at absent. |
 | `peering_peers` | (i) | R1 | calling module | peeringdb_sync -> peeringdb_synced_at (boolean -> timestamp; the written value must change too). |
-| `pg_ai_clause_compliance` | (i) | R4 | migration 323 | Live is a per-clause checklist; the code writes an artifact row. |
-| `pg_cmmc_supply_chain` | (i) | R1/R3 | migration 323 | cage_code -> team_member_cage; cert_expiry -> certification_expiry; created_at, updated_at absent. |
+| `pg_ai_clause_compliance` | (i) | R4 | migration 329 | Live is a per-clause checklist; the code writes an artifact row. |
+| `pg_cmmc_supply_chain` | (i) | R1/R3 | migration 329 | cage_code -> team_member_cage; cert_expiry -> certification_expiry; created_at, updated_at absent. |
 | `pg_theme_tracking` | (i) | R1 | calling module | status -> implementation_status; notes -> reviewer_notes; created_at -> checked_at. |
-| `pg_win_loss_records` | (i) | R1/R3 | migration 323 | recorded_at -> created_at; bid_decision_id, debrief_notes absent. |
-| `pg_win_themes` | (i) | R3 | migration 323 | keywords absent. |
-| `pma_credential_alerts` | (i) | R1/R3 | migration 323 | days_remaining -> days_warning; severity absent. |
-| `pma_personnel` | (i) | R3 | migration 323 | role, secret_expiry, ts_expiry absent (live carries lcat and poly_expiry only). |
+| `pg_win_loss_records` | (i) | R1/R3 | migration 329 | recorded_at -> created_at; bid_decision_id, debrief_notes absent. |
+| `pg_win_themes` | (i) | R3 | migration 329 | keywords absent. |
+| `pma_credential_alerts` | (i) | R1/R3 | migration 329 | days_remaining -> days_warning; severity absent. |
+| `pma_personnel` | (i) | R3 | migration 329 | role, secret_expiry, ts_expiry absent (live carries lcat and poly_expiry only). |
 | `poam_items` | (i) | R1/R3 | calling module | finding_ref -> weakness_id; title -> weakness_description; due_date -> milestone_date; workload_id absent. |
 | `project_framework_status` | (i) | R1 | calling module | implemented_controls -> implemented_count. |
 | `projects` | (i) | R3 | calling module | compliance_score absent. |
-| `pulse_demand_signals` | (i) | R3 | migration 323 | sam_opportunity_ids, status absent. |
+| `pulse_demand_signals` | (i) | R3 | migration 329 | sam_opportunity_ids, status absent. |
 | `rag_chunks` | (i) | R3 | calling module | sign_bits absent on PG (SQLite-only quantisation column). |
-| `rag_ingestion_log` | (i) | R1/R3 | migration 323 | chunk_count -> chunks_created; status, started_at, completed_at absent. |
-| `redaction_audit` | (i) | R1/R3 | migration 323 | function -> module; entity_types_json -> entity_types; created_at -> timestamp; action absent. |
+| `rag_ingestion_log` | (i) | R1/R3 | migration 329 | chunk_count -> chunks_created; status, started_at, completed_at absent. |
+| `redaction_audit` | (i) | R1/R3 | migration 329 | function -> module; entity_types_json -> entity_types; created_at -> timestamp; action absent. |
 | `research_dossiers` | (i) | R1/R3 | calling module | created_at -> generated_at; vertical_name absent (live keys by vertical_id). |
-| `sdc_attack_snapshots` | (i) | R4 | migration 323 | Live keys by component_id with nodes_json/edges_json; the code writes design_id/label/counts. |
-| `sg_coa_options` | (i) | R1/R3 | migration 323 | title -> coa_name; description -> course_description; resource_allocation absent. |
+| `sdc_attack_snapshots` | (i) | R4 | migration 329 | Live keys by component_id with nodes_json/edges_json; the code writes design_id/label/counts. |
+| `sg_coa_options` | (i) | R1/R3 | migration 329 | title -> coa_name; description -> course_description; resource_allocation absent. |
 | `sg_entities` | (i) | R4 | calling module | The icdev PG table is the strategos supply-chain shape (name/theater_id/location_wkt). |
 | `sg_interdiction_results` | (i) | R1 | calling module | criticality_score -> criticality; substitutability_inverse -> substitutability; composite_score -> priority_score; computed_at -> created_at; affected_units_json -> metadata_json. |
-| `sg_intsum_paragraphs` | (i) | R3 | migration 323 | grounded, require_citations, citations absent — a TRUST provenance invariant that cannot be enforced at rest. |
-| `sg_intsums` | (i) | R3 | migration 323 | grounding_status, grounding_json absent — the same TRUST invariant. |
-| `sg_kg_edges` | (i) | R3 | migration 323 | created_at absent. |
-| `sg_kg_nodes` | (i) | R4 | migration 323 | icdev PG holds the 5-column strategos shape; the code writes the 10-column geosigint shape. |
+| `sg_intsum_paragraphs` | (i) | R3 | migration 329 | grounded, require_citations, citations absent — a TRUST provenance invariant that cannot be enforced at rest. |
+| `sg_intsums` | (i) | R3 | migration 329 | grounding_status, grounding_json absent — the same TRUST invariant. |
+| `sg_kg_edges` | (i) | R3 | migration 329 | created_at absent. |
+| `sg_kg_nodes` | (i) | R4 | migration 329 | icdev PG holds the 5-column strategos shape; the code writes the 10-column geosigint shape. |
 | `sg_tracks` | (i) | R4 | calling module | icdev PG holds a PostGIS track shape (location_wkt/track_ts). |
-| `simulation_results` | (i) | R4 | migration 323 | Network Canvas owns the live table (sim_type/topology_id/result_json); the Digital Program Twin writes scenario_id/metric_name/delta. One name, two owners. |
+| `simulation_results` | (i) | R4 | migration 329 | Network Canvas owns the live table (sim_type/topology_id/result_json); the Digital Program Twin writes scenario_id/metric_name/delta. One name, two owners. |
 | `tasks` | (i) | R5 | calling module | These sites believe `tasks` is the Kanban board. The board is `kanban_tasks`; live `tasks` is an 8-column legacy table with no description column. |
 | `tenants` | (i) | R3 | calling module | compartments absent on the icdev copy (see the platform.db override — only non-platform callers land here). |
-| `ttx_api_log` | (i) | R3 | migration 323 | token_count, cost_usd absent — TTX cost telemetry is never persisted. |
-| `usage_events` | (i) | R4 | migration 323 | Live is a web-request log (route/method/status_code); billing/metering writes tenant metering rows. |
+| `ttx_api_log` | (i) | R3 | migration 329 | token_count, cost_usd absent — TTX cost telemetry is never persisted. |
+| `usage_events` | (i) | R4 | migration 329 | Live is a web-request log (route/method/status_code); billing/metering writes tenant metering rows. |
 | `users` | (i) | R3 | calling module | compartments absent on the icdev copy (see the platform.db override). |
-| `wfc_chain_phases` | (i) | R1/R3 | migration 323 | phase_name -> name; phase_status -> status; workflow_snapshot_yaml absent. |
-| `workflow_acceptance_criteria` | (i) | R3 | migration 323 | cot_config absent. |
-| `zig_maturity_scores` | (i) | R3 | migration 323 | target_id absent — external-target scores collapse onto the same pillar row. |
+| `wfc_chain_phases` | (i) | R1/R3 | migration 329 | phase_name -> name; phase_status -> status; workflow_snapshot_yaml absent. |
+| `workflow_acceptance_criteria` | (i) | R3 | migration 329 | cot_config absent. |
+| `zig_maturity_scores` | (i) | R3 | migration 329 | target_id absent — external-target scores collapse onto the same pillar row. |

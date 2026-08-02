@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Migration 323: close the INSERT/schema gaps found by swp-scan-01.
+"""Migration 329: close the INSERT/schema gaps found by swp-scan-01.
 
 ``tools/lint/insert_column_linter.py`` parsed every static ``INSERT INTO`` in
 ``tools/`` and checked the named columns against ``information_schema`` on the
@@ -244,7 +244,7 @@ def _split_simulation_results(conn, is_pg: bool) -> None:
             "FROM simulation_results WHERE sim_type IS NOT NULL"
             + (" ON CONFLICT (id) DO NOTHING" if is_pg else "")
         )
-        logger.info("323: Network Canvas simulation rows copied to nc_simulation_results")
+        logger.info("329: Network Canvas simulation rows copied to nc_simulation_results")
 
 
 def _is_pg(conn) -> bool:
@@ -298,7 +298,7 @@ def up(conn=None) -> None:
                 # would fork a second definition away from its owning
                 # init_db.py, so leave it alone and say so.
                 absent += 1
-                logger.info("323: table %s absent — skipped", table)
+                logger.info("329: table %s absent — skipped", table)
                 continue
             for column, coltype in cols:
                 if column.lower() in live:
@@ -308,7 +308,7 @@ def up(conn=None) -> None:
                     'ALTER TABLE %s ADD COLUMN "%s" %s' % (table, column, coltype)
                 )
                 added += 1
-                logger.info("323: %s.%s added", table, column)
+                logger.info("329: %s.%s added", table, column)
 
         if is_pg:
             for table, column in DROP_NOT_NULL:
@@ -330,11 +330,11 @@ def up(conn=None) -> None:
                 # Pre-existing duplicates. The upsert stays correct without the
                 # index on every row written from here on; failing the whole
                 # migration over historic data would be worse.
-                logger.warning("323: unique index %s not created: %s", index, exc)
+                logger.warning("329: unique index %s not created: %s", index, exc)
 
         conn.commit()
         logger.info(
-            "323 complete: %d column(s) added, %d already present, %d table(s) absent",
+            "329 complete: %d column(s) added, %d already present, %d table(s) absent",
             added,
             skipped,
             absent,

@@ -172,7 +172,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
         with _nc() as db:
             db.execute(
                 # enabled is is_active. rule_json and severity genuinely did not
-                # exist and are added by migration 323 — a policy without its rule
+                # exist and are added by migration 329 — a policy without its rule
                 # is not a policy, and the validation route below reads rule_json
                 # back, so dropping them was not an option (swp-scan-01).
                 "INSERT INTO nc_intent_policies "

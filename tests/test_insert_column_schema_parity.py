@@ -19,9 +19,9 @@ Two things have to stay true from here on, and this module asserts both:
    so does reverting any of the fixes.
 
 2. **The rows the migration unblocked actually persist.**
-   :func:`test_migration_323_columns_persist_a_row` builds each affected table in
+   :func:`test_migration_329_columns_persist_a_row` builds each affected table in
    its *pre*-migration shape on a throwaway SQLite database, applies migration
-   323, writes a row naming the added columns, and reads it back.  Before the
+   329, writes a row naming the added columns, and reads it back.  Before the
    migration that INSERT raises; after it the row round-trips.
 
 The full per-finding classification is in
@@ -38,7 +38,7 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MIGRATION = (
-    _REPO_ROOT / "tools" / "db" / "migrations" / "323_insert_column_schema_parity" / "up.py"
+    _REPO_ROOT / "tools" / "db" / "migrations" / "329_insert_column_schema_parity" / "up.py"
 )
 
 
@@ -152,7 +152,7 @@ def test_no_new_insert_column_drift():
 # (2) The migration actually lets a row land
 # ---------------------------------------------------------------------------
 
-# {table: (pre-323 CREATE, columns written, values)} — the CREATE is the shape
+# {table: (pre-329 CREATE, columns written, values)} — the CREATE is the shape
 # the live database really had, so the INSERT below genuinely fails before the
 # migration runs and genuinely succeeds after it.
 ROUND_TRIP: dict[str, tuple[str, tuple[str, ...], tuple]] = {
@@ -186,7 +186,7 @@ ROUND_TRIP: dict[str, tuple[str, tuple[str, ...], tuple]] = {
     # R4 — the Digital Program Twin's per-dimension columns never landed
     # because the Network Canvas won the CREATE race for this table name.
     # sim_type is nullable here: relaxing the NC's NOT NULL is a PostgreSQL-only
-    # step (see test_migration_323_relaxes_the_network_canvas_not_null), and this
+    # step (see test_migration_329_relaxes_the_network_canvas_not_null), and this
     # case is about the columns being added.
     "simulation_results": (
         "CREATE TABLE simulation_results (id TEXT PRIMARY KEY, topology_id TEXT, "
@@ -198,7 +198,7 @@ ROUND_TRIP: dict[str, tuple[str, tuple[str, ...], tuple]] = {
 
 
 def _load_migration():
-    spec = importlib.util.spec_from_file_location("migration_323", _MIGRATION)
+    spec = importlib.util.spec_from_file_location("migration_329", _MIGRATION)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -206,7 +206,7 @@ def _load_migration():
 
 @pytest.fixture
 def pre_migration_db(tmp_path):
-    """A SQLite database carrying the exact pre-323 shape of each table."""
+    """A SQLite database carrying the exact pre-329 shape of each table."""
     conn = sqlite3.connect(tmp_path / "parity.db")
     for create, _, _ in ROUND_TRIP.values():
         conn.execute(create)
@@ -226,8 +226,8 @@ def test_the_insert_fails_before_the_migration(pre_migration_db):
             )
 
 
-def test_migration_323_columns_persist_a_row(pre_migration_db):
-    """After migration 323 the previously-rejected row round-trips."""
+def test_migration_329_columns_persist_a_row(pre_migration_db):
+    """After migration 329 the previously-rejected row round-trips."""
     _load_migration().up(pre_migration_db)
 
     for table, (_, columns, values) in ROUND_TRIP.items():
@@ -246,7 +246,7 @@ def test_migration_323_columns_persist_a_row(pre_migration_db):
         assert tuple(row) == values, f"{table}: persisted values differ"
 
 
-def test_migration_323_declares_every_column_it_adds(pre_migration_db):
+def test_migration_329_declares_every_column_it_adds(pre_migration_db):
     """Every column in COLUMNS lands on a table that exists."""
     module = _load_migration()
     module.up(pre_migration_db)
@@ -260,7 +260,7 @@ def test_migration_323_declares_every_column_it_adds(pre_migration_db):
             assert column.lower() in live, f"{table}.{column} was not added"
 
 
-def test_migration_323_is_idempotent(pre_migration_db):
+def test_migration_329_is_idempotent(pre_migration_db):
     """Re-running adds nothing and does not raise — required by the runner."""
     module = _load_migration()
     module.up(pre_migration_db)
@@ -278,12 +278,12 @@ def test_migration_323_is_idempotent(pre_migration_db):
     assert before == after
 
 
-def test_migration_323_relaxes_the_network_canvas_not_null():
+def test_migration_329_relaxes_the_network_canvas_not_null():
     """Adding the twin's columns is not enough while sim_type stays NOT NULL.
 
     Where the Network Canvas won the CREATE race for ``simulation_results`` it
     left ``sim_type NOT NULL``.  The Digital Program Twin names
-    scenario_id / dimension / metric_name and never sim_type, so once 323 adds
+    scenario_id / dimension / metric_name and never sim_type, so once 329 adds
     those columns the INSERT stops raising ``UndefinedColumn`` and starts
     raising ``NotNullViolation`` — still rejected, just further along.
     """
