@@ -1,0 +1,9 @@
+{
+  "id": "20260802200931_agent_approval_log",
+  "description": "ars-appr-01 — append-only trail of every agent-loop approval-gate decision, with the actor who decided and the reason.",
+  "date": "2026-08-02",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "tables_affected": ["agent_approval_log"],
+  "reversible": true
+}

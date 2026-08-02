@@ -19,6 +19,23 @@ from icdev.tools.llm.agent_loop import (
 from icdev.tools.llm.provider import LLMResponse
 
 
+@pytest.fixture(autouse=True)
+def _no_approval_gate(monkeypatch):
+    """Opt this file out of the ars-appr-01 approval gate.
+
+    These tests exercise loop *mechanics* with synthetic tools ("echo", "slow",
+    "boom"). The gate correctly classifies those as unknown and halts them for
+    approval, which would make every one of them assert on the gate instead of on
+    the behaviour it is actually about.
+
+    The gate's own default-on behaviour is proven in
+    ``tests/test_approval_gate.py::test_run_agent_loop_gates_an_unknown_tool_by_default``
+    — do not add gate assertions here, and do not read this fixture as evidence
+    that the gate is opt-in. It is on by default.
+    """
+    monkeypatch.setenv("ICDEV_AGENT_APPROVAL_GATE", "0")
+
+
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------

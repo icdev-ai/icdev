@@ -6,7 +6,20 @@ aborts with ResultSubtype.error_consecutive_tool_failures.
 """
 from __future__ import annotations
 
+import pytest
+
 from icdev.tools.llm.agent_loop import run_agent_loop, ResultSubtype, DONE
+
+
+@pytest.fixture(autouse=True)
+def _no_approval_gate(monkeypatch):
+    """Opt out of the ars-appr-01 approval gate — see tests/test_approval_gate.py.
+
+    These tests count *tool errors* to prove the circuit breaker trips. The gate
+    correctly halts their synthetic tools for approval, which would add errors of
+    a different kind and make the counts measure the gate instead of the breaker.
+    """
+    monkeypatch.setenv("ICDEV_AGENT_APPROVAL_GATE", "0")
 
 
 # ---------------------------------------------------------------------------

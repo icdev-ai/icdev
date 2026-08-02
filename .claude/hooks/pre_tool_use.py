@@ -714,6 +714,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # for competition integrity; append-only in fact (only engine.log_api_receipt
         # inserts, every other reference is a SELECT). Rows never UPDATE/DELETE.
         "ttx_api_log",
+        # Agent-loop approval gate (ars-appr-01, migration 20260802200931).
+        # WHO approved or denied an irreversible tool call, and WHY. This is the
+        # non-repudiation record for every halt-for-confirmation the agent loop
+        # made — if it were mutable, the answer to "who authorised that push"
+        # could be rewritten after the fact. Rows only ever INSERT.
+        "agent_approval_log",
     ]
     # NOTE: runtime_invocations (migration 341) is deliberately NOT listed. It
     # is telemetry with a genuine lifecycle — the recorder opens a row 'running'

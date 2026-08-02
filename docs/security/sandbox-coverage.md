@@ -1054,3 +1054,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - Line endings and file encoding are preserved (`read_source` normalises to LF for parsing and restores the original newline on write).
   - `tests/test_coherence_swallowed_persistence.py` pins the detector in both directions and asserts the real tree is clean.
 - **Revisit if:** the fixer gains an LLM-authored rewrite path (source text becoming model output rather than a deterministic transform), starts writing to a path derived from file content, or is wired into an unattended reflex that runs `--write` without review.
+
+### Gap 45 — Agent-loop approval gate (`tools/llm/approval_gate.py`)
+
+**Module:** `icdev/tools/llm/approval_gate.py` (canonical; `tools/llm/approval_gate.py` is a re-export shim) — ars-appr-01.
+
+**Ingress path:** LLM-authored tool calls. Every `tool_calls` entry `run_agent_loop` receives is passed to `classify()`, which JSON-flattens the tool input and matches it against the `irreversible.patterns` regexes from `args/approval_gate.yaml`. The tool *name* is likewise model-chosen. So both inputs to the classification are untrusted model output, and a preview of that input is persisted to `agent_approval_log` and rendered into a console prompt.
+
+- **Decision:** **trusted-first-party** for the rules, **sandboxed-by-construction** for the content.
+- **Rationale:** Model-supplied content is only ever *read*: `json.dumps` serialises it and `re.search` matches it. Nothing from a tool input is executed, `eval`'d, imported, deserialised, or interpolated into SQL — the recorder's INSERT is fully parameterised through `StorageConnection`, and the preview is stored as an opaque value, never concatenated into a statement. The patterns themselves come from a first-party YAML file in the repo, not from the model; a pattern that fails to compile is logged and dropped rather than raising. The module's authority runs one way: it can only *refuse* a call, never widen one.
+- **Guardrails:**
+  - `preview_input()` truncates to 300 characters and collapses whitespace before anything is persisted or printed, so a hostile tool input cannot flood the audit table or the console prompt.
+  - Default deny: a tool matching no rule is `UNKNOWN` and requires approval, so an unenumerated tool cannot slip through by being unrecognised.
+  - Content patterns are evaluated **before** the reversible allowlist, so an allowlisted shell tool cannot launder an irreversible command through itself.
+  - `is_read_only` is read from the tool *schema* — first-party code — never from the model's arguments.
+  - A missing or malformed `args/approval_gate.yaml` falls back to a deliberately narrower rule set rather than an empty allowlist.
+  - `tests/test_approval_gate.py` pins the rule ordering, the default-deny behaviour, and the append-only recording in both directions.
+- **Revisit if:** the classifier gains an LLM-judged risk tier whose verdict can *approve* rather than only escalate (`tools/agent_runtime/safety.py::_llm_risk` is that shape and would need its own decision here), the patterns become model- or tenant-authored rather than repo-authored, or the recorder starts persisting full tool inputs instead of a bounded preview.

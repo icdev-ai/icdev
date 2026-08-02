@@ -65,6 +65,27 @@ os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+-- Agent-loop approval gate decisions (ars-appr-01, migration 20260802200931).
+-- Append-only: WHO approved or denied an irreversible tool call, and WHY.
+-- Present here so any test that drives an agent loop records its decisions
+-- instead of logging a missing-table warning.
+CREATE TABLE IF NOT EXISTS agent_approval_log (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    session_id TEXT,
+    trace_id TEXT,
+    tool_name TEXT NOT NULL,
+    tool_input_preview TEXT,
+    reversibility TEXT NOT NULL,
+    rule_id TEXT,
+    decision TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    approval_mode TEXT,
+    classification TEXT DEFAULT 'CUI',
+    metadata TEXT
+);
+
 -- Runtime invocation telemetry (migration 341). Present here so any test that
 -- exercises an instrumented path (MCP dispatch, execute_agent, an ACE role
 -- step) records rather than tripping the recorder's missing-table latch.

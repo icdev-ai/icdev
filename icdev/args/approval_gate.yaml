@@ -1,0 +1,168 @@
+# CUI // SP-CTI
+# Approval gate for irreversible agent-loop actions (ars-appr-01).
+#
+# Read by tools/llm/approval_gate.py (canonical: icdev/tools/llm/approval_gate.py),
+# which classifies every tool call an agent loop emits and halts the irreversible
+# ones for a human decision.
+#
+# RULE ORDER — first match wins, and the order is the security property:
+#   1. schema `reversibility: reversible|irreversible` (explicit declaration)
+#   2. irreversible.tools     — tool-name match (exact or glob)
+#   3. schema `is_read_only: true` — first-party assertion; short-circuits patterns
+#      so grep_files("git push") does not prompt
+#   4. irreversible.patterns  — regex over the flattened tool input, evaluated
+#      BEFORE the reversible allowlist so an allowlisted shell tool cannot launder
+#      `git push --force` through itself
+#   5. reversible.tools       — allowlist
+#   6. no match               -> UNKNOWN -> requires approval (default deny)
+#
+# A missing or malformed copy of this file does NOT open the gate: the module
+# falls back to a deliberately narrower, fail-closed rule set.
+
+# Master switch. Overridden by ICDEV_AGENT_APPROVAL_GATE=0.
+enabled: true
+
+# manual | deny | off   (overridden by ICDEV_AGENT_APPROVAL_MODE)
+#   manual — ask the injected approver; the default approver prompts on a TTY and
+#            denies fail-closed when there is no interactive console (cron, CI,
+#            the kanban runner), so an unattended run can never self-approve.
+#   deny   — never approve. For batch runs that must not stall on a prompt.
+#   off    — auto-approve, still recorded with actor + reason. The audited escape
+#            hatch; every use logs a WARNING.
+mode: manual
+
+irreversible:
+  # Tool names that are irreversible by nature, whatever their arguments.
+  # Exact names or fnmatch globs.
+  tools:
+    # --- git / GitHub publication and destruction ---
+    - git_push
+    - force_push
+    - push_branch
+    - merge_pr
+    - pr_merge
+    - delete_branch
+    - delete_worktree
+    - delete_file
+    - delete_*
+    - remove_*
+    # --- delivery board: "done" is merge-verified and audit-logged ---
+    - kanban_set_done
+    - kanban_move_task
+    - set_task_status
+    # --- external posts: once sent, it is out of our control ---
+    - post_external
+    - send_email
+    - send_message
+    - send_notification
+    - publish
+    - publish_*
+    - upload_*
+    # --- infrastructure ---
+    - deploy
+    - deploy_*
+    - terraform_apply
+    - terraform_destroy
+    - k8s_deploy
+    - rollback
+
+  # Content patterns. Matched case-insensitively against the JSON-flattened tool
+  # input, so they catch an irreversible act smuggled through a generic shell or
+  # dispatch tool. Add a rule here rather than widening the allowlist.
+  patterns:
+    - id: git-push
+      regex: '\bgit\s+(?:-[^\s]+\s+)*push\b'
+      reason: "git push publishes commits to a remote — they cannot be un-published"
+
+    - id: git-force-push
+      regex: '\bgit\s+.*push\s+.*(?:--force|--force-with-lease|\s-f\b)'
+      reason: "a force-push rewrites remote history and can destroy other sessions' commits"
+
+    - id: git-history-destruction
+      regex: '\bgit\s+(?:reset\s+--hard|clean\s+-[a-z]*[fdx]|branch\s+-D|push\s+.*--delete)\b'
+      reason: "discards committed or untracked work with no recovery path"
+
+    - id: git-stash
+      regex: '\bgit\s+stash\b'
+      reason: "the stash is shared across all worktrees — stashing here can silently steal another concurrent session's work"
+
+    - id: worktree-remove
+      regex: '\bgit\s+worktree\s+(?:remove|prune)\b'
+      reason: "removing a worktree discards any uncommitted work inside it"
+
+    - id: pr-merge
+      regex: '\bgh\s+pr\s+(?:merge|close)\b'
+      reason: "merging or closing a pull request is a publication event on a shared remote"
+
+    - id: gh-destructive
+      regex: '\bgh\s+(?:repo\s+delete|release\s+delete|api\s+.*-X\s*DELETE)\b'
+      reason: "deletes a GitHub resource — irreversible on the remote"
+
+    - id: append-only-write
+      regex: '\b(?:update|delete\s+from|drop\s+table|truncate)\b.*\b(?:audit_trail|hook_events|agent_approval_log|cortex_audit|abac_decisions|security_context_log|rls_audit|component_audit_log)\b'
+      reason: "audit tables are append-only (NIST AU) — a row, once written, is evidence and must never be altered"
+
+    - id: sql-destructive
+      regex: '\b(?:drop\s+(?:table|database|schema)|truncate\s+table|delete\s+from)\b'
+      reason: "destroys persisted rows with no undo"
+
+    - id: filesystem-destructive
+      regex: '(?:\brm\s+-[a-z]*[rf]|\brmdir\b|\bshutil\.rmtree\b|\bRemove-Item\b.*-Recurse)'
+      reason: "recursive delete — the files are not recoverable from the filesystem"
+
+    - id: kanban-done
+      regex: '(?:--set-status\s+\S+\s+done|--force-done|/move\b.*\bdone\b)'
+      reason: "marking a task done closes it on the shared board and is merge-verified — a wrong 'done' makes the board lie"
+
+    - id: youtube-delete
+      regex: '\byoutube\b.*\b(?:delete|remove)\b|\bvideos\.delete\b'
+      reason: "CLAUDE.md absolute prohibition: NEVER delete YouTube videos — irreversible"
+
+    - id: external-post
+      regex: '\b(?:curl|wget|requests\.(?:post|put|delete)|httpx\.(?:post|put|delete))\b.*\bhttps?://'
+      reason: "sends data to an external service — publication cannot be recalled, and it may carry CUI"
+
+    - id: package-publish
+      regex: '\b(?:twine\s+upload|npm\s+publish|docker\s+push|helm\s+push)\b'
+      reason: "publishes an artifact to a registry — a published version cannot be unpublished"
+
+reversible:
+  # Allowlisted tool names. Anything not listed here, not read-only, and not
+  # matching an irreversible rule is UNKNOWN and requires approval.
+  #
+  # Note on the shell/dispatch tools (run_command, run_tool): they are listed as
+  # reversible only because they carry TWO compensating controls that a truly
+  # unknown tool does not — the irreversible `patterns` above are evaluated
+  # against their command string first (rule 4 beats rule 5), and
+  # tools/agent_runtime/safety.py already runs its own per-command approval gate
+  # inside the SAG handler. Remove them here to require approval on every shell
+  # call; the patterns are the load-bearing control either way.
+  tools:
+    # loop control — must never require approval or the loop cannot terminate
+    - done
+    # reads (most already declare is_read_only in their schema; belt and braces)
+    - read_file
+    - read_result
+    - list_files
+    - search_files
+    - grep_files
+    - glob_files
+    - browser_read_state
+    - browser_screenshot
+    # local, git-recoverable mutations
+    - write_file
+    - patch_file
+    - edit_file
+    # in-process coordination — no external side effect
+    - post_result
+    - spawn_agent
+    - parallel_agents
+    # screened shell/dispatch (see note above)
+    - run_tool
+    - run_command
+    # browser interaction inside a session
+    - browser_navigate
+    - browser_click
+    - browser_type
+    - browser_select
+    - browser_press

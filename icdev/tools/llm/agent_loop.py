@@ -617,6 +617,10 @@ def run_agent_loop(
     sanitize_tool_results: bool = True,
     initial_messages: list[dict[str, Any]] | None = None,
     harness_task_id: str | None = None,
+    approval_gate: bool | None = None,
+    approver: Any = None,
+    approval_mode: str | None = None,
+    approval_actor: str = "",
     _record_harness_decision: bool = True,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
@@ -696,6 +700,22 @@ def run_agent_loop(
             seeding. Used by :func:`run_agent_loop_with_rubric` to resume a
             transcript with grader feedback appended; also usable directly by
             callers that maintain their own message history.
+        approval_gate: Whether to run the reversibility approval gate
+            (:mod:`icdev.tools.llm.approval_gate`). ``None`` (default) resolves
+            from ``ICDEV_AGENT_APPROVAL_GATE`` then ``args/approval_gate.yaml``,
+            which ship it **enabled**. When on, every tool call is classified
+            reversible / irreversible / unknown, and anything that is not provably
+            reversible halts for a human decision before it executes. A blocked
+            call is not fatal: the model receives a "not executed, needs human
+            confirmation" tool_result and the loop continues.
+        approver: ``callable(ApprovalRequest) -> ApprovalDecision | bool`` that
+            grants or denies a halted call. Defaults to
+            ``approval_gate.default_approver`` — the console on a TTY, fail-closed
+            otherwise, so an unattended run can never self-approve.
+        approval_mode: ``manual`` | ``deny`` | ``off``. Defaults to
+            ``ICDEV_AGENT_APPROVAL_MODE`` then the config file.
+        approval_actor: Operator identity recorded on a decision when the approver
+            does not supply one.
         harness_task_id: Optional Continuous-Harness task id to key the recorded
             ``harness_eval`` decision on. When the runner dispatches a kanban
             task, pass its task id so the kanban reflex's later ``record_outcome``
@@ -765,6 +785,37 @@ def run_agent_loop(
 
     # Correlation ID: threads this loop run through memory writes, evals, and OTel spans.
     trace_id = str(_uuid.uuid4())
+
+    # ------------------------------------------------------------------
+    # Approval gate (ars-appr-01) — the loop's halt-for-confirmation step.
+    #
+    # Wired here rather than left to each caller: an approval step that only
+    # applies when someone remembers to pass a hook is not a gate. It composes
+    # with a caller-supplied ``on_pre_tool_use`` (that hook still runs first and
+    # can still block) and defaults to enabled, so an unknown tool requires
+    # approval even in a call site written before this existed.
+    # ------------------------------------------------------------------
+    try:
+        from icdev.tools.llm.approval_gate import build_approval_hook, is_enabled
+
+        if is_enabled(approval_gate):
+            on_pre_tool_use = build_approval_hook(
+                tools=tools,
+                approver=approver,
+                mode=approval_mode,
+                session_id=session_id,
+                trace_id=trace_id,
+                actor=approval_actor,
+                chain=on_pre_tool_use,
+            )
+    except Exception as exc:  # noqa: BLE001 — see below
+        # A gate that cannot be built must not silently vanish. The loop still
+        # runs (breaking every agent because a YAML file is malformed would be
+        # worse), but this is loud: the run is unguarded and the log says so.
+        logger.error(
+            "agent_loop: APPROVAL GATE UNAVAILABLE — tool calls will run unguarded: %s",
+            exc,
+        )
 
     # Resume: if a prior session ID is given, load its message history instead
     # of starting fresh. Falls back to a new conversation if the session is not
