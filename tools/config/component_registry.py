@@ -1216,6 +1216,21 @@ def validate_canvas_completeness(
                 migration_path_str = str(_db_parent)
 
     # Point 7: nav link
+    #
+    # The `completeness:` block declares APPLICABILITY, not presence — the
+    # registry's own convention comment reads "7. nav_link — applies ->
+    # `nav_link: true`". An explicit `nav_link: false` therefore means the point
+    # does not apply to this component, exactly like an absent `db_migration`
+    # (point 6) or an absent `iqe.adapter_module` (point 8), both of which
+    # already drive `required` rather than `present`. Reading that `false` as
+    # "declared and missing" left the one canvas that uses it permanently
+    # unfixable: `aiify_compat` is a 301-redirect alias (/ai-augmentation →
+    # /ai-ify/) whose sidebar link is owned by the real `aiify` canvas, and
+    # giving it a nav section re-emits the duplicate "AI-ify" entry cnr-nav-01
+    # removed. A MISSING key still means "required" — only an explicit falsy
+    # value opts out, so this cannot silently excuse a canvas that forgot to
+    # declare its nav.
+    nav_link_declared_na = "nav_link" in completeness and not completeness.get("nav_link")
     nav_link_present = bool(completeness.get("nav_link")) or bool(comp.nav.get("section"))
 
     # Point 8: IQE integration
@@ -1289,10 +1304,16 @@ def validate_canvas_completeness(
         ),
         CanvasCompletenessItem(
             point="nav_link",
-            required=True,
+            required=not nav_link_declared_na,
             present=nav_link_present,
             path=None,
-            message="nav link declared in registry" if nav_link_present else "missing nav_link or nav.section",
+            message=(
+                "nav link declared in registry"
+                if nav_link_present
+                else "nav link declared not applicable (completeness.nav_link: false)"
+                if nav_link_declared_na
+                else "missing nav_link or nav.section"
+            ),
         ),
         CanvasCompletenessItem(
             point="iqe_integration",

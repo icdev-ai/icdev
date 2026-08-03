@@ -6,10 +6,23 @@
 # the coherence_checker `new_page_completeness` gate so active development is
 # not blocked. Each entry requires a follow-up task to complete the canvas.
 #
-# Consumed by: tools/workflow/coherence_checker.py :: check_new_page_completeness
+# Consumed by BOTH halves of the 8-point gate (idp-score-05):
+#   tools/workflow/coherence_checker.py :: check_new_page_completeness  (filesystem-driven)
+#   tools/workflow/coherence_checker.py :: check_canvas_completeness    (registry-driven)
+# Both are `blocking` in args/security_gates.yaml, so this is the single grandfather
+# list for the whole rule — an entry here excuses a canvas from both.
+#
+# NOTE ON KEYING — the two checks identify a canvas differently, so an entry may
+# need to be written twice. `check_new_page_completeness` matches the template
+# DIRECTORY name (tools/dashboard/templates/network/); `check_canvas_completeness`
+# matches the registry component KEY (`ndc`). For most canvases those differ, and
+# as of idp-score-05 the two sets do not overlap at all — the union below excuses
+# nothing on the registry side, so all registered canvases are still fully checked.
+# To grandfather a canvas from both halves, list BOTH its directory and its key.
 #
 # Rules:
 #   - Each entry is a canvas directory name under tools/dashboard/templates/
+#     (filesystem check) or a registry component `key` (registry check)
 #   - Only add entries for pre-existing incomplete canvases, not new work
 #   - Include a comment: canvas name — what is missing (task-id)
 #   - Remove the entry once all 8 components are complete
