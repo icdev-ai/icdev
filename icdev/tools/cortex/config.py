@@ -98,6 +98,9 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
 # mtime-keyed cache: str(path) -> (mtime, merged config)
 _config_cache: Dict[str, tuple] = {}
 
+# Same shape, for the raw args/llm_config.yaml read by airgap_exclusions().
+_llm_config_cache: Dict[str, tuple] = {}
+
 
 class CortexAirgapError(RuntimeError):
     """The LLM routing config cannot serve Cortex in an air-gapped environment."""
@@ -173,9 +176,24 @@ def resolve_fail_closed(ctx=None, config_path=None) -> bool:
 # ---------------------------------------------------------------------------
 # Air-gap invariant
 # ---------------------------------------------------------------------------
-def _load_llm_config(config_path=None) -> Dict:
+def _load_llm_config(config_path=None, refresh: bool = False) -> Dict:
+    """Load args/llm_config.yaml, cached per path+mtime.
+
+    Same cache discipline as ``load_cortex_config``: this is on the air-gap hot
+    path (``airgap_exclusions`` runs on every ``_invoke`` when ICDEV_AIRGAP=1),
+    so an uncached ``yaml.safe_load`` of the whole LLM config would be paid per
+    LLM call. ``refresh=True`` bypasses the cache.
+    """
     path = Path(config_path) if config_path else resolve_llm_config_path()
-    return _load_yaml(path)
+    key = str(path)
+    mtime = path.stat().st_mtime if path.is_file() else 0.0
+    if not refresh:
+        cached = _llm_config_cache.get(key)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+    config = _load_yaml(path)
+    _llm_config_cache[key] = (mtime, config)
+    return config
 
 
 def _is_local_model(model_cfg: Optional[Dict], providers: Dict) -> bool:
