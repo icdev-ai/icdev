@@ -241,6 +241,12 @@ def _propose_roles(question: str) -> list[dict]:
     advisory: any failure yields an empty roster and the proposal still renders.
     """
     try:
+        # Canonical namespace, and here it is load-bearing rather than stylistic:
+        # in a source checkout `tools.ace.problem_classifier` loads a *second*
+        # copy of the module, whose `ProblemClassifierLens` is a different class
+        # object from the one `icdev.tools.ace.*` (i.e. ACE itself) uses, with its
+        # own role-loader state. Keep the `icdev.` prefix. See
+        # docs/features/cortex-unified-ai-layer.md, "Import namespace".
         from icdev.tools.ace.problem_classifier import ProblemClassifierLens
 
         lens = ProblemClassifierLens(question)

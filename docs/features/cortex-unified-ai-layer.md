@@ -160,6 +160,41 @@ tier, so the whole facade is air-gap safe. `assert_airgap_ready()` raises
 Everything under `tools/cortex/`, `tools/mcp/cortex_server.py`, and the IQE
 adapter is mirrored to `icdev/tools/…`.
 
+### Import namespace (cxo-doc-02)
+
+Most imports inside `tools/cortex/` are spelled `tools.*`, but three are spelled
+`icdev.tools.*` — `api.py::_run_single_agent` (`llm.agent_loop`, twice) and
+`blueprint.py::_propose_roles` (`ace.problem_classifier`). That is **not** drift
+to be normalised away; the canonical spelling is `icdev.tools.*` and those three
+sites are the ones that are already right.
+
+The two roots are not interchangeable, and which one you get depends on how
+ICDEV was installed:
+
+| Environment | Resolution | Effect |
+|-------------|-----------|--------|
+| Wheel / `pip install icdev` | `icdev/__init__.py::_alias_tools_namespace()` binds `sys.modules["tools"] = icdev.tools` | `tools.X` **is** `icdev.tools.X` — one object |
+| Source checkout (this repo) | A real top-level `tools/` package exists, so the alias deliberately stands down | `tools.X` and `icdev.tools.X` are **separate module objects** with separate state |
+
+That second row is the whole point. In a source checkout `tools.iqe.executor`,
+`tools.db.storage` and `tools.ace.problem_classifier` each load a second time
+under the `tools.` name, producing distinct classes and distinct module-level
+caches. `icdev.tools.*` is therefore the only spelling that binds the same
+object in both environments — which is exactly why CLAUDE.md names it canonical.
+
+Consequences for the two call sites:
+
+- **`ace.problem_classifier`** — load-bearing. ACE's own modules (`tools/ace/controller.py`, `problem_classifier.py`, …) import through `icdev.tools.*`. Spelling this one `tools.*` would hand Cortex a *different* `ProblemClassifierLens` class with its own role-loader state.
+- **`llm.agent_loop`** — identity happens to survive either spelling today, because `tools/llm/agent_loop.py` was collapsed into a pure re-export shim (`dba8d4b59`) after the physical copy it replaced drifted out of sync and silently served a stale loop. That is a property of one file, not of the namespace, so the canonical spelling still stands.
+
+What was explicitly **not** done: converting the rest of `tools/cortex/` to
+`icdev.tools.*`. Cortex is hosted by the Flask dashboard, which reaches it
+through `tools.*`; flipping ~100 sibling imports would have Cortex binding a
+different `db.storage` (and therefore a different connection pool and RLS
+predicate state) from its own host. The mixed spelling is the safe state, and
+`tests/cortex/test_import_namespace.py` pins it so the three canonical sites are
+not "tidied" back.
+
 ## 9. Verification
 
 - Unit suite: `pytest tests/cortex/` (SQLite, conftest-forced).
