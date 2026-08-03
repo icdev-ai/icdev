@@ -33,6 +33,7 @@ _SCHEMA = """
 CREATE TABLE kanban_tasks (
     id TEXT PRIMARY KEY,
     title TEXT,
+    description TEXT,
     priority TEXT,
     status TEXT,
     depends_on_task_id TEXT,
@@ -78,19 +79,26 @@ def conn(monkeypatch):
 
 
 def _task(conn, tid, *, status, title=None, priority="high", dep=None,
-          heartbeat=None, updated=None):
+          heartbeat=None, updated=None, description=None):
     conn.execute(
-        "INSERT INTO kanban_tasks (id, title, priority, status, depends_on_task_id,"
-        " last_heartbeat_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-        (tid, title if title is not None else f"task {tid}", priority, status, dep,
-         heartbeat, updated or _now()),
+        "INSERT INTO kanban_tasks (id, title, description, priority, status,"
+        " depends_on_task_id, last_heartbeat_at, updated_at)"
+        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+        (tid, title if title is not None else f"task {tid}", description, priority,
+         status, dep, heartbeat, updated or _now()),
     )
 
 
-def _gate(conn, gid, *, updated=None):
+def _gate(conn, gid, *, updated=None, description="RISK: needs a human in the loop."):
+    """A gate that STATES a risk by default.
+
+    The ranking tests below are about volume and priority; leaving them
+    unjustified would make every one of them pass for the wrong reason, since
+    an unjustified gate outranks everything (kpr-idle-02).
+    """
     _task(conn, gid, status="in_progress",
           title="MANUAL-MODE GATE — held, do not dispatch",
-          priority="critical", updated=updated or _now())
+          priority="critical", updated=updated or _now(), description=description)
 
 
 # --------------------------------------------------------------------------- #
@@ -264,3 +272,97 @@ def test_the_scheduler_falls_back_rather_than_dying(monkeypatch):
         A, "diagnose", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db gone"))
     )
     assert S._idle_reason(1) == "idle (no due tasks)"
+
+
+# --------------------------------------------------------------------------- #
+# kpr-idle-02 — a gate is only justified by a stated risk
+# --------------------------------------------------------------------------- #
+
+from tools.kanban.gates import declared_risk  # noqa: E402
+
+
+def test_an_explicit_risk_line_is_read():
+    risk, confidence = declared_risk(
+        "Sentinel.\nRISK: these tasks classify CUI and need a human in the loop.\n"
+    )
+    assert confidence == "explicit"
+    assert "classify CUI" in risk
+
+
+def test_risk_shaped_prose_is_accepted_but_marked_implicit():
+    """Existing gates are not all condemned overnight — but the gap stays visible."""
+    risk, confidence = declared_risk(
+        "Held in_progress forever — these are design decisions, not agent work."
+    )
+    assert confidence == "implicit"
+    assert risk
+
+
+def test_procedure_is_not_risk():
+    """The distinction the whole policy rests on.
+
+    "Do not move this without a decision" and "re-hold after /start" tell a
+    reader what to DO. Neither says what goes wrong if the runner builds the
+    card, so neither can be reviewed — there is nothing to weigh.
+    """
+    risk, confidence = declared_risk(
+        "Manual hold for the card. Do NOT move this to done without an explicit "
+        "decision to let the runner build it autonomously.\n"
+        "Hazard: /start's reset releases this gate. Re-hold it after any /start."
+    )
+    assert confidence == "none"
+    assert risk is None
+
+
+def test_an_empty_description_states_no_risk():
+    assert declared_risk("") == (None, "none")
+    assert declared_risk(None) == (None, "none")
+
+
+def test_an_unjustified_gate_outranks_a_justified_one_holding_far_more(conn):
+    """Justification dominates volume — the policy, expressed as an assertion."""
+    _task(conn, "silent-gate-00", status="in_progress",
+          title="MANUAL-MODE GATE — silent", priority="critical")
+    conn.execute("UPDATE kanban_tasks SET description=%s WHERE id=%s",
+                 ("Manual hold. Do not move without a decision.", "silent-gate-00"))
+    _task(conn, "stated-gate-00", status="in_progress",
+          title="MANUAL-MODE GATE — stated", priority="critical")
+    conn.execute("UPDATE kanban_tasks SET description=%s WHERE id=%s",
+                 ("RISK: targets a private repo the runner cannot clone.",
+                  "stated-gate-00"))
+
+    _task(conn, "s-0", status="backlog", dep="silent-gate-00", priority="low")
+    for i in range(12):
+        _task(conn, f"j-{i}", status="backlog", dep="stated-gate-00", priority="critical")
+
+    d = A.diagnose(conn)
+    assert d["recommendation"]["release"] == "silent-gate-00", (
+        "one low-priority task with no stated risk must still outrank twelve "
+        "critical ones behind a gate that explains itself"
+    )
+    assert d["recommendation"]["justified"] is False
+    assert "states no risk" in d["recommendation"]["why"]
+
+
+def test_among_justified_gates_volume_decides_again(conn):
+    """The precedence rule must not flatten ordinary ranking."""
+    for gid, n in (("a-gate-00", 1), ("b-gate-00", 6)):
+        _task(conn, gid, status="in_progress", title=f"MANUAL-MODE GATE {gid}")
+        conn.execute("UPDATE kanban_tasks SET description=%s WHERE id=%s",
+                     ("RISK: needs a human in the loop.", gid))
+        for i in range(n):
+            _task(conn, f"{gid}-t{i}", status="backlog", dep=gid, priority="high")
+    assert A.diagnose(conn)["recommendation"]["release"] == "b-gate-00"
+
+
+def test_a_justified_gate_carries_its_risk_into_the_output(conn):
+    _task(conn, "g-00", status="in_progress", title="MANUAL-MODE GATE")
+    conn.execute("UPDATE kanban_tasks SET description=%s WHERE id=%s",
+                 ("RISK: the tasks need a human in the loop for classification.",
+                  "g-00"))
+    _task(conn, "t-1", status="backlog", dep="g-00")
+    cand = A.diagnose(conn)["candidates"][0]
+    assert cand["justified"] is True
+    assert cand["risk_confidence"] == "explicit"
+    assert "human in the loop" in cand["risk"]
+    assert not any("NO stated risk" in c for c in cand["caveats"])

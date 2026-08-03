@@ -27,6 +27,20 @@ quietly substituted throughput for intent — and the gate would stop being a
 control the moment anyone learned it could be overridden by waiting. Every
 function here is a read. The recommendation is an argument, not an action.
 
+A GATE IS ONLY JUSTIFIED BY A STATED RISK (kpr-idle-02)
+-------------------------------------------------------
+A gate stops work, so it owes a reason: what goes wrong if the runner builds
+this card unattended. Procedure is not a reason — "do not move without a
+decision" and "re-hold after /start" say what to DO, not what breaks, so they
+cannot be reviewed and cannot be weighed against the cost of holding.
+
+A gate with no stated risk therefore outranks every justified gate for release,
+regardless of how much work each holds: it is not a control, it is work nobody
+has looked at. Volume and priority decide among equals, never across that line.
+Measured on the live board the day this shipped: of four held gates, two stated
+a reason and two did not, and one of the silent pair had been holding 19 tasks —
+three of them critical — for 39 hours.
+
 WHAT THE RANKING CAN AND CANNOT KNOW
 ------------------------------------
 It ranks on signals it can actually measure: how much work would become
@@ -51,7 +65,7 @@ if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
 from tools.db.storage import get_connection  # noqa: E402
-from tools.kanban.gates import is_manual_gate  # noqa: E402
+from tools.kanban.gates import declared_risk, is_manual_gate  # noqa: E402
 
 #: A task whose TITLE announces it cannot proceed. These are the expensive ones:
 #: dispatched, an agent spends a full session rediscovering why, and usually
@@ -62,6 +76,11 @@ _INERT_TITLE = re.compile(r"^\s*(BLOCKED|DECLINED|WONTFIX|SUPERSEDED)\b", re.I)
 #: Priority -> weight. Deliberately coarse: this orders candidates, it does not
 #: measure them, and a finer scale would imply precision the inputs do not have.
 _PRIORITY_WEIGHT = {"critical": 3, "high": 2, "medium": 1, "low": 0}
+
+#: Added to any gate holding work with no stated risk, so it outranks every
+#: justified gate no matter how much work they hold. Large on purpose: this
+#: is a precedence rule expressed as arithmetic, not a heavy nudge.
+_UNJUSTIFIED_PRECEDENCE = 10_000.0
 
 PAUSED = "paused"
 WEDGED = "wedged"
@@ -86,6 +105,9 @@ class GateCandidate:
     ready_on_release: int
     priority_mix: Dict[str, int]
     inert: List[str]
+    risk: Optional[str]
+    risk_confidence: str
+    justified: bool
     score: float
     caveats: List[str]
 
@@ -105,8 +127,12 @@ def _hours_since(value: Any) -> Optional[float]:
 
 
 def _held_gates(conn) -> List[Dict[str, Any]]:
+    # `description` is not optional here: it is where a gate states its risk,
+    # and omitting it would make every gate look unjustified — the failure would
+    # read as a policy finding rather than a missing column.
     rows = [dict(r) for r in conn.execute(
-        "SELECT id, title, updated_at FROM kanban_tasks WHERE status = 'in_progress'"
+        "SELECT id, title, description, updated_at FROM kanban_tasks "
+        "WHERE status = 'in_progress'"
     ).fetchall()]
     return [r for r in rows if is_manual_gate(r.get("id"), r.get("title"))]
 
@@ -154,15 +180,32 @@ def _score_gate(conn, gate: Dict[str, Any]) -> GateCandidate:
     inert = [f"{r['id']}: {r['title']}" for r in open_rows
              if _INERT_TITLE.match(r.get("title") or "")]
 
-    # Score = the work that would actually start, weighted by how urgent that
-    # work claims to be, minus the tasks that would burn a session going nowhere.
-    # Age is a tiebreak only: a gate held longer is not more important, but
-    # between two equal candidates the older one has waited.
+    # A gate stops work, so it owes a reason (kpr-idle-02). One that states no
+    # risk is not a control — it is work nobody has looked at — and it should be
+    # released or justified BEFORE a justified gate is opened, regardless of
+    # which holds more tasks. So justification dominates the ranking rather than
+    # adjusting it: volume decides among equals, never across this line.
+    risk, confidence = declared_risk(gate.get("description"))
+    justified = confidence != "none"
+
     urgency = sum(_PRIORITY_WEIGHT.get(r.get("priority") or "", 0) for r in open_rows)
     held = _hours_since(gate.get("updated_at"))
     score = float(ready + urgency - 2 * len(inert)) + (held or 0.0) / 1000.0
+    if not justified:
+        score += _UNJUSTIFIED_PRECEDENCE
 
     caveats: List[str] = []
+    if not justified:
+        caveats.append(
+            "held with NO stated risk — a gate that cannot say what goes wrong "
+            "if the runner builds this card is not a control, it is unreviewed "
+            "work. Add a `RISK:` line to the gate's description or release it"
+        )
+    elif confidence == "implicit":
+        caveats.append(
+            f"risk is stated in prose, not as a `RISK:` line: \"{(risk or '')[:110]}\" "
+            "— restate it so it can be reviewed rather than inferred"
+        )
     if inert:
         caveats.append(
             f"{len(inert)} of {len(open_rows)} open task(s) self-declare "
@@ -187,6 +230,9 @@ def _score_gate(conn, gate: Dict[str, Any]) -> GateCandidate:
         ready_on_release=ready,
         priority_mix=mix,
         inert=inert,
+        risk=risk,
+        risk_confidence=confidence,
+        justified=justified,
         score=round(score, 3),
         caveats=caveats,
     )
@@ -277,13 +323,25 @@ def _recommend(candidates: List[GateCandidate]) -> Dict[str, Any]:
     """The argument for the top candidate, and what the ranking cannot see."""
     top = candidates[0]
     runners = candidates[1:]
-    return {
-        "release": top.gate_id,
-        "why": (
+    if not top.justified:
+        why = (
+            f"it states no risk. It has held {top.open_tasks} task(s) for "
+            f"{top.held_hours}h without recording what would go wrong if the "
+            "runner built them, so there is nothing to review and nothing to "
+            "weigh against the cost of holding. Release it, or add a `RISK:` "
+            "line saying what the hold is protecting against"
+        )
+    else:
+        why = (
             f"{top.ready_on_release} task(s) would start immediately "
             f"(priority mix {top.priority_mix or '{}'}), the largest amount of "
-            "genuinely dispatchable work among the held gates"
-        ),
+            "genuinely dispatchable work among the gates that justify holding"
+        )
+    return {
+        "release": top.gate_id,
+        "why": why,
+        "justified": top.justified,
+        "risk": top.risk,
         "before_releasing": top.caveats,
         "then": [c.gate_id for c in runners],
         "command": f"python tools/kanban/cli.py --set-status {top.gate_id} done",
