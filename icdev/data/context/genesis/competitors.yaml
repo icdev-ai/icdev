@@ -5,93 +5,331 @@
 # architectural patterns, and capability gaps.
 #
 # Classification: CUI // SP-CTI
+#
+# ── Schema ───────────────────────────────────────────────────────────
+#   repo       GitHub owner/name. Absent => not trackable; see `trackable`.
+#   subsystem  The ICDEV subsystem this target benchmarks. Routing key —
+#              a scout finding is actionable only if it lands on an owner.
+#   category   Free-text grouping used by the scout brief headings.
+#   watch      Signals to collect. Only `releases` costs an extra API call;
+#              `stars`/`readme_changes`/`models` are declarative.
+#   trackable  false => no public repo. The scout skips it and lists it
+#              under "Manual review" in the brief instead.
+#   url        Required when `trackable: false` — where a human goes to look.
+#   notes      Why it is on the list.
+#
+# ── Subsystems ───────────────────────────────────────────────────────
+# The first ten map 1:1 onto docs/research/external-benchmark-map.md §1–§10.
+# Every subsystem named there has at least one entry below.
+#
+#   developer_portal      §1  Developer portal / catalog
+#   observability         §2  Observability / LLM telemetry
+#   agent_runtime         §3  Agent runtime & orchestration
+#   security_ops          §4  Security ops / threat analysis
+#   rag_knowledge_graph   §5  RAG & knowledge graph
+#   compliance_ato        §6  Compliance & ATO
+#   delivery_pipeline     §7  Delivery pipeline
+#   data_lineage          §8  Data quality & lineage
+#   evaluation            §9  LLM evaluation & red teaming
+#   iac                   §10 IaC & infrastructure
+#
+# These are ICDEV subsystems the benchmark map did not cover; they predate it:
+#
+#   autonomous_research   Genesis / autoresearch loops
+#   llm_infrastructure    Local model serving
+#   mlops                 Model lifecycle
+#   embedded              SparkPilot / RTOS
+#
+# ── API budget ───────────────────────────────────────────────────────
+# 39 trackable repos = 39 metadata calls, plus 39 carrying `releases`
+# = 78 GitHub API calls per cycle. GITHUB_TOKEN is therefore REQUIRED,
+# not optional: the unauthenticated ceiling is 60 requests/hour, so an
+# untokened run exhausts it partway through and the remainder fail. A
+# token raises the limit to 5,000/hr and the whole list fits comfortably.
+#
+# The failure mode is quiet, which is why this is written down. A repo
+# that 403s logs one WARN line and is counted as an error; the reflex
+# still reports success as long as *some* target resolved. Partial
+# coverage looks like coverage. If the brief's "Repos Monitored" count is
+# below 39, the token is missing or exhausted — that is the tell.
+#
+# Adding a `releases` entry costs one more call; adding a repo costs two.
+# Budget before you extend.
+#
+# Complementary, NOT a duplicate of: args/innovation_config.yaml
+# `sources.github`, which watches trending repos, issue streams and topic
+# discussions. That half finds projects nobody named; this half tracks the
+# named ones. Do not merge them.
 
 targets:
-  # ── Autonomous AI / Agent Systems ────────────────────────────────
-  - repo: karpathy/autoresearch
-    category: autonomous_research
-    watch: [releases, stars, readme_changes]
-    notes: "Autoresearch pattern — tight experiment loops"
+  # ── §1 Developer portal / catalog ────────────────────────────────
+  - repo: backstage/backstage
+    subsystem: developer_portal
+    category: platform_engineering
+    watch: [releases, stars]
+    notes: "Internal developer portal — golden path pattern. The open-source catalog framework the commercial scorecard products layer on top of."
+
+  - name: Cortex.io
+    url: https://www.cortex.io/
+    subsystem: developer_portal
+    category: platform_engineering
+    trackable: false
+    review: manual
+    notes: "Commercial SaaS scorecard product — no public product repo, so there is nothing to watch programmatically. Review docs and changelog by hand when the idp card needs a scorecard-as-code reference. Source of the scorecard ladder ICDEV is adapting: ranked levels, weighted rules, per-rule exemptions with approval."
+
+  - name: Port
+    url: https://docs.port.io/
+    subsystem: developer_portal
+    category: platform_engineering
+    trackable: false
+    review: manual
+    notes: "Commercial no-code IDP SaaS — no public product repo. port-labs publishes a docs site and integration clients, not the platform, so there is no release stream that tracks the product. Manual doc review; the blueprint/entity model is the part worth reading."
+
+  - name: OpsLevel
+    url: https://docs.opslevel.com/
+    subsystem: developer_portal
+    category: platform_engineering
+    trackable: false
+    review: manual
+    notes: "Commercial service-maturity scorecard SaaS — no public product repo. Manual doc review. Same portal-only limitation as Cortex.io: it surfaces a gap and waits for a human, where ICDEV can turn a failing rule into a kanban task."
+
+  # ── §2 Observability / LLM telemetry ─────────────────────────────
+  - repo: open-telemetry/semantic-conventions
+    subsystem: observability
+    category: observability
+    watch: [releases, stars]
+    notes: "Home of the gen_ai.* GenAI semantic conventions. ICDEV is already OTel-GenAI-native, so this is a conformance watch rather than a gap watch — it tells us when the spec moves under us."
+
+  - repo: langfuse/langfuse
+    subsystem: observability
+    category: observability
+    watch: [releases, stars]
+    notes: "Open-source LLM observability leader, OTel-native. Closest external analogue to ICDEV's /traces and /provenance surfaces."
+
+  - repo: cortexproject/cortex
+    subsystem: observability
+    category: observability
+    watch: [releases]
+    notes: "Horizontally scalable long-term Prometheus storage. Note the name collision — unrelated to both ICDEV Cortex and TheHive Cortex."
 
   - repo: SigNoz/signoz
+    subsystem: observability
     category: observability
     watch: [releases, stars]
     notes: "Open-source APM, traces, metrics, logs"
 
-  - repo: opentofu/opentofu
-    category: iac
-    watch: [releases]
-    notes: "Terraform fork — IaC ecosystem evolution"
-
-  # ── Compliance & Security ────────────────────────────────────────
-  - repo: oscal-compass/compliance-trestle
-    category: compliance
+  # ── §3 Agent runtime & orchestration ─────────────────────────────
+  - repo: langchain-ai/langgraph
+    subsystem: agent_runtime
+    category: agent_framework
     watch: [releases, stars]
-    notes: "NIST OSCAL tooling — direct competitor for compliance automation"
+    notes: "State-graph agent orchestration — the 'agent brain' half of the dominant two-layer production pattern. ICDEV's counterpart is agent_loop.py."
 
-  - repo: ComplianceAsCode/content
-    category: compliance
-    watch: [releases]
-    notes: "SCAP/STIG automation content"
-
-  - repo: anchore/grype
-    category: security
-    watch: [releases]
-    notes: "Vulnerability scanner for container images"
-
-  - repo: aquasecurity/trivy
-    category: security
-    watch: [releases]
-    notes: "Comprehensive security scanner"
-
-  # ── DevSecOps & Platform Engineering ─────────────────────────────
-  - repo: backstage/backstage
-    category: platform_engineering
+  - repo: temporalio/temporal
+    subsystem: agent_runtime
+    category: agent_framework
     watch: [releases, stars]
-    notes: "Internal developer portal — golden path pattern"
+    notes: "Durable execution — the 'muscle' half of the same two-layer pattern; ICDEV's counterpart is the DWO card. Also benchmarks delivery_pipeline (§7)."
 
-  - repo: argoproj/argo-cd
-    category: devsecops
-    watch: [releases]
-    notes: "GitOps continuous delivery"
+  - repo: openai/openai-agents-python
+    subsystem: agent_runtime
+    category: agent_framework
+    watch: [releases, stars]
+    notes: "OpenAI Agents SDK — handoffs, guardrails and sessions. Watch for the approval-workflow primitive ICDEV's agent loop currently lacks."
 
-  - repo: kyverno/kyverno
-    category: policy_as_code
-    watch: [releases]
-    notes: "Kubernetes-native policy engine"
-
-  # ── AI / ML / LLM Infrastructure ────────────────────────────────
-  - repo: ollama/ollama
-    category: llm_infrastructure
-    watch: [releases, models]
-    notes: "Local LLM runtime — our scanner-tier backbone"
-
-  - repo: mlflow/mlflow
-    category: mlops
-    watch: [releases]
-    notes: "ML lifecycle management"
-
-  # ── Embedded / IoT ──────────────────────────────────────────────
-  - repo: espressif/esp-idf
-    category: embedded
-    watch: [releases]
-    notes: "ESP32 development framework"
-
-  - repo: FreeRTOS/FreeRTOS
-    category: rtos
-    watch: [releases]
-    notes: "Core RTOS — SparkPilot foundation"
-
-  # ── Agent Frameworks ────────────────────────────────────────────
   - repo: anthropics/claude-code
+    subsystem: agent_runtime
     category: agent_framework
     watch: [releases, stars]
     notes: "Our runtime platform"
 
   - repo: microsoft/autogen
+    subsystem: agent_runtime
     category: agent_framework
     watch: [releases, stars]
     notes: "Multi-agent conversation framework"
+
+  # ── §4 Security ops / threat analysis ────────────────────────────
+  - repo: TheHive-Project/Cortex
+    subsystem: security_ops
+    category: security
+    watch: [releases, stars]
+    notes: "39+ analyzers behind one REST API. The value is the contract, not the analyzers — declared observable types, per-analyzer rate limit, taxonomy-tagged report. Direct source for the anz card."
+
+  - repo: MISP/MISP
+    subsystem: security_ops
+    category: security
+    watch: [releases]
+    notes: "Threat-intel sharing platform. The taxonomy and galaxy vocabulary is the interoperability target for ICDEV's analyzer output."
+
+  - repo: OpenCTI-Platform/opencti
+    subsystem: security_ops
+    category: security
+    watch: [releases]
+    notes: "Structured CTI platform, STIX2-native. Adjacent standard for making ICDEV threat output interoperable rather than bespoke."
+
+  - repo: anchore/grype
+    subsystem: security_ops
+    category: security
+    watch: [releases]
+    notes: "Vulnerability scanner for container images"
+
+  - repo: aquasecurity/trivy
+    subsystem: security_ops
+    category: security
+    watch: [releases]
+    notes: "Comprehensive security scanner"
+
+  # ── §5 RAG & knowledge graph ─────────────────────────────────────
+  - repo: microsoft/graphrag
+    subsystem: rag_knowledge_graph
+    category: rag
+    watch: [releases, stars]
+    notes: "Graph-augmented retrieval — community detection and hierarchical summaries. The technique ICDEV cannot use until kg_edges is non-empty; sequenced behind idp-cat-02."
+
+  - repo: run-llama/llama_index
+    subsystem: rag_knowledge_graph
+    category: rag
+    watch: [releases, stars]
+    notes: "Retrieval pipeline framework. ICDEV's tools/rag/ is at parity on retrieval; watch for ingestion and index-construction patterns."
+
+  - repo: deepset-ai/haystack
+    subsystem: rag_knowledge_graph
+    category: rag
+    watch: [releases]
+    notes: "The other major retrieval pipeline framework. Named alongside LlamaIndex in the benchmark map."
+
+  # ── §6 Compliance & ATO ──────────────────────────────────────────
+  - repo: oscal-compass/compliance-trestle
+    subsystem: compliance_ato
+    category: compliance
+    watch: [releases, stars]
+    notes: "NIST OSCAL tooling — direct competitor for compliance automation"
+
+  - repo: usnistgov/OSCAL
+    subsystem: compliance_ato
+    category: compliance
+    watch: [releases]
+    notes: "The OSCAL standard itself. Compliance is ICDEV's strongest differentiator, so this watch is defensive — schema changes are a compatibility risk, not an idea source."
+
+  - repo: ComplianceAsCode/content
+    subsystem: compliance_ato
+    category: compliance
+    watch: [releases]
+    notes: "SCAP/STIG automation content"
+
+  # ── §7 Delivery pipeline ─────────────────────────────────────────
+  - repo: argoproj/argo-workflows
+    subsystem: delivery_pipeline
+    category: devsecops
+    watch: [releases]
+    notes: "Kubernetes-native pipelines. Named in the benchmark map alongside Temporal; neither closes the loop from detected gap to merged fix, which is where ICDEV leads."
+
+  - repo: argoproj/argo-cd
+    subsystem: delivery_pipeline
+    category: devsecops
+    watch: [releases]
+    notes: "GitOps continuous delivery"
+
+  - repo: kyverno/kyverno
+    subsystem: delivery_pipeline
+    category: policy_as_code
+    watch: [releases]
+    notes: "Kubernetes-native policy engine"
+
+  # ── §8 Data quality & lineage ────────────────────────────────────
+  - repo: OpenLineage/OpenLineage
+    subsystem: data_lineage
+    category: data_lineage
+    watch: [releases, stars]
+    notes: "The emerging lineage event spec. Cheapest adaptation in the benchmark map — emitting OpenLineage events makes ICDEV's existing data_canvas engines interoperable without rewriting them."
+
+  - repo: datahub-project/datahub
+    subsystem: data_lineage
+    category: data_lineage
+    watch: [releases]
+    notes: "Metadata catalog and governance. Adjacent to ICDEV's data-mesh model (dm_domains, dm_data_products)."
+
+  - repo: fivetran/great_expectations
+    subsystem: data_lineage
+    category: data_lineage
+    watch: [releases]
+    notes: "Declarative data quality expectations. ICDEV's quality engine exists; the gap is data flowing through it, not the code. Moved from great-expectations/great_expectations (Fivetran acquisition) — the old slug 301s, so it still resolves, but record the canonical name."
+
+  # ── §9 LLM evaluation & red teaming ──────────────────────────────
+  - repo: promptfoo/promptfoo
+    subsystem: evaluation
+    category: evaluation
+    watch: [releases, stars]
+    notes: "Eval-as-config with CI gating. Fits ICDEV's args-over-code convention directly — context/iqe/queries/ already establishes config-declared test corpora. Primary adaptation target for the thinnest subsystem measured."
+
+  - repo: confident-ai/deepeval
+    subsystem: evaluation
+    category: evaluation
+    watch: [releases, stars]
+    notes: "50+ research-backed metrics — faithfulness, relevance, safety. The metric definitions are the reusable part; ICDEV has TRUST per call but nothing measuring quality regression release over release."
+
+  - repo: Giskard-AI/giskard-oss
+    subsystem: evaluation
+    category: evaluation
+    watch: [releases]
+    notes: "LLM vulnerability scanning. Complements the existing ATLAS red-teaming and OWASP-agentic assessor on the quality side. Renamed from Giskard-AI/giskard — the old slug 301s, so it still resolves, but record the canonical name."
+
+  # ── §10 IaC & infrastructure ─────────────────────────────────────
+  - repo: crossplane/crossplane
+    subsystem: iac
+    category: iac
+    watch: [releases, stars]
+    notes: "Control-plane IaC. ICDEV is at parity here with better compliance integration; nothing urgent to adapt."
+
+  - repo: bridgecrewio/checkov
+    subsystem: iac
+    category: iac
+    watch: [releases]
+    notes: "IaC policy scanning. The policy-pack model is the closest thing worth borrowing if IaC policy scanning becomes a priority."
+
+  - repo: runatlantis/atlantis
+    subsystem: iac
+    category: iac
+    watch: [releases]
+    notes: "PR-driven Terraform. Named in the benchmark map; ICDEV's PR-driven loop is broader but not Terraform-specific."
+
+  - repo: opentofu/opentofu
+    subsystem: iac
+    category: iac
+    watch: [releases]
+    notes: "Terraform fork — IaC ecosystem evolution"
+
+  # ── Outside the benchmark map ────────────────────────────────────
+  - repo: karpathy/autoresearch
+    subsystem: autonomous_research
+    category: autonomous_research
+    watch: [releases, stars, readme_changes]
+    notes: "Autoresearch pattern — tight experiment loops"
+
+  - repo: ollama/ollama
+    subsystem: llm_infrastructure
+    category: llm_infrastructure
+    watch: [releases, models]
+    notes: "Local LLM runtime — our scanner-tier backbone"
+
+  - repo: mlflow/mlflow
+    subsystem: mlops
+    category: mlops
+    watch: [releases]
+    notes: "ML lifecycle management"
+
+  - repo: espressif/esp-idf
+    subsystem: embedded
+    category: embedded
+    watch: [releases]
+    notes: "ESP32 development framework"
+
+  - repo: FreeRTOS/FreeRTOS
+    subsystem: embedded
+    category: rtos
+    watch: [releases]
+    notes: "Core RTOS — SparkPilot foundation"
 
 # Scout frequency: daily 07:00 UTC
 # Output: intel briefs in data/genesis/reports/scout-YYYY-MM-DD.md
