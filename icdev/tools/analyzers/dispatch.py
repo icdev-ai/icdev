@@ -356,6 +356,18 @@ def _positional_parameters(func: Any) -> List[inspect.Parameter]:
     ]
 
 
+def _observable_argument(binding: Any, observable: Observable, nested_key: str) -> Any:
+    """The observable value shaped the way the declaration says (anz-mig-01).
+
+    ``observable_form: list`` wraps the scalar for batch-shaped callables like
+    ``score_advisories(advisory_ids)``. Without it such a callable receives a
+    bare string, iterates it character by character, and reports having scored
+    nothing — a silent wrong answer rather than an error.
+    """
+    value = [observable.value] if binding.observable_form == "list" else observable.value
+    return {nested_key: value} if nested_key else value
+
+
 def build_call(
     func: Any,
     decl: AnalyzerDeclaration,
@@ -382,6 +394,19 @@ def build_call(
     binding = decl.binding
     kwargs: Dict[str, Any] = {}
 
+    # 0. the connection parameter, if one is declared. No value is produced
+    #    here — build_call stays pure, and a connection opened during argument
+    #    assembly would leak on every later BindingError. `dispatch` opens it
+    #    around the call and injects it. Reserving the name keeps step 4 from
+    #    reporting it as a parameter with no source (anz-mig-01).
+    conn_param = binding.connection.param if binding.connection else None
+    if conn_param and conn_param not in names:
+        raise BindingError(
+            f"binding.connection.param names parameter {conn_param!r}, which "
+            f"{decl.module}.{decl.entrypoint}() does not accept "
+            f"(parameters: {', '.join(names) or 'none'})"
+        )
+
     # 1. the observable value
     if binding.observable_arg:
         target, _, nested_key = binding.observable_arg.partition(".")
@@ -391,9 +416,16 @@ def build_call(
                 f"{decl.module}.{decl.entrypoint}() does not accept "
                 f"(parameters: {', '.join(names) or 'none'})"
             )
-        kwargs[target] = {nested_key: observable.value} if nested_key else observable.value
+        kwargs[target] = _observable_argument(binding, observable, nested_key)
     elif names:
-        kwargs[names[0]] = observable.value
+        if names[0] == conn_param:
+            raise BindingError(
+                f"{decl.module}.{decl.entrypoint}() takes the connection as its "
+                "first parameter, so the observable needs an explicit "
+                "`binding.observable_arg` — otherwise it would be passed as the "
+                "connection"
+            )
+        kwargs[names[0]] = _observable_argument(binding, observable, "")
     else:
         raise BindingError(
             f"{decl.module}.{decl.entrypoint}() accepts no parameters, so it "
@@ -415,6 +447,8 @@ def build_call(
     for param in parameters:
         if param.name in kwargs:
             continue
+        if param.name == conn_param:
+            continue  # supplied by dispatch, around the call
         if param.name in static_map:
             kwargs[param.name] = static_map[param.name]
             continue
@@ -436,6 +470,48 @@ def build_call(
     if missing_context:
         raise MissingContextError(missing_context)
     return kwargs
+
+
+def _call_with_connection(func: Any, decl: AnalyzerDeclaration, kwargs: Dict[str, Any]) -> Any:
+    """Call *func* with a connection this function owns end to end (anz-mig-01).
+
+    Opened here rather than in :func:`build_call` so a binding error raised
+    during argument assembly cannot leak a handle, and so the lifecycle is
+    visible in one place: open, call, commit if declared, always close.
+
+    ``commit`` is honoured only on success. These analyzers write — a hijack
+    detection committed after the call raised would persist a half-finished
+    analysis, which is worse than not writing at all.
+
+    The factory reference comes from the first-party contract file, never from
+    a caller, and is resolved here rather than at load time so that reading the
+    contract does not import every canvas's database module.
+    """
+    binding = decl.binding.connection
+    try:
+        module = importlib.import_module(binding.factory_module)
+        factory = getattr(module, binding.factory_attr, None)
+        if factory is None:
+            raise AttributeError(
+                f"{binding.factory_module} has no attribute {binding.factory_attr!r}"
+            )
+    except Exception as exc:
+        raise BindingError(
+            f"binding.connection.factory {binding.factory!r} for analyzer "
+            f"{decl.key!r} could not be resolved: {exc}"
+        ) from exc
+
+    conn = factory()
+    try:
+        payload = func(**{**kwargs, binding.param: conn})
+        if binding.commit:
+            conn.commit()
+        return payload
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 — a close failure must not mask the result
+            logger.debug("analyzer %s: connection close failed", decl.key, exc_info=True)
 
 
 def resolve_entrypoint(decl: AnalyzerDeclaration) -> Any:
@@ -653,6 +729,17 @@ def _run_one(
 
     try:
         if mode == SANDBOXED:
+            if decl.binding.connection is not None:
+                # A live DB handle cannot cross into the sandbox, and quietly
+                # dropping it would call the analyzer with conn=None. That is a
+                # declaration/reality mismatch, which is what SandboxUnsupported
+                # already means here.
+                raise SandboxUnsupported(
+                    "binding.connection cannot be honoured under `sandbox: "
+                    "sandboxed` — a database handle cannot be serialised into "
+                    "the sandbox. Declare this analyzer trusted_first_party or "
+                    "drop the connection binding."
+                )
             payload = run_sandboxed(
                 decl,
                 kwargs,
@@ -661,6 +748,8 @@ def _run_one(
                 project_id=context.get("project_id"),
                 tenant_id=context.get("tenant_id"),
             )
+        elif decl.binding.connection is not None:
+            payload = _call_with_connection(func, decl, kwargs)
         else:
             payload = func(**kwargs)
     except SandboxUnsupported as exc:

@@ -70,6 +70,16 @@ _KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 #: ``param`` or ``param.key`` — the two forms ``binding.observable_arg`` takes.
 _ARG_TARGET = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
+#: ``package.module:callable`` — the form ``binding.connection.factory`` takes.
+_FACTORY_REF = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$"
+)
+
+#: How the observable value reaches its parameter. ``list`` wraps the scalar for
+#: batch-shaped callables such as ``score_advisories(advisory_ids)`` — without it
+#: they receive a bare string where they iterate, and silently score nothing.
+_OBSERVABLE_FORMS = frozenset({"scalar", "list"})
+
 
 # ---------------------------------------------------------------------------
 # Errors — none of these are caught in this module. That is the point.
@@ -153,6 +163,43 @@ class TaxonomyDeclaration:
 
 
 @dataclasses.dataclass(frozen=True)
+class ConnectionBinding:
+    """How a callable that takes a DB handle gets one — declared, not coded (anz-mig-01).
+
+    Every ``tools/dsoc_canvas/`` analyzer takes ``conn`` as its first argument,
+    and every hand-written call site repeats the same three lines: import the
+    canvas ``get_connection``, call it, close it. ``context_args`` can already
+    route a caller-supplied connection into that parameter, but that pushes the
+    boilerplate onto every caller and leaves the lifecycle unowned — nobody can
+    say from the declaration whether the dispatcher or the caller commits.
+
+    Naming the factory here as a ``module:callable`` reference keeps both out of
+    a dispatch table. ``commit`` is explicit because these analyzers WRITE: a
+    hijack detection that is computed and never committed is a silent no-op of
+    exactly the kind the contract exists to remove.
+
+    The factory is resolved at call time, not at load time — a contract that
+    imported every canvas's DB module just to validate would drag the whole
+    platform into any process that reads the declaration.
+    """
+
+    param: str
+    factory: str
+    commit: bool = False
+
+    @property
+    def factory_module(self) -> str:
+        return self.factory.split(":", 1)[0]
+
+    @property
+    def factory_attr(self) -> str:
+        return self.factory.split(":", 1)[1]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"param": self.param, "factory": self.factory, "commit": self.commit}
+
+
+@dataclasses.dataclass(frozen=True)
 class ArgumentBinding:
     """How a dispatcher turns an observable plus context into a call (anz-disp-01).
 
@@ -179,8 +226,10 @@ class ArgumentBinding:
     """
 
     observable_arg: Optional[str] = None
+    observable_form: str = "scalar"
     context_args: Tuple[Tuple[str, str], ...] = ()
     static_args: Tuple[Tuple[str, Any], ...] = ()
+    connection: Optional[ConnectionBinding] = None
 
     @property
     def context_map(self) -> Dict[str, str]:
@@ -195,13 +244,21 @@ class ArgumentBinding:
     @property
     def declared(self) -> bool:
         """True when the contract said anything at all about this analyzer's call."""
-        return bool(self.observable_arg or self.context_args or self.static_args)
+        return bool(
+            self.observable_arg
+            or self.context_args
+            or self.static_args
+            or self.connection
+            or self.observable_form != "scalar"
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "observable_arg": self.observable_arg,
+            "observable_form": self.observable_form,
             "context_args": self.context_map,
             "static_args": self.static_map,
+            "connection": self.connection.to_dict() if self.connection else None,
         }
 
 
@@ -464,6 +521,44 @@ def _parse_taxonomy(
     )
 
 
+def _parse_connection(raw: Any, *, what: str) -> Optional[ConnectionBinding]:
+    """Validate an optional ``binding.connection`` block (anz-mig-01).
+
+    The factory is checked for SHAPE only. Importing it here to prove it
+    resolves would pull every declared canvas's database module into any
+    process that merely reads the contract — including the coherence checker
+    and the tests — so resolution stays at call time, where the dispatcher can
+    report the failure against the analyzer it belongs to.
+    """
+    if raw is None:
+        return None
+    block = _require_mapping(raw, f"{what}.connection")
+
+    param = _require_str(block.get("param"), f"{what}.connection.param")
+    if not _IDENTIFIER.match(param):
+        raise InvalidDeclaration(
+            f"{what}.connection.param {param!r} must be a Python parameter name"
+        )
+
+    factory = _require_str(block.get("factory"), f"{what}.connection.factory")
+    if not _FACTORY_REF.match(factory):
+        raise InvalidDeclaration(
+            f"{what}.connection.factory must be `module.path:callable`, got {factory!r}"
+        )
+
+    commit = block.get("commit", False)
+    if not isinstance(commit, bool):
+        raise InvalidDeclaration(
+            f"{what}.connection.commit must be true or false, got {commit!r}"
+        )
+
+    unknown = sorted(set(block) - {"param", "factory", "commit"})
+    if unknown:
+        raise InvalidDeclaration(f"{what}.connection has unknown key(s) {unknown}")
+
+    return ConnectionBinding(param=param, factory=factory, commit=commit)
+
+
 def _parse_binding(raw: Any, *, analyzer_key: str) -> ArgumentBinding:
     """Validate an optional ``binding:`` block. Absent means "first parameter"."""
     if raw is None:
@@ -497,6 +592,16 @@ def _parse_binding(raw: Any, *, analyzer_key: str) -> ArgumentBinding:
             out.append((param, source))
         return tuple(out)
 
+    observable_form = block.get("observable_form", "scalar")
+    observable_form = _require_str(observable_form, f"{what}.observable_form")
+    if observable_form not in _OBSERVABLE_FORMS:
+        raise InvalidDeclaration(
+            f"{what}.observable_form must be one of "
+            f"{sorted(_OBSERVABLE_FORMS)}, got {observable_form!r}"
+        )
+
+    connection = _parse_connection(block.get("connection"), what=what)
+
     context_args = _pairs("context_args", values_must_be_str=True)
     static_args = _pairs("static_args", values_must_be_str=False)
 
@@ -518,10 +623,28 @@ def _parse_binding(raw: Any, *, analyzer_key: str) -> ArgumentBinding:
                 "supplied by `context_args`/`static_args`"
             )
 
+    # The connection parameter is a fourth source, and the same rule applies to
+    # it: one parameter, one source. Silently letting `context_args` win would
+    # hand the analyzer whatever the caller passed and never open the factory,
+    # which reads at runtime as the analyzer simply not writing anything.
+    if connection is not None:
+        if connection.param in context_params or connection.param in static_params:
+            raise InvalidDeclaration(
+                f"{what}: parameter {connection.param!r} is supplied by "
+                "`connection` and also by `context_args`/`static_args`"
+            )
+        if observable_arg and observable_arg.split(".", 1)[0] == connection.param:
+            raise InvalidDeclaration(
+                f"{what}: parameter {connection.param!r} receives both the "
+                "observable and the connection"
+            )
+
     return ArgumentBinding(
         observable_arg=observable_arg,
+        observable_form=observable_form,
         context_args=context_args,
         static_args=static_args,
+        connection=connection,
     )
 
 
