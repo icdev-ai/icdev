@@ -14,6 +14,11 @@ new scorecard is a YAML edit — no Python change.** That is the contract, and
 `tests/test_idp_scorecard.py::test_adding_a_rule_requires_no_python_change`
 pins it.
 
+> **Companion surface:** `tools/quality/component_scorer.py` (idp-score-01) scores
+> the same components from the *other* direction — reading ICDEV's existing
+> measurement subsystems (probes, canvas posture, coherence, the 8-point gate)
+> rather than declared rules. Documented in `tools/manifest/quality.md`.
+
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Scorecard evaluator | tools/idp/scorecard.py | Loads `args/scorecards/*.yaml`, runs one IQE query per rule (plus one per `filter`) over the declared collection, and assigns every entity a weighted score, a per-dimension breakdown, an A–F letter grade and a ladder level. An entity with no applicable rule scores `None` (unassessed), never `0`. Public API: `load_scorecards(dir)`, `load_scorecard(key, dir)`, `parse_scorecard(mapping)`, `evaluate(scorecard, conn) -> report dict`, `evaluate_all(dir, conn)`, `Scorecard.letter_grade(score)`, `Scorecard.dimension_order()`. Raises `ScorecardError` on a malformed file, an unknown level, a duplicate rule identifier, an unparseable expression, or a rule that reads a collection the scorecard does not declare. `evaluate(card, tenant_id=…)` binds the tenant scope for the WHOLE evaluation — universe, every rule query, every filter and the evidence fact rows all read the same reduced collection, so a rule can never pass an entity the universe excluded — and echoes it back as `report["tenant_id"]` so a caller persisting the result knows whose row it is writing. | `--list \| --scorecard <key> \| --component <key> \| --dir <path> \| --tenant <id> \| --json` | JSON report or human table |
