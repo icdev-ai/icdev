@@ -181,6 +181,25 @@ defaults:
 # statement of what it accepts and emits, and a rate limit and sandbox posture
 # that anz-rate-01 can enforce without touching the module.
 #
+# ARGUMENT BINDING (optional `binding:` block, anz-disp-01)
+# ---------------------------------------------------------
+# These entrypoints share no signature, so the dispatcher is told — in data —
+# how to call each one:
+#
+#   binding:
+#     observable_arg: cve_id            # parameter receiving the observable value;
+#                                       # `param.key` nests it in a dict for `param`.
+#                                       # Omitted => the callable's FIRST parameter.
+#     context_args: {project_id: project_id}   # parameter -> dispatch-context key
+#     static_args:  {context: dispatch}        # constants
+#
+# Omit the block whenever "first parameter" is already right (match_observable,
+# scan, parse_bundle). Declare it whenever it is not: trigger_rtbh's first
+# parameter is a live DB connection, and a dispatcher that passed an IP address
+# there would fail inside the analyzer — indistinguishable from a clean run that
+# found nothing. A parameter left with no source and no default is reported as
+# `misdeclared` by name; the dispatcher never guesses.
+#
 # The seed set below is deliberately small. It exists to prove the mechanism
 # against real modules, not to port all 79 (that is anz-mig-*).
 analyzers:
@@ -199,6 +218,16 @@ analyzers:
     rate_limit:
       max_calls: 240
       per_seconds: 3600
+    # triage_cve(project_id, cve_id, component, cvss_score, severity, description)
+    # — six required parameters, only one of which is the observable.
+    binding:
+      observable_arg: cve_id
+      context_args:
+        project_id: project_id
+        component: component
+        cvss_score: cvss_score
+        severity: severity
+        description: description
 
   - key: section_889_screen
     kind: analyzer
@@ -212,6 +241,9 @@ analyzers:
       predicates: [section-889]
       levels: [safe, suspicious, malicious]
     sandbox: trusted_first_party
+    # screen_item(item: dict) — the vendor name is one key of the line item.
+    binding:
+      observable_arg: item.vendor_name
 
   - key: threat_intel_match
     kind: analyzer
@@ -267,3 +299,13 @@ analyzers:
     rate_limit:
       max_calls: 10
       per_seconds: 3600
+    # trigger_rtbh(conn, prefix, reason, ...) — `conn` is a live DB connection
+    # the dispatcher does not hold, so this responder is reported `misdeclared`
+    # (naming `conn`) if it is ever explicitly dispatched. It is excluded from
+    # the default fan-out anyway: responders ACT, and blackholing a prefix is
+    # not something submitting an IP for analysis should trigger.
+    binding:
+      observable_arg: prefix
+      context_args:
+        reason: reason
+        triggered_by: user_id
