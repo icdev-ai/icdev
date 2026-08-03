@@ -67,15 +67,28 @@ def db(tmp_path, monkeypatch):
     # Pre-create the schema this tool depends on
     raw = sqlite3.connect(str(db_path))
     raw.executescript("""
+        -- Mirrors the live audit_trail (see tools/db/init_icdev_db.py and the
+        -- shared fixture in tests/conftest.py). This used to declare
+        -- id TEXT/tenant_id/user_id/resource/recorded_at -- none of which the
+        -- real table has -- while omitting the project_id/event_type/actor it
+        -- does. _audit() writes the real columns, so every INSERT below raised
+        -- and was swallowed by its best-effort except, and the assertions then
+        -- failed on a missing project_id column rather than on a missing row.
         CREATE TABLE IF NOT EXISTS audit_trail (
-            id TEXT PRIMARY KEY,
-            tenant_id TEXT,
-            user_id TEXT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT,
+            event_type TEXT NOT NULL,
+            actor TEXT NOT NULL,
             action TEXT NOT NULL,
-            resource TEXT,
             details TEXT,
+            affected_files TEXT,
             classification TEXT DEFAULT 'CUI',
-            recorded_at TEXT NOT NULL
+            ip_address TEXT,
+            session_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            hash TEXT,
+            previous_hash TEXT,
+            signature TEXT
         );
         CREATE TABLE IF NOT EXISTS proc_procurements (
             id              TEXT PRIMARY KEY,
@@ -474,7 +487,7 @@ class TestAuditTrail:
         conn = get_connection()
         rows = conn.execute(
             "SELECT action, details FROM audit_trail "
-            "WHERE project_id = ? ORDER BY recorded_at",
+            "WHERE project_id = ? ORDER BY created_at",
             ("PROC-AUD-1",),
         ).fetchall()
         actions = [r["action"] for r in rows]

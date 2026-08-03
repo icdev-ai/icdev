@@ -1054,3 +1054,37 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - Line endings and file encoding are preserved (`read_source` normalises to LF for parsing and restores the original newline on write).
   - `tests/test_coherence_swallowed_persistence.py` pins the detector in both directions and asserts the real tree is clean.
 - **Revisit if:** the fixer gains an LLM-authored rewrite path (source text becoming model output rather than a deterministic transform), starts writing to a path derived from file content, or is wired into an unattended reflex that runs `--write` without review.
+
+### Gap 45 — Observable dispatch fan-out (`tools/analyzers/dispatch.py`)
+
+**Module:** `tools/analyzers/dispatch.py` (anz-disp-01), exposed over MCP as `analyzer_dispatch` / `analyzer_capabilities`.
+
+**Ingress path:** Two. (1) The **observable value** — an IP, domain, URL, file hash, CVE id, vendor name, file path or free text supplied by a caller (a chat turn, an MCP client, an agent) and passed as an argument into first-party analyzer functions. (2) The **analyzer's return payload**, from which `extract_taxonomy()` reads `{predicate, level, value}` tags. Both are listed because dispatch is deliberately a *convergence point*: one entry point now carries caller-controlled content into ~79 analyzer-shaped modules.
+
+- **Decision:** **trusted-first-party** (the dispatcher itself); each analyzer keeps its own declared posture.
+- **Rationale:** The dispatcher interprets, never executes. It contains no `exec`/`eval`/`compile`/`subprocess`/`os.system` and no deserialization; the observable value is only ever bound to a keyword argument of a declared callable. Critically, **the caller cannot steer the import**: `resolve_entrypoint()` takes its dotted `module`/`entrypoint` from `args/analyzer_contract.yaml` — first-party and code-reviewed — and `dispatch()` accepts an *observable type* from a closed vocabulary, never a module path. An unknown type raises `UnknownObservableType` rather than resolving anything. Taxonomy tags are validated against the declaration, and the namespace is stamped from the declaration rather than read from the payload, so an analyzer cannot label its output as another subsystem's.
+- **Guardrails:**
+  - `sandbox:` is declared per analyzer in the contract and defaults to the strictest posture (`sandboxed`) for anything that declares nothing. Dispatch surfaces that posture through `analyzer_capabilities`; **enforcement lands in `anz-rate-01`** via the existing `sandbox_execute` path, not a second isolation mechanism.
+  - Responders (`kind: responder`) — which take real-world action, e.g. RTBH blackholing a prefix — are excluded from the default fan-out and require an explicit `include_responders`. Submitting an IP for analysis cannot trigger one.
+  - Every analyzer runs under its declared `timeout_seconds` on a bounded process-wide pool (`ICDEV_ANALYZER_MAX_WORKERS`, default 8), so a hostile or hanging input cannot exhaust threads or stall the caller; a timed-out future is abandoned, not joined.
+  - An analyzer that raises is contained: `_run_one()` catches per analyzer and returns an `error` report, so one bad input cannot abort the fan-out or leak a stack trace to the caller as an unhandled exception.
+  - Nothing is dropped silently — `timeout`, `error`, `unavailable`, `misdeclared` and `skipped` are all reported by name and set `partial`, so a caller cannot mistake "the analyzer never answered" for "the analyzer found nothing".
+  - `tests/test_analyzer_dispatch.py` pins the timeout, error-containment, responder-exclusion and taxonomy-validation behaviours.
+- **Revisit if:** an analyzer is declared whose entrypoint shells out or executes the observable (at that point the declaration must be `sandboxed` and `anz-rate-01`'s enforcement is a prerequisite, not a follow-up); or `dispatch()` ever accepts a module path, callable, or contract file from a caller rather than from `args/analyzer_contract.yaml`.
+
+### Gap 46 — Agent approval gate: reversibility classification of tool calls (`tools/agent_runtime/approval_gate.py`)
+
+**Module:** `tools/agent_runtime/approval_gate.py` (ars-appr-01).
+
+**Ingress path:** Two, and the first is genuinely untrusted. (1) The **tool input of every agent tool call** — an arbitrary dict authored by an LLM, flattened to a string and matched against the policy's regexes. This module sees every tool in the platform, so it sees every model-authored argument. (2) `args/agent_approval_policy.yaml`, a first-party config that supplies the regex patterns and the tier lists.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither ingress reaches an execution path. Tool input is *read about*, never run: `flatten_input()` builds a string, `re.search` matches it, and `hashlib.sha256` digests it — there is no `exec`/`eval`/`compile`/`subprocess`/`os.system`/`pickle`/`importlib` anywhere in the module, and the gate never invokes the tool it is classifying. It returns a verdict; the *caller* decides whether to run the handler. The policy file is parsed with `yaml.safe_load` (never `yaml.load`), and its patterns are compiled with `re.compile` inside a `try` that logs and skips a bad pattern rather than raising. Classification is a pure function of (tool name, flattened input, policy).
+- **Guardrails:**
+  - **Fail-closed by construction (the load-bearing control):** `default_tier` is `unknown` and `unknown` is in `require_approval_tiers`, so a tool must be *named* in the policy to run unattended. An unreadable, malformed, or missing policy file falls back to `_FALLBACK_POLICY`, which enumerates **zero** tools — every call then requires a human. A config failure cannot be the reason an irreversible action ran unattended.
+  - Content patterns are **asymmetric**: an `irreversible` pattern escalates any tool, but `recoverable`/`reversible` patterns apply only to the declared `command_tools`. Model-authored argument text therefore cannot *lower* a tool's tier — the reverse would let an LLM auto-approve itself by mentioning `mkdir`.
+  - Hard blocks are consulted first via `run_pre_tool_check` and are never escalated to the approver, so the gate cannot be used to talk past `.claude/hooks/pre_tool_use.py`.
+  - A raising approver is caught and **denies** (`test_a_broken_approver_denies`); `console_approver` denies on EOF, so a non-interactive run cannot silently self-approve.
+  - Argument **values never persist**. `agent_approval_log` stores argument key names and a SHA-256 of the flattened input only — model-authored input may carry CUI, and ICDEV is a public repo.
+  - `tests/test_agent_approval_gate.py` pins all of the above, including the regression that incidental argument text cannot downgrade `git_push`.
+- **Revisit if:** the gate gains a policy source that is not first-party (a tenant-supplied or LLM-authored policy would make the regexes untrusted input), a pattern language more expressive than `re` is adopted, or the module starts *executing* a remediation rather than returning a verdict.

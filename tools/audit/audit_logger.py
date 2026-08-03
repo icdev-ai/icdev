@@ -292,6 +292,7 @@ VALID_EVENT_TYPES = (
     "govcon.knowledge_base",
     "govcon.lifecycle",
     "govcon.pipeline",
+    "govcon.procurement_vehicle",
     "govcon.program_bridge",
     "govcon.question_export",
     "govcon.question_generator",
@@ -300,7 +301,91 @@ VALID_EVENT_TYPES = (
     "govcon.scan",
     "govcon.telco_rfp",
     "govcon.win_theme",
+
+    # GovCon modules whose _audit() takes event_type as a parameter, so the
+    # literal lives at the call site rather than in the function. Those call
+    # sites pass verb-level names without a govcon. prefix, and none of them
+    # were admitted either — the same dead-write bug as the block above, just
+    # invisible to a search for "govcon.*". They are kept verbatim rather than
+    # folded into per-module govcon.* types because the fine-grained verb is
+    # only carried here: these modules' `action` argument holds a rendered
+    # sentence ("pWin=68% for OPP-1"), not the operation name. Verb-level
+    # namespacing already matches poam.*, pipeline.*, chat.* and review_board.*
+    # above.
+    "benchmark.store",
+    "bid_scoring.calibrate",
+    "bid_scoring.compute_weights",
+    "blueprint.exported",
+    "blueprint.generated",
+    "capability.enrich",
+    "cost_volume.generate",
+    "gsa_rate.add",
+    "gsa_rate.seed",
+    "idiq.team_created",
+    "igce.add_line",
+    "igce.calibrate",
+    "igce.category_updated",
+    "igce.created",
+    "igce.generate",
+    "igce.updated",
+    "lcat.store",
+    "market_rate.add",
+    "procurement.created",
+    "procurement.linked_to_initiative",
+    "proposal.maturity_assessed",
+    "pwin.compute",
+    "quote.created",
+    "talent.add_posting",
+    "talent.velocity",
+    "teaming.add_partner",
+    "teaming.oci_screen",
+    "teaming.score_partner",
+
+    # LLM context compression (tools/llm/compression/context_compressor.py).
+    # Its write had omitted event_type entirely; "config_changed" was the
+    # nearest admitted type but records a compression as a configuration
+    # change, which is not what happened.
+    "llm.context_compressed",
 )
+
+EVENT_TYPE_CONSTRAINT = "audit_trail_event_type_check"
+
+
+def event_type_check_sql() -> str:
+    """The CHECK body admitting exactly VALID_EVENT_TYPES.
+
+    Single source for every place the constraint is spelled out, so the
+    constant and the constraint cannot drift. Event types are identifiers from
+    a hardcoded tuple in this module, never user input, so inlining them as
+    literals is safe — and DDL cannot be parameterised anyway.
+    """
+    values = ", ".join(f"'{t}'" for t in VALID_EVENT_TYPES)
+    return f"CHECK (event_type IN ({values}))"
+
+
+def rebuild_event_type_constraint(conn) -> bool:
+    """Regenerate audit_trail's event_type CHECK from VALID_EVENT_TYPES.
+
+    Call this from a migration whenever an event type is added. Returns True
+    when the constraint was rebuilt, False on SQLite — SQLite cannot ALTER a
+    CHECK, and rebuilding audit_trail there would mean copying an append-only,
+    hash-chained table. Fresh SQLite databases get the generated constraint
+    from init_icdev_db.py instead, and existing ones are dev-local.
+
+    The connection is caller-owned: migrations run inside a larger transaction
+    and closing it here would break the rest of their run.
+    """
+    if getattr(conn, "_backend", "") != "postgresql":
+        return False
+    conn.execute(
+        f"ALTER TABLE audit_trail DROP CONSTRAINT IF EXISTS {EVENT_TYPE_CONSTRAINT}"
+    )
+    conn.execute(
+        f"ALTER TABLE audit_trail ADD CONSTRAINT {EVENT_TYPE_CONSTRAINT} "
+        f"{event_type_check_sql()}"
+    )
+    conn.commit()
+    return True
 
 
 def log_event(

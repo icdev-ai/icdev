@@ -2,7 +2,10 @@
 """Intent classifier — maps a user message to a chat canvas mode.
 
 Fast path: keyword rules.
-Fallback: LLM via tools.llm.router when confidence is low.
+Fallback: the governed ``tools.cortex.api.classify`` facade when confidence is
+low. The message is USER-AUTHORED chat text, so it must not reach a provider
+without the gateway pre-check, redaction, budget/rate gate, provider fallback
+chain and append-only audit row that ``LLMRouter.invoke`` applies.
 
 Returns:
     {
@@ -19,6 +22,36 @@ from typing import Any
 
 CANVAS_MODES = {"cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
 INTAKE_MODE = "intake"
+
+# cortex_api.classify's documented marker for its deterministic degradation path
+# (see tools/cortex/api.py::classify — provider="deterministic").
+_CORTEX_FALLBACK_PROVIDER = "deterministic"
+
+# Labels handed to cortex_api.classify, and the mode each maps back to.
+#
+# classify() puts the label list verbatim in the prompt, so the bare mode codes
+# carry no meaning to a model and the answer is close to noise — measured against
+# the configured provider, "translate this paragraph into Spanish" came back as
+# "idc" and "write a summary of the Q3 report" as "eda". These glosses restore
+# the semantics the old hand-rolled prompt spelled out.
+#
+# _NO_CANVAS_LABEL is the none-of-the-above escape hatch. classify() forces a
+# choice among the labels, so without it every off-topic message is assigned some
+# canvas; with it, the same messages come back as no-canvas and stay in intake.
+_NO_CANVAS_LABEL = "none-of-the-above"
+_LABEL_TO_MODE: dict[str, str] = {
+    _NO_CANVAS_LABEL: INTAKE_MODE,
+    "requirements-intake": INTAKE_MODE,
+    "cloud-migration": "cam",
+    "network-design": "ndc",
+    "security-design": "sdc",
+    "data-architecture": "eda",
+    "database-design": "ddc",
+    "process-design": "pdc",
+    "business-design": "bdc",
+    "observability-design": "odc",
+    "infrastructure-design": "idc",
+}
 
 # Each entry: (canvas_type, score_weight, [keyword_patterns])
 # Patterns are matched case-insensitively against the full message.
@@ -270,51 +303,51 @@ def _score_message(text: str) -> dict[str, Any]:
     return {"mode": INTAKE_MODE, "canvas_type": None, "confidence": 0.55, "reason": "no strong keyword signal"}
 
 
+def _intake_default(reason: str) -> dict[str, Any]:
+    return {"mode": INTAKE_MODE, "canvas_type": None, "confidence": 0.50, "reason": reason}
+
+
 def _llm_classify(text: str) -> dict[str, Any]:
-    """LLM fallback for ambiguous messages. Returns same shape as _score_message."""
+    """Governed LLM fallback for ambiguous messages.
+
+    Returns the same shape as :func:`_score_message`. Routed through
+    ``cortex_api.classify`` (and therefore ``LLMRouter.invoke``) rather than a
+    provider handle, so the call carries the gateway pre-check, input/output
+    redaction, budget and rate gates, the provider fallback chain and the
+    append-only ``cortex_audit`` row. Any failure — governance block, exhausted
+    chain, Cortex unavailable — degrades to intake.
+    """
     try:
-        from tools.llm.router import LLMRouter
+        from tools.cortex.api import classify as cortex_classify
+        from tools.cortex.schemas import CortexContext
 
-        router = LLMRouter()
-        provider, model_id, _ = router.get_provider_for_function("classification")
-
-        prompt = (
-            f"Classify the following user message into one of these chat modes:\n"
-            f"- intake: user wants to build a new app / capture requirements / describe a project\n"
-            f"- cam: migration, modernization, deprecated tech, refactoring, EOL\n"
-            f"- ndc: network topology, firewall, VLAN, routing, network design\n"
-            f"- sdc: security architecture, threat model, IAM design, zero trust\n"
-            f"- eda: data pipeline, event streaming, ETL, Kafka, data architecture\n"
-            f"- ddc: database schema, ER diagram, data model, SQL/NoSQL design\n"
-            f"- pdc: process flow, workflow, BPMN, state machine\n"
-            f"- bdc: business model, capability map, value stream\n"
-            f"- odc: observability, monitoring, logging, tracing design\n"
-            f"- idc: infrastructure, Terraform, Kubernetes, cloud architecture\n\n"
-            f"Message: {text[:500]}\n\n"
-            f"Reply with ONLY a JSON object: {{\"mode\": \"<mode>\", \"reason\": \"<one sentence>\"}}"
+        result = cortex_classify(
+            text,
+            labels=sorted(_LABEL_TO_MODE),
+            ctx=CortexContext(agent_id="chat-intent"),
         )
 
-        response = provider.complete(model_id=model_id, prompt=prompt, max_tokens=100)
-        raw = (response or "").strip()
+        if (result.provider or "") == _CORTEX_FALLBACK_PROVIDER:
+            # No LLM was reachable (air-gap / exhausted chain), so classify()
+            # answered from tools/rag/query_classifier.py, whose taxonomy
+            # (factual / analytical / …) maps onto none of these labels — it then
+            # falls through to labels[0]. Accepting that would route every
+            # ambiguous air-gap message to one arbitrary canvas.
+            return _intake_default("LLM unavailable, defaulting to intake")
 
-        import json
-        # Extract JSON from possible markdown fences
-        json_match = re.search(r"\{[^}]+\}", raw)
-        if json_match:
-            obj = json.loads(json_match.group())
-            mode = obj.get("mode", INTAKE_MODE)
-            if mode not in CANVAS_MODES and mode != INTAKE_MODE:
-                mode = INTAKE_MODE
-            return {
-                "mode": mode,
-                "canvas_type": mode if mode in CANVAS_MODES else None,
-                "confidence": 0.78,
-                "reason": f"LLM: {obj.get('reason', '')}",
-            }
+        label = (result.text or "").strip().lower()
+        mode = _LABEL_TO_MODE.get(label)
+        if mode is None:
+            return _intake_default("LLM returned no known label, defaulting to intake")
+
+        return {
+            "mode": mode,
+            "canvas_type": mode if mode in CANVAS_MODES else None,
+            "confidence": 0.78,
+            "reason": f"LLM: cortex.classify chose {label} via {result.provider or 'cortex'}",
+        }
     except Exception:
-        pass
-
-    return {"mode": INTAKE_MODE, "canvas_type": None, "confidence": 0.50, "reason": "LLM unavailable, defaulting to intake"}
+        return _intake_default("LLM unavailable, defaulting to intake")
 
 
 def classify(message: str) -> dict[str, Any]:

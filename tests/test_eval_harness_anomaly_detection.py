@@ -213,3 +213,95 @@ class TestCheckGatesMinDecisionsFromConfig:
         assert alerts == [], (
             "Should skip reflex below _DEFAULT_GATES min_decisions when config absent"
         )
+
+
+# ---------------------------------------------------------------------------
+# AUROC gate (restored in tsr-ai-01-d5)
+# ---------------------------------------------------------------------------
+#
+# _compute_auroc and its gate were authored ONLY in icdev/tools/... (the generated
+# mirror). `sync_package_tree.py --clean` at a7d227138 regenerated the mirror from
+# tools/, so the whole feature was deleted and only tests/test_benchmark_runner.py
+# noticed — via an ImportError nobody read. These tests pin the feature to the
+# CANONICAL path and assert both copies carry it, so the next --clean sync cannot
+# quietly remove it again.
+
+
+class TestAuroc:
+    def test_both_copies_expose_compute_auroc(self):
+        """Guards the mirror-only-authoring failure that deleted this feature."""
+        import importlib
+
+        canonical = importlib.import_module("tools.genesis.harness.eval_harness")
+        packaged = importlib.import_module("icdev.tools.genesis.harness.eval_harness")
+        assert hasattr(canonical, "_compute_auroc")
+        assert hasattr(packaged, "_compute_auroc")
+
+    def test_auroc_min_is_a_default_gate(self):
+        assert _DEFAULT_GATES["auroc_min"] == 0.65
+
+    def test_compute_metrics_emits_auroc_key(self):
+        """compute_metrics must carry auroc through — check_gates reads m['auroc']."""
+        from tools.genesis.harness.eval_harness import compute_metrics
+
+        rows = [{"decision": "heal", "confidence": 0.9, "actual_outcome": "resolved"}] * 5 + \
+               [{"decision": "heal", "confidence": 0.1, "actual_outcome": "false_positive"}] * 5
+
+        class _Conn:
+            def execute(self, *a, **kw):
+                class _R:
+                    def fetchall(self_inner):
+                        return rows
+                return _R()
+            def close(self):
+                pass
+
+        with patch("tools.genesis.harness.eval_harness._conn", return_value=_Conn()):
+            m = compute_metrics("oracle_triage")
+
+        assert m["auroc"] == 1.0
+
+    def test_low_auroc_fires_a_medium_alert(self):
+        metrics = {
+            "reflex": "oracle_triage", "window_days": 30, "total_decisions": 50,
+            "precision": 0.95, "ece": 0.05, "auroc": 0.20,
+            "false_heal_rate": None, "heal_success_rate": None,
+        }
+        with patch("tools.genesis.harness.eval_harness._load_harness_config",
+                   return_value={"gates": dict(_DEFAULT_GATES), "anomaly_detection": {}}), \
+             patch("tools.genesis.harness.eval_harness.compute_metrics", return_value=metrics), \
+             patch("tools.genesis.harness.eval_harness._AnomalyDetector.get_thresholds",
+                   return_value=dict(_DEFAULT_GATES)):
+            alerts = check_gates()
+
+        # compute_metrics is patched, so both gated reflexes report the same
+        # numbers and both fire.
+        auroc_alerts = [a for a in alerts if a["metric"] == "auroc"]
+        assert auroc_alerts, "low AUROC must raise an alert"
+        assert all(a["severity"] == "medium" for a in auroc_alerts)
+        assert all(a["threshold"] == 0.65 for a in auroc_alerts)
+
+    def test_healthy_auroc_fires_nothing(self):
+        metrics = {
+            "reflex": "oracle_triage", "window_days": 30, "total_decisions": 50,
+            "precision": 0.95, "ece": 0.05, "auroc": 0.90,
+            "false_heal_rate": None, "heal_success_rate": None,
+        }
+        with patch("tools.genesis.harness.eval_harness._load_harness_config",
+                   return_value={"gates": dict(_DEFAULT_GATES), "anomaly_detection": {}}), \
+             patch("tools.genesis.harness.eval_harness.compute_metrics", return_value=metrics), \
+             patch("tools.genesis.harness.eval_harness._AnomalyDetector.get_thresholds",
+                   return_value=dict(_DEFAULT_GATES)):
+            alerts = check_gates()
+
+        assert not [a for a in alerts if a["metric"] == "auroc"]
+
+    def test_unjudged_rows_are_dropped_not_scored_as_wrong(self):
+        """A 'pending' outcome is missing data, not a negative — see _compute_ece."""
+        from tools.genesis.harness.eval_harness import _compute_auroc
+
+        clean = [{"confidence": 0.9, "actual_outcome": "resolved"}] * 5 + \
+                [{"confidence": 0.1, "actual_outcome": "false_positive"}] * 5
+        noisy = clean + [{"confidence": 0.95, "actual_outcome": "pending"}] * 4
+
+        assert _compute_auroc(noisy) == _compute_auroc(clean) == 1.0

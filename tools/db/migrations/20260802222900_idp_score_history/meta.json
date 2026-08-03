@@ -1,0 +1,9 @@
+{
+  "id": "20260802222900_idp_score_history",
+  "description": "Append-only per-component scorecard history — one row per component per evaluation window, carrying the attained ladder level so level CHANGES are detectable, not just score drift.",
+  "date": "2026-08-02",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "tables_affected": ["idp_scorecard_history"],
+  "reversible": true
+}

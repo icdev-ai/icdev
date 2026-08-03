@@ -243,6 +243,10 @@ class TestReapStaleInProgressManualExemption:
         monkeypatch.setattr(km, "_task_log_is_empty", lambda tid: True)
         monkeypatch.setattr(km, "_get_task_timeout", lambda tid: 60)  # normal threshold = 120s
         monkeypatch.setattr(km, "_detect_execution_anomaly", lambda age: (False, ""))
+        # Without this the reaper returns at its first line whenever a real
+        # scheduler happens to be running on the machine, and the assertion
+        # below reports "not reaped" for a reaper that never ran at all.
+        monkeypatch.setattr(km, "_foreign_scheduler_pid", lambda: 0)
 
         now = datetime.now(timezone.utc)
         very_stale_ts = (now - timedelta(seconds=300)).isoformat()

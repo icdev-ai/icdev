@@ -1771,6 +1771,12 @@ def _remove_worktree(path) -> bool:
     import shutil as _shutil
     import subprocess as _sp
 
+    # Whether there was anything here to begin with. The orphan branch below
+    # reports success when the directory is gone afterwards — which is also true
+    # of a path that never existed, so a phantom path counted as a removal and
+    # re-inflated the sweep total this function exists to make honest.
+    _existed = Path(path).exists()
+
     result = _sp.run(
         ["git", "worktree", "remove", str(path), "--force"],
         cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
@@ -1794,6 +1800,13 @@ def _remove_worktree(path) -> bool:
 
     # Orphan: on disk but not a registered worktree. git cannot help; we can.
     if "is not a working tree" in stderr:
+        if not _existed:
+            # Nothing was here. Deleting nothing is not a removal — saying so
+            # would put phantom entries back into the sweep count.
+            logger.warning(
+                "Sweep: %s is neither a worktree nor a directory — nothing to remove", path,
+            )
+            return False
         _shutil.rmtree(str(path), ignore_errors=True)
         if not Path(path).exists():
             logger.info(
@@ -2013,6 +2026,104 @@ def _ensure_pr_base(pr_ref: str, task_id: str) -> str | None:
         return None
 
 
+def _open_prs_for_task(task_id: str, repo_root, *, exclude_branch: str = "") -> list:
+    """Open PRs whose head branch belongs to ``task_id``.
+
+    Returns ``[{"url", "number", "branch"}, ...]``, newest first.
+
+    A task's work does not always live on ``kanban/<task_id>``: workers
+    routinely push a descriptive suffix (``kanban/<id>-land``) or another prefix
+    (``fix/<id>-...``), which is why `_branches_for_task` exists. Asking gh only
+    about the canonical branch therefore misses the PR a worker already opened,
+    and the dispatcher goes on to open a second one for the same task.
+    """
+    import json as _json
+    import subprocess as _sp
+
+    out = []
+    for branch in _branches_for_task(task_id, repo_root):
+        short = branch.split("origin/", 1)[-1]
+        if exclude_branch and short == exclude_branch:
+            continue
+        try:
+            r = _sp.run(
+                ["gh", "pr", "list", "--head", short, "--state", "open",
+                 "--json", "url,number,headRefName,createdAt"],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode != 0:
+                continue
+            for pr in _json.loads(r.stdout or "[]"):
+                if any(p["number"] == pr.get("number") for p in out):
+                    continue
+                out.append({
+                    "url": pr.get("url", ""), "number": pr.get("number"),
+                    "branch": pr.get("headRefName", short),
+                    "createdAt": pr.get("createdAt", ""),
+                })
+        except Exception as exc:  # noqa: BLE001 — best-effort discovery
+            logger.debug("PR flow: open-PR lookup failed for %s: %s", short, exc)
+    return sorted(out, key=lambda p: p.get("createdAt") or "", reverse=True)
+
+
+def _supersede_stale_prs(task_id: str, keep_url: str, keep_branch: str, repo_root) -> list:
+    """Close a task's OTHER open PRs once ``keep_url`` carries the work.
+
+    A retry works on a fresh branch, so without this a task accumulates competing
+    PRs — gdx-aud-01 reached three (#1135, #1220, #1221), and pr_linker could only
+    guess which one mattered.
+
+    Refuses to close a PR whose branch holds commits the surviving branch does
+    not: ``git cherry`` compares by patch-id, so a rebase or cherry-pick of the
+    same work does not count as unique. If anything is genuinely only on the old
+    branch, the PR is left open and a warning is logged — losing committed work
+    to tidy the board would be a far worse bug than a duplicate PR.
+
+    Returns the list of closed PR URLs.
+    """
+    import subprocess as _sp
+
+    closed = []
+    for pr in _open_prs_for_task(task_id, repo_root, exclude_branch=keep_branch):
+        if pr["url"] == keep_url:
+            continue
+        try:
+            cherry = _sp.run(
+                ["git", "cherry", keep_branch, f"origin/{pr['branch']}"],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
+            )
+            if cherry.returncode != 0:
+                logger.warning(
+                    "PR flow: cannot compare %s against %s for task %s — leaving "
+                    "PR %s open", pr["branch"], keep_branch, task_id, pr["url"],
+                )
+                continue
+            unique = [ln for ln in cherry.stdout.splitlines() if ln.startswith("+")]
+            if unique:
+                logger.warning(
+                    "PR flow: NOT closing %s for task %s — its branch %s has %d "
+                    "commit(s) absent from %s",
+                    pr["url"], task_id, pr["branch"], len(unique), keep_branch,
+                )
+                continue
+            _sp.run(
+                ["gh", "pr", "close", str(pr["number"]), "--comment",
+                 f"Superseded by {keep_url} — the same task ({task_id}) was retried "
+                 f"on `{keep_branch}`, and every commit on `{pr['branch']}` is "
+                 f"already present there (compared by patch-id). Closing so the "
+                 f"task has exactly one open PR."],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=60,
+            )
+            closed.append(pr["url"])
+            logger.info(
+                "PR flow: closed superseded PR %s for task %s (kept %s)",
+                pr["url"], task_id, keep_url,
+            )
+        except Exception as exc:  # noqa: BLE001 — never block the PR flow
+            logger.warning("PR flow: supersede failed for %s: %s", pr["url"], exc)
+    return closed
+
+
 def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     """Push the kanban branch to origin and open a GitHub PR.
 
@@ -2066,6 +2177,30 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
         "---\n🤖 Generated by ICDEV Kanban Scheduler\n"
         "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
     )
+    # One task, one PR (kpr-dup-02). A retry runs on a fresh branch, so
+    # `gh pr create` happily opens a SECOND PR for a task that already has one
+    # — the create below only fails when a PR exists for THIS exact head.
+    # gdx-aud-01 reached three open PRs that way. If an open PR already carries
+    # this branch's commits, reuse it instead of adding another.
+    for _existing in _open_prs_for_task(task_id, _repo_root, exclude_branch=branch_name):
+        try:
+            _cherry = _sp.run(
+                ["git", "cherry", f"origin/{_existing['branch']}", branch_name],
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=30,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        if _cherry.returncode != 0:
+            continue
+        if any(ln.startswith("+") for ln in _cherry.stdout.splitlines()):
+            continue  # this branch has work that PR does not — a new PR is right
+        logger.info(
+            "PR flow: task %s already has open PR %s carrying these commits — "
+            "reusing it instead of opening a second", task_id, _existing["url"],
+        )
+        _ensure_pr_base(_existing["url"], task_id)
+        return _existing["url"]
+
     create = _sp.run(
         ["gh", "pr", "create",
          "--title", pr_title,
@@ -2088,6 +2223,10 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     pr_url = create.stdout.strip()
     _ensure_pr_base(pr_url, task_id)
     logger.info("PR flow: opened PR %s for task %s", pr_url, task_id)
+    # A new PR was warranted (this branch had work the others lacked), so the
+    # earlier attempts are superseded. Close only the ones whose commits are all
+    # present here — anything with unique work stays open and gets a warning.
+    _supersede_stale_prs(task_id, pr_url, branch_name, _repo_root)
     return pr_url
 
 
@@ -2733,32 +2872,150 @@ def _run_gate_step(slug: str, work_dir: str, task_id: str) -> Tuple[bool, str]:
     return True, f"unknown gate step '{slug}' — skipped"
 
 
+# ---------------------------------------------------------------------------
+# Deterministic tool tasks (the non-phase-gate shape)
+# ---------------------------------------------------------------------------
+# A board task whose entire job is one documented `python tools/...` scan does
+# not need a 900-1800s LLM dispatch wrapped around a ~40s subprocess. Such a
+# task opts in with a marker line anywhere in its description:
+#
+#     TOOL-RUNNER: python tools/testing/health_check.py --json
+#
+# The marker only SELECTS from the closed set below — it cannot introduce a new
+# command, and that distinction is the entire point. Task descriptions are
+# written by an LLM, so a prefix-only check ("starts with python tools/") would
+# let anything in the tree run unattended, `tools/db/init_icdev_db.py` included.
+# Two gates apply, in order:
+#
+#   1. tools/skills/invoke.py::_is_safe_command — the shared prefix allowlist,
+#      reused rather than re-implemented (tools/agent_runtime/cron.py reuses the
+#      same one for its script jobs).
+#   2. _TOOL_RUNNER_COMMANDS — this module's closed set, compared on the
+#      canonical argv tuple so that spacing, `python3`, or a backslash path
+#      cannot smuggle an unlisted command past a string compare.
+#
+# Membership is deliberately limited to read-only scans. A command that fails
+# either gate is REFUSED, not run: the task falls through to the normal LLM
+# executor chain, which is exactly the pre-existing behaviour for every task.
+_TOOL_RUNNER_COMMANDS: frozenset = frozenset({
+    ("python", "tools/testing/health_check.py", "--json"),
+    ("python", "tools/db/storage.py", "--health", "--json"),
+    ("python", "tools/awareness/health_prober.py", "--run-all", "--json"),
+    ("python", "tools/awareness/drift_detector.py", "--detect", "--json"),
+    ("python", "tools/awareness/gap_detector.py", "--detect", "--json"),
+    ("python", "tools/workflow/coherence_checker.py", "--all", "--gate"),
+})
+
+_TOOL_RUNNER_MARKER_RE = re.compile(
+    r"^[ \t]*(?:[-*][ \t]*)?TOOL-RUNNER:[ \t]*`?(?P<cmd>[^`\r\n]+?)`?[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _canonical_command(cmd: str) -> Optional[Tuple[str, ...]]:
+    """Normalise a command string to an argv tuple for allowlist comparison."""
+    import shlex  # noqa: PLC0415
+
+    try:
+        parts = shlex.split(cmd.strip(), posix=False)
+    except ValueError:
+        return None
+    if not parts:
+        return None
+    if parts[0] in ("python3", "py"):
+        parts[0] = "python"
+    return tuple(p.replace("\\", "/") for p in parts)
+
+
+def _tool_runner_command(description: str) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve a TOOL-RUNNER marker against the allowlist.
+
+    Returns ``(command, refusal_reason)``:
+      ``(None, None)``   — no marker; not a tool-runner task at all.
+      ``(None, reason)`` — marked as one, but the command is refused.
+      ``(cmd, None)``    — cleared both gates and may run.
+    """
+    match = _TOOL_RUNNER_MARKER_RE.search(description or "")
+    if not match:
+        return None, None
+    raw = match.group("cmd").strip()
+
+    from tools.skills.invoke import _is_safe_command  # noqa: PLC0415
+
+    # Normalise FIRST so both gates judge one string rather than two spellings
+    # of it. This cannot widen anything: gate 2 is exact set membership, and
+    # `python3 x` / `tools\x` are the same invocation as `python x` / `tools/x`.
+    canonical = _canonical_command(raw)
+    if canonical is None:
+        return None, f"command could not be parsed: {raw[:200]}"
+    normalised = " ".join(canonical)
+
+    if not _is_safe_command(normalised):
+        return None, ("prefix not in the shared allowlist "
+                      f"(python tools/, python -m tools, python -c): {raw[:200]}")
+
+    if canonical not in _TOOL_RUNNER_COMMANDS:
+        return None, f"command not in the tool_runner allowlist: {raw[:200]}"
+    return normalised, None
+
+
+def _run_tool_command(cmd: str, work_dir: str) -> Tuple[bool, str]:
+    """Execute one already-allowlisted command via the shared skill invoker."""
+    from tools.skills.invoke import run_command  # noqa: PLC0415
+
+    res = run_command(cmd, [], timeout=MAX_EXECUTION_SECONDS_SCAN, cwd=work_dir)
+    if res.get("skipped"):
+        return False, res.get("reason", "command skipped")
+    if res.get("error"):
+        return False, f"{cmd} errored: {res['error']}"
+    rc = res.get("returncode", 1)
+    out = ((res.get("stdout") or "") + (res.get("stderr") or "")).strip()
+    return rc == 0, f"$ {cmd}\nexit={rc}\n{out[-3000:]}"
+
+
 def _dispatch_via_tool_runner(task: dict, work_dir: str, task_log: Path) -> bool:
-    """Run a deterministic gate sub-task in-process. Returns True if handled."""
+    """Run a deterministic task in-process. Returns True if handled.
+
+    Two shapes qualify: an auto-decomposed phase-gate child (matched on task id)
+    and a task carrying a TOOL-RUNNER marker naming an allowlisted read-only
+    scan. Everything else — including a marker naming an unlisted command —
+    returns False and takes the normal LLM executor chain.
+    """
     task_id = task["id"]
     slug = _gate_step_slug(task_id)
-    if not slug:
-        return False
+
+    if slug:
+        kind, label = "gate step", slug
+    else:
+        cmd, refusal = _tool_runner_command(task.get("description") or "")
+        if refusal:
+            logger.warning("kanban: tool_runner REFUSED %s — %s", task_id, refusal)
+            print(f"  Kanban: tool_runner refused {task_id} — {refusal}")
+            return False
+        if not cmd:
+            return False
+        kind, label = "tool command", cmd
 
     started = time.monotonic()
     try:
-        ok, detail = _run_gate_step(slug, work_dir, task_id)
+        ok, detail = (_run_gate_step(slug, work_dir, task_id) if slug
+                      else _run_tool_command(cmd, work_dir))
     except Exception as exc:
-        ok, detail = False, f"gate step raised: {exc}"
+        ok, detail = False, f"{kind} raised: {exc}"
     elapsed = round(time.monotonic() - started, 1)
 
     try:
         task_log.write_text(
             f"[tool-runner dispatch — task {task_id}]\n"
             f"[work_dir {work_dir}]\n"
-            f"[step {slug}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
+            f"[{kind} {label}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
             encoding="utf-8", errors="replace",
         )
     except Exception as exc:
-        logger.debug("kanban: gate-step log write failed for %s: %s", task_id, exc)
+        logger.debug("kanban: tool-runner log write failed for %s: %s", task_id, exc)
 
     _set_executor_type(task_id, "tool_runner")
-    print(f"  Kanban: gate step {task_id} ({slug}) "
+    print(f"  Kanban: {kind} {task_id} ({label}) "
           f"{'PASSED' if ok else 'FAILED'} in {elapsed}s via tool_runner")
     if ok:
         _move_task(task_id, "done", actor="tool_runner", reason=detail[:400])

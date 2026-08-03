@@ -602,9 +602,15 @@ class TestTwoTierFineTunedIntegration:
             project_id="proj-123",
         )
 
-    def test_two_tier_disabled_skips_ft_check(self):
+    def test_two_tier_disabled_skips_ft_check(self, monkeypatch):
         """When two-tier is disabled, no fine-tuned check occurs."""
         from tools.llm.provider import LLMRequest
+
+        # LLM_TWO_TIER_ENABLED overrides the config in BOTH directions, and the
+        # kanban dispatch environment exports it as "true". Without this delenv
+        # the config toggle under test is simply not the thing deciding, and the
+        # assertion below fails on a machine that happens to have it set.
+        monkeypatch.delenv("LLM_TWO_TIER_ENABLED", raising=False)
 
         router = self._make_router_with_two_tier()
         router._config["two_tier"]["enabled"] = False
@@ -616,6 +622,41 @@ class TestTwoTierFineTunedIntegration:
         with patch.object(router, "_check_finetuned_override") as mock_ft:
             result = router._maybe_invoke_two_tier("code_generation", request)
             assert result is None
+            mock_ft.assert_not_called()
+
+    def test_env_var_overrides_disabled_config(self, monkeypatch):
+        """LLM_TWO_TIER_ENABLED=true re-enables two-tier over a disabled config.
+
+        The other half of the override contract — asserted so the env var can
+        never again be the silent reason a "disabled" test result flips.
+        """
+        from tools.llm.provider import LLMRequest
+
+        monkeypatch.setenv("LLM_TWO_TIER_ENABLED", "true")
+
+        router = self._make_router_with_two_tier()
+        router._config["two_tier"]["enabled"] = False
+
+        request = LLMRequest(messages=[{"role": "user", "content": "Generate"}])
+
+        with patch.object(router, "_check_finetuned_override") as mock_ft:
+            mock_ft.return_value = None
+            with patch.object(router, "_rag_augment", return_value=request):
+                with patch.object(router, "_invoke_model_direct", return_value=None):
+                    router._maybe_invoke_two_tier("code_generation", request)
+            mock_ft.assert_called_once()
+
+    def test_env_var_false_disables_enabled_config(self, monkeypatch):
+        """LLM_TWO_TIER_ENABLED=false wins over an enabled config."""
+        from tools.llm.provider import LLMRequest
+
+        monkeypatch.setenv("LLM_TWO_TIER_ENABLED", "false")
+
+        router = self._make_router_with_two_tier()  # config has enabled: True
+        request = LLMRequest(messages=[{"role": "user", "content": "Generate"}])
+
+        with patch.object(router, "_check_finetuned_override") as mock_ft:
+            assert router._maybe_invoke_two_tier("code_generation", request) is None
             mock_ft.assert_not_called()
 
 

@@ -2,7 +2,25 @@
 
 8 tables supporting autonomous 4-team AI competition: tournaments, teams,
 rounds, artifacts, judge evaluations, LLMOps events, training pairs, and
-live leaderboard.  Append-only audit trail (AU).
+live leaderboard.
+
+Mutability (gdx-aud-01 — audited against every write site in tools/gameday/):
+
+APPEND-ONLY (NIST AU immutable evidence; registered in APPEND_ONLY_TABLES in
+.claude/hooks/pre_tool_use.py — never UPDATE/DELETE):
+    gd_ai_artifacts       — one row per generated artifact
+    gd_ai_llmops_events   — one row per inference call
+    gd_ai_training_pairs  — one row per extracted training pair
+
+MUTABLE BY DESIGN (live competition state, deliberately NOT append-only):
+    gd_ai_tournaments  — status / current_round / started_at / completed_at
+    gd_ai_teams        — cumulative score and counter deltas
+    gd_ai_rounds       — status / started_at / completed_at
+    gd_ai_judge_evals  — upsert on (round_id, team_id) so a round can be re-judged
+    gd_ai_leaderboard  — recomputed snapshot, upsert on (tournament_id, team_id)
+
+The append-only set above is the contract; tests/test_gdx_gameday_append_only.py
+fails if this docstring and the hook ever disagree.
 """
 # CUI // SP-CTI
 

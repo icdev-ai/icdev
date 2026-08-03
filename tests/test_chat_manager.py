@@ -28,7 +28,21 @@ def manager():
     mgr._db_create_task = MagicMock()
     mgr._db_complete_task = MagicMock()
     mgr._db_fail_task = MagicMock()
-    return mgr
+    yield mgr
+
+    # create_context() always starts a daemon _agent_loop thread per context, and
+    # nothing in these tests stops it. Left running, each one polls its queue for
+    # the rest of the pytest session and writes governance audit rows from a
+    # background thread — which trips the transaction-leak guard in whichever
+    # test happens to be finishing when the write lands. That is why the reported
+    # test moved between runs: the thread, not the test, was the leaker.
+    contexts = list(mgr._contexts.values())
+    for ctx in contexts:
+        ctx._stop_event.set()
+    for ctx in contexts:
+        thread = getattr(ctx, "_thread", None)
+        if thread is not None:
+            thread.join(timeout=5)
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +269,11 @@ _CM = importlib.import_module("tools.dashboard.chat_manager")
 
 
 def _make_ctx(manager, **kw):
-    """Build an active context on the manager without starting its thread."""
+    """Build an active context on the manager.
+
+    create_context() DOES start the agent-loop thread; the `manager` fixture's
+    teardown is what stops it.
+    """
     res = manager.create_context("user-1", **kw)
     return manager._contexts[res["context_id"]]
 
@@ -289,6 +307,23 @@ def _patch_router(monkeypatch, invoke_fn):
     for _key, _mod in list(_sys.modules.items()):
         if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
             monkeypatch.setattr(_mod, "LLMRouter", _Router)
+
+    # Patching the CLASS is not enough for the plain chat branch. Since
+    # cxo-adopt-01 that branch runs through `cortex_api.complete`, whose
+    # `_get_router()` calls `tools.llm.get_router()` — a module-level SINGLETON
+    # that caches the first `LLMRouter` it builds. Once any earlier test has
+    # warmed that cache, the real router is already instantiated and rebinding
+    # the class name affects nothing, so the stub was silently ignored and the
+    # turn fell through to the echo fallback. Patch the getter itself (the
+    # shim-aware pattern `tools/cortex/api.py::_get_router` documents).
+    _stub = _Router()
+    for _name in ("tools.llm", "icdev.tools.llm"):
+        try:
+            monkeypatch.setattr(
+                importlib.import_module(_name), "get_router", lambda config_path=None: _stub
+            )
+        except ImportError:
+            pass
 
 
 class TestPendingPlaceholder:

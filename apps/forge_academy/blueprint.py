@@ -946,11 +946,22 @@ def api_guild_stats(guild_id):
 _LEARNER_MISSION_FIELDS = (
     "id", "slug", "title", "tagline", "tier", "topic", "mission_type",
     "xp_reward", "difficulty", "estimated_minutes", "is_available",
+    # aca-trn-03: the objective is the one field here that is not a price. It was
+    # added to the table and to both Jinja surfaces but not to this allowlist, so
+    # /api/academy/learning-path recommended missions while withholding the only
+    # thing that says what they teach. A JSON client had no way to reach it.
+    "learning_objective",
 )
 
 
 def _learner_mission_view(mission: dict) -> dict:
-    """Project a mission row down to the fields a client may see."""
+    """Project a mission row down to the fields a client may see.
+
+    Missing keys are dropped rather than nulled, so a row read before migration
+    20260803005919 simply omits the objective. A row that has the column but no authored objective
+    keeps it as an explicit ``null`` — "nobody wrote one" is a real answer, and the
+    client should be able to tell it apart from "this build predates the field".
+    """
     return {k: mission.get(k) for k in _LEARNER_MISSION_FIELDS if k in mission}
 
 
@@ -1326,6 +1337,38 @@ def api_academy_health():
     health["competency_chain"] = chain
     ok = health.get("initialized") and not chain.get("stalled") and chain.get("ok", True)
     return jsonify(health), (200 if ok else 503)
+
+
+@bp.route("/api/academy/export/xapi")
+@require_org_intel
+def api_export_xapi():
+    """Export Academy completions as xAPI 1.0.3 statements (aca-trn-05).
+
+    Org-leadership gated on the same tier as the other cohort-wide surfaces: this
+    reads every learner's record by design, since feeding an external LMS is an
+    administrative act, not a per-learner one. ``?user_id=`` narrows it to one
+    learner for a single transfer-of-record request.
+
+    Unverified records — no provenance row in fa_xp_ledger / no evidence row in
+    fa_certificate_evidence — are withheld by default and counted in ``excluded``.
+    ``?include_unverified=1`` emits them stamped ``verified: false`` rather than
+    laundering them into the same shape as graded work.
+
+    ``?statements_only=1`` returns the bare array an LRS POST /statements expects.
+    """
+    _ensure_init()
+    from .xapi import build_statements
+
+    result = build_statements(
+        user_id=request.args.get("user_id", type=int),
+        since=request.args.get("since"),
+        include_unverified=request.args.get("include_unverified", "").lower()
+        in ("1", "true", "yes"),
+        tenant_id=_fa_tenant_id(),
+    )
+    if request.args.get("statements_only", "").lower() in ("1", "true", "yes"):
+        return jsonify(result["statements"])
+    return jsonify(result)
 
 
 @bp.route("/api/academy/competencies")

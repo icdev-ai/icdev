@@ -121,10 +121,28 @@ def _heuristic_risk(tool_name: str, tool_input: dict[str, Any]) -> str:
     blob = f"{tool_name} {_flatten(tool_input)}".lower()
     if any(kw in blob for kw in _HIGH_RISK_KEYWORDS):
         return "high"
-    # write_file within the repo is medium; a read-ish command is low.
+
+    # ars-appr-01: this used to end at `return "low"`, so in `smart` mode any
+    # tool that was not run_command/write_file and carried none of the keywords
+    # above was auto-approved — including every tool nobody had enumerated. That
+    # is an allowlist that fails open. Defer to the reversibility classifier,
+    # whose default tier for an unrecognised tool is `unknown` (needs approval).
+    try:
+        from tools.agent_runtime.approval_gate import IRREVERSIBLE, RECOVERABLE, classify
+
+        cls = classify(tool_name, tool_input)
+        if cls.tier == IRREVERSIBLE or cls.requires_approval:
+            return "high"
+        if cls.tier == RECOVERABLE:
+            return "medium"
+        return "low"
+    except Exception as exc:  # noqa: BLE001 — classifier unavailable: fail toward high
+        logger.debug("safety: reversibility classifier unavailable: %s", exc)
+
+    # write_file within the repo is medium; anything unrecognised is high.
     if tool_name == "write_file":
         return "medium"
-    return "low"
+    return "high"
 
 
 def _llm_risk(

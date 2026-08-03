@@ -189,8 +189,13 @@ CONTRACTS: dict[str, dict[str, Any]] = {
     },
 
     # ── Radar ──
+    # Unlike the value/breadth endpoints, this one signals "no data yet" with
+    # 404 + {"error": "no_snapshot"} rather than 200 + {"status": "no_data"}.
+    # Treated as the same empty-data condition; a 404 carrying any other body
+    # (including Flask's HTML 404 for a genuinely missing route) still fails.
     "GET /api/radar/latest": {
         "required": [],
+        "no_data_404_error": "no_snapshot",
     },
 }
 
@@ -296,6 +301,19 @@ def _login(base: str, email: str, password: str) -> requests.Session:
     return s
 
 
+def _json_error_is(resp: Any, sentinel: str) -> bool:
+    """True when *resp* is JSON carrying exactly ``{"error": sentinel}``.
+
+    Keeps the no-data allowance narrow: Flask's HTML 404 for a route that no
+    longer exists is not JSON, so it still fails.
+    """
+    try:
+        body = resp.json()
+    except Exception:
+        return False
+    return isinstance(body, dict) and body.get("error") == sentinel
+
+
 def _get_nested(obj: Any, dotted_key: str) -> Any:
     """Resolve 'a.b.c' into obj['a']['b']['c']."""
     parts = dotted_key.split(".")
@@ -356,8 +374,15 @@ def check_api(base: str, session: requests.Session, report: SmokeReport,
             resp = fn(f"{base}{path}", timeout=20)
             elapsed = time.time() - t0
 
-            # Must be HTTP 200
+            # Must be HTTP 200 — except for a contract that documents its own
+            # "no data yet" status code (see no_data_404_error above).
             if resp.status_code != 200:
+                sentinel = contract.get("no_data_404_error")
+                if sentinel and resp.status_code == 404 and _json_error_is(resp, sentinel):
+                    report.add(CheckResult(route, "warn",
+                        f"{sentinel} — sweep has not run yet", elapsed))
+                    print(f"  {WARN}  {route:<55} {YELLOW(f'{sentinel} — sweep has not run yet')}")
+                    continue
                 report.add(CheckResult(route, "fail",
                     f"HTTP {resp.status_code} (expected 200)", elapsed))
                 print(f"  {FAIL}  {route:<55} HTTP {resp.status_code}")
@@ -380,15 +405,23 @@ def check_api(base: str, session: requests.Session, report: SmokeReport,
             failures: list[str] = []
             warnings: list[str] = []
 
-            # Allow "no_data" status responses through without data checks
+            # Allow "no_data" status responses through without data checks.
+            # The required-key list describes the *populated* shape, so it must
+            # be skipped too — a no_data body carries {status, message} and
+            # nothing else, and checking it anyway reported three endpoints as
+            # broken purely because their sweep had not run yet.
             no_data = (body.get("status") == "no_data") if isinstance(body, dict) else False
 
-            # 1 — Required top-level keys
-            for key in contract.get("required", []):
-                if _get_nested(body, key) is None and key not in body:
-                    failures.append(f"missing required key '{key}'")
+            if no_data:
+                # Surfaced as WARN, not a silent PASS — the endpoint is healthy
+                # but the page behind it renders empty until the sweep runs.
+                warnings.append("no_data — sweep has not run yet")
+            else:
+                # 1 — Required top-level keys
+                for key in contract.get("required", []):
+                    if _get_nested(body, key) is None and key not in body:
+                        failures.append(f"missing required key '{key}'")
 
-            if not no_data:
                 # 2 — data_key check (object)
                 dk = contract.get("data_key")
                 if dk:

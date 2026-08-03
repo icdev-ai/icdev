@@ -4,10 +4,11 @@
 
 from __future__ import annotations
 
-import sqlite3
 from unittest.mock import patch
 
 import pytest
+
+from tests._sql_compat import connect as translating_connect
 
 
 TRIAD_SCHEMA = """
@@ -85,8 +86,11 @@ CREATE TABLE IF NOT EXISTS kg_retrieval_log (
 
 @pytest.fixture
 def triad_db():
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    # The triad modules (kg_pair_generator, rag_ft_pipeline, quality_monitor)
+    # author PostgreSQL ``%s`` placeholders and rely on StorageConnection to
+    # rewrite them for SQLite. A bare sqlite3 connection makes every statement
+    # raise ``near "%": syntax error``.
+    conn = translating_connect(":memory:")
     conn.executescript(TRIAD_SCHEMA)
     return conn
 

@@ -36,19 +36,33 @@ _RESOLVED = "resolved"
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _log_path() -> Path:
+    """Resolve the decision log path, honouring ``FATHOMDESK_DECISIONS_PATH``.
+
+    Resolved per call rather than once at import so a test can redirect the log
+    to a tmp dir. Without the override, any test that reaches arbitrate() writes
+    fabricated decisions straight into the tracked data/fathomdesk_decisions.md,
+    which the session auto-commit hook then commits.
+    """
+    override = os.environ.get("FATHOMDESK_DECISIONS_PATH")
+    return Path(override) if override else _LOG_PATH
+
+
 def _read_all() -> str:
-    if not _LOG_PATH.exists():
+    path = _log_path()
+    if not path.exists():
         return ""
-    return _LOG_PATH.read_text(encoding="utf-8")
+    return path.read_text(encoding="utf-8")
 
 
 def _write_all(content: str) -> None:
-    _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(_LOG_PATH.parent), suffix=".tmp")
+    path = _log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(content)
-        os.replace(tmp, str(_LOG_PATH))
+        os.replace(tmp, str(path))
     except Exception:
         try:
             os.unlink(tmp)
@@ -95,9 +109,13 @@ def _make_entry(
 def _parse_entries(content: str, status_filter: str | None = None) -> list[dict[str, Any]]:
     """Parse all entries from the log.  Optionally filter by status."""
     results: list[dict[str, Any]] = []
-    # Split on H2 headers; re.split keeps headers when using a capture group
+    # Split on H2 headers; re.split keeps headers when using a capture group.
+    # The result is [preamble, header, body, header, body, ...] — headers sit at
+    # ODD indices. Walking from 0 read the preamble as a header and every body as
+    # the next one, so no header ever matched: get_pending() returned [] against
+    # a log holding 564 entries, and the whole deferred-reflection loop was inert.
     parts = re.split(r"(## \[[^\]]+\]\n)", content)
-    i = 0
+    i = 1
     while i < len(parts):
         header = parts[i]
         body = parts[i + 1] if i + 1 < len(parts) else ""
