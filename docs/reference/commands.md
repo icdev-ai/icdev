@@ -1101,6 +1101,15 @@ python tools/workflow/coherence_checker.py --check doc_command_paths --gate     
 python tools/workflow/coherence_checker.py --check insert_schema_parity --json                      # List INSERT columns absent from the live schema
 python tools/workflow/coherence_checker.py --check insert_schema_parity --gate                      # Fail on any NEW mismatch
 
+# Vendored-copy parity (cxo-doc-03) — a stdlib-only module that standalone apps copy verbatim
+# into their OWN repos (tools/cortex/client.py -> compass / idea_lab tools/integrations/
+# cortex_client.py) must stay a SUBSET of every copy's public API. Targets are declared in
+# args/vendor_parity.yaml (no code change to add one). Compares classes/functions/method
+# parameter names, NOT bytes — the copies legitimately differ by a provenance header and by
+# line endings. A consumer repo that is not checked out on this machine is SKIPPED, never failed.
+python tools/workflow/coherence_checker.py --check vendor_parity --json                             # Report copies lagging canonical
+python tools/workflow/coherence_checker.py --check vendor_parity --changed-files "tools/cortex/client.py" --gate   # Fail when a changed source outruns a copy
+
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout
 python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
