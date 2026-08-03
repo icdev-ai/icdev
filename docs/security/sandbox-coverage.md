@@ -1055,7 +1055,24 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - `tests/test_coherence_swallowed_persistence.py` pins the detector in both directions and asserts the real tree is clean.
 - **Revisit if:** the fixer gains an LLM-authored rewrite path (source text becoming model output rather than a deterministic transform), starts writing to a path derived from file content, or is wired into an unattended reflex that runs `--write` without review.
 
-### Gap 45 — Agent approval gate: reversibility classification of tool calls (`tools/agent_runtime/approval_gate.py`)
+### Gap 45 — Observable dispatch fan-out (`tools/analyzers/dispatch.py`)
+
+**Module:** `tools/analyzers/dispatch.py` (anz-disp-01), exposed over MCP as `analyzer_dispatch` / `analyzer_capabilities`.
+
+**Ingress path:** Two. (1) The **observable value** — an IP, domain, URL, file hash, CVE id, vendor name, file path or free text supplied by a caller (a chat turn, an MCP client, an agent) and passed as an argument into first-party analyzer functions. (2) The **analyzer's return payload**, from which `extract_taxonomy()` reads `{predicate, level, value}` tags. Both are listed because dispatch is deliberately a *convergence point*: one entry point now carries caller-controlled content into ~79 analyzer-shaped modules.
+
+- **Decision:** **trusted-first-party** (the dispatcher itself); each analyzer keeps its own declared posture.
+- **Rationale:** The dispatcher interprets, never executes. It contains no `exec`/`eval`/`compile`/`subprocess`/`os.system` and no deserialization; the observable value is only ever bound to a keyword argument of a declared callable. Critically, **the caller cannot steer the import**: `resolve_entrypoint()` takes its dotted `module`/`entrypoint` from `args/analyzer_contract.yaml` — first-party and code-reviewed — and `dispatch()` accepts an *observable type* from a closed vocabulary, never a module path. An unknown type raises `UnknownObservableType` rather than resolving anything. Taxonomy tags are validated against the declaration, and the namespace is stamped from the declaration rather than read from the payload, so an analyzer cannot label its output as another subsystem's.
+- **Guardrails:**
+  - `sandbox:` is declared per analyzer in the contract and defaults to the strictest posture (`sandboxed`) for anything that declares nothing. Dispatch surfaces that posture through `analyzer_capabilities`; **enforcement lands in `anz-rate-01`** via the existing `sandbox_execute` path, not a second isolation mechanism.
+  - Responders (`kind: responder`) — which take real-world action, e.g. RTBH blackholing a prefix — are excluded from the default fan-out and require an explicit `include_responders`. Submitting an IP for analysis cannot trigger one.
+  - Every analyzer runs under its declared `timeout_seconds` on a bounded process-wide pool (`ICDEV_ANALYZER_MAX_WORKERS`, default 8), so a hostile or hanging input cannot exhaust threads or stall the caller; a timed-out future is abandoned, not joined.
+  - An analyzer that raises is contained: `_run_one()` catches per analyzer and returns an `error` report, so one bad input cannot abort the fan-out or leak a stack trace to the caller as an unhandled exception.
+  - Nothing is dropped silently — `timeout`, `error`, `unavailable`, `misdeclared` and `skipped` are all reported by name and set `partial`, so a caller cannot mistake "the analyzer never answered" for "the analyzer found nothing".
+  - `tests/test_analyzer_dispatch.py` pins the timeout, error-containment, responder-exclusion and taxonomy-validation behaviours.
+- **Revisit if:** an analyzer is declared whose entrypoint shells out or executes the observable (at that point the declaration must be `sandboxed` and `anz-rate-01`'s enforcement is a prerequisite, not a follow-up); or `dispatch()` ever accepts a module path, callable, or contract file from a caller rather than from `args/analyzer_contract.yaml`.
+
+### Gap 46 — Agent approval gate: reversibility classification of tool calls (`tools/agent_runtime/approval_gate.py`)
 
 **Module:** `tools/agent_runtime/approval_gate.py` (ars-appr-01).
 
