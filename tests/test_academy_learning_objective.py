@@ -239,3 +239,45 @@ def test_the_authored_catalogue_yields_objectives_without_inventing_them():
         assert len(objective) <= cl._OBJECTIVE_MAX_CHARS, slug
         assert objective == objective.strip(), slug
         assert "\n" not in objective, slug
+
+
+# --------------------------------------------------------------------------
+# The JSON surface (aca-trn-03-d1)
+# --------------------------------------------------------------------------
+# Storing the field is not the same as exposing it. `_learner_mission_view` is an
+# allowlist (aca-hyg-03) — a mission row is projected down to named fields before
+# it reaches a browser — so a column added to the table without a matching entry
+# here is invisible to every JSON client, silently and with no error. The two
+# Jinja surfaces read the row directly and so did not catch this.
+
+def _view(mission: dict) -> dict:
+    from forge_academy.blueprint import _learner_mission_view
+
+    return _learner_mission_view(mission)
+
+
+def test_the_objective_survives_the_learner_projection():
+    """The one field on a mission card that is not a price has to reach the client."""
+    out = _view({
+        "id": 7, "slug": "m-t1-01", "title": "Ship an SSP",
+        "learning_objective": "Generate an SSP from a control baseline.",
+        # Internal bookkeeping the allowlist exists to strip.
+        "domain_classes_json": "[]", "is_active": 1, "tenant_id": "acme",
+    })
+    assert out["learning_objective"] == "Generate an SSP from a control baseline."
+    assert "tenant_id" not in out
+    assert "is_active" not in out
+
+
+def test_an_unauthored_objective_is_an_explicit_null_not_an_omission():
+    """NULL in the column is a real answer — nobody wrote one — and the client
+    must be able to tell it apart from a build that predates the field."""
+    out = _view({"id": 7, "slug": "m-t1-01", "learning_objective": None})
+    assert "learning_objective" in out
+    assert out["learning_objective"] is None
+
+
+def test_a_row_from_before_the_migration_omits_the_key_entirely():
+    """Projection drops missing keys, so a pre-342 row must not 500 or fake a null."""
+    out = _view({"id": 7, "slug": "m-t1-01", "title": "Ship an SSP"})
+    assert "learning_objective" not in out
