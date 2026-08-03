@@ -276,8 +276,15 @@ def classify_lines(
     classifier. It may choose from the taxonomy; it may not grow it by classifying
     into it, because a category that appears at assignment time was never approved
     by anybody.
+
+    The batches are independent — each one names its own lines and nothing else —
+    so they run concurrently on the shared bounded pool (tools/cortex/pool.py)
+    rather than paying one full 7-gate round trip per BATCH lines in sequence.
+    Assignments are still applied in batch order, and a batch that fails still
+    costs only its own lines: they fall to FALLBACK exactly as before.
     """
     from tools.cortex import api as cortex
+    from tools.cortex.pool import get_pool, map_ordered
 
     lines = list(lines)
     if not lines:
@@ -295,25 +302,24 @@ def classify_lines(
         for c in tax.categories
     )
 
-    out: dict[str, str] = {}
+    # Opaque, per-batch keys — NOT the line_id.
+    #
+    # Two reasons, and the second is the important one. A line_id is
+    # "<filename>:<sheet>:<row>", so sending it ships the customer's document
+    # names to the model for no benefit at all; a token does the same job and
+    # discloses nothing. And a long id invites the model to mangle it — the
+    # first version of this prompt wrote "- id=<line_id> ::" and the model
+    # dutifully copied "id=..." INTO the field, so not one assignment ever
+    # matched and every line silently fell to the backstop. The output looked
+    # like a working classifier producing poor results.
+    batches = []
     for i in range(0, len(lines), BATCH):
         chunk = lines[i: i + BATCH]
-
-        # Opaque, per-batch keys — NOT the line_id.
-        #
-        # Two reasons, and the second is the important one. A line_id is
-        # "<filename>:<sheet>:<row>", so sending it ships the customer's document
-        # names to the model for no benefit at all; a token does the same job and
-        # discloses nothing. And a long id invites the model to mangle it — the
-        # first version of this prompt wrote "- id=<line_id> ::" and the model
-        # dutifully copied "id=..." INTO the field, so not one assignment ever
-        # matched and every line silently fell to the backstop. The output looked
-        # like a working classifier producing poor results.
         keys = {f"t{n}": ln for n, ln in enumerate(chunk)}
         items = "\n".join(
             f"{k}: {(ln.description or '')[:90]}" for k, ln in keys.items()
         )
-        prompt = (
+        batches.append((keys, (
             "File each item under exactly one of the categories below.\n\n"
             "Rules:\n"
             "- Use ONLY the labels listed, copied exactly.\n"
@@ -321,12 +327,24 @@ def classify_lines(
             "- Return the item's key verbatim in line_id (e.g. \"t0\"), nothing else.\n"
             "- Do not mention prices or quantities.\n\n"
             f"CATEGORIES:\n{menu}\n\nITEMS:\n{items}"
-        )
-        try:
-            res = cortex.extract(prompt, ASSIGN_SCHEMA, ctx)
-            payload = json.loads(res.text)
-            rows = payload.get("assignments") or []
-        except Exception:
+        )))
+
+    def _assign(batch) -> list:
+        res = cortex.extract(batch[1], ASSIGN_SCHEMA, ctx)
+        payload = json.loads(res.text)
+        return payload.get("assignments") or []
+
+    results = map_ordered(
+        get_pool("bom-taxonomy", env_var="CORTEX_BOM_TAXONOMY_WORKERS"),
+        _assign,
+        batches,
+    )
+
+    out: dict[str, str] = {}
+    for (keys, _prompt), (rows, exc) in zip(batches, results):
+        # A failed batch is not a failed run — its lines simply fall to FALLBACK
+        # below, which is what the serial version did too.
+        if exc is not None:
             rows = []
 
         for r in rows:

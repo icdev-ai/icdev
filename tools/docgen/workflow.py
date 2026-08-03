@@ -746,6 +746,20 @@ def detect_semantic_conflicts(doc_text: str) -> list[dict]:
          "severity": "warning" | "error"}
 
     Caps at 15 section pairs (C(6,2)=15).  Returns [] on any exception.
+
+    The pairs are independent, so the LLM pass runs them concurrently on the
+    shared bounded pool (``tools/cortex/pool.py``) instead of paying 15 full
+    7-gate round trips end to end.  Two properties are preserved exactly:
+
+    * **Order.** Results are consumed in pair order, so the conflict list is
+      identical to the serial version's, not completion-ordered.
+    * **The first-failure fallback.** The serial loop flipped to the keyword
+      classifier for the REST of the scan the moment one LLM call raised.  That
+      still holds: the first pair is probed on its own, and a later pair that
+      raises disables the LLM for every pair after it, discarding results that
+      were already in flight.  Probing first also means an air-gapped run wastes
+      exactly one call, as before, rather than firing all 15 into a dead
+      provider.
     """
     import re as _re
 
@@ -768,66 +782,92 @@ def detect_semantic_conflicts(doc_text: str) -> list[dict]:
         # section text, so trusted_content=True keeps the old skip_injection_scan
         # semantics while adding provenance/audit/egress governance.
         from tools.cortex import api as _cortex_api
+        from tools.cortex.pool import get_pool as _get_pool, map_ordered as _map_ordered
         from tools.cortex.schemas import CortexContext as _CortexContext
     except ImportError:
         _llm_available = False
 
-    for i in range(len(sections)):
-        for j in range(i + 1, len(sections)):
-            sec_a = sections[i]
-            sec_b = sections[j]
+    pairs = [(i, j) for i in range(len(sections)) for j in range(i + 1, len(sections))]
 
-            if _llm_available:
-                try:
-                    prompt = (
-                        "Do the following two document sections contradict each other? "
-                        "Return JSON only: {\"contradicts\": true/false, \"description\": \"...\"}.\n\n"
-                        f"Section A (first 600 chars):\n{sec_a[:600]}\n\n"
-                        f"Section B (first 600 chars):\n{sec_b[:600]}"
-                    )
-                    cx = _cortex_api.complete(
-                        prompt,
-                        function="detect_semantic_conflicts",
-                        ctx=_CortexContext(domain="document", agent_id="docgen",
-                                           trusted_content=True),
-                        max_tokens=128,
-                        temperature=0.0,
-                    )
-                    raw = (cx.text or "").strip()
-                    raw = _re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
-                    import json as _json
-                    data = _json.loads(raw)
-                    if data.get("contradicts"):
-                        conflicts.append({
-                            "section_a": sec_a[:120],
-                            "section_b": sec_b[:120],
-                            "description": str(data.get("description", "Contradiction detected")),
-                            "severity": "error",
-                        })
-                    continue
-                except Exception:
-                    _llm_available = False  # fall through to keyword fallback
+    def _llm_pair_conflict(pair: tuple[int, int]) -> dict | None:
+        """One governed contradiction check.  Returns a conflict dict or None.
 
-            # Keyword fallback
-            combined_a = sec_a.lower()
-            combined_b = sec_b.lower()
-            for kw_a, kw_b in _CONTRADICTION_PAIRS:
-                if kw_a in combined_a and kw_b in combined_b:
-                    conflicts.append({
-                        "section_a": sec_a[:120],
-                        "section_b": sec_b[:120],
-                        "description": f"Potential contradiction: '{kw_a}' vs '{kw_b}'",
-                        "severity": "warning",
-                    })
-                    break
-                if kw_b in combined_a and kw_a in combined_b:
-                    conflicts.append({
-                        "section_a": sec_a[:120],
-                        "section_b": sec_b[:120],
-                        "description": f"Potential contradiction: '{kw_b}' vs '{kw_a}'",
-                        "severity": "warning",
-                    })
-                    break
+        Raises on ANY failure (call, unparseable JSON) — the caller treats that
+        as "the LLM is gone", exactly as the serial loop did.
+        """
+        sec_a, sec_b = sections[pair[0]], sections[pair[1]]
+        prompt = (
+            "Do the following two document sections contradict each other? "
+            "Return JSON only: {\"contradicts\": true/false, \"description\": \"...\"}.\n\n"
+            f"Section A (first 600 chars):\n{sec_a[:600]}\n\n"
+            f"Section B (first 600 chars):\n{sec_b[:600]}"
+        )
+        cx = _cortex_api.complete(
+            prompt,
+            function="detect_semantic_conflicts",
+            ctx=_CortexContext(domain="document", agent_id="docgen",
+                               trusted_content=True),
+            max_tokens=128,
+            temperature=0.0,
+        )
+        raw = (cx.text or "").strip()
+        raw = _re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
+        import json as _json
+        data = _json.loads(raw)
+        if not data.get("contradicts"):
+            return None
+        return {
+            "section_a": sec_a[:120],
+            "section_b": sec_b[:120],
+            "description": str(data.get("description", "Contradiction detected")),
+            "severity": "error",
+        }
+
+    # Probe the first pair alone, then fan the rest out.  Probing keeps the
+    # air-gap cost at one wasted call; fanning out collapses the remaining
+    # n(n-1)/2 - 1 round trips into ceil(rest / max_workers).
+    llm_results: list = []
+    if _llm_available and pairs:
+        _pool = _get_pool("docgen-conflicts", env_var="CORTEX_DOCGEN_CONFLICT_WORKERS")
+        llm_results = _map_ordered(_pool, _llm_pair_conflict, pairs[:1])
+        if llm_results[0][1] is None and len(pairs) > 1:
+            llm_results += _map_ordered(_pool, _llm_pair_conflict, pairs[1:])
+
+    for idx, (i, j) in enumerate(pairs):
+        sec_a = sections[i]
+        sec_b = sections[j]
+
+        if _llm_available:
+            # idx is always in range while _llm_available holds: the probe
+            # covers pair 0, and the fan-out covers the rest unless the probe
+            # itself failed — which clears the flag on this very iteration.
+            conflict, exc = llm_results[idx]
+            if exc is None:
+                if conflict is not None:
+                    conflicts.append(conflict)
+                continue
+            _llm_available = False  # fall through to keyword fallback
+
+        # Keyword fallback
+        combined_a = sec_a.lower()
+        combined_b = sec_b.lower()
+        for kw_a, kw_b in _CONTRADICTION_PAIRS:
+            if kw_a in combined_a and kw_b in combined_b:
+                conflicts.append({
+                    "section_a": sec_a[:120],
+                    "section_b": sec_b[:120],
+                    "description": f"Potential contradiction: '{kw_a}' vs '{kw_b}'",
+                    "severity": "warning",
+                })
+                break
+            if kw_b in combined_a and kw_a in combined_b:
+                conflicts.append({
+                    "section_a": sec_a[:120],
+                    "section_b": sec_b[:120],
+                    "description": f"Potential contradiction: '{kw_b}' vs '{kw_a}'",
+                    "severity": "warning",
+                })
+                break
 
     return conflicts
 
