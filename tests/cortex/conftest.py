@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from tools.cortex import search_service
+from tools.cortex import metrics, search_service
 
 
 @pytest.fixture(autouse=True)
@@ -20,3 +20,16 @@ def _propagate_search_service_logs():
     logger.propagate = True
     yield
     logger.propagate = old
+
+
+@pytest.fixture(autouse=True)
+def _reset_metrics_memo():
+    """metrics.summarize() memoizes across calls; drop it around every test.
+
+    The memo key folds in ICDEV_DB_PATH so tests pointing at their own tmp_path
+    DB already miss each other, but a test that does NOT repoint the DB would
+    otherwise inherit a previous test's rollup.
+    """
+    metrics.reset_memo()
+    yield
+    metrics.reset_memo()

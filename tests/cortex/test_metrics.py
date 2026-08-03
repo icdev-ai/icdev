@@ -211,3 +211,191 @@ def test_aggregated_result_is_status_ok():
     assert out["status"] == "ok"
     assert out["available"] is True
     assert out["summary"]["calls"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Bounded scan + shared computation (cxo-perf-04)
+# --------------------------------------------------------------------------- #
+#
+# A 30-day window used to fetchall() every cortex_audit row and json.loads each
+# one, and each of the three routes re-ran it on its own connection. Counts now
+# come from SQL, the gates_json detail read is capped, and the three routes
+# share one computation through a short-TTL memo.
+
+
+def _metrics_app():
+    """Bare app carrying the cortex blueprint.
+
+    ``base.html`` is stubbed: the real one reads ``nav_tree`` and friends from
+    the dashboard app's context processors, which are not what these tests are
+    about. The blueprint's own ``cortex/metrics.html`` still renders for real.
+    """
+    from flask import Flask
+    from jinja2 import ChoiceLoader, DictLoader
+
+    from tools.cortex.blueprint import cortex_bp
+
+    app = Flask(__name__)
+    app.register_blueprint(cortex_bp)
+    app.config["TESTING"] = True
+    app.jinja_loader = ChoiceLoader([
+        DictLoader({"base.html": "{% block content %}{% endblock %}"}),
+        app.jinja_loader,
+    ])
+    return app
+
+
+def test_three_route_hits_perform_one_scan(cortex_db, monkeypatch):
+    """Page + JSON + tile in quick succession must scan cortex_audit ONCE."""
+    record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                  "blocked": False, "cost_usd": 0.01, "latency_ms": 10,
+                  "outcomes": {"operation": "pass"}})
+
+    scans = []
+    real_scan = metrics._scan
+
+    def counting_scan(conn, window_hours, limit):
+        scans.append(window_hours)
+        return real_scan(conn, window_hours, limit)
+
+    monkeypatch.setattr(metrics, "_scan", counting_scan)
+
+    client = _metrics_app().test_client()
+    for path in ("/cortex/metrics", "/cortex/api/metrics", "/cortex/api/metrics/tile"):
+        assert client.get(path).status_code == 200
+
+    assert len(scans) == 1, f"expected one scan across three routes, got {len(scans)}"
+
+
+def test_memo_does_not_cross_windows(cortex_db, monkeypatch):
+    """The memo is keyed by window — a different window still reads."""
+    record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                  "blocked": False, "outcomes": {"operation": "pass"}})
+
+    scans = []
+    real_scan = metrics._scan
+
+    def counting_scan(conn, window_hours, limit):
+        scans.append(window_hours)
+        return real_scan(conn, window_hours, limit)
+
+    monkeypatch.setattr(metrics, "_scan", counting_scan)
+
+    metrics.summarize(window_hours=24)
+    metrics.summarize(window_hours=24)
+    metrics.summarize(window_hours=168)
+
+    assert scans == [24, 168]
+
+
+def test_memo_disabled_by_zero_ttl(cortex_db, monkeypatch):
+    """CORTEX_METRICS_MEMO_TTL_SECONDS=0 forces every call to read."""
+    record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                  "blocked": False, "outcomes": {"operation": "pass"}})
+    monkeypatch.setenv("CORTEX_METRICS_MEMO_TTL_SECONDS", "0")
+
+    scans = []
+    real_scan = metrics._scan
+    monkeypatch.setattr(
+        metrics, "_scan",
+        lambda conn, w, limit: (scans.append(w), real_scan(conn, w, limit))[1],
+    )
+
+    metrics.summarize(window_hours=24)
+    metrics.summarize(window_hours=24)
+
+    assert len(scans) == 2
+
+
+def test_unavailable_is_not_memoized(tmp_path, monkeypatch):
+    """A broken trail must be re-probed, so recovery is visible immediately."""
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "empty.db"))
+
+    assert metrics.summarize(window_hours=24)["status"] == "unavailable"
+
+    # Table now exists and holds a row — the very next call must see it rather
+    # than serve a cached "unavailable" for the rest of the TTL.
+    init_db()
+    record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                  "blocked": False, "outcomes": {"operation": "pass"}})
+
+    stats = metrics.summarize(window_hours=24)
+    assert stats["status"] == "ok"
+    assert stats["summary"]["calls"] == 1
+
+
+def test_counts_stay_exact_when_detail_is_truncated(cortex_db):
+    """Capping the gates_json read must not cap the call/block counts."""
+    for _ in range(3):
+        record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                      "blocked": False, "cost_usd": 0.01,
+                      "outcomes": {"operation": "pass"}})
+    record_audit({"operation": "cortex.search", "tenant_id": "t-b",
+                  "blocked": True, "blocked_gate": "pre_check"})
+
+    stats = metrics.summarize(window_hours=24, detail_limit=2)
+
+    # Exact over the full window — these come from SQL, not the capped read.
+    assert stats["summary"]["calls"] == 4
+    assert stats["summary"]["blocked"] == 1
+    assert stats["summary"]["block_rate_pct"] == 25.0
+    assert sum(f["calls"] for f in stats["by_function"]) == 4
+    assert sum(t["calls"] for t in stats["by_tenant"]) == 4
+    assert sum(stats["by_outcome"].values()) == 4
+
+    # ...and the panel is told the spend detail only covers a sample.
+    assert stats["detail"]["truncated"] is True
+    assert stats["detail"]["rows_scanned"] == 2
+    assert stats["detail"]["limit"] == 2
+
+
+def test_untruncated_window_reports_complete_detail(cortex_db):
+    record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                  "blocked": False, "cost_usd": 0.02,
+                  "outcomes": {"operation": "pass"}})
+
+    stats = metrics.summarize(window_hours=24)
+
+    assert stats["detail"]["truncated"] is False
+    assert stats["detail"]["rows_scanned"] == 1
+    assert abs(stats["summary"]["cost_usd"] - 0.02) < 1e-6
+
+
+def test_metrics_page_discloses_a_truncated_detail_read(cortex_db, monkeypatch):
+    """A capped spend figure must be labelled as such on the page itself."""
+    for _ in range(3):
+        record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                      "blocked": False, "cost_usd": 0.01,
+                      "outcomes": {"operation": "pass"}})
+    monkeypatch.setattr(metrics, "_DETAIL_ROW_LIMIT", 2)
+
+    body = _metrics_app().test_client().get("/cortex/metrics").get_data(as_text=True)
+
+    assert "Partial spend detail" in body
+    assert ">3<" in body  # exact call count still rendered on the Calls card
+
+
+def test_metrics_page_still_distinguishes_idle_from_unavailable(cortex_db, tmp_path,
+                                                                monkeypatch):
+    """Bounding + memoizing must not collapse the two empty-looking states."""
+    idle = _metrics_app().test_client().get("/cortex/metrics").get_data(as_text=True)
+    assert "Idle" in idle
+    assert "Metrics unavailable" not in idle
+
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "no-cortex-tables.db"))
+    metrics.reset_memo()
+
+    broken = _metrics_app().test_client().get("/cortex/metrics").get_data(as_text=True)
+    assert "Metrics unavailable" in broken
+
+
+def test_tile_reports_detail_truncation(cortex_db):
+    """The home tile must disclose a partial cost figure, not imply a total."""
+    record_audit({"operation": "cortex.complete", "tenant_id": "t-a",
+                  "blocked": False, "outcomes": {"operation": "pass"}})
+
+    resp = _metrics_app().test_client().get("/cortex/api/metrics/tile")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["detail_truncated"] is False

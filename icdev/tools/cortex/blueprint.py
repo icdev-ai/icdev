@@ -127,6 +127,11 @@ def index():
 
 
 # ── Observability panel (read-only over the cortex_audit trail) ──────────────────
+#
+# All three routes below call the same ``metrics.summarize()``, which memoizes
+# successful results for a few seconds keyed by window + RLS boundary. Rendering
+# the page while the home tile polls therefore costs ONE scan of cortex_audit,
+# not three.
 
 def _metrics_window() -> int:
     try:
@@ -172,6 +177,10 @@ def api_metrics_tile():
         "redactions": s["redactions"],
         "cost_usd": s["cost_usd"],
         "cache_hits": s["cache_hits"],
+        # calls/blocked/block_rate are exact over the whole window; cost is
+        # derived from the bounded gates_json detail read, so say when that read
+        # was capped rather than let a partial spend figure read as the total.
+        "detail_truncated": bool((stats.get("detail") or {}).get("truncated")),
     })
 
 
