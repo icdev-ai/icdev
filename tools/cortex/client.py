@@ -6,6 +6,11 @@ idea_lab) vendor this file verbatim into tools/integrations/cortex_client.py
 with a provenance header — keep it importable with ZERO icdev dependencies
 (urllib/json/os only) so copies never drift into needing the platform.
 
+Those copies are declared in ``args/vendor_parity.yaml``. Adding a public method
+here without re-vendoring is caught by ``coherence_checker.py --check
+vendor_parity`` (cxo-doc-03) — the drift is otherwise latent, because a method
+no consumer calls yet goes missing without breaking anything.
+
 Server surfaces this client speaks to (one ICDEV host):
 
     POST {host}/cortex/api/v1/{search,ask,complete,classify,extract,govern}

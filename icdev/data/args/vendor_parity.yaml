@@ -1,0 +1,41 @@
+# CUI // SP-CTI
+# Out-of-repo VENDORED-copy parity (cxo-doc-03) — consumed by
+# tools/workflow/coherence_checker.py::check_vendor_parity.
+#
+# Some ICDEV modules are deliberately stdlib-only so STANDALONE apps living in
+# SEPARATE git repositories can copy them verbatim. `args/mirror_parity.yaml`
+# cannot express this: it maps tools/<root> -> icdev/tools/<root> INSIDE this
+# repo and has no concept of an out-of-repo consumer.
+#
+# The failure mode this file exists to catch is LATENT: a method added to the
+# canonical file is simply absent from the vendored copies, and because no
+# consumer calls it yet, nothing breaks — until someone tries. MEASURED
+# 2026-08-02: tools/cortex/client.py had 24 public methods, compass's copy 22
+# and idea_lab's 19, and the drift had gone unnoticed for weeks.
+#
+# The check compares the PUBLIC API (classes, functions, method names +
+# parameter names), NOT bytes: a vendored copy legitimately differs by its
+# provenance header and by line endings (canonical is LF, both consumers are
+# CRLF under core.autocrlf=true). Canonical's public API must be a SUBSET of
+# each copy's — a copy that is temporarily AHEAD of canonical is fine.
+#
+# Adding a vendor target needs no code change; add an entry below.
+
+# Fallback values for ${VAR} placeholders in consumer paths, used only when the
+# environment variable is unset. A placeholder that resolves to nothing (no env
+# var, no default) makes the consumer SKIP — it never fails the check. This is
+# what keeps CI green on a runner where the standalone repos are not checked out.
+path_defaults:
+  ICDEV_STANDALONE_ROOT: C:/AI/standalone
+
+vendored_copies:
+  - source: tools/cortex/client.py
+    note: >-
+      Cortex service client SDK (ctx-expose-06). Stdlib-only by contract so the
+      standalone apps can vendor it; see the module docstring.
+    last_synced: "2026-08-02"
+    consumers:
+      - name: compass
+        path: "${ICDEV_STANDALONE_ROOT}/compass/tools/integrations/cortex_client.py"
+      - name: idea_lab
+        path: "${ICDEV_STANDALONE_ROOT}/idea_lab/tools/integrations/cortex_client.py"
