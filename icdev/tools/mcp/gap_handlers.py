@@ -3902,6 +3902,12 @@ def handle_analyzer_dispatch(args: dict) -> dict:
     status-carrying. ``partial`` is true when any analyzer timed out, raised,
     or could not run — the response never omits an analyzer that did not
     answer, because "timed out" and "found nothing" must not look alike.
+
+    That invariant is why ``rate_limit_wait_seconds`` defaults to 0 here rather
+    than blocking a gateway call: an analyzer that is out of quota is *reported*
+    as ``rate_limited`` with ``retry_after_seconds``, so the caller can re-submit
+    deliberately. Pass a positive value to queue for a slot instead. Neither
+    path drops the analyzer.
     """
     try:
         from tools.analyzers.contract import ContractError, UnknownObservableType
@@ -3921,6 +3927,11 @@ def handle_analyzer_dispatch(args: dict) -> dict:
         timeout = args.get("timeout_seconds")
 
         try:
+            rate_limit_wait = float(args.get("rate_limit_wait_seconds") or 0.0)
+        except (TypeError, ValueError):
+            return {"error": "rate_limit_wait_seconds must be a number"}
+
+        try:
             result = dispatch(
                 observable_type,
                 args["value"],
@@ -3928,6 +3939,7 @@ def handle_analyzer_dispatch(args: dict) -> dict:
                 kinds=kinds,
                 analyzers=args.get("analyzers") or None,
                 timeout_seconds=int(timeout) if timeout else None,
+                rate_limit_wait_seconds=rate_limit_wait,
             )
         except UnknownObservableType as exc:
             # Name the legal values rather than returning an empty report set,

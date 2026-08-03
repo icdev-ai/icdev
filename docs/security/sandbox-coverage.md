@@ -1104,3 +1104,79 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - The detector is pure: it returns a verdict, and only `run_agent_loop` acts on it (ending the run). Content it reads never reaches a handler, a prompt, or a write.
   - The tuner is operator-invoked, read-only, and writes nothing outside stdout.
 - **Revisit if:** the detector gains an LLM-based similarity judge (tool output would then become prompt content and needs the injection posture that applies to `tool_result_sanitizer`), or the tuner grows a `--fix`/`--write` mode that edits config from what it read.
+
+### Gap 48 — Ported analyzer declarations and posture enforcement (`args/analyzer_contract.yaml`)
+
+**Modules:** the six analyzer/responder declarations seeded into
+`args/analyzer_contract.yaml` (anz-con-01), dispatched through
+`tools/analyzers/dispatch.py` (anz-disp-01) and gated by
+`tools/analyzers/rate_limit.py` + `tools/analyzers/sandbox.py` (anz-rate-01).
+
+**Ingress path:** Gap 45 records the decision for the *dispatcher*. This gap
+records one decision per *ported analyzer*, as OPT-58 requires: dispatch is a
+convergence point that carries a caller-supplied observable (IP, domain, URL,
+file hash, CVE id, vendor name, file path, STIX bundle) into each declared
+entrypoint, so each entrypoint is its own ingress point and needs its own
+recorded trust decision rather than inheriting the dispatcher's.
+
+**Enforcement (new in anz-rate-01).** The `sandbox:` posture below is no longer
+advisory. `tools/analyzers/sandbox.py::resolve_execution_mode` turns it into an
+execution mode on every dispatch, and `_run_one` routes the call accordingly:
+
+- `sandboxed` → always executed through `SandboxExecutor`
+  (`tools/security/sandbox_executor.py`, D-SEC-10) — the same object behind the
+  `sandbox_execute` MCP tool. **No second isolation path was built.**
+- `sandboxed_on_demand` → in-process, promoted to `SandboxExecutor` when
+  `ICDEV_STRICT_SANDBOX=1` (IL5 / air-gap), matching this document's convention.
+- `trusted_first_party` / `bypass_documented` → in-process.
+- anything else → **sandboxed** (fail closed).
+
+If a posture requires the sandbox and the sandbox is disabled or has no
+container runtime, the analyzer is reported `sandbox_unavailable` and **is not
+run in-process**. Failing closed is the point: a silent downgrade would give
+the strictest declaration the weakest behaviour on exactly the hosts that
+cannot isolate it.
+
+| Analyzer (contract key) | Entrypoint | Decision | Rationale |
+|---|---|---|---|
+| `cve_triage` | `tools/supply_chain/cve_triager.py::triage_cve` | **trusted-first-party** | Scores a CVE id against the first-party dependency graph in `data/icdev.db`. No `exec`/`eval`/`subprocess`/`importlib`, no deserialization of the observable, no network egress — the CVE id is bound to a parameter and used in parameterised SQL. Blast radius is computed from first-party rows. |
+| `section_889_screen` | `tools/supply_chain/ndaa_889_screener.py::screen_item` | **trusted-first-party** | String-matches a vendor name against the repo-resident Section 889 Part A/B covered-entity lists. No execution primitives; the observable is compared, never interpreted. |
+| `threat_intel_match` | `tools/security_canvas/threat_intel_engine.py::match_observable` | **trusted-first-party** | Looks an observable up among already-ingested indicator rows. The untrusted step is *feed ingestion*, which is upstream of this analyzer and carries its own posture; matching is a parameterised read with no execution primitives. |
+| `secret_scan` | `tools/security/secret_detector.py::scan` | **sandboxed-on-demand** | The one seed analyzer that **executes an external process over caller-supplied input**: it shells out to `detect-secrets` via `subprocess.run` against a caller-supplied `file_path` / `repository`. Argument-list form (never `shell=True`) with a timeout, and the scanner only reads. Permissive in dev because the target is normally a local first-party checkout; under `ICDEV_STRICT_SANDBOX=1` dispatch routes it through `SandboxExecutor` so an attacker-supplied checkout is parsed inside the container boundary. |
+| `stix_ingest` | `tools/strategos/stix_importer.py::parse_bundle` | **sandboxed** | Parses a **wholly attacker-controllable** STIX 2.x bundle — the largest untrusted-content surface in the seed set. Declared `sandboxed`, and now enforced: dispatch will not call it in-process. Note the deployment prerequisite below. |
+| `rtbh_blackhole` | `tools/dsoc_canvas/rtbh_manager.py::trigger_rtbh` | **trusted-first-party** | A **responder**, excluded from the default fan-out (`kinds=("analyzer",)`) because blackholing a prefix must never be triggered by submitting an IP for analysis. Its first parameter is a live DB connection the dispatcher does not hold, so it is additionally reported `misdeclared` if ever dispatched explicitly. No execution primitives. |
+
+**Deployment prerequisite for `sandboxed` analyzers.** The sandbox driver runs
+`importlib.import_module(<declared module>)` inside the container, so the image
+must have the platform importable. The stock `python:3.12-slim` in
+`args/sandbox_config.yaml` does not, and `stix_ingest` will report `error`
+naming `ModuleNotFoundError` against it. An operator declaring an analyzer
+`sandboxed` must point `sandbox.images.python` at an image carrying ICDEV. This
+is a configuration step and it fails **loudly**; that is the intended trade
+against silently running untrusted-bundle parsing in-process.
+
+**Guardrails:**
+- Postures are declared as data in `args/analyzer_contract.yaml` and validated
+  against the contract's closed `sandbox_postures` vocabulary at load time; an
+  unknown posture raises rather than defaulting to permissive.
+- An analyzer that declares nothing inherits `defaults.sandbox: sandboxed` —
+  the strictest posture, not the cheapest.
+- Arguments crossing the sandbox boundary must be JSON-serializable; a bound
+  DB connection or file handle is rejected as `misdeclared`, by name, instead
+  of producing a container-side stack trace.
+- Rate limits are enforced per analyzer *after* binding and posture resolution,
+  so an analyzer that never ran spends no quota against a metered external API
+  (SAM.gov, CISA KEV, NVD, ACLED, the OSINT feeds).
+- Exceeding a rate limit **queues or reports — it never drops**: the analyzer
+  still produces a `rate_limited` report carrying `retry_after_seconds`, and
+  `DispatchResult.partial` names it. An omitted report would be
+  indistinguishable from "the analyzer ran and found nothing".
+- `tests/test_analyzer_rate_limit.py` pins the fail-closed sandbox gate, the
+  never-dropped rate-limit reporting, and the requirement that **every**
+  declared analyzer has a decision in this table whose wording matches its
+  declared posture — so a newly ported analyzer cannot merge without landing
+  here.
+- **Revisit if:** an analyzer is ported whose entrypoint executes, deserializes
+  (`pickle`, `yaml.load`), or shells out over the observable — it must be
+  declared `sandboxed` and this table updated; or if `dispatch()` ever accepts
+  a module path or callable from a caller rather than from the contract file.

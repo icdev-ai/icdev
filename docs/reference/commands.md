@@ -290,6 +290,37 @@ python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --analyzer threat_i
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
 ```
 
+### Rate limits and sandbox posture (anz-rate-01)
+
+Each declaration's `rate_limit` and `sandbox` posture are **enforced** on every
+dispatch, not merely surfaced. Exceeding a limit queues or reports — it never
+drops: without `--rate-limit-wait` an out-of-quota analyzer yields a
+`rate_limited` report carrying `retry_after_seconds` (and sets `partial`), and
+with it the call queues for a slot, bounded both by the flag and by what is
+left of that analyzer's own timeout budget.
+
+Sandboxed analyzers run through the platform `SandboxExecutor` behind the
+`sandbox_execute` MCP tool — there is no second isolation path. A posture that
+requires the sandbox on a host without one is reported `sandbox_unavailable`
+and is **not** run in-process. Per-analyzer decisions:
+[docs/security/sandbox-coverage.md](../security/sandbox-coverage.md) Gap 48.
+
+```bash
+python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094 --rate-limit-wait 5   # queue, don't report
+python tools/analyzers/dispatch.py --type file_path --value ./repo --strict-sandbox       # promote on-demand postures
+ICDEV_STRICT_SANDBOX=1 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4       # same, host-wide (IL5 / air-gap)
+python tools/analyzers/contract.py --json    # declared rate_limit + sandbox posture per analyzer
+```
+
+`analyzer_capabilities` additionally reports each analyzer's live rate-limit
+window (`rate_limit_state`) and the `execution_mode` its posture resolves to on
+this host. Reading it consumes no quota.
+
+> Sandboxed analyzers import the declared module *inside* the container, so
+> `sandbox.images.python` in `args/sandbox_config.yaml` must point at an image
+> carrying ICDEV. The stock `python:3.12-slim` does not, and the analyzer will
+> report `error` naming `ModuleNotFoundError` rather than silently degrading.
+
 MCP (existing gateway, category `analyzers`, no new server):
 `analyzer_dispatch` (params: `observable_type`, `value`, `context`,
 `analyzers`, `include_responders`, `timeout_seconds`) and

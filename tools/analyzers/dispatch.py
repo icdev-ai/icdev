@@ -27,12 +27,14 @@ report carries a status from :data:`REPORT_STATUSES`. A fan-out that omitted a
 timed-out analyzer would read identically to one where that analyzer found
 nothing, so:
 
-    ok           the analyzer returned
-    timeout      it exceeded its declared ``timeout_seconds`` budget
-    error        it raised
-    unavailable  its module or entrypoint could not be imported
-    misdeclared  the declaration and the callable's signature disagree
-    skipped      the caller's context lacks a key the declaration maps
+    ok                   the analyzer returned
+    timeout              it exceeded its declared ``timeout_seconds`` budget
+    error                it raised
+    unavailable          its module or entrypoint could not be imported
+    misdeclared          the declaration and the callable's signature disagree
+    skipped              the caller's context lacks a key the declaration maps
+    rate_limited         its declared ``rate_limit`` window is full
+    sandbox_unavailable  it must be sandboxed and the sandbox cannot run it
 
 ``DispatchResult.partial`` is true whenever any report is not ``ok``, and
 :meth:`DispatchResult.to_dict` names the offenders under ``partial_reasons``.
@@ -48,6 +50,25 @@ budget each future from a common start, and abandon (never join) a future that
 overruns. A third executor would have been a third place for the thread leak
 that pattern exists to prevent.
 
+RATE LIMITS QUEUE OR REPORT — THEY NEVER DROP (anz-rate-01)
+-----------------------------------------------------------
+Each declaration's ``rate_limit`` is enforced by
+:mod:`tools.analyzers.rate_limit` immediately before the entrypoint is called,
+so an analyzer that is excluded, misdeclared or unsandboxable never burns quota
+it did not spend. Exhausting a window has two possible outcomes and neither is
+a discard: with ``rate_limit_wait_seconds`` the call **queues** for a slot, and
+otherwise it is **reported** as ``rate_limited`` carrying ``retry_after_seconds``
+— a real report, in ``reports``, that sets ``partial``.
+
+SANDBOX POSTURE IS ENFORCED, NOT JUST DECLARED (anz-rate-01)
+------------------------------------------------------------
+:mod:`tools.analyzers.sandbox` turns each declaration's ``sandbox:`` posture
+into an execution mode and routes the call accordingly, reusing the platform
+``SandboxExecutor`` behind the ``sandbox_execute`` MCP tool rather than
+introducing a second isolation path. An analyzer that must be sandboxed on a
+host with no sandbox is reported ``sandbox_unavailable``; it is never
+downgraded to an in-process call.
+
 RESPONDERS DO NOT RUN BY DEFAULT
 --------------------------------
 The contract's ``kind`` splits analyzers (observe) from responders (act).
@@ -59,6 +80,7 @@ Usage:
     python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094
     python tools/analyzers/dispatch.py --type ip --value 198.51.100.7 --json
     python tools/analyzers/dispatch.py --type vendor --value Acme --dry-run
+    python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094 --rate-limit-wait 5
     python tools/analyzers/dispatch.py --observables
 """
 
@@ -83,6 +105,14 @@ from tools.analyzers.contract import (
     AnalyzerDeclaration,
     ContractError,
     get_contract,
+)
+from tools.analyzers.rate_limit import AnalyzerRateLimiter, get_limiter
+from tools.analyzers.sandbox import (
+    SANDBOXED,
+    SandboxUnavailable,
+    SandboxUnsupported,
+    resolve_execution_mode,
+    run_sandboxed,
 )
 from tools.logging.icdev_logger import get_logger
 
@@ -114,6 +144,8 @@ REPORT_STATUSES: Tuple[str, ...] = (
     "unavailable",
     "misdeclared",
     "skipped",
+    "rate_limited",
+    "sandbox_unavailable",
 )
 
 #: Default fan-out width. Overridable via ``ICDEV_ANALYZER_MAX_WORKERS``.
@@ -204,6 +236,13 @@ class AnalyzerReport:
     taxonomy_defects: Tuple[str, ...] = ()
     data: Any = None
     detail: Optional[str] = None
+    #: The declared posture this run was gated on, and the mode it resolved to.
+    sandbox_posture: str = ""
+    execution_mode: str = ""
+    #: Seconds after which a ``rate_limited`` analyzer has a slot again, and how
+    #: long this call queued for one. Both zero unless the limiter said so.
+    retry_after_seconds: float = 0.0
+    queued_seconds: float = 0.0
 
     @property
     def succeeded(self) -> bool:
@@ -222,6 +261,10 @@ class AnalyzerReport:
             "taxonomy_defects": list(self.taxonomy_defects),
             "data": self.data,
             "detail": self.detail,
+            "sandbox_posture": self.sandbox_posture,
+            "execution_mode": self.execution_mode,
+            "retry_after_seconds": round(self.retry_after_seconds, 4),
+            "queued_seconds": round(self.queued_seconds, 4),
         }
 
 
@@ -487,6 +530,9 @@ def _report(
     detail: Optional[str] = None,
     taxonomy: Tuple[Dict[str, Any], ...] = (),
     taxonomy_defects: Tuple[str, ...] = (),
+    execution_mode: str = "",
+    retry_after_seconds: float = 0.0,
+    queued_seconds: float = 0.0,
 ) -> AnalyzerReport:
     return AnalyzerReport(
         analyzer=decl.key,
@@ -500,6 +546,10 @@ def _report(
         taxonomy_defects=taxonomy_defects,
         data=data,
         detail=detail,
+        sandbox_posture=decl.sandbox,
+        execution_mode=execution_mode,
+        retry_after_seconds=retry_after_seconds,
+        queued_seconds=queued_seconds,
     )
 
 
@@ -508,12 +558,27 @@ def _run_one(
     observable: Observable,
     context: Mapping[str, Any],
     timeout_seconds: int,
+    *,
+    limiter: Optional[AnalyzerRateLimiter] = None,
+    rate_limit_wait_seconds: float = 0.0,
+    strict_sandbox: Optional[bool] = None,
 ) -> AnalyzerReport:
     """Run one analyzer in a worker thread. Never raises.
 
     Import happens here rather than on the submitting thread so that a module
     which hangs on import is covered by the analyzer's timeout budget instead
     of stalling the whole fan-out.
+
+    The order of the gates is deliberate: resolve, bind and settle the sandbox
+    posture first, and take a rate-limit slot only once the call is certain to
+    be made. An analyzer that turns out to be misdeclared, unimportable or
+    unsandboxable must not spend quota against an external API it never
+    reached.
+
+    Note that the declared module is imported in-process even for a sandboxed
+    analyzer, because binding needs its signature. That is first-party code
+    named by the contract file; what the sandbox exists to contain is the
+    *observable*, which only ever reaches the entrypoint inside the container.
     """
     started = time.monotonic()
 
@@ -552,8 +617,77 @@ def _run_one(
             detail=str(exc),
         )
 
+    # Declared posture -> execution mode. An unknown posture resolves to
+    # sandboxed, so this cannot silently widen into an in-process call.
+    mode = resolve_execution_mode(decl, strict=strict_sandbox)
+
+    # Rate limit. Exceeding it queues (bounded) or is reported by name — the
+    # one thing it must never do is drop the analyzer from `reports`.
+    #
+    # The queue is capped by what is left of this analyzer's own timeout budget.
+    # Without the cap, an analyzer told to wait longer than its budget would be
+    # abandoned as `timeout` by the fan-out loop, then acquire its slot and run
+    # anyway — spending real quota on a result nobody is left to read. Capping
+    # means it reports `rate_limited` while the caller is still listening.
+    effective_wait = min(
+        max(0.0, float(rate_limit_wait_seconds)),
+        max(0.0, timeout_seconds - elapsed()),
+    )
+    decision = (limiter or get_limiter()).acquire(
+        decl.key,
+        decl.rate_limit.max_calls,
+        decl.rate_limit.per_seconds,
+        max_wait_seconds=effective_wait,
+    )
+    if not decision.allowed:
+        return _report(
+            decl,
+            "rate_limited",
+            duration=elapsed(),
+            timeout_seconds=timeout_seconds,
+            detail=decision.detail(),
+            execution_mode=mode,
+            retry_after_seconds=decision.retry_after_seconds,
+            queued_seconds=decision.waited_seconds,
+        )
+
     try:
-        payload = func(**kwargs)
+        if mode == SANDBOXED:
+            payload = run_sandboxed(
+                decl,
+                kwargs,
+                timeout_seconds=timeout_seconds,
+                actor=context.get("actor"),
+                project_id=context.get("project_id"),
+                tenant_id=context.get("tenant_id"),
+            )
+        else:
+            payload = func(**kwargs)
+    except SandboxUnsupported as exc:
+        # The declaration says sandbox me, and its own arguments make that
+        # impossible — a declaration/reality mismatch, same class as a binding
+        # error, so it gets the same status.
+        logger.warning("analyzer %s cannot be sandboxed as declared: %s", decl.key, exc)
+        return _report(
+            decl,
+            "misdeclared",
+            duration=elapsed(),
+            timeout_seconds=timeout_seconds,
+            detail=str(exc),
+            execution_mode=mode,
+            queued_seconds=decision.waited_seconds,
+        )
+    except SandboxUnavailable as exc:
+        logger.warning("analyzer %s requires a sandbox that is not available: %s", decl.key, exc)
+        return _report(
+            decl,
+            "sandbox_unavailable",
+            duration=elapsed(),
+            timeout_seconds=timeout_seconds,
+            detail=str(exc),
+            execution_mode=mode,
+            queued_seconds=decision.waited_seconds,
+        )
     except Exception as exc:
         logger.warning("analyzer %s raised: %s", decl.key, exc)
         return _report(
@@ -562,6 +696,8 @@ def _run_one(
             duration=elapsed(),
             timeout_seconds=timeout_seconds,
             detail=f"{type(exc).__name__}: {exc}",
+            execution_mode=mode,
+            queued_seconds=decision.waited_seconds,
         )
 
     tags, defects = extract_taxonomy(decl, payload)
@@ -573,6 +709,8 @@ def _run_one(
         data=payload,
         taxonomy=tags,
         taxonomy_defects=defects,
+        execution_mode=mode,
+        queued_seconds=decision.waited_seconds,
     )
 
 
@@ -619,6 +757,9 @@ def dispatch(
     analyzers: Optional[Iterable[str]] = None,
     timeout_seconds: Optional[int] = None,
     contract: Optional[AnalyzerContract] = None,
+    rate_limit_wait_seconds: float = 0.0,
+    limiter: Optional[AnalyzerRateLimiter] = None,
+    strict_sandbox: Optional[bool] = None,
 ) -> DispatchResult:
     """Fan an observable out to every analyzer that declared it accepts the type.
 
@@ -636,6 +777,14 @@ def dispatch(
             declarations still appear under ``excluded``.
         timeout_seconds: Override every analyzer's declared budget.
         contract: An already-loaded contract (tests, or a pinned file).
+        rate_limit_wait_seconds: How long an analyzer may queue for a
+            rate-limit slot before being reported as ``rate_limited``. ``0.0``
+            (the default) reports immediately rather than blocking a pooled
+            worker; either way the analyzer still produces a report.
+        limiter: An explicit rate limiter (tests, or an isolated window).
+            Defaults to the process-wide one.
+        strict_sandbox: Override the ``ICDEV_STRICT_SANDBOX`` reading that
+            decides whether ``sandboxed_on_demand`` analyzers are isolated.
 
     Returns:
         A :class:`DispatchResult` holding one report per matched declaration.
@@ -668,7 +817,16 @@ def dispatch(
     }
     executor = _get_executor()
     futures = {
-        decl.key: executor.submit(_run_one, decl, observable, context, budgets[decl.key])
+        decl.key: executor.submit(
+            _run_one,
+            decl,
+            observable,
+            context,
+            budgets[decl.key],
+            limiter=limiter,
+            rate_limit_wait_seconds=rate_limit_wait_seconds,
+            strict_sandbox=strict_sandbox,
+        )
         for decl in selected
     }
 
@@ -724,14 +882,18 @@ def capabilities(
     observable_type: Optional[str] = None,
     *,
     contract: Optional[AnalyzerContract] = None,
+    limiter: Optional[AnalyzerRateLimiter] = None,
 ) -> Dict[str, Any]:
     """What can be dispatched: the observable vocabulary and its analyzers.
 
     A caller needs this to know which types :func:`dispatch` will accept — the
     answer is derived from the contract, so a newly declared analyzer shows up
-    here with no code change either.
+    here with no code change either. Each entry also reports its declared rate
+    limit, the live state of that limit's window, and the execution mode its
+    sandbox posture resolves to on this host. Reading this consumes no quota.
     """
     contract = contract or get_contract()
+    limiter = limiter or get_limiter()
     types = (
         [observable_type] if observable_type else sorted(contract.observable_types)
     )
@@ -755,6 +917,14 @@ def capabilities(
                     "levels": list(d.taxonomy.levels),
                     "timeout_seconds": d.timeout_seconds,
                     "sandbox": d.sandbox,
+                    # What the posture actually resolves to on THIS host, so a
+                    # caller can see that `sandboxed_on_demand` is running
+                    # in-process here rather than assuming the strict reading.
+                    "execution_mode": resolve_execution_mode(d),
+                    "rate_limit": d.rate_limit.to_dict(),
+                    "rate_limit_state": limiter.snapshot(
+                        d.key, d.rate_limit.max_calls, d.rate_limit.per_seconds
+                    ),
                     "enabled": d.enabled,
                 }
                 for d in matches
@@ -787,6 +957,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Include responders (they ACT — off by default)",
     )
     parser.add_argument("--timeout", type=int, help="Override every analyzer's budget")
+    parser.add_argument(
+        "--rate-limit-wait",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "Queue up to SECONDS for a rate-limit slot instead of reporting "
+            "`rate_limited` immediately (default: 0, report)"
+        ),
+    )
+    parser.add_argument(
+        "--strict-sandbox",
+        action="store_true",
+        help="Force sandboxed_on_demand analyzers through the sandbox",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -825,6 +1010,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             kinds=("analyzer", "responder") if args.responders else ("analyzer",),
             analyzers=args.analyzers,
             timeout_seconds=args.timeout,
+            rate_limit_wait_seconds=args.rate_limit_wait,
+            strict_sandbox=True if args.strict_sandbox else None,
         )
     except (ContractError, DispatchError) as exc:
         message = {"error": type(exc).__name__, "message": str(exc)}
