@@ -263,6 +263,29 @@ python tools/analyzers/contract.py --observable cve      # who accepts this obse
 python tools/analyzers/contract.py --check-sql observable_type   # CHECK clause for a migration
 ```
 
+### Observable dispatch (anz-disp-01)
+
+One entry point. Submitting an observable fans it out to **every** analyzer that
+declared it accepts that type — concurrently, with a per-analyzer timeout — and
+returns taxonomy-tagged reports. An analyzer that timed out is reported as
+`timeout`, never omitted: a fan-out that dropped it would read identically to
+one where it found nothing. Exit code is 2 when the result is partial.
+
+```bash
+python tools/analyzers/dispatch.py --observables                          # vocabulary + who accepts what
+python tools/analyzers/dispatch.py --type ip --value 198.51.100.7         # fan out to every ip analyzer
+python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094 \
+    --context '{"project_id":"p1","component":"xz","cvss_score":10.0,"severity":"critical","description":"backdoor"}'
+python tools/analyzers/dispatch.py --type vendor --value Acme --json      # machine-readable reports
+python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --analyzer threat_intel_match
+python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
+```
+
+MCP (existing gateway, category `analyzers`, no new server):
+`analyzer_dispatch` (params: `observable_type`, `value`, `context`,
+`analyzers`, `include_responders`, `timeout_seconds`) and
+`analyzer_capabilities` (param: `observable_type`).
+
 ---
 
 ## Browser Automation & Agent Scope Controls
@@ -4070,3 +4093,44 @@ improvement immediately instead of waiting out the window. The scheduled writer
 is the Genesis reflex `idp_score_recorder` (3h, GREEN tier — see
 `args/genesis_config.yaml`); the window in `args/scorecards/<key>.yaml` decides
 whether each cycle actually records, so changing granularity is a YAML edit.
+
+### Gap seeder — a failing rule becomes a kanban task (idp-gap-01)
+
+A catalog product surfaces a red cell and stops. ICDEV owns `kanban_tasks` and
+an autonomous build pipeline, so a failing rule can become work. One task per
+failing rule per component, with the rule's `failureMessage` as the description
+and the IQE query that measured the failure as the acceptance criteria.
+
+```bash
+# Dry run — the default. Reads everything, applies every cap, writes nothing.
+python tools/idp/gap_seeder.py
+python tools/idp/gap_seeder.py --json
+
+# Try different caps before committing to them
+python tools/idp/gap_seeder.py --max-per-run 3 --max-per-component 1
+
+# One scorecard only
+python tools/idp/gap_seeder.py --scorecard component-readiness
+
+# Actually write (refused until args/idp_gap_seeder.yaml has enabled: true)
+python tools/idp/gap_seeder.py --seed --json
+python tools/idp/gap_seeder.py --seed --force        # one-off, ignores enabled: false
+```
+
+Caps live in `args/idp_gap_seeder.yaml`. `max_tasks_per_component` is applied
+**before** `max_tasks_per_run` so one badly scoring component cannot consume the
+whole budget; both truncations are logged at WARNING, printed to stderr, and
+reported as `truncated` in the JSON — a silent truncation would read as
+"nothing left to do". Measured on the live board: 311 failing rules → 10 tasks.
+
+Re-running seeds nothing. The idempotency key is
+`idp-gap:<scorecard>:<component>:<rule>` and already-seeded gaps are filtered
+out *before* the cap is applied, so the same ten are not re-offered forever.
+
+Nothing dispatches without confirmation: tasks land as `suggested` **and** carry
+`depends_on_task_id = idpgap-gate-00`, a `*-gate-00` sentinel held `in_progress`.
+The dependency edge is the hold that is enforced in code
+(`promote_backlog_to_scheduled::_deps_satisfied`); `suggested` alone is not,
+because the kanban deadlock-breaker can promote a card out of it. Release the
+whole batch by setting the gate to `done`. Seeding is refused outright if the
+gate has already been released.
