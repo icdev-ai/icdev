@@ -343,6 +343,22 @@ def test_packaged_copies_have_not_drifted(contract_path: Path):
             REPO_ROOT / "tools" / "analyzers" / "contract.py",
             REPO_ROOT / "icdev" / "tools" / "analyzers" / "contract.py",
         ),
+        # anz-mig-01 — the binding and parity layers ship with the contract, and
+        # the parity case file is the fixed input set the ports are proved
+        # against. A generated child app that inherits contract.py but not
+        # binding.py inherits declarations it cannot dispatch.
+        (
+            REPO_ROOT / "tools" / "analyzers" / "binding.py",
+            REPO_ROOT / "icdev" / "tools" / "analyzers" / "binding.py",
+        ),
+        (
+            REPO_ROOT / "tools" / "analyzers" / "parity.py",
+            REPO_ROOT / "icdev" / "tools" / "analyzers" / "parity.py",
+        ),
+        (
+            REPO_ROOT / "args" / "analyzer_parity_cases.yaml",
+            REPO_ROOT / "icdev" / "data" / "args" / "analyzer_parity_cases.yaml",
+        ),
     ]
     for source, mirror in pairs:
         assert mirror.is_file(), f"missing packaged copy: {mirror.relative_to(REPO_ROOT)}"

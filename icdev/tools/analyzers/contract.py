@@ -64,9 +64,17 @@ SUPPORTED_VERSIONS: Tuple[int, ...] = (1,)
 #: Legal values of ``kind``. Cortex's split: analyzers observe, responders act.
 ANALYZER_KINDS: Tuple[str, ...] = ("analyzer", "responder")
 
+#: How the observable value reaches the callable. ``scalar`` passes it as-is;
+#: ``list`` wraps it in a one-element list for batch-shaped callables such as
+#: ``vuln_triage_engine.score_advisories(advisory_ids=[...])``.
+OBSERVABLE_FORMS: Tuple[str, ...] = ("scalar", "list")
+
 _DOTTED_PATH = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _KEY = re.compile(r"^[a-z][a-z0-9_]*$")
+_FACTORY_REF = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +108,10 @@ class DuplicateAnalyzerKey(ContractError):
 
 class InvalidDeclaration(ContractError):
     """A declaration is structurally wrong: missing field, bad type, bad shape."""
+
+
+class InvalidInputBinding(ContractError):
+    """An ``input_binding`` block is structurally wrong or self-contradictory."""
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +163,77 @@ class TaxonomyDeclaration:
 
 
 @dataclasses.dataclass(frozen=True)
+class ConnectionBinding:
+    """How a callable that takes a DB handle gets one — declared, not coded.
+
+    Every ``tools/dsoc_canvas/`` analyzer takes ``conn`` as its first argument
+    and every hand-written call site repeats the same three lines: import the
+    canvas ``get_connection``, call, close. Naming the factory here as a
+    ``module:callable`` reference keeps that out of a dispatch table.
+    """
+
+    param: str
+    factory: str
+    commit: bool = False
+
+    @property
+    def factory_module(self) -> str:
+        return self.factory.split(":", 1)[0]
+
+    @property
+    def factory_attr(self) -> str:
+        return self.factory.split(":", 1)[1]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"param": self.param, "factory": self.factory, "commit": self.commit}
+
+
+@dataclasses.dataclass(frozen=True)
+class InputBinding:
+    """How an observable reaches an already-existing callable's parameters.
+
+    anz-con-01 deliberately stopped at declaring WHAT an analyzer accepts,
+    leaving argument adaptation open. The seed set showed why that has to be
+    data too: the six declared entrypoints have six incompatible signatures —
+    ``match_observable(observable, context='')`` takes the observable first,
+    ``trigger_rtbh(conn, prefix, reason, ...)`` wants a DB handle first, and
+    ``triage_cve(project_id, cve_id, component, cvss_score, severity,
+    description, ...)`` buries it in argument two of six. Writing one adapter
+    function per analyzer would rebuild exactly the bespoke wiring this card
+    exists to delete, so the mapping is declared here instead.
+
+    Nothing about the target callable changes. ``tools/analyzers/binding.py``
+    reads this block, assembles keyword arguments, and returns the callable's
+    result untouched — no wrapping, no coercion. That output transparency is
+    what makes "port an analyzer" a null behavioral change.
+    """
+
+    observable_param: str
+    observable_form: str = "scalar"
+    connection: Optional[ConnectionBinding] = None
+    context_params: Tuple[str, ...] = ()
+    optional_context_params: Tuple[str, ...] = ()
+
+    def bound_param_names(self) -> Tuple[str, ...]:
+        """Every callable parameter this binding supplies a value for."""
+        names = [self.observable_param]
+        if self.connection is not None:
+            names.append(self.connection.param)
+        names.extend(self.context_params)
+        names.extend(self.optional_context_params)
+        return tuple(names)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "observable_param": self.observable_param,
+            "observable_form": self.observable_form,
+            "connection": self.connection.to_dict() if self.connection else None,
+            "context_params": list(self.context_params),
+            "optional_context_params": list(self.optional_context_params),
+        }
+
+
+@dataclasses.dataclass(frozen=True)
 class AnalyzerDeclaration:
     """One declared analyzer or responder. Declared in config, not in code."""
 
@@ -166,10 +249,22 @@ class AnalyzerDeclaration:
     sandbox: str
     timeout_seconds: int
     enabled: bool
+    input_binding: Optional[InputBinding] = None
 
     def accepts_observable(self, observable_type: str) -> bool:
         """True when this analyzer declared *observable_type* as an input."""
         return observable_type in self.accepts
+
+    @property
+    def is_dispatchable(self) -> bool:
+        """True when this declaration can be invoked, not merely described.
+
+        A declaration without an ``input_binding`` is a statement of intent:
+        it says what the analyzer accepts and emits, but nothing knows how to
+        hand it an observable. :func:`tools.analyzers.binding.verify_bindings`
+        lists these so "declared" is never mistaken for "wired".
+        """
+        return self.input_binding is not None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -185,6 +280,9 @@ class AnalyzerDeclaration:
             "sandbox": self.sandbox,
             "timeout_seconds": self.timeout_seconds,
             "enabled": self.enabled,
+            "input_binding": (
+                self.input_binding.to_dict() if self.input_binding else None
+            ),
         }
 
 
@@ -233,6 +331,10 @@ class AnalyzerContract:
     def is_valid_observable_type(self, observable_type: str) -> bool:
         """True when *observable_type* is in the closed vocabulary."""
         return observable_type in self.observable_types
+
+    def dispatchable(self) -> List[AnalyzerDeclaration]:
+        """Every declaration that carries an ``input_binding``, in file order."""
+        return [d for d in self.analyzers if d.is_dispatchable]
 
     # -- machine-readable export -----------------------------------------
 
@@ -407,6 +509,94 @@ def _parse_taxonomy(
     )
 
 
+def _require_identifier_list(value: Any, what: str) -> Tuple[str, ...]:
+    """A possibly-empty list of Python identifiers, no duplicates."""
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise InvalidInputBinding(f"{what} must be a list, got {value!r}")
+    out: List[str] = []
+    for item in value:
+        if not isinstance(item, str) or not _IDENTIFIER.match(item):
+            raise InvalidInputBinding(
+                f"{what} entries must be Python identifiers, got {item!r}"
+            )
+        if item in out:
+            raise InvalidInputBinding(f"{what} lists {item!r} more than once")
+        out.append(item)
+    return tuple(out)
+
+
+def _parse_connection_binding(raw: Any, what: str) -> ConnectionBinding:
+    block = _require_mapping(raw, what)
+    param = block.get("param")
+    if not isinstance(param, str) or not _IDENTIFIER.match(param):
+        raise InvalidInputBinding(
+            f"{what}.param must be a Python identifier, got {param!r}"
+        )
+    factory = block.get("factory")
+    if not isinstance(factory, str) or not _FACTORY_REF.match(factory):
+        raise InvalidInputBinding(
+            f"{what}.factory must be a 'dotted.module:callable' reference, got {factory!r}"
+        )
+    commit = block.get("commit", False)
+    if not isinstance(commit, bool):
+        raise InvalidInputBinding(f"{what}.commit must be a boolean, got {commit!r}")
+    return ConnectionBinding(param=param, factory=factory, commit=commit)
+
+
+def _parse_input_binding(raw: Any, *, analyzer_key: str) -> InputBinding:
+    what = f"analyzer {analyzer_key!r} `input_binding`"
+    block = _require_mapping(raw, what)
+
+    observable_param = block.get("observable_param")
+    if not isinstance(observable_param, str) or not _IDENTIFIER.match(observable_param):
+        raise InvalidInputBinding(
+            f"{what}.observable_param must be a Python identifier, got {observable_param!r}"
+        )
+
+    observable_form = block.get("observable_form", "scalar")
+    if observable_form not in OBSERVABLE_FORMS:
+        raise InvalidInputBinding(
+            f"{what}.observable_form is {observable_form!r}; "
+            f"legal values: {', '.join(OBSERVABLE_FORMS)}"
+        )
+
+    connection = (
+        _parse_connection_binding(block["connection"], f"{what}.connection")
+        if block.get("connection") is not None
+        else None
+    )
+
+    context_params = _require_identifier_list(
+        block.get("context_params"), f"{what}.context_params"
+    )
+    optional_context_params = _require_identifier_list(
+        block.get("optional_context_params"), f"{what}.optional_context_params"
+    )
+
+    binding = InputBinding(
+        observable_param=observable_param,
+        observable_form=observable_form,
+        connection=connection,
+        context_params=context_params,
+        optional_context_params=optional_context_params,
+    )
+
+    # One parameter, one source. A name claimed twice means the binding is
+    # ambiguous about which value wins, and picking a winner silently is how a
+    # migration stops being behaviour-preserving.
+    names = binding.bound_param_names()
+    collisions = sorted({n for n in names if names.count(n) > 1})
+    if collisions:
+        raise InvalidInputBinding(
+            f"{what} binds parameter(s) {collisions} from more than one source; "
+            "each callable parameter may be supplied by exactly one of "
+            "observable_param, connection.param, context_params, optional_context_params"
+        )
+    return binding
+
+
 def _parse_analyzer(
     raw: Any,
     index: int,
@@ -499,6 +689,11 @@ def _parse_analyzer(
         sandbox=sandbox,
         timeout_seconds=timeout_seconds,
         enabled=enabled,
+        input_binding=(
+            _parse_input_binding(block["input_binding"], analyzer_key=key)
+            if block.get("input_binding") is not None
+            else None
+        ),
     )
 
 
@@ -703,8 +898,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.list:
         for decl in contract.analyzers:
             state = "enabled" if decl.enabled else "disabled"
+            wiring = "bound" if decl.is_dispatchable else "declared"
             print(
-                f"{decl.key:24} {decl.kind:10} {state:9} "
+                f"{decl.key:24} {decl.kind:10} {state:9} {wiring:9} "
                 f"accepts={','.join(decl.accepts)} taxonomy={decl.taxonomy.namespace} "
                 f"sandbox={decl.sandbox}"
             )
@@ -712,7 +908,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print(
         f"VALID: {contract.path} — {len(contract.observable_types)} observable types, "
-        f"{len(contract.analyzers)} declaration(s), "
+        f"{len(contract.analyzers)} declaration(s) "
+        f"({len(contract.dispatchable())} with an input_binding), "
         f"{len(contract.taxonomy_namespaces)} taxonomy namespace(s)"
     )
     return 0

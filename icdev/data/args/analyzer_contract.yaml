@@ -95,6 +95,16 @@ observable_types:
   cve:
     description: CVE identifier.
     consumers: [tools/supply_chain/cve_triager.py, tools/supply_chain/cve_passive_watcher.py, tools/strategos/cisa_kev_importer.py]
+  advisory:
+    # anz-mig-01: the PVM family does not accept a CVE string. It accepts an
+    # nc_advisories row id — the platform's own record of a vulnerability, which
+    # already carries the CVSS, publication date and asset linkage the scorers
+    # read. Declaring `cve` here instead would have been a lie that typechecks.
+    description: Identifier (nc_advisories.id) of a vulnerability advisory record held by the platform.
+    consumers: [tools/network/vuln_predictor.py, tools/network/vuln_triage_engine.py]
+  network:
+    description: Identifier of a network under analysis, used to scope NQE device-inventory queries.
+    consumers: [tools/network/attack_surface_mapper.py]
   sbom:
     description: An SBOM document (CycloneDX or SPDX).
     consumers: [tools/compliance/sbom_generator.py]
@@ -144,6 +154,7 @@ taxonomy:
     SUPPLYCHAIN: tools/supply_chain/ — SCRM, CVE triage, Section 889 screening.
     DSOC: tools/dsoc_canvas/ — DDoS, BGP and network-defence analyzers.
     STRATEGOS: tools/strategos/ — intelligence feeds, importers and OSINT.
+    NETWORK: tools/network/ — NDC predictive vulnerability management and attack-surface correlation.
 
 # ---------------------------------------------------------------------------
 # Closed vocabulary: sandbox posture
@@ -176,13 +187,42 @@ defaults:
 # Declarations
 # ---------------------------------------------------------------------------
 # `module`/`entrypoint` name the callable that already implements the analysis.
-# The contract does not change that callable's signature — argument adaptation
-# is anz-disp-01's job. Declaring an analyzer here today buys: a machine-readable
-# statement of what it accepts and emits, and a rate limit and sandbox posture
-# that anz-rate-01 can enforce without touching the module.
+# The contract does not change that callable's signature.
 #
-# The seed set below is deliberately small. It exists to prove the mechanism
-# against real modules, not to port all 79 (that is anz-mig-*).
+# INPUT_BINDING (anz-mig-01)
+# --------------------------
+# A declaration without `input_binding` says what an analyzer accepts but not
+# how to hand it anything — it is described, not wired. `input_binding` closes
+# that gap AS DATA, because the alternative is one adapter function per analyzer
+# and that is precisely the bespoke wiring this card exists to delete.
+#
+#   input_binding:
+#     observable_param: observed_prefix   # the parameter the observable lands in
+#     observable_form: scalar             # scalar (default) | list — `list` wraps
+#                                         #   it for batch-shaped callables
+#     connection:                         # optional; for callables taking a DB handle
+#       param: conn
+#       factory: tools.dsoc_canvas.db.init_db:get_connection
+#       commit: true                      # only when the analyzer writes
+#     context_params: [our_prefix, our_asn]         # caller MUST supply these
+#     optional_context_params: [detection_source]   # passed through if supplied
+#
+# Nothing here changes an analyzer. tools/analyzers/binding.py assembles the
+# keyword arguments and returns the callable's result UNTOUCHED — no report
+# envelope, no dict coercion, no swallowed exception. That output transparency
+# is what makes porting an analyzer a null behavioural change, and
+# tools/analyzers/parity.py proves it per call rather than asserting it here.
+#
+# `python tools/analyzers/binding.py --verify` checks every binding against the
+# real signature of its callable: entrypoint resolves, every declared parameter
+# exists, every required parameter is bound. A binding that names a parameter
+# the callable does not have is caught there, not at dispatch.
+#
+# NOT EVERY ANALYZER FITS, AND THAT IS THE POINT. A contract everything fits
+# after enough special-casing is not a contract. The families surveyed for
+# anz-mig-01 and rejected — feed importers, canvas aggregators, daemon watchers
+# — are listed with reasons in
+# docs/features/anz-mig-01-analyzer-contract-migration.md.
 analyzers:
   - key: cve_triage
     kind: analyzer
@@ -267,3 +307,142 @@ analyzers:
     rate_limit:
       max_calls: 10
       per_seconds: 3600
+    # anz-mig-01. trigger_rtbh(conn, prefix, reason, triggered_by='system',
+    # auto_withdraw_minutes=60) — the observable is `prefix`, the DB handle comes
+    # from the canvas factory, and `reason` is required by the callable so it is
+    # a required context value rather than a default invented here.
+    input_binding:
+      observable_param: prefix
+      connection:
+        param: conn
+        factory: tools.dsoc_canvas.db.init_db:get_connection
+        commit: true
+      context_params: [reason]
+      optional_context_params: [triggered_by, auto_withdraw_minutes]
+
+  # ── anz-mig-01: DSOC family ────────────────────────────────────────────────
+  # get_dsoc_overview and get_active_hijacks are NOT here. Both take only a
+  # connection and answer "what is happening across the canvas" — they accept no
+  # observable, so there is nothing for the contract to bind. See the migration
+  # doc; forcing them in would have meant inventing a null observable type.
+
+  - key: bgp_prefix_hijack
+    kind: analyzer
+    display_name: BGP Prefix Hijack Detection
+    description: Compares an observed BGP announcement against an owned prefix and records a hijack event when the origin AS does not match.
+    module: tools.dsoc_canvas.bgp_hijack_detector
+    entrypoint: detect_prefix_hijack
+    accepts: [bgp_prefix]
+    taxonomy:
+      namespace: DSOC
+      predicates: [prefix-hijack, hijack-confidence]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 600
+      per_seconds: 3600
+    # The observable is the OBSERVED announcement; the prefix we own is context,
+    # not a second observable. Getting that backwards would invert the verdict.
+    input_binding:
+      observable_param: observed_prefix
+      connection:
+        param: conn
+        factory: tools.dsoc_canvas.db.init_db:get_connection
+        commit: true
+      context_params: [our_prefix, our_asn, observed_origin_asn]
+      optional_context_params: [peer_asn, detection_source]
+
+  - key: bgp_route_leak
+    kind: analyzer
+    display_name: BGP Route Leak Detection
+    description: Records a route-leak event for a prefix announced through a peer that should not be propagating it.
+    module: tools.dsoc_canvas.bgp_hijack_detector
+    entrypoint: detect_route_leak
+    accepts: [bgp_prefix]
+    taxonomy:
+      namespace: DSOC
+      predicates: [route-leak, leak-confidence]
+      levels: [info, suspicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 600
+      per_seconds: 3600
+    input_binding:
+      observable_param: prefix
+      connection:
+        param: conn
+        factory: tools.dsoc_canvas.db.init_db:get_connection
+        commit: true
+      context_params: [announcing_asn, peer_asn]
+      optional_context_params: [leak_type, confidence_pct, detection_source]
+
+  # ── anz-mig-01: PVM family (NDC predictive vulnerability management) ───────
+  # These three were reached through tools/mcp/gap_handlers.py, whose handlers do
+  # nothing but unpack `args`, import the module and forward. Declaring the
+  # binding here makes that hand-written middle layer redundant rather than
+  # duplicated — the handler is not modified by this card, but a caller that
+  # goes through the contract no longer needs one.
+
+  - key: pvm_risk_prediction
+    kind: analyzer
+    display_name: PVM Composite Risk Prediction
+    description: Scores one advisory with the 4-weight composite formula (cvss, exploit, patch lag, impacted trend) and appends to nc_vuln_predictions.
+    module: tools.network.vuln_predictor
+    entrypoint: predict_advisory_risk
+    accepts: [advisory]
+    taxonomy:
+      namespace: NETWORK
+      predicates: [composite-risk, exploit-likelihood, patch-lag]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 600
+      per_seconds: 3600
+    # predict_advisory_risk opens its own connection internally, so no
+    # `connection:` block — declaring one would open a second handle the callable
+    # never uses.
+    input_binding:
+      observable_param: advisory_id
+
+  - key: pvm_triage_scoring
+    kind: analyzer
+    display_name: PVM Bayesian Triage Scoring
+    description: 4-factor triage score (KEV, asset criticality, network exposure, urgency) with auto-approve and HITL thresholds.
+    module: tools.network.vuln_triage_engine
+    entrypoint: score_advisories
+    accepts: [advisory]
+    taxonomy:
+      namespace: NETWORK
+      predicates: [triage-priority, hitl-required]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 240
+      per_seconds: 3600
+    # score_advisories(advisory_ids: list[int] | None) is batch-shaped: one call,
+    # N observables, one aggregate result. `observable_form: list` hands it a
+    # one-element list so a single-observable dispatch produces the identical
+    # call the existing MCP handler makes for a single id. Its whole-corpus
+    # sweep (advisory_ids=None) has no observable and stays outside the
+    # contract — see the migration doc.
+    input_binding:
+      observable_param: advisory_ids
+      observable_form: list
+
+  - key: pvm_attack_surface
+    kind: analyzer
+    display_name: PVM Attack Surface Mapping
+    description: Correlates NQE device inventory with CVE advisories and Nessus findings, upserting nc_attack_surface scores.
+    module: tools.network.attack_surface_mapper
+    entrypoint: map_attack_surface
+    accepts: [network]
+    taxonomy:
+      namespace: NETWORK
+      predicates: [surface-score, exposure-type]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 60
+      per_seconds: 3600
+    input_binding:
+      observable_param: network_id

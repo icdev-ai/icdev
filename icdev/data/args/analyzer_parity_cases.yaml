@@ -1,0 +1,132 @@
+# CUI // SP-CTI
+# Fixed input set for the analyzer-migration parity harness (anz-mig-01).
+#
+# WHAT THIS PROVES
+# ----------------
+# Porting an analyzer onto the contract must be a NULL behavioural change. Two
+# things could break that, and each case below checks both:
+#
+#   1. INPUT ADAPTATION — the binding could put a value in the wrong parameter.
+#      `direct_kwargs` is the call a hand-written call site makes, written out
+#      independently from the existing call sites (tools/mcp/gap_handlers.py and
+#      the DSOC blueprint). The harness asserts that the kwargs assembled from
+#      the contract are byte-identical to it. This runs nothing, so it is
+#      deterministic and side-effect free.
+#
+#   2. OUTPUT TRANSPARENCY — the binding could wrap, coerce or swallow the
+#      result. Cases marked `live: true` are executed BOTH ways in the same
+#      process against the same database and their outcomes diffed: same return
+#      value, or the same exception type and message.
+#
+# The diff is direct-vs-bound in one environment, NOT against a golden file
+# captured elsewhere. A golden file would encode whatever database the capture
+# host happened to have and would go stale the first time a row changed; this
+# comparison holds on an empty worktree DB, on a seeded one and in CI.
+#
+# WHY SOME CASES ARE `live: false`
+# --------------------------------
+# Honesty about coverage beats a green run. A case is not executed when running
+# it twice would not be a fair comparison:
+#   - the DSOC detectors and the RTBH responder COMMIT. Two executions write two
+#     rows, so the second call is not the same call as the first, and running
+#     them live against a real canvas DB would be a destructive probe.
+#   - map_attack_surface issues Forward Networks NQE queries over the network.
+# Their input adaptation is still checked, which is where an interface migration
+# actually breaks.
+#
+# Run:  python -m tools.analyzers.parity --json
+#       python -m tools.analyzers.parity --live --json
+
+version: 1
+
+cases:
+  # ── DSOC ────────────────────────────────────────────────────────────────
+  - analyzer: rtbh_blackhole
+    name: blackhole-single-host
+    observable_type: ip
+    observable: "203.0.113.4"
+    context:
+      reason: "volumetric udp flood"
+      triggered_by: "anz-mig-01-parity"
+    direct_kwargs:
+      prefix: "203.0.113.4"
+      reason: "volumetric udp flood"
+      triggered_by: "anz-mig-01-parity"
+    live: false
+    live_skip_reason: "responder commits an RTBH announcement; a second execution is a second blackhole"
+
+  - analyzer: bgp_prefix_hijack
+    name: more-specific-from-foreign-asn
+    observable_type: bgp_prefix
+    observable: "198.51.100.0/24"
+    context:
+      our_prefix: "198.51.100.0/22"
+      our_asn: 64500
+      observed_origin_asn: 64511
+      detection_source: "anz-mig-01-parity"
+    # The OBSERVED announcement is the observable; the prefix we own is context.
+    # Swapping them inverts the verdict, which is the exact regression this case
+    # exists to catch.
+    direct_kwargs:
+      observed_prefix: "198.51.100.0/24"
+      our_prefix: "198.51.100.0/22"
+      our_asn: 64500
+      observed_origin_asn: 64511
+      detection_source: "anz-mig-01-parity"
+    live: false
+    live_skip_reason: "detect_prefix_hijack records a hijack event and commits"
+
+  - analyzer: bgp_route_leak
+    name: peer-propagating-upstream-prefix
+    observable_type: bgp_prefix
+    observable: "192.0.2.0/24"
+    context:
+      announcing_asn: 64512
+      peer_asn: 64513
+      leak_type: "type-1"
+      confidence_pct: 80.0
+    direct_kwargs:
+      prefix: "192.0.2.0/24"
+      announcing_asn: 64512
+      peer_asn: 64513
+      leak_type: "type-1"
+      confidence_pct: 80.0
+    live: false
+    live_skip_reason: "detect_route_leak records a leak event and commits"
+
+  # ── PVM ─────────────────────────────────────────────────────────────────
+  # advisory id -1: nc_advisories.id is an autoincrement primary key, so a
+  # negative id cannot exist on ANY database. That makes the live diff safe to
+  # execute on a seeded host as well as an empty worktree — both calls take the
+  # not-found branch, which returns before writing anything, so the second call
+  # is genuinely the same call as the first.
+  - analyzer: pvm_risk_prediction
+    name: advisory-that-cannot-exist
+    observable_type: advisory
+    observable: -1
+    context: {}
+    direct_kwargs:
+      advisory_id: -1
+    live: true
+
+  - analyzer: pvm_triage_scoring
+    name: single-advisory-batch-of-one
+    observable_type: advisory
+    observable: -1
+    context: {}
+    # score_advisories is batch-shaped. `observable_form: list` must produce a
+    # one-element list — not the bare int, which would raise, and not None,
+    # which would silently sweep every open advisory in the platform.
+    direct_kwargs:
+      advisory_ids: [-1]
+    live: true
+
+  - analyzer: pvm_attack_surface
+    name: scoped-network
+    observable_type: network
+    observable: "anz-mig-01-parity-network"
+    context: {}
+    direct_kwargs:
+      network_id: "anz-mig-01-parity-network"
+    live: false
+    live_skip_reason: "map_attack_surface issues Forward Networks NQE queries over the network and upserts nc_attack_surface"

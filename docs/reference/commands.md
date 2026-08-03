@@ -263,6 +263,25 @@ python tools/analyzers/contract.py --observable cve      # who accepts this obse
 python tools/analyzers/contract.py --check-sql observable_type   # CHECK clause for a migration
 ```
 
+A declaration carrying an `input_binding` (anz-mig-01) is also *dispatchable*:
+the binding layer hands the analyzer an observable and returns its result
+untouched, without modifying the analyzer. The parity harness proves the port
+changed nothing, against the fixed input set in
+`args/analyzer_parity_cases.yaml`.
+
+```bash
+python tools/analyzers/binding.py --verify               # bindings vs real callable signatures
+python tools/analyzers/binding.py --verify --json
+python tools/analyzers/binding.py --describe pvm_risk_prediction
+python tools/analyzers/parity.py                         # input-adaptation diff (no side effects)
+python tools/analyzers/parity.py --live --json           # also execute live-safe cases and diff outcomes
+python tools/analyzers/parity.py --analyzer bgp_route_leak
+```
+
+> Run these as `python -m tools.analyzers.binding` when invoking from a git
+> worktree: script-by-path puts the script's own directory on `sys.path` and
+> `tools` then resolves from the shared checkout, not the worktree.
+
 ---
 
 ## Browser Automation & Agent Scope Controls
