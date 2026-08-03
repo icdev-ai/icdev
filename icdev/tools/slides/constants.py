@@ -10,6 +10,9 @@ from __future__ import annotations
 SLIDES_FEATURE_FLAG = "ICDEV_SLIDES_ENABLED"
 
 # ── Deck Types ────────────────────────────────────────────────────────────────
+# The deck types a user may CHOOSE. This list is handed to the index page and the
+# new-deck wizard as the deck-type picker, so anything added here becomes a menu
+# option. It is not the whole persisted vocabulary — see SYSTEM_DECK_TYPES.
 DECK_TYPES: list[str] = [
     "executive_overview",    # ICDEV ecosystem + capabilities overview
     "canvas_deep_dive",      # Single canvas detailed walkthrough
@@ -20,6 +23,27 @@ DECK_TYPES: list[str] = [
     "general_presentation",  # Open-ended topic/occasion deck
     "pitch_deck",            # Audience-aware investment/concept pitch
 ]
+
+# Deck types the system PERSISTS but never offers as a choice (sdt-vocab-01).
+#
+# A template-fill deck is produced by uploading a .pptx and filling its shapes;
+# there is no wizard path that selects it, so it does not belong in the picker.
+# But blueprint.py writes it to slides_decks.deck_type, and CHECK_DECK_TYPE used
+# to derive from DECK_TYPES alone — so the route could not persist a deck against
+# a correctly-created schema at all. It only appeared to work on databases whose
+# slides_decks predated the constraint, which is why a clean checkout surfaced it
+# and a long-lived one did not.
+#
+# Kept separate rather than appended to DECK_TYPES so fixing the constraint does
+# not put a non-choice in front of the user. deck_type is the deck's provenance;
+# collapsing template_fill into "custom" would erase the only record that a deck
+# came from a user-supplied template.
+SYSTEM_DECK_TYPES: list[str] = [
+    "template_fill",         # Built by filling an uploaded .pptx template
+]
+
+# Everything slides_decks.deck_type may legally hold. The CHECK derives from this.
+PERSISTED_DECK_TYPES: list[str] = DECK_TYPES + SYSTEM_DECK_TYPES
 
 # ── Tones / Styles ────────────────────────────────────────────────────────────
 TONES: list[str] = [
@@ -155,7 +179,9 @@ SLIDE_PROVENANCES: list[str] = [
 ]
 
 # ── DB CHECK Constraint strings (derive from Python constants above) ──────────
-CHECK_DECK_TYPE     = "deck_type IN (" + ", ".join(f"'{t}'" for t in DECK_TYPES) + ")"
+# PERSISTED_DECK_TYPES, not DECK_TYPES: the constraint has to admit the types the
+# system writes as well as the ones a user can pick (sdt-vocab-01).
+CHECK_DECK_TYPE     = "deck_type IN (" + ", ".join(f"'{t}'" for t in PERSISTED_DECK_TYPES) + ")"
 CHECK_SLIDE_TYPE    = "slide_type IN (" + ", ".join(f"'{t}'" for t in SLIDE_TYPES) + ")"
 CHECK_THEME         = "theme IN (" + ", ".join(f"'{t}'" for t in THEMES) + ")"
 CHECK_DECK_STATUS   = "status IN (" + ", ".join(f"'{s}'" for s in DECK_STATUSES) + ")"
