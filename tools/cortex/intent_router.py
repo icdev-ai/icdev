@@ -22,6 +22,34 @@ classifier here.
 The ``agent`` intent is returned with ``requires_confirm=True``: the chat
 surface must NOT auto-launch an agent loop / ACE team — it surfaces a confirm
 affordance first (see blueprint ``api_chat``).
+
+Boundary — three "classify" surfaces, deliberately kept separate
+(cxo-adopt-07):
+
+  1. ``tools.chat_router.intent_classifier`` — *which canvas* (intake or one of
+     the nine design canvases). The only one of the three that reaches a
+     provider: its low-confidence fallback goes through ``cortex_api.classify``
+     and inherits the gateway pre-check, redaction, budget gate and audit row.
+  2. THIS module — *which Cortex facade* (search / ask / complete / agent).
+     Pure keyword rules layered on (1); it makes no provider call of its own and
+     must not grow one. Routing a facade choice through an LLM would add a
+     round-trip per turn and buy no governance the callee does not already
+     apply.
+  3. ``tools.rag.query_classifier`` (MCP ``query_classify``) — *what shape of
+     answer* a RAG query needs. Fully deterministic; ``cortex_api.classify``
+     degrades to exactly this classifier when no provider is reachable, which is
+     why ``query_classify`` is not a TRUST-chain bypass and is not adopted.
+
+Retrieval boundary: ``search_knowledge`` / ``rag_search`` / ``kg_search`` /
+``dic_search`` overlap ``cortex_search``'s surface but are single-backend tools
+carrying backend-specific knobs (``pattern_type``, ``source_type``, ``profile``,
+``collection_id``) that ``cortex_search`` cannot express, and none of them sends
+a prompt to a provider. Their registry descriptions point callers at
+``cortex_search`` for cross-backend retrieval with citations; their handlers are
+intentionally NOT retargeted. Output-side CUI egress to an external MCP client
+is a gateway-wide concern owned by ``tools/gateway/security_chain.py``, not a
+per-tool one. ``dic_chat`` is the one genuine LLM path in that cluster and is
+already Cortex-adopted.
 """
 from __future__ import annotations
 
