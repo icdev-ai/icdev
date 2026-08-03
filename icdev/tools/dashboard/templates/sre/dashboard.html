@@ -22,6 +22,8 @@
   .pill-warning { background: #f39c12; color: #fff; }
   .pill-critical { background: #e74c3c; color: #fff; }
   .pill-exhausted { background: #c0392b; color: #fff; }
+  /* Unassessed is neutral on purpose — it must not read as a good or bad score. */
+  .pill-not-assessed { background: #33415c; color: #b9c6de; }
   .sre-bar { background: #0f2040; border-radius: 4px; height: 8px; margin: 4px 0 8px; overflow: hidden; }
   .sre-bar-fill { height: 100%; border-radius: 4px; }
   .sre-incident { padding: 8px; background: #0f2040; border-radius: 6px; margin: 4px 0; border-left: 3px solid #e74c3c; }
@@ -90,10 +92,20 @@ function renderSreDashboard(d, dora) {
   ];
   metrics.forEach(m => {
     if (!m.data) return;
+    // A null value means the metric could not be assessed — the endpoint's
+    // NOT_ASSESSED path. Never hand it to fmt(): `Math.round(null/60)` renders
+    // MTTR as "0 min", which reads as a perfect score, and the others render
+    // the literal "null". Show the absence instead.
+    const value = m.data.value == null
+      ? `<span style="color:#7a8cb0">Not measured</span>`
+      : m.fmt(m.data);
+    const rating = m.data.rating || 'Not Assessed';
+    // "Not Assessed" would otherwise become the two-class `pill-not assessed`.
+    const pillClass = rating.toLowerCase().replace(/\s+/g, '-');
     html += `<div class="sre-card">
       <h3>${m.label}</h3>
-      <div style="font-size:24px;font-weight:800;color:${doraColor(m.data.rating)}">${m.fmt(m.data)}</div>
-      <span class="sre-pill pill-${m.data.rating.toLowerCase()}">${m.data.rating}</span>
+      <div style="font-size:24px;font-weight:800;color:${doraColor(rating)}">${value}</div>
+      <span class="sre-pill pill-${pillClass}" title="${m.data.note || ''}">${rating}</span>
     </div>`;
   });
   html += '</div>';

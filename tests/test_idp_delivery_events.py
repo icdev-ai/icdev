@@ -408,3 +408,48 @@ def test_no_data_outside_the_window_still_reads_not_assessed(conn, monkeypatch):
     assert dora["lead_time"]["rating"] == "Not Assessed"
     assert dora["mttr"]["rating"] == "Not Assessed"
     assert dora["metrics_assessed"] == 1
+
+
+# ── the scorecard renderer ────────────────────────────────────────────────────
+
+
+def _sre_template(root: Path) -> str:
+    return (root / "tools" / "dashboard" / "templates" / "sre" / "dashboard.html").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_unassessed_metric_is_not_rendered_as_a_number():
+    """A null value must never reach the card formatter.
+
+    The formatters are arithmetic: MTTR's is
+    ``v.value < 3600 ? Math.round(v.value/60) + ' min' : ...``, and JavaScript
+    coerces ``null`` to 0 in both the comparison and the division — so an
+    unassessed MTTR rendered as **"0 min"**, a perfect score, directly under its
+    own "Not Assessed" badge. The other three rendered the literal "null".
+
+    That is the same defect the endpoint's NOT_ASSESSED sentinel exists to
+    prevent, one layer up: absence of measurement displayed as a favourable
+    measurement.
+    """
+    template = _sre_template(ROOT)
+    metrics_block = template.split("const metrics = [", 1)[1].split("// SLOs", 1)[0]
+
+    assert "m.data.value == null" in metrics_block, (
+        "the card renderer must branch on a null value before calling fmt()"
+    )
+    assert "Not measured" in metrics_block
+    # The rating pill class must survive a two-word rating; `pill-not assessed`
+    # is two classes, neither of which is styled.
+    assert r"""replace(/\s+/g, "-")""" in metrics_block or r"""replace(/\s+/g, '-')""" in metrics_block
+    assert ".pill-not-assessed" in template, "the neutral pill style must exist"
+
+
+def test_sre_template_mirror_is_in_sync():
+    """The icdev/ twin ships to generated child apps — drift means they render
+    the old, lying card while the platform renders the fixed one."""
+    canonical = _sre_template(ROOT)
+    mirror = (
+        ROOT / "icdev" / "tools" / "dashboard" / "templates" / "sre" / "dashboard.html"
+    ).read_text(encoding="utf-8")
+    assert canonical == mirror, "tools/ and icdev/ sre/dashboard.html have diverged"
