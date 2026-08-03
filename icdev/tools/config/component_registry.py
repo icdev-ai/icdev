@@ -1076,6 +1076,15 @@ def _module_dir_from_module(module: str, root: Path | None = None) -> str:
     return "/".join(parts)
 
 
+def _nav_link_message(present: bool, required: bool) -> str:
+    """Human-readable status for completeness point 7."""
+    if present:
+        return "nav link declared in registry"
+    if not required:
+        return "nav link waived (completeness.nav_link: false)"
+    return "missing nav_link or nav.section"
+
+
 def _blueprint_path_from_module(module: str, root: Path) -> Path:
     """Resolve the file that should carry the @route decorators."""
     module_file = root.joinpath(*module.split(".")).with_suffix(".py")
@@ -1215,8 +1224,17 @@ def validate_canvas_completeness(
                 migration_present = True
                 migration_path_str = str(_db_parent)
 
-    # Point 7: nav link
-    nav_link_present = bool(completeness.get("nav_link")) or bool(comp.nav.get("section"))
+    # Point 7: nav link.
+    # `completeness.nav_link: false` is an explicit waiver, using the same
+    # declare-it-or-it-is-not-required convention points 6 and 8 already follow
+    # for a canvas with no migration / no IQE adapter. A 301-redirect alias has
+    # no sidebar entry of its own by design — aiify_compat redirects
+    # /ai-augmentation to the real `aiify` canvas, which owns the "AI-ify" link —
+    # and the registry says so. Honour the declaration instead of reporting it as
+    # an unmet requirement; absent the key the nav link is still required.
+    nav_link_declared = completeness.get("nav_link")
+    nav_link_required = nav_link_declared is not False
+    nav_link_present = bool(nav_link_declared) or bool(comp.nav.get("section"))
 
     # Point 8: IQE integration
     iqe_adapter_module = comp.iqe.get("adapter_module")
@@ -1289,10 +1307,10 @@ def validate_canvas_completeness(
         ),
         CanvasCompletenessItem(
             point="nav_link",
-            required=True,
+            required=nav_link_required,
             present=nav_link_present,
             path=None,
-            message="nav link declared in registry" if nav_link_present else "missing nav_link or nav.section",
+            message=_nav_link_message(nav_link_present, nav_link_required),
         ),
         CanvasCompletenessItem(
             point="iqe_integration",

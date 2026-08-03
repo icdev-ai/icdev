@@ -172,6 +172,13 @@ raise. This is a broad, pre-existing test-harness pattern (cf. MEMORY "tests w/ 
 `aiify_compat` missing a `nav_link` — a legacy compat canvas; WARN notes "legacy canvases may need
 registry updates." Registry decision for the aiify owner, not triage.
 
+> **RESOLVED 2026-08-02 (idp-score-05).** The disposition above is superseded. `aiify_compat` already
+> declared `completeness.nav_link: false` — it is a 301-redirect alias with no sidebar entry by
+> design — but the validator ignored the declaration and required the point anyway. Point 7 now
+> honours an explicit `false` the way points 6 and 8 already did, so the canvas passes on its own
+> terms. With the last finding cleared, `canvas_completeness` was flipped WARN → FAIL and declared
+> blocking in `args/security_gates.yaml`, matching its filesystem-driven twin `new_page_completeness`.
+
 ---
 
 ## Summary — one line per non-passing category
@@ -191,4 +198,4 @@ registry updates." Registry decision for the aiify owner, not triage.
 | template_variable_parity | WARN(514) | INTENTIONAL — known WARN-only noise |
 | runtime_placeholder_style | WARN(269) | INTENTIONAL — known WARN-only noise |
 | test_db_isolation | WARN(194) | INTENTIONAL — pre-existing raw-sqlite test pattern |
-| canvas_completeness | WARN(1) | INTENTIONAL — legacy `aiify_compat` nav registry |
+| canvas_completeness | WARN(1) | **FIXED-later (idp-score-05)** — `nav_link: false` waiver honoured; check flipped WARN → FAIL and declared blocking |

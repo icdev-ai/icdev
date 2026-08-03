@@ -126,6 +126,25 @@ new_page_completeness:
     Whitelisted canvases are skipped via args/page_completeness_whitelist.yaml.
     Canvas directories without page.html are checked by the mirror-parity sub-check.
 
+# Canvas Completeness Gate (idp-score-05) — registry-driven twin of the gate above.
+# Same CLAUDE.md rule, opposite direction: new_page_completeness walks the template
+# tree, canvas_completeness walks args/component_registry.yaml and validates each
+# registered canvas with component_registry.py::validate_canvas_completeness.
+# It returned `warn` from the day it was wired in, so the "mandatory" 8-point gate
+# never actually blocked anything the sibling check could not see. The two now
+# agree on severity.
+# Run: python tools/workflow/coherence_checker.py --check canvas_completeness --json --gate
+canvas_completeness:
+  blocking:
+    - incomplete_registered_canvas    # registered canvas missing a required completeness point
+  note: >
+    Violations are detected by tools/workflow/coherence_checker.py::check_canvas_completeness.
+    A point that legitimately does not apply is waived by declaring it false in the
+    canvas's registry `completeness:` block (e.g. `nav_link: false` for a redirect
+    alias); a whole canvas is grandfathered via args/page_completeness_whitelist.yaml,
+    the same list new_page_completeness reads. Do not add whitelist entries to get a
+    commit through — ship the missing component.
+
 # Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
 acceptance_validation:
   blocking:

@@ -1058,6 +1058,40 @@ def _load_ruff_gate_whitelist() -> Dict[str, Set[str]]:
     return normalized
 
 
+def _load_grandfathered_canvases() -> Set[str]:
+    """Canvas names listed in args/page_completeness_whitelist.yaml.
+
+    Schema:
+        # reason for each canvas
+        whitelisted_canvases:
+          - canvas_name  # reason (task-id)
+
+    This is the shared grandfather list for BOTH completeness gates — the
+    filesystem-driven `new_page_completeness` (keyed on the template directory
+    name) and the registry-driven `canvas_completeness` (keyed on the registry
+    key). The two names coincide for every canvas but the redirect aliases, so
+    one entry normally covers both.
+
+    Missing/malformed file → empty set.
+    """
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return set()
+    if not _PAGE_COMPLETENESS_WHITELIST_CONFIG.exists():
+        return set()
+    try:
+        raw = yaml.safe_load(
+            _PAGE_COMPLETENESS_WHITELIST_CONFIG.read_text(encoding="utf-8")
+        ) or {}
+    except Exception:
+        return set()
+    canvases = raw.get("whitelisted_canvases")
+    if not isinstance(canvases, list):
+        return set()
+    return {str(c).strip() for c in canvases if c}
+
+
 def _load_page_completeness_whitelist() -> Set[str]:
     """Load grandfathered canvas names from args/page_completeness_whitelist.yaml.
 
@@ -1079,19 +1113,8 @@ def _load_page_completeness_whitelist() -> Set[str]:
     except ImportError:
         return set()
 
-    skip: Set[str] = set()
-
     # 1. Legacy grandfathered whitelist.
-    if _PAGE_COMPLETENESS_WHITELIST_CONFIG.exists():
-        try:
-            raw = yaml.safe_load(
-                _PAGE_COMPLETENESS_WHITELIST_CONFIG.read_text(encoding="utf-8")
-            ) or {}
-            canvases = raw.get("whitelisted_canvases")
-            if isinstance(canvases, list):
-                skip.update(str(c).strip() for c in canvases if c)
-        except Exception:
-            pass
+    skip: Set[str] = _load_grandfathered_canvases()
 
     # 2. IQE triage exemptions (tch-fix-04).
     if _COMPLETION_EXEMPTIONS_CONFIG.exists():
@@ -5429,13 +5452,30 @@ def check_component_cli_reachability(
 
 
 def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
-    """Run the 8-point completeness gate against every registered canvas."""
+    """Run the 8-point completeness gate against every registered canvas.
+
+    BLOCKING (idp-score-05). CLAUDE.md states "Never ship a template without all
+    7 other components", and the filesystem-driven sibling
+    :func:`check_new_page_completeness` has always failed and is declared
+    blocking in args/security_gates.yaml. This registry-driven check enforces the
+    same rule from the other direction, so it carries the same severity — it
+    returned ``warn`` for its whole life, which meant the "mandatory" gate never
+    stopped anything.
+
+    The escape hatch is args/page_completeness_whitelist.yaml (shared with the
+    sibling check), not a downgraded status.
+    """
     missing_issues: List[str] = []
+    whitelisted: List[str] = []
     try:
         from tools.config.component_registry import get_registry
 
+        grandfathered = _load_grandfathered_canvases()
         registry = get_registry()
         for comp in registry.iter_canvases():
+            if comp.key in grandfathered:
+                whitelisted.append(comp.key)
+                continue
             report = registry.validate_canvas_completeness(comp.key)
             if not report.passed:
                 for item in report.items:
@@ -5460,22 +5500,30 @@ def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> Coh
         return CoherenceCheck(
             check_id="canvas_completeness",
             check_name="Canvas Completeness Gate",
-            status="warn",
+            status="fail",
             expected=["All canvases pass 8-point completeness gate"],
             actual=[f"{len(missing_issues)} missing component(s)"],
             missing=sorted(missing_issues),
             extra=[],
-            message=f"{len(missing_issues)} canvas completeness issue(s) found (legacy canvases may need registry updates)",
+            message=(
+                f"{len(missing_issues)} canvas completeness issue(s) — ship the "
+                "missing component(s), declare the point waived in the registry "
+                "`completeness` block, or grandfather the canvas in "
+                "args/page_completeness_whitelist.yaml"
+            ),
         )
 
+    actual = ["All canvases complete"]
+    if whitelisted:
+        actual.append(f"{len(whitelisted)} grandfathered: {', '.join(sorted(whitelisted))}")
     return CoherenceCheck(
         check_id="canvas_completeness",
         check_name="Canvas Completeness Gate",
         status="pass",
         expected=["All canvases pass 8-point completeness gate"],
-        actual=["All canvases complete"],
+        actual=actual,
         missing=[],
-        extra=[],
+        extra=sorted(whitelisted),
         message="All registered canvases pass the 8-point completeness gate",
     )
 
