@@ -64,6 +64,7 @@ import math
 import os
 import threading
 import uuid as _uuid
+from collections import deque as _deque
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -134,6 +135,15 @@ class ResultSubtype:
     error_stalled = "error_stalled"
     """No novel successful tool call for ``stall_threshold`` consecutive turns."""
 
+    error_semantic_loop = "error_semantic_loop"
+    """Recent tool calls were semantically equivalent — the agent was looping.
+
+    Distinct from :attr:`error_max_budget_tokens` on purpose: an undetected loop
+    burns the token budget to its ceiling and then reports budget exhaustion,
+    which reads as "task too big" rather than "agent was stuck". See
+    :mod:`icdev.tools.llm.loop_detector`.
+    """
+
 
 # ---------------------------------------------------------------------------
 # Result
@@ -192,6 +202,12 @@ class AgentLoopResult:
     """Correlation ID threaded through memory writes, evals, and OTel spans (migration 229)."""
     output_redacted: bool = False
     """True when output_redactor replaced PII/credentials in final_content (IL4/IL5)."""
+    loop_detection: dict[str, Any] = field(default_factory=dict)
+    """Details of the semantic-loop detection that ended the run (empty if none).
+
+    Shape: :meth:`icdev.tools.llm.loop_detector.LoopDetection.as_dict` — tool
+    name, cluster size, window size, distinct turns, mean similarity, reason.
+    """
 
 
 # Type aliases for callback hooks.
@@ -611,6 +627,9 @@ def _record_codegen_decision(
         "llm_function": llm_function,
         "session_id": session_id,
         "result_subtype": result.result_subtype,
+        # Carried into harness_eval so "agent was stuck" stays separable from
+        # "task exhausted its budget" once the run is only a telemetry row.
+        "truncation_reason": result.truncation_reason,
         "done": result.done,
         "truncated": result.truncated,
         "turns": result.turns,
@@ -618,6 +637,8 @@ def _record_codegen_decision(
         "total_output_tokens": result.total_output_tokens,
         "total_cost_usd": result.total_cost_usd,
     }
+    if result.loop_detection:
+        metadata["loop_detection"] = result.loop_detection
     if rubric_verdict is not None:
         metadata["rubric_verdict"] = rubric_verdict
     if grading_attempts is not None:
@@ -670,6 +691,7 @@ def run_agent_loop(
     max_consecutive_errors: int | None = 3,
     llm_call_timeout_seconds: float | None = None,
     stall_threshold: int | None = None,
+    loop_detection: dict[str, Any] | None = None,
     memory_enabled: bool | None = None,
     memory_top_k: int | None = None,
     memory_tier: str | None = None,
@@ -773,6 +795,16 @@ def run_agent_loop(
             ``ResultSubtype.error_consecutive_tool_failures``. ``None`` disables
             this guard. Default 3. Loaded from
             ``args/llm_config.yaml`` ``agent_loop.budgets.max_consecutive_errors``.
+        loop_detection: Overrides for the semantic-loop detector (see
+            :mod:`icdev.tools.llm.loop_detector`). ``None`` reads
+            ``args/llm_config.yaml`` ``agent_loop.loop_detection``. Pass
+            ``{"enabled": False}`` to disable, or tune ``window`` /
+            ``similarity_threshold`` / ``min_cluster_size`` /
+            ``min_distinct_turns`` / ``coverage_ratio`` per call. When a loop is
+            detected the run ends with ``ResultSubtype.error_semantic_loop`` and
+            ``truncation_reason="semantic_loop"`` — deliberately distinct from
+            the budget-exhaustion reasons, since an undetected loop otherwise
+            just spends the token budget and reports ``max_total_tokens``.
         initial_messages: Pre-built message history to start from, taking
             precedence over both ``resume_session_id`` and ``user_prompt``-based
             seeding. Used by :func:`run_agent_loop_with_rubric` to resume a
@@ -822,6 +854,18 @@ def run_agent_loop(
         stall_threshold = int(budget_defaults["stall_threshold"])
     if stall_threshold is None:
         stall_threshold = 3
+    # Semantic loop detector — config file supplies the defaults, the caller may
+    # override any key (including turning it off entirely).
+    from icdev.tools.llm.loop_detector import (
+        ToolCallRecord as _ToolCallRecord,
+        detect_semantic_loop as _detect_semantic_loop,
+        load_detector_config as _load_detector_config,
+    )
+
+    _loop_cfg = _load_detector_config()
+    _loop_cfg.update(loop_detection or {})
+    _loop_detection_enabled = bool(_loop_cfg.get("enabled", True))
+    _loop_window = max(1, int(_loop_cfg.get("window", 8)))
     # max_consecutive_errors: Python default=3, None=explicitly disabled.
     # Do NOT load from budget_defaults — None must mean "disable", not "use config".
 
@@ -917,6 +961,8 @@ def run_agent_loop(
     _DUPLICATE_ERROR_THRESHOLD = 5
     _last_progress_turn: int = -1
     _seen_call_keys: set[str] = set()
+    # Control 6: rolling window of executed calls for semantic-loop detection.
+    _recent_calls: _deque[Any] = _deque(maxlen=_loop_window)
     with _futures.ThreadPoolExecutor(max_workers=16) as executor:
         for turn in range(max_iterations):
             if stop_event is not None and stop_event.is_set():
@@ -930,8 +976,32 @@ def run_agent_loop(
                     turn - _last_progress_turn, _last_progress_turn, turn,
                 )
                 result.result_subtype = ResultSubtype.error_stalled
+                result.truncation_reason = "stalled"
                 result.truncated = True
                 break
+
+            # Control 6: Semantic loop detector — abort when recent tool calls are
+            # equivalent-but-not-identical (control 3 only sees exact duplicates,
+            # and the stall detector only sees *no* progress). Runs before the LLM
+            # call so a loop stops well short of the token ceiling.
+            if _loop_detection_enabled and len(_recent_calls) >= 2:
+                _detection = _detect_semantic_loop(_recent_calls, config=_loop_cfg)
+                if _detection.detected:
+                    logger.warning("agent_loop: semantic loop detected — %s", _detection.reason)
+                    result.result_subtype = ResultSubtype.error_semantic_loop
+                    result.truncation_reason = "semantic_loop"
+                    result.loop_detection = _detection.as_dict()
+                    result.truncated = True
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Agent loop stopped: semantic loop detected — "
+                                f"{_detection.reason}."
+                            ),
+                        }
+                    )
+                    break
 
             # Control 2: Budget pressure — inject 'N turns remaining' in last 20% of budget.
             _turns_remaining = max_iterations - turn
@@ -1170,6 +1240,20 @@ def run_agent_loop(
                             out_text = _san_result.sanitized_text
                     except Exception:
                         pass  # non-fatal
+
+                # Control 6: feed the semantic-loop window. Errors are included —
+                # re-running a failing command with cosmetic variation is the
+                # canonical loop — but the DONE sentinel is not a real result.
+                if _loop_detection_enabled and out_text is not DONE and out_text != DONE:
+                    _recent_calls.append(
+                        _ToolCallRecord(
+                            turn=turn,
+                            name=tc_name,
+                            arguments=tc_input,
+                            result=out_text,
+                            is_error=is_error,
+                        )
+                    )
 
                 entry: dict[str, Any] = {
                     "turn": turn,
