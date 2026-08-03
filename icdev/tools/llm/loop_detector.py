@@ -56,6 +56,7 @@ __all__ = [
     "DEFAULT_CONFIG",
     "LoopDetection",
     "ToolCallRecord",
+    "argument_similarity",
     "call_similarity",
     "detect_semantic_loop",
     "load_detector_config",
@@ -295,6 +296,34 @@ def similarity(left: str, right: str) -> float:
     return (ratio + jac) / 2.0
 
 
+def argument_similarity(left: Any, right: Any) -> float:
+    """Similarity of two argument payloads — the **weakest** matching field.
+
+    Flattening a dict to one string and comparing that lets a long shared field
+    carry a genuinely different one. Real transcripts made this concrete: an
+    ``Edit`` call repeats an absolute ``file_path`` of 100+ characters while
+    ``old_string``/``new_string`` change completely every turn, and the shared
+    path alone pushed the flattened comparison over threshold — flagging
+    ordinary file editing as a loop. Comparing per key and taking the minimum
+    means *every* argument has to be equivalent, so one changing field is enough
+    to establish that the agent is doing something new.
+
+    A key present on one side only scores 0: an argument that appeared or
+    vanished is a difference, not a match.
+    """
+    if isinstance(left, dict) and isinstance(right, dict):
+        keys = set(left) | set(right)
+        if not keys:
+            return 1.0
+        return min(
+            similarity(_arguments_to_text(left.get(key)), _arguments_to_text(right.get(key)))
+            if key in left and key in right
+            else 0.0
+            for key in keys
+        )
+    return similarity(_arguments_to_text(left), _arguments_to_text(right))
+
+
 def call_similarity(
     left: ToolCallRecord,
     right: ToolCallRecord,
@@ -307,7 +336,7 @@ def call_similarity(
     """
     if left.name != right.name:
         return (0.0, 0.0)
-    arg_sim = similarity(_arguments_to_text(left.arguments), _arguments_to_text(right.arguments))
+    arg_sim = argument_similarity(left.arguments, right.arguments)
     res_sim = similarity(
         _sample_result(left.result or "", result_sample_chars),
         _sample_result(right.result or "", result_sample_chars),

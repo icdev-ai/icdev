@@ -21,6 +21,7 @@ from icdev.tools.llm.agent_loop import ResultSubtype, run_agent_loop
 from icdev.tools.llm.loop_detector import (
     DEFAULT_CONFIG,
     ToolCallRecord,
+    argument_similarity,
     detect_semantic_loop,
     load_detector_config,
     similarity,
@@ -107,6 +108,23 @@ class TestSimilarity:
         # One character apart, so SequenceMatcher alone scores this ~0.98. The
         # token-set half of the metric is what keeps it below threshold.
         assert similarity("file1.txt", "file2.txt") < DEFAULT_CONFIG["similarity_threshold"]
+
+    def test_a_long_shared_field_cannot_carry_a_changed_one(self):
+        """Per-key comparison: the weakest field decides, not the concatenation.
+
+        Found by replaying real transcripts — an ``Edit`` repeats a 100+ character
+        absolute ``file_path`` while ``old_string``/``new_string`` change entirely,
+        and comparing the flattened payload scored that over threshold.
+        """
+        path = "C:/AI/ICDev/tools/dashboard/templates/observability/page.html"
+        left = {"file_path": path, "old_string": "<h1>Old heading</h1>", "new_string": "<h1>New</h1>"}
+        right = {"file_path": path, "old_string": "def compute(a, b):", "new_string": "def compute(a, b, c):"}
+        assert argument_similarity(left, right) < DEFAULT_CONFIG["similarity_threshold"]
+        # The same payloads flattened would have looked equivalent.
+        assert similarity(str(left), str(right)) > argument_similarity(left, right)
+
+    def test_a_key_present_on_one_side_only_is_a_difference(self):
+        assert argument_similarity({"cmd": "ls", "timeout": 5}, {"cmd": "ls"}) == 0.0
 
     def test_digits_survive_normalisation(self):
         # "5 failed" must never normalise to "2 failed" — that is the progress signal.
@@ -230,6 +248,36 @@ class TestDetectorSparesLegitimateWork:
         )
         assert detection.detected is False
         assert detection.distinct_variants == 1
+
+    def test_repeated_edits_to_one_file_are_not_a_loop(self):
+        """The real-transcript false positive, end to end.
+
+        Five edits to the same file: identical `file_path`, changing content, and
+        a tool result that is near-constant by design ("...updated successfully").
+        Argument similarity carried by the shared path is what flagged this before
+        per-key comparison landed.
+        """
+        path = "C:/AI/ICDev/tools/dashboard/templates/observability/page.html"
+        detection = detect_semantic_loop(
+            [
+                ToolCallRecord(
+                    turn=i,
+                    name="Edit",
+                    arguments={"file_path": path, "old_string": old, "new_string": new},
+                    result=f"The file {path} has been updated successfully.",
+                )
+                for i, (old, new) in enumerate(
+                    [
+                        ("<h1>Dashboard</h1>", "<h1>Observability</h1>"),
+                        ("{{ rows|length }}", "{{ rows|length }} of {{ total }}"),
+                        ("def compute(a, b):", "def compute(a, b, c):"),
+                        ("return None", "return summarise(rows)"),
+                        ("# TODO", "# handled in obx-slo-02"),
+                    ]
+                )
+            ]
+        )
+        assert detection.detected is False
 
     def test_below_minimum_history_never_fires(self):
         detection = detect_semantic_loop(
