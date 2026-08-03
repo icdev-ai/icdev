@@ -16,7 +16,15 @@
 #   trackable  false => no public repo. The scout skips it and lists it
 #              under "Manual review" in the brief instead.
 #   url        Required when `trackable: false` — where a human goes to look.
-#   notes      Why it is on the list.
+#   notes      Why it is on the list. For an adaptation candidate this doubles
+#              as the signal description, so write it long-form there.
+#   adaptation Present => this target is also an adaptation candidate, and
+#              tools/innovation/seed_external_repos.py registers it as an
+#              innovation signal. Absent => watched only. Sub-keys, all
+#              optional: source (defaults to the repo name, lowercased),
+#              title (defaults to name/repo), description (defaults to
+#              `notes`), gotcha_layer, target, status, and scoring — the
+#              five dimensions weighted per args/innovation_config.yaml.
 #
 # ── Subsystems ───────────────────────────────────────────────────────
 # The first ten map 1:1 onto docs/research/external-benchmark-map.md §1–§10.
@@ -36,13 +44,14 @@
 # These are ICDEV subsystems the benchmark map did not cover; they predate it:
 #
 #   autonomous_research   Genesis / autoresearch loops
+#   design_quality        Generated-UI and presentation quality
 #   llm_infrastructure    Local model serving
 #   mlops                 Model lifecycle
 #   embedded              SparkPilot / RTOS
 #
 # ── API budget ───────────────────────────────────────────────────────
-# 39 trackable repos = 39 metadata calls, plus 39 carrying `releases`
-# = 78 GitHub API calls per cycle. GITHUB_TOKEN is therefore REQUIRED,
+# 53 trackable repos = 53 metadata calls, plus 39 carrying `releases`
+# = 92 GitHub API calls per cycle. GITHUB_TOKEN is therefore REQUIRED,
 # not optional: the unauthenticated ceiling is 60 requests/hour, so an
 # untokened run exhausts it partway through and the remainder fail. A
 # token raises the limit to 5,000/hr and the whole list fits comfortably.
@@ -51,7 +60,7 @@
 # that 403s logs one WARN line and is counted as an error; the reflex
 # still reports success as long as *some* target resolved. Partial
 # coverage looks like coverage. If the brief's "Repos Monitored" count is
-# below 39, the token is missing or exhausted — that is the tell.
+# below 53, the token is missing or exhausted — that is the tell.
 #
 # Adding a `releases` entry costs one more call; adding a repo costs two.
 # Budget before you extend.
@@ -330,6 +339,322 @@ targets:
     category: rtos
     watch: [releases]
     notes: "Core RTOS — SparkPilot foundation"
+
+  # ── Adaptation candidates ────────────────────────────────────────
+  # Carry an `adaptation` block, so seed_external_repos.py registers each
+  # as an innovation signal alongside the scout watching the repo. These
+  # were a Python literal in that script until xbm-list-02; the list and
+  # the watchlist are one file now, so adding a repo here is the only
+  # step. `notes` is the signal description verbatim — editing it changes
+  # the content hash and the next run registers a second, duplicate row.
+
+  - repo: chopratejas/headroom
+    subsystem: agent_runtime
+    category: performance
+    watch: [stars]
+    adaptation:
+      title: Headroom — Reversible Context Compression for AI Agents
+      gotcha_layer: tool
+      target: tools/llm/router.py — add compression middleware
+      status: pending
+      scoring:
+        novelty: 0.90
+        feasibility: 0.85
+        compliance_alignment: 0.95
+        user_impact: 0.95
+        effort: 0.80
+    notes: 'Content-aware compression layer (SmartCrusher, CodeCompressor) that reduces token usage 60-95% for AI
+      agent workflows. Provides MCP server, HTTP proxy, and library interfaces. Includes CacheAligner for
+      KV cache hits, cross-agent memory deduplication, and failure mining (headroom learn). Integration point:
+      tools/llm/router.py compression layer, genesis daemon A2A message compression. Python library (pip install
+      headroom).'
+
+  - repo: mvanhorn/last30days-skill
+    subsystem: autonomous_research
+    category: ai_tooling
+    watch: [stars]
+    adaptation:
+      title: last30days — Parallel Multi-Source Social Trend Synthesis
+      gotcha_layer: tool
+      target: tools/research/source_scanners/ — social_trend_scanner.py
+      status: pending
+      scoring:
+        novelty: 0.85
+        feasibility: 0.80
+        compliance_alignment: 0.90
+        user_impact: 0.90
+        effort: 0.75
+    notes: 'Agent skill that simultaneously searches Reddit, X, YouTube, TikTok, GitHub, and Hacker News to synthesize
+      what''s trending about a topic in the last 30 days. Key patterns: intelligent entity disambiguation
+      (handle→subreddit→repo), parallel multi-source orchestration, cross-source cluster merging with dedup,
+      dual-scoring (relevance + fun), offline-shareable HTML briefs. 1,012 tests. Adaptation: implement as
+      a Research engine source adapter at tools/research/source_scanners/social_trend_scanner.py.'
+
+  - repo: Panniantong/agent-reach
+    subsystem: autonomous_research
+    category: developer_experience
+    watch: [stars]
+    adaptation:
+      title: Agent Reach — Unified Internet Access Layer for AI Agents
+      gotcha_layer: tool
+      target: tools/platform_connectors/ — unified adapter registry
+      status: pending
+      scoring:
+        novelty: 0.80
+        feasibility: 0.85
+        compliance_alignment: 0.85
+        user_impact: 0.85
+        effort: 0.80
+    notes: 'Single-entry platform connector framework for AI agents: Twitter, YouTube, Reddit, GitHub, and more via
+      agent-reach install. Patterns: multi-backend routing (primary + fallbacks), zero-config where possible
+      (free APIs prioritized), health monitoring (agent-reach doctor), MCP integration with Exa search, yt-dlp
+      fallback for blocked YouTube. Addresses fragmented per-engine platform connectors in ICDEV. Adaptation:
+      consolidate tools/research/source_scanners/* and tools/innovation/web_scanner.py platform fetches into
+      a shared tools/platform_connectors/ adapter registry.'
+
+  - repo: microsoft/markitdown
+    subsystem: rag_knowledge_graph
+    category: developer_experience
+    watch: [stars]
+    adaptation:
+      title: MarkItDown — Multi-Format to Markdown Converter (Microsoft)
+      gotcha_layer: tool
+      target: tools/document_intelligence/converters/markitdown_adapter.py
+      status: pending
+      scoring:
+        novelty: 0.70
+        feasibility: 0.95
+        compliance_alignment: 0.90
+        user_impact: 0.85
+        effort: 0.90
+    notes: 'Python utility (pip install markitdown) converting PDF, DOCX, PPTX, XLSX, images (with LLM descriptions),
+      audio transcription, HTML, and YouTube video URLs to Markdown for LLM ingestion. Modular plugin architecture
+      with optional Azure Document Intelligence integration for layout-aware PDF extraction. Multiple API
+      security levels. Directly addresses DIC''s limited format support. Adaptation: tools/document_intelligence/converters/markitdown_adapter.py
+      — additive wrapper that feeds MarkItDown output into DIC RAG pipeline.'
+
+  - repo: iii-hq/iii
+    subsystem: agent_runtime
+    category: architecture
+    watch: [stars]
+    adaptation:
+      source: iii-hq-iii
+      title: iii — Unified Function+Trigger Runtime for Service Composition
+      gotcha_layer: tool
+      target: tools/agents/a2a_registry.py — unified trigger patterns
+      status: pending
+      scoring:
+        novelty: 0.85
+        feasibility: 0.60
+        compliance_alignment: 0.90
+        user_impact: 0.85
+        effort: 0.45
+    notes: 'Runtime platform that eliminates point-to-point service integrations via auto-discovery and a unified
+      function/trigger interface. Workers spawn workers. Built-in distributed tracing across TypeScript, Python,
+      Rust, Go. Zero-integration architecture. Maps to ICDEV''s 15-agent A2A system (ports 8443-8458): the
+      unified trigger model could replace JSON-RPC 2.0 point-to-point wiring. Observability consolidation
+      would unify scheduler.ndjson, .logs, audit_trail. Adaptation: extract architectural patterns for tools/agents/a2a_registry.py;
+      multi-language support is a significant integration lift.'
+
+  - repo: nousresearch/hermes-agent
+    subsystem: agent_runtime
+    category: ai_tooling
+    watch: [stars]
+    adaptation:
+      title: Hermes Agent — Self-Improving Agent with Persistent Memory
+      gotcha_layer: tool
+      target: tools/memory/hybrid_search.py — FTS5 patterns; tools/nova/ — skill auto-gen
+      status: pending
+      scoring:
+        novelty: 0.75
+        feasibility: 0.70
+        compliance_alignment: 0.80
+        user_impact: 0.70
+        effort: 0.65
+    notes: 'Self-improving AI assistant (NousResearch) with learning loop, persistent memory via FTS5 session history
+      + LLM summarization, autonomous skill creation, multi-platform messaging (Telegram, Discord, Slack,
+      CLI), 40+ tool support + MCP, and Honcho dialectic user modeling. Six terminal backends (local/Docker/SSH/Modal).
+      Relevant patterns: FTS5 full-text session search for tools/memory/hybrid_search.py, skill auto-generation
+      for Continuous Harness, multi-platform messaging for ICDEV notifications beyond current PushNotification
+      MCP.'
+
+  - repo: refactoringhq/tolaria
+    subsystem: rag_knowledge_graph
+    category: developer_experience
+    watch: [stars]
+    adaptation:
+      title: Tolaria — Offline Git-Backed Markdown Knowledge Vault
+      gotcha_layer: context
+      target: context/ directory structure — air-gap vault export patterns
+      status: pending
+      scoring:
+        novelty: 0.55
+        feasibility: 0.75
+        compliance_alignment: 0.75
+        user_impact: 0.55
+        effort: 0.75
+    notes: 'Desktop app (Tauri + React) for managing markdown-based knowledge bases. Files-first with git, plain
+      markdown + YAML frontmatter, AI-agnostic (Claude, Codex, Gemini), keyboard-centric UI. Types as navigation
+      (not enforcement). Offline and air-gap-safe by design. ICDEV already has tools/knowledge/ canvas; Tolaria''s
+      git-backed vault pattern and keyboard-shortcut philosophy could improve knowledge authoring DX and offline
+      export for IL5/IL6 environments. Adaptation: context/ + hardprompts/ directory structure patterns; air-gap
+      vault export.'
+
+  - repo: leonxlnx/taste-skill
+    subsystem: design_quality
+    category: ai_tooling
+    watch: [stars]
+    adaptation:
+      title: Taste Skill — Parametric Design-Quality Instruction Skills
+      gotcha_layer: hardprompt
+      target: hardprompts/design_quality_instructions.md
+      status: pending
+      scoring:
+        novelty: 0.65
+        feasibility: 0.70
+        compliance_alignment: 0.75
+        user_impact: 0.55
+        effort: 0.80
+    notes: 'Framework for reusable agent skills that improve AI-generated UI quality. Modular skill architecture
+      (npx skills add), tunable parameters (DESIGN_VARIANCE, MOTION_INTENSITY, VISUAL_DENSITY), image-first
+      workflows, multi-agent portability via SKILL.md format (works across ChatGPT, Codex, Cursor, Claude).
+      Anti-generic output research with parametric dials. Adaptation: hardprompts/ directory — add design-quality
+      instruction templates for Creative canvas and Slides generator to improve generated UI/presentation
+      code quality.'
+
+  - repo: ruvnet/RuView
+    subsystem: embedded
+    category: infrastructure
+    watch: [stars]
+    adaptation:
+      title: RuView — WiFi CSI Human Sensing and Edge Inference
+      gotcha_layer: arg
+      target: tools/monitor/ — self-supervised anomaly patterns (future)
+      status: pending
+      scoring:
+        novelty: 0.50
+        feasibility: 0.30
+        compliance_alignment: 0.60
+        user_impact: 0.30
+        effort: 0.25
+    notes: 'ESP32-based passive WiFi Channel State Information sensing for occupancy detection, vital signs, and
+      movement — no cameras or wearables. Self-supervised learning (ADR-024), 8KB quantized edge model, Ed25519
+      witness chain attestation. 105-module inference catalog (health, retail, industrial). Low immediate
+      ICDEV relevance: hardware-dependent, out-of-scope for current roadmap. Potential future value if ICDEV
+      integrates IoT monitoring for data-center occupancy or equipment health. Self-supervised anomaly detection
+      patterns may be relevant to MONITOR canvas. Defer unless IoT use case confirmed.'
+
+  - repo: modem-dev/sideshow
+    subsystem: agent_runtime
+    category: ui
+    watch: [stars]
+    adaptation:
+      title: Sideshow — Real-Time Agent Output Rendering Panel
+      gotcha_layer: tool
+      target: icdev/tools/ace/ — real-time output rendering + threaded feedback for ACE coworker canvas
+      status: pending
+      scoring:
+        novelty: 0.85
+        feasibility: 0.75
+        compliance_alignment: 0.80
+        user_impact: 0.90
+        effort: 0.65
+    notes: 'Live browser view for coding agents: renders HTML, Mermaid diagrams, diffs, code, and images directly
+      from agent stdout in real-time. Threaded user feedback lets agents iterate without full re-runs. MCP-integrated,
+      built on Solid.js + Hono + Cloudflare Workers. Key patterns: composable output cards, streaming render
+      pipeline, in-browser feedback threading. Adaptation: ACE /coworker canvas needs real-time visual output
+      rendering and a threaded feedback loop for agent refinement cycles.'
+
+  - repo: yeet-src/httpinspect
+    subsystem: observability
+    category: observability
+    watch: [stars]
+    adaptation:
+      title: httpinspect — Zero-Instrumentation eBPF HTTP Monitor
+      gotcha_layer: tool
+      target: icdev/tools/monitoring/ — zero-instrumentation HTTP capture pattern for air-gapped IL6/SIPR monitoring
+        strategy
+      status: pending
+      scoring:
+        novelty: 0.80
+        feasibility: 0.55
+        compliance_alignment: 0.70
+        user_impact: 0.75
+        effort: 0.50
+    notes: 'Terminal dashboard for live inter-service HTTP traffic captured at kernel level via eBPF/TCX — no proxy,
+      no app modifications, no restarts. Requires Linux 6.6+ with BTF and Clang. Real-time endpoint metrics
+      (request rate, latency, status codes) in a `top`-like TUI. Adaptation: ICDEV monitoring canvas zero-instrumentation
+      layer for IL5/IL6 air-gapped deployments where inserting a proxy is prohibited; informs ZTA network
+      segmentation canvas traffic analysis without sidecar overhead.'
+
+  - repo: Forward-Future/loopy
+    subsystem: agent_runtime
+    category: workflow
+    watch: [stars]
+    adaptation:
+      title: Loopy — Structured Feedback-Driven Workflow Loops for AI Agents
+      gotcha_layer: tool
+      target: icdev/tools/llm/agent_loop.py — structured loop stages with feedback; goals/manifest.md — before/after
+        loop examples; kanban starter card library
+      status: pending
+      scoring:
+        novelty: 0.75
+        feasibility: 0.90
+        compliance_alignment: 0.90
+        user_impact: 0.85
+        effort: 0.80
+    notes: 'Platform providing named ''loops'' — iterative, feedback-driven workflows with explicit before/after
+      examples and measurable success criteria. Agents run a loop, receive structured feedback, and refine
+      until criteria are met. Safety-first design: no auto-scheduling, no production changes without HITL
+      gate. Skill distribution via npx. Registry-driven loop catalog. Supports Codex, Cursor, Claude Code.
+      Adaptation: agent_loop.py structured refinement stages with named loop taxonomy; goals/manifest.md before/after
+      examples; kanban starter card library.'
+
+  - repo: shadcn-labs/agentcn
+    subsystem: developer_portal
+    category: dx
+    watch: [stars]
+    adaptation:
+      title: agentcn — Zero-Config AI Agent Templates (shadcn model)
+      gotcha_layer: tool
+      target: icdev/tools/dashboard/ — zero-config UX onboarding; args/component_registry.yaml — component recipe model;
+        tools/dev_profile/ — cursor-import-bridge recipe distribution
+      status: pending
+      scoring:
+        novelty: 0.70
+        feasibility: 0.85
+        compliance_alignment: 0.75
+        user_impact: 0.80
+        effort: 0.75
+    notes: 'Open-source collection of production-ready AI agent templates distributed as CLI recipes with zero install
+      configuration. Each template ships complete: instructions, tool definitions, workflow steps. IDE integrations
+      for Cursor and VS Code. Built on Next.js + TypeScript + shadcn/ui + Radix. ''npx agentcn add <name>''
+      model. Adaptation: simplify ICDEV /initialize to 3 commands; kanban starter card library modeled on
+      recipe distribution; Cursor dev-profile bridge improvement.'
+
+  - repo: TriliumNext/Trilium
+    subsystem: rag_knowledge_graph
+    category: knowledge
+    watch: [stars]
+    adaptation:
+      title: Trilium — Hierarchical Knowledge Base with Relation Maps & Attribute System
+      gotcha_layer: tool
+      target: icdev/tools/knowledge/ + tools/second_brain/ — hierarchical cloning model, typed attribute system, bidirectional
+        relation maps; icdev/tools/dic/ — per-document encryption pattern
+      status: pending
+      scoring:
+        novelty: 0.80
+        feasibility: 0.80
+        compliance_alignment: 0.85
+        user_impact: 0.90
+        effort: 0.70
+    notes: 'Open-source personal knowledge base (TypeScript/Node.js) scaling to 100k+ notes. Key patterns: hierarchical
+      cloning (single note placed in multiple tree locations simultaneously), typed attribute system (labels
+      + typed relation types), bidirectional relation maps, per-note AES encryption, self-hosted sync server,
+      REST API + JS scripting automation, Excalidraw canvas sketching, Leaflet geo maps. Adaptation: Second
+      Brain canvas note-cloning model for multi-context entity placement; KG entity multi-parent hierarchy;
+      DIC per-document encryption; /components-map relation map visualization; RAG index sharding strategy
+      for large corpora.'
 
 # Scout frequency: daily 07:00 UTC
 # Output: intel briefs in data/genesis/reports/scout-YYYY-MM-DD.md

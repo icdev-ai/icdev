@@ -17,7 +17,8 @@
 | Innovation Config | args/innovation_config.yaml | Configuration: sources, scoring weights, triage rules, scheduling, competitive intel, standards monitoring | (data) | YAML config |
 | Kanban Promoter | tools/innovation/kanban_promoter.py | Promote approved/suggested innovation signals into kanban_tasks (status=suggested) with source_prediction_id provenance (OPT-60) | --triage-result, --limit, --min-innovation-score, --dry-run, --list, --promote-id, --json | Summary JSON + inserted task ids |
 | Innovation Promoter Config | args/innovation_promoter.yaml | Config for kanban_promoter: triage states, score gate, priority thresholds | (data) | YAML config |
-| External Repo Seeder | tools/innovation/seed_external_repos.py | Seed external GitHub repos as innovation signals for technology scouting (source_type=external_repo_scouting) | --register-all, --status, --score-all, --json | Registered signal ids + scores |
+| External Repo Seeder | tools/innovation/seed_external_repos.py | Seed external GitHub repos as innovation signals for technology scouting (source_type=external_repo_scouting). Targets read from context/genesis/competitors.yaml — every entry with an `adaptation` block; add a repo there, not here (xbm-list-02) | --register-all, --status, --score-all, --json | Registered signal ids + scores |
+| Scout Watchlist | context/genesis/competitors.yaml | Single source for both the Genesis scout reflex (what to poll) and the External Repo Seeder (what to register). An `adaptation` block marks a target as an adaptation candidate; `notes` is the signal description verbatim, so rewording it changes the dedup hash | (data) | YAML config |
 
 
 ## DIC Integration (Epic D — dic-syn-ri)
