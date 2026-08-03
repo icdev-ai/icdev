@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS fa_missions (
     order_idx INTEGER NOT NULL DEFAULT 0,
     difficulty TEXT DEFAULT 'intermediate',
     estimated_minutes INTEGER DEFAULT 30,
+    -- aca-trn-03: what the learner will be able to do afterwards. NULL where the
+    -- authored content states none — never a synthesised stand-in, because this is
+    -- the field a compliance audit reads. Extracted by
+    -- content_loader.extract_learning_objective; migration 20260803005919 backfills.
+    learning_objective TEXT,
     source_credit TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'active',
@@ -963,17 +968,22 @@ def upsert_mission(data: dict) -> int:
     conn.execute(
         """INSERT INTO fa_missions
            (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
-            prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit,
+            learning_objective)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(slug) DO UPDATE SET
              title=excluded.title, tagline=excluded.tagline,
-             xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
+             xp_reward=excluded.xp_reward, order_idx=excluded.order_idx,
+             learning_objective=COALESCE(excluded.learning_objective,
+                                         fa_missions.learning_objective)""",
         (data["slug"], data["title"], data.get("tagline", ""),
          data.get("tier", 1), data.get("topic", ""), data.get("role_filter", "all"),
          data.get("mission_type", "coding"), data.get("xp_reward", 200),
          json.dumps(data.get("prereqs", [])), data.get("order_idx", 0),
          data.get("difficulty", "intermediate"), data.get("estimated_minutes", 30),
-         data.get("source_credit", "")),
+         data.get("source_credit", ""),
+         # aca-trn-03: NULL, not "", so an unstated objective is one state.
+         (data.get("learning_objective") or None)),
     )
     conn.commit()
     row = conn.execute("SELECT id FROM fa_missions WHERE slug=%s", (data["slug"],)).fetchone()

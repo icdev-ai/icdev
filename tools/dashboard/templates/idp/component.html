@@ -20,9 +20,16 @@
     {% else %}
       <span class="badge bg-secondary">unranked</span>
     {% endif %}
-    {% if detail.score is not none %}
+    {% if detail.assessed %}
+      <span class="badge {{ detail.grade_class }} fs-6">Grade {{ detail.letter_grade }}</span>
       <span class="badge bg-primary">{{ detail.score | round(0) | int }}%</span>
+    {% else %}
+      {# No applicable rule ran. Saying "F / 0%" here would invent a finding. #}
+      <span class="badge bg-secondary fs-6" title="No rule in this scorecard applied to this component">{{ detail.unassessed_label }}</span>
     {% endif %}
+    <span class="small text-muted">
+      owner: {% if detail.facts.owner %}{{ detail.facts.owner }}{% else %}<span class="text-warning">unowned</span>{% endif %}
+    </span>
     {% if detail.facts.route %}
       <a href="{{ detail.facts.route }}" class="btn btn-sm btn-outline-primary ms-auto">Open {{ detail.facts.route }} &rarr;</a>
     {% endif %}
@@ -60,15 +67,31 @@
     </div>
 
     <div class="col-lg-7">
-      <div class="card mb-3">
-        <div class="card-header py-2"><strong>Scorecard rules</strong></div>
+      {# One card per dimension. Every rule under it carries the query that
+         produced its verdict and a link that re-runs that query live, so no
+         score on this page has to be taken on trust. #}
+      {% for dim in detail.dimensions %}
+      <div class="card mb-3" id="dim-{{ dim.key }}">
+        <div class="card-header py-2 d-flex align-items-center flex-wrap gap-2">
+          <strong>{{ dim.label }}</strong>
+          {% if dim.assessed %}
+            <span class="badge {{ dim.grade_class }}">{{ dim.letter_grade }}</span>
+            <span class="badge bg-primary">{{ dim.score | round(0) | int }}%</span>
+            <span class="text-muted small">{{ dim.earned_weight }}/{{ dim.total_weight }} weight</span>
+          {% else %}
+            <span class="badge bg-secondary" title="No rule in this dimension applies to this component">{{ detail.unassessed_label }}</span>
+          {% endif %}
+          {% if dim.failure_count %}
+            <span class="badge bg-danger ms-auto">{{ dim.failure_count }} failing</span>
+          {% endif %}
+        </div>
         <div class="card-body p-0">
           <table class="table table-sm mb-0 align-middle">
             <tbody>
-              {% for outcome in detail.outcomes %}
+              {% for outcome in dim.outcomes %}
               <tr>
-                <td style="width:110px;">
-                  <span class="badge {{ {'pass':'bg-success','fail':'bg-danger','exempt':'bg-info text-dark'}.get(outcome.status, 'bg-secondary') }}">
+                <td style="width:110px;" class="align-top pt-2">
+                  <span class="badge {{ outcome.status_class }}">
                     {{ 'n/a' if outcome.status == 'not_applicable' else outcome.status }}
                   </span>
                 </td>
@@ -76,15 +99,51 @@
                   <strong>{{ outcome.title or outcome.identifier }}</strong>
                   <div class="text-muted small font-monospace">{{ outcome.identifier }}{% if outcome.level %} &middot; gates {{ outcome.level }}{% endif %} &middot; weight {{ outcome.weight }}</div>
                   {% if outcome.message %}<div class="small text-danger mt-1">{{ outcome.message }}</div>{% endif %}
+                  {% if outcome.evidence %}
+                  <details class="small mt-1">
+                    <summary class="text-muted" style="cursor:pointer;">evidence</summary>
+                    <div class="mt-1">
+                      <div class="text-muted" style="font-size:.75rem;">query</div>
+                      <div class="font-monospace" style="font-size:.75rem; word-break:break-all;">{{ outcome.evidence.expression }}</div>
+                      {% if outcome.evidence.filter_expression %}
+                        <div class="text-muted mt-1" style="font-size:.75rem;">applies to</div>
+                        <div class="font-monospace" style="font-size:.75rem; word-break:break-all;">{{ outcome.evidence.filter_expression }}</div>
+                      {% endif %}
+                      {% if outcome.evidence.observed %}
+                        <div class="text-muted mt-1" style="font-size:.75rem;">observed for {{ detail.key }}</div>
+                        {% for field, value in outcome.evidence.observed | dictsort %}
+                          <div class="font-monospace" style="font-size:.75rem;">{{ field }} = {{ value }}</div>
+                        {% endfor %}
+                      {% endif %}
+                      {% if outcome.evidence.note %}
+                        <div class="text-muted mt-1" style="font-size:.75rem;">source: {{ outcome.evidence.note }}</div>
+                      {% endif %}
+                      <a href="{{ outcome.evidence_url }}" class="d-inline-block mt-1" style="font-size:.75rem;">
+                        Re-run this check &rarr;
+                      </a>
+                    </div>
+                  </details>
+                  {% endif %}
                 </td>
               </tr>
               {% else %}
-              <tr><td class="text-muted small p-3">Not graded by this scorecard.</td></tr>
+              <tr><td class="text-muted small p-3" colspan="2">No rules in this dimension.</td></tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
       </div>
+      {% else %}
+      <div class="card mb-3">
+        <div class="card-body text-muted small">
+          Not graded by this scorecard.
+          {% if not detail.graded %}
+            <code>{{ detail.key }}</code> produced no result row &mdash; that is
+            <em>{{ detail.unassessed_label | lower }}</em>, not a failing grade.
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
 
       <div class="card">
         <div class="card-header py-2">
@@ -126,7 +185,9 @@
   </div>
 
   <div class="text-muted small mt-3">
-    JSON: <code>/idp/api/component/{{ detail.key }}</code>
+    Facts from <code>{{ detail.adapter_module }}</code>; rules from <code>{{ detail.scorecard_source }}</code>.
+    JSON: <code>/idp/api/component/{{ detail.key }}</code>,
+    <code>/idp/api/evidence?component={{ detail.key }}&amp;rule=&lt;id&gt;</code>.
   </div>
   {% endif %}
 </div>

@@ -46,6 +46,13 @@
 .fa-step-header { margin-bottom:1.5rem; }
 .fa-step-num { font-size:.65rem; color:var(--fa-orange); text-transform:uppercase; letter-spacing:.15em; margin:0 0 .3rem; }
 .fa-step-title { font-size:1.4rem; font-weight:800; margin:0 0 .8rem; }
+/* aca-trn-03: sits above the step content for the whole run, so it is calm —
+   a tinted panel with a cyan rule, matched to the tier-locked notice below it. */
+.fa-mission-objective { background:#101018; border:1px solid #2a2a3a;
+  border-left:3px solid var(--fa-cyan); border-radius:8px; padding:.85rem 1.1rem;
+  margin-bottom:1.2rem; font-size:.9rem; line-height:1.5; color:var(--text-primary); }
+.fa-mission-objective-label { font-size:.62rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--fa-cyan); opacity:.85; margin-bottom:.3rem; }
 .fa-step-content {
   background:var(--fa-card); border:1px solid var(--fa-border); border-radius:10px;
   padding:1.5rem; margin-bottom:1.2rem; line-height:1.7;
@@ -169,6 +176,18 @@
   {# role="region", not "main": base.html already declares role="main" on
      #main-content, and a second main landmark is itself a violation. #}
   <div class="fa-main" id="step-main" tabindex="-1" role="region" aria-label="Step content">
+    {# aca-trn-03: state the outcome before the first step, not after the last one.
+       The sidebar gives tier, type, minutes and XP — all cost — and a learner
+       started step 1 without ever being told what the mission is for. Placed above
+       the tier-locked notice deliberately: knowing what a mission teaches is what
+       makes "readable but earns no XP" a decision the learner can actually make.
+       Omitted where the content states no objective (NULL), never synthesised. #}
+    {% if mission.learning_objective %}
+    <div class="fa-mission-objective">
+      <div class="fa-mission-objective-label">Learning objective</div>
+      {{ mission.learning_objective }}
+    </div>
+    {% endif %}
     {% if tier_locked %}
     {# aca-ux-04: locked-but-readable. The content below is fully readable; the
        server refuses credit (api_step_submit), so state that plainly rather than

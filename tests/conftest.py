@@ -575,6 +575,25 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     previous_hash TEXT,
     signature TEXT
 );
+-- ars-appr-01 / migration 342. Append-only: every approval-gate verdict for an
+-- irreversible or unenumerated agent tool call, with the actor and the reason.
+CREATE TABLE IF NOT EXISTS agent_approval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decided_at TEXT NOT NULL,
+    session_id TEXT,
+    actor TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    tier TEXT NOT NULL,
+    rule TEXT,
+    decision TEXT NOT NULL,
+    reason TEXT,
+    mode TEXT,
+    arg_keys TEXT,
+    input_sha256 TEXT,
+    detail TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,

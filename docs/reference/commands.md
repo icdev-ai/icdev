@@ -331,6 +331,46 @@ finally:
 
 ---
 
+## Agent Approval Gate — Irreversible Action Confirmation (ars-appr-01)
+
+Classifies an agent tool call by **reversibility** and halts the irreversible
+ones for confirmation. Policy: `args/agent_approval_policy.yaml`.
+
+```bash
+# Classify a tool call (exit 0; read the JSON for the verdict)
+python tools/agent_runtime/approval_gate.py --classify git_push --json
+python tools/agent_runtime/approval_gate.py --classify run_command \
+    --input '{"command": "git push --force"}' --json
+python tools/agent_runtime/approval_gate.py --list-policy --json
+```
+
+Tiers: `reversible` and `recoverable` run unattended; `irreversible` and
+`unknown` halt. **A tool must be named in the policy to run unattended** —
+`default_tier` is `unknown` and `unknown` requires approval, so an allowlist gap
+fails closed rather than open. A missing or unreadable policy file makes every
+tool `unknown`.
+
+Wire it into a loop with `approval_gate=True`, or set the env var:
+
+```python
+from icdev.tools.llm.agent_loop import run_agent_loop
+
+run_agent_loop(router, system_prompt=..., user_prompt=..., tools=..., 
+               tool_handlers=..., approval_gate=True)      # or a custom hook
+```
+
+```bash
+export ICDEV_AGENT_APPROVAL_MODE=enforce   # enforce (default) | dry_run | off
+export ICDEV_APPROVAL_ACTOR="jane.doe"     # recorded with every decision
+```
+
+Every approval **and** denial is appended to `agent_approval_log` (migration
+342, append-only) with the actor and the reason. Argument **values are never
+stored** — only argument key names and a SHA-256 of the input, because tool
+arguments can carry CUI. `dry_run` and `off` still write the audit row.
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
@@ -4017,21 +4057,45 @@ surfaces for every other canvas.
 | `/idp/` | Ladder, rule coverage, catalog, and the portal's own grade |
 | `/idp/catalog` | Same page, catalog section |
 | `/idp/scorecards` | Same page, scorecard section |
-| `/idp/component/<key>` | One component: facts, per-rule outcomes, 8-point breakdown |
+| `/idp/component/<key>` | One component: facts, per-dimension cards, 8-point breakdown |
+| `/idp/evidence?component=<key>&rule=<id>` | Why one rule landed as it did, re-derived live (idp-ui-01) |
 | `GET /idp/api/catalog` | JSON catalog (`?scorecard=`, `?refresh=1`) |
 | `GET /idp/api/scorecard` | JSON scorecard report |
 | `GET /idp/api/component/<key>` | JSON component detail |
+| `GET /idp/api/evidence?component=<key>&rule=<id>` | JSON rule evidence |
 | `POST /idp/api/iqe-query` | IQE natural-language query over `idp.components` |
 
 The view models are a library, not a CLI — import them:
 
 ```python
-from tools.idp.portal import portal_overview, component_detail, self_check
+from tools.idp.portal import (
+    portal_overview, component_detail, rule_evidence, self_check,
+)
 
 portal_overview()               # everything /idp renders
-component_detail("ndc")         # one component's facts, rules and 8 points
+component_detail("ndc")         # facts, per-dimension scores, evidence links
+rule_evidence("ndc", "e2e-spec")  # re-runs that rule live and returns its sources
 self_check()["completeness"]    # the portal's own 8-point breakdown
 ```
+
+### Catalog and scorecards (idp-ui-01)
+
+Every component is listed with its owner, ladder level and A—F letter grade,
+and every grade decomposes into per-dimension scores that link to the evidence
+behind them.
+
+```bash
+# Per-dimension columns and letter grades in the CLI table
+python tools/idp/scorecard.py --scorecard component-readiness
+
+# One component's dimensions, grade, and per-rule evidence
+python tools/idp/scorecard.py --scorecard component-readiness --component ndc --json
+```
+
+A component (or a single dimension) that no rule applies to reports
+`score: null`, `letter_grade: null`, `assessed: false` and renders as
+**"Not assessed"** — never as `0%` or `F`. A measured zero still reads as a
+zero; the two are different claims and the surface keeps them apart.
 
 Any rule expression is a standalone IQE query, so it can be run by hand against
 the same collection the scorecard grades:

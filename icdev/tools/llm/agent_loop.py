@@ -61,6 +61,7 @@ from __future__ import annotations
 import concurrent.futures as _futures
 import json
 import math
+import os
 import threading
 import uuid as _uuid
 from collections import deque as _deque
@@ -499,6 +500,66 @@ def _build_read_only_set(tools: list[dict[str, Any]]) -> set[str]:
     return read_only
 
 
+def _resolve_approval_gate(
+    approval_gate: "PreToolUseHook | bool | None",
+) -> "PreToolUseHook | None":
+    """Turn the ``approval_gate`` argument into a hook, or ``None`` (ars-appr-01).
+
+    ``True`` / env-enabled builds the default reversibility gate; a callable is
+    taken as-is; ``False`` disables it. See :func:`run_agent_loop` for why the
+    default is env-resolved rather than always-on.
+    """
+    if approval_gate is False:
+        return None
+    if callable(approval_gate):
+        return approval_gate
+    if approval_gate is None:
+        mode = (os.environ.get("ICDEV_AGENT_APPROVAL_MODE") or "").strip().lower()
+        if not mode or mode == "off":
+            return None
+    try:
+        from tools.agent_runtime.approval_gate import build_approval_hook
+
+        return build_approval_hook()
+    except Exception as exc:  # noqa: BLE001
+        # The gate was asked for and could not be built. Refusing every tool call
+        # is the fail-closed answer: an operator who set ICDEV_AGENT_APPROVAL_MODE
+        # did not ask for "run unsupervised if the gate is broken".
+        logger.error("agent_loop: approval gate unavailable, denying all tools: %s", exc)
+        # Bind the message now: Python unbinds `exc` at the end of the except
+        # block, so a closure over it raises NameError when the hook fires.
+        why = f"{type(exc).__name__}: {exc}"
+
+        def _deny(name: str, _input: dict[str, Any]) -> str:
+            return (
+                f"BLOCKED: the approval gate was requested but could not be loaded "
+                f"({why}), so {name} cannot be authorised. Fix the gate or unset "
+                "ICDEV_AGENT_APPROVAL_MODE."
+            )
+
+        return _deny
+
+
+def _compose_pre_tool_hooks(
+    *hooks: "PreToolUseHook | None",
+) -> "PreToolUseHook | None":
+    """Chain pre-tool hooks in order; the first non-empty block message wins."""
+    active = [h for h in hooks if h is not None]
+    if not active:
+        return None
+    if len(active) == 1:
+        return active[0]
+
+    def _chained(name: str, tool_input: dict[str, Any]) -> "str | None":
+        for hook in active:
+            msg = hook(name, tool_input)
+            if msg:
+                return msg
+        return None
+
+    return _chained
+
+
 # ---------------------------------------------------------------------------
 # Continuous Harness feed — record a codegen decision per loop run
 # ---------------------------------------------------------------------------
@@ -617,6 +678,7 @@ def run_agent_loop(
     on_pre_tool_use: PreToolUseHook | None = None,
     on_post_tool_use: PostToolUseHook | None = None,
     on_stop: StopHook | None = None,
+    approval_gate: PreToolUseHook | bool | None = None,
     max_total_tokens: int | None = None,
     max_cost_usd: float | None = None,
     context_window_tokens: int | None = None,
@@ -680,6 +742,26 @@ def run_agent_loop(
                        called after each tool execution for audit/sidecar use.
         on_stop:       Optional ``hook(result)`` called once when the loop ends,
                        regardless of exit reason, before returning to the caller.
+        approval_gate: Reversibility gate for irreversible tool calls
+                       (ars-appr-01). ``True`` builds the default gate from
+                       :func:`tools.agent_runtime.approval_gate.build_approval_hook`;
+                       a callable is used as-is (same contract as
+                       ``on_pre_tool_use``); ``False`` disables it. The default
+                       ``None`` resolves from ``ICDEV_AGENT_APPROVAL_MODE``: the
+                       gate is built when that env var is set to anything other
+                       than ``off``, and is otherwise absent.
+
+                       Absent-by-default is a deliberate, stated choice, not an
+                       oversight. Every existing caller passes its own tool
+                       vocabulary, and the gate's policy is fail-closed
+                       (unenumerated tool -> halt), so switching it on globally
+                       would deny every call in every caller that has not yet
+                       classified its tools. Turning it on is one env var; a
+                       runtime that executes real irreversible operations —
+                       ``tools/agent_runtime`` already gates its dispatch via
+                       :func:`tools.agent_runtime.safety.build_safety_gate` —
+                       must set it. When it runs, it composes *before*
+                       ``on_pre_tool_use``: the gate's block wins.
         max_total_tokens: Hard cap on cumulative input+output tokens across turns.
         max_cost_usd:     Hard cap on cumulative USD cost (when providers report it).
         context_window_tokens: Soft threshold; if message history exceeds this,
@@ -803,6 +885,13 @@ def run_agent_loop(
 
     # Build set of read-only tool names for parallel execution.
     _read_only_tools = _build_read_only_set(tools)
+
+    # Compose the approval gate (ars-appr-01) in front of the caller's own hook.
+    # The gate runs first so an irreversible call halts even when the caller's
+    # hook would have waved it through.
+    on_pre_tool_use = _compose_pre_tool_hooks(
+        _resolve_approval_gate(approval_gate), on_pre_tool_use
+    )
 
     # Assign a unique session ID so callers can persist and resume this loop.
     session_id = str(_uuid.uuid4())
