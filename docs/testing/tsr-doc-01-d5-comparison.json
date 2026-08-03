@@ -1,0 +1,345 @@
+{
+  "task": "tsr-doc-01-d5",
+  "before": {
+    "task": "tsr-doc-01-d2",
+    "commit": "de2332135",
+    "totals": {
+      "failed": 16,
+      "passed": 2539,
+      "skipped": 10,
+      "warning": 4,
+      "error": 1
+    },
+    "files_by_status": {
+      "FAIL": 7,
+      "PASS": 154,
+      "ERROR": 1
+    }
+  },
+  "after_run1": {
+    "commit": "b680c4077",
+    "totals": {
+      "passed": 2550,
+      "failed": 5,
+      "skipped": 10,
+      "warning": 4,
+      "error": 1
+    },
+    "files_by_status": {
+      "PASS": 157,
+      "FAIL": 4,
+      "ERROR": 1
+    },
+    "wall_clock_seconds": 1202.4
+  },
+  "after_run2": {
+    "commit": "b680c4077",
+    "totals": {
+      "passed": 2551,
+      "failed": 4,
+      "skipped": 10,
+      "warning": 4,
+      "error": 1
+    },
+    "files_by_status": {
+      "PASS": 158,
+      "FAIL": 3,
+      "ERROR": 1
+    },
+    "wall_clock_seconds": 1567.7
+  },
+  "selection_identical": true,
+  "files_of_interest": [
+    {
+      "file": "tests/browser/test_scope.py",
+      "d2": {
+        "file": "tests/browser/test_scope.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 51
+        },
+        "seconds": 3.67
+      },
+      "run1": {
+        "file": "tests/browser/test_scope.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 52
+        },
+        "seconds": 7.14
+      },
+      "run2": {
+        "file": "tests/browser/test_scope.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 52
+        },
+        "seconds": 3.72
+      }
+    },
+    {
+      "file": "tests/docmod/test_regen_quality_gate.py",
+      "d2": {
+        "file": "tests/docmod/test_regen_quality_gate.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 2,
+          "passed": 8
+        },
+        "seconds": 3.58
+      },
+      "run1": {
+        "file": "tests/docmod/test_regen_quality_gate.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 2,
+          "passed": 8
+        },
+        "seconds": 9.08
+      },
+      "run2": {
+        "file": "tests/docmod/test_regen_quality_gate.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 2,
+          "passed": 8
+        },
+        "seconds": 4.51
+      }
+    },
+    {
+      "file": "tests/genesis_auto/test_extractors.py",
+      "d2": {
+        "file": "tests/genesis_auto/test_extractors.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 6,
+          "skipped": 10
+        },
+        "seconds": 2.79
+      },
+      "run1": {
+        "file": "tests/genesis_auto/test_extractors.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 6,
+          "skipped": 10
+        },
+        "seconds": 3.17
+      },
+      "run2": {
+        "file": "tests/genesis_auto/test_extractors.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 6,
+          "skipped": 10
+        },
+        "seconds": 3.26
+      }
+    },
+    {
+      "file": "tests/test_dic_re_enrich_metadata.py",
+      "d2": {
+        "file": "tests/test_dic_re_enrich_metadata.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 5
+        },
+        "seconds": 3.0
+      },
+      "run1": {
+        "file": "tests/test_dic_re_enrich_metadata.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 4
+        },
+        "seconds": 3.85
+      },
+      "run2": {
+        "file": "tests/test_dic_re_enrich_metadata.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 5
+        },
+        "seconds": 6.16
+      }
+    },
+    {
+      "file": "tests/test_dic_techwriter.py",
+      "d2": {
+        "file": "tests/test_dic_techwriter.py",
+        "rc": 1,
+        "status": "ERROR",
+        "counts": {
+          "passed": 28,
+          "error": 1
+        },
+        "seconds": 15.82
+      },
+      "run1": {
+        "file": "tests/test_dic_techwriter.py",
+        "rc": 1,
+        "status": "ERROR",
+        "counts": {
+          "passed": 28,
+          "error": 1
+        },
+        "seconds": 29.86
+      },
+      "run2": {
+        "file": "tests/test_dic_techwriter.py",
+        "rc": 1,
+        "status": "ERROR",
+        "counts": {
+          "passed": 28,
+          "error": 1
+        },
+        "seconds": 20.01
+      }
+    },
+    {
+      "file": "tests/test_dsyn_consistency.py",
+      "d2": {
+        "file": "tests/test_dsyn_consistency.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 15
+        },
+        "seconds": 2.89
+      },
+      "run1": {
+        "file": "tests/test_dsyn_consistency.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 16
+        },
+        "seconds": 3.23
+      },
+      "run2": {
+        "file": "tests/test_dsyn_consistency.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 16
+        },
+        "seconds": 6.77
+      }
+    },
+    {
+      "file": "tests/test_dsyn_patch_mode.py",
+      "d2": {
+        "file": "tests/test_dsyn_patch_mode.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 3,
+          "passed": 20
+        },
+        "seconds": 2.69
+      },
+      "run1": {
+        "file": "tests/test_dsyn_patch_mode.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 23
+        },
+        "seconds": 3.39
+      },
+      "run2": {
+        "file": "tests/test_dsyn_patch_mode.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 23
+        },
+        "seconds": 3.74
+      }
+    },
+    {
+      "file": "tests/test_idr_multi_source.py",
+      "d2": {
+        "file": "tests/test_idr_multi_source.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 18
+        },
+        "seconds": 2.83
+      },
+      "run1": {
+        "file": "tests/test_idr_multi_source.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 18
+        },
+        "seconds": 3.66
+      },
+      "run2": {
+        "file": "tests/test_idr_multi_source.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 1,
+          "passed": 18
+        },
+        "seconds": 3.68
+      }
+    },
+    {
+      "file": "tests/test_rted_conflict_detector.py",
+      "d2": {
+        "file": "tests/test_rted_conflict_detector.py",
+        "rc": 1,
+        "status": "FAIL",
+        "counts": {
+          "failed": 7,
+          "passed": 4
+        },
+        "seconds": 2.7
+      },
+      "run1": {
+        "file": "tests/test_rted_conflict_detector.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 11
+        },
+        "seconds": 3.81
+      },
+      "run2": {
+        "file": "tests/test_rted_conflict_detector.py",
+        "rc": 0,
+        "status": "PASS",
+        "counts": {
+          "passed": 11
+        },
+        "seconds": 4.07
+      }
+    }
+  ],
+  "passed_run1_failed_run2": []
+}
