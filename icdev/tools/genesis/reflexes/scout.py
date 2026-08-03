@@ -234,6 +234,8 @@ def _generate_brief(
             repo_anomalies = anomalies.get(repo, [])
 
             lines.append(f"### {repo}")
+            if item.get("subsystem"):
+                lines.append(f"- **Subsystem:** {item['subsystem']}")
             lines.append(f"- **Stars:** {stars:,}" if isinstance(stars, int) else f"- **Stars:** {stars}")
             if lang:
                 lines.append(f"- **Language:** {lang}")
@@ -291,7 +293,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         info = _get_repo_info(repo, description_max_chars=desc_max, timeout=api_timeout)
         if not info:
             errors += 1
-            targets_data.append({"repo": repo, "category": target.get("category", ""), "info": {}, "error": True})
+            targets_data.append(
+                {
+                    "repo": repo,
+                    "category": target.get("category", ""),
+                    "subsystem": target.get("subsystem", ""),
+                    "info": {},
+                    "error": True,
+                }
+            )
             continue
 
         # Injection scan on external text fields (description, topics)
@@ -314,7 +324,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     [f["category"] for f in critical],
                 )
                 errors += 1
-                targets_data.append({"repo": repo, "category": target.get("category", ""), "info": {}, "error": True})
+                targets_data.append(
+                {
+                    "repo": repo,
+                    "category": target.get("category", ""),
+                    "subsystem": target.get("subsystem", ""),
+                    "info": {},
+                    "error": True,
+                }
+            )
                 continue
 
         release = None
@@ -337,6 +355,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             {
                 "repo": repo,
                 "category": target.get("category", ""),
+                "subsystem": target.get("subsystem", ""),
                 "info": info,
                 "release": release,
             }

@@ -4,94 +4,337 @@
 # These repos are monitored for: new releases, star velocity,
 # architectural patterns, and capability gaps.
 #
+# This list is the *named-target* half of ICDEV's external intelligence.
+# The other half — GitHub trending, issues and discussions — lives in
+# args/innovation_config.yaml under `sources.github`.  The two are
+# complementary (curated watchlist vs. undirected discovery), NOT duplicates.
+# Do not merge them.
+#
+# Every target carries a `subsystem:` key naming the ICDEV subsystem it
+# benchmarks, so a scout finding can be routed to an owner.  Values are drawn
+# from the `subsystems:` legend below, which follows
+# docs/research/external-benchmark-map.md.
+#
 # Classification: CUI // SP-CTI
 
+# ── Subsystem legend — where a finding gets routed ──────────────────
+# Keys 1-10 are the ten major subsystems of the external benchmark map.
+# The two trailing keys cover pre-existing targets that the map does not
+# scope, so that no entry is left untagged.
+subsystems:
+  developer_portal:
+    benchmark_map_section: 1
+    verdict: gap
+    routes_to: "args/component_registry.yaml, tools/awareness/, developer_scorecards"
+  observability:
+    benchmark_map_section: 2
+    verdict: ahead
+    routes_to: "tools/observability/, OHC canvas"
+  agent_runtime:
+    benchmark_map_section: 3
+    verdict: parity_with_named_gaps
+    routes_to: "tools/agent/, tools/workflow_hitl/, DWO"
+  security_ops:
+    benchmark_map_section: 4
+    verdict: gap
+    routes_to: "tools/strategos/, tools/security/, tools/supply_chain/"
+  rag_kg:
+    benchmark_map_section: 5
+    verdict: parity
+    routes_to: "tools/rag/, tools/knowledge_graph/"
+  compliance_ato:
+    benchmark_map_section: 6
+    verdict: ahead
+    routes_to: "tools/compliance/, OSCAL toolchain"
+  delivery_pipeline:
+    benchmark_map_section: 7
+    verdict: ahead_on_concept
+    routes_to: "tools/kanban/, tools/cicd/"
+  data_lineage:
+    benchmark_map_section: 8
+    verdict: gap
+    routes_to: "tools/data_canvas/"
+  evaluation:
+    benchmark_map_section: 9
+    verdict: gap
+    routes_to: "tools/evaluation/"
+  iac:
+    benchmark_map_section: 10
+    verdict: parity
+    routes_to: "tools/deployment/, IDC canvas"
+  llm_runtime:
+    benchmark_map_section: null
+    verdict: not_benchmarked
+    routes_to: "tools/llm/"
+  embedded_rtos:
+    benchmark_map_section: null
+    verdict: not_benchmarked
+    routes_to: "SparkPilot"
+
 targets:
-  # ── Autonomous AI / Agent Systems ────────────────────────────────
-  - repo: karpathy/autoresearch
-    category: autonomous_research
-    watch: [releases, stars, readme_changes]
-    notes: "Autoresearch pattern — tight experiment loops"
+  # ── 1. Developer portal / catalog — GAP ──────────────────────────
+  - repo: backstage/backstage
+    category: platform_engineering
+    subsystem: developer_portal
+    watch: [releases, stars]
+    notes: "Internal developer portal — golden path pattern. Open-source catalog framework the commercial scorecard products layer on top of."
+
+  - repo: port-labs/ocean
+    category: platform_engineering
+    subsystem: developer_portal
+    watch: [releases, stars]
+    notes: "Port's open-source integration framework — the trackable half of Port. The portal product itself is commercial SaaS; see manual_review."
+
+  # ── 2. Observability / LLM telemetry — AHEAD ─────────────────────
+  - repo: open-telemetry/semantic-conventions
+    category: observability
+    subsystem: observability
+    watch: [releases]
+    notes: "Source of the gen_ai.* GenAI semantic conventions ICDEV already emits. Watched for spec drift, not for adoption."
+
+  - repo: langfuse/langfuse
+    category: observability
+    subsystem: observability
+    watch: [releases, stars]
+    notes: "Open-source LLM observability leader, OTel-native. Primary external benchmark for tools/observability/."
+
+  - repo: cortexproject/cortex
+    category: observability
+    subsystem: observability
+    watch: [releases]
+    notes: "Horizontally scalable Prometheus long-term storage. Distinct from TheHive Cortex (security_ops) and cortex.io (developer_portal) — three unrelated projects share the name."
 
   - repo: SigNoz/signoz
     category: observability
+    subsystem: observability
     watch: [releases, stars]
     notes: "Open-source APM, traces, metrics, logs"
 
-  - repo: opentofu/opentofu
-    category: iac
+  - repo: mlflow/mlflow
+    category: mlops
+    subsystem: observability
     watch: [releases]
-    notes: "Terraform fork — IaC ecosystem evolution"
+    notes: "ML lifecycle management — benchmarks the OHC model-registry and experiment-tracking surface"
 
-  # ── Compliance & Security ────────────────────────────────────────
-  - repo: oscal-compass/compliance-trestle
-    category: compliance
+  # ── 3. Agent runtime & orchestration — PARITY, NAMED GAPS ────────
+  - repo: langchain-ai/langgraph
+    category: agent_framework
+    subsystem: agent_runtime
     watch: [releases, stars]
-    notes: "NIST OSCAL tooling — direct competitor for compliance automation"
+    notes: "State-graph agent brain — the inner loop half of the dominant 2026 two-layer pattern. Benchmarks agent_loop.py."
 
-  - repo: ComplianceAsCode/content
-    category: compliance
-    watch: [releases]
-    notes: "SCAP/STIG automation content"
+  - repo: temporalio/temporal
+    category: durable_execution
+    subsystem: agent_runtime
+    watch: [releases, stars]
+    notes: "Durable-execution muscle — the outer loop half of the two-layer pattern; benchmarks DWO. Also the external reference for delivery_pipeline (map §7)."
+
+  - repo: openai/openai-agents-python
+    category: agent_framework
+    subsystem: agent_runtime
+    watch: [releases, stars]
+    notes: "OpenAI Agents SDK — variant of state-graph orchestration; watched for approval-workflow and session-ceiling patterns (both named gaps)."
+
+  - repo: microsoft/autogen
+    category: agent_framework
+    subsystem: agent_runtime
+    watch: [releases, stars]
+    notes: "Multi-agent conversation framework"
+
+  - repo: anthropics/claude-code
+    category: agent_framework
+    subsystem: agent_runtime
+    watch: [releases, stars]
+    notes: "Our runtime platform"
+
+  - repo: karpathy/autoresearch
+    category: autonomous_research
+    subsystem: agent_runtime
+    watch: [releases, stars, readme_changes]
+    notes: "Autoresearch pattern — tight experiment loops"
+
+  # ── 4. Security ops / threat analysis — GAP ──────────────────────
+  - repo: TheHive-Project/Cortex
+    category: security_operations
+    subsystem: security_ops
+    watch: [releases, stars]
+    notes: "39+ analyzers behind one REST API. The analyzer *contract* — declared observable types, per-analyzer rate limits, taxonomy-tagged reports — is what card `anz` adapts."
+
+  - repo: MISP/MISP
+    category: threat_intelligence
+    subsystem: security_ops
+    watch: [releases, stars]
+    notes: "Threat-intel sharing standard. Taxonomy alignment is the deferred half of map §4."
+
+  - repo: OpenCTI-Platform/opencti
+    category: threat_intelligence
+    subsystem: security_ops
+    watch: [releases, stars]
+    notes: "Structured CTI platform (STIX-native). Adjacent standard for making ICDEV threat output interoperable rather than bespoke."
 
   - repo: anchore/grype
     category: security
+    subsystem: security_ops
     watch: [releases]
     notes: "Vulnerability scanner for container images"
 
   - repo: aquasecurity/trivy
     category: security
+    subsystem: security_ops
     watch: [releases]
     notes: "Comprehensive security scanner"
 
-  # ── DevSecOps & Platform Engineering ─────────────────────────────
-  - repo: backstage/backstage
-    category: platform_engineering
+  # ── 5. RAG & knowledge graph — PARITY ────────────────────────────
+  - repo: run-llama/llama_index
+    category: rag
+    subsystem: rag_kg
     watch: [releases, stars]
-    notes: "Internal developer portal — golden path pattern"
+    notes: "Retrieval pipeline reference. ICDEV retrieval is at parity (38 modules); watched for pipeline patterns, not for adoption."
+
+  - repo: microsoft/graphrag
+    category: knowledge_graph
+    subsystem: rag_kg
+    watch: [releases, stars]
+    notes: "Community detection + hierarchical summarisation over graph edges. The adaptation is sequenced behind idp-cat-02, which creates the edges (kg_edges = 0 today)."
+
+  # ── 6. Compliance & ATO — AHEAD ──────────────────────────────────
+  - repo: oscal-compass/compliance-trestle
+    category: compliance
+    subsystem: compliance_ato
+    watch: [releases, stars]
+    notes: "NIST OSCAL reference tooling — closest external comparable. Map §6 found nothing worth adapting *from*; watched to hold that claim."
+
+  - repo: ComplianceAsCode/content
+    category: compliance
+    subsystem: compliance_ato
+    watch: [releases]
+    notes: "SCAP/STIG automation content"
+
+  # ── 7. Delivery pipeline — AHEAD ON CONCEPT ──────────────────────
+  - repo: argoproj/argo-workflows
+    category: devsecops
+    subsystem: delivery_pipeline
+    watch: [releases, stars]
+    notes: "Kubernetes-native pipelines. Named in map §7 alongside Temporal; neither closes the loop from detected gap to merged fix the way the kanban pipeline does."
 
   - repo: argoproj/argo-cd
     category: devsecops
+    subsystem: delivery_pipeline
     watch: [releases]
     notes: "GitOps continuous delivery"
 
+  # ── 8. Data quality & lineage — GAP ──────────────────────────────
+  - repo: OpenLineage/OpenLineage
+    category: data_lineage
+    subsystem: data_lineage
+    watch: [releases, stars]
+    notes: "Emerging lineage event spec. Emitting it would make the existing tools/data_canvas/ engines interoperable — the cheap win named in map §8."
+
+  - repo: datahub-project/datahub
+    category: data_catalog
+    subsystem: data_lineage
+    watch: [releases, stars]
+    notes: "Data catalog and governance. Benchmarks the data-mesh domain/product/contract model (dm_domains = 4 rows today)."
+
+  - repo: fivetran/great_expectations
+    category: data_quality
+    subsystem: data_lineage
+    watch: [releases, stars]
+    notes: "Declarative data quality. NOTE: moved from great-expectations/great_expectations after the Fivetran acquisition — the old slug 301s."
+
+  # ── 9. LLM evaluation & red teaming — GAP ────────────────────────
+  - repo: promptfoo/promptfoo
+    category: llm_evaluation
+    subsystem: evaluation
+    watch: [releases, stars]
+    notes: "Eval-as-config with CI gating. The recommended adaptation for map §9 — fits the args-over-code convention and the context/iqe/queries/ corpus pattern directly."
+
+  - repo: confident-ai/deepeval
+    category: llm_evaluation
+    subsystem: evaluation
+    watch: [releases, stars]
+    notes: "50+ research-backed metrics (faithfulness, relevance, safety). Benchmarks tools/evaluation/, the thinnest major subsystem measured (2 modules)."
+
+  - repo: Giskard-AI/giskard-oss
+    category: llm_evaluation
+    subsystem: evaluation
+    watch: [releases, stars]
+    notes: "LLM vulnerability scanning. NOTE: repo renamed from Giskard-AI/giskard — the old slug 301s."
+
+  # ── 10. IaC & infrastructure — PARITY ────────────────────────────
+  - repo: crossplane/crossplane
+    category: iac
+    subsystem: iac
+    watch: [releases, stars]
+    notes: "Control-plane IaC. Comparable coverage to the IDC canvas; nothing urgent to adapt per map §10."
+
+  - repo: bridgecrewio/checkov
+    category: iac
+    subsystem: iac
+    watch: [releases, stars]
+    notes: "IaC policy scanning. The policy-pack model is the one thing worth borrowing if IaC policy scanning becomes a priority."
+
+  - repo: opentofu/opentofu
+    category: iac
+    subsystem: iac
+    watch: [releases]
+    notes: "Terraform fork — IaC ecosystem evolution"
+
   - repo: kyverno/kyverno
     category: policy_as_code
+    subsystem: iac
     watch: [releases]
     notes: "Kubernetes-native policy engine"
 
-  # ── AI / ML / LLM Infrastructure ────────────────────────────────
+  # ── Not benchmarked by the map — pre-existing targets ────────────
   - repo: ollama/ollama
     category: llm_infrastructure
+    subsystem: llm_runtime
     watch: [releases, models]
     notes: "Local LLM runtime — our scanner-tier backbone"
 
-  - repo: mlflow/mlflow
-    category: mlops
-    watch: [releases]
-    notes: "ML lifecycle management"
-
-  # ── Embedded / IoT ──────────────────────────────────────────────
   - repo: espressif/esp-idf
     category: embedded
+    subsystem: embedded_rtos
     watch: [releases]
     notes: "ESP32 development framework"
 
   - repo: FreeRTOS/FreeRTOS
     category: rtos
+    subsystem: embedded_rtos
     watch: [releases]
     notes: "Core RTOS — SparkPilot foundation"
 
-  # ── Agent Frameworks ────────────────────────────────────────────
-  - repo: anthropics/claude-code
-    category: agent_framework
-    watch: [releases, stars]
-    notes: "Our runtime platform"
+# ── Manual review — benchmarks with no trackable repo ──────────────
+# Commercial products named in the benchmark map that publish no canonical
+# open-source repository.  The Scout Reflex does not read this block (it only
+# iterates `targets:`), and deliberately so: scraping a marketing site is not
+# worth building.  These are reviewed by hand on the stated cadence.
+manual_review:
+  - name: Cortex.io
+    subsystem: developer_portal
+    trackable: false
+    reason: "Commercial SaaS scorecard product — no open-source repo."
+    review: "https://docs.cortex.io/"
+    cadence: quarterly
+    notes: "Scorecard-as-code is the specific thing to adapt: ranked level ladders, weighted rules, per-rule exemptions with approval, evaluation windows. Their 2026 positioning is 'mission control for the AI software factory'. Tracked as card `idp`."
 
-  - repo: microsoft/autogen
-    category: agent_framework
-    watch: [releases, stars]
-    notes: "Multi-agent conversation framework"
+  - name: Port
+    subsystem: developer_portal
+    trackable: partial
+    reason: "Portal itself is commercial SaaS; only the integration framework is open source."
+    review: "https://docs.port.io/"
+    cadence: quarterly
+    notes: "The trackable half is port-labs/ocean in `targets:` above. No-code SaaS alternative to Backstage."
 
-# Scout frequency: daily 07:00 UTC
+  - name: OpsLevel
+    subsystem: developer_portal
+    trackable: false
+    reason: "Commercial SaaS scorecard product — no open-source repo."
+    review: "https://docs.opslevel.com/"
+    cadence: quarterly
+    notes: "Second scorecard product layered on Backstage. Same portal-only criticism as Cortex.io — surfaces a gap and waits for a human. ICDEV's execution layer is the differentiator."
+
+# Scout frequency: daily 10:30 UTC (args/genesis_config.yaml: reflexes.scout)
 # Output: intel briefs in data/genesis/reports/scout-YYYY-MM-DD.md
+# Benchmark map: docs/research/external-benchmark-map.md
