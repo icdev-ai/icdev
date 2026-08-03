@@ -594,39 +594,43 @@ def collect_nodes(
     return nodes
 
 
-def derive_edges(nodes: List[Node]) -> List[Edge]:
-    """Derive edges from a node list.
+def derive_graph(
+    nodes: List[Node], base: Optional[Path] = None
+) -> tuple[List[Node], List[Edge]]:
+    """Derive the relationship layer for a node list.
 
-    Scope (Phase 1d minimum):
-      * tool → tool_category : structural grouping (via extra.category)
-      * canvas_module → goal : goal markdown mentioning canvas name
-      * (more edge types in later phases)
+    Delegates to ``tools/awareness/edge_deriver.py``, which reads the evidence
+    already on disk — AST imports, ``CREATE TABLE`` DDL, ``@bp.route``
+    decorators, documented ``python tools/...`` commands and the component
+    registry — and returns both the edges and the endpoint nodes those edges
+    need (``migration`` / ``db_table`` / ``route`` / ``iqe_collection``).
+
+    Every edge records ``properties.derivation`` and ``properties.mechanical``
+    so a consumer can tell a parsed import from an inferred keyword match.
+
+    Imported lazily: edge_deriver imports this module for its Node/Edge types,
+    so a module-level import here would be circular.
     """
-    edges: List[Edge] = []
+    try:
+        from tools.awareness.edge_deriver import derive as _derive
+    except ImportError as exc:  # pragma: no cover -- slim installs
+        LOG.warning("edge_deriver unavailable, graph will have no edges: %s", exc)
+        return nodes, []
+    try:
+        return _derive(nodes, base=base or BASE_DIR)
+    except Exception as exc:  # pragma: no cover -- never wedge a scan on edges
+        LOG.error("edge derivation failed: %s", exc)
+        return nodes, []
 
-    # tool category edges (tool → tool_category as a virtual parent node).
-    # Phase 1d does not create tool_category nodes yet; deferred to a
-    # later sub-phase when the full 12-type taxonomy lands.
 
-    # canvas_module → goal: look for goal files that reference canvas names
-    canvas_nodes = [n for n in nodes if n.entity_type == "canvas_module"]
-    goal_nodes = [n for n in nodes if n.entity_type == "goal"]
-    for cm in canvas_nodes:
-        cm_keyword = cm.label.lower().replace("_", " ")
-        for g in goal_nodes:
-            title_l = g.label.lower()
-            if cm_keyword in title_l or cm.label.lower() in title_l:
-                edges.append(
-                    Edge(
-                        id=_edge_id(cm.id, g.id, "referenced_by_goal"),
-                        source_id=cm.id,
-                        target_id=g.id,
-                        relationship="referenced_by_goal",
-                        weight=0.5,
-                        properties={"inferred_by": "title_keyword_match"},
-                    )
-                )
+def derive_edges(nodes: List[Node], base: Optional[Path] = None) -> List[Edge]:
+    """Backward-compatible wrapper returning only the edges.
 
+    Callers that also need the derived endpoint nodes (routes, tables,
+    migrations, IQE collections) should use ``derive_graph``; edges pointing at
+    nodes this function discards will be filtered out at render time.
+    """
+    _, edges = derive_graph(nodes, base=base)
     return edges
 
 
@@ -705,10 +709,56 @@ def _upsert_edge(conn: Any, edge: Edge) -> None:
     )
 
 
+# Rows per transaction. Phase 1a committed per row so one bad row could not
+# wedge the rest; that cost one round-trip per row, which was invisible at
+# 2,432 nodes / 0 edges and is not once the graph carries five figures of
+# edges. Chunking keeps the resilience (a failed chunk is replayed row by row
+# so only the genuinely bad row is lost) at ~1/200th the round-trips.
+_UPSERT_CHUNK = 200
+
+
+def _upsert_chunked(conn: Any, items: List[Any], writer: Any, kind: str) -> int:
+    """Upsert `items` in chunks; on chunk failure replay it row by row.
+
+    Returns the number of rows that could not be written.
+    """
+    errors = 0
+    for start in range(0, len(items), _UPSERT_CHUNK):
+        chunk = items[start:start + _UPSERT_CHUNK]
+        try:
+            for item in chunk:
+                writer(conn, item)
+            conn.commit()
+            continue
+        except Exception as exc:
+            LOG.warning(
+                "%s chunk %d-%d failed (%s) — retrying row by row",
+                kind, start, start + len(chunk), exc,
+            )
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        for item in chunk:
+            try:
+                writer(conn, item)
+                conn.commit()
+            except Exception as exc:
+                LOG.error("%s upsert failed (%s): %s", kind, item.id, exc)
+                errors += 1
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+    return errors
+
+
 def persist(nodes: List[Node], edges: List[Edge]) -> Dict[str, Any]:
-    """Upsert nodes and edges to kg_nodes/kg_edges. Per-node commit
-    (Phase 1a resilience pattern) so one bad row does not wedge the
-    transaction for the rest.
+    """Upsert nodes and edges to kg_nodes/kg_edges.
+
+    Writes in transactions of ``_UPSERT_CHUNK`` rows; a chunk that raises is
+    rolled back and replayed one row at a time, so a single bad row is dropped
+    rather than taking the whole scan down with it.
     """
     if get_connection is None:
         return {"persisted": False, "error": "get_connection unavailable"}
@@ -727,29 +777,8 @@ def persist(nodes: List[Node], edges: List[Edge]) -> Dict[str, Any]:
         except Exception:
             pass
 
-    for node in nodes:
-        try:
-            _upsert_node(conn, node)
-            conn.commit()
-        except Exception as exc:
-            LOG.error("Node upsert failed (%s): %s", node.id, exc)
-            errors += 1
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-
-    for edge in edges:
-        try:
-            _upsert_edge(conn, edge)
-            conn.commit()
-        except Exception as exc:
-            LOG.error("Edge upsert failed (%s): %s", edge.id, exc)
-            errors += 1
-            try:
-                conn.rollback()
-            except Exception:
-                pass
+    errors += _upsert_chunked(conn, nodes, _upsert_node, "Node")
+    errors += _upsert_chunked(conn, edges, _upsert_edge, "Edge")
 
     try:
         _upsert_graph_row(conn, len(nodes), len(edges))
@@ -882,12 +911,17 @@ def scan(
     Scoped scans never prune (they only see part of the tree).
     """
     base = base or BASE_DIR
-    nodes = collect_nodes(base, scope=scope)
-    edges = derive_edges(nodes)
+    indexed = collect_nodes(base, scope=scope)
+    # derive_graph returns `indexed` plus the endpoint nodes the mechanical
+    # edges need (route / db_table / migration / iqe_collection); persist both
+    # or every edge pointing at one of them would dangle.
+    nodes, edges = derive_graph(indexed, base=base)
 
     summary: Dict[str, Any] = {
         "graph_id": GRAPH_ID,
         "nodes": len(nodes),
+        "indexed_nodes": len(indexed),
+        "derived_nodes": len(nodes) - len(indexed),
         "edges": len(edges),
         "enabled": sum(1 for n in nodes if n.enabled),
         "disabled": sum(1 for n in nodes if not n.enabled),

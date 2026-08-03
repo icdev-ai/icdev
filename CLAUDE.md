@@ -73,7 +73,11 @@ python tools/showcase/ai_canvas_demo_runner.py --scenario 1 --audience exec --js
 # synthetic_data_engine.py is a library (SyntheticDataEngine, DOMAINS) — import it, no CLI
 
 # Internal Awareness Engine (Phase 1-6, D-AWARE)
-python tools/awareness/component_indexer.py --scan --json        # Refresh kg-icdev-self-awareness nodes
+python tools/awareness/component_indexer.py --scan --json        # Refresh kg-icdev-self-awareness nodes + edges
+python tools/awareness/edge_deriver.py --derive --json           # Derive dependency edges (imports, DDL, routes, registry)
+python tools/awareness/edge_deriver.py --dependents tools/db/storage.py --json   # Blast radius: what breaks if this changes
+python tools/awareness/edge_deriver.py --dependencies tools/awareness/health_prober.py --depth 2
+python tools/awareness/edge_deriver.py --stats --json            # Edge counts by derivation method
 python tools/awareness/health_prober.py --run-all --json         # Probe routes, imports, coherence
 python tools/awareness/drift_detector.py --detect --json         # Detect regressions vs baseline
 python tools/awareness/gap_detector.py --detect --json           # Surface structural gaps
