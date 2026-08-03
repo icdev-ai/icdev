@@ -513,6 +513,10 @@ python tools/refactor/fix_swallowed_persistence.py --write --json
 python tools/refactor/fix_swallowed_persistence.py --write --path tools/govcon --path icdev/tools/govcon
 # The gate that fails the build if the pattern is reintroduced (fast + full tier)
 python tools/workflow/coherence_checker.py --check swallowed_persistence --json
+# Standalone CLI over the same detector — exit 0 clean, 1 violations, 2 bad path.
+# For a shell / pre-commit hook / air-gapped stage that cannot load the coherence harness.
+python tools/dev/check_swallowed_inserts.py
+python tools/dev/check_swallowed_inserts.py --path tools/govcon --json
 # Standalone check with file:line output — exit 0 clean, 1 violations, 2 detector missing
 python tools/dev/check_swallowed_inserts.py
 python tools/dev/check_swallowed_inserts.py --json
