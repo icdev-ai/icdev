@@ -91,8 +91,41 @@ def shadowed_migrations(migrations_dir: Path | None = None) -> list[dict[str, st
     return out
 
 
+def _split_entry(item: Any) -> tuple[str, str]:
+    """An allowlist item as (migration name, reason).
+
+    Two accepted shapes, so the file can carry its justification inline:
+
+        - 010_network_intelligence_schema                  # bare name, no reason
+        - 010_network_intelligence_schema: why it is safe  # name + reason
+
+    A one-key mapping rather than a parallel ``reasons:`` block, because a
+    parallel block drifts the moment an entry is added or renamed and then
+    documents the wrong migration — which is worse than documenting none.
+    """
+    if isinstance(item, dict):
+        if len(item) == 1:
+            name, reason = next(iter(item.items()))
+            return str(name), str(reason or "").strip()
+        return str(item), ""
+    return str(item), ""
+
+
 def load_allowlist(path: Path | None = None) -> dict[str, list[str]]:
     """Known pre-existing duplicates, grandfathered so the gate is actionable."""
+    return {v: sorted(d) for v, d in load_allowlist_reasons(path).items()}
+
+
+def load_allowlist_reasons(path: Path | None = None) -> dict[str, dict[str, str]]:
+    """version -> {migration name -> why this shadowed entry is safe}.
+
+    The reason is the point of the file. "Grandfathered" was only ever a
+    statement that a collision predates the gate, never that it is harmless;
+    the mvs-audit-03 audit found six entries whose schema no supported backend
+    produced on a fresh install, so the difference is load-bearing. Recording
+    the finding next to the entry means the next reader inherits the answer
+    instead of re-deriving it from 60 migration files.
+    """
     p = path or _ALLOWLIST_PATH
     if not p.is_file():
         return {}
@@ -103,7 +136,24 @@ def load_allowlist(path: Path | None = None) -> dict[str, list[str]]:
     except Exception:
         return {}
     raw = data.get("grandfathered", {}) or {}
-    return {_normalise(str(k)): sorted(v or []) for k, v in raw.items()}
+    out: dict[str, dict[str, str]] = {}
+    for version, items in raw.items():
+        entries: dict[str, str] = {}
+        for item in items or []:
+            name, reason = _split_entry(item)
+            entries[name] = reason
+        out[_normalise(str(version))] = entries
+    return out
+
+
+def unexplained_entries(path: Path | None = None) -> list[str]:
+    """Allowlisted migrations carrying no reason — ``version/name`` strings."""
+    return sorted(
+        f"{version}/{name}"
+        for version, entries in load_allowlist_reasons(path).items()
+        for name, reason in entries.items()
+        if not reason
+    )
 
 
 def check(migrations_dir: Path | None = None, allowlist_path: Path | None = None) -> dict[str, Any]:
@@ -119,13 +169,18 @@ def check(migrations_dir: Path | None = None, allowlist_path: Path | None = None
     for version, names in dups.items():
         if allowed.get(version) != names:
             new[version] = names
+    # An entry with no recorded reason is a violation too. It is the same defect
+    # the allowlist was created to stop — an unexamined collision that reads as
+    # approved — just written down instead of left on disk.
+    unexplained = unexplained_entries(allowlist_path)
     return {
         "total_versions": len(discover_versions(migrations_dir)),
         "duplicate_versions": len(dups),
         "grandfathered": len(allowed),
         "new_violations": new,
+        "unexplained_entries": unexplained,
         "shadowed_count": len(shadowed_migrations(migrations_dir)),
-        "passed": not new,
+        "passed": not new and not unexplained,
     }
 
 

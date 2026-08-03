@@ -1623,7 +1623,13 @@ CREATE TABLE IF NOT EXISTS supply_chain_vendors (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
     vendor_name TEXT NOT NULL,
-    vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')),
+    -- 'defense_contractor' comes from migration 050_theater_supply_chain, which
+    -- is shadowed by 050_sg_sio_assessments and so has never run (mvs-audit-03).
+    -- PostgreSQL has the widened constraint via pg_consolidated.sql; SQLite gets
+    -- it here rather than from the migration, because widening a CHECK on SQLite
+    -- means rebuilding the table (create _new, copy, DROP, rename) and that is a
+    -- destructive operation to fix a non-destructive problem.
+    vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor', 'defense_contractor')),
     country_of_origin TEXT,
     scrm_risk_tier TEXT CHECK(scrm_risk_tier IN ('low', 'moderate', 'high', 'critical')),
     section_889_status TEXT CHECK(section_889_status IN ('compliant', 'under_review', 'prohibited', 'exempt')),

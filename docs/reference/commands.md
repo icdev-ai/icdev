@@ -1552,6 +1552,29 @@ python tools/db/migrate.py --create "add_feature_table"           # Scaffold new
 python tools/db/migrate.py --mark-applied 001                    # Mark existing DB as migrated
 python tools/db/migrate.py --up --all-tenants                    # Apply to all tenant DBs
 
+# Duplicate migration versions — a same-version sibling is skipped SILENTLY
+python tools/db/migration_versions.py --json                     # Report all duplicates
+python tools/db/migration_versions.py --gate                     # Exit 1 on new duplicates OR unexplained allowlist entries
+python tools/db/migration_versions.py --shadowed --json          # What is being skipped
+
+# Is a grandfathered collision actually harmless? (mvs-audit-03)
+# Classifies every shadowed migration by REBUILDING both backends from empty.
+# Without the two oracles below it falls back to source attribution alone.
+python tools/db/shadowed_migration_audit.py                      # Human summary
+python tools/db/shadowed_migration_audit.py --gaps               # Only entries needing action
+python tools/db/shadowed_migration_audit.py --json \
+    --fresh-db /path/to/fresh.db \
+    --fresh-pg-dsn postgresql://user:pw@host:5432/scratch_db
+# Build the oracles first:
+#   SQLite : ICDEV_STORAGE_BACKEND=sqlite ICDEV_DB_PATH=<path> python tools/db/init_icdev_db.py
+#            python tools/db/migrate.py --up --converge --db-path <path>
+#   PG     : ICDEV_DATABASE_URL=<dsn> python tools/db/bootstrap_pg.py
+#            ICDEV_DATABASE_URL=<dsn> python tools/db/migrate.py --up --converge
+# NOTE: ICDEV_DATABASE_URL outranks ICDEV_PG_DATABASE in storage._get_pg_pool.
+# Exporting only ICDEV_PG_DATABASE in an environment that already sets the URL
+# silently keeps the OLD target — the connection succeeds and addresses the
+# wrong database.
+
 # Database Backup/Restore (D152)
 python tools/db/backup.py --backup [--db icdev] [--json]         # Backup single database
 python tools/db/backup.py --backup --all [--json]                # Backup all databases
