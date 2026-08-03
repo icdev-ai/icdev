@@ -9,6 +9,7 @@ predicate wiring, one-row-per-governed-call) on the SQLite fallback.
 """
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import json
 from pathlib import Path
@@ -288,3 +289,136 @@ def test_pipeline_run_writes_one_cortex_audit_row(cortex_db, monkeypatch):
     assert row["tenant_id"] == "tenant-a"
     assert row["provenance_id"] == "scr-e2e"
     assert row["outcome"] == "pass"
+
+
+# ---------------------------------------------------------------------------
+# One connection per governed call (cxo-perf-03)
+# ---------------------------------------------------------------------------
+def _count_connections(monkeypatch):
+    """Wrap get_connection to count how many connections a call path opens."""
+    from tools.db import storage
+
+    opened = []
+    real = storage.get_connection
+
+    def counting(*args, **kwargs):
+        conn = real(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(storage, "get_connection", counting)
+    return opened
+
+
+def _fetch_session_ids():
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM cortex_sessions")
+        return {row[0] for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def test_record_governed_call_opens_one_connection_for_both_writes(cortex_db, monkeypatch):
+    from tools.cortex.db.init_db import record_governed_call
+
+    opened = _count_connections(monkeypatch)
+    audit_id = record_governed_call(
+        {
+            "record_id": "cgov-one",
+            "operation": "cortex.complete",
+            "session_id": "sess-one",
+            "tenant_id": "tenant-a",
+            "user_id": "u1",
+            "classification": "CUI",
+            "domain": "rfi",
+        }
+    )
+
+    assert len(opened) == 1, f"expected 1 connection, got {len(opened)}"
+    assert audit_id == "cgov-one"
+    # Both rows landed on that single connection.
+    assert _fetch_session_ids() == {"sess-one"}
+    assert [r["id"] for r in _fetch_audit_rows()] == ["cgov-one"]
+
+
+def test_governed_pipeline_call_opens_one_connection(cortex_db, monkeypatch):
+    from tools.cortex import governance
+    from tools.cortex.governance import GovernancePipeline
+
+    monkeypatch.setattr(
+        governance, "_gate_check_text",
+        lambda text: {"allowed": True, "warnings": [], "blocked_reason": None},
+    )
+    monkeypatch.setattr(governance, "_gate_redact_input", lambda text, cls: (text, 0))
+    monkeypatch.setattr(governance, "_gate_redact_output", lambda text: (text, []))
+    # Provenance owns its own connection and is out of scope here — stub it so
+    # the count isolates the session+audit persistence this task collapsed.
+    monkeypatch.setattr(
+        governance, "_gate_register_provenance",
+        lambda output_text, ctx, operation, record_id: "scr-perf",
+    )
+
+    opened = _count_connections(monkeypatch)
+    ctx = CortexContext(session_id="sess-perf", tenant_id="tenant-a", user_id="u1")
+    GovernancePipeline(operation="cortex.complete").wrap(
+        lambda p: "ok", ctx, prompt="q", retrieval=False
+    )
+
+    assert len(opened) == 1, f"governed call opened {len(opened)} connections, want 1"
+    assert _fetch_session_ids() == {"sess-perf"}
+    assert len(_fetch_audit_rows()) == 1
+
+
+def test_cache_hit_audit_opens_one_connection(cortex_db, monkeypatch):
+    from tools.cortex import cache
+
+    opened = _count_connections(monkeypatch)
+    cache.audit_hit(
+        "cortex.complete",
+        CortexContext(session_id="sess-hit", tenant_id="tenant-a", user_id="u1"),
+    )
+
+    assert len(opened) == 1, f"cache hit opened {len(opened)} connections, want 1"
+    rows = _fetch_audit_rows()
+    assert len(rows) == 1
+    assert json.loads(rows[0]["gates_json"])["cache_hit"] is True
+
+
+def test_audit_row_survives_a_failing_session_write(cortex_db, monkeypatch):
+    """A broken cortex_sessions write must not take the append-only audit row down.
+
+    On PostgreSQL a failed statement poisons the shared transaction, so the
+    session write is rolled back before the audit INSERT runs.
+    """
+    # tools.cortex.db re-exports the init_db FUNCTION, shadowing the module
+    # attribute — import the module object explicitly to patch its globals.
+    idb = importlib.import_module("tools.cortex.db.init_db")
+
+    def boom(ctx, conn=None):
+        raise RuntimeError("session write exploded")
+
+    monkeypatch.setattr(idb, "ensure_session", boom)
+    audit_id = idb.record_governed_call(
+        {
+            "record_id": "cgov-survive",
+            "operation": "cortex.complete",
+            "session_id": "sess-boom",
+            "tenant_id": "tenant-a",
+        }
+    )
+
+    assert audit_id == "cgov-survive"
+    assert [r["id"] for r in _fetch_audit_rows()] == ["cgov-survive"]
+
+
+def test_record_governed_call_skips_session_write_without_session_id(cortex_db):
+    from tools.cortex.db.init_db import record_governed_call
+
+    record_governed_call({"record_id": "cgov-nosess", "operation": "cortex.classify",
+                          "tenant_id": "t"})
+    assert _fetch_session_ids() == set()
+    assert [r["id"] for r in _fetch_audit_rows()] == ["cgov-nosess"]

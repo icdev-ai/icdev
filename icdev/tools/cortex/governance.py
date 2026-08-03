@@ -233,15 +233,17 @@ def _gate_register_provenance(
 def _gate_record_audit(payload: dict) -> None:
     """Gate 7b: append-only audit row (NIST AU).
 
-    Persists one INSERT-only ``cortex_audit`` row (ctx-govern-03) through the
-    RLS-aware storage shim, and also emits a structured log line so the audit is
-    observable even when the DB write degrades. A persistence failure is logged,
-    never raised — the outer ``_audit`` guard already isolates it from the real
-    operation outcome, and governance must never fail because bookkeeping did.
+    Persists the call's ``cortex_sessions`` row and its one INSERT-only
+    ``cortex_audit`` row (ctx-govern-03) through the RLS-aware storage shim, both
+    over a SINGLE connection (cxo-perf-03), and also emits a structured log line
+    so the audit is observable even when the DB write degrades. A persistence
+    failure is logged, never raised — the outer ``_audit`` guard already isolates
+    it from the real operation outcome, and governance must never fail because
+    bookkeeping did.
     """
     logger.info("cortex_governance_audit %s", json.dumps(payload, default=str))
     try:
-        _mod("cortex.db.init_db").record_audit(payload)
+        _mod("cortex.db.init_db").record_governed_call(payload)
     except Exception as exc:  # audit persistence must never mask the real outcome
         logger.error("cortex governance audit persistence failed: %s", exc)
 
@@ -364,6 +366,9 @@ class GovernancePipeline:
                 "user_id": ctx.user_id,
                 "classification": ctx.classification,
                 "domain": getattr(ctx, "domain", "") or "",
+                # Carried for the cortex_sessions row that shares this call's
+                # connection; cortex_audit has no air_gap column of its own.
+                "air_gap": bool(getattr(ctx, "air_gap", False)),
                 "blocked": report.blocked,
                 "blocked_gate": blocked_gate,
                 "blocked_reason": report.blocked_reason,
