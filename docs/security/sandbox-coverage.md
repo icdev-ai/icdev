@@ -1071,3 +1071,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - Nothing is dropped silently — `timeout`, `error`, `unavailable`, `misdeclared` and `skipped` are all reported by name and set `partial`, so a caller cannot mistake "the analyzer never answered" for "the analyzer found nothing".
   - `tests/test_analyzer_dispatch.py` pins the timeout, error-containment, responder-exclusion and taxonomy-validation behaviours.
 - **Revisit if:** an analyzer is declared whose entrypoint shells out or executes the observable (at that point the declaration must be `sandboxed` and `anz-rate-01`'s enforcement is a prerequisite, not a follow-up); or `dispatch()` ever accepts a module path, callable, or contract file from a caller rather than from `args/analyzer_contract.yaml`.
+
+### Gap 46 — Agent approval gate: reversibility classification of tool calls (`tools/agent_runtime/approval_gate.py`)
+
+**Module:** `tools/agent_runtime/approval_gate.py` (ars-appr-01).
+
+**Ingress path:** Two, and the first is genuinely untrusted. (1) The **tool input of every agent tool call** — an arbitrary dict authored by an LLM, flattened to a string and matched against the policy's regexes. This module sees every tool in the platform, so it sees every model-authored argument. (2) `args/agent_approval_policy.yaml`, a first-party config that supplies the regex patterns and the tier lists.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither ingress reaches an execution path. Tool input is *read about*, never run: `flatten_input()` builds a string, `re.search` matches it, and `hashlib.sha256` digests it — there is no `exec`/`eval`/`compile`/`subprocess`/`os.system`/`pickle`/`importlib` anywhere in the module, and the gate never invokes the tool it is classifying. It returns a verdict; the *caller* decides whether to run the handler. The policy file is parsed with `yaml.safe_load` (never `yaml.load`), and its patterns are compiled with `re.compile` inside a `try` that logs and skips a bad pattern rather than raising. Classification is a pure function of (tool name, flattened input, policy).
+- **Guardrails:**
+  - **Fail-closed by construction (the load-bearing control):** `default_tier` is `unknown` and `unknown` is in `require_approval_tiers`, so a tool must be *named* in the policy to run unattended. An unreadable, malformed, or missing policy file falls back to `_FALLBACK_POLICY`, which enumerates **zero** tools — every call then requires a human. A config failure cannot be the reason an irreversible action ran unattended.
+  - Content patterns are **asymmetric**: an `irreversible` pattern escalates any tool, but `recoverable`/`reversible` patterns apply only to the declared `command_tools`. Model-authored argument text therefore cannot *lower* a tool's tier — the reverse would let an LLM auto-approve itself by mentioning `mkdir`.
+  - Hard blocks are consulted first via `run_pre_tool_check` and are never escalated to the approver, so the gate cannot be used to talk past `.claude/hooks/pre_tool_use.py`.
+  - A raising approver is caught and **denies** (`test_a_broken_approver_denies`); `console_approver` denies on EOF, so a non-interactive run cannot silently self-approve.
+  - Argument **values never persist**. `agent_approval_log` stores argument key names and a SHA-256 of the flattened input only — model-authored input may carry CUI, and ICDEV is a public repo.
+  - `tests/test_agent_approval_gate.py` pins all of the above, including the regression that incidental argument text cannot downgrade `git_push`.
+- **Revisit if:** the gate gains a policy source that is not first-party (a tenant-supplied or LLM-authored policy would make the regexes untrusted input), a pattern language more expressive than `re` is adopted, or the module starts *executing* a remediation rather than returning a verdict.

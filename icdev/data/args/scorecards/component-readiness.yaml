@@ -38,6 +38,42 @@ evaluation:
   # this to decide when a re-run is due.
   window: 24h
 
+# Dimensions (idp-ui-01) — the buckets a component's score breaks down into.
+# These keys are the five score columns `developer_scorecards` already carries,
+# so a persisted row (idp-score-03) has somewhere to put each one without a
+# schema change. `column: ''` would mean report-only.
+dimensions:
+- key: code_quality
+  label: Code Quality
+  column: code_quality_score
+  description: Is it wired the way the registry says it is?
+- key: security
+  label: Security
+  column: security_score
+  description: Row-level security and access posture.
+- key: compliance
+  label: Compliance
+  column: compliance_score
+  description: Meets the platform's own declared gates.
+- key: test_coverage
+  label: Test Coverage
+  column: test_coverage_score
+  description: Proven by a test, not merely present.
+- key: velocity
+  label: Velocity
+  column: velocity_score
+  description: Can someone act on it — owner, on-call, discoverability.
+
+# Letter-grade bands over the overall score, highest first. An UNASSESSED
+# component (no applicable rule) gets no letter at all rather than an F.
+grading:
+  bands:
+  - {letter: A, min: 90}
+  - {letter: B, min: 80}
+  - {letter: C, min: 70}
+  - {letter: D, min: 60}
+  - {letter: F, min: 0}
+
 ladder:
   levels:
   - name: Bronze
@@ -64,6 +100,9 @@ rules:
   title: Declared module resolves to a real blueprint file
   level: Bronze
   weight: 15
+  dimension: code_quality
+  evidence: >-
+    args/component_registry.yaml `module:` resolved against the repo tree by tools/iqe/adapters/idp.py::_blueprint_present.
   expression: foreach c in idp.components where c.has_blueprint == true select c.key
   # Features and core extensions may legitimately declare no module at all;
   # this rule only applies to components that claim one.
@@ -77,6 +116,9 @@ rules:
   title: No canvas RLS-bypass coherence violation
   level: Bronze
   weight: 15
+  dimension: security
+  evidence: >-
+    Open canvas RLS-bypass findings from tools/workflow/coherence_checker.py, read by _rls_violation_keys().
   expression: foreach c in idp.components where c.rls_clean == true select c.key
   failureMessage: >-
     Canvas DB access bypasses row-level security. Use get_canvas_connection()
@@ -87,6 +129,9 @@ rules:
   title: Has an IQE adapter so its data is queryable
   level: Silver
   weight: 10
+  dimension: code_quality
+  evidence: >-
+    Existence of tools/iqe/adapters/<adapter_module leaf>.py on disk.
   expression: foreach c in idp.components where c.has_iqe_adapter == true select c.key
   failureMessage: >-
     No tools/iqe/adapters/<key>.py. Without an adapter this component's data is
@@ -96,6 +141,9 @@ rules:
   title: Ships at least one seed query
   level: Silver
   weight: 5
+  dimension: code_quality
+  evidence: >-
+    Files matching *.iqe/*.yaml under context/iqe/queries/<key>/.
   expression: foreach c in idp.components where c.has_seed_queries == true select c.key
   failureMessage: >-
     No .iqe files under context/iqe/queries/<key>/. The 8-point gate asks for
@@ -106,6 +154,9 @@ rules:
   title: Has a Playwright E2E spec
   level: Gold
   weight: 20
+  dimension: test_coverage
+  evidence: >-
+    First matching tests/e2e/<key>*.spec.ts on disk.
   expression: foreach c in idp.components where c.has_e2e_spec == true select c.key
   failureMessage: >-
     No tests/e2e/<key>*.spec.ts. This is the single largest readiness gap in
@@ -115,6 +166,9 @@ rules:
   title: Passes the 8-point canvas completeness gate
   level: Gold
   weight: 20
+  dimension: compliance
+  evidence: >-
+    tools/config/component_registry.py::validate_canvas_completeness — the 8-point gate, per point.
   expression: foreach c in idp.components where c.completeness_passed == true select c.key
   # Only canvases are in scope for the 8-point gate; child apps, features and
   # core extensions are not graded on it and must not be held back by it.
@@ -129,6 +183,9 @@ rules:
   title: Has a named owner or owning team
   level: Platinum
   weight: 25
+  dimension: velocity
+  evidence: >-
+    Scrubbed Component.owner from args/component_registry.yaml; UNOWNED_SENTINELS normalize to unowned.
   expression: foreach c in idp.components where c.has_owner == true select c.key
   failureMessage: >-
     No `owner:` in args/component_registry.yaml. The field was added by
@@ -141,6 +198,9 @@ rules:
   title: No failing awareness health probes on its routes
   level: Platinum
   weight: 15
+  dimension: compliance
+  evidence: >-
+    Newest snapshot window of awareness_component_health probe rows, matched to the component by url_prefix.
   expression: foreach c in idp.components where c.failing_probes == 0 select c.key
   # Only grade components whose routes have actually been probed — never
   # measured must not read as healthy.
@@ -157,6 +217,9 @@ rules:
 - identifier: nav-reachable
   title: Declares navigation metadata
   weight: 5
+  dimension: velocity
+  evidence: >-
+    `nav:` block in args/component_registry.yaml.
   expression: foreach c in idp.components where c.has_nav == true select c.key
   failureMessage: >-
     No `nav:` block, so the component is not reachable from the registry-driven
@@ -165,6 +228,9 @@ rules:
 - identifier: on-call-named
   title: Has an on-call contact
   weight: 5
+  dimension: velocity
+  evidence: >-
+    `on_call:` in args/component_registry.yaml.
   expression: foreach c in idp.components where c.on_call != "" select c.key
   failureMessage: >-
     No `on_call:` contact. Aspirational — scores but does not gate, so it can
@@ -173,6 +239,9 @@ rules:
 - identifier: owner-reachable
   title: Owner has a contact address
   weight: 5
+  dimension: velocity
+  evidence: >-
+    `owner_contact:` in args/component_registry.yaml.
   expression: foreach c in idp.components where c.has_owner_contact == true select c.key
   failureMessage: >-
     No `owner_contact:`. An owner nobody can reach is only marginally better

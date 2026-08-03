@@ -1,0 +1,166 @@
+# CUI // SP-CTI
+# Reversibility policy for agent tool calls (ars-appr-01).
+#
+# Loaded by tools/agent_runtime/approval_gate.py. Behaviour changes here, not in
+# Python — FORGE args layer.
+#
+# TIERS
+#   reversible   — no durable side effect, or one undone by re-running. Auto-allow.
+#   recoverable  — mutates local state that a checkpoint/VCS can restore. Auto-allow.
+#   irreversible — publishes, destroys, or writes evidence that cannot be un-written.
+#                  ALWAYS halts for confirmation.
+#   unknown      — not enumerated below. DEFAULT DENY: halts for confirmation.
+#
+# An allowlist that fails open is decoration. `default_tier: unknown` plus
+# `unknown` in `require_approval_tiers` is the entire point of this file: the
+# case nobody enumerated is the case that needs a human.
+version: 1
+
+# Tier assigned to a tool that matches nothing below.
+default_tier: unknown
+
+# Tiers that halt for confirmation before the handler runs.
+require_approval_tiers:
+  - irreversible
+  - unknown
+
+tools:
+  # ---------------------------------------------------------------------------
+  # Reversible — reads and searches. No durable side effect.
+  # ---------------------------------------------------------------------------
+  reversible:
+    - read_file
+    - read_files
+    - list_files
+    - list_dir
+    - glob
+    - grep
+    - search
+    - search_knowledge
+    - rag_search
+    - kg_search
+    - get_status
+    - get_project_context
+    - health_check
+    - browser_read_state
+    - browser_screenshot
+    - classify
+    - summarize
+
+  # ---------------------------------------------------------------------------
+  # Recoverable — local mutation a checkpoint or git can restore.
+  # ---------------------------------------------------------------------------
+  recoverable:
+    - write_file
+    - edit_file
+    - apply_patch
+    - create_directory
+    - format
+    - lint
+    - run_tests
+    - git_add
+    - git_commit
+    - kanban_create_task
+    - kanban_update_task
+
+  # ---------------------------------------------------------------------------
+  # Irreversible — publishes, destroys, or writes immutable evidence.
+  # These are the surfaces named in the ars-appr-01 card.
+  # ---------------------------------------------------------------------------
+  irreversible:
+    - git_push
+    - git_force_push
+    - git_reset_hard
+    - delete_branch
+    - delete_worktree
+    - worktree_remove
+    - pr_merge
+    - merge_pull_request
+    - publish_asset
+    - deploy
+    - k8s_deploy
+    - terraform_apply
+    - terraform_destroy
+    - send_email
+    - send_message
+    - post_webhook
+    - http_post
+    - upload_file
+    - delete_file
+    - delete_video
+    - rag_delete_source
+    - kanban_delete_task
+    - kanban_set_done
+    - audit_write
+    - rollback
+
+# ---------------------------------------------------------------------------
+# Generic executors: tools that are a shell, not a verb. Their whole meaning is
+# the string they are handed, so a content pattern below may lower their tier.
+#
+# For every OTHER tool a content pattern may only RAISE the tier. That asymmetry
+# is load-bearing: when downgrade patterns applied to everything, `git_push`
+# with a `{"note": "mkdir logs"}` argument matched the `mkdir` recoverable
+# pattern and was auto-allowed, and so was any unenumerated tool whose input
+# happened to contain the word. A downgrade rule firing on a tool it was never
+# written for is an allowlist that fails open by accident.
+# ---------------------------------------------------------------------------
+command_tools:
+  - run_command
+  - bash
+  - shell
+  - sh
+  - execute_command
+  - exec
+  - powershell
+  - terminal
+
+# ---------------------------------------------------------------------------
+# Content patterns. Irreversible patterns are applied (case-insensitively) to
+# the flattened tool input of EVERY call, whatever the tool is named and
+# whatever tier it was assigned — escalation is always safe.
+#
+# The `recoverable` / `reversible` patterns below apply ONLY to `command_tools`.
+# ---------------------------------------------------------------------------
+command_patterns:
+  irreversible:
+    - pattern: 'git\s+push'
+      detail: pushes commits to a remote — published history cannot be un-published
+    - pattern: 'push\s+.*--force|--force-with-lease|push\s+-f\b'
+      detail: force-push discards remote commits
+    - pattern: 'git\s+reset\s+--hard'
+      detail: discards working-tree and index state irrecoverably
+    - pattern: 'git\s+branch\s+-[dD]\b|push\s+.*--delete|push\s+.*:\s*\S'
+      detail: deletes a branch (local or remote)
+    - pattern: 'git\s+worktree\s+remove|git\s+worktree\s+prune'
+      detail: removes a worktree and any uncommitted work in it
+    - pattern: 'gh\s+pr\s+merge|gh\s+release\s+create|gh\s+repo\s+delete'
+      detail: merges or publishes to GitHub
+    - pattern: 'git\s+clean\s+-[a-z]*[dfx]'
+      detail: deletes untracked files
+    - pattern: 'rm\s+-[a-z]*r[a-z]*f|rm\s+-[a-z]*f[a-z]*r|rmdir\s+/s|remove-item\s+.*-recurse'
+      detail: recursive force delete
+    - pattern: '\bdrop\s+(table|database|schema)\b|\btruncate\s+table\b'
+      detail: destroys a database object
+    - pattern: '\b(update|delete)\s+(from\s+)?\w*audit\w*|\b(update|delete)\s+(from\s+)?\w*_log\b'
+      detail: mutates an append-only audit table (NIST AU)
+    - pattern: 'kanban.*--set-status\s+done|"status"\s*:\s*"done"'
+      detail: marks a kanban task done — the board is the delivery record
+    - pattern: 'curl\s+.*(-X\s*(POST|PUT|DELETE|PATCH)|--data|-d\s)|wget\s+.*--post'
+      detail: posts to an external endpoint — egress cannot be recalled
+    - pattern: 'terraform\s+(apply|destroy)|kubectl\s+(apply|delete)|helm\s+(install|upgrade|uninstall)'
+      detail: mutates deployed infrastructure
+    - pattern: 'docker\s+push|npm\s+publish|twine\s+upload|pip\s+.*upload'
+      detail: publishes an artifact to a registry
+    - pattern: 'shutdown|reboot|mkfs|\bdd\s+if=|format\s+[a-z]:'
+      detail: destroys a host or filesystem
+    - pattern: 'youtube.*delete|delete.*youtube'
+      detail: CLAUDE.md names this an absolute prohibition — irreversible
+
+  # Recoverable content patterns: local, restorable from git/checkpoint.
+  # Consulted ONLY for the `command_tools` above.
+  recoverable:
+    - pattern: 'git\s+(add|commit|stash\s+list|checkout\s+-b)'
+      detail: local VCS mutation
+    - pattern: 'mkdir|touch\b'
+      detail: creates a local path
