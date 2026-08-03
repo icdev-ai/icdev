@@ -27,6 +27,21 @@ CANONICAL_MIGRATIONS = REPO_ROOT / "tools" / "db" / "migrations"
 CANONICAL_ALLOWLIST = REPO_ROOT / "args" / "migration_duplicate_versions.yaml"
 
 
+def _load_up(path: Path):
+    """Import an ``up.py`` by PATH, not by package name.
+
+    Two copies of this migration exist (``tools/`` and ``icdev/tools/``) under
+    the same module name, so a normal import would return whichever landed in
+    ``sys.modules`` first and the mirror test would compare a file with itself.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(f"_up_{abs(hash(str(path)))}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class TestAllowlistReasons:
     """Criterion 3: the allowlist must say WHY each entry is safe."""
 
@@ -144,11 +159,27 @@ class TestFoldedGapsStillDeclared:
             assert obj in up.read_text(encoding="utf-8"), f"{obj} absent from {up}"
 
     def test_role_vocabulary_matches_the_dashboard_constant(self):
-        up = CANONICAL_MIGRATIONS / self.FOLD / "up.py"
-        src = up.read_text(encoding="utf-8")
-        # The four roles PostgreSQL rejected before the fold.
-        for role in ("migration_engineer", "component_admin", "auditor", "ciso"):
-            assert f'"{role}"' in src
+        # Substring-checking four role names would pass while the CHECK and the
+        # RBAC matrix drifted in either direction — and drift between the DB copy
+        # and the Python copy is the defect this migration exists to repair. So
+        # compare the SETS, per CLAUDE.md's "derive CHECK constraints from Python
+        # constants" rule. The migration cannot import the constant at runtime (a
+        # migration must stay frozen against a moving codebase), so the tuple is
+        # literal and this test is what keeps it honest.
+        from tools.dashboard.auth import VALID_DASHBOARD_ROLES
+
+        module = _load_up(CANONICAL_MIGRATIONS / self.FOLD / "up.py")
+        assert set(module._ROLES) == set(VALID_DASHBOARD_ROLES)
+        # The four PostgreSQL rejected before the fold — named explicitly so a
+        # regression points at the roles that actually broke create_user().
+        assert {"migration_engineer", "component_admin", "auditor", "ciso"} <= set(module._ROLES)
+
+    def test_mirror_carries_the_same_role_vocabulary(self):
+        canonical = _load_up(CANONICAL_MIGRATIONS / self.FOLD / "up.py")
+        mirror = _load_up(
+            REPO_ROOT / "icdev" / "tools" / "db" / "migrations" / self.FOLD / "up.py"
+        )
+        assert set(canonical._ROLES) == set(mirror._ROLES)
 
 
 class TestVendorTypeVocabulary:
