@@ -70,6 +70,7 @@ _DEFAULT_GATES = {
     "false_heal_max": 0.20,
     "heal_success_min": 0.60,
     "min_decisions": 10,
+    "auroc_min": 0.65,
 }
 
 
@@ -446,7 +447,7 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
     Returns
     -------
     dict with keys:
-        precision, recall, ece, false_heal_rate, heal_success_rate,
+        precision, recall, ece, auroc, false_heal_rate, heal_success_rate,
         total_decisions, resolved_count, window_days
     """
     conn = None
@@ -486,7 +487,11 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
     recall = len(resolved) / len(known) if known else None
 
     # Expected Calibration Error (ECE) over decile bins
-    ece = _compute_ece([r for r in rows if r["confidence"] is not None and r["actual_outcome"] is not None])
+    conf_outcome_rows = [r for r in rows if r["confidence"] is not None and r["actual_outcome"] is not None]
+    ece = _compute_ece(conf_outcome_rows)
+
+    # AUROC over the same rows with confidence scores and known outcomes
+    auroc = _compute_auroc(conf_outcome_rows)
 
     # False-heal rate: self_resolved / (resolved + self_resolved) for heal reflex
     heal_total = len(resolved) + len(self_res)
@@ -507,6 +512,7 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
         "precision": round(precision, 4) if precision is not None else None,
         "recall": round(recall, 4) if recall is not None else None,
         "ece": round(ece, 4) if ece is not None else None,
+        "auroc": round(auroc, 4) if auroc is not None else None,
         "false_heal_rate": round(false_heal_rate, 4) if false_heal_rate is not None else None,
         "heal_success_rate": round(heal_success_rate, 4) if heal_success_rate is not None else None,
     }
@@ -752,6 +758,23 @@ def check_gates() -> list[dict[str, Any]]:
                 ),
             })
 
+        auroc_min = float(t.get("auroc_min", _DEFAULT_GATES["auroc_min"]))
+        auroc = m.get("auroc")
+        if auroc is not None and auroc < auroc_min:
+            alerts.append({
+                "reflex": reflex,
+                "metric": "auroc",
+                "value": auroc,
+                "threshold": auroc_min,
+                "adaptive": auroc_min != _DEFAULT_GATES["auroc_min"],
+                "severity": "medium",
+                "recommendation": (
+                    f"{reflex} AUROC {auroc:.3f} < {auroc_min:.3f}. "
+                    "Confidence scores have poor discriminative power. "
+                    "Review confidence derivation in oracle heuristics and consider re-calibration."
+                ),
+            })
+
         false_heal = m.get("false_heal_rate")
         if false_heal is not None and false_heal > t["false_heal_max"]:
             alerts.append({
@@ -861,3 +884,66 @@ def _compute_ece(rows: list, success_outcomes: "frozenset[str] | set[str] | None
         ece += (len(items) / n) * abs(avg_conf - avg_acc)
 
     return ece
+
+
+def _compute_auroc(rows: list, success_outcomes: "frozenset[str] | set[str] | None" = None) -> float | None:
+    """Area under ROC curve via trapezoidal rule over confidence-sorted thresholds.
+
+    Where ECE asks "are the confidence numbers honest?", AUROC asks the separate
+    question "do they *discriminate* at all?" — a reflex can be perfectly
+    calibrated and still rank a wrong decision above a right one.
+
+    Args:
+        rows: mappings with ``confidence`` and ``actual_outcome``.
+        success_outcomes: outcome values meaning "the prediction was right".
+            Defaults to SUCCESS_OUTCOMES ("resolved") — the harness vocabulary.
+
+    Returns None when fewer than MIN_CALIBRATION_SAMPLES usable rows remain, or
+    when the usable rows are all one class (a ROC curve needs both).
+
+    Row filtering matches _compute_ece deliberately: rows with no confidence, no
+    outcome, or a non-evidence outcome are dropped rather than scored as
+    negatives. Counting an unjudged prediction as wrong would understate AUROC
+    for exactly the reflexes whose outcomes are slowest to land.
+    """
+    success = frozenset(success_outcomes) if success_outcomes else SUCCESS_OUTCOMES
+
+    usable = [
+        r for r in rows
+        if r["confidence"] is not None
+        and r["actual_outcome"] is not None
+        and str(r["actual_outcome"]).strip().lower() not in NON_EVIDENCE_OUTCOMES
+    ]
+    if len(usable) < MIN_CALIBRATION_SAMPLES:
+        return None
+
+    def _is_positive(row) -> bool:
+        return str(row["actual_outcome"]).strip().lower() in success
+
+    total_pos = sum(1 for r in usable if _is_positive(r))
+    total_neg = len(usable) - total_pos
+    if not total_pos or not total_neg:
+        return None
+
+    # Stable sort: tied confidences keep their input order, so a run of equal
+    # scores traces the diagonal rather than an artificially perfect corner.
+    sorted_rows = sorted(usable, key=lambda r: float(r["confidence"]), reverse=True)
+
+    points: list[tuple[float, float]] = [(0.0, 0.0)]
+    tp = 0
+    fp = 0
+    for r in sorted_rows:
+        if _is_positive(r):
+            tp += 1
+        else:
+            fp += 1
+        points.append((fp / total_neg, tp / total_pos))
+    points.append((1.0, 1.0))
+
+    auroc = 0.0
+    for i in range(1, len(points)):
+        x0, y0 = points[i - 1]
+        x1, y1 = points[i]
+        auroc += (x1 - x0) * (y0 + y1) / 2.0
+
+    return auroc

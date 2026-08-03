@@ -20,6 +20,10 @@ Usage examples:
   # JSON output (pipe-friendly)
   python tools/kanban/cli.py --list --prefix zig-ext --json
   python tools/kanban/cli.py --show zig-ext-08 --json
+
+  # Clear a stale done-gate block without re-dispatching the task
+  python tools/kanban/cli.py --reverify zig-ext-08 --dry-run
+  python tools/kanban/cli.py --reverify zig-ext-08 --json
 """
 
 import argparse
@@ -322,6 +326,46 @@ def _ascii(s: object) -> str:
     return out.encode("ascii", "replace").decode("ascii")
 
 
+def cmd_reverify(task_id: str, json_out: bool, dry_run: bool = False) -> int:
+    """Recompute a task's verification from git and append a fresh verdict.
+
+    This is the manual escape hatch from the enforced done-gate. `pr_watcher`
+    reads only the LATEST `kanban_verifications` row and nothing writes one
+    except a dispatch, so a task that verified badly once stays blocked from
+    auto-merge until it is re-dispatched — which opens a second PR rather than
+    reusing the first. Re-verifying clears the block without that.
+
+    It does NOT weaken the gate: the verdict is recomputed from the branch's
+    real state, so a task with no work still fails.
+
+    Exit 0 = passed, 1 = failed, 2 = no such task.
+    """
+    from tools.db.storage import get_connection
+    from tools.kanban.reverify import reverify
+
+    try:
+        verdict = reverify(task_id, get_connection, dry_run=dry_run)
+    except LookupError as exc:
+        # Explicit non-zero, never a silent success: this CLI is what worker
+        # sessions use to report their own state, and a typo'd id that exits 0
+        # reads as "cleared" when nothing happened.
+        if json_out:
+            print(json.dumps({"error": "not_found", "task_id": task_id}, indent=2))
+        else:
+            print(f"NOT_FOUND: {exc}", file=sys.stderr)
+        return 2
+
+    if json_out:
+        print(json.dumps(verdict, indent=2, default=str, sort_keys=True))
+    else:
+        state = "would write" if dry_run else (
+            "wrote" if verdict.get("written") else "did not write")
+        print(f"{task_id}: {verdict['result']} ({state})")
+        print(f"  branch: {_ascii(verdict.get('branch'))}")
+        print(f"  {_ascii(verdict.get('reason'))}")
+    return 0 if verdict["result"] == "passed" else 1
+
+
 def cmd_pipeline(task_id: str, json_out: bool) -> int:
     """Print a task's delivery-pipeline (gate) status — the CLI mirror of the
     dashboard pipeline stepper. Pure view; provider/LLM-agnostic (no LLM call)."""
@@ -569,6 +613,14 @@ def main():
     parser.add_argument("--pipeline", metavar="TASK_ID",
                         help="Show a task's delivery-pipeline (gate) status (CLI view)")
 
+    # --reverify <id> — recompute the done-gate verdict from git state
+    parser.add_argument("--reverify", metavar="TASK_ID",
+                        help="Recompute a task's verification from its branch and "
+                             "append a fresh verdict, clearing a stale done-gate block "
+                             "without re-dispatching (exit 0=passed, 1=failed, 2=unknown)")
+    parser.add_argument("--dry-run", dest="dry_run", action="store_true",
+                        help="With --reverify: compute the verdict without writing it")
+
     # --list [--prefix PREFIX] [--status STATUS]
     parser.add_argument("--list", action="store_true", help="List tasks")
     parser.add_argument("--prefix", metavar="PREFIX", help="Filter by id prefix (used with --list)")
@@ -624,6 +676,9 @@ def main():
 
     elif args.pipeline:
         sys.exit(cmd_pipeline(args.pipeline, args.json_out))
+
+    elif args.reverify:
+        sys.exit(cmd_reverify(args.reverify, args.json_out, dry_run=args.dry_run))
 
     elif args.list:
         sys.exit(cmd_list(args.prefix, args.status, args.json_out))

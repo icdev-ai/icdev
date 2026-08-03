@@ -125,7 +125,18 @@ CREATE TABLE IF NOT EXISTS kanban_verifications (
     review_passed         INTEGER,
     review_findings       TEXT,
     pytest_ran            INTEGER DEFAULT 0,
-    created_at            TEXT DEFAULT CURRENT_TIMESTAMP
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+    -- Present in production (added by migrations) but absent here, so a fresh
+    -- SQLite database got 27 columns while PostgreSQL had 32. Every INSERT
+    -- naming one of these — including the dispatch-time writer in
+    -- genesis/reflexes/kanban.py — raised "no column named ..." on a fresh DB
+    -- and was swallowed by its best-effort except. Listing them keeps the
+    -- promise this module's docstring already makes.
+    dispatch_source       TEXT,
+    classification        TEXT,
+    remediation_attempted INTEGER DEFAULT 0,
+    remediation_success   INTEGER,
+    remediation_type      TEXT
 )
 """
 

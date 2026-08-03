@@ -296,3 +296,33 @@ rag:
       index_type: IVF256_HNSW32
     sqlite:
       db_path: data/rag/rag_vectors.db
+# Anomaly-detection calibration for re-ranking. tools/rag/reranker_provider.py
+# documents these as the override surface for its module-level constants, but the
+# block was never shipped, so _load_rerank_anomaly_config() returned {} and every
+# value came from code. Mirrors the module defaults exactly — this is the knob,
+# not a behaviour change.
+reranker:
+  anomaly_detection:
+    enabled: true
+    # Minimum reranked rag_retrieval_log rows before the adaptive floor kicks in;
+    # below this, fallback_score_floor is used.
+    min_samples: 30
+    # Flag reranks scoring below mean − k·stddev of history.
+    stddev_k: 2.0
+    # Fallback when disabled or insufficient history (mirrors _RERANK_SCORE_FLOOR).
+    fallback_score_floor: 0.30
+    # Safe clamps for the adaptively-computed floor.
+    adaptive_bounds:
+      floor_min: 0.05
+      floor_max: 0.80
+# Same arrangement for vector search — see tools/rag/sqlite_vector_store.py.
+sqlite_vector_store:
+  anomaly_detection:
+    enabled: true
+    min_samples: 30
+    stddev_k: 2.0
+    # Mirrors _VECTOR_SCORE_FLOOR.
+    fallback_score_floor: 0.30
+    adaptive_bounds:
+      floor_min: 0.05
+      floor_max: 0.80
