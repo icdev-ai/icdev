@@ -106,10 +106,20 @@ trust_kernel:
       audit: true
 
   # D-GEN-8: circuit breaker — 3 consecutive failures disables Reflex
+  #
+  # xbm-wake-01: cooldown_minutes was declared here from the start but read by
+  # no code, and auto_reenable:false made the breaker a permanent latch.  Three
+  # transient GitHub-API outages in June 2026 therefore killed the `scout`
+  # reflex outright — it sat dormant for five weeks with nothing logged, and
+  # `research` likewise since 2026-06-13.  The cooldown is now implemented as a
+  # half-open probe (ReflexStateBase.is_circuit_open): after the window the
+  # next scheduled run is allowed through, a success closes the breaker, and a
+  # failure re-trips it and restarts the window.  A permanently broken reflex
+  # thus retries once an hour instead of never, and says so in the audit log.
   circuit_breaker:
     max_consecutive_failures: 3
     cooldown_minutes: 60
-    auto_reenable: false  # human must re-enable after trip
+    auto_reenable: true   # half-open retry after cooldown_minutes
     notify_on_trip: true
 
   # Kill switch
@@ -951,6 +961,54 @@ reflexes:
     promotion_threshold: 0.7  # Oracle confidence threshold for kanban card creation
     config_path: args/awareness_config.yaml  # Full config — probes, gaps, oracle, narrative
 
+  # ── IDP Score Recorder (per-component scorecard history — idp-score-03) ─────
+  # Deliberately on the awareness beat: awareness is what refreshes
+  # awareness_component_health, the source of the `probes-healthy` rule's facts,
+  # so a point recorded on the same cadence is scored against fresh probe data.
+  # Whether a point is actually DUE is decided by the scorecard's own
+  # `evaluation.window` (args/scorecards/<key>.yaml) — with the shipped 24h
+  # window this writes once a day and skips the other seven cycles. Shortening
+  # that window is a YAML edit; no code change and no config change here.
+
+  idp_score_recorder:
+    enabled: true
+    risk_tier: green
+    a2a_eligible: true    # read-heavy IQE evaluation — safe to distribute
+    schedule: "every 3h"
+    interval_seconds: 10800  # 3 hours — matches the awareness cycle
+    cooldown_minutes: 60
+    timeout_seconds: 300
+    depends_on: [awareness]  # score against the probe data this cycle refreshed
+    description: "Persist a scorecard evaluation per component per evaluation window so score and ladder-level trend are answerable"
+    success_metric:
+      name: rows_written
+      threshold: 0
+      operator: gte  # 0 = the window was already recorded; skipping is healthy
+    if_due: true      # false = write a point every cycle (backfill/demo only)
+
+  # ── IDP Delivery Events (keep the DORA window from emptying again) ──────────
+  # /api/sre/dora reads a rolling 30-day window, so a one-off backfill decays:
+  # every event it emitted ages out and the endpoint returns to
+  # metrics_assessed: 0 with nobody having changed a line. This is the writer
+  # that keeps the four keys measurable. The sync is incremental and idempotent,
+  # so a cycle with no new merges writes nothing and still succeeds.
+
+  idp_delivery_events:
+    enabled: true
+    risk_tier: green
+    a2a_eligible: true    # reads the kanban ledger, appends events — no LLM
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS in the reflex module
+    cooldown_minutes: 120
+    timeout_seconds: 300
+    description: "Emit DORA delivery events (deployment_initiated / deployment_failed / ci_pipeline_runs) for changes that landed since the last cycle"
+    days: 7           # steady-state look-back; a cold install backfills via the CLI --days 90
+    dry_run: false
+    success_metric:
+      name: deploy_events
+      threshold: 0
+      operator: gte  # 0 = no new merges this cycle; a quiet platform is healthy
+
   # ── Self-Monitor (project internal health into operator-facing /monitoring) ──
 
   self_monitor:
@@ -1105,6 +1163,22 @@ reflexes:
       name: isas_checked
       threshold: 0
       operator: gte          # Informational — 0 ISAs tracked is healthy; >0 checked is normal operation
+
+  # ── Full-tier coherence sweep (gate/sweep split) ─────────────────────────────
+
+  coherence_sweep:
+    timeout_seconds: 1800    # full 49-check tier on a cold tree measured 328s; head-room for a loaded host
+    enabled: true
+    risk_tier: green         # read-only: no --fix, writes only the gitignored .tmp/ baseline cache
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 120
+    description: "Full-tier coherence sweep on the main checkout. Runs the whole-app checks (blueprint_imports, openapi_parity, llm_router_api) that the per-task fast-tier gate defers, and refreshes the cached baseline that gate diffs new failures against. Delegates to tools.workflow.validated_commit helpers."
+    dry_run: false           # when true, reports failing checks without refreshing the baseline cache
+    success_metric:
+      name: failed_count
+      threshold: 0
+      operator: lte          # 0 failing checks on main is healthy; >0 means main has regressed
 
   # ── cATO Twin Continuous Monitoring (bdr-ops-1 — enabled after query soak) ───
 
