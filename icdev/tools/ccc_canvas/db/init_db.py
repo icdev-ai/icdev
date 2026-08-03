@@ -7,6 +7,7 @@ DB file: data/ccc_canvas.db  |  env: CCC_STORAGE_BACKEND, CCC_DB_PATH
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[4]
@@ -206,7 +207,7 @@ def init_db() -> None:
                     conn.commit()
                 except Exception:
                     pass  # column already exists
-        print(f"[init_db] CCC schema ready ({_CCC_BACKEND})")
+        print(f"[init_db] CCC schema ready ({_CCC_BACKEND})", file=sys.stderr)
     finally:
         conn.close()
 

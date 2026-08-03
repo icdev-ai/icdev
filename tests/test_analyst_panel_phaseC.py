@@ -13,8 +13,23 @@ import json
 import sqlite3
 from unittest.mock import MagicMock, patch
 
+import pytest
 
+from tests._sql_compat import connect as _translating_connect
 from tools.fathomdesk.agents.debate_engine import DebateResult
+
+
+@pytest.fixture(autouse=True)
+def _isolate_decision_log(tmp_path, monkeypatch):
+    """Keep decision_memory writes out of the tracked data/ file.
+
+    arbitrate() persists through decision_memory, whose default log path is the
+    tracked data/fathomdesk_decisions.md — so without this every run of these
+    tests appended fabricated decisions to a repo file.
+    """
+    monkeypatch.setenv(
+        "FATHOMDESK_DECISIONS_PATH", str(tmp_path / "fathomdesk_decisions.md")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -195,8 +210,7 @@ class TestRiskManagerGate0Floor:
         monkeypatch.setenv("ICDEV_DB_PATH", str(db_path))
 
         with patch("tools.fathomdesk.agents.risk_manager.get_connection") as mock_conn:
-            mock_conn.return_value = sqlite3.connect(str(db_path))
-            mock_conn.return_value.row_factory = sqlite3.Row
+            mock_conn.return_value = _translating_connect(db_path)
 
             rm = RiskManager(ticker="AAPL", as_of_date="2026-05-01")
             # min_confidence default is 0.60; 0.30 triggers Gate A
@@ -229,8 +243,7 @@ class TestRiskManagerGate0Floor:
         conn.close()
 
         with patch("tools.fathomdesk.agents.risk_manager.get_connection") as mock_conn:
-            mock_conn.return_value = sqlite3.connect(str(db_path))
-            mock_conn.return_value.row_factory = sqlite3.Row
+            mock_conn.return_value = _translating_connect(db_path)
 
             rm = RiskManager(ticker="MSFT", as_of_date="2026-05-01")
             high_conf_result = self._make_debate_result("BUY", confidence=0.80)
@@ -261,8 +274,7 @@ class TestRiskManagerGate0Floor:
         conn.close()
 
         with patch("tools.fathomdesk.agents.risk_manager.get_connection") as mock_conn:
-            mock_conn.return_value = sqlite3.connect(str(db_path))
-            mock_conn.return_value.row_factory = sqlite3.Row
+            mock_conn.return_value = _translating_connect(db_path)
 
             rm = RiskManager(ticker="TSLA", as_of_date="2026-05-01")
             hold_result = self._make_debate_result("HOLD", confidence=0.90)
@@ -312,9 +324,7 @@ class TestDecisionAuditRow:
         db_path = self._create_audit_db(tmp_path / "audit_test.db")
 
         def _get_fresh_conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            return _translating_connect(db_path)
 
         debate_result = DebateResult(
             bull_case="Strong fundamentals.",
@@ -362,9 +372,7 @@ class TestDecisionAuditRow:
         db_path = self._create_audit_db(tmp_path / "audit_scores.db")
 
         def _get_fresh_conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            return _translating_connect(db_path)
 
         debate_result = DebateResult(
             bull_case="Bull.",
@@ -497,9 +505,7 @@ class TestAnalystPanelDisabledFallback:
         conn.close()
 
         def _fresh_conn():
-            c = sqlite3.connect(str(db_path))
-            c.row_factory = sqlite3.Row
-            return c
+            return _translating_connect(db_path)
 
         with patch("tools.fathomdesk.agents.debate_engine.DebateEngine.run", return_value=fake_result) as mock_run, \
              patch("tools.fathomdesk.agents.risk_manager.get_connection", side_effect=_fresh_conn):

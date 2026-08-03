@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS fa_missions (
     order_idx INTEGER NOT NULL DEFAULT 0,
     difficulty TEXT DEFAULT 'intermediate',
     estimated_minutes INTEGER DEFAULT 30,
+    -- aca-trn-03: what the learner will be able to do afterwards. NULL where the
+    -- authored content states none — never a synthesised stand-in, because this is
+    -- the field a compliance audit reads. Extracted by
+    -- content_loader.extract_learning_objective; migration 20260803005919 backfills.
+    learning_objective TEXT,
     source_credit TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'active',
@@ -152,6 +157,7 @@ CREATE TABLE IF NOT EXISTS fa_guilds (
     description TEXT,
     invite_code TEXT NOT NULL UNIQUE,
     created_by INTEGER REFERENCES fa_users(id),
+    tenant_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -254,6 +260,114 @@ CREATE TABLE IF NOT EXISTS fa_certificate_evidence (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- aca-trn-04: the instructor workflow. Declared here as well as in migration 323
+-- for the same reason as fa_xp_ledger above — a query against a missing table
+-- inside a caller's open transaction ABORTS that transaction on PostgreSQL.
+CREATE TABLE IF NOT EXISTS fa_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_type TEXT NOT NULL DEFAULT 'mission',
+    mission_id INTEGER REFERENCES fa_missions(id),
+    track_key TEXT,
+    target_type TEXT NOT NULL DEFAULT 'learner',
+    target_user_id INTEGER REFERENCES fa_users(id),
+    target_role TEXT,
+    due_at TEXT,
+    note TEXT,
+    assigned_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS fa_instructor_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES fa_users(id),
+    mission_id INTEGER REFERENCES fa_missions(id),
+    step_id INTEGER REFERENCES fa_mission_steps(id),
+    assignment_id INTEGER REFERENCES fa_assignments(id),
+    verdict TEXT NOT NULL,
+    override_score INTEGER,
+    prior_score INTEGER,
+    comment TEXT,
+    reviewer TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). A grade override that cannot
+-- be attributed to a person is indistinguishable from a bug in the grader.
+CREATE TABLE IF NOT EXISTS fa_instructor_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    actor_role TEXT,
+    subject_type TEXT,
+    subject_id TEXT,
+    detail_json TEXT DEFAULT '{}',
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- aca-trn-01: the assessment model. Declared here as well as in migration 324 for
+-- the same reason as fa_xp_ledger — a query against a missing table inside an open
+-- transaction aborts that transaction on PostgreSQL, and classify_step runs on every
+-- mission page render.
+CREATE TABLE IF NOT EXISTS fa_assessment_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id       INTEGER NOT NULL,
+    item_key      TEXT NOT NULL,
+    prompt        TEXT NOT NULL,
+    options_json  TEXT NOT NULL DEFAULT '[]',
+    correct_index INTEGER NOT NULL DEFAULT 0,
+    explanation   TEXT,
+    difficulty    TEXT DEFAULT 'core',
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id     TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(step_id, item_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fa_items_step ON fa_assessment_items(step_id);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). An attempt limit whose ledger can
+-- be edited is not a limit, and fa_xp_ledger cites these rows.
+CREATE TABLE IF NOT EXISTS fa_step_attempts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    step_id      INTEGER NOT NULL,
+    kind         TEXT NOT NULL DEFAULT 'attempt',
+    attempt_num  INTEGER NOT NULL DEFAULT 1,
+    policy       TEXT NOT NULL DEFAULT 'practice',
+    served_json  TEXT NOT NULL DEFAULT '[]',
+    answers_json TEXT,
+    score_pct    INTEGER,
+    passed       INTEGER,
+    closed_at    TEXT,
+    reason       TEXT,
+    actor        TEXT,
+    classification TEXT DEFAULT 'CUI',
+    tenant_id    TEXT,
+    created_at   TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_fa_attempts_user_step ON fa_step_attempts(user_id, step_id);
+
+CREATE TABLE IF NOT EXISTS fa_step_assessment_policy (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id            INTEGER NOT NULL,
+    policy             TEXT NOT NULL DEFAULT 'practice',
+    items_per_attempt  INTEGER,
+    pass_threshold_pct INTEGER,
+    max_attempts       INTEGER,
+    updated_at         TEXT,
+    created_at         TEXT DEFAULT (datetime('now')),
+    UNIQUE(step_id)
+);
+
 CREATE TABLE IF NOT EXISTS fa_oracle_predictions (
     id TEXT PRIMARY KEY,
     lens_id TEXT NOT NULL,
@@ -329,6 +443,7 @@ CREATE TABLE IF NOT EXISTS fa_step_ontology (
     step_id INTEGER NOT NULL REFERENCES fa_mission_steps(id),
     ontology_id TEXT NOT NULL,
     step_class TEXT,
+    competency_class TEXT,
     UNIQUE(step_id)
 );
 
@@ -346,12 +461,40 @@ CREATE TABLE IF NOT EXISTS fa_user_competencies (
 CREATE INDEX IF NOT EXISTS idx_fa_user_competencies_user ON fa_user_competencies(user_id);
 CREATE INDEX IF NOT EXISTS idx_fa_user_competencies_class ON fa_user_competencies(competency_class);
 
+-- kg_nodes / kg_edges are PLATFORM-OWNED, not Academy tables: on a provisioned
+-- install they already hold thousands of rows from the rest of ICDEV, so these
+-- CREATE ... IF NOT EXISTS statements are no-ops there and the column list below
+-- must match the platform schema exactly.
+--
+-- aca-trn-02: it did not. This block declared `kg_edges.label`, but the platform
+-- table names that column `relationship`. Every competency edge insert therefore
+-- raised UndefinedColumn on PostgreSQL — swallowed by a bare `except: pass`,
+-- which on PG leaves the transaction ABORTED, so the very next statement in
+-- record_user_competency failed with InFailedSqlTransaction. The competency
+-- chain could not have recorded a single row on the primary backend.
+--
+-- The platform declares both graph_id columns as REFERENCES kg_graphs(id), so a
+-- node cannot be inserted into a graph that does not exist yet. kg_graphs is
+-- declared here for the same reason the other two are: so the Academy can
+-- guarantee its own graph row. See _ensure_kg_graph.
+CREATE TABLE IF NOT EXISTS kg_graphs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    name TEXT NOT NULL,
+    description TEXT,
+    entity_count INTEGER DEFAULT 0,
+    edge_count INTEGER DEFAULT 0,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT,
+    updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS kg_nodes (
     id TEXT PRIMARY KEY,
     graph_id TEXT NOT NULL,
-    label TEXT,
-    entity_type TEXT,
-    properties TEXT,
+    label TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    properties TEXT DEFAULT '{}',
     created_at TEXT
 );
 
@@ -360,8 +503,9 @@ CREATE TABLE IF NOT EXISTS kg_edges (
     graph_id TEXT NOT NULL,
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
-    label TEXT,
-    properties TEXT,
+    relationship TEXT NOT NULL,
+    weight REAL DEFAULT 1.0,
+    properties TEXT DEFAULT '{}',
     created_at TEXT
 );
 """
@@ -410,6 +554,12 @@ def migrate():
             "ALTER TABLE fa_missions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
             "ALTER TABLE fa_missions ADD COLUMN updated_at TEXT",
             "ALTER TABLE fa_leaderboard_cache ADD COLUMN tenant_id TEXT",
+            # aca-trn-04: guilds were the one cross-learner object with no tenant
+            # column, so an invite code from one tenant was joinable from another.
+            "ALTER TABLE fa_guilds ADD COLUMN tenant_id TEXT",
+            # aca-trn-02 / migration 328 — steps carry a competency class too, so a
+            # certificate can cite the specific submissions behind a claim.
+            "ALTER TABLE fa_step_ontology ADD COLUMN competency_class TEXT",
         ]:
             try:
                 conn.execute(col_ddl)
@@ -421,7 +571,12 @@ def migrate():
                     pass  # Column already exists
         _seed_achievements(conn)
         _seed_skill_nodes(conn)
-        seed_mission_ontology_mappings()
+        # NOTE: seed_mission_ontology_mappings() is deliberately NOT called here.
+        # migrate() runs BEFORE seed_mission_catalog(), so on a fresh install
+        # fa_missions is still empty at this point and every mapping lookup found
+        # nothing. That ordering is why 35 of 124 missions and 122 of 212 steps
+        # carried no ontology row in production (aca-trn-02). The caller seeds the
+        # catalog first and then maps it — see blueprint._ensure_init.
     finally:
         _set_lock_timeout(conn, "0")  # restore PG default (no lock timeout)
 
@@ -436,8 +591,8 @@ def _seed_achievements(conn):
                 (a["slug"], a["title"], a["description"], a["icon"],
                  a["xp_bonus"], a["rarity"], a["criteria_json"]),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            _log.warning("_seed_achievements: best-effort INSERT into fa_achievements failed (non-blocking): %s", exc)
     conn.commit()
 
 
@@ -452,8 +607,8 @@ def _seed_skill_nodes(conn):
                 (n["slug"], n["title"], n["tier"], n["role_filter"],
                  json.dumps(n.get("prereqs", [])), pos[0], pos[1]),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            _log.warning("_seed_skill_nodes: best-effort INSERT into fa_skill_nodes failed (non-blocking): %s", exc)
     conn.commit()
 
 
@@ -813,17 +968,22 @@ def upsert_mission(data: dict) -> int:
     conn.execute(
         """INSERT INTO fa_missions
            (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
-            prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit,
+            learning_objective)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(slug) DO UPDATE SET
              title=excluded.title, tagline=excluded.tagline,
-             xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
+             xp_reward=excluded.xp_reward, order_idx=excluded.order_idx,
+             learning_objective=COALESCE(excluded.learning_objective,
+                                         fa_missions.learning_objective)""",
         (data["slug"], data["title"], data.get("tagline", ""),
          data.get("tier", 1), data.get("topic", ""), data.get("role_filter", "all"),
          data.get("mission_type", "coding"), data.get("xp_reward", 200),
          json.dumps(data.get("prereqs", [])), data.get("order_idx", 0),
          data.get("difficulty", "intermediate"), data.get("estimated_minutes", 30),
-         data.get("source_credit", "")),
+         data.get("source_credit", ""),
+         # aca-trn-03: NULL, not "", so an unstated objective is one state.
+         (data.get("learning_objective") or None)),
     )
     conn.commit()
     row = conn.execute("SELECT id FROM fa_missions WHERE slug=%s", (data["slug"],)).fetchone()
@@ -931,13 +1091,20 @@ def get_step_progress(user_id: int, step_id: int) -> dict:
 
 
 def record_step_attempt(user_id: int, step_id: int, submission: str = "",
-                        passed: bool = True, hints_used: int = 0) -> str:
+                        passed: bool = True, hints_used: int = 0,
+                        score: int | None = None) -> str:
     """Record a submission against a step. Returns the resulting status.
 
     aca-int-05: this used to hardcode status='completed' in BOTH branches, so a
     FAILED submission was filed as a completed step (only `score` recorded the
     failure) and `steps_completed` counted it. A failure is now stored as
     STEP_STATUS_ATTEMPTED, and only a pass sets completed_at.
+
+    aca-trn-01: `score` used to be `100 if passed else 0` unconditionally — a step
+    could not express "2 of 3 items correct". An item-scored step now passes its real
+    percentage; callers with nothing better to say leave it None and get the old
+    binary, which is still correct for a coding step (the runner reports one boolean
+    for the whole suite, see CODING_PASS_THRESHOLD_PCT).
 
     Mastery is never withdrawn: once a step is completed, a later failed
     experiment records the submission but does not downgrade the status or the
@@ -946,7 +1113,7 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     status = STEP_STATUS_COMPLETED if passed else STEP_STATUS_ATTEMPTED
-    score = 100 if passed else 0
+    score = (100 if passed else 0) if score is None else int(score)
     existing = conn.execute(
         "SELECT id, status, score FROM fa_step_progress WHERE user_id=%s AND step_id=%s",
         (user_id, step_id),
@@ -962,6 +1129,13 @@ def record_step_attempt(user_id: int, step_id: int, submission: str = "",
             )
             conn.commit()
             return STEP_STATUS_COMPLETED
+        if already_done == STEP_STATUS_COMPLETED:
+            # aca-trn-01: a real percentage makes it possible to PASS a step you have
+            # already passed with a lower score — 100% on the first attempt, then 70%
+            # on a later practice run. Keeping the best score is the same
+            # "mastery is never withdrawn" rule the branch above applies to status.
+            prior = (existing["score"] if hasattr(existing, "keys") else existing[2]) or 0
+            score = max(int(prior), score)
         conn.execute(
             "UPDATE fa_step_progress SET status=%s, submission=%s, score=%s, "
             "hints_used=%s, completed_at=%s WHERE user_id=%s AND step_id=%s",
@@ -1349,7 +1523,8 @@ def grant_achievement(user_id: int, slug: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def create_guild(
-    name: str, description: str, created_by: int, invite_code: str | None = None
+    name: str, description: str, created_by: int, invite_code: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict:
     """Create a guild and make ``created_by`` its leader.
 
@@ -1361,12 +1536,19 @@ def create_guild(
 
     Codes are stored uppercased because ``join_guild`` uppercases before
     lookup; a lowercase code would be unjoinable.
+
+    aca-trn-04: ``tenant_id`` is stamped on the guild so ``join_guild`` can
+    refuse a cross-tenant join. Before this the invite code was the only key,
+    and it is global — a code leaked out of one tenant admitted a learner from
+    another straight into ``get_guild_stats``, which returns every member's name
+    and XP.
     """
     conn = get_connection()
     code = (invite_code or secrets.token_urlsafe(6)).upper()
     conn.execute(
-        "INSERT INTO fa_guilds (name,description,invite_code,created_by) VALUES (%s,%s,%s,%s)",
-        (name, description, code, created_by),
+        "INSERT INTO fa_guilds (name,description,invite_code,created_by,tenant_id) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        (name, description, code, created_by, tenant_id),
     )
     conn.commit()
     row = conn.execute(
@@ -1384,12 +1566,33 @@ def create_guild(
     return guild
 
 
-def join_guild(invite_code: str, user_id: int) -> dict | None:
+def _same_tenant(left, right) -> bool:
+    """Whether two tenant values name the same population.
+
+    NULL and '' are both written for "no tenant" (the SaaS middleware returns
+    None, refresh_leaderboard_cache stores ''), so comparing them raw would split
+    one real tenant in two.
+    """
+    return (left or "") == (right or "")
+
+
+def join_guild(invite_code: str, user_id: int, tenant_id: str | None = None) -> dict | None:
+    """Join a guild by invite code, or None when the code does not resolve.
+
+    aca-trn-04: returns None for a guild in a DIFFERENT tenant as well as for a
+    missing code — deliberately the same answer, so a probe cannot use the
+    response to confirm that someone else's invite code exists.
+    """
     conn = get_connection()
     guild = conn.execute(
         "SELECT * FROM fa_guilds WHERE invite_code=%s", (invite_code.upper(),)
     ).fetchone()
     if not guild:
+        return None
+    guild_tenant = dict(guild).get("tenant_id")
+    if not _same_tenant(guild_tenant, tenant_id):
+        _log.warning("cross-tenant guild join refused: guild %s, user %s",
+                     dict(guild).get("id"), user_id)
         return None
     try:
         conn.execute(
@@ -1400,32 +1603,53 @@ def join_guild(invite_code: str, user_id: int) -> dict | None:
             "UPDATE fa_users SET guild_id=%s WHERE id=%s", (guild["id"], user_id)
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        _log.warning("join_guild: best-effort INSERT into fa_guild_members failed (non-blocking): %s", exc)
     return dict(guild)
 
 
-def get_guild_stats(guild_id: int) -> dict | None:
+def get_guild_stats(guild_id: int, tenant_id: str | None = None) -> dict | None:
     """Members and total XP for a guild, or None when the guild does not exist.
 
     aca-hyg-03: this returned {"members": [], "total_xp": 0} either way, so a caller
     could not tell an empty guild from a missing one and the route 200'd on a bad id.
     An empty-but-real guild still returns a dict with an empty member list.
+
+    aca-trn-04: a guild belonging to another tenant reads as missing — the check is
+    unconditional, not opt-in, because ``tenant_id=None`` is itself a real tenant
+    (the default one) and an opt-in check would leave the caller who most needs it
+    unprotected. ``/api/academy/guild/<id>`` takes the id straight from the URL and
+    had no authorisation of any kind, so with more than one tenant enrolled it was an
+    id-enumeration read of every learner's display name and XP. Members are filtered
+    by tenant too: guild rows predating this column carry NULL and would otherwise
+    still list the cross-tenant members joined before the fix.
     """
     conn = get_connection()
-    exists = conn.execute(
-        "SELECT 1 FROM fa_guilds WHERE id=%s", (guild_id,)
+    row = conn.execute(
+        "SELECT tenant_id FROM fa_guilds WHERE id=%s", (guild_id,)
     ).fetchone()
-    if not exists:
+    if not row:
         return None
-    members = conn.execute(
-        """SELECT u.display_name, u.xp, u.level, gm.role
-           FROM fa_guild_members gm
-           JOIN fa_users u ON u.id=gm.user_id
-           WHERE gm.guild_id=%s
-           ORDER BY u.xp DESC""",
-        (guild_id,),
-    ).fetchall()
+    if not _same_tenant(dict(row).get("tenant_id"), tenant_id):
+        return None
+    if tenant_id:
+        members = conn.execute(
+            """SELECT u.display_name, u.xp, u.level, gm.role
+               FROM fa_guild_members gm
+               JOIN fa_users u ON u.id=gm.user_id
+               WHERE gm.guild_id=%s AND u.tenant_id=%s
+               ORDER BY u.xp DESC""",
+            (guild_id, tenant_id),
+        ).fetchall()
+    else:
+        members = conn.execute(
+            """SELECT u.display_name, u.xp, u.level, gm.role
+               FROM fa_guild_members gm
+               JOIN fa_users u ON u.id=gm.user_id
+               WHERE gm.guild_id=%s AND (u.tenant_id IS NULL OR u.tenant_id='')
+               ORDER BY u.xp DESC""",
+            (guild_id,),
+        ).fetchall()
     total_xp = sum(m["xp"] for m in members)
     return {"members": [dict(m) for m in members], "total_xp": total_xp}
 
@@ -1437,11 +1661,25 @@ def get_guild_stats(guild_id: int) -> dict | None:
 _LEADERBOARD_CACHE_TTL = 300  # seconds
 
 
-def _leaderboard_cache_fresh(conn, period: str) -> bool:
+def _leaderboard_cache_fresh(conn, period: str, tenant_id: str | None = None) -> bool:
+    """Whether THIS TENANT's cache for ``period`` is inside the TTL.
+
+    aca-trn-04: the freshness probe ignored tenant_id while every read and write
+    around it was tenant-scoped. So the first tenant to refresh made the cache
+    look fresh for all of them, and every other tenant's ``refresh_leaderboard_cache``
+    was skipped forever — their rows were never written, the cache query returned
+    nothing, and they silently fell through to the uncached fallback (which has no
+    ``rank_pos``). Invisible with one learner in one tenant; permanent with two.
+    """
     try:
-        row = conn.execute(
-            "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=%s", (period,)
-        ).fetchone()
+        params: list = [period]
+        q = "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=%s"
+        if tenant_id:
+            q += " AND tenant_id=%s"
+            params.append(tenant_id)
+        else:
+            q += " AND (tenant_id IS NULL OR tenant_id='')"
+        row = conn.execute(q, params).fetchone()
         if not row or not row[0]:
             return False
         cached_at = datetime.fromisoformat(row[0].replace("Z", "+00:00"))
@@ -1474,8 +1712,11 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
                 (u["id"], period, u["xp"], rank, now, tenant_id or ""),
             )
             count += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            _log.warning(
+                "refresh_leaderboard_cache: best-effort INSERT into fa_leaderboard_cache failed (non-blocking): %s",
+                exc,
+            )
     try:
         conn.commit()
     except Exception:
@@ -1485,7 +1726,7 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
 
 def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, tenant_id: str | None = None) -> list[dict]:
     conn = get_connection()
-    if not _leaderboard_cache_fresh(conn, period):
+    if not _leaderboard_cache_fresh(conn, period, tenant_id):
         try:
             refresh_leaderboard_cache(period=period, tenant_id=tenant_id)
         except Exception:
@@ -1628,6 +1869,32 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
             gates.append({"name": "Role Tier 2", "met": False,
                           "detail": "Set your role in profile first"})
 
+    # Gate: aggregate assessment score (aca-trn-01)
+    #
+    # This requirement has been declared in CERT_TIERS since the certificates were
+    # written — "Tier 1 complete + full role Tier 2 track + 20-question adaptive
+    # assessment", assessment_score_min: 70 — and NOTHING read it. It fell off the end
+    # of this if-chain, so the Foundation certificate attested to an assessment that
+    # did not exist. It is enforced here now that there is a model behind it.
+    if reqs.get("assessment_score_min"):
+        from apps.forge_academy.assessment import certificate_assessment_score
+
+        result = certificate_assessment_score(user_id)
+        threshold = int(reqs["assessment_score_min"])
+        met = bool(result["graded_steps"]) and result["score"] >= threshold
+        gates.append({
+            "name": f"Assessment Score >= {threshold}",
+            "met": met,
+            # collect_cert_evidence snapshots this string verbatim into
+            # fa_certificate_evidence (aca-int-07), so it has to carry the figures.
+            "detail": (
+                f"Assessment score: {result['score']}% across "
+                f"{result['graded_steps']} graded steps"
+                if result["graded_steps"] else
+                "No graded steps attempted yet — the score cannot be satisfied vacuously"
+            ),
+        })
+
     # Gate: Foundation cert required
     if reqs.get("foundation"):
         has_found = conn.execute(
@@ -1759,6 +2026,44 @@ def collect_cert_evidence(user_id: int, eligibility: dict, conn) -> list[dict]:
             "demonstrated_at": d.get("completed_at"),
             "score": d.get("score"),
         })
+
+    # 4. The competencies those missions demonstrated (aca-trn-02).
+    #
+    # Missions and steps say what the learner DID. A competency says what that
+    # work is evidence OF, in a vocabulary shared with the rest of the platform's
+    # ontology — which is the part a reader outside the Academy can actually
+    # act on. Snapshotted here with the rest, for the same reason: the claim must
+    # not drift after issue.
+    try:
+        comps = conn.execute(
+            """SELECT uc.competency_class, uc.demonstrated_at,
+                      COUNT(*) AS mission_count,
+                      MIN(uc.demonstrated_at) AS first_at
+                 FROM fa_user_competencies uc
+                WHERE uc.user_id = %s
+                GROUP BY uc.competency_class, uc.demonstrated_at
+                ORDER BY uc.competency_class""",
+            (user_id,),
+        ).fetchall()
+    except Exception:
+        comps = []
+    rolled: dict[str, dict] = {}
+    for r in comps:
+        d = dict(r)
+        cls = d["competency_class"]
+        cur = rolled.setdefault(cls, {"n": 0, "first_at": d.get("first_at")})
+        cur["n"] += int(d.get("mission_count") or 1)
+        if (d.get("first_at") or "") < (cur["first_at"] or ""):
+            cur["first_at"] = d.get("first_at")
+    for cls, agg in sorted(rolled.items()):
+        evidence.append({
+            "evidence_type": "competency",
+            "ref_id": None,
+            "label": cls,
+            "detail": f"demonstrated across {agg['n']} completed mission(s)",
+            "demonstrated_at": agg["first_at"],
+            "score": None,
+        })
     return evidence
 
 
@@ -1768,8 +2073,8 @@ def get_cert_evidence(cert_id: int) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT * FROM fa_certificate_evidence WHERE cert_id=%s "
-            "ORDER BY CASE evidence_type WHEN 'gate' THEN 0 WHEN 'mission' THEN 1 "
-            "ELSE 2 END, id",
+            "ORDER BY CASE evidence_type WHEN 'gate' THEN 0 WHEN 'competency' THEN 1 "
+            "WHEN 'mission' THEN 2 ELSE 3 END, id",
             (cert_id,),
         ).fetchall()
     except Exception:
@@ -1880,8 +2185,16 @@ def verify_certificate_token(token: str) -> dict | None:
 
 def upsert_mission_ontology(mission_id: int, ontology_id: str, mission_class: str,
                              topic_class: str, competency_class: str,
-                             prereq_paths: list[str] | None = None) -> None:
-    conn = get_connection()
+                             prereq_paths: list[str] | None = None,
+                             conn=None) -> None:
+    """Map one mission to its ontology classes.
+
+    `conn` lets the seeder pass its own connection so a whole catalog is mapped
+    in one transaction with one commit, instead of opening and committing once
+    per mission.
+    """
+    own = conn is None
+    conn = conn or get_connection()
     conn.execute(
         """INSERT INTO fa_mission_ontology
            (mission_id, ontology_id, mission_class, topic_class, competency_class, prereq_ontology_paths_json)
@@ -1895,32 +2208,62 @@ def upsert_mission_ontology(mission_id: int, ontology_id: str, mission_class: st
         (mission_id, ontology_id, mission_class, topic_class, competency_class,
          json.dumps(prereq_paths or [])),
     )
-    conn.commit()
+    if own:
+        conn.commit()
 
 
-def upsert_step_ontology(step_id: int, ontology_id: str, step_class: str) -> None:
-    conn = get_connection()
+def upsert_step_ontology(step_id: int, ontology_id: str, step_class: str,
+                          competency_class: str | None = None, conn=None) -> None:
+    own = conn is None
+    conn = conn or get_connection()
     conn.execute(
         """INSERT INTO fa_step_ontology
-           (step_id, ontology_id, step_class)
-           VALUES (%s, %s, %s)
+           (step_id, ontology_id, step_class, competency_class)
+           VALUES (%s, %s, %s, %s)
            ON CONFLICT(step_id) DO UPDATE SET
              ontology_id=excluded.ontology_id,
-             step_class=excluded.step_class""",
-        (step_id, ontology_id, step_class),
+             step_class=excluded.step_class,
+             competency_class=excluded.competency_class""",
+        (step_id, ontology_id, step_class, competency_class),
     )
-    conn.commit()
+    if own:
+        conn.commit()
 
 
 # ---------------------------------------------------------------------------
 # Competency tracking + KG edges
 # ---------------------------------------------------------------------------
 
+def _rollback_quietly(conn) -> None:
+    """Return an errored connection to a usable state.
+
+    Unconditional, because ``getattr(conn, "in_transaction", False)`` is always
+    False on a StorageConnection — it forwards nothing extra — so there is no
+    state to test first. On PostgreSQL a failed statement poisons the whole
+    transaction: every later statement raises InFailedSqlTransaction until
+    somebody rolls back. That is the mechanism by which one bad column name in
+    the KG edge insert took down the SELECT that followed it.
+    """
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+
+
 def record_user_competency(user_id: int, competency_class: str,
                             source_mission_id: int | None = None,
                             source_step_id: int | None = None,
                             evidence: dict | None = None) -> dict:
-    """Record a demonstrated competency and create a KG edge."""
+    """Record a demonstrated competency and link it into the knowledge graph.
+
+    Raises on failure to record the competency itself — a training record that
+    reports success when it wrote nothing is worse than no training record.
+
+    The KG edge is a secondary index over data that now lives in
+    fa_user_competencies, so a failure there is reported in the returned
+    ``kg_edge`` field rather than thrown: it must not cost the learner the
+    credit they earned. It is no longer swallowed silently.
+    """
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -1932,24 +2275,77 @@ def record_user_competency(user_id: int, competency_class: str,
     )
     conn.commit()
 
-    # Create KG edge: user -> demonstrates -> competency_class
+    kg_edge = "ok"
     try:
         _create_kg_competency_edge(conn, user_id, competency_class, source_mission_id, now)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Roll back BEFORE anything else touches this connection.
+        _rollback_quietly(conn)
+        kg_edge = f"failed: {exc}"
+        _log.warning("competency KG edge failed for user %s / %s: %s",
+                     user_id, competency_class, exc)
 
     row = conn.execute(
-        "SELECT * FROM fa_user_competencies WHERE user_id=%s AND competency_class=%s AND source_mission_id=%s",
+        "SELECT * FROM fa_user_competencies WHERE user_id=%s AND competency_class=%s "
+        "AND source_mission_id=%s",
         (user_id, competency_class, source_mission_id),
     ).fetchone()
-    return dict(row) if row else {"user_id": user_id, "competency_class": competency_class}
+    result = dict(row) if row else {"user_id": user_id, "competency_class": competency_class}
+    result["kg_edge"] = kg_edge
+    return result
+
+
+KG_GRAPH_ID = "icdev-core-ontology"
+
+
+def _ensure_kg_graph(conn) -> None:
+    """Guarantee the graph row the competency nodes and edges hang off.
+
+    The platform's KG DDL (tools/knowledge_graph/ingester.py, federation.py,
+    graph_rag.py) declares ``graph_id TEXT NOT NULL REFERENCES kg_graphs(id)``,
+    and ``icdev-core-ontology`` is created by exactly one thing — the ontology
+    federation pass, which runs only when somebody federates the ontology. On an
+    install built from that DDL and never federated, the node insert fails on a
+    foreign key, not on a column name.
+
+    How much this bites depends on whether the constraint was materialised.
+    Verified 2026-08-02: the current production PostgreSQL has the three tables
+    but NOT the foreign key (only kg_nodes.source_chunk_id -> rag_chunks), so
+    there the edge failed on the column name alone; a SQLite install with
+    ``PRAGMA foreign_keys=ON``, or any PG built from the DDL above, fails on the
+    key as well. Do not "disprove" this by checking production for a constraint
+    that instance never had — seeding the row is what makes the chain correct on
+    both, and a graph row is the right thing to have regardless of enforcement.
+
+    Same graph id and same graph_type as the federation pass, so this seeds the
+    row federation would later UPDATE rather than forking a parallel graph.
+    """
+    row = conn.execute("SELECT id FROM kg_graphs WHERE id=%s", (KG_GRAPH_ID,)).fetchone()
+    if row:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT OR IGNORE INTO kg_graphs
+           (id, project_id, name, description, metadata, created_at, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (KG_GRAPH_ID, None, "ICDEV Core Ontology",
+         "Unified ontology graph; FORGE Academy links demonstrated competencies here.",
+         json.dumps({"graph_type": "ontology", "source": "forge_academy"}), now, now),
+    )
 
 
 def _create_kg_competency_edge(conn, user_id: int, competency_class: str,
                                 source_mission_id: int | None, demonstrated_at: str) -> None:
-    """Insert a KG edge linking the user to the ontology competency class."""
+    """Insert a KG edge linking the user to the ontology competency class.
+
+    kg_nodes/kg_edges are platform-owned. The edge's relation column is named
+    ``relationship``; this wrote ``label`` and failed on every call against
+    PostgreSQL (aca-trn-02). Keep the column list in step with the platform
+    schema, not with the Academy's local CREATE IF NOT EXISTS.
+    """
+    _ensure_kg_graph(conn)
     user = conn.execute("SELECT username FROM fa_users WHERE id=%s", (user_id,)).fetchone()
-    user_label = user["username"] if user else f"user_{user_id}"
+    user_label = (user["username"] if user else None) or f"user_{user_id}"
     source_node = f"fa_user:{user_id}"
     target_node = f"ontology:{competency_class}"
     edge_id = f"{source_node}--demonstrates--{target_node}--{source_mission_id or 0}"
@@ -1958,24 +2354,173 @@ def _create_kg_competency_edge(conn, user_id: int, competency_class: str,
         """INSERT OR REPLACE INTO kg_nodes
            (id, graph_id, label, entity_type, properties, created_at)
            VALUES (%s, %s, %s, %s, %s, %s)""",
-        (source_node, "icdev-core-ontology", user_label, "fa_user",
+        (source_node, KG_GRAPH_ID, user_label, "fa_user",
          json.dumps({"user_id": user_id}), demonstrated_at),
     )
     conn.execute(
         """INSERT OR REPLACE INTO kg_nodes
            (id, graph_id, label, entity_type, properties, created_at)
            VALUES (%s, %s, %s, %s, %s, %s)""",
-        (target_node, "icdev-core-ontology", competency_class, "ontology_class",
+        (target_node, KG_GRAPH_ID, competency_class, "ontology_class",
          json.dumps({"canonical_id": competency_class}), demonstrated_at),
     )
     conn.execute(
         """INSERT OR REPLACE INTO kg_edges
-           (id, graph_id, source_id, target_id, label, properties, created_at)
+           (id, graph_id, source_id, target_id, relationship, properties, created_at)
            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-        (edge_id, "icdev-core-ontology", source_node, target_node, "demonstrates",
+        (edge_id, KG_GRAPH_ID, source_node, target_node, "demonstrates",
          json.dumps({"source_mission_id": source_mission_id, "user_id": user_id}), demonstrated_at),
     )
     conn.commit()
+
+
+def record_mission_competencies(user_id: int, mission_id: int, score: int = 100,
+                                 hints_used: int = 0) -> dict:
+    """Record every competency a verified mission completion demonstrates.
+
+    This is the whole point of the chain: a mission the learner finished is
+    converted into specific, cited claims — the tier it was at, the subject it
+    was in, and the classes carried by the individual steps they actually
+    passed. Each row carries the evidence it rests on, so a certificate can
+    quote it and a verifier can check it.
+
+    Returns a summary rather than raising, so the caller can put the outcome in
+    the response the learner sees. ``recorded`` empty with ``classes`` non-empty
+    means every class was already on file (the mission was re-completed);
+    ``classes`` empty means the mission has no ontology mapping, which is a
+    catalog defect and is reported as ``unmapped``.
+    """
+    from .ontology import build_mission_competency_classes
+
+    conn = get_connection()
+    result: dict = {"recorded": [], "classes": [], "errors": [], "unmapped": False,
+                    "kg_edges": "ok"}
+
+    try:
+        onto = conn.execute(
+            """SELECT o.topic_class, o.competency_class, m.slug, m.title, m.tier
+                 FROM fa_missions m
+                 LEFT JOIN fa_mission_ontology o ON o.mission_id = m.id
+                WHERE m.id = %s""",
+            (mission_id,),
+        ).fetchone()
+    except Exception as exc:
+        _rollback_quietly(conn)
+        result["errors"].append(str(exc))
+        return result
+
+    if not onto:
+        result["errors"].append(f"mission {mission_id} not found")
+        return result
+    onto = dict(onto)
+
+    if not onto.get("competency_class") and not onto.get("topic_class"):
+        # The mission exists but was never mapped. Say so — silently recording
+        # nothing here is what made 35 unmapped missions invisible.
+        result["unmapped"] = True
+        _log.warning("mission %s (%s) has no ontology mapping — no competency recorded",
+                     mission_id, onto.get("slug"))
+        return result
+
+    classes = build_mission_competency_classes(
+        onto.get("topic_class") or "", onto.get("tier") or 1)
+
+    # The step classes the learner actually earned. A mission is completed by
+    # passing its steps, so the steps are the evidence, and only steps that
+    # carry a competency class (i.e. not passive `watch` steps) count.
+    step_evidence: dict[str, list[int]] = {}
+    try:
+        rows = conn.execute(
+            """SELECT so.competency_class, s.id AS step_id
+                 FROM fa_step_progress sp
+                 JOIN fa_mission_steps s ON s.id = sp.step_id
+                 JOIN fa_step_ontology so ON so.step_id = s.id
+                WHERE sp.user_id = %s AND s.mission_id = %s
+                  AND sp.status = 'completed' AND so.competency_class IS NOT NULL""",
+            (user_id, mission_id),
+        ).fetchall()
+        for r in rows:
+            d = dict(r)
+            step_evidence.setdefault(d["competency_class"], []).append(d["step_id"])
+    except Exception as exc:
+        # Step-level detail is an enrichment; the mission-level claim stands
+        # without it. Record the error instead of discarding it.
+        _rollback_quietly(conn)
+        result["errors"].append(str(exc))
+
+    for cls in step_evidence:
+        if cls not in classes:
+            classes.append(cls)
+    result["classes"] = list(classes)
+
+    for cls in classes:
+        try:
+            row = record_user_competency(
+                user_id=user_id,
+                competency_class=cls,
+                source_mission_id=mission_id,
+                source_step_id=(step_evidence.get(cls) or [None])[0],
+                evidence={
+                    "mission_slug": onto.get("slug"),
+                    "mission_title": onto.get("title"),
+                    "tier": onto.get("tier"),
+                    "score": score,
+                    "hints_used": hints_used,
+                    "verified_step_ids": step_evidence.get(cls, []),
+                },
+            )
+            if row.get("kg_edge", "ok") != "ok":
+                result["kg_edges"] = row["kg_edge"]
+            result["recorded"].append(cls)
+        except Exception as exc:
+            _rollback_quietly(conn)
+            result["errors"].append(f"{cls}: {exc}")
+            _log.exception("competency %s not recorded for user %s mission %s",
+                           cls, user_id, mission_id)
+
+    return result
+
+
+def backfill_user_competencies() -> dict:
+    """Record competencies for missions completed before this chain worked.
+
+    Every completed mission on the board predates a working recorder, so
+    without this the learners who did the work are the only ones with no
+    training record. Idempotent — ``record_user_competency`` ignores conflicts —
+    so it is safe to run on every init.
+    """
+    conn = get_connection()
+    summary = {"users": 0, "missions": 0, "recorded": 0, "errors": []}
+    try:
+        rows = conn.execute(
+            """SELECT mp.user_id, mp.mission_id, mp.score
+                 FROM fa_mission_progress mp
+                 JOIN fa_mission_ontology o ON o.mission_id = mp.mission_id
+                WHERE mp.status = 'completed'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM fa_user_competencies uc
+                       WHERE uc.user_id = mp.user_id
+                         AND uc.source_mission_id = mp.mission_id)"""
+        ).fetchall()
+    except Exception as exc:
+        _rollback_quietly(conn)
+        summary["errors"].append(str(exc))
+        return summary
+
+    seen_users = set()
+    for r in rows:
+        d = dict(r)
+        out = record_mission_competencies(d["user_id"], d["mission_id"],
+                                          score=d.get("score") or 100)
+        summary["missions"] += 1
+        summary["recorded"] += len(out["recorded"])
+        summary["errors"].extend(out["errors"])
+        seen_users.add(d["user_id"])
+    summary["users"] = len(seen_users)
+    if summary["recorded"]:
+        _log.info("FORGE Academy: backfilled %d competency record(s) across %d mission(s)",
+                  summary["recorded"], summary["missions"])
+    return summary
 
 
 def get_user_competencies(user_id: int) -> list[dict]:
@@ -1990,52 +2535,254 @@ def get_user_competencies(user_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def seed_mission_ontology_mappings() -> None:
-    """Seed ontology mappings for all builtin missions."""
-    from .ontology import build_mission_ontology_id, build_step_ontology_id
-    from .content_loader import BUILTIN_MISSIONS, BUILTIN_STEPS
+def get_competency_profile(user_id: int) -> dict:
+    """The learner's training record: what they can do, and what proves it.
+
+    Grouped by competency class, because that is the unit a reader cares about
+    ("has this person worked on boundaries?"), with every mission that
+    demonstrated it listed underneath as the evidence. ``catalog_missions`` is
+    the number of missions in the catalog carrying that class, so depth is
+    readable — 1 of 9 is a different claim from 9 of 9 and the page should not
+    present them identically.
+    """
     conn = get_connection()
-    # Skip if already seeded — avoids 80×N per-mission connection/commit storm
+    profile: dict = {"competencies": [], "total_classes": 0, "total_records": 0,
+                     "error": None}
     try:
-        existing = conn.execute("SELECT COUNT(*) FROM fa_mission_ontology").fetchone()[0]
-        if existing >= len(BUILTIN_MISSIONS):
-            _log.debug("FORGE Academy: ontology mappings already seeded (%d), skipping", existing)
-            return
-    except Exception:
-        pass  # table may not exist yet; proceed with seeding
-    for m in BUILTIN_MISSIONS:
-        row = conn.execute("SELECT id FROM fa_missions WHERE slug=%s", (m["slug"],)).fetchone()
-        if not row:
-            continue
-        mission_id = row["id"]
+        rows = conn.execute(
+            """SELECT uc.competency_class, uc.demonstrated_at, uc.evidence_json,
+                      uc.source_mission_id, m.slug AS mission_slug,
+                      m.title AS mission_title, m.tier
+                 FROM fa_user_competencies uc
+                 LEFT JOIN fa_missions m ON m.id = uc.source_mission_id
+                WHERE uc.user_id = %s
+                ORDER BY uc.demonstrated_at DESC""",
+            (user_id,),
+        ).fetchall()
+    except Exception as exc:
+        _rollback_quietly(conn)
+        profile["error"] = str(exc)
+        return profile
+
+    # Catalog breadth per class, computed once rather than per group.
+    catalog: dict[str, int] = {}
+    try:
+        for r in conn.execute(
+            """SELECT competency_class AS cls, COUNT(*) AS n FROM fa_mission_ontology
+                GROUP BY competency_class"""
+        ).fetchall():
+            d = dict(r)
+            if d["cls"]:
+                catalog[d["cls"]] = catalog.get(d["cls"], 0) + int(d["n"])
+        for r in conn.execute(
+            """SELECT topic_class AS cls, COUNT(*) AS n FROM fa_mission_ontology
+                GROUP BY topic_class"""
+        ).fetchall():
+            d = dict(r)
+            if d["cls"]:
+                catalog[d["cls"]] = catalog.get(d["cls"], 0) + int(d["n"])
+    except Exception as exc:
+        _rollback_quietly(conn)
+        profile["error"] = str(exc)
+
+    grouped: dict[str, dict] = {}
+    for r in rows:
+        d = dict(r)
+        cls = d["competency_class"]
+        try:
+            ev = json.loads(d.get("evidence_json") or "{}")
+        except (ValueError, TypeError):
+            ev = {}
+        entry = grouped.setdefault(cls, {
+            "competency_class": cls,
+            "namespace": cls.split(":")[0] if ":" in cls else "icdev",
+            "label": cls.split(":")[-1],
+            "first_demonstrated_at": d.get("demonstrated_at"),
+            "last_demonstrated_at": d.get("demonstrated_at"),
+            "catalog_missions": catalog.get(cls, 0),
+            "evidence": [],
+        })
+        entry["evidence"].append({
+            "mission_id": d.get("source_mission_id"),
+            "mission_slug": d.get("mission_slug"),
+            "mission_title": d.get("mission_title") or ev.get("mission_title") or "",
+            "tier": d.get("tier") or ev.get("tier"),
+            "score": ev.get("score"),
+            "verified_step_ids": ev.get("verified_step_ids", []),
+            "demonstrated_at": d.get("demonstrated_at"),
+        })
+        if (d.get("demonstrated_at") or "") < (entry["first_demonstrated_at"] or ""):
+            entry["first_demonstrated_at"] = d.get("demonstrated_at")
+
+    for entry in grouped.values():
+        entry["mission_count"] = len(entry["evidence"])
+    profile["competencies"] = sorted(
+        grouped.values(), key=lambda e: (-e["mission_count"], e["competency_class"]))
+    profile["total_classes"] = len(grouped)
+    profile["total_records"] = len(rows)
+    return profile
+
+
+def seed_mission_ontology_mappings() -> dict:
+    """Map every mission and step in the catalog to its ontology classes.
+
+    Driven off the DATABASE, not off BUILTIN_MISSIONS. The previous version
+    iterated the builtin list and bailed out entirely once
+    ``COUNT(fa_mission_ontology) >= len(BUILTIN_MISSIONS)``, which failed twice
+    over (aca-trn-02): missions seeded by any other source — the AADC and AIMC
+    seed modules, a tenant's own content — were never in the list to be mapped,
+    and the count guard then declared the job finished on their behalf. In
+    production that left 35 of 124 missions and 122 of 212 steps with no
+    ontology row, so completing them could not have demonstrated anything.
+
+    Only the gaps are filled, so a fully-mapped catalog costs two SELECTs and no
+    writes, and newly-added content is picked up on the next init without a
+    manual reseed. Everything runs on one connection and commits once — the
+    per-row commit storm is what the old guard was really protecting against.
+
+    Returns a summary so a caller (init, a health probe, a test) can see what
+    was actually mapped instead of inferring it from silence.
+    """
+    from .ontology import build_mission_ontology_id, build_step_ontology_id
+    conn = get_connection()
+    summary = {"missions_mapped": 0, "steps_mapped": 0, "errors": []}
+
+    try:
+        missions = conn.execute(
+            """SELECT m.id, m.slug, m.mission_type, m.topic, m.title, m.tier
+                 FROM fa_missions m
+                 LEFT JOIN fa_mission_ontology o ON o.mission_id = m.id
+                WHERE o.id IS NULL"""
+        ).fetchall()
+    except Exception as exc:
+        # Tables may not exist yet on a partially-migrated install. Report it
+        # rather than returning a summary that reads like a clean no-op.
+        _log.warning("FORGE Academy: ontology mapping scan failed: %s", exc)
+        _rollback_quietly(conn)
+        summary["errors"].append(str(exc))
+        return summary
+
+    for m in missions:
+        m = dict(m)
         onto = build_mission_ontology_id(
             slug=m["slug"],
-            mission_type=m.get("mission_type", "coding"),
-            topic=m.get("topic", ""),
-            title=m.get("title", ""),
-            tier=m.get("tier", 1),
+            mission_type=m.get("mission_type") or "coding",
+            topic=m.get("topic") or "",
+            title=m.get("title") or "",
+            tier=m.get("tier") or 1,
         )
         upsert_mission_ontology(
-            mission_id=mission_id,
+            mission_id=m["id"],
             ontology_id=onto["ontology_id"],
             mission_class=onto["mission_class"],
             topic_class=onto["topic_class"],
             competency_class=onto["competency_class"],
             prereq_paths=onto["prereq_ontology_paths"],
+            conn=conn,
         )
-        # Seed step ontologies
-        steps = BUILTIN_STEPS.get(m["slug"], [])
-        for step in steps:
-            step_row = conn.execute(
-                "SELECT id FROM fa_mission_steps WHERE mission_id=%s AND step_num=%s",
-                (mission_id, step["step_num"]),
-            ).fetchone()
-            if not step_row:
-                continue
-            step_onto = build_step_ontology_id(m["slug"], step["step_num"], step.get("step_type", "configure"))
-            upsert_step_ontology(
-                step_id=step_row["id"],
-                ontology_id=step_onto["ontology_id"],
-                step_class=step_onto["step_class"],
-            )
-    _log.info("FORGE Academy: seeded ontology mappings")
+        summary["missions_mapped"] += 1
+    if summary["missions_mapped"]:
+        conn.commit()
+
+    # Steps are mapped after missions so a step can read the topic class its
+    # mission was just given. A step with a row but a NULL competency_class is
+    # re-mapped too: that is what every pre-aca-trn-02 row looks like.
+    try:
+        steps = conn.execute(
+            """SELECT s.id, s.mission_id, s.step_num, s.step_type,
+                      m.slug, m.tier, o.topic_class,
+                      so.id AS mapping_id, so.ontology_id AS have_onto,
+                      so.step_class AS have_step_class,
+                      so.competency_class AS have_competency
+                 FROM fa_mission_steps s
+                 JOIN fa_missions m ON m.id = s.mission_id
+                 LEFT JOIN fa_mission_ontology o ON o.mission_id = s.mission_id
+                 LEFT JOIN fa_step_ontology so ON so.step_id = s.id
+                WHERE so.id IS NULL OR so.competency_class IS NULL"""
+        ).fetchall()
+    except Exception as exc:
+        _log.warning("FORGE Academy: step ontology scan failed: %s", exc)
+        _rollback_quietly(conn)
+        summary["errors"].append(str(exc))
+        return summary
+
+    for s in steps:
+        s = dict(s)
+        step_onto = build_step_ontology_id(
+            s["slug"], s["step_num"], s.get("step_type") or "configure",
+            topic_class=s.get("topic_class") or "",
+            tier=s.get("tier") or 1,
+        )
+        # A NULL competency_class is ambiguous: it is either a row written before
+        # the column existed, or a correctly-mapped PASSIVE step, for which NULL
+        # is the right and permanent answer. Re-mapping on NULL alone would
+        # rewrite every `watch` step on every init, forever, and never converge.
+        # Compare against what is already stored and skip when it matches.
+        if (s.get("mapping_id") is not None
+                and s.get("have_onto") == step_onto["ontology_id"]
+                and s.get("have_step_class") == step_onto["step_class"]
+                and s.get("have_competency") == step_onto["competency_class"]):
+            continue
+        upsert_step_ontology(
+            step_id=s["id"],
+            ontology_id=step_onto["ontology_id"],
+            step_class=step_onto["step_class"],
+            competency_class=step_onto["competency_class"],
+            conn=conn,
+        )
+        summary["steps_mapped"] += 1
+    if summary["steps_mapped"]:
+        conn.commit()
+
+    if summary["missions_mapped"] or summary["steps_mapped"]:
+        _log.info("FORGE Academy: mapped %d mission(s) and %d step(s) to ontology classes",
+                  summary["missions_mapped"], summary["steps_mapped"])
+    return summary
+
+
+def competency_chain_status() -> dict:
+    """How much of the catalog can actually produce a competency record.
+
+    A silent competency chain is indistinguishable from one that works and has
+    nothing to say yet, which is exactly how this shipped empty. These counters
+    are served by /api/academy/health so the difference is visible without
+    reading the database by hand.
+    """
+    conn = get_connection()
+    status: dict = {"ok": True, "error": None}
+
+    def _count(key: str, sql: str) -> None:
+        try:
+            row = conn.execute(sql).fetchone()
+            status[key] = int(row[0]) if row else 0
+        except Exception as exc:
+            _rollback_quietly(conn)
+            status["ok"] = False
+            status["error"] = str(exc)
+            status[key] = None
+
+    _count("missions", "SELECT COUNT(*) FROM fa_missions")
+    _count("missions_unmapped",
+           "SELECT COUNT(*) FROM fa_missions m "
+           "LEFT JOIN fa_mission_ontology o ON o.mission_id=m.id WHERE o.id IS NULL")
+    _count("steps", "SELECT COUNT(*) FROM fa_mission_steps")
+    # Unmapped means NO ontology row. A row with a NULL competency_class is a
+    # correctly-mapped passive step (`watch`), which is a valid end state —
+    # counting those as unmapped would leave this figure permanently non-zero
+    # and so permanently unreadable.
+    _count("steps_unmapped",
+           "SELECT COUNT(*) FROM fa_mission_steps s "
+           "LEFT JOIN fa_step_ontology o ON o.step_id=s.id "
+           "WHERE o.id IS NULL")
+    _count("steps_with_competency",
+           "SELECT COUNT(*) FROM fa_step_ontology WHERE competency_class IS NOT NULL")
+    _count("missions_completed",
+           "SELECT COUNT(*) FROM fa_mission_progress WHERE status='completed'")
+    _count("competencies_recorded", "SELECT COUNT(*) FROM fa_user_competencies")
+
+    # The one combination that means something is broken rather than merely
+    # unused: completed missions exist and not one produced a competency row.
+    completed = status.get("missions_completed") or 0
+    recorded = status.get("competencies_recorded") or 0
+    status["stalled"] = bool(completed > 0 and recorded == 0)
+    return status

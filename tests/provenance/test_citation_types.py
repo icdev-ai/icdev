@@ -65,17 +65,50 @@ def _quoted_values(text: str) -> set:
     return set(re.findall(r"'([a-z_]+)'", text))
 
 
-def test_migration_295_check_matches_the_constant():
-    """The migration's CHECK must be exactly what the constant renders."""
-    path = REPO / "tools" / "db" / "migrations" / "295_web_citation_type_and_fetch_provenance.sql"
-    sql = path.read_text(encoding="utf-8")
+def _constraint_migrations() -> list:
+    """Every migration that renders the citation_type CHECK, lowest number first.
 
-    m = re.search(r"CHECK \(citation_type IN \(([^)]+)\)\)", sql)
-    assert m, "no rendered CHECK clause found in migration 295"
-    assert _quoted_values(m.group(1)) == set(ct.CITATION_TYPES), (
-        "migration 295's CHECK has drifted from CITATION_TYPES — regenerate it "
+    Resolved by content rather than by a hardcoded filename. The previous
+    version pinned "295_web_citation_type_and_fetch_provenance.sql"; that file
+    is now numbered 297, so the guardrail had been silently failing — and
+    pinning ONE migration is wrong in principle anyway, because each new type
+    ships its own migration and every earlier one becomes a historical snapshot
+    that must drift.
+    """
+    found = []
+    for path in sorted((REPO / "tools" / "db" / "migrations").glob("*.sql")):
+        text = path.read_text(encoding="utf-8")
+        m = re.search(r"CHECK \(citation_type IN \(([^)]+)\)\)", text)
+        if m:
+            found.append((path, m.group(1)))
+    return found
+
+
+def test_latest_constraint_migration_matches_the_constant():
+    """The MOST RECENT migration's CHECK must be what the constant renders.
+
+    Earlier migrations are snapshots of the vocabulary at their point in
+    history and are deliberately not asserted against today's constant.
+    """
+    migrations = _constraint_migrations()
+    assert migrations, "no migration renders a citation_type CHECK clause"
+
+    path, values = migrations[-1]
+    assert _quoted_values(values) == set(ct.CITATION_TYPES), (
+        f"{path.name}'s CHECK has drifted from CITATION_TYPES — regenerate it "
         "with tools.provenance.citation_types.check_constraint_sql()"
     )
+
+
+def test_every_constraint_migration_is_a_subset_of_the_constant():
+    """A historical migration may lag, but must never contain an unknown type.
+
+    Catches a value shipped in SQL that was never added to the Python constant —
+    the inverse of the drift the latest-migration check catches.
+    """
+    for path, values in _constraint_migrations():
+        unknown = _quoted_values(values) - set(ct.CITATION_TYPES)
+        assert not unknown, f"{path.name} ships citation types absent from CITATION_TYPES: {unknown}"
 
 
 def test_consolidated_schema_matches_the_constant():
@@ -145,9 +178,19 @@ def test_fetch_provenance_is_registered_append_only():
 
 
 def test_detail_table_mapping_points_at_a_real_table():
-    assert ct.DETAIL_TABLES["web"] == "web_fetch_provenance"
-    migration = (
-        REPO / "tools" / "db" / "migrations"
-        / "295_web_citation_type_and_fetch_provenance.sql"
-    ).read_text(encoding="utf-8")
-    assert "CREATE TABLE IF NOT EXISTS web_fetch_provenance" in migration
+    """Every DETAIL_TABLES target must actually be created by some migration.
+
+    Located by content, not filename — the migration this used to pin by number
+    has since been renumbered, which broke the check silently.
+    """
+    for citation_type, table in ct.DETAIL_TABLES.items():
+        assert citation_type in ct.CITATION_TYPES, (
+            f"DETAIL_TABLES maps {citation_type!r}, which is not a valid citation type"
+        )
+        created = any(
+            f"CREATE TABLE IF NOT EXISTS {table}" in p.read_text(encoding="utf-8")
+            for p in (REPO / "tools" / "db" / "migrations").glob("*.sql")
+        )
+        assert created, (
+            f"DETAIL_TABLES[{citation_type!r}] = {table!r} but no migration creates it"
+        )

@@ -1,0 +1,270 @@
+# CUI // SP-CTI
+#
+# Item bank for m01-llm-fundamentals (aca-trn-01).
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Steps 1 and 3 are labs with an authored stepN_test.py and are already graded by
+# the coding path. Steps 2, 4 and 5 are lessons with nothing to grade against —
+# step 4's own content ends with "Test your understanding - answer the question
+# below to continue" and there was no question below it. These banks are what make
+# Tier 1 graded end to end, which is what makes the certificate's assessment gate
+# mean something rather than pass vacuously.
+#
+# AUTHORING RULES (enforced by assessment.validate_item_bank, called by the seeder):
+#   * >= ASSESSMENT_MIN_BANK_SIZE (5) items per step. A bank no larger than the draw
+#     serves the same items every attempt, which makes the randomisation decorative.
+#   * `correct` is an index into `options` AS AUTHORED. The learner never sees this
+#     order — open_attempt permutes the options per attempt and records the mapping
+#     server-side, so the position here is not the position in the DOM.
+#   * `key` is stable and unique per step. Answers are posted keyed on it rather
+#     than on a position, so reordering this file cannot silently re-point a
+#     recorded answer at a different question.
+#
+# Every item below is answerable from the lesson markdown it assesses, and only
+# from it. Nothing here tests a fact the learner was never shown — that would be
+# the fabricated-authority problem aca-hon-01 was filed for, in assessment form.
+
+mission: m01-llm-fundamentals
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 2 — Token Economics (steps/step2_token_economics.md)
+  # -------------------------------------------------------------------------
+  - step: 2
+    items:
+      - key: tok-size
+        prompt: >-
+          As a rule of thumb, roughly how much English text is one token?
+        options:
+          - "One full word, always"
+          - "About 4 characters, or three quarters of a word"
+          - "One character"
+          - "One sentence"
+        correct: 1
+        explanation: >-
+          A token is roughly 4 characters or about three quarters of a word in
+          English. Tokenization is not word-for-word: "cat" is 1 token while
+          "categorically" is 3.
+        difficulty: core
+
+      - key: tok-io-cost
+        prompt: >-
+          Why are output (completion) tokens more expensive than input (prompt)
+          tokens?
+        options:
+          - "Output tokens are larger than input tokens"
+          - "Providers charge more for longer answers as a policy choice"
+          - "Output is generated in the decode phase, which is sequential, while input is prefilled"
+          - "Output tokens are stored permanently and input tokens are not"
+        correct: 2
+        explanation: >-
+          Input is handled in the prefill phase; output is produced token by token
+          in the sequential decode phase. The cost difference is a property of how
+          inference runs, not a pricing policy.
+        difficulty: core
+
+      - key: tok-prefix-cache
+        prompt: >-
+          What does caching repeated context (prefix caching) buy you?
+        options:
+          - "Near-zero cost on the repeated portion of the context"
+          - "A larger context window"
+          - "Fewer output tokens"
+          - "Automatic summarization of old turns"
+        correct: 0
+        explanation: >-
+          Prefix caching means the repeated context costs close to nothing on each
+          subsequent run. It does not change the size of the context window.
+        difficulty: core
+
+      - key: tok-special-chars
+        prompt: >-
+          Why does a string like "CUI//SP-CTI" cost more tokens than a common
+          English word of similar length?
+        options:
+          - "Classification markings are billed at a premium rate"
+          - "Special characters fragment into more tokens than ordinary words do"
+          - "Uppercase text always doubles the token count"
+          - "Markings are sent twice for audit purposes"
+        correct: 1
+        explanation: >-
+          Special characters fragment more under the tokenizer. "CUI//SP-CTI" comes
+          out at 4 or more tokens, while "cat" is a single token.
+        difficulty: core
+
+      - key: tok-window-scope
+        prompt: >-
+          A model's context window limits which of the following?
+        options:
+          - "Input tokens only"
+          - "Output tokens only"
+          - "Input and output tokens combined, for a single inference"
+          - "The total tokens a user may spend per month"
+        correct: 2
+        explanation: >-
+          The context window is the maximum token count for a single inference, and
+          input plus output combined must fit inside it.
+        difficulty: core
+
+  # -------------------------------------------------------------------------
+  # Step 4 — Context Window Limits (steps/step4_context_window.md)
+  # This is the step whose content promised a question that did not exist.
+  # -------------------------------------------------------------------------
+  - step: 4
+    items:
+      - key: ctx-contents
+        prompt: >-
+          During a single inference, which of these must fit inside the context
+          window?
+        options:
+          - "Only the user's most recent message"
+          - "Only the retrieved documents"
+          - "The system prompt, conversation history, retrieved documents and tool results"
+          - "Only the system prompt and the model's answer"
+        correct: 2
+        explanation: >-
+          The context window is the model's working memory for one inference:
+          system prompt, conversation history, retrieved documents and tool results
+          all have to fit inside it.
+        difficulty: core
+
+      - key: ctx-rag-budget
+        prompt: >-
+          A RAG pipeline retrieves 20 documents of about 500 tokens each. Roughly
+          how much of the context window is consumed before generation starts?
+        options:
+          - "About 1,000 tokens"
+          - "About 10,000 tokens"
+          - "About 500 tokens"
+          - "About 100,000 tokens"
+        correct: 1
+        explanation: >-
+          20 documents times 500 tokens is about 10,000 tokens, spent before the
+          system prompt or the conversation history is even added. Against an 8K
+          window you are already over the limit.
+        difficulty: core
+
+      - key: ctx-sliding-window
+        prompt: >-
+          What does the sliding window strategy do?
+        options:
+          - "Keeps the last N tokens of conversation and drops earlier turns"
+          - "Compresses old turns into a running summary"
+          - "Splits documents and retrieves only the top-K chunks"
+          - "Increases the model's maximum context size"
+        correct: 0
+        explanation: >-
+          Sliding window keeps the most recent N tokens and drops what came before.
+          Compressing old turns into a summary is summarization; retrieving top-K
+          chunks is chunking.
+        difficulty: core
+
+      - key: ctx-distillation
+        prompt: >-
+          What is context distillation?
+        options:
+          - "Removing duplicate documents from the retrieval set"
+          - "Using a cheap model to compress context and an expensive model to reason over it"
+          - "Training a smaller model on a larger model's outputs"
+          - "Dropping the system prompt when the window fills"
+        correct: 1
+        explanation: >-
+          As the lesson uses the term, context distillation means spending a cheap
+          model on compression so the expensive model reasons over less text.
+        difficulty: stretch
+
+      - key: ctx-router-threshold
+        prompt: >-
+          At what point does the ICDEV router automatically trigger a summarization
+          pass?
+        options:
+          - "When the session reaches 50% of the model's context limit"
+          - "When the session reaches 80% of the model's context limit"
+          - "Only when an inference has already failed"
+          - "Only when the operator requests it"
+        correct: 1
+        explanation: >-
+          The router tracks input plus output tokens per call and summarizes using
+          the cheaper model tier at 80% of the context limit, so the failure is
+          avoided rather than recovered from.
+        difficulty: core
+
+  # -------------------------------------------------------------------------
+  # Step 5 — ICDEV LLM Router (steps/step5_llm_router.md)
+  # -------------------------------------------------------------------------
+  - step: 5
+    items:
+      - key: rtr-intent
+        prompt: >-
+          When calling an LLM through the ICDEV router, what does your code declare?
+        options:
+          - "A specific model name, such as a Claude or GPT model ID"
+          - "An intent, such as a function name like code_generation"
+          - "A provider endpoint URL"
+          - "A maximum monthly budget"
+        correct: 1
+        explanation: >-
+          You never hardcode a model name. You declare an intent and the router
+          selects the best available provider for it.
+        difficulty: core
+
+      - key: rtr-config-file
+        prompt: >-
+          Which file maps function names to provider tiers?
+        options:
+          - "args/llm_config.yaml"
+          - "tools/llm/router.py"
+          - "args/component_registry.yaml"
+          - "requirements.txt"
+        correct: 0
+        explanation: >-
+          args/llm_config.yaml holds the mapping from function names such as
+          code_generation, chat and embedding to provider tiers. router.py reads it
+          rather than containing the mapping itself.
+        difficulty: core
+
+      - key: rtr-airgap-tier
+        prompt: >-
+          In air-gap mode with no internet access, which provider tier does the
+          router use?
+        options:
+          - "Primary — Claude or GPT-4o via Bedrock"
+          - "Secondary — the fallback cloud tier"
+          - "Local — Ollama models running on the machine"
+          - "It fails, because a provider is unreachable"
+        correct: 2
+        explanation: >-
+          The Local tier exists for exactly this case and routes to Ollama models
+          such as mistral, llama3 and qwen2.5. Air-gap is a supported mode, not a
+          failure.
+        difficulty: core
+
+      - key: rtr-api
+        prompt: >-
+          Which router method returns the provider to use for a given function?
+        options:
+          - "get_provider_for_function"
+          - "chat"
+          - "select_model"
+          - "route_request"
+        correct: 0
+        explanation: >-
+          router.get_provider_for_function("code_generation") returns a provider,
+          and chat() is then called on that provider.
+        difficulty: core
+
+      - key: rtr-sensei
+        prompt: >-
+          When FORGE Sensei answers a hint request during a mission, which function
+          does it ask the router for?
+        options:
+          - "code_generation"
+          - "chat"
+          - "embedding"
+          - "summarization"
+        correct: 1
+        explanation: >-
+          Hints go through the router's "chat" function, which in the training
+          environment routes to a local Ollama model and needs no API key.
+        difficulty: core

@@ -32,6 +32,9 @@ from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.testing.production_audit")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "icdev.db"
@@ -1355,7 +1358,10 @@ def check_dashboard_health() -> AuditCheck:
     try:
         conn = get_connection()
         conn.execute(
-            "INSERT OR IGNORE INTO dashboard_users (id, email, name, role, status) "
+            # The column is display_name; `name` has never existed on this table,
+            # so the audit user was never created and every authenticated page
+            # check below silently degraded to an unauthenticated one (swp-scan-01).
+            "INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role, status) "
             "VALUES ('audit-user', 'audit@icdev.local', 'Audit', 'admin', 'active')"
         )
         import hashlib
@@ -1370,8 +1376,9 @@ def check_dashboard_health() -> AuditCheck:
         conn.commit()
         conn.close()
         session.post(f"{base}/login", data={"api_key": key}, allow_redirects=False)
-    except Exception:
-        pass  # Continue without auth
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Continue without auth
+        logger.warning("check_dashboard_health: best-effort INSERT into dashboard_users failed (non-blocking): %s", exc)
 
     pages = [
         "/",
@@ -2435,8 +2442,9 @@ def _store_report(report: AuditReport, categories: List[str]):
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Don't fail the audit because DB write failed
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Don't fail the audit because DB write failed
+        logger.warning("_store_report: best-effort INSERT into production_audits failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

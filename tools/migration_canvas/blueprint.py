@@ -125,8 +125,8 @@ def create_migration_blueprint():
                     "INSERT INTO mc_audit (design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into mc_audit failed (non-blocking): %s", exc)
         # Bridge to main icdev.db audit_trail for compliance chain
         try:
             from tools.db.storage import get_connection as _icdev_conn
@@ -146,8 +146,8 @@ def create_migration_blueprint():
                         now_isoformat(),
                     ),
                 )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
     def _notify(title: str, body: str, severity: str = "info"):
         """Fire-and-forget notification — never raises."""

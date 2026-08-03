@@ -22,46 +22,51 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
+import _sql_compat
 import tools.genesis.reflexes.kanban as km
-from tools.db.storage import translate_sql
 
 GATE_ID = "prem-gate-00"
 GATE_TITLE = "MANUAL-MODE GATE - do not complete; do not dispatch"
 
 
-class _TranslatingConn:
-    """Translate %s placeholders to ? so kanban.py's PG-style SQL runs on SQLite."""
-
-    def __init__(self, conn):
-        self._conn = conn
-
-    def execute(self, sql, params=()):
-        return self._conn.execute(translate_sql(sql, backend="sqlite"), params)
-
-    def executemany(self, sql, seq):
-        return self._conn.executemany(translate_sql(sql, backend="sqlite"), seq)
-
-    def commit(self):
-        return self._conn.commit()
-
-    def close(self):
-        return self._conn.close()
-
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
-
-
 def _patch_km(db_path, monkeypatch):
+    # kanban.py authors its SQL for PostgreSQL (%s placeholders); the shared
+    # _sql_compat wrapper applies the same translate_sql the runtime's
+    # StorageConnection does, and unlike the hand-rolled shim this file used to
+    # carry it also implements __enter__/__exit__ the way StorageConnection
+    # does — so `with get_connection() as conn:` call sites commit.
     def _fake_conn(*_a, **_kw):
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return _TranslatingConn(c)
+        return _sql_compat.connect(db_path)
 
     monkeypatch.setattr(km, "get_connection", _fake_conn)
     monkeypatch.setattr(km, "_running", {})
     monkeypatch.setattr(km, "_task_log_is_empty", lambda tid: True)
     monkeypatch.setattr(km, "_get_task_timeout", lambda tid: 900)
     monkeypatch.setattr(km, "_detect_execution_anomaly", lambda age: (False, ""))
+    # _reap_stale_in_progress returns at its first line when another live
+    # scheduler owns the runner. Unpatched, these tests pass in CI and fail on
+    # any developer machine with a scheduler running — and the failure reads as
+    # "stale task not reaped" rather than "the reaper never ran".
+    monkeypatch.setattr(km, "_foreign_scheduler_pid", lambda: 0)
+
+    # ── ambient host state the sweeps read, pinned so this file tests gate
+    #    exemption and nothing else ────────────────────────────────────────
+    #
+    # Both _reap_stale_in_progress and _startup_recover_stale_in_progress return
+    # BEFORE touching the DB when another live kanban scheduler owns the runner.
+    # _foreign_scheduler_pid() resolves that from the pid lockfile in the MAIN
+    # worktree (_main_worktree_root()/.tmp/kanban_scheduler.pid), never from the
+    # tmp_path DB this fixture builds — so with a scheduler running anywhere on
+    # the machine the sweep no-ops and the control assertion ("ordinary stale
+    # task must still be reaped") fails for a reason unrelated to gates. That
+    # ownership guard is real behaviour with its own coverage; here it is
+    # ambient state, so pin it to "this process owns the runner".
+    monkeypatch.setattr(km, "_foreign_scheduler_pid", lambda: 0)
+    # Same shape one layer down: Manual Build is a flag file in the main
+    # worktree, and while it is on the reaper skips every task whose in_progress
+    # transition was not recorded by the scheduler — which is all of them here,
+    # since _insert_task writes kanban_tasks directly with no transition row.
+    monkeypatch.setattr(km, "_manual_build", lambda: False)
 
 
 def _insert_task(db_path, task_id, title, status, updated_at):
@@ -191,9 +196,10 @@ def _insert_dep_task(db_path, task_id, title, status, depends_on):
 
 class TestStateMachineAutoCloseExemption:
     def _conn(self, db_path):
-        c = sqlite3.connect(str(db_path))
-        c.row_factory = sqlite3.Row
-        return _TranslatingConn(c)
+        # Same seam as _patch_km above: state_machine's SQL is PG-flavoured, so
+        # the connection handed to it has to translate placeholders the way the
+        # runtime's StorageConnection does.
+        return _sql_compat.connect(db_path)
 
     def test_gate_parent_not_auto_closed_when_all_children_done(self, icdev_db):
         """A -gate-00 parent whose every dependent is done must stay

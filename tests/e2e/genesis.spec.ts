@@ -3,6 +3,7 @@
 // Verifies the Genesis dashboard loads with daemon status, 14 reflexes table, GKP promoter stats, and feedback-driven priorities.
 
 import { test, expect } from '@playwright/test';
+import { loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 // Genesis runs on port 5050
@@ -10,22 +11,14 @@ const GENESIS_BASE = 'http://localhost:5050';
 
 test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test.beforeEach(async ({ page }) => {
-    // Steps 1-4: Login to Genesis dashboard
-    await page.goto(`${GENESIS_BASE}/login`);
-    await page.waitForLoadState('domcontentloaded');
+    // tsh-e2e-01-d3: keep the first-run overlays out of the way before the first
+    // navigation. The login step below used to match the onboarding wizard's
+    // hidden #onb-apikey input and spend the whole actionTimeout trying to fill
+    // it — see fixtures/onboarding.ts for why that happens locally but not in CI.
+    await suppressOnboarding(page);
 
-    const apiKeyInput = page.locator(
-      'input[type="password"], input[name="api_key"], input[id="api_key"], input[placeholder*="key" i]'
-    );
-    if (await apiKeyInput.count() > 0) {
-      await apiKeyInput.first().fill('sparkpilot');
-      const submitBtn = page.getByRole('button', { name: /Login|Sign In|Submit/i })
-        .or(page.locator('button[type="submit"]'));
-      if (await submitBtn.count() > 0) {
-        await submitBtn.first().click();
-        await page.waitForLoadState('domcontentloaded');
-      }
-    }
+    // Steps 1-4: Login to Genesis dashboard (a no-op under dev auto-login)
+    await loginIfPrompted(page, GENESIS_BASE);
   });
 
   test('genesis page loads with heading and intro panel', async ({ page }) => {

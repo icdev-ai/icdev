@@ -41,6 +41,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.win_theme_manager")
 
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
@@ -180,8 +183,8 @@ def _audit(conn, action, details="", actor="win_theme_manager"):
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (_now(), "govcon.win_theme", actor, action, details, "proposal_genesis"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _extract_keywords(text):
@@ -443,9 +446,12 @@ def track_implementation(theme_id, section_id, status, density_score=None, notes
     now = _now()
 
     # Append-only tracking record (NIST AU-2)
+    # status/notes/created_at are not columns (swp-scan-01); the live names are
+    # implementation_status/reviewer_notes/checked_at. checked_at is also
+    # NOT NULL, so this append-only NIST AU-2 record never landed.
     conn.execute(
         "INSERT INTO pg_theme_tracking "
-        "(id, theme_id, section_id, status, density_score, notes, created_at) "
+        "(id, theme_id, section_id, implementation_status, density_score, reviewer_notes, checked_at) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (tracking_id, theme_id, section_id, status, density_score, notes, now),
     )

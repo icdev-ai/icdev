@@ -76,6 +76,33 @@ def _uuid():
     return str(uuid.uuid4())
 
 
+def _draft_resource_attrs(request):
+    """Build ABAC resource dict for a proposal draft endpoint (prop-sec-01).
+
+    Resolves the draft's linked proposal_sections.writer_email so the
+    ``proposal_draft_writer_own`` policy can enforce need-to-know: a
+    section_writer may only act on drafts for sections assigned to them.
+    """
+    draft_id = (request.view_args or {}).get("draft_id", "")
+    writer_email = ""
+    if draft_id:
+        try:
+            conn = _get_db()
+            row = conn.execute(
+                """SELECT s.writer_email
+                   FROM proposal_section_drafts d
+                   LEFT JOIN proposal_sections s ON s.id = d.section_id
+                   WHERE d.id = %s""",
+                (draft_id,),
+            ).fetchone()
+            conn.close()
+            if row:
+                writer_email = row["writer_email"] or ""
+        except Exception:
+            pass
+    return {"type": "proposal_draft", "writer_email": writer_email}
+
+
 def _audit(conn, action, details="", actor="govcon_api"):
     """Append-only audit trail (NIST AU-2).
 
@@ -93,8 +120,8 @@ def _audit(conn, action, details="", actor="govcon_api"):
             conn.execute("RELEASE SAVEPOINT govcon_audit")
         except Exception:
             conn.execute("ROLLBACK TO SAVEPOINT govcon_audit")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # =====================================================================
@@ -723,6 +750,7 @@ def reject_draft(draft_id):
 
 @govcon_api.route("/drafts/<draft_id>/rewrite-save", methods=["POST"])
 @require_role(*GOVCON_WRITE_ROLES)
+@abac_protect(_draft_resource_attrs, "POST")
 def rewrite_save_draft(draft_id):
     """POST /api/govcon/drafts/<id>/rewrite-save — Save a WriteGuard rewrite as a new draft row.
 

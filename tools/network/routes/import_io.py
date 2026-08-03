@@ -25,6 +25,9 @@ from tools.network.blueprint_helpers import (
 from tools.network.compliance import run_compliance_audit
 from tools.network.db.init_db import get_connection
 from tools.network.export_import import import_drawio, import_svg, import_vdx
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.network.routes.import_io")
 
 
 def register_import_io_routes(bp):
@@ -1225,8 +1228,8 @@ def register_import_io_routes(bp):
                 ),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("nc_api_add_favorite: best-effort INSERT into nc_favorites failed (non-blocking): %s", exc)
         conn.close()
         return jsonify({"ok": True}), 201
 

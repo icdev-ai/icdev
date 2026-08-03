@@ -38,12 +38,12 @@ import os
 import re
 import threading
 import time
-from pathlib import Path
 from typing import Optional
 
 from tools.logging.icdev_logger import get_logger
 from tools.rag.retriever_common import clamp_unit, run_rag_search
 
+from .config import load_cortex_config
 from .schemas import CORTEX_BACKENDS, Citation, CortexContext, CortexSearchResult
 
 logger = get_logger(__name__)
@@ -508,41 +508,6 @@ _DOCUMENT_PATTERNS = re.compile(
     r"clearance|classified|cleared)\b",
     re.IGNORECASE,
 )
-
-_config_cache: Optional[dict] = None
-
-
-def _find_repo_root() -> Optional[Path]:
-    """Walk up from this file until a directory containing ``args/`` is found.
-
-    Works from both namespace roots (``tools/`` and ``icdev/tools/``) and from
-    git worktrees; never consults ``os.getcwd()``.
-    """
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "args").is_dir():
-            return parent
-    return None
-
-
-def load_cortex_config(refresh: bool = False) -> dict:
-    """Load and cache ``args/cortex_config.yaml``; missing file -> ``{}``."""
-    global _config_cache
-    if _config_cache is not None and not refresh:
-        return _config_cache
-    cfg: dict = {}
-    root = _find_repo_root()
-    path = root / "args" / "cortex_config.yaml" if root else None
-    if path is not None and path.exists():
-        try:
-            import yaml
-
-            with open(path, encoding="utf-8") as fh:
-                cfg = yaml.safe_load(fh) or {}
-        except Exception as exc:
-            logger.warning("Cortex config load failed (%s): %s", path, exc)
-    _config_cache = cfg
-    return cfg
-
 
 def _taxonomy_label(query: str) -> dict:
     """Label a query via the RAG query classifier (D-RAG-24 taxonomy).

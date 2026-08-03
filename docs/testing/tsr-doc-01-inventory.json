@@ -1,2844 +1,3239 @@
 {
   "task": "tsr-doc-01-d1",
-  "root": "C:/Users/schuo/AppData/Local/Temp/claude/wt-tsr-doc-01-d1",
-  "total_test_files": 2013,
-  "matched_files": 166,
-  "total_matches": 729,
-  "packages": {
+  "root": "C:/AI/ICDev/.tmp/worktrees/tsr-doc-d1-clean",
+  "test_files_scanned": 2036,
+  "regex": "(?<![\\w.])(?:icdev\\.)?tools\\.(?:document_intelligence|doc_modernization|writing|dic|quality|wg|pulse\\.writeguard)(?![\\w])",
+  "totals": {
+    "files_with_any_mention": 166,
+    "files_with_real_import": 159,
+    "files_static_import": 99,
+    "files_dynamic_import_only": 60,
+    "files_loading_doc_code": 162,
+    "files_reference_only": 4,
+    "files_exclusive": 68,
+    "parse_errors": 0
+  },
+  "by_package": {
     "document_intelligence": {
-      "matching": 125,
-      "importing": 69
+      "mentioned_in": 125,
+      "imported_in": 122,
+      "static_in": 69,
+      "dynamic_in": 57
     },
     "doc_modernization": {
-      "matching": 20,
-      "importing": 19
-    },
-    "pulse.writeguard": {
-      "matching": 3,
-      "importing": 1
+      "mentioned_in": 20,
+      "imported_in": 20,
+      "static_in": 19,
+      "dynamic_in": 1
     },
     "writing": {
-      "matching": 2,
-      "importing": 1
-    },
-    "quality": {
-      "matching": 30,
-      "importing": 20
+      "mentioned_in": 2,
+      "imported_in": 2,
+      "static_in": 1,
+      "dynamic_in": 1
     },
     "dic": {
-      "matching": 0,
-      "importing": 0
+      "mentioned_in": 0,
+      "imported_in": 0,
+      "static_in": 0,
+      "dynamic_in": 0
+    },
+    "quality": {
+      "mentioned_in": 30,
+      "imported_in": 26,
+      "static_in": 20,
+      "dynamic_in": 6
+    },
+    "wg": {
+      "mentioned_in": 0,
+      "imported_in": 0,
+      "static_in": 0,
+      "dynamic_in": 0
+    },
+    "pulse.writeguard": {
+      "mentioned_in": 3,
+      "imported_in": 1,
+      "static_in": 1,
+      "dynamic_in": 0
     }
   },
-  "tiers": {
-    "A": 54,
-    "B": 45,
-    "C": 67
-  },
-  "discovery_regex": "(?<![\\w.])(?:icdev\\.)?tools\\.(?:document_intelligence|doc_modernization|pulse\\.writeguard|writing|quality|dic)(?![\\w])",
-  "import_regex": "^\\s*(?:from|import)\\s+(?:icdev\\.)?tools\\.(document_intelligence|doc_modernization|pulse\\.writeguard|writing|quality|dic)(?![\\w])",
   "files": [
     {
-      "file": "tests/browser/test_scope.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/browser/test_scope.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [],
-      "other_subsystems": [
-        "audit",
-        "browser"
+      "imported_packages": [
+        "doc_modernization"
       ],
-      "matches": 1,
-      "first_match": "link_check = importlib.import_module(\"tools.doc_modernization.link_check\")",
-      "lines": [
-        228
-      ]
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "doc_modernization"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "audit",
+        "browser",
+        "http"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/cortex/test_analyst_citations.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/cortex/test_analyst_citations.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "cortex",
         "dashboard",
         "iqe",
         "llm"
       ],
-      "matches": 2,
-      "first_match": "``tools.quality.citation_grounding`` module. Fixture answers cover valid,",
-      "lines": [
-        7,
-        30
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/cortex/test_governance_pipeline.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/cortex/test_governance_pipeline.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "cortex"
       ],
-      "matches": 1,
-      "first_match": "from tools.quality import citation_grounding",
-      "lines": [
-        426
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/cortex/test_search_adapters.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/cortex/test_search_adapters.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "cortex",
+        "knowledge_graph",
+        "mcp",
         "rag"
       ],
-      "matches": 2,
-      "first_match": "from tools.document_intelligence.search_engine import Citation, DICSearchResult",
-      "lines": [
-        112,
-        197
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_architecture_patterns_pack.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/docmod/test_architecture_patterns_pack.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [],
-      "matches": 6,
-      "first_match": "from tools.doc_modernization.base_pack import ChunkRef  # noqa: E402",
-      "lines": [
-        31,
-        32,
-        38,
-        64,
-        192,
-        198
-      ]
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_bridge_persist.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/docmod/test_bridge_persist.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "docgen"
       ],
-      "matches": 1,
-      "first_match": "doc_gen = importlib.import_module(\"tools.document_intelligence.doc_generator\")",
-      "lines": [
-        28
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_change_control_pack.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/docmod/test_change_control_pack.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [],
-      "matches": 3,
-      "first_match": "from tools.doc_modernization.base_pack import CandidateEntity, ChunkRef  # noqa: E402",
-      "lines": [
-        22,
-        23,
-        218
-      ]
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_claim_extractor.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/docmod/test_claim_extractor.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 2,
-      "first_match": "from tools.doc_modernization import claim_extractor as ce",
-      "lines": [
-        16,
-        17
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_claim_lifecycle.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/docmod/test_claim_lifecycle.py",
+      "mentioned_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "other_subsystems": [
-        "db"
-      ],
-      "matches": 11,
-      "first_match": "from tools.doc_modernization import claim_lifecycle as cl",
-      "lines": [
-        26,
-        27,
-        76,
-        113,
-        139,
-        226,
-        305,
-        306,
-        321,
-        338,
-        354
-      ]
-    },
-    {
-      "file": "tests/docmod/test_core_engine.py",
-      "tier": "B",
-      "packages": [
-        "doc_modernization"
-      ],
-      "imported": [
-        "doc_modernization"
-      ],
-      "other_subsystems": [
-        "db"
-      ],
-      "matches": 17,
-      "first_match": "from tools.doc_modernization.base_pack import DomainPack  # noqa: F401",
-      "lines": [
-        103,
-        110,
-        118,
-        127,
-        138,
-        166,
-        176,
-        195,
-        196,
-        220,
-        221,
-        259,
-        260,
-        273,
-        299,
-        319,
-        348
-      ]
-    },
-    {
-      "file": "tests/docmod/test_cross_reference_tracker.py",
-      "tier": "B",
-      "packages": [
+      "static_import_packages": [
+        "doc_modernization",
         "document_intelligence"
       ],
-      "imported": [
-        "document_intelligence"
-      ],
-      "other_subsystems": [
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence import cross_reference_tracker as xrt",
-      "lines": [
-        16
-      ]
+      "exclusive": false,
+      "mention_count": 11,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_domain_packs.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/docmod/test_core_engine.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 17,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_cross_reference_tracker.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_domain_packs.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db",
         "knowledge_graph",
         "mcp"
       ],
-      "matches": 14,
-      "first_match": "from tools.doc_modernization.base_pack import ChunkRef",
-      "lines": [
-        10,
-        69,
-        88,
-        97,
-        110,
-        111,
-        134,
-        152,
-        197,
-        221,
-        251,
-        267,
-        268,
-        291
-      ]
+      "exclusive": false,
+      "mention_count": 14,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_evidence_currency_pack.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/docmod/test_evidence_currency_pack.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [],
-      "matches": 3,
-      "first_match": "from tools.doc_modernization.base_pack import ChunkRef  # noqa: E402",
-      "lines": [
-        23,
-        24,
-        205
-      ]
-    },
-    {
-      "file": "tests/docmod/test_feed_wiring.py",
-      "tier": "B",
-      "packages": [
-        "doc_modernization",
-        "document_intelligence"
-      ],
-      "imported": [
-        "doc_modernization",
-        "document_intelligence"
-      ],
-      "other_subsystems": [
-        "db"
-      ],
-      "matches": 17,
-      "first_match": "from tools.doc_modernization.base_pack import CandidateEntity, ChunkRef",
-      "lines": [
-        23,
-        146,
-        156,
-        164,
-        172,
-        187,
-        209,
-        219,
-        230,
-        238,
-        258,
-        304,
-        316,
-        338,
-        344,
-        356,
-        367
-      ]
-    },
-    {
-      "file": "tests/docmod/test_hitl_surfaces.py",
-      "tier": "B",
-      "packages": [
-        "doc_modernization",
-        "document_intelligence"
-      ],
-      "imported": [
-        "doc_modernization",
-        "document_intelligence"
-      ],
-      "other_subsystems": [
-        "db"
-      ],
-      "matches": 13,
-      "first_match": "from tools.doc_modernization import redline_drafter as rd",
-      "lines": [
-        122,
-        151,
-        161,
-        168,
-        177,
-        188,
-        194,
-        202,
-        236,
-        244,
-        279,
-        316,
-        346
-      ]
-    },
-    {
-      "file": "tests/docmod/test_import_from_docgen.py",
-      "tier": "B",
-      "packages": [
-        "document_intelligence"
-      ],
-      "imported": [
-        "document_intelligence"
-      ],
-      "other_subsystems": [
-        "db"
-      ],
-      "matches": 4,
-      "first_match": "from tools.document_intelligence.blueprint import dic_bp",
-      "lines": [
-        70,
-        125,
-        143,
-        275
-      ]
-    },
-    {
-      "file": "tests/docmod/test_link_check.py",
-      "tier": "B",
-      "packages": [
+      "static_import_packages": [
         "doc_modernization"
       ],
-      "imported": [
-        "doc_modernization"
-      ],
-      "other_subsystems": [
-        "db"
-      ],
-      "matches": 2,
-      "first_match": "from tools.doc_modernization import link_check as lc",
-      "lines": [
-        22,
-        320
-      ]
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_modernization_ui.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/docmod/test_feed_wiring.py",
+      "mentioned_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 17,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_hitl_surfaces.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 13,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_import_from_docgen.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 4,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_link_check.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_modernization_ui.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db",
         "iqe",
         "llm"
       ],
-      "matches": 8,
-      "first_match": "import tools.document_intelligence.blueprint as bp_mod  # registers all routes",
-      "lines": [
-        45,
-        46,
-        121,
-        140,
-        155,
-        181,
-        199,
-        200
-      ]
+      "exclusive": false,
+      "mention_count": 8,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_pack_generator.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/docmod/test_pack_generator.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "cli"
       ],
-      "matches": 2,
-      "first_match": "from tools.doc_modernization.base_pack import ChunkRef  # noqa: E402",
-      "lines": [
-        25,
-        26
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_pg_fixes_and_flow.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/docmod/test_pg_fixes_and_flow.py",
+      "mentioned_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 16,
-      "first_match": "import tools.document_intelligence.blueprint as bp_mod",
-      "lines": [
-        77,
-        78,
-        131,
-        132,
-        133,
-        158,
-        180,
-        200,
-        240,
-        241,
-        267,
-        304,
-        308,
-        309,
-        320,
-        352
-      ]
+      "exclusive": false,
+      "mention_count": 16,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_regen_quality_gate.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/docmod/test_regen_quality_gate.py",
+      "mentioned_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 9,
-      "first_match": "from tools.doc_modernization.regen_quality_gate import (",
-      "lines": [
-        22,
-        205,
-        206,
-        207,
-        283,
-        299,
-        300,
-        316,
-        331
-      ]
+      "exclusive": false,
+      "mention_count": 9,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_reverse_bridge.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/docmod/test_reverse_bridge.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db",
         "docgen"
       ],
-      "matches": 2,
-      "first_match": "doc_gen = importlib.import_module(\"tools.document_intelligence.doc_generator\")",
-      "lines": [
-        158,
-        201
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_sop_workflows_pack.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/docmod/test_sop_workflows_pack.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [],
-      "matches": 6,
-      "first_match": "from tools.doc_modernization.base_pack import ChunkRef  # noqa: E402",
-      "lines": [
-        31,
-        32,
-        38,
-        64,
-        206,
-        212
-      ]
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_standards_catalog.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/docmod/test_standards_catalog.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "config",
         "db"
       ],
-      "matches": 1,
-      "first_match": "from tools.doc_modernization.blueprint import docmod_bp",
-      "lines": [
-        33
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/docmod/test_temporal_validity.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/docmod/test_temporal_validity.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [],
-      "matches": 7,
-      "first_match": "from tools.doc_modernization import temporal",
-      "lines": [
-        19,
-        20,
-        21,
-        22,
-        115,
-        203,
-        222
-      ]
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 7,
+      "parse_error": null
     },
     {
-      "file": "tests/document_intelligence/test_chunk_repair.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/document_intelligence/test_chunk_repair.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.chunk_repair import (",
-      "lines": [
-        19
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/document_intelligence/test_freshness_notifier.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/document_intelligence/test_freshness_notifier.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 2,
-      "first_match": "from tools.document_intelligence.freshness_engine import FreshnessResult",
-      "lines": [
-        23,
-        24
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/document_intelligence/test_table_extract.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/document_intelligence/test_table_extract.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 7,
-      "first_match": "from tools.document_intelligence import table_extract as te",
-      "lines": [
-        17,
-        164,
-        172,
-        183,
-        191,
-        201,
-        213
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 7,
+      "parse_error": null
     },
     {
-      "file": "tests/genesis_auto/test_extractors.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/genesis_auto/test_extractors.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 18,
-      "first_match": "\"\"\"Auto-generated tests for tools.document_intelligence.extractors.",
-      "lines": [
-        3,
-        23,
-        33,
-        42,
-        52,
-        61,
-        71,
-        80,
-        90,
-        99,
-        109,
-        118,
-        128,
-        137,
-        147,
-        156,
-        169,
-        180
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 18,
+      "parse_error": null
     },
     {
-      "file": "tests/genesis_auto/test_ingest_orchestrator.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/genesis_auto/test_ingest_orchestrator.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 8,
-      "first_match": "\"\"\"Auto-generated tests for tools.document_intelligence.ingest_orchestrator.",
-      "lines": [
-        3,
-        23,
-        33,
-        42,
-        56,
-        64,
-        72,
-        83
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 8,
+      "parse_error": null
     },
     {
-      "file": "tests/govcon/test_past_performance_suggester.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/govcon/test_past_performance_suggester.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [
-        "db"
+      "imported_packages": [
+        "quality"
       ],
-      "matches": 1,
-      "first_match": "cg = importlib.import_module(\"tools.quality.citation_grounding\")",
-      "lines": [
-        26
-      ]
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "govcon"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/http/test_egress_guard.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/http/test_egress_guard.py",
+      "mentioned_packages": [
         "doc_modernization"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "http"
       ],
-      "matches": 2,
-      "first_match": "from tools.doc_modernization.link_check import egress_guard as legacy",
-      "lines": [
-        162,
-        175
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/http/test_fetch_extract_retrofit.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/http/test_fetch_extract_retrofit.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "chat_router",
         "creative",
         "http",
         "research"
       ],
-      "matches": 4,
-      "first_match": "from tools.document_intelligence import extractors",
-      "lines": [
-        243,
-        262,
-        281,
-        296
-      ]
+      "exclusive": false,
+      "mention_count": 4,
+      "parse_error": null
     },
     {
-      "file": "tests/quality/test_rigor_gates.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/quality/test_rigor_gates.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.quality.rigor_gates import EvaluationResult, ILTierProfile, evaluate, load_profile",
-      "lines": [
-        18
-      ]
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_acoic_hitl_audit.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_acoic_hitl_audit.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 9,
-      "first_match": "import tools.document_intelligence.acoic as acoic_mod",
-      "lines": [
-        34,
-        40,
-        57,
-        83,
-        93,
-        101,
-        111,
-        123,
-        150
-      ]
+      "exclusive": false,
+      "mention_count": 9,
+      "parse_error": null
     },
     {
-      "file": "tests/test_capture_strategy.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_capture_strategy.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "govcon"
       ],
-      "matches": 1,
-      "first_match": "from tools.quality.content_grounding import find_placeholders",
-      "lines": [
-        8
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_categorical_scoring.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_categorical_scoring.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "from tools.quality.categorical_scoring import (",
-      "lines": [
-        15,
-        149
-      ]
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_citation_grounding.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_citation_grounding.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.quality.citation_grounding import (",
-      "lines": [
-        9
-      ]
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_claim_grounding.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_claim_grounding.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "from tools.quality.citation_grounding import (",
-      "lines": [
-        18,
-        296
-      ]
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_clx_control_loop.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_clx_control_loop.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "agent_runtime",
+        "db",
         "kanban"
       ],
-      "matches": 3,
-      "first_match": "from tools.quality.sensor import ReviewLoopSensor, Violation, _looks_like_path",
-      "lines": [
-        16,
-        49,
-        156
-      ]
+      "exclusive": false,
+      "mention_count": 3,
+      "parse_error": null
     },
     {
-      "file": "tests/test_cnr_docgen.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_cnr_docgen.py",
+      "mentioned_packages": [
         "pulse.writeguard"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": false,
+      "loads_doc_code": false,
+      "reference_only": true,
+      "other_tools_packages": [
         "db",
         "docgen"
       ],
-      "matches": 2,
-      "first_match": "with patch.dict(sys.modules, {\"tools.pulse.writeguard\": None}):",
-      "lines": [
-        201,
-        214
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_cnr_mission_canvas.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_cnr_mission_canvas.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": false,
+      "loads_doc_code": false,
+      "reference_only": true,
+      "other_tools_packages": [
         "airgap",
         "dashboard",
         "iqe",
         "mission_canvas",
         "studio"
       ],
-      "matches": 1,
-      "first_match": "is grounded via tools.quality.citation_grounding.",
-      "lines": [
-        8
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_completion_auditor.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_completion_auditor.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.quality import completion_auditor as ca",
-      "lines": [
-        24
-      ]
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_component_registry.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_component_registry.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": false,
+      "loads_doc_code": false,
+      "reference_only": true,
+      "other_tools_packages": [
         "cli",
         "config",
         "db"
       ],
-      "matches": 1,
-      "first_match": "(\"dic\", \"ICDEV_DIC_ENABLED\", \"tools.document_intelligence.blueprint\", \"dic_bp\"),",
-      "lines": [
-        49
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_constitutional_ai.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_constitutional_ai.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 5,
-      "first_match": "from tools.quality.constitutional_ai import (",
-      "lines": [
-        7,
-        156,
-        167,
-        178,
-        190
-      ]
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 5,
+      "parse_error": null
     },
     {
-      "file": "tests/test_content_grounding.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_content_grounding.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "govcon"
       ],
-      "matches": 2,
-      "first_match": "from tools.quality.citation_grounding import CONF_ABSTAIN",
-      "lines": [
-        9,
-        10
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_context_budget.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_context_budget.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.blueprint import (",
-      "lines": [
-        22
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_cove_architecture.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_cove_architecture.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 2,
-      "first_match": "from tools.quality.cove_guard import cove_guard",
-      "lines": [
-        141,
-        152
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_crx_kg_blast_radius.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_crx_kg_blast_radius.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 13,
-      "first_match": "with _patch_attr(\"tools.document_intelligence.consistency_checker\",",
-      "lines": [
-        108,
-        110,
-        124,
-        126,
-        137,
-        139,
-        148,
-        157,
-        159,
-        176,
-        185,
-        200,
-        213
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 13,
+      "parse_error": null
     },
     {
-      "file": "tests/test_derivation_disclosure.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_derivation_disclosure.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.quality.derivation import (",
-      "lines": [
-        16
-      ]
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_acoic_ux.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_acoic_ux.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db",
         "docgen",
         "genesis"
       ],
-      "matches": 9,
-      "first_match": "import tools.document_intelligence.acoic as acoic_mod",
-      "lines": [
-        40,
-        49,
-        59,
-        67,
-        200,
-        214,
-        222,
-        237,
-        246
-      ]
+      "exclusive": false,
+      "mention_count": 9,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_aiassist_retry.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_aiassist_retry.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "dg = importlib.import_module(\"tools.document_intelligence.doc_generator\")",
-      "lines": [
-        13
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_analytics_kg_linkage.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_analytics_kg_linkage.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence import analytics_engine",
-      "lines": [
-        13
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_analytics_provenance.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_analytics_provenance.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db",
         "rag"
       ],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence import analytics_engine",
-      "lines": [
-        14
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_anomaly_severity.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_anomaly_severity.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        21
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_batch_ingest_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_batch_ingest_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "orch = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        14
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_bulk_edit_anomaly_detection.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_bulk_edit_anomaly_detection.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        15
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_chat_cortex_adoption.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_chat_cortex_adoption.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "cortex"
       ],
-      "matches": 1,
-      "first_match": "import tools.document_intelligence.blueprint as bp",
-      "lines": [
-        12
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_chat_memory.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_chat_memory.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 5,
-      "first_match": "``tools.document_intelligence.chat_memory`` adds grounded, citable session",
-      "lines": [
-        5,
-        23,
-        24,
-        25,
-        56
-      ]
+      "exclusive": false,
+      "mention_count": 5,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_chat_memory_schema.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_chat_memory_schema.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence import chat_memory as cm",
-      "lines": [
-        26
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_citation_publish_gate.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_citation_publish_gate.py",
+      "mentioned_packages": [
         "document_intelligence",
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence",
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "from tools.document_intelligence.consistency_checker import (",
-      "lines": [
-        23,
-        27
-      ]
+      "static_import_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_claim_grounding_wiring.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_claim_grounding_wiring.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "from tools.document_intelligence.blueprint import _claim_grounding",
-      "lines": [
-        21,
-        111
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_collection_listing_anomaly.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_collection_listing_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 2,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        26,
-        218
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_collection_registry.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_collection_registry.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.collection_registry import (",
-      "lines": [
-        12
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_collection_scoping.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_collection_scoping.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence import search_engine as se",
-      "lines": [
-        29
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_confabulation.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_confabulation.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "dg = importlib.import_module(\"tools.document_intelligence.doc_generator\")",
-      "lines": [
-        11
-      ]
-    },
-    {
-      "file": "tests/test_dic_consumer_file_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "orch = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        19
-      ]
-    },
-    {
-      "file": "tests/test_dic_consumer_pipeline_health_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "static_import_packages": [],
+      "dynamic_import_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "orch = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        16
-      ]
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "security"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_cove_gate.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_consumer_file_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_consumer_pipeline_health_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_cove_gate.py",
+      "mentioned_packages": [
         "document_intelligence",
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence",
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 10,
-      "first_match": "from tools.document_intelligence import consistency_checker as cc",
-      "lines": [
-        21,
-        87,
-        103,
-        115,
-        129,
-        142,
-        160,
-        170,
-        180,
-        189
-      ]
-    },
-    {
-      "file": "tests/test_dic_cross_canvas_context.py",
-      "tier": "B",
-      "packages": [
-        "document_intelligence"
-      ],
-      "imported": [
-        "document_intelligence"
-      ],
-      "other_subsystems": [
-        "db"
-      ],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.cross_canvas_context import (",
-      "lines": [
-        12
-      ]
-    },
-    {
-      "file": "tests/test_dic_dead_surfaces_removed.py",
-      "tier": "A",
-      "packages": [
-        "document_intelligence"
-      ],
-      "imported": [
-        "document_intelligence"
-      ],
-      "other_subsystems": [],
-      "matches": 6,
-      "first_match": "from tools.document_intelligence.blueprint import _PAGES",
-      "lines": [
-        47,
-        59,
-        68,
-        84,
-        93,
-        100
-      ]
-    },
-    {
-      "file": "tests/test_dic_derivation_all_paths.py",
-      "tier": "A",
-      "packages": [
-        "document_intelligence"
-      ],
-      "imported": [
-        "document_intelligence"
-      ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence import blueprint as bp",
-      "lines": [
-        24
-      ]
-    },
-    {
-      "file": "tests/test_dic_derivation_wiring.py",
-      "tier": "A",
-      "packages": [
+      "static_import_packages": [
         "document_intelligence",
         "quality"
       ],
-      "imported": [
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 10,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_cross_canvas_context.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_dead_surfaces_removed.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_derivation_all_paths.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_derivation_wiring.py",
+      "mentioned_packages": [
         "document_intelligence",
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 5,
-      "first_match": "from tools.document_intelligence import blueprint as bp",
-      "lines": [
-        12,
-        61,
-        77,
-        83,
-        83
-      ]
+      "imported_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "static_import_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 5,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_document_model_anomaly_detection.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_document_model_anomaly_detection.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        16
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_document_routing_anomaly_detection.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_document_routing_anomaly_detection.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        16
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_extraction_quality.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_extraction_quality.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "extractors = importlib.import_module(\"tools.document_intelligence.extractors\")",
-      "lines": [
-        24
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_field_validation_anomaly_detection.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_field_validation_anomaly_detection.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        16
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_filters.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_filters.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.filters import (",
-      "lines": [
-        5
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_freshness_engine.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_freshness_engine.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.freshness_engine import (",
-      "lines": [
-        16
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_graphrag_chat.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_graphrag_chat.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence import blueprint as bp",
-      "lines": [
-        17
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_inbox.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_inbox.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 24,
-      "first_match": "from tools.document_intelligence.inbox import discover",
-      "lines": [
-        44,
-        52,
-        57,
-        67,
-        70,
-        79,
-        82,
-        91,
-        94,
-        106,
-        109,
-        119,
-        122,
-        129,
-        133,
-        141,
-        144,
-        152,
-        155,
-        158,
-        166,
-        169,
-        178,
-        182
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 24,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_inbox_sweep_reflex.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_inbox_sweep_reflex.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "genesis"
       ],
-      "matches": 2,
-      "first_match": "_inbox = importlib.import_module(\"tools.document_intelligence.inbox\")",
-      "lines": [
-        26,
-        27
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_ai_summary.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_ai_summary.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        18
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_anomaly_detection.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_anomaly_detection.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        14
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_classify.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_classify.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        28
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_consumer_outcome_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_consumer_outcome_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "orch = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        14
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_correspondence.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_correspondence.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        35
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_duplex_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_duplex_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        17
-      ]
-    },
-    {
-      "file": "tests/test_dic_ingest_email_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        15
-      ]
-    },
-    {
-      "file": "tests/test_dic_ingest_identifiers.py",
-      "tier": "C",
-      "packages": [
+      "static_import_packages": [],
+      "dynamic_import_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        32
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_import_validation.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_email_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "orch = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        15
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_job_anomaly_detection.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_identifiers.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_import_validation.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_job_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        15
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_label_match_criteria.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_label_match_criteria.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        24
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_metadata.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_metadata.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        25
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_near_duplicate.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_near_duplicate.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        24
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_ocr_cleanup.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_ocr_cleanup.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        20
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_orchestrator.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dic_ingest_orchestrator.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 12,
-      "first_match": "from tools.document_intelligence import ingest_orchestrator as orch",
-      "lines": [
-        18,
-        19,
-        181,
-        218,
-        235,
-        239,
-        244,
-        272,
-        273,
-        291,
-        295,
-        300
-      ]
+      "exclusive": false,
+      "mention_count": 12,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_routing_metadata.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_routing_metadata.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        27
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_throughput_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_throughput_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        16
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_workflow_action_params.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_workflow_action_params.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        28
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_ingest_workflow_mutations.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_ingest_workflow_mutations.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        36
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "llm",
+        "rag"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_layout_probe.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_layout_probe.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence import extractors",
-      "lines": [
-        23
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_lifecycle_assignment_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_lifecycle_assignment_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "orch = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        15
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_nav_consistency.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_nav_consistency.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.blueprint import _PAGE_GROUPS, _PAGES",
-      "lines": [
-        75
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_output_export_anomaly_detection.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_output_export_anomaly_detection.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        17
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_publish_gate.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_publish_gate.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 12,
-      "first_match": "patch(\"tools.document_intelligence.blueprint._conn\", _make_shim),",
-      "lines": [
-        122,
-        123,
-        125,
-        127,
-        133,
-        164,
-        178,
-        187,
-        195,
-        209,
-        222,
-        228
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 12,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_re_enrich_metadata.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_re_enrich_metadata.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db",
         "llm"
       ],
-      "matches": 1,
-      "first_match": "ingest = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        25
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_reasoning_scrub.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_reasoning_scrub.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "dg = importlib.import_module(\"tools.document_intelligence.doc_generator\")",
-      "lines": [
-        10
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_route_dedup.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_route_dedup.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "from tools.document_intelligence import acoic",
-      "lines": [
-        45,
-        55
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_access.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_access.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
         "llm"
       ],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        24
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        23
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_answer.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_answer.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        22
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_expand.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_expand.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        23
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_filter_coverage_anomaly.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_filter_coverage_anomaly.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        24
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_filter_query.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_filter_query.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
         "llm"
       ],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        25
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_intent.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_intent.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        24
-      ]
-    },
-    {
-      "file": "tests/test_dic_search_keyword.py",
-      "tier": "C",
-      "packages": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        28
-      ]
-    },
-    {
-      "file": "tests/test_dic_search_query_intent.py",
-      "tier": "C",
-      "packages": [
+      "static_import_packages": [],
+      "dynamic_import_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        30
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_result_summary.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_keyword.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        22
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_search_snippet.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_search_query_intent.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "llm"
       ],
-      "matches": 1,
-      "first_match": "se = importlib.import_module(\"tools.document_intelligence.search_engine\")",
-      "lines": [
-        23
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_style_engine.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_search_result_summary.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.style_engine import check_style, check_sections",
-      "lines": [
-        8
-      ]
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_techwriter.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_search_snippet.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_style_engine.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_techwriter.py",
+      "mentioned_packages": [
         "document_intelligence",
         "writing"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence",
         "writing"
       ],
-      "other_subsystems": [],
-      "matches": 30,
-      "first_match": "from tools.document_intelligence.constants import TEMPLATE_TYPES",
-      "lines": [
-        14,
-        24,
-        32,
-        38,
-        44,
-        94,
-        102,
-        111,
-        119,
-        126,
-        135,
-        142,
-        153,
-        163,
-        172,
-        188,
-        197,
-        207,
-        208,
-        235,
-        236,
-        272,
-        273,
-        299,
-        300,
-        317,
-        329,
-        346,
-        357,
-        367
-      ]
+      "static_import_packages": [
+        "document_intelligence",
+        "writing"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 30,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_techwriter_citations.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dic_techwriter_citations.py",
+      "mentioned_packages": [
         "document_intelligence",
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 3,
-      "first_match": "from tools.document_intelligence import tech_writing_assist as twa",
-      "lines": [
-        23,
-        25,
-        154
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_template_chunking.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_template_chunking.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "rag"
       ],
-      "matches": 1,
-      "first_match": "io = importlib.import_module(\"tools.document_intelligence.ingest_orchestrator\")",
-      "lines": [
-        14
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_text_parse_quality.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_text_parse_quality.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "extractors = importlib.import_module(\"tools.document_intelligence.extractors\")",
-      "lines": [
-        25
-      ]
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dic_view_anomaly_detection.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dic_view_anomaly_detection.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "analytics = importlib.import_module(\"tools.document_intelligence.analytics_engine\")",
-      "lines": [
-        15
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_divergence_critic.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_divergence_critic.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [],
-      "matches": 7,
-      "first_match": "from tools.quality.categorical_scoring import compose_divergence",
-      "lines": [
-        11,
-        12,
-        259,
-        278,
-        289,
-        318,
-        333
-      ]
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 7,
+      "parse_error": null
     },
     {
-      "file": "tests/test_doc_generator_confidence_bands.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_doc_generator_confidence_bands.py",
+      "mentioned_packages": [
         "document_intelligence",
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "_doc_generator = importlib.import_module(\"tools.document_intelligence.doc_generator\")",
-      "lines": [
-        15,
-        16
-      ]
+      "imported_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_docdrift_rename.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_docdrift_rename.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 4,
-      "first_match": "from tools.document_intelligence import blueprint as bp",
-      "lines": [
-        42,
-        81,
-        93,
-        108
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 4,
+      "parse_error": null
     },
     {
-      "file": "tests/test_docgen.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_docgen.py",
+      "mentioned_packages": [
         "document_intelligence",
         "pulse.writeguard"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "pulse.writeguard"
+      ],
+      "real_import": false,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db",
         "docgen"
       ],
-      "matches": 22,
-      "first_match": "# sys.modules[name]=None makes `from tools.pulse.writeguard import \u2026` raise ImportError.",
-      "lines": [
-        369,
-        370,
-        449,
-        450,
-        467,
-        515,
-        516,
-        542,
-        543,
-        581,
-        603,
-        604,
-        626,
-        657,
-        680,
-        681,
-        925,
-        952,
-        1289,
-        1290,
-        1671,
-        1686
-      ]
+      "exclusive": false,
+      "mention_count": 22,
+      "parse_error": null
     },
     {
-      "file": "tests/test_docgen_bridge_scrub.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_docgen_bridge_scrub.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "from tools.document_intelligence.doc_generator import (",
-      "lines": [
-        26,
-        82
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_docmod_drift_bridge.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_docmod_drift_bridge.py",
+      "mentioned_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "doc_modernization",
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "doc_modernization"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 14,
-      "first_match": "import tools.doc_modernization.drift_bridge as db",
-      "lines": [
-        51,
-        59,
-        61,
-        62,
-        135,
-        147,
-        152,
-        156,
-        158,
-        164,
-        167,
-        168,
-        181,
-        201
-      ]
+      "exclusive": false,
+      "mention_count": 14,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dsyn_canvas_adapter.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dsyn_canvas_adapter.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 21,
-      "first_match": "import tools.document_intelligence.canvas_adapter as mod",
-      "lines": [
-        103,
-        126,
-        133,
-        141,
-        152,
-        162,
-        172,
-        181,
-        196,
-        204,
-        211,
-        219,
-        227,
-        235,
-        246,
-        258,
-        268,
-        275,
-        283,
-        291,
-        299
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 21,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dsyn_consistency.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dsyn_consistency.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 27,
-      "first_match": "from tools.document_intelligence.consistency_checker import extract_changed_concepts",
-      "lines": [
-        89,
-        97,
-        104,
-        112,
-        119,
-        157,
-        159,
-        168,
-        170,
-        177,
-        179,
-        186,
-        188,
-        195,
-        197,
-        220,
-        222,
-        241,
-        245,
-        247,
-        262,
-        266,
-        268,
-        277,
-        292,
-        298,
-        300
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 27,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dsyn_dic_integration_reflex.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dsyn_dic_integration_reflex.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": false,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "genesis"
       ],
-      "matches": 2,
-      "first_match": "patch(\"tools.document_intelligence.canvas_adapter.get_connection\", _fake_gc),",
-      "lines": [
-        206,
-        207
-      ]
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dsyn_patch_mode.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dsyn_patch_mode.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 33,
-      "first_match": "from tools.document_intelligence import doc_generator",
-      "lines": [
-        92,
-        96,
-        101,
-        106,
-        111,
-        156,
-        158,
-        171,
-        173,
-        186,
-        188,
-        201,
-        203,
-        220,
-        222,
-        234,
-        236,
-        268,
-        270,
-        278,
-        280,
-        291,
-        293,
-        301,
-        303,
-        309,
-        311,
-        318,
-        320,
-        332,
-        334,
-        342,
-        344
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 33,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dsyn_suggest.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dsyn_suggest.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 28,
-      "first_match": "from tools.document_intelligence import blueprint",
-      "lines": [
-        83,
-        88,
-        93,
-        98,
-        103,
-        120,
-        128,
-        130,
-        132,
-        134,
-        136,
-        138,
-        143,
-        162,
-        164,
-        166,
-        168,
-        170,
-        181,
-        183,
-        185,
-        187,
-        202,
-        204,
-        206,
-        208,
-        210,
-        212
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 28,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dsyn_suggestion_api.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dsyn_suggestion_api.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 7,
-      "first_match": "patch(\"tools.document_intelligence.blueprint._conn\", _fake_conn),",
-      "lines": [
-        191,
-        192,
-        193,
-        198,
-        199,
-        200,
-        384
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 7,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dsyn_suggestion_store.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_dsyn_suggestion_store.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 20,
-      "first_match": "import tools.document_intelligence.suggestion_store as mod",
-      "lines": [
-        55,
-        75,
-        81,
-        89,
-        96,
-        103,
-        113,
-        125,
-        135,
-        145,
-        156,
-        169,
-        174,
-        191,
-        201,
-        210,
-        224,
-        232,
-        238,
-        248
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 20,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dsyn_vv_smoke.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dsyn_vv_smoke.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "aiify",
         "cloudforge",
         "compliance",
@@ -2849,524 +3244,622 @@
         "network",
         "security"
       ],
-      "matches": 8,
-      "first_match": "import tools.document_intelligence.suggestion_store as ss",
-      "lines": [
-        221,
-        289,
-        291,
-        316,
-        318,
-        375,
-        380,
-        385
-      ]
+      "exclusive": false,
+      "mention_count": 8,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dvg_benchmark.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dvg_benchmark.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "critic = importlib.import_module(\"tools.quality.divergence_critic\")",
-      "lines": [
-        54,
-        64
-      ]
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "creative"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dvg_wire04_mcp.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dvg_wire04_mcp.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "quality"
+      ],
+      "real_import": false,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "mcp",
         "skills"
       ],
-      "matches": 1,
-      "first_match": "patch(\"tools.quality.divergence_critic.score_idea_pool\", return_value=fake_scored):",
-      "lines": [
-        84
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_dvg_wire_creative_branch.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_dvg_wire_creative_branch.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "critic_mod = importlib.import_module(\"tools.quality.divergence_critic\")",
-      "lines": [
-        17
-      ]
-    },
-    {
-      "file": "tests/test_dvg_wire_solution_divergence.py",
-      "tier": "C",
-      "packages": [
+      "imported_packages": [
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "critic_mod = importlib.import_module(\"tools.quality.divergence_critic\")",
-      "lines": [
-        16
-      ]
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "creative"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_idr_multi_source.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_dvg_wire_solution_divergence.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "innovation"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_idr_multi_source.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "docgen"
       ],
-      "matches": 15,
-      "first_match": "from tools.document_intelligence.doc_generator import generate_document",
-      "lines": [
-        213,
-        221,
-        223,
-        224,
-        235,
-        244,
-        246,
-        258,
-        271,
-        273,
-        280,
-        308,
-        326,
-        334,
-        348
-      ]
+      "exclusive": false,
+      "mention_count": 15,
+      "parse_error": null
     },
     {
-      "file": "tests/test_markitdown_adapter.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_markitdown_adapter.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 11,
-      "first_match": "ADAPTER_MODULE = \"tools.document_intelligence.converters.markitdown_adapter\"",
-      "lines": [
-        8,
-        13,
-        26,
-        32,
-        38,
-        46,
-        61,
-        69,
-        81,
-        82,
-        101
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 11,
+      "parse_error": null
     },
     {
-      "file": "tests/test_mcp_writeguard_tool.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_mcp_writeguard_tool.py",
+      "mentioned_packages": [
         "pulse.writeguard"
       ],
-      "imported": [
+      "imported_packages": [
         "pulse.writeguard"
       ],
-      "other_subsystems": [],
-      "matches": 4,
-      "first_match": "(tools.pulse.writeguard.handle_writeguard_analyze).\"\"\"",
-      "lines": [
-        4,
-        9,
-        19,
-        26
-      ]
+      "static_import_packages": [
+        "pulse.writeguard"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "pulse.writeguard"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 4,
+      "parse_error": null
     },
     {
-      "file": "tests/test_nav_intel_09_d5_judge_publish_integration.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_nav_intel_09_d5_judge_publish_integration.py",
+      "mentioned_packages": [
         "writing"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "writing"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "writing"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "dashboard",
         "db"
       ],
-      "matches": 4,
-      "first_match": "The import is `from tools.writing.llm_judge import evaluate_and_store,",
-      "lines": [
-        263,
-        267,
-        317,
-        457
-      ]
+      "exclusive": false,
+      "mention_count": 4,
+      "parse_error": null
     },
     {
-      "file": "tests/test_network_doc_lifecycle.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_network_doc_lifecycle.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "ace",
         "db",
         "network"
       ],
-      "matches": 10,
-      "first_match": "from tools.document_intelligence import acoic",
-      "lines": [
-        273,
-        276,
-        296,
-        297,
-        342,
-        356,
-        357,
-        385,
-        405,
-        418
-      ]
+      "exclusive": false,
+      "mention_count": 10,
+      "parse_error": null
     },
     {
-      "file": "tests/test_penta_aiify_trust.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_penta_aiify_trust.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "aiify",
-        "db"
+        "db",
+        "llm"
       ],
-      "matches": 3,
-      "first_match": "from tools.quality.html_sanitizer import sanitize_html",
-      "lines": [
-        27,
-        35,
-        43
-      ]
+      "exclusive": false,
+      "mention_count": 3,
+      "parse_error": null
     },
     {
-      "file": "tests/test_placeholder_promote_gate.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_placeholder_promote_gate.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "dashboard",
+        "govcon",
         "security"
       ],
-      "matches": 1,
-      "first_match": "import tools.quality.content_grounding as cg",
-      "lines": [
-        152
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_publish_gates.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_publish_gates.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [
+      "imported_packages": [
         "quality"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "db"
       ],
-      "matches": 1,
-      "first_match": "from tools.quality.citation_grounding import PUBLISH_GATES, publish_gate_check_sql",
-      "lines": [
-        24
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_release_orchestrator.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_release_orchestrator.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": false,
+      "loads_doc_code": false,
+      "reference_only": true,
+      "other_tools_packages": [
         "dx",
         "installer"
       ],
-      "matches": 1,
-      "first_match": "b\"from icdev.tools.quality.citation_grounding import parse_citations\\n\",",
-      "lines": [
-        554
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_review_loop.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_review_loop.py",
+      "mentioned_packages": [
         "quality"
       ],
-      "imported": [],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "rl = importlib.import_module(\"tools.quality.review_loop\")",
-      "lines": [
-        13
-      ]
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_rted_conflict_detector.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_rted_conflict_detector.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 1,
-      "first_match": "from tools.document_intelligence.conflict_detector import (  # noqa: E402",
-      "lines": [
-        11
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_rted_history_api.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_rted_history_api.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 3,
-      "first_match": "patch(\"tools.document_intelligence.blueprint._conn\", _make_shim),",
-      "lines": [
-        115,
-        116,
-        121
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
     },
     {
-      "file": "tests/test_rted_history_recorder.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_rted_history_recorder.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 6,
-      "first_match": "with patch(\"tools.document_intelligence.history_recorder.get_connection\", _fake_get_connection):",
-      "lines": [
-        53,
-        57,
-        78,
-        89,
-        100,
-        118
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
     },
     {
-      "file": "tests/test_rted_history_ui.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_rted_history_ui.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 3,
-      "first_match": "patch(\"tools.document_intelligence.blueprint._conn\", _make_shim),",
-      "lines": [
-        128,
-        129,
-        134
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
     },
     {
-      "file": "tests/test_rted_lock_manager.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_rted_lock_manager.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 5,
-      "first_match": "with patch(\"tools.document_intelligence.lock_manager.get_connection\", _fake_get_connection):",
-      "lines": [
-        57,
-        63,
-        125,
-        139,
-        164
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 5,
+      "parse_error": null
     },
     {
-      "file": "tests/test_rted_presence_api.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_rted_presence_api.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 6,
-      "first_match": "import tools.document_intelligence.blueprint as _bp_mod",
-      "lines": [
-        27,
-        82,
-        83,
-        88,
-        133,
-        145
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
     },
     {
-      "file": "tests/test_rted_presence_registry.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_rted_presence_registry.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "with patch(\"tools.document_intelligence.presence_registry.get_connection\", _fake):",
-      "lines": [
-        53,
-        57
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_rted_vv_smoke.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_rted_vv_smoke.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 9,
-      "first_match": "patch(\"tools.document_intelligence.blueprint._conn\", _fake_conn_fn),",
-      "lines": [
-        193,
-        194,
-        195,
-        196,
-        202,
-        203,
-        204,
-        206,
-        258
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 9,
+      "parse_error": null
     },
     {
-      "file": "tests/test_tech_writing_assist.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_tech_writing_assist.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "cortex"
       ],
-      "matches": 1,
-      "first_match": "twa = importlib.import_module(\"tools.document_intelligence.tech_writing_assist\")",
-      "lines": [
-        11
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_tw_standards_validation.py",
-      "tier": "C",
-      "packages": [
+      "path": "tests/test_tw_standards_validation.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [],
-      "other_subsystems": [
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "cortex"
       ],
-      "matches": 1,
-      "first_match": "twa = importlib.import_module(\"tools.document_intelligence.tech_writing_assist\")",
-      "lines": [
-        7
-      ]
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
     },
     {
-      "file": "tests/test_verifier_contract.py",
-      "tier": "A",
-      "packages": [
+      "path": "tests/test_verifier_contract.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [],
-      "matches": 2,
-      "first_match": "from tools.document_intelligence.verifier import (",
-      "lines": [
-        32,
-        37
-      ]
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
     },
     {
-      "file": "tests/test_wiki_integrations.py",
-      "tier": "B",
-      "packages": [
+      "path": "tests/test_wiki_integrations.py",
+      "mentioned_packages": [
         "document_intelligence"
       ],
-      "imported": [
+      "imported_packages": [
         "document_intelligence"
       ],
-      "other_subsystems": [
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
         "ace",
         "anvil",
         "memory"
       ],
-      "matches": 8,
-      "first_match": "from tools.document_intelligence.search_engine import _file_qa_to_wiki, _qa_slug",
-      "lines": [
-        43,
-        65,
-        82,
-        94,
-        116,
-        127,
-        133,
-        293
-      ]
+      "exclusive": false,
+      "mention_count": 8,
+      "parse_error": null
     }
-  ]
+  ],
+  "tiers": {
+    "A_exclusive": 68,
+    "B_mixed": 94,
+    "C_reference_only": 4
+  },
+  "supersedes": {
+    "note": "Replaces the first tsr-doc-01-d1 inventory. That run classified imports with '^\\s*(?:from|import)\\s+tools\\.<pkg>', which cannot match importlib.import_module('tools.<pkg>') or a mock.patch string target. 63 files it filed as tier C 'mention only' do load DOC code.",
+    "previous_tiers": {
+      "A": 54,
+      "B": 45,
+      "C": 67
+    },
+    "previous_slice_lines": 54
+  }
 }

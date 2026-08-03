@@ -23,6 +23,7 @@ Every CHECK constraint is derived from the enums in
 from __future__ import annotations
 
 import os
+import sys
 
 from tools.integrity.constants import (
     ASSESS_MODES,
@@ -197,4 +198,4 @@ def init_db(conn=None) -> None:
 
 if __name__ == "__main__":
     init_db()
-    print("[init_db] SIPA integrity schema ready")
+    print("[init_db] SIPA integrity schema ready", file=sys.stderr)

@@ -3,6 +3,7 @@
 // Verifies the Proposal Genesis dashboard loads with daemon status, Phase A reflexes, quality scores, and audit trail.
 
 import { test, expect } from '@playwright/test';
+import { dismissOverlays, loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 // Proposal Genesis runs on port 5050
@@ -10,36 +11,17 @@ const PG_BASE = 'http://localhost:5050';
 
 test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test.beforeEach(async ({ page }) => {
-    // Suppress tour overlay before any navigation
-    await page.addInitScript(() => {
-      localStorage.setItem('icdev_tour_completed', '1');
-      localStorage.setItem('icdev_tour_last_step', '999');
-    });
+    // tsh-e2e-01-d3: suppress the tour AND the onboarding wizard before any
+    // navigation. The tour keys alone were not enough — the login step below
+    // matched the wizard's hidden #onb-apikey input and burned the whole
+    // actionTimeout on it. See fixtures/onboarding.ts.
+    await suppressOnboarding(page);
 
     // Login (no-op in dev mode — dashboard has no auth gate)
-    await page.goto(`${PG_BASE}/login`);
-    await page.waitForLoadState('domcontentloaded');
-
-    const apiKeyInput = page.locator(
-      'input[type="password"], input[name="api_key"], input[id="api_key"], input[placeholder*="key" i]'
-    );
-    if (await apiKeyInput.count() > 0) {
-      await apiKeyInput.first().fill('sparkpilot');
-      const submitBtn = page.getByRole('button', { name: /Login|Sign In|Submit/i })
-        .or(page.locator('button[type="submit"]'));
-      if (await submitBtn.count() > 0) {
-        await submitBtn.first().click();
-        await page.waitForLoadState('domcontentloaded');
-      }
-    }
+    await loginIfPrompted(page, PG_BASE);
 
     // Dismiss any lingering dialog from a previous test
-    await page.evaluate(() => {
-      document.querySelectorAll<HTMLElement>('dialog[open]').forEach(d => {
-        if (typeof (d as any).close === 'function') (d as any).close();
-        else d.removeAttribute('open');
-      });
-    });
+    await dismissOverlays(page);
   });
 
   test('proposal genesis page loads with heading and intro panel', async ({ page }) => {

@@ -20612,6 +20612,20 @@ CREATE TABLE public.nc_simulation_artifacts (
 
 
 --
+-- Name: nc_simulation_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_simulation_results (
+    id text NOT NULL,
+    topology_id text,
+    sim_type text NOT NULL,
+    input_json text DEFAULT '{}'::text,
+    result_json text DEFAULT '{}'::text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: nc_simulation_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -29773,7 +29787,7 @@ CREATE TABLE public.source_citation_registry (
     project_id text,
     trust_score real DEFAULT 0.0,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text])))
+    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text, 'cortex'::text, 'asset_token'::text])))
 );
 
 
@@ -31370,6 +31384,16 @@ ALTER SEQUENCE public.ttx_api_log_log_id_seq OWNED BY public.ttx_api_log.log_id;
 --
 -- Name: ttx_formation_plan; Type: TABLE; Schema: public; Owner: -
 --
+-- UNWIRED BY DESIGN (gdx-dead-02, 2026-08-01). No module in tools/, icdev/ or apps/
+-- reads or writes this table, and no migration creates it -- it exists only in this
+-- consolidated snapshot. It backs the designed-but-unbuilt GameDay registration /
+-- snake-draft team formation feature, together with ttx_registrations and the
+-- register.html / registrations.html templates. Retained deliberately rather than
+-- dropped: see docs/features/phase-wge-wargame-enhancements.md
+-- ("Registration & team formation: designed, not built"). Wiring is carded as gdx-reg-01.
+-- Do not treat the absence of queries as drift, and do not extend this table without
+-- also landing a migration -- fresh databases do not have it.
+--
 
 CREATE TABLE public.ttx_formation_plan (
     plan_id integer NOT NULL,
@@ -31504,6 +31528,18 @@ ALTER SEQUENCE public.ttx_leaderboard_lb_id_seq OWNED BY public.ttx_leaderboard.
 
 --
 -- Name: ttx_registrations; Type: TABLE; Schema: public; Owner: -
+--
+-- UNWIRED BY DESIGN (gdx-dead-02, 2026-08-01). No module in tools/, icdev/ or apps/
+-- reads or writes this table, and no migration creates it -- it exists only in this
+-- consolidated snapshot. It backs the designed-but-unbuilt GameDay registration /
+-- snake-draft team formation feature, together with ttx_formation_plan and the
+-- register.html / registrations.html templates. The implementation that once used it
+-- (apps/ai_gameday/registration.py) was deleted by penta-gd-03 as unreachable code.
+-- Retained deliberately rather than dropped: see
+-- docs/features/phase-wge-wargame-enhancements.md
+-- ("Registration & team formation: designed, not built"). Wiring is carded as gdx-reg-01.
+-- NOTE: this table is NOT evidence of NIST AC-2 account-management coverage -- nothing
+-- writes to it. That control gap is documented in the feature doc.
 --
 
 CREATE TABLE public.ttx_registrations (
@@ -42827,6 +42863,14 @@ ALTER TABLE ONLY public.nc_lab_clones
 
 ALTER TABLE ONLY public.nc_simulation_artifacts
     ADD CONSTRAINT nc_simulation_artifacts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_simulation_results nc_simulation_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_simulation_results
+    ADD CONSTRAINT nc_simulation_results_pkey PRIMARY KEY (id);
 
 
 --
@@ -61692,6 +61736,14 @@ ALTER TABLE ONLY public.mission_versions
 
 ALTER TABLE ONLY public.nc_simulation_artifacts
     ADD CONSTRAINT nc_simulation_artifacts_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.nc_simulation_runs(id);
+
+
+--
+-- Name: nc_simulation_results nc_simulation_results_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_simulation_results
+    ADD CONSTRAINT nc_simulation_results_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
 
 
 --

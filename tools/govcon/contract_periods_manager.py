@@ -27,6 +27,9 @@ import uuid
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.contract_periods_manager")
 
 PERIOD_TYPES = ("base", "option_1", "option_2", "option_3", "option_4", "option_5")
 PERIOD_STATUSES = ("active", "exercised", "unexercised", "expired")
@@ -57,8 +60,8 @@ def _audit(conn, action, details="", actor="contract_periods_manager"):
             "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _get_billed(conn, contract_id: str) -> float:

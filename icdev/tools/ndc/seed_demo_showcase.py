@@ -14,7 +14,7 @@ Targets
   /network/ (NDC index, tools/network/blueprint.py:181)
     - topologies          (3 enterprise graphs w/ EOL-bearing nodes)
     - nc_project_topologies (link 5 projects to topologies; fix orphan bug)
-    - simulation_results  (6 sims)
+    - nc_simulation_results  (6 sims)
     - nc_board_reviews    (4 pending)
     - nc_compliance_checks (8 mixed pass/fail)
     - nc_peering_agreements (6 operational, 1 with contract_end < 90d)
@@ -36,6 +36,9 @@ from datetime import datetime, timedelta, timezone
 # Canonical connection abstraction — RLS-safe, backend-portable
 from tools.network.db.init_db import get_connection as nc_conn
 from tools.migration_canvas.db.init_db import get_connection as mc_conn
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ndc.seed_demo_showcase")
 
 NOW = datetime.now(timezone.utc)
 NOW_ISO = NOW.isoformat()
@@ -468,8 +471,11 @@ def ensure_project_links(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_project_links: best-effort INSERT into nc_project_topologies failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(PROJECT_TOPOLOGY_LINKS) - inserted}
 
@@ -539,17 +545,19 @@ def ensure_devices(conn) -> dict:
         try:
             conn.execute(
                 """INSERT OR IGNORE INTO ni_devices
+                   -- rack_location/criticality_score are not columns; the live
+                   -- names are rack/criticality (swp-scan-01).
                    (id, topology_id, node_id, label, device_type, vendor, model,
-                    firmware_version, eol_date, eos_date, site, rack_location,
-                    criticality_score, downstream_count, notes, properties_json, created_at, updated_at)
+                    firmware_version, eol_date, eos_date, site, rack,
+                    criticality, downstream_count, notes, properties_json, created_at, updated_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (dev_id, topo_id, node_id, label, dtype, vendor, model, fw, eol, eos, site, rack, crit, ds, notes, props,
                  NOW_ISO, NOW_ISO),
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("ensure_devices: best-effort INSERT into ni_devices failed (non-blocking): %s", exc)
     conn.commit()
     return {"inserted": inserted, "skipped": len(DEVICES) - inserted}
 
@@ -762,8 +770,11 @@ def ensure_device_configs(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_device_configs: best-effort INSERT into ni_device_configs failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(DEVICE_CONFIGS) - inserted}
 
@@ -798,15 +809,18 @@ def ensure_simulations(conn) -> dict:
         })
         try:
             conn.execute(
-                """INSERT OR IGNORE INTO simulation_results
+                """INSERT OR IGNORE INTO nc_simulation_results
                    (id, topology_id, sim_type, input_json, result_json, ran_at)
                    VALUES (?, ?, ?, '{}', ?, ?)""",
                 (sim_id, topo_id, sim_type, result, NOW_ISO),
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_simulations: best-effort INSERT into nc_simulation_results failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(SIMULATIONS) - inserted}
 
@@ -836,8 +850,11 @@ def ensure_board_reviews(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_board_reviews: best-effort INSERT into nc_board_reviews failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(BOARD_REVIEWS) - inserted}
 
@@ -875,8 +892,11 @@ def ensure_compliance(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_compliance: best-effort INSERT into nc_compliance_checks failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(COMPLIANCE_CHECKS) - inserted}
 
@@ -923,8 +943,11 @@ def ensure_peering(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_peering: best-effort INSERT into nc_peering_agreements failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(PEERING) - inserted}
 
@@ -962,8 +985,11 @@ def ensure_notifications(conn) -> dict:
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
                 inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "ensure_notifications: best-effort INSERT into nc_notifications failed (non-blocking): %s",
+                exc,
+            )
     conn.commit()
     return {"inserted": inserted, "skipped": len(NOTIFICATIONS) - inserted}
 
@@ -1012,8 +1038,8 @@ def ensure_audit(conn) -> dict:
                 (action, etype, eid, details, user, NOW_ISO),
             )
             inserted += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("ensure_audit: best-effort INSERT into nc_audit failed (non-blocking): %s", exc)
     conn.commit()
     return {"inserted": inserted, "skipped": 0}
 
@@ -1045,8 +1071,11 @@ def ensure_migration_sessions() -> dict:
                     )
                     if conn.execute("SELECT changes()").fetchone()[0]:
                         inserted += 1
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                    logger.warning(
+                        "ensure_migration_sessions: best-effort INSERT into mc_net_sessions failed (non-blocking): %s",
+                        exc,
+                    )
             conn.commit()
     except Exception as e:
         return {"inserted": 0, "skipped": 0, "error": str(e)}
@@ -1078,7 +1107,7 @@ def run() -> dict:
             "nc_project_topologies": _row_count(conn, "nc_project_topologies"),
             "ni_devices": _row_count(conn, "ni_devices"),
             "ni_device_configs": _row_count(conn, "ni_device_configs"),
-            "simulation_results": _row_count(conn, "simulation_results"),
+            "nc_simulation_results": _row_count(conn, "nc_simulation_results"),
             "nc_board_reviews": _row_count(conn, "nc_board_reviews"),
             "nc_compliance_checks": _row_count(conn, "nc_compliance_checks"),
             "nc_peering_agreements": _row_count(conn, "nc_peering_agreements"),

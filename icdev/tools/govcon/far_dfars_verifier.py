@@ -54,6 +54,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.far_dfars_verifier")
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
@@ -790,10 +793,10 @@ def _audit(conn, action: str, details: str = "", actor: str = "far_dfars_verifie
             "INSERT INTO audit_trail "
             "(created_at, event_type, actor, action, details, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.far_dfars_verification", actor, action, details, "govcon"),
+            (_now(), "govcon.far_dfars_verification", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _get_db():

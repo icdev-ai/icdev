@@ -126,6 +126,36 @@ CREATE TABLE IF NOT EXISTS ttx_inject_templates (
     ai_tools_json TEXT DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Pre-session registration + snake-draft formation (gdx-reg-01). Both tables
+-- previously existed only in tools/db/schema/pg_consolidated.sql with no
+-- migration behind them, so a database built from migrations did not have them.
+-- Migration 325 is the shared fix; these blocks keep the app self-bootstrapping
+-- the same way every other ttx_* table here does.
+CREATE TABLE IF NOT EXISTS ttx_registrations (
+    registration_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    player_name TEXT NOT NULL,
+    email TEXT,
+    stated_skill TEXT NOT NULL,
+    matched_role_id TEXT NOT NULL,
+    matched_role_label TEXT NOT NULL,
+    match_confidence REAL NOT NULL DEFAULT 1.0,
+    match_method TEXT NOT NULL DEFAULT 'selected',
+    match_reasoning TEXT,
+    academy_username TEXT,
+    registered_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ttx_formation_plan (
+    plan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ttx_sessions(session_id),
+    registration_id INTEGER NOT NULL REFERENCES ttx_registrations(registration_id),
+    team_slot INTEGER NOT NULL,
+    team_name TEXT NOT NULL,
+    confirmed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 _INDEXES = """
@@ -137,6 +167,9 @@ CREATE INDEX IF NOT EXISTS idx_ttx_responses_inject ON ttx_responses(inject_id);
 CREATE INDEX IF NOT EXISTS idx_ttx_scores_team ON ttx_scores(team_id);
 CREATE INDEX IF NOT EXISTS idx_ttx_api_log_team ON ttx_api_log(team_id, session_id);
 CREATE INDEX IF NOT EXISTS idx_ttx_leaderboard_session ON ttx_leaderboard(session_id);
+CREATE INDEX IF NOT EXISTS idx_ttx_registrations_session ON ttx_registrations(session_id);
+CREATE INDEX IF NOT EXISTS idx_ttx_formation_plan_session ON ttx_formation_plan(session_id);
+CREATE INDEX IF NOT EXISTS idx_ttx_formation_plan_registration ON ttx_formation_plan(registration_id);
 """
 
 # Columns added after the tables shipped. The CREATE TABLE blocks above already
@@ -156,22 +189,33 @@ _ADD_COLUMNS = [
 _migrated = False
 
 
+def _split_statements(script: str) -> list[str]:
+    """Split a DDL script on `;`, ignoring semicolons inside `--` comments.
+
+    A bare `split(";")` breaks as soon as a comment contains a semicolon: the
+    text after it loses its `--` marker and is handed to the driver as SQL. The
+    comment `-- Migration 325 is the shared fix; these blocks ...` did exactly
+    that, so `CREATE TABLE ttx_registrations` (and everything after it) raised
+    `near "these": syntax error` and was never created.
+    """
+    body = "\n".join(
+        line for line in script.splitlines() if not line.strip().startswith("--")
+    )
+    return [stmt.strip() for stmt in body.split(";") if stmt.strip()]
+
+
 def migrate() -> None:
     global _migrated
     if _migrated:
         return
     conn = get_connection()
-    for stmt in _DDL.strip().split(";"):
-        stmt = stmt.strip()
-        if stmt:
+    for stmt in _split_statements(_DDL):
+        conn.execute(stmt)
+    for stmt in _split_statements(_INDEXES):
+        try:
             conn.execute(stmt)
-    for stmt in _INDEXES.strip().split(";"):
-        stmt = stmt.strip()
-        if stmt:
-            try:
-                conn.execute(stmt)
-            except Exception:
-                pass
+        except Exception:
+            pass
     conn.commit()
 
     # Guarded column adds for tables that predate the column. CREATE TABLE

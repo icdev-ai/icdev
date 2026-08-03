@@ -1,0 +1,55 @@
+{
+  "name": "Insecure Pipeline",
+  "generated_at": "2026-08-02T02:58:43.437562+00:00",
+  "target_csp": "aws",
+  "region": "us-gov-west-1",
+  "environment": "staging",
+  "layers": {
+    "scca_foundation": false,
+    "network": true,
+    "compute_k8s": true,
+    "compute_vm": false,
+    "platform": true,
+    "helm_tools": 1,
+    "ci_config": 0,
+    "ansible": 0
+  },
+  "helm_releases": [
+    "gitlab-runner"
+  ],
+  "managed_resources": [
+    {
+      "type": "k8s-cluster",
+      "terraform": {
+        "aws": "aws_eks_cluster",
+        "azure": "azurerm_kubernetes_cluster",
+        "gcp": "google_container_cluster",
+        "oci": "oci_containerengine_cluster",
+        "ibm": "ibm_container_cluster",
+        "on_prem": "rke2_cluster"
+      }
+    }
+  ],
+  "saas_integrations": [
+    {
+      "type": "scm-gitlab",
+      "notes": "GitLab.com SaaS; self-hosted requires massive Helm chart"
+    }
+  ],
+  "ci_steps": [],
+  "cost_estimate": {
+    "per_run_cost": 0.0,
+    "runs_per_month": 500,
+    "monthly_variable": 0.0,
+    "monthly_fixed": 29.0,
+    "total_monthly": 29.0,
+    "details": [
+      {
+        "type": "cicd-gitlab",
+        "per_run": 0.0
+      }
+    ]
+  },
+  "node_count": 3,
+  "edge_count": 2
+}

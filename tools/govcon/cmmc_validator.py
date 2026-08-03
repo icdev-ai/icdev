@@ -42,6 +42,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.cmmc_validator")
 
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
@@ -117,8 +120,8 @@ def _audit(conn, action, details="", actor="cmmc_validator"):
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (_now(), "govcon.cmmc_supply_chain", actor, action, details, "proposal_genesis"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _role_label(role):
@@ -247,12 +250,16 @@ def add_team_member(
     effective_status = _determine_status(member_data)
 
     try:
+        # cert_expiry/cage_code are not columns (swp-scan-01); the live names
+        # are certification_expiry/team_member_cage. checked_at is NOT NULL with
+        # no default, so the row failed on that too — and the `except` below
+        # only logs, so no team member was ever recorded.
         conn.execute(
             "INSERT INTO pg_cmmc_supply_chain "
             "(id, opportunity_id, team_member_name, role, required_cmmc_level, actual_cmmc_level, "
-            "sprs_score, assessment_type, poam_status, cert_expiry, cage_code, "
-            "compliance_status, created_at, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "sprs_score, assessment_type, poam_status, certification_expiry, team_member_cage, "
+            "compliance_status, checked_at, created_at, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 member_id,
                 opportunity_id,
@@ -266,6 +273,7 @@ def add_team_member(
                 cert_expiry,
                 cage,
                 effective_status,
+                now,
                 now,
                 now,
             ),

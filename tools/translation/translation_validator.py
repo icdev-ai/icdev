@@ -33,6 +33,9 @@ import subprocess
 import uuid
 from tools.db.storage import get_connection
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.translation.translation_validator")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -711,8 +714,11 @@ def _record_validations(db_path, job_id, results):
             )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_record_validations: best-effort INSERT into translation_validations failed (non-blocking): %s",
+            exc,
+        )
 
 
 def repair_translation(unit, source_code, translated_code, errors, source_language, target_language, config=None):

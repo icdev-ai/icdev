@@ -176,7 +176,7 @@ abac_policies:
       - PATCH
     decision: Deny
 
-  # --- Proposal draft review policies (approve/reject in api/govcon.py) ---
+  # --- Proposal draft REVIEW policies (approve/reject in api/govcon.py) ---
   # Separation of duties: reviewing/privileged roles decide; a section_writer
   # never self-approves/rejects their own draft.
 
@@ -198,7 +198,10 @@ abac_policies:
       - reject
     decision: Permit
 
-  - name: proposal_draft_writer_deny_unassigned
+  # Renamed from proposal_draft_writer_deny_unassigned. The WRITE family below
+  # needs that name for its own section_writer deny, and two rules cannot share
+  # one name; no test references this one, so it is the safe side to rename.
+  - name: proposal_draft_review_deny_unassigned
     subject:
       role: section_writer
     resource:
@@ -206,6 +209,49 @@ abac_policies:
     action:
       - approve
       - reject
+    decision: Deny
+
+  # --- Proposal draft WRITE policies (POST rewrite-save in api/govcon.py) ---
+  # Disjoint from the review family above: those govern who DECIDES on a draft,
+  # these govern who may CHANGE one. Before prop-sec-01 only approve/reject were
+  # governed, so the write path was reachable by any authenticated role.
+
+  - name: proposal_draft_privileged_write
+    subject:
+      role:
+        operator: in
+        values:
+          - capture_mgr
+          - proposal_mgr
+          - reviewer
+          - tenant_admin
+          - admin
+    resource:
+      type: proposal_draft
+    action:
+      - PUT
+      - POST
+    decision: Permit
+
+  - name: proposal_draft_writer_own
+    subject:
+      role: section_writer
+    resource:
+      type: proposal_draft
+      writer_email: "${subject.user_id}"
+    action:
+      - PUT
+      - POST
+    decision: Permit
+
+  - name: proposal_draft_writer_deny_unassigned
+    subject:
+      role: section_writer
+    resource:
+      type: proposal_draft
+    action:
+      - PUT
+      - POST
     decision: Deny
 
 # ---------------------------------------------------------------------------
@@ -327,14 +373,14 @@ column_policies:
   - table: pg_win_themes
     role: reviewer
     columns:
-      theme_statement: "null"
+      theme_statement: redact
       supporting_evidence: "null"
       target_eval_factor: "null"
       ghost_competitor: "null"
   - table: pg_win_themes
     role: co
     columns:
-      theme_statement: "null"
+      theme_statement: redact
       supporting_evidence: "null"
       target_eval_factor: "null"
       ghost_competitor: "null"

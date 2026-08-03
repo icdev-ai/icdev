@@ -106,8 +106,9 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Auth logging should never break the request
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Auth logging should never break the request
+        logger.warning("log_auth_event: best-effort INSERT into dashboard_auth_log failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -455,6 +456,14 @@ PUBLIC_ENDPOINTS = frozenset(
         "api_contact_submit",
         # Cortex service liveness probe (ctx-expose-02) — status only, no data.
         "cortex.api_v1_health",
+        # Dashboard liveness probe (/api/health). app.py documents it as the
+        # "P2 — monitoring / load-balancer" endpoint, but it was not public, so
+        # it answered 401 to every caller that could not hold a session — i.e.
+        # to every load balancer, container HEALTHCHECK and uptime monitor,
+        # which is the entire set of intended callers. It returns
+        # {"status", "db"} and nothing else, matching the status-only-no-data
+        # rule the Cortex probe above is held to.
+        "api_health",
     }
 )
 

@@ -31,6 +31,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ace.tool_runner")
 
 def _resolve_repo_root() -> Path:
     """Directory the allowlisted commands are executed in.
@@ -242,8 +245,8 @@ class ToolRunner:
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit_hitl: best-effort INSERT into ace_audit_log failed (non-blocking): %s", exc)
 
     def _store_artifact(
         self,
@@ -264,8 +267,11 @@ class ToolRunner:
             try:
                 conn.execute(
                     """
+                    -- ace_artifacts splits content_md / content_json; there is no
+                    -- bare `content`. The payload below is JSON, so it belongs in
+                    -- content_json (swp-scan-01).
                     INSERT INTO ace_artifacts
-                        (id, instance_id, coworker_id, artifact_type, content, created_at)
+                        (id, instance_id, coworker_id, artifact_type, content_json, created_at)
                     VALUES (%s, %s, %s, 'tool_output', %s, %s)
                     """,
                     (
@@ -279,6 +285,7 @@ class ToolRunner:
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass  # artifact storage is best-effort; never crash the caller
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # artifact storage is best-effort; never crash the caller
+            logger.warning("_store_artifact: best-effort INSERT into ace_artifacts failed (non-blocking): %s", exc)
         return artifact_id

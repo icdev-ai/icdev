@@ -88,6 +88,27 @@ db_abstraction_lint:
     backup_manager.py, */init_db.py.  Suppress a single line with # sqlite3-ok
     only when a direct connection genuinely cannot be avoided.
 
+# Citation-type vocabulary gate (cxo-trust-02) — blocks a citation_type literal
+# that is not in tools/provenance/citation_types.py::CITATION_TYPES.
+#
+# register_citation() validates the vocabulary BEFORE the INSERT and raises
+# ValueError; every caller swallows it, so an unknown value means the citation is
+# never written — silently, forever. Two subsystems shipped exactly that and
+# neither was noticed: tools/cortex/governance.py ("cortex") wrote 0 of 285
+# registry rows while its gate recorded "warn", and tools/blockchain/
+# asset_ledger.py ("asset_token") left anchor_status "skipped" so GovChain asset
+# tokenization never anchored. Two subsystems, one missing gate.
+# Run: python tools/lint/citation_type_linter.py --json --gate
+citation_type_vocabulary:
+  blocking:
+    - unknown_citation_type   # citation_type="..." absent from CITATION_TYPES
+  note: >
+    Detected by tools/lint/citation_type_linter.py. Fix by adding the value to
+    CITATION_TYPES and shipping a migration rendered from check_constraint_sql(),
+    or by correcting the typo — never by widening the linter. tests/ are exempt
+    (a test may assert a bogus type is rejected) and a single line can be
+    suppressed with # citation-type-ok when the value is validated elsewhere.
+
 # New Page Completeness Gate (TCH — True Completion Hardening)
 # Blocks merges when a new dashboard page ships without all 8 required components
 # (template, icdev/ mirror, blueprint route, backing module, nav link, IQE adapter,
@@ -1173,6 +1194,32 @@ canvas_placeholder_style:
     Replace ? with %s in any execute() SQL string in files importing get_canvas_connection.
     The coherence checker returns FAIL (exits 1 with --gate) on any violation so CI blocks
     the merge before the ProgrammingError reaches production.
+
+# Swallowed Persistence Gate (swp-swallow-01, D-WF-8 sub-check)
+# The other half of canvas_placeholder_style above: that gate catches the SQL
+# that raises, this one catches the handler that eats it. A broad `except` whose
+# body is exactly `pass` over a try block containing an INSERT means the write
+# can fail on every call, forever, with nothing to show for it — which is how a
+# batch of persistence defects survived long enough to need a card.
+# Run: python tools/workflow/coherence_checker.py --check swallowed_persistence --gate
+swallowed_persistence:
+  description: "Detect `except Exception: pass` guarding an INSERT — best-effort is fine, silent is not"
+  blocking:
+    - insert_guarded_by_bare_pass_handler
+  warning: []
+  thresholds:
+    max_swallowed_insert_sites: 0
+  note: >
+    Violations detected by tools/workflow/coherence_checker.py::check_swallowed_persistence,
+    which shares its AST detector with tools/refactor/swallowed_persistence.py so the gate and
+    the fixer cannot disagree. The fix keeps the best-effort behaviour and adds the report:
+    `except Exception as exc:` + `logger.warning("<fn>: best-effort INSERT into <table> failed
+    (non-blocking): %s", exc)` — see tools/canvas/event_bus.py::_audit_event. Narrowing the
+    handler to the exception actually expected is equally acceptable. Run
+    `python tools/refactor/fix_swallowed_persistence.py --write --json` to apply the rewrite.
+    The check runs in BOTH the fast (per-task) and full (nightly) tiers; a full-tier-only gate
+    would not block the build that reintroduces the pattern.
+
 foundry_self_vet:
   description: "ACF Autonomous Capability Foundry — self-vet gate before autonomous build (acf-engine-03)"
   blocking:

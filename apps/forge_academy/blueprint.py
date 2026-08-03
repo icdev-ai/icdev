@@ -18,7 +18,8 @@ from .db import (
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
-    record_user_competency,
+    record_mission_competencies, get_competency_profile, competency_chain_status,
+    seed_mission_ontology_mappings, backfill_user_competencies,
 )
 from .content_loader import get_mission_with_steps, seed_mission_catalog
 from .gamification import (
@@ -98,6 +99,18 @@ def _ensure_init():
         try:
             migrate()
             seed_mission_catalog()
+            # aca-trn-02: the ontology mapping runs HERE, after the catalog is
+            # seeded — inside migrate() it ran against an empty fa_missions on a
+            # fresh install and mapped nothing. Missions and steps must carry a
+            # competency class before completing them can demonstrate anything,
+            # so a mapping failure is an init failure, not a debug log.
+            mapping = seed_mission_ontology_mappings()
+            _INIT_HEALTH["ontology_mapping"] = mapping
+            if mapping.get("errors"):
+                raise RuntimeError(
+                    "ontology mapping failed: " + "; ".join(mapping["errors"]))
+            # Completions that predate a working recorder still deserve a record.
+            _INIT_HEALTH["competency_backfill"] = backfill_user_competencies()
             count = _mission_count()
             _INIT_HEALTH["mission_count"] = count
             if count <= 0:
@@ -327,6 +340,24 @@ def mission_runner(slug):
     tier_locked = not tier_state.get("unlocked", True)
     gating_tier = tier_state.get("gating_tier")
 
+    # aca-int-02/03: the template serialises this into page JavaScript. The raw step
+    # rows carry the grading test and the answer key, so only the sanitised
+    # projection may go into the page.
+    # aca-trn-01: user-scoped, because a step with an item bank serves a per-learner,
+    # per-attempt draw. Passing the user id here is what opens (or resumes) that
+    # attempt; the answer key still never reaches the page.
+    steps_client = client_safe_steps(mission.get("steps", []), fa_user["id"])
+
+    # Which steps render the assessment pane instead of their type pane. Derived from
+    # steps_client rather than re-queried, so the template's routing decision and the
+    # payload it renders from cannot disagree: if open_attempt returned nothing —
+    # every item retired, or the table unavailable — the step keeps its type pane
+    # rather than showing an empty form no one can submit.
+    assessed_step_ids = {
+        s["id"] for s in steps_client
+        if (s.get("assessment") or {}).get("items")
+    }
+
     return render_template(
         "forge_academy/mission.html",
         fa_user=fa_user,
@@ -334,10 +365,8 @@ def mission_runner(slug):
         tier_locked=tier_locked,
         tier_state=tier_state,
         gating_state=tier_info.get(gating_tier, {}) if gating_tier else {},
-        # aca-int-02/03: the template serialises this into page JavaScript. The
-        # raw step rows carry the grading test and the answer key, so only the
-        # sanitised projection may go into the page.
-        steps_client=client_safe_steps(mission.get("steps", [])),
+        steps_client=steps_client,
+        assessed_step_ids=assessed_step_ids,
         progress=progress,
         step_states=step_states,
         level_ctx=level_ctx,
@@ -369,7 +398,7 @@ def guild():
     fa_user = _fa_user()
     guild_data = None
     if fa_user and fa_user.get("guild_id"):
-        guild_data = get_guild_stats(fa_user["guild_id"])
+        guild_data = get_guild_stats(fa_user["guild_id"], tenant_id=_fa_tenant_id())
     return render_template(
         "forge_academy/guild.html",
         fa_user=fa_user,
@@ -420,6 +449,9 @@ def profile():
         fa_user=fa_user,
         roles=ROLES,
         levels=LEVELS,
+        # aca-trn-02: the training record belongs where the learner's identity
+        # is, not on a page of its own that nobody would find.
+        competency_profile=get_competency_profile(fa_user["id"]) if fa_user else None,
         level_ctx=_level_ctx(fa_user) if fa_user else {},
     )
 
@@ -539,6 +571,9 @@ def api_step_submit():
     # `skill_tag` used to be read from this body; every one of them was forgeable.
     submission = data.get("submission", "")
     chosen_option = data.get("chosen_option")
+    # aca-trn-01: item_key -> DISPLAYED option index. Meaningless without the server's
+    # served_json, which is what makes the option order in the DOM useless.
+    answers = data.get("answers") if isinstance(data.get("answers"), dict) else {}
     elapsed_s = data.get("elapsed_seconds")
     # aca-int-06: the hint count comes from fa_step_progress, where the hint route
     # recorded it. It used to be read from this body, and the browser zeroed its own
@@ -549,7 +584,31 @@ def api_step_submit():
     )
     hints_used = max(0, stored_hints_used)
 
-    verdict = grade_step(step_id, submission, chosen_option=chosen_option)
+    # aca-trn-01: the attempt limit is checked BEFORE grading. Grading first and
+    # discarding the verdict would let a learner burn attempts to enumerate the item
+    # bank, which is exactly what a summative cap exists to prevent.
+    from .assessment import attempt_state
+
+    gate = attempt_state(fa_user["id"], step_id)
+    if not gate["allowed"] and gate["reason"] == "attempts_exhausted":
+        return jsonify({
+            "ok": True,
+            "passed": False,
+            "assessed": True,
+            "status": "attempts_exhausted",
+            "reason": "attempts_exhausted",
+            "policy": gate["policy"],
+            "attempts_used": gate["attempts_used"],
+            "attempts_remaining": 0,
+            "max_attempts": gate["max_attempts"],
+            "stderr": (
+                f"You have used all {gate['max_attempts']} attempts on this "
+                "assessment. An instructor can reset it for you."
+            ),
+        })
+
+    verdict = grade_step(step_id, submission, chosen_option=chosen_option,
+                         answers=answers, user_id=fa_user["id"])
     step = verdict.get("step")
     if step is None:
         return jsonify({"error": "unknown step", "passed": False}), 404
@@ -579,19 +638,29 @@ def api_step_submit():
     # counts as an attempt — not opening its page.
     record_mission_attempt(fa_user["id"], mission_id)
     status = complete_step(fa_user["id"], step_id, submission=submission,
-                           passed=passed, hints_used=hints_used)
+                           passed=passed, hints_used=hints_used,
+                           # aca-trn-01: the real percentage. An item-scored step can
+                           # now record "67", which no longer rounds to a pass.
+                           score=verdict.get("score"))
 
     resp = {
         "ok": True,
         "passed": passed,
         "assessed": verdict["assessed"],
         "status": status,
+        "score": verdict.get("score"),
         "reason": verdict.get("reason", ""),
         "stdout": verdict.get("stdout", ""),
         "stderr": verdict.get("stderr", ""),
         "explanation": verdict.get("explanation", ""),
         "correct_option": verdict.get("correct_option"),
     }
+    # Item-scored steps report per-item feedback and the attempt budget. Released
+    # only here, with the attempt closed - before that this IS the answer key.
+    for key in ("items", "correct", "total", "pass_threshold_pct",
+                "attempts_used", "attempts_remaining"):
+        if verdict.get(key) is not None:
+            resp[key] = verdict[key]
     if not passed:
         # No credit for a failed or ungradeable submission. The learner keeps the
         # feedback and can try again.
@@ -625,25 +694,43 @@ def api_step_submit():
         resp["mission_complete"] = True
         resp["mission_xp"] = mission_xp_event
         resp["mission_achievements"] = mission_ach
-        # Record competency ontology edges
+        # aca-trn-02: recording the competency is part of completing the mission,
+        # not a side effect of it. The outcome goes back to the client with the
+        # rest of the completion, so a chain that records nothing is visible in
+        # the response instead of only in a log nobody reads.
         try:
-            if mission:
-                from .ontology import get_tier_competency
-                record_user_competency(
-                    user_id=fa_user["id"],
-                    competency_class=get_tier_competency(mission.get("tier", 1)),
-                    source_mission_id=mission_id,
-                    evidence={"mission_slug": mission_slug, "score": 100},
-                )
-        except Exception:
-            # fga-fix-05 precedent: a swallowed warning never reaches a health
-            # check. Competency recording has never produced a row in production
-            # (aca-trn-02) — log loudly enough to find out why.
+            competency = record_mission_competencies(
+                user_id=fa_user["id"], mission_id=mission_id,
+                score=100, hints_used=hints_used)
+        except Exception as exc:
             import logging
             logging.getLogger(__name__).exception(
                 "competency recording failed for mission %s", mission_id)
+            competency = {"recorded": [], "classes": [], "errors": [str(exc)],
+                          "unmapped": False}
+        resp["competencies"] = competency
+        if competency.get("errors") or competency.get("unmapped"):
+            import logging
+            logging.getLogger(__name__).error(
+                "competency chain incomplete for mission %s: unmapped=%s errors=%s",
+                mission_id, competency.get("unmapped"), competency.get("errors"))
 
     return jsonify(resp)
+
+
+@bp.route("/api/academy/assessment/coverage")
+def api_assessment_coverage():
+    """How much of the catalogue is actually graded (aca-trn-01).
+
+    Exists so the shortfall is a NUMBER on an endpoint rather than a claim in a
+    document. 94% of steps were passive when the assessment model was specified;
+    this reports what that figure is today instead of letting the next audit
+    rediscover it.
+    """
+    _ensure_init()
+    from .assessment import coverage_report
+
+    return jsonify(coverage_report())
 
 
 @bp.route("/api/academy/step/design-assess", methods=["POST"])
@@ -815,7 +902,8 @@ def api_guild_create():
         return jsonify({"error": "name required"}), 400
     guild = create_guild(name=name, description=description,
                          invite_code=secrets.token_urlsafe(6),
-                         created_by=fa_user["id"])
+                         created_by=fa_user["id"],
+                         tenant_id=_fa_tenant_id())
     # Report the code that was actually STORED, not the one we proposed —
     # create_guild uppercases it to match join_guild's lookup, so echoing the
     # local variable would hand the user an invite that never resolves.
@@ -830,13 +918,22 @@ def api_guild_join():
         return jsonify({"error": "not configured"}), 400
     data = request.get_json(silent=True) or {}
     invite_code = data.get("invite_code", "").strip()
-    result = join_guild(user_id=fa_user["id"], invite_code=invite_code)
+    result = join_guild(user_id=fa_user["id"], invite_code=invite_code,
+                        tenant_id=_fa_tenant_id())
+    if result is None:
+        # aca-trn-04: this returned `null` with a 200, so an unresolvable invite
+        # code was indistinguishable from a successful join to any caller that
+        # checked the status.
+        return jsonify({"ok": False, "error": "invite code not found"}), 404
     return jsonify(result)
 
 
 @bp.route("/api/academy/guild/<int:guild_id>")
 def api_guild_stats(guild_id):
-    stats = get_guild_stats(guild_id)
+    # aca-trn-04: scoped to the caller's tenant. The id comes from the URL and
+    # this route has no other authorisation, so unscoped it enumerated every
+    # learner's display name and XP across every tenant.
+    stats = get_guild_stats(guild_id, tenant_id=_fa_tenant_id())
     if stats is None:
         # aca-hyg-03: used to 200 with an empty member list, so a client could not
         # tell a missing guild from an empty one.
@@ -849,11 +946,22 @@ def api_guild_stats(guild_id):
 _LEARNER_MISSION_FIELDS = (
     "id", "slug", "title", "tagline", "tier", "topic", "mission_type",
     "xp_reward", "difficulty", "estimated_minutes", "is_available",
+    # aca-trn-03: the objective is the one field here that is not a price. It was
+    # added to the table and to both Jinja surfaces but not to this allowlist, so
+    # /api/academy/learning-path recommended missions while withholding the only
+    # thing that says what they teach. A JSON client had no way to reach it.
+    "learning_objective",
 )
 
 
 def _learner_mission_view(mission: dict) -> dict:
-    """Project a mission row down to the fields a client may see."""
+    """Project a mission row down to the fields a client may see.
+
+    Missing keys are dropped rather than nulled, so a row read before migration
+    20260803005919 simply omits the objective. A row that has the column but no authored objective
+    keeps it as an explicit ``null`` — "nobody wrote one" is a real answer, and the
+    client should be able to tell it apart from "this build predates the field".
+    """
     return {k: mission.get(k) for k in _LEARNER_MISSION_FIELDS if k in mission}
 
 
@@ -1054,16 +1162,223 @@ def api_org_readiness():
         return jsonify({"error": str(exc)}), 500
 
 
+# ---------------------------------------------------------------------------
+# Instructor / cohort workflow  (aca-trn-04)
+#
+# Every route here wears @require_org_intel — the SAME admin/pm/isso gate Org
+# Readiness and the Oracle already use. A second RBAC model for instructors was
+# explicitly not built: two authorisation systems over one dataset is how a
+# surface ends up authorised in one place and open in the other.
+# ---------------------------------------------------------------------------
+
+def _instructor_identity() -> tuple[str, str]:
+    """(actor, role) for the audit trail. Never anonymous — the gate guarantees a user."""
+    user = getattr(g, "current_user", None)
+    if isinstance(user, dict):
+        return (user.get("email") or user.get("username") or "unknown",
+                str(user.get("role") or ""))
+    return (str(getattr(user, "email", "") or getattr(user, "username", "") or "unknown"),
+            str(getattr(user, "role", "") or ""))
+
+
+@bp.route("/academy/instructor")
+@require_org_intel
+def instructor_page():
+    _ensure_init()
+    from . import instructor as _inst
+    tenant_id = _fa_tenant_id()
+    learners = _inst.roster(tenant_id)
+    assignments = _inst.list_assignments(tenant_id)
+    return render_template(
+        "forge_academy/instructor.html",
+        learners=learners,
+        assignments=assignments,
+        missions=list_missions(tier=None),
+        roles=ROLES,
+        audit=_inst.audit_trail(tenant_id, limit=25),
+        verdicts=sorted(_inst.REVIEW_VERDICTS),
+    )
+
+
+@bp.route("/academy/instructor/learner/<int:user_id>")
+@require_org_intel
+def instructor_learner_page(user_id: int):
+    _ensure_init()
+    from . import instructor as _inst
+    tenant_id = _fa_tenant_id()
+    learner = _inst.get_learner(user_id, tenant_id)
+    if not learner:
+        # Same answer for "not in this tenant" as for "does not exist".
+        return redirect(url_for("forge_academy.instructor_page"))
+    return render_template(
+        "forge_academy/instructor_learner.html",
+        learner=learner,
+        summary=user_progress_summary(user_id, tenant_id),
+        assignments=_inst.list_assignments(tenant_id, user_id=user_id),
+        submissions=_inst.learner_submissions(user_id),
+        evidence=_inst.learner_evidence(user_id),
+        reviews=_inst.learner_reviews(user_id),
+        roles=ROLES,
+        verdicts=sorted(_inst.REVIEW_VERDICTS),
+    )
+
+
+@bp.route("/api/academy/instructor/roster")
+@require_org_intel
+def api_instructor_roster():
+    _ensure_init()
+    from . import instructor as _inst
+    return jsonify({"learners": _inst.roster(_fa_tenant_id(),
+                                             request.args.get("role") or None)})
+
+
+@bp.route("/api/academy/instructor/assignments")
+@require_org_intel
+def api_instructor_assignments():
+    _ensure_init()
+    from . import instructor as _inst
+    user_id = request.args.get("user_id", type=int)
+    return jsonify({"assignments": _inst.list_assignments(
+        _fa_tenant_id(), user_id=user_id)})
+
+
+@bp.route("/api/academy/instructor/assign", methods=["POST"])
+@require_org_intel
+def api_instructor_assign():
+    _ensure_init()
+    from . import instructor as _inst
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    actor, actor_role = _instructor_identity()
+    try:
+        assignment = _inst.create_assignment(
+            assigned_by=actor,
+            actor_role=actor_role,
+            assignment_type=data.get("assignment_type", "mission"),
+            mission_id=data.get("mission_id"),
+            track_key=data.get("track_key"),
+            target_type=data.get("target_type", "learner"),
+            target_user_id=data.get("target_user_id"),
+            target_role=data.get("target_role"),
+            due_at=data.get("due_at"),
+            note=data.get("note", ""),
+            tenant_id=_fa_tenant_id(),
+        )
+    except _inst.AssignmentError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "assignment": assignment})
+
+
+@bp.route("/api/academy/instructor/assignment/<int:assignment_id>/cancel", methods=["POST"])
+@require_org_intel
+def api_instructor_cancel(assignment_id: int):
+    _ensure_init()
+    from . import instructor as _inst
+    actor, actor_role = _instructor_identity()
+    ok = _inst.cancel_assignment(assignment_id, actor=actor, actor_role=actor_role,
+                                 tenant_id=_fa_tenant_id())
+    if not ok:
+        return jsonify({"ok": False, "error": "assignment not found"}), 404
+    return jsonify({"ok": True, "assignment_id": assignment_id})
+
+
+@bp.route("/api/academy/instructor/review", methods=["POST"])
+@require_org_intel
+def api_instructor_review():
+    _ensure_init()
+    from . import instructor as _inst
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    actor, actor_role = _instructor_identity()
+    try:
+        result = _inst.record_review(
+            user_id=int(data.get("user_id") or 0),
+            verdict=data.get("verdict", ""),
+            reviewer=actor,
+            actor_role=actor_role,
+            mission_id=data.get("mission_id"),
+            step_id=data.get("step_id"),
+            assignment_id=data.get("assignment_id"),
+            override_score=data.get("override_score"),
+            comment=data.get("comment", ""),
+            tenant_id=_fa_tenant_id(),
+        )
+    except _inst.AssignmentError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "user_id must be a learner id"}), 400
+    return jsonify(result)
+
+
+@bp.route("/api/academy/instructor/audit")
+@require_org_intel
+def api_instructor_audit():
+    _ensure_init()
+    from . import instructor as _inst
+    limit = min(request.args.get("limit", 50, type=int) or 50, 200)
+    return jsonify({"audit": _inst.audit_trail(_fa_tenant_id(), limit=limit)})
+
+
 @bp.route("/api/academy/health")
 def api_academy_health():
     """Surface the Academy init/seed health flag (penta-aca-06).
 
     Returns 200 when the mission catalog seeded successfully, 503 when init/seed
     failed — so an empty catalog is observable instead of silently served.
+
+    aca-trn-02 adds the competency chain to the same probe. A training record
+    that quietly writes nothing looks exactly like one with nothing to say yet,
+    which is how it stayed empty: 503 when the chain is stalled (missions have
+    been completed and produced no competency at all), and unmapped counts in
+    the body either way so partial catalog coverage is visible before a learner
+    finishes one of the missions it is missing.
     """
     _ensure_init()
     health = get_init_health()
-    return jsonify(health), (200 if health.get("initialized") else 503)
+    chain = competency_chain_status()
+    health["competency_chain"] = chain
+    ok = health.get("initialized") and not chain.get("stalled") and chain.get("ok", True)
+    return jsonify(health), (200 if ok else 503)
+
+
+@bp.route("/api/academy/export/xapi")
+@require_org_intel
+def api_export_xapi():
+    """Export Academy completions as xAPI 1.0.3 statements (aca-trn-05).
+
+    Org-leadership gated on the same tier as the other cohort-wide surfaces: this
+    reads every learner's record by design, since feeding an external LMS is an
+    administrative act, not a per-learner one. ``?user_id=`` narrows it to one
+    learner for a single transfer-of-record request.
+
+    Unverified records — no provenance row in fa_xp_ledger / no evidence row in
+    fa_certificate_evidence — are withheld by default and counted in ``excluded``.
+    ``?include_unverified=1`` emits them stamped ``verified: false`` rather than
+    laundering them into the same shape as graded work.
+
+    ``?statements_only=1`` returns the bare array an LRS POST /statements expects.
+    """
+    _ensure_init()
+    from .xapi import build_statements
+
+    result = build_statements(
+        user_id=request.args.get("user_id", type=int),
+        since=request.args.get("since"),
+        include_unverified=request.args.get("include_unverified", "").lower()
+        in ("1", "true", "yes"),
+        tenant_id=_fa_tenant_id(),
+    )
+    if request.args.get("statements_only", "").lower() in ("1", "true", "yes"):
+        return jsonify(result["statements"])
+    return jsonify(result)
+
+
+@bp.route("/api/academy/competencies")
+def api_competencies():
+    """The signed-in learner's competency profile."""
+    _ensure_init()
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 404
+    return jsonify(get_competency_profile(fa_user["id"]))
 
 
 # ---------------------------------------------------------------------------

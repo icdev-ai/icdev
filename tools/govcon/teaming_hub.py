@@ -49,6 +49,9 @@ if str(_ROOT) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.common.helpers import row_to_dict  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.teaming_hub")
 
 # ── Constants ─────────────────────────────────────────────────
 
@@ -149,8 +152,9 @@ def _audit(conn, event_type, action, details, opp_id=None):
                     None,
                 ),
             )
-        except Exception:
-            pass  # audit is best-effort
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # audit is best-effort
+            logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 # ── Core Functions ────────────────────────────────────────────

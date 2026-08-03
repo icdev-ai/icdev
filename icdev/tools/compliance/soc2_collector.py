@@ -55,21 +55,47 @@ def collect_evidence(
 
     with get_connection() as conn:
         # ── Harvest from audit_trail ──────────────────────────────────────────
-        since_clause = f" AND recorded_at >= '{since}'" if since else ""
+        # audit_trail's real columns are (id, project_id, event_type, actor,
+        # action, details, ..., created_at). This query used to select
+        # `resource`/`recorded_at` and filter on `tenant_id` -- three columns
+        # the table has never had -- so on the primary PostgreSQL backend it
+        # raised every time and the `except` below turned that into "no audit
+        # evidence found". The collector reported success while harvesting
+        # nothing from its main source. It looked correct only because the
+        # SQLite test fixture declared those same fictional columns.
+        #
+        # Note audit_trail carries no tenant column at all, so this source is
+        # platform-wide rather than per-tenant; the sibling component_audit_log
+        # harvest below is likewise unscoped. Tenant-scoping the evidence
+        # sources is a real gap, but it needs a schema decision, not a rewrite
+        # of this query.
+        # Each source names its own timestamp column: audit_trail.created_at,
+        # component_audit_log.recorded_at. One shared clause cannot serve both.
+        audit_since = f" AND created_at >= '{since}'" if since else ""
+        component_since = f" AND recorded_at >= '{since}'" if since else ""
         try:
             audit_rows = conn.execute(
-                f"SELECT id, action, resource, recorded_at FROM audit_trail "
-                f"WHERE tenant_id = %s{since_clause} ORDER BY recorded_at DESC LIMIT 5000",
-                (tenant_id,),
+                f"SELECT id, event_type, action, created_at FROM audit_trail "
+                f"WHERE 1=1{audit_since} ORDER BY created_at DESC LIMIT 5000",
             ).fetchall()
         except Exception:
             audit_rows = []
 
         for row in audit_rows:
-            row_id, action, resource, recorded_at = (
+            row_id, event_type, action, recorded_at = (
                 row[0], row[1], row[2], row[3]
             )
-            matched_controls = event_to_controls.get(action, [])
+            # Match on event_type -- the enumerated column, constrained by
+            # audit_trail_event_type_check and generated from
+            # tools.audit.audit_logger.VALID_EVENT_TYPES. `action` is free text
+            # ("Built RTM for 10 requirements"), so it is only a fallback for
+            # controls whose configured values are verb-shaped.
+            resource = event_type
+            matched_controls = (
+                event_to_controls.get(event_type)
+                or event_to_controls.get(action)
+                or []
+            )
             for ctrl_id in matched_controls:
                 ev_id = str(uuid.uuid4())
                 try:
@@ -96,7 +122,7 @@ def collect_evidence(
         try:
             comp_rows = conn.execute(
                 f"SELECT id, component_key, event_type, recorded_at FROM component_audit_log "
-                f"WHERE 1=1{since_clause} ORDER BY recorded_at DESC LIMIT 5000",
+                f"WHERE 1=1{component_since} ORDER BY recorded_at DESC LIMIT 5000",
             ).fetchall()
         except Exception:
             comp_rows = []

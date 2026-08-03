@@ -16,6 +16,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.proposal_genesis.reflexes.draft")
 
 # ---------------------------------------------------------------------------
 # Module-level fallback constant — overridable from proposal_genesis_config.yaml
@@ -196,8 +199,11 @@ def _get_pulse_content(
                         _utcnow_iso(),
                     ),
                 )
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "_get_pulse_content: best-effort INSERT into pg_pulse_proposal_links failed (non-blocking): %s",
+                    exc,
+                )
         conn.commit()
         return matches[:5]
     except Exception:

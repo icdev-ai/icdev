@@ -204,7 +204,13 @@ CREATE TABLE IF NOT EXISTS nc_template_docs (
     FOREIGN KEY (template_id) REFERENCES nc_templates(id)
 );
 
-CREATE TABLE IF NOT EXISTS simulation_results (
+-- Named nc_simulation_results, not simulation_results: the unprefixed name
+-- belongs to the Digital Program Twin (tools/simulation/*, declared in
+-- tools/db/init_icdev_db.py with a completely different shape). Both used
+-- CREATE TABLE IF NOT EXISTS, so in the shared PostgreSQL database whichever
+-- init ran first silently took the name from the other. See migration
+-- 327_nc_simulation_results_rename.
+CREATE TABLE IF NOT EXISTS nc_simulation_results (
     id          TEXT PRIMARY KEY,
     topology_id TEXT REFERENCES topologies(id),
     sim_type    TEXT NOT NULL,
@@ -14645,7 +14651,7 @@ def init_db():
                 repair_check_constraints(conn)
             except Exception:
                 pass
-            print("[init_db] Schema created (PostgreSQL)")
+            print("[init_db] Schema created (PostgreSQL)", file=sys.stderr)
         else:
             # SQLite: executescript for all-at-once
             conn.executescript(SCHEMA)
@@ -14666,7 +14672,7 @@ def init_db():
             except Exception:
                 pass
             conn.commit()
-            print(f"[init_db] Schema created at {DB_PATH}")
+            print(f"[init_db] Schema created at {DB_PATH}", file=sys.stderr)
 
         # Migration: add columns to existing tables if missing
         _migrations = [
@@ -14718,7 +14724,7 @@ def init_db():
                 try:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
                     conn.commit()
-                    print(f"[init_db] Migrated: added {col} to {table}")
+                    print(f"[init_db] Migrated: added {col} to {table}", file=sys.stderr)
                 except Exception:
                     pass  # Column might already exist with different syntax
 
@@ -14756,9 +14762,9 @@ def init_db():
                 added += 1
         if added:
             conn.commit()
-            print(f"[init_db] Seeded {added} new templates (total: {count + added}).")
+            print(f"[init_db] Seeded {added} new templates (total: {count + added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {count} templates up to date.")
+            print(f"[init_db] All {count} templates up to date.", file=sys.stderr)
 
         # Seed enclave snippets (upsert — inserts new snippets even if some already exist)
         snip_count = conn.execute("SELECT COUNT(*) FROM nc_enclave_snippets").fetchone()[0]
@@ -14786,9 +14792,9 @@ def init_db():
                 snip_added += 1
         if snip_added:
             conn.commit()
-            print(f"[init_db] Seeded {snip_added} new enclave snippets (total: {snip_count + snip_added}).")
+            print(f"[init_db] Seeded {snip_added} new enclave snippets (total: {snip_count + snip_added}).", file=sys.stderr)
         else:
-            print(f"[init_db] All {snip_count} enclave snippets up to date.")
+            print(f"[init_db] All {snip_count} enclave snippets up to date.", file=sys.stderr)
 
         # Seed template docs (SOP / Runbook markdown from docs/network/sops/)
         sops_dir = _ICDEV_ROOT / "docs" / "network" / "sops"
@@ -14831,10 +14837,10 @@ def init_db():
                     doc_added += 1
             if doc_added:
                 conn.commit()
-                print(f"[init_db] Seeded {doc_added} template docs.")
+                print(f"[init_db] Seeded {doc_added} template docs.", file=sys.stderr)
             else:
                 existing = conn.execute("SELECT COUNT(*) FROM nc_template_docs").fetchone()[0]
-                print(f"[init_db] All {existing} template docs up to date.")
+                print(f"[init_db] All {existing} template docs up to date.", file=sys.stderr)
 
         # Seed default admin user (password: admin — MUST change on first login)
         import hashlib
@@ -14847,7 +14853,7 @@ def init_db():
                 ("usr-admin", "admin", "Administrator", pw_hash, "admin"),
             )
             conn.commit()
-            print("[init_db] Default admin user created (username: admin, password: admin).")
+            print("[init_db] Default admin user created (username: admin, password: admin).", file=sys.stderr)
 
         # Seed review boards (ARB, ERB, CCB)
         board_count = conn.execute("SELECT COUNT(*) FROM nc_review_boards").fetchone()[0]
@@ -14907,7 +14913,7 @@ def init_db():
                     b,
                 )
             conn.commit()
-            print("[init_db] Seeded 3 review boards (ARB, ERB, CCB).")
+            print("[init_db] Seeded 3 review boards (ARB, ERB, CCB).", file=sys.stderr)
 
         # Seed design patterns
         pattern_count = conn.execute("SELECT COUNT(*) FROM nc_design_patterns").fetchone()[0]
@@ -15103,7 +15109,7 @@ def init_db():
                     p,
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_patterns)} design patterns.")
+            print(f"[init_db] Seeded {len(_patterns)} design patterns.", file=sys.stderr)
 
         # Seed device profiles
         prof_count = conn.execute("SELECT COUNT(*) FROM nc_device_profiles").fetchone()[0]
@@ -15402,7 +15408,7 @@ def init_db():
                     p,
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_profiles)} device profiles.")
+            print(f"[init_db] Seeded {len(_profiles)} device profiles.", file=sys.stderr)
 
         # ── Seed hardware profiles ────────────────────────────────────────
         hw_count = conn.execute("SELECT COUNT(*) FROM nc_hardware_profiles").fetchone()[0]
@@ -15508,7 +15514,7 @@ def init_db():
                     p,
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_hw_profiles)} hardware profiles.")
+            print(f"[init_db] Seeded {len(_hw_profiles)} hardware profiles.", file=sys.stderr)
 
         # ── Seed naming conventions ─────────────────────────────────────
         nc_count = conn.execute("SELECT COUNT(*) FROM nc_naming_conventions").fetchone()[0]
@@ -15555,7 +15561,7 @@ def init_db():
                     c,
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_conventions)} naming conventions.")
+            print(f"[init_db] Seeded {len(_conventions)} naming conventions.", file=sys.stderr)
 
         # ── Seed NDC SOPs ──────────────────────────────────────────────
         sop_count = conn.execute("SELECT COUNT(*) FROM ndc_sops").fetchone()[0]
@@ -15727,7 +15733,7 @@ def init_db():
                     (f"log-seed-{s['sop_id']}", s["sop_id"], _now_iso),
                 )
             conn.commit()
-            print(f"[init_db] Seeded {len(_sops)} NDC SOPs.")
+            print(f"[init_db] Seeded {len(_sops)} NDC SOPs.", file=sys.stderr)
 
         # ── Auto-seed full SOP library if approved count is low ────────────
         approved_count = conn.execute(
@@ -15738,9 +15744,9 @@ def init_db():
                 from tools.network.seed_sops import seed as _seed_sops
                 result = _seed_sops(status="approved")
                 if result["seeded"] > 0:
-                    print(f"[init_db] Auto-seeded {result['seeded']} approved SOPs via seed_sops.")
+                    print(f"[init_db] Auto-seeded {result['seeded']} approved SOPs via seed_sops.", file=sys.stderr)
             except Exception as _e:
-                print(f"[init_db] seed_sops auto-seed skipped: {_e}")
+                print(f"[init_db] seed_sops auto-seed skipped: {_e}", file=sys.stderr)
 
         # ── Auto-seed demo migration projects if none exist ────────────────
         migration_count = conn.execute(
@@ -15750,16 +15756,16 @@ def init_db():
             try:
                 from tools.network.seed_migration_demo import seed_demo_migrations
                 seed_demo_migrations()
-                print("[init_db] Auto-seeded demo migration projects.")
+                print("[init_db] Auto-seeded demo migration projects.", file=sys.stderr)
             except Exception as _e:
-                print(f"[init_db] demo migration seed skipped: {_e}")
+                print(f"[init_db] demo migration seed skipped: {_e}", file=sys.stderr)
 
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",
             ("INIT", "database", f"Schema initialized at {datetime.now(timezone.utc).isoformat()}"),
         )
         conn.commit()
-        print("[init_db] Done.")
+        print("[init_db] Done.", file=sys.stderr)
     finally:
         conn.close()
 

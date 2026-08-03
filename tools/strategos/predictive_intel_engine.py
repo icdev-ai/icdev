@@ -23,6 +23,9 @@ from datetime import datetime, timezone
 
 from tools.db.storage import get_connection, is_pg
 from tools.llm.router import LLMRouter
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.strategos.predictive_intel_engine")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -517,8 +520,8 @@ def _persist_brief(brief: dict, mesh: dict) -> None:
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_persist_brief: best-effort INSERT into sg_leadership_briefs failed (non-blocking): %s", exc)
     finally:
         conn.close()
 

@@ -20,3 +20,19 @@ ci_log_max_chars: 4000
 # set hold_on_sibling_conflict to also serialize the merge (wait) instead of racing.
 sibling_conflict_check: true
 hold_on_sibling_conflict: false
+
+# Bounded self-heal of a stale done-gate block (kpr-rvfy-03).
+# The enforced done-gate reads only the LATEST kanban_verifications row, and
+# nothing writes one except a dispatch — so a green PR whose verification went
+# stale waits forever, then ages into is_stale -> FAILED and gets re-dispatched,
+# which opens a SECOND PR instead of merging the first.
+# When the gate holds, re-verify ONCE from git state and re-check.
+reverify_on_hold: true
+reverify_max_attempts_per_task: 1
+
+# Whether to also re-verify a task that has NO verification row at all.
+# OFF by default and it should stay off: such a task has never been judged, so
+# writing a passing verdict from git state would merge a PR that no conformance
+# review ever saw — the exact thing the enforced gate exists to prevent.
+# A conformance failure (review_passed=0) is NEVER refreshed, regardless.
+reverify_when_missing: false

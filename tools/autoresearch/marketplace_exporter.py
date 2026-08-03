@@ -21,6 +21,9 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools.common.helpers import now_iso
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.autoresearch.marketplace_exporter")
 
 
 def _gen_id(prefix="mke"):
@@ -140,11 +143,14 @@ def export_experiment_as_asset(
             asset_id = _gen_id("mka")
             try:
                 conn.execute(
+                    # The column is publisher_tenant_id, not tenant_id, and
+                    # current_version is NOT NULL without a default — so this
+                    # export never wrote a row (swp-scan-01).
                     "INSERT INTO marketplace_assets "
-                    "(id, tenant_id, name, asset_type, description, slug, "
+                    "(id, publisher_tenant_id, name, asset_type, description, slug, "
                     "publisher_user, impact_level, status, classification, "
-                    "created_at, updated_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "current_version, created_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         asset_id,
                         tenant_id,
@@ -156,12 +162,17 @@ def export_experiment_as_asset(
                         "IL4",
                         "draft",
                         "CUI",
+                        "1.0.0",
                         now_iso(),
                         now_iso(),
                     ),
                 )
-            except Exception:
-                pass  # Table may not exist in all environments
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # Table may not exist in all environments
+                logger.warning(
+                    "export_experiment_as_asset: best-effort INSERT into marketplace_assets failed (non-blocking): %s",
+                    _exc,
+                )
 
             # Audit trail
             try:
@@ -182,8 +193,11 @@ def export_experiment_as_asset(
                         now_iso(),
                     ),
                 )
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning(
+                    "export_experiment_as_asset: best-effort INSERT into audit_trail failed (non-blocking): %s",
+                    _exc,
+                )
 
         return {
             "success": True,

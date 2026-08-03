@@ -24,6 +24,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -37,6 +38,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.scout.daemon")
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -114,8 +118,8 @@ def _audit(event_type: str, details: str = "", pillar: str = "", success: bool =
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into scout_audit failed (non-blocking): %s", exc)
 
 
 def _load_config() -> dict:
@@ -139,31 +143,50 @@ def _feed_innovation_signals(findings: List[dict], config: dict) -> int:
             if f.get("relevance_score", 0) < min_score:
                 continue
             try:
+                now = _now()
+                url = f.get("url", "")
+                title = f.get("title", "")[:500]
+                # score/raw_data are not columns on innovation_signals
+                # (swp-scan-01); the live names are raw_score/metadata. And
+                # content_hash/discovered_at are NOT NULL with no default, so
+                # omitting them failed the row on its own. Every miss landed in
+                # the bare `except: pass` below, so Scout has never fed a single
+                # signal to the Innovation Engine.
                 conn.execute(
                     """INSERT INTO innovation_signals
                        (id, source, source_type, title, description, url,
-                        category, score, raw_data, status, created_at)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s)""",
+                        category, raw_score, metadata, content_hash,
+                        discovered_at, status, created_at)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s)""",
                     (
                         f.get("id", f"scout-sig-{uuid.uuid4().hex[:12]}"),
                         "scout_daemon",
                         f.get("category", "scout"),
-                        f.get("title", "")[:500],
+                        title,
                         f.get("description", "")[:2000],
-                        f.get("url", ""),
+                        url,
                         f.get("category", "scout"),
                         f.get("relevance_score", 0),
                         json.dumps(f.get("metadata", {})),
-                        _now(),
+                        hashlib.sha256(f"{url}|{title}".encode("utf-8")).hexdigest(),
+                        now,
+                        now,
                     ),
                 )
                 count += 1
-            except Exception:
-                pass  # Duplicate or schema mismatch — skip
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # Duplicate or schema mismatch — skip
+                logger.warning(
+                    "_feed_innovation_signals: best-effort INSERT into innovation_signals failed (non-blocking): %s",
+                    exc,
+                )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_feed_innovation_signals: best-effort INSERT into innovation_signals failed (non-blocking): %s",
+            exc,
+        )
     return count
 
 
@@ -177,19 +200,23 @@ def _update_heartbeat(config: dict, findings_count: int, duration_ms: int) -> No
         now = _now()
         # Upsert heartbeat check
         conn.execute(
-            """INSERT INTO heartbeat_checks (check_type, last_run, next_run, status, duration_ms, details)
+            # The live column is result_summary, not details (swp-scan-01) —
+            # the bare `except: pass` below meant no scout heartbeat ever
+            # landed.
+            """INSERT INTO heartbeat_checks (check_type, last_run, next_run, status, duration_ms, result_summary)
                VALUES (%s, %s, %s, 'healthy', %s, %s)
                ON CONFLICT(check_type) DO UPDATE SET
                    last_run = excluded.last_run,
                    status = 'healthy',
                    duration_ms = excluded.duration_ms,
-                   details = excluded.details""",
+                   result_summary = excluded.result_summary""",
             (check_name, now, now, duration_ms, json.dumps({"findings": findings_count, "scan_date": now[:10]})),
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Heartbeat table may not exist
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Heartbeat table may not exist
+        logger.warning("_update_heartbeat: best-effort INSERT into heartbeat_checks failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -374,8 +401,8 @@ def run_scout(config: dict = None) -> dict:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("run_scout: best-effort INSERT into scout_scans failed (non-blocking): %s", _exc)
 
     # Step 10: Update heartbeat
     _update_heartbeat(config, len(all_findings), duration_ms)

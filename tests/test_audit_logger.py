@@ -7,12 +7,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 """Tests for tools.audit.audit_logger — append-only audit trail writer."""
 
 import json
+import re
 import sqlite3
 from unittest.mock import patch
 
 import pytest
 
-from tools.audit.audit_logger import VALID_EVENT_TYPES, log_event
+from tools.audit.audit_logger import (
+    EVENT_TYPE_CONSTRAINT,
+    VALID_EVENT_TYPES,
+    event_type_check_sql,
+    log_event,
+    rebuild_event_type_constraint,
+)
 
 
 def _create_audit_table(db_path: Path):
@@ -311,3 +318,139 @@ class TestLogEventAppendOnly:
         )
         assert entry_id >= 1
         assert nested_db.exists()
+
+
+class TestEventTypeCheckSql:
+    """The generator that keeps the CHECK constraint tied to the constant."""
+
+    def test_admits_every_valid_event_type(self):
+        emitted = set(re.findall(r"'([^']+)'", event_type_check_sql()))
+        assert emitted == set(VALID_EVENT_TYPES)
+
+    def test_is_a_check_on_event_type(self):
+        sql = event_type_check_sql()
+        assert sql.startswith("CHECK (event_type IN (")
+        assert sql.endswith("))")
+
+    def test_output_is_usable_as_ddl_and_enforces_the_list(self, tmp_path):
+        """A generator that emits invalid SQL would fail open at migration time."""
+        conn = sqlite3.connect(str(tmp_path / "gen.db"))
+        conn.execute(
+            "CREATE TABLE audit_trail ("
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  event_type TEXT NOT NULL,"
+            "  actor TEXT NOT NULL,"
+            "  action TEXT NOT NULL,"
+            f"  {event_type_check_sql()})"
+        )
+        conn.execute(
+            "INSERT INTO audit_trail (event_type, actor, action) VALUES (?, ?, ?)",
+            (VALID_EVENT_TYPES[0], "test", "accepted"),
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO audit_trail (event_type, actor, action) VALUES (?, ?, ?)",
+                ("definitely.not.a.valid.type", "test", "rejected"),
+            )
+        conn.close()
+
+    def test_no_event_type_contains_a_quote(self):
+        """The generator inlines literals, so a quote would produce broken DDL."""
+        offenders = [t for t in VALID_EVENT_TYPES if "'" in t or "\\" in t]
+        assert not offenders, f"event types unsafe to inline as SQL literals: {offenders}"
+
+    def test_event_types_are_unique(self):
+        """A duplicate is harmless in SQL but signals the constant was edited twice."""
+        seen, dupes = set(), []
+        for t in VALID_EVENT_TYPES:
+            if t in seen:
+                dupes.append(t)
+            seen.add(t)
+        assert not dupes, f"duplicate event types in VALID_EVENT_TYPES: {dupes}"
+
+
+class TestRebuildEventTypeConstraint:
+    """Migrations call this to re-derive the constraint from the constant."""
+
+    def test_returns_false_and_writes_nothing_on_sqlite(self):
+        """SQLite cannot ALTER a CHECK, so the rebuild must decline, not half-apply.
+
+        Silently issuing the PostgreSQL DDL here would raise inside a migration
+        and leave the constraint in whatever state the failure found it.
+        """
+
+        class _SqliteConn:
+            _backend = "sqlite"
+
+            def __init__(self):
+                self.statements = []
+
+            def execute(self, sql, params=None):
+                self.statements.append(sql)
+
+            def commit(self):
+                self.statements.append("COMMIT")
+
+        conn = _SqliteConn()
+        assert rebuild_event_type_constraint(conn) is False
+        assert conn.statements == []
+
+    def test_drops_then_adds_the_named_constraint_on_postgres(self):
+        """Order matters: ADD before DROP would collide with the existing one."""
+
+        class _PgConn:
+            _backend = "postgresql"
+
+            def __init__(self):
+                self.statements = []
+
+            def execute(self, sql, params=None):
+                self.statements.append(" ".join(sql.split()))
+
+            def commit(self):
+                self.statements.append("COMMIT")
+
+        conn = _PgConn()
+        assert rebuild_event_type_constraint(conn) is True
+
+        drop, add, commit = conn.statements
+        assert drop == (
+            f"ALTER TABLE audit_trail DROP CONSTRAINT IF EXISTS {EVENT_TYPE_CONSTRAINT}"
+        )
+        assert add.startswith(
+            f"ALTER TABLE audit_trail ADD CONSTRAINT {EVENT_TYPE_CONSTRAINT} CHECK"
+        )
+        assert commit == "COMMIT"
+        assert set(re.findall(r"'([^']+)'", add)) == set(VALID_EVENT_TYPES)
+
+    def test_does_not_close_the_caller_owned_connection(self):
+        """Migrations pass their own connection; closing it breaks the rest of the run."""
+
+        class _PgConn:
+            _backend = "postgresql"
+            closed = False
+
+            def execute(self, sql, params=None):
+                pass
+
+            def commit(self):
+                pass
+
+            def close(self):
+                self.closed = True
+
+        conn = _PgConn()
+        rebuild_event_type_constraint(conn)
+        assert conn.closed is False
+
+    def test_treats_a_connection_with_no_backend_attribute_as_not_postgres(self):
+        """Fail closed: an unknown connection must not receive PostgreSQL-only DDL."""
+
+        class _Bare:
+            def execute(self, sql, params=None):
+                raise AssertionError("must not execute DDL on an unknown backend")
+
+            def commit(self):
+                raise AssertionError("must not commit on an unknown backend")
+
+        assert rebuild_event_type_constraint(_Bare()) is False

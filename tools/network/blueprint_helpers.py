@@ -7,6 +7,9 @@ from collections import OrderedDict
 from copy import deepcopy
 from datetime import datetime, timezone
 from functools import wraps
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.network.blueprint_helpers")
 
 
 def _now():
@@ -280,8 +283,9 @@ def _audit(action, entity_type="", entity_id="", detail="", classification="CUI"
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Audit is best-effort — never block the operation
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Audit is best-effort — never block the operation
+        logger.warning("_audit: best-effort INSERT into ndc_audit failed (non-blocking): %s", exc)
 
 
 def _notify(event_type, data=None):

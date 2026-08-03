@@ -7,6 +7,7 @@ DB file: data/aiify_canvas.db  |  env: AIIFY_STORAGE_BACKEND, AIIFY_DB_PATH
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from tools.logging.icdev_logger import get_logger
@@ -361,7 +362,7 @@ def init_db() -> None:
         # Orderly, tracked file migrations + idempotent column reconcile.
         _run_file_migrations(conn)
         _ensure_columns(conn)
-        print(f"[init_db] AI-ify schema ready ({backend})")
+        print(f"[init_db] AI-ify schema ready ({backend})", file=sys.stderr)
     finally:
         conn.close()
 

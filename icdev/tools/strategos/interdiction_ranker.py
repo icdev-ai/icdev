@@ -325,10 +325,13 @@ def _persist_results(run_id: str, ranked: list[dict], computed_at: str) -> None:
     try:
         for rank, item in enumerate(ranked, start=1):
             conn.execute(
+                # swp-scan-01: five of these columns exist only in this caller.
+                # Live: criticality, substitutability, priority_score,
+                # metadata_json, created_at.
                 """INSERT INTO sg_interdiction_results
                    (id, run_id, node_id, rank, blast_radius,
-                    criticality_score, substitutability_inverse, composite_score,
-                    affected_units_json, computed_at)
+                    criticality, substitutability, priority_score,
+                    metadata_json, created_at)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     str(uuid.uuid4()),

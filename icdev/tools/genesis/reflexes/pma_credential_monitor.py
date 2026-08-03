@@ -79,9 +79,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if not existing_alert:
                 alert_id = f"pma-alert-{uuid.uuid4().hex[:10]}"
                 conn.execute(
+                    # The live column is days_warning, not days_remaining
+                    # (swp-scan-01) — no credential-expiry alert ever persisted.
                     """
                     INSERT INTO pma_credential_alerts
-                        (id, person_id, alert_type, expiry_date, days_remaining,
+                        (id, person_id, alert_type, expiry_date, days_warning,
                          severity, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,

@@ -21,6 +21,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.proposal_genesis.reflexes.scout")
 
 REPORTS_DIR = BASE_DIR / "data" / "proposal_genesis" / "briefs"
 
@@ -235,8 +238,8 @@ def _store_brief(brief_md: str) -> str:
             ),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_store_brief: best-effort INSERT into pg_proposal_genesis_audit failed (non-blocking): %s", exc)
     finally:
         conn.close()
 
@@ -380,8 +383,11 @@ def _match_awards_to_decisions() -> Dict[str, int]:
             )
 
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_match_awards_to_decisions: best-effort INSERT into pg_bid_decision_outcomes failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

@@ -26,6 +26,7 @@ from tools.workflow.coherence_checker import (
     check_ruff_lint,
     check_schema_code,
     check_signature_call,
+    check_test_db_isolation,
     run_checks,
 )
 from tools.workflow.impact_analyzer import (
@@ -34,6 +35,44 @@ from tools.workflow.impact_analyzer import (
     analyze_impact,
     get_graph,
 )
+
+
+@pytest.fixture(autouse=True)
+def _repo_must_stay_clean():
+    """No test in this module may modify the repository it is testing.
+
+    The coherence auto-fixers are not read-only: the manifest fixer appends
+    rows to ``tools/manifest.md`` and ``_autofix_imports`` shells out to
+    ``ruff --fix --select F401,F811,F841 tools/``. ``test_autofix_mode`` used
+    to invoke them against the LIVE checkout, and on 2026-08-01 a single run
+    added 14 unrelated auto-registration rows to ``tools/manifest.md`` that
+    then had to be reverted out of an unrelated PR before it could be
+    committed.
+
+    Enforced at runtime for every test rather than by grepping the source for
+    ``autofix=True``: a text check counts prose in docstrings and cannot see a
+    fixer reached indirectly. This catches any route to a write, including one
+    a future test adds without knowing the history.
+    """
+    import subprocess
+
+    from tools.workflow import coherence_checker as _cc
+
+    repo = Path(_cc.__file__).resolve().parents[2]
+
+    def _tracked_edits():
+        out = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, cwd=str(repo), timeout=60,
+        )
+        # Only tracked modifications matter; untracked scratch is not this
+        # suite's business and would make the guard flaky.
+        return {ln[3:] for ln in out.stdout.splitlines() if ln[:2].strip() == "M"}
+
+    before = _tracked_edits()
+    yield
+    new = _tracked_edits() - before
+    assert not new, f"test modified tracked file(s) in the repo under test: {sorted(new)}"
 
 
 # ---------------------------------------------------------------------------
@@ -527,14 +566,86 @@ class TestCoherenceReport:
         assert report.checks[0].status == "warn"
 
     @pytest.mark.timeout(300)
-    def test_autofix_mode(self):
-        """Test that --fix mode runs without error and includes total_fixes."""
-        report = run_checks(autofix=True)
+    def test_autofix_mode(self, monkeypatch):
+        """--fix mode runs and plumbs total_fixes through — without touching the tree.
+
+        The real fixers mutate tracked files (``_autofix_manifest`` appends to
+        ``tools/manifest.md``, ``_autofix_append_only`` rewrites
+        ``.claude/hooks/pre_tool_use.py``, ``_autofix_imports`` shells out to
+        ``ruff --fix`` over ``tools/``), so running them here left the working
+        tree dirty. Stub the handlers: this test owns the autofix *plumbing*,
+        not the individual fixers.
+        """
+        applied: list = []
+
+        def _stub_fixer(check):
+            applied.append(check.check_id)
+            return [f"stub fix for {check.check_id}"]
+
+        globals_ = run_checks.__globals__
+        stub_handlers = {check_id: _stub_fixer for check_id in globals_["_AUTOFIX_HANDLERS"]}
+        # setitem on the module globals is shim-proof: it is the same dict
+        # _apply_fixes resolves _AUTOFIX_HANDLERS from at call time.
+        monkeypatch.setitem(globals_, "_AUTOFIX_HANDLERS", stub_handlers)
+
+        report = run_checks(selected=["append_only", "manifest"], autofix=True)
         assert isinstance(report, CoherenceReport)
         assert hasattr(report, "total_fixes")
         assert report.total_fixes >= 0
+        assert report.total_fixes == sum(len(c.fixes_applied) for c in report.checks)
+        # Only failed/warned checks may be fixed, and only via the stubs.
+        assert all(c.status in ("fail", "warn") for c in report.checks if c.fixes_applied)
+        assert set(applied) <= {"append_only", "manifest"}
         d = report.to_dict()
         assert "total_fixes" in d
+
+    def test_autofix_dispatches_to_registered_handler(self, monkeypatch):
+        """A failing check with an ``auto`` tier routes through its handler."""
+        globals_ = run_checks.__globals__
+        seen = []
+
+        def _stub_fixer(check):
+            seen.append(check)
+            return ["stub fix"]
+
+        monkeypatch.setitem(globals_, "_AUTOFIX_HANDLERS", {"manifest": _stub_fixer})
+
+        check = CoherenceCheck(
+            check_id="manifest",
+            check_name="Manifest",
+            status="fail",
+            expected=[],
+            actual=[],
+            missing=["tools/foo/bar.py"],
+            extra=[],
+            message="missing",
+        )
+        updated = globals_["_apply_fixes"](check)
+        assert seen == [check]
+        assert updated.fixes_applied == ["stub fix"]
+        assert "1 auto-fixed" in updated.message
+
+    def test_autofix_skips_non_auto_tier(self, monkeypatch):
+        """A ``skip``-tier check never reaches a fixer, even when it fails."""
+        globals_ = run_checks.__globals__
+        assert globals_["_FIX_REGISTRY"]["nav_sync"] == "skip"
+
+        def _boom(check):  # pragma: no cover — must never be called
+            raise AssertionError("skip-tier check must not be auto-fixed")
+
+        monkeypatch.setitem(globals_, "_AUTOFIX_HANDLERS", {"nav_sync": _boom})
+
+        check = CoherenceCheck(
+            check_id="nav_sync",
+            check_name="Nav Sync",
+            status="fail",
+            expected=[],
+            actual=[],
+            missing=["x"],
+            extra=[],
+            message="missing",
+        )
+        assert globals_["_apply_fixes"](check).fixes_applied == []
 
     def test_fixes_applied_field(self):
         """Test that checks include fixes_applied list."""
@@ -626,3 +737,148 @@ class TestImpactAnalyzer:
     def test_analyze_impact_table_change(self):
         result = analyze_impact(changed_tables=["chat_contexts"])
         assert "affected_subsystems" in result
+
+
+class TestCheckTestDbIsolation:
+    """The gate must reject bare sqlite3 fixtures — and accept its own remedy."""
+
+    @staticmethod
+    def _write(tmp_path, body: str) -> Path:
+        # The check only scans paths with a "tests" path segment.
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir(exist_ok=True)
+        path = tests_dir / "test_sample.py"
+        path.write_text(textwrap.dedent(body), encoding="utf-8")
+        return path
+
+    def test_flags_bare_sqlite3_fixture(self, tmp_path):
+        path = self._write(tmp_path, """
+            import sqlite3
+            from unittest.mock import patch
+
+            def mem_db():
+                return sqlite3.connect(":memory:")
+
+            def test_it(mem_db):
+                with patch("tools.x.get_connection", return_value=mem_db):
+                    mem_db.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "fail"
+        assert any("monkeypatches a DB connection factory" in v for v in result.extra)
+
+    def test_accepts_translating_wrapper_around_raw_connect(self, tmp_path):
+        # ``translating()`` takes a raw sqlite3 handle by design — the fixture
+        # needs one to create its schema. That input is not residue.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from unittest.mock import patch
+
+            from tests._sql_compat import translating
+
+            def mem_db():
+                conn = sqlite3.connect(":memory:")
+                conn.execute("CREATE TABLE t (a TEXT)")
+                return translating(conn, unclosable=True)
+
+            def test_it(mem_db):
+                with patch("tools.x.get_connection", return_value=mem_db):
+                    mem_db.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "pass", result.extra
+
+    def test_accepts_lambda_replacement_naming_a_compat_fixture(self, tmp_path):
+        # patch(target, lambda: shim) — the fixture is named in the lambda body.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from unittest.mock import patch
+
+            from tests._sql_compat import translating
+
+            def shim():
+                db = sqlite3.connect(":memory:")
+                return translating(db, unclosable=True)
+
+            def test_it(shim):
+                with patch("tools.x.get_canvas_connection", lambda: shim):
+                    shim.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "pass", result.extra
+
+    def test_still_flags_second_unwrapped_factory_in_same_file(self, tmp_path):
+        # One fixed fixture must not launder a raw one alongside it.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from unittest.mock import patch
+
+            from tests._sql_compat import translating
+
+            def good_db():
+                return translating(sqlite3.connect(":memory:"))
+
+            def raw_db():
+                return sqlite3.connect(":memory:")
+
+            def test_it(raw_db):
+                with patch("tools.x.get_connection", return_value=raw_db):
+                    raw_db.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "fail"
+
+    def test_accepts_contextmanager_indirection_to_a_compat_fixture(self, tmp_path):
+        # The name in the patch call (_gc) is two hops from translating():
+        # _gc yields shim -> shim returns _shim_conn() -> _shim_conn wraps.
+        # This is the shape the merged canvas emitter fixtures actually use.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from contextlib import contextmanager
+            from unittest.mock import patch
+
+            from tests import _sql_compat
+
+            def _shim_conn():
+                raw = sqlite3.connect(":memory:")
+                return _sql_compat.translating(raw, unclosable=True)
+
+            def shim():
+                return _shim_conn()
+
+            @contextmanager
+            def _patch(shim):
+                @contextmanager
+                def _gc(): yield shim
+                with patch("tools.x.get_canvas_connection", _gc): yield shim
+
+            def test_it(shim):
+                with _patch(shim):
+                    shim.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "pass", result.extra
+
+    def test_indirection_does_not_launder_a_raw_factory(self, tmp_path):
+        # Same contextmanager shape, but the factory hands back a BARE
+        # connection — indirection must not turn that into a pass.
+        path = self._write(tmp_path, """
+            import sqlite3
+            from contextlib import contextmanager
+            from unittest.mock import patch
+
+            def _shim_conn():
+                return sqlite3.connect(":memory:")
+
+            def shim():
+                return _shim_conn()
+
+            @contextmanager
+            def _gc(shim): yield shim
+
+            def test_it(shim):
+                with patch("tools.x.get_connection", _gc):
+                    shim.execute("INSERT INTO t (a) VALUES (%s)", ("v",))
+        """)
+        result = check_test_db_isolation(changed_files=[path])
+        assert result.status == "fail"

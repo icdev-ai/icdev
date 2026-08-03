@@ -32,6 +32,9 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.compliance.base_assessor")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -366,9 +369,10 @@ class BaseAssessor(ABC):
 
             try:
                 conn.execute(
+                    # The column is implemented_count (swp-scan-01).
                     """INSERT OR REPLACE INTO project_framework_status
                        (project_id, framework_id, total_controls,
-                        implemented_controls, coverage_pct, gate_status,
+                        implemented_count, coverage_pct, gate_status,
                         last_assessed, updated_at)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
@@ -383,8 +387,12 @@ class BaseAssessor(ABC):
                     ),
                 )
                 conn.commit()
-            except Exception:
-                pass  # Table may not exist yet
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # Table may not exist yet
+                logger.warning(
+                    "assess: best-effort INSERT into project_framework_status failed (non-blocking): %s",
+                    exc,
+                )
 
             self._log_audit_event(
                 conn,

@@ -33,6 +33,9 @@ import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.amendment_tracker")
 
 # =========================================================================
 # PATH SETUP
@@ -68,10 +71,10 @@ def _audit(conn, action, details="", actor="amendment_tracker"):
         conn.execute(
             "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
-            (_uuid(), _now(), "govcon.amendment", actor, action, details, "govcon"),
+            (_now(), "govcon.amendment", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _extract_text_from_file(file_path):

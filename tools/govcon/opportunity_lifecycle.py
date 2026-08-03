@@ -31,7 +31,6 @@ import hashlib
 import json
 import os
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -44,6 +43,9 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection, column_exists  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.opportunity_lifecycle")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -145,7 +147,6 @@ def _audit(conn, action: str, details: str = "", project_id: str = "") -> None:
             "(created_at, event_type, actor, action, details, session_id, project_id) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                str(uuid.uuid4()),
                 _now(),
                 "govcon.lifecycle",
                 "opportunity-lifecycle",
@@ -155,8 +156,8 @@ def _audit(conn, action: str, details: str = "", project_id: str = "") -> None:
                 project_id,
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _ensure_tables(conn) -> None:

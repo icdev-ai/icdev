@@ -75,14 +75,14 @@ class TestLoadThresholds:
 
 
 # ---------------------------------------------------------------------------
-# _nlp_extract_audit_refs
+# _nlp_extract_audit_mutations
 # ---------------------------------------------------------------------------
 
-class TestNlpExtractAuditRefs:
+class TestNlpExtractAuditMutations:
     def test_returns_none_when_no_api_key(self, tmp_path, monkeypatch):
         m = _mod()
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        result = m._nlp_extract_audit_refs("some code", "find mutations")
+        result = m._nlp_extract_audit_mutations("some code", "find mutations")
         assert result is None
 
     def test_returns_none_when_disabled(self, tmp_path, monkeypatch):
@@ -92,7 +92,7 @@ class TestNlpExtractAuditRefs:
             m, "_load_thresholds",
             lambda: {**m._DEFAULTS, "nlp_extractor_enabled": False},
         )
-        result = m._nlp_extract_audit_refs("some code", "find mutations")
+        result = m._nlp_extract_audit_mutations("some code", "find mutations")
         assert result is None
 
     def test_returns_none_on_import_error(self, monkeypatch):
@@ -108,7 +108,7 @@ class TestNlpExtractAuditRefs:
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", _broken_import)
-        result = m._nlp_extract_audit_refs("some code", "find mutations")
+        result = m._nlp_extract_audit_mutations("some code", "find mutations")
         assert result is None
 
     def test_parses_valid_json_response(self, monkeypatch):
@@ -126,7 +126,7 @@ class TestNlpExtractAuditRefs:
             "tools.llm.anthropic_provider": MagicMock(AnthropicLLMProvider=MagicMock(return_value=fake_provider)),
             "tools.llm.provider": MagicMock(LLMRequest=MagicMock(return_value=MagicMock())),
         }):
-            result = m._nlp_extract_audit_refs("session.query(AuditLog).delete()", "find mutations")
+            result = m._nlp_extract_audit_mutations("session.query(AuditLog).delete()", "find mutations")
 
         assert result is not None
         assert result["found"] is True
@@ -145,7 +145,7 @@ class TestNlpExtractAuditRefs:
             "tools.llm.anthropic_provider": MagicMock(AnthropicLLMProvider=MagicMock(return_value=fake_provider)),
             "tools.llm.provider": MagicMock(LLMRequest=MagicMock(return_value=MagicMock())),
         }):
-            result = m._nlp_extract_audit_refs("some code", "find mutations")
+            result = m._nlp_extract_audit_mutations("some code", "find mutations")
 
         assert result is None
 
@@ -170,7 +170,7 @@ class TestNlpExtractAuditRefs:
             "tools.llm.anthropic_provider": MagicMock(AnthropicLLMProvider=MagicMock(return_value=fake_provider)),
             "tools.llm.provider": MagicMock(LLMRequest=CapturingRequest),
         }):
-            m._nlp_extract_audit_refs("A" * 200, "task")
+            m._nlp_extract_audit_mutations("A" * 200, "task")
 
         assert len(captured_prompts) == 1
         # The prompt should contain only 10 chars of the code sample
@@ -212,7 +212,7 @@ class TestCheckNoAuditMutations:
             nlp_calls.append(text)
             return {"found": True, "refs": ["AuditLog.delete()"], "confidence": 0.95}
 
-        monkeypatch.setattr(m, "_nlp_extract_audit_refs", fake_nlp)
+        monkeypatch.setattr(m, "_nlp_extract_audit_mutations", fake_nlp)
         monkeypatch.setattr(
             m, "_load_thresholds",
             lambda: {**m._DEFAULTS, "nlp_extractor_confidence_threshold": 0.7},
@@ -231,7 +231,7 @@ class TestCheckNoAuditMutations:
             nlp_calls.append(text)
             return None
 
-        monkeypatch.setattr(m, "_nlp_extract_audit_refs", fake_nlp)
+        monkeypatch.setattr(m, "_nlp_extract_audit_mutations", fake_nlp)
         result = m._check_no_audit_mutations(tmp_path)
         assert result.passed is False
         assert len(nlp_calls) == 0
@@ -243,7 +243,7 @@ class TestCheckNoAuditMutations:
         def fake_nlp(text, task):
             return {"found": True, "refs": ["something"], "confidence": 0.3}
 
-        monkeypatch.setattr(m, "_nlp_extract_audit_refs", fake_nlp)
+        monkeypatch.setattr(m, "_nlp_extract_audit_mutations", fake_nlp)
         monkeypatch.setattr(
             m, "_load_thresholds",
             lambda: {**m._DEFAULTS, "nlp_extractor_confidence_threshold": 0.7},
@@ -267,7 +267,7 @@ class TestCheckAuditLogInserts:
     def test_fails_when_no_inserts_found(self, tmp_path, monkeypatch):
         _write(tmp_path, "nolog.py", "# nothing here\n")
         m = _mod()
-        monkeypatch.setattr(m, "_nlp_extract_audit_refs", lambda *a, **kw: None)
+        monkeypatch.setattr(m, "_nlp_extract_audit_mutations", lambda *a, **kw: None)
         result = m._check_audit_log_inserts(tmp_path)
         assert result.passed is False
 
@@ -280,7 +280,7 @@ class TestCheckAuditLogInserts:
             nlp_calls.append(text)
             return {"found": True, "refs": ["session.add(AuditLog(...))"], "confidence": 0.9}
 
-        monkeypatch.setattr(m, "_nlp_extract_audit_refs", fake_nlp)
+        monkeypatch.setattr(m, "_nlp_extract_audit_mutations", fake_nlp)
         monkeypatch.setattr(
             m, "_load_thresholds",
             lambda: {**m._DEFAULTS, "nlp_extractor_confidence_threshold": 0.7},
@@ -297,7 +297,7 @@ class TestCheckAuditLogInserts:
         def fake_nlp(text, task):
             return {"found": True, "refs": ["session.add(Something())"], "confidence": 0.4}
 
-        monkeypatch.setattr(m, "_nlp_extract_audit_refs", fake_nlp)
+        monkeypatch.setattr(m, "_nlp_extract_audit_mutations", fake_nlp)
         monkeypatch.setattr(
             m, "_load_thresholds",
             lambda: {**m._DEFAULTS, "nlp_extractor_confidence_threshold": 0.7},

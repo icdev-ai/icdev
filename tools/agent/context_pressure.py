@@ -31,6 +31,9 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.common.helpers import now_iso  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.agent.context_pressure")
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -196,8 +199,12 @@ def _log_pressure_event(result: dict, db_path: Path = None):
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Best effort — never block on DB issues
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best effort — never block on DB issues
+        logger.warning(
+            "_log_pressure_event: best-effort INSERT into context_pressure_events failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 
@@ -361,8 +368,12 @@ def _log_stuck_event(result: dict, db_path: Path = None):
             ),
         )
         conn.commit()
-    except Exception:
-        pass  # Best effort
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best effort
+        logger.warning(
+            "_log_stuck_event: best-effort INSERT into context_pressure_events failed (non-blocking): %s",
+            exc,
+        )
     finally:
         conn.close()
 

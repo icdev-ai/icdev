@@ -1620,17 +1620,25 @@ def seed_mission_catalog() -> None:
                 json.dumps(m.get("prereqs", [])), m.get("order_idx", 0),
                 m.get("difficulty", "intermediate"), m.get("estimated_minutes", 30),
                 m.get("source_credit", ""),
+                # aca-trn-03: a declared objective wins; otherwise read it out of the
+                # mission's own first step. NULL, never "", so "no objective authored"
+                # is one state in the database rather than two.
+                (m.get("learning_objective")
+                 or objective_for_mission(discovered.get(m["slug"]))) or None,
             )
             for m in catalog
         ]
         conn.executemany(
             """INSERT INTO fa_missions
                (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
-                prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit,
+                learning_objective)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(slug) DO UPDATE SET
                  title=excluded.title, tagline=excluded.tagline,
-                 xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
+                 xp_reward=excluded.xp_reward, order_idx=excluded.order_idx,
+                 learning_objective=COALESCE(excluded.learning_objective,
+                                             fa_missions.learning_objective)""",
             rows,
         )
         conn.commit()
@@ -1673,6 +1681,17 @@ def seed_mission_catalog() -> None:
                 "FORGE Academy: seeded %d mission(s) from discovered content", seeded_from_disk
             )
         conn.commit()
+
+        # aca-trn-01: item banks last, because they resolve (mission_slug, step_num)
+        # to a step id and therefore need the step rows above to exist. Idempotent
+        # and re-run every start-up, so editing the authored YAML corrects the
+        # database — the same self-correcting property the catalogue reconciles
+        # above were added for (aca-hon-02/04/05), applied to assessment content.
+        try:
+            seed_item_banks(conn)
+        except Exception:
+            # A bad bank costs its steps their assessment, not the whole catalogue.
+            _log.warning("item bank seed failed", exc_info=True)
         _log.info("FORGE Academy: seeded/updated %d missions (%d derived from content)",
                   len(catalog), len(catalog) - len(BUILTIN_MISSIONS))
     except Exception as e:
@@ -1776,6 +1795,242 @@ def _title_head(title: str | None) -> str:
             text = text.split(sep, 1)[0]
             break
     return " ".join(text.lower().split())
+
+
+# ---------------------------------------------------------------------------
+# Learning objectives (aca-trn-03)
+# ---------------------------------------------------------------------------
+# A mission card advertises XP, estimated minutes and difficulty — three costs —
+# and never states what the learner will be able to DO afterwards. For training
+# used in a compliance context the objective is the auditable unit: "this learner
+# was trained on X" needs an X, and a tagline ("The difference between a chatbot
+# and a weapon is the prompt.") is marketing copy, not one.
+#
+# This is an EXTRACTION pass, not an authoring one. Nothing here writes an
+# objective an author did not: where the content states one it is surfaced, and
+# where it does not the column stays NULL and both surfaces omit the line. A
+# plausible-looking objective synthesised from a tagline would put un-authored
+# text on the surface that most needs to be true — the aca-hon-* failure mode
+# (mechanical slug titles, step-type badges that did not match the steps) applied
+# to an auditable field. An absent objective is a visible content gap; an invented
+# one is an invisible false record.
+#
+# Three sources, in priority order:
+#   1. ``learning_objective:`` in the step's frontmatter — the explicit channel,
+#      for an author stating it outright. Nothing carries it yet; it exists so
+#      authoring one does not require touching this module.
+#   2. The lead paragraph of an objective-bearing section in the mission's FIRST
+#      step. No file uses a literal "## Learning Objective" heading today, but 29
+#      missions open with "## What You'll Build" and 8 with "## Mission Brief",
+#      and those paragraphs are already written as "you're building X that does Y".
+#   3. (aca-trn-03-d2) The mission-statement sentence of the step's OPENING
+#      paragraph — the prose under the H1, before any section heading. Source 2
+#      finds nothing in a "## What you'll build" that opens straight into a code
+#      fence or a bullet list, which is how 5 missions author it; but 6 of those
+#      files state the objective outright one paragraph earlier ("In this mission
+#      you'll build an agent that monitors a CI/CD pipeline…"). That paragraph is
+#      part hook and part claim, so unlike source 2 it is NOT taken whole: only
+#      from the sentence carrying a first/second-person mission cue onward. The
+#      hook ("Attackers don't target your code — they target your AI's behavior.")
+#      is motivation, and it is also what a 320-char trim would otherwise keep
+#      while dropping the claim. Requiring the cue is what keeps this an
+#      extraction: a paragraph that merely opens the topic states no objective and
+#      yields none.
+
+#: Section headings whose lead paragraph states what the learner will produce.
+#: Ordered: an explicit objective heading beats a build/brief section describing
+#: the same thing more loosely.
+_OBJECTIVE_HEADINGS = (
+    "learning objective", "learning objectives",
+    "objective", "objectives",
+    "mission brief", "your mission",
+    "what you'll learn", "what you will learn",
+    "what you'll build", "what you will build",
+    "what you'll do", "what you will do",
+    # The most common objective-bearing heading in this catalogue by a wide margin
+    # (48 first steps). Imperative rather than declarative — "Build a X that does
+    # Y" instead of "you will be able to build a X" — but it is the author stating
+    # the outcome, which is what an extraction pass is here to surface. Ranked last
+    # so a mission carrying both a brief and a task list surfaces the brief.
+    "your task", "your tasks",
+)
+
+#: Below this a match is a sentence fragment, not a statement of capability.
+#: Better absent — and visibly so — than truncated into something unauditable.
+_OBJECTIVE_MIN_CHARS = 40
+#: A card line, not an essay. Longer text is cut back to a sentence boundary.
+_OBJECTIVE_MAX_CHARS = 320
+
+#: A sentence in the opening paragraph that claims the mission's outcome rather
+#: than setting up its motivation. Deliberately narrow — an author writing "the
+#: pipeline fails" is describing the problem, not the objective.
+_MISSION_CUE_RE = re.compile(
+    r"\b(?:in this mission|by the end|this mission"
+    r"|you(?:'|’)?(?:ll| will) (?:build|learn|write|implement|ship|design))\b",
+    re.IGNORECASE,
+)
+
+#: Sentence boundary for splitting a paragraph. Kept crude on purpose: a false
+#: split costs the objective a leading clause, never a wrong claim.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!])\s+")
+
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_MARKS_RE = re.compile(r"(\*\*|__|`|~~)")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def _normalise_heading(text: str) -> str:
+    """`## What You'll Build` body -> `what you'll build`, typographic quotes folded."""
+    cleaned = (text or "").replace("’", "'").replace("‘", "'")
+    cleaned = cleaned.strip().strip("#").strip().rstrip(":").strip()
+    return " ".join(cleaned.lower().split())
+
+
+def _flatten_markdown(text: str) -> str:
+    """Markdown prose -> one clean line: links to their label, emphasis dropped."""
+    flat = _MD_LINK_RE.sub(r"\1", text or "")
+    flat = _MD_MARKS_RE.sub("", flat)
+    # Single '*' / '_' only between word characters is emphasis; leave snake_case
+    # identifiers alone, because they are usually the thing being taught.
+    flat = re.sub(r"(?<!\w)[*_](?=\w)|(?<=\w)[*_](?!\w)", "", flat)
+    return " ".join(flat.split()).strip()
+
+
+def _trim_to_sentence(text: str) -> str:
+    """Cut over-long prose back to a sentence boundary, else an ellipsis."""
+    if len(text) <= _OBJECTIVE_MAX_CHARS:
+        return text
+    window = text[:_OBJECTIVE_MAX_CHARS]
+    cut = max(window.rfind(". "), window.rfind("! "), window.rfind("? "))
+    if cut >= _OBJECTIVE_MIN_CHARS:
+        return window[: cut + 1].strip()
+    cut = window.rfind(" ")
+    return (window[:cut] if cut > 0 else window).strip() + "…"
+
+
+def _lead_paragraph(lines: list[str], start: int) -> str:
+    """First prose paragraph after ``start``, skipping non-prose blocks.
+
+    Stops at the next heading so a section with no prose of its own (straight into
+    a code block or a list) yields nothing rather than borrowing the next
+    section's text.
+    """
+    para: list[str] = []
+    in_fence = False
+    for line in lines[start + 1:]:
+        stripped = line.strip()
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            if para:
+                break
+            continue
+        if in_fence:
+            continue
+        if stripped.startswith("#"):
+            break
+        if not stripped:
+            if para:
+                break
+            continue
+        # Lists, tables, quotes and images are structure, not a prose statement.
+        if stripped[0] in "-*+>|!" or re.match(r"^\d+[.)]\s", stripped):
+            if para:
+                break
+            continue
+        para.append(stripped)
+    return _flatten_markdown(" ".join(para))
+
+
+def _opening_claim(lines: list[str]) -> str:
+    """The mission-statement sentence of the prose under the step's H1, or "".
+
+    Returns the cue-carrying sentence *and everything after it* in that paragraph
+    — "In this mission you'll build X. It runs against Y." is one claim — but
+    drops whatever preceded it, which is the hook.
+    """
+    h1 = next(
+        (i for i, line in enumerate(lines)
+         if line.strip().startswith("# ") and not line.strip().startswith("##")),
+        None,
+    )
+    if h1 is None:
+        return ""
+    para = _lead_paragraph(lines, h1).rstrip(":").strip()
+    # Same reason as the heading path: a question is the exercise, not the claim.
+    if not para or "?" in para:
+        return ""
+    sentences = _SENTENCE_SPLIT_RE.split(para)
+    for idx, sentence in enumerate(sentences):
+        if _MISSION_CUE_RE.search(sentence):
+            return " ".join(sentences[idx:]).strip()
+    return ""
+
+
+def extract_learning_objective(raw: str) -> str:
+    """The learning objective stated by one step's markdown, or "" if none is.
+
+    ``raw`` is the whole file including frontmatter. Returns "" rather than a
+    guess: the caller stores NULL and the UI omits the line.
+    """
+    fm, body = _parse_frontmatter(raw or "")
+    declared = _flatten_markdown(str(fm.get("learning_objective") or ""))
+    if declared:
+        return _trim_to_sentence(declared)
+
+    lines = (body or "").splitlines()
+    headings: dict[str, int] = {}
+    in_fence = False
+    for idx, line in enumerate(lines):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence or not line.strip().startswith("#"):
+            continue
+        name = _normalise_heading(line)
+        # First occurrence wins; a heading repeated later is a different section.
+        headings.setdefault(name, idx)
+
+    for wanted in _OBJECTIVE_HEADINGS:
+        idx = headings.get(wanted)
+        if idx is None:
+            continue
+        para = _lead_paragraph(lines, idx)
+        # A trailing colon means the paragraph introduces a list or code block.
+        # The sentence still reads as an objective once the colon is dropped.
+        para = para.rstrip(":").strip()
+        if len(para) < _OBJECTIVE_MIN_CHARS:
+            continue
+        # A paragraph carrying a question is the exercise being posed, not the
+        # capability being claimed — "identify: what listen_topics does it
+        # subscribe to?" is what the learner does DURING the mission. Surfacing
+        # it as the objective would put a quiz item on the field an audit reads,
+        # so the mission falls through to NULL and states none. This bites the
+        # "your task" sections hardest, which is where it is needed.
+        if "?" in para:
+            continue
+        return _trim_to_sentence(para)
+
+    # aca-trn-03-d2: no objective-bearing section yielded prose. Fall back to the
+    # claim in the opening paragraph, which is where a mission whose "what you'll
+    # build" is a code fence or a bullet list tends to have stated it.
+    claim = _opening_claim(lines)
+    if len(claim) >= _OBJECTIVE_MIN_CHARS:
+        return _trim_to_sentence(claim)
+    return ""
+
+
+def objective_for_mission(steps: list | None) -> str:
+    """A mission's objective: the one its first step states, else "".
+
+    Later steps state per-step tasks, not the mission's outcome, so only step 1 is
+    consulted. Steps are expected in ``step_num`` order (``discover_steps`` sorts).
+    """
+    for step in steps or []:
+        objective = (step.get("learning_objective") or "").strip()
+        if objective:
+            return objective
+        break  # only the first step speaks for the mission
+    return ""
 
 
 def mission_type_from_steps(steps: list | None) -> str:
@@ -1981,6 +2236,9 @@ def discover_steps() -> dict:
             "xp_partial": _DEFAULT_XP,
             "skill_tag": str(fm.get("skill_tag") or ""),
             "estimated_seconds": _DEFAULT_SECONDS,
+            # aca-trn-03: carried on every step, read from step 1 only
+            # (objective_for_mission). "" where the content states none.
+            "learning_objective": extract_learning_objective(raw),
         })
 
     for slug, steps in found.items():
@@ -2120,6 +2378,7 @@ def discover_missions(discovered: dict | None = None) -> list:
             "estimated_minutes": max(5, (len(steps) * _DEFAULT_SECONDS) // 60),
             "prereqs": [],
             "source_credit": _DERIVED_CREDIT,
+            "learning_objective": objective_for_mission(steps),
         })
     return out
 
@@ -2360,6 +2619,144 @@ def _md_to_html(text: str) -> str:
         import html
         return f"<pre>{html.escape(text)}</pre>"
     return _sanitize_html(rendered, raw_fallback=text)
+
+
+# ---------------------------------------------------------------------------
+# Item banks (aca-trn-01)
+# ---------------------------------------------------------------------------
+# Banks are authored in YAML next to the lesson they assess, under
+# content/item_banks/<mission-slug>.yaml, and seeded into fa_assessment_items.
+#
+# Authored as content rather than as rows in a migration for the same reason the
+# steps themselves are: a migration is applied once, so correcting a badly-worded
+# question would need a second migration, and the bank would drift out of step with
+# the lesson it belongs to. Seeding is idempotent and re-runs on every start-up, so
+# editing the YAML corrects the database.
+
+ITEM_BANK_ROOT = CONTENT_ROOT / "item_banks"
+
+
+def load_item_banks() -> dict:
+    """Parse every authored item bank. Returns ``{mission_slug: {step_num: [item]}}``.
+
+    Malformed banks are skipped with a warning rather than raising: a bad bank must
+    cost its own step its assessment, not take start-up down with it. The step then
+    classifies as `acknowledged`, which grades honestly (``assessed: False``) instead
+    of pretending to have assessed anything.
+    """
+    if not ITEM_BANK_ROOT.is_dir():
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        _log.warning("PyYAML unavailable — item banks not seeded")
+        return {}
+
+    banks: dict[str, dict[int, list]] = {}
+    for path in sorted(ITEM_BANK_ROOT.glob("*.yaml")):
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            _log.warning("item bank %s is not parseable", path.name, exc_info=True)
+            continue
+        slug = str(doc.get("mission") or path.stem).strip()
+        if not slug:
+            continue
+        for entry in doc.get("steps") or []:
+            try:
+                step_num = int(entry.get("step"))
+            except (TypeError, ValueError):
+                _log.warning("item bank %s has a step with no usable number", path.name)
+                continue
+            items = []
+            for raw in entry.get("items") or []:
+                options = [str(o) for o in (raw.get("options") or [])]
+                items.append({
+                    "item_key": str(raw.get("key") or "").strip(),
+                    "prompt": str(raw.get("prompt") or "").strip(),
+                    "options": options,
+                    "correct_index": raw.get("correct"),
+                    "explanation": str(raw.get("explanation") or "").strip(),
+                    "difficulty": str(raw.get("difficulty") or "core").strip(),
+                })
+            if items:
+                banks.setdefault(slug, {})[step_num] = items
+    return banks
+
+
+def seed_item_banks(conn) -> int:
+    """Upsert authored item banks onto their steps. Returns the item count written.
+
+    Runs on every start-up, after the steps exist, and is idempotent: an item is
+    keyed on ``(step_id, item_key)`` so re-seeding corrects a reworded prompt in
+    place rather than duplicating it. Learner attempts reference ``item_key``, so a
+    corrected item stays the same item in the ledger.
+
+    A bank that fails ``validate_item_bank`` is REFUSED, not partially written — a
+    half-seeded bank would serve a learner a question with no correct answer in it.
+    """
+    banks = load_item_banks()
+    if not banks:
+        return 0
+    from .assessment import validate_item_bank
+
+    written = 0
+    for slug, by_step in banks.items():
+        row = conn.execute(
+            "SELECT id FROM fa_missions WHERE slug=%s", (slug,)
+        ).fetchone()
+        if not row:
+            _log.warning("item bank references unknown mission %r", slug)
+            continue
+        mission_id = row["id"] if hasattr(row, "keys") else row[0]
+
+        for step_num, items in by_step.items():
+            problems = validate_item_bank(items)
+            if problems:
+                # Refused at seed time rather than discovered by a learner
+                # mid-assessment.
+                _log.warning("item bank %s step %s refused: %s",
+                             slug, step_num, "; ".join(problems))
+                continue
+            step_row = conn.execute(
+                "SELECT id FROM fa_mission_steps WHERE mission_id=%s AND step_num=%s",
+                (mission_id, step_num),
+            ).fetchone()
+            if not step_row:
+                _log.warning("item bank %s references missing step %s", slug, step_num)
+                continue
+            step_id = step_row["id"] if hasattr(step_row, "keys") else step_row[0]
+
+            for item in items:
+                existing = conn.execute(
+                    "SELECT id FROM fa_assessment_items WHERE step_id=%s AND item_key=%s",
+                    (step_id, item["item_key"]),
+                ).fetchone()
+                payload = (
+                    item["prompt"], json.dumps(item["options"]),
+                    int(item["correct_index"]), item["explanation"],
+                    item["difficulty"],
+                )
+                if existing:
+                    eid = existing["id"] if hasattr(existing, "keys") else existing[0]
+                    conn.execute(
+                        "UPDATE fa_assessment_items SET prompt=%s, options_json=%s, "
+                        "correct_index=%s, explanation=%s, difficulty=%s, is_active=1 "
+                        "WHERE id=%s",
+                        (*payload, eid),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO fa_assessment_items "
+                        "(step_id, item_key, prompt, options_json, correct_index, "
+                        " explanation, difficulty) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        (step_id, item["item_key"], *payload),
+                    )
+                written += 1
+    if written:
+        conn.commit()
+        _log.info("FORGE Academy: seeded %d assessment item(s)", written)
+    return written
 
 
 def load_step_content(content_path: str) -> dict:

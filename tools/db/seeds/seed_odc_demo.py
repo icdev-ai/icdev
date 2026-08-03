@@ -386,8 +386,10 @@ def seed_assessments(conn) -> int:
 
 
 def seed_audit(conn) -> int:
+    # The column is actor. `user` is also a reserved word in PostgreSQL, so this
+    # statement failed to parse there and od_audit has stayed empty (swp-scan-01).
     sql = """INSERT OR IGNORE INTO od_audit (
-        design_id, user, action, detail, classification, created_at
+        design_id, actor, action, detail, classification, created_at
     ) VALUES (?,?,?,?,?,?)"""
     count = 0
     actions = [

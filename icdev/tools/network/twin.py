@@ -9,6 +9,9 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.network.twin")
 
 
 def _now() -> str:
@@ -66,8 +69,8 @@ def take_snapshot(project_id: str, label: str | None = None) -> dict:
             (snap_id, project_id, label, device_count, link_count, taken_at),
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("take_snapshot: best-effort INSERT into network_twin_snapshots failed (non-blocking): %s", exc)
 
     return {
         "id": snap_id,

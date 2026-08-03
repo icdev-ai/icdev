@@ -46,6 +46,13 @@
 .fa-step-header { margin-bottom:1.5rem; }
 .fa-step-num { font-size:.65rem; color:var(--fa-orange); text-transform:uppercase; letter-spacing:.15em; margin:0 0 .3rem; }
 .fa-step-title { font-size:1.4rem; font-weight:800; margin:0 0 .8rem; }
+/* aca-trn-03: sits above the step content for the whole run, so it is calm —
+   a tinted panel with a cyan rule, matched to the tier-locked notice below it. */
+.fa-mission-objective { background:#101018; border:1px solid #2a2a3a;
+  border-left:3px solid var(--fa-cyan); border-radius:8px; padding:.85rem 1.1rem;
+  margin-bottom:1.2rem; font-size:.9rem; line-height:1.5; color:var(--text-primary); }
+.fa-mission-objective-label { font-size:.62rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--fa-cyan); opacity:.85; margin-bottom:.3rem; }
 .fa-step-content {
   background:var(--fa-card); border:1px solid var(--fa-border); border-radius:10px;
   padding:1.5rem; margin-bottom:1.2rem; line-height:1.7;
@@ -169,6 +176,18 @@
   {# role="region", not "main": base.html already declares role="main" on
      #main-content, and a second main landmark is itself a violation. #}
   <div class="fa-main" id="step-main" tabindex="-1" role="region" aria-label="Step content">
+    {# aca-trn-03: state the outcome before the first step, not after the last one.
+       The sidebar gives tier, type, minutes and XP — all cost — and a learner
+       started step 1 without ever being told what the mission is for. Placed above
+       the tier-locked notice deliberately: knowing what a mission teaches is what
+       makes "readable but earns no XP" a decision the learner can actually make.
+       Omitted where the content states no objective (NULL), never synthesised. #}
+    {% if mission.learning_objective %}
+    <div class="fa-mission-objective">
+      <div class="fa-mission-objective-label">Learning objective</div>
+      {{ mission.learning_objective }}
+    </div>
+    {% endif %}
     {% if tier_locked %}
     {# aca-ux-04: locked-but-readable. The content below is fully readable; the
        server refuses credit (api_step_submit), so state that plainly rather than
@@ -208,7 +227,17 @@
 
       {% set stype = step.step_type|default('coding') %}
 
-      {% if stype == 'coding' %}
+      {# aca-trn-01: a step with an authored item bank renders its questions
+         INSTEAD of its type pane. This mirrors grade_step, where `_grade_items`
+         already takes precedence over the declared step type — with a bank, the
+         step is the questions. Keeping the type pane as well would leave a second,
+         easier completion control ("✓ Understood → Continue") beside the
+         assessment, which is a way to pass a knowledge check without answering it.
+         `assessed_step_ids` comes from the blueprint; the questions themselves come
+         from STEPS[idx].assessment and carry no answer key. #}
+      {% if step.id in assessed_step_ids %}
+      {% include "forge_academy/partials/_step_assessment.html" %}
+      {% elif stype == 'coding' %}
       {% include "forge_academy/partials/_step_coding.html" %}
       {% elif stype == 'configure' %}
       {% include "forge_academy/partials/_step_configure.html" %}
@@ -389,7 +418,7 @@ function faEnrolNotice() {
 // whether it passed: `passed`, `score`, `base_xp`, `mission_xp` and
 // `mission_complete` were all read from this body and all were forgeable
 // (aca-int-01). Only the step id, the submission and the chosen option travel.
-async function submitStep(stepIdx, submission, chosenOption) {
+async function submitStep(stepIdx, submission, chosenOption, answers) {
   if (!FA_USER_ID) { faEnrolNotice(); return null; }
   const step = STEPS[stepIdx];
   const elapsed = Math.round((Date.now() - startTime) / 1000);
@@ -402,6 +431,13 @@ async function submitStep(stepIdx, submission, chosenOption) {
     };
     if (chosenOption !== undefined && chosenOption !== null) {
       payload.chosen_option = chosenOption;
+    }
+    // aca-trn-01: item_key -> the index of the option AS DISPLAYED. The server maps
+    // it back through the permutation it recorded when it served the draw, so these
+    // numbers mean nothing without that row — which is what makes reading the DOM
+    // useless to someone trying to skip the assessment.
+    if (answers && Object.keys(answers).length) {
+      payload.answers = answers;
     }
     const resp = await fetch('/api/academy/step/submit', {
       method:'POST', headers:{'Content-Type':'application/json'},

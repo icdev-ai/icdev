@@ -38,6 +38,17 @@ if _PYTEST_PG:
     os.environ["ICDEV_PG_NO_FALLBACK"] = "1"
 else:
     os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
+    # Make the backend guard's documented pytest exemption real. Its docstring
+    # says "tests/conftest.py forces sqlite for the whole pytest suite and is
+    # right to — those are short-lived, isolated databases"; the guard only means
+    # to fire where something *serves* on the fallback. Nothing implemented that,
+    # though: the exemption held only because ICDEV_PG_NO_FALLBACK is usually
+    # absent from the environment. A session spawned by the kanban scheduler
+    # inherits it from .env, and every test that builds the dashboard app then
+    # errored at create_app() with SqliteServerRefused — a pass/fail that depends
+    # on who launched pytest. This line asserts the choice the two lines above
+    # just made.
+    os.environ.setdefault("ICDEV_ALLOW_SQLITE_SERVER", "1")
     os.environ["NOCC_STORAGE_BACKEND"] = "sqlite"
     os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
     os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
@@ -54,6 +65,27 @@ os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+-- Runtime invocation telemetry (migration 341). Present here so any test that
+-- exercises an instrumented path (MCP dispatch, execute_agent, an ACE role
+-- step) records rather than tripping the recorder's missing-table latch.
+CREATE TABLE IF NOT EXISTS runtime_invocations (
+    id TEXT PRIMARY KEY,
+    surface TEXT NOT NULL,
+    name TEXT NOT NULL,
+    session_id TEXT,
+    project_id TEXT,
+    parent_id TEXT,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    duration_ms INTEGER,
+    status TEXT NOT NULL DEFAULT 'running',
+    error_class TEXT,
+    error_message TEXT,
+    arg_keys TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL DEFAULT 'unknown',
@@ -152,6 +184,11 @@ CREATE TABLE IF NOT EXISTS studio_run_memory (
     key        TEXT NOT NULL,
     value_json TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    -- RLS columns (migration 326). Must mirror tools/studio/init_db.py or a
+    -- test that runs inside a request context hits the same
+    -- "no such column: classification" the migration exists to fix.
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id      TEXT,
     PRIMARY KEY (run_id, key)
 );
 CREATE TABLE IF NOT EXISTS studio_event_sources (
@@ -512,15 +549,50 @@ CREATE TABLE IF NOT EXISTS mfa_attempts (
     ip_address TEXT,
     recorded_at TEXT NOT NULL
 );
+-- audit_trail mirrors the LIVE table (information_schema.columns on the
+-- primary PostgreSQL backend), not the older shape this fixture used to carry.
+-- It previously declared (id TEXT, tenant_id, user_id, resource, recorded_at
+-- NOT NULL) -- four columns the live table does not have, and it omitted the
+-- NOT NULL event_type/actor it does. That inversion is not cosmetic: it made
+-- the fixture reward exactly the INSERTs that are dead in production. An audit
+-- write naming `resource`/`recorded_at` passed here and raised on live PG,
+-- where the caller's best-effort `except` swallowed it, so tools/govcon and
+-- cross_agency_transfer_logger recorded nothing while their tests stayed green.
+-- Keep this in step with tools/db/init_icdev_db.py's audit_trail DDL.
 CREATE TABLE IF NOT EXISTS audit_trail (
-    id TEXT PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
     action TEXT NOT NULL,
-    resource TEXT,
     details TEXT,
+    affected_files TEXT,
     classification TEXT DEFAULT 'CUI',
-    recorded_at TEXT NOT NULL
+    ip_address TEXT,
+    session_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    hash TEXT,
+    previous_hash TEXT,
+    signature TEXT
+);
+-- ars-appr-01 / migration 342. Append-only: every approval-gate verdict for an
+-- irreversible or unenumerated agent tool call, with the actor and the reason.
+CREATE TABLE IF NOT EXISTS agent_approval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decided_at TEXT NOT NULL,
+    session_id TEXT,
+    actor TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    tier TEXT NOT NULL,
+    rule TEXT,
+    decision TEXT NOT NULL,
+    reason TEXT,
+    mode TEXT,
+    arg_keys TEXT,
+    input_sha256 TEXT,
+    detail TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
@@ -1044,6 +1116,109 @@ CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
     tenant_id TEXT,
     classification TEXT DEFAULT 'CUI'
 );
+-- Win/loss analysis (tools/win_loss/win_loss_engine.py). DDL mirrors
+-- tools/db/init_icdev_db.py. WinLossEngine.run() writes all four in one
+-- transaction and swallows the exception on failure, so a single missing table
+-- here reads as "the engine ran and persisted nothing" rather than as an error.
+CREATE TABLE IF NOT EXISTS pg_win_loss_records (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK(outcome IN ('won', 'lost', 'no_award', 'cancelled')),
+    competitor_name TEXT,
+    competitor_strengths TEXT,
+    our_strengths   TEXT,
+    our_weaknesses  TEXT,
+    lessons_learned TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_pg_winloss_opp ON pg_win_loss_records(opportunity_id);
+CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
+    id              TEXT PRIMARY KEY,
+    win_loss_id     TEXT NOT NULL,
+    category        TEXT NOT NULL CHECK(category IN ('technical', 'management', 'pricing', 'past_performance', 'compliance', 'staffing', 'other')),
+    lesson          TEXT NOT NULL,
+    actionable      INTEGER NOT NULL DEFAULT 1,
+    applied         INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS win_loss_analysis_runs (
+    id                  TEXT PRIMARY KEY,
+    run_at              TEXT,
+    outcomes_analyzed   INTEGER,
+    patterns_found      INTEGER,
+    top_win_features    TEXT,
+    top_loss_features   TEXT,
+    result_json         TEXT,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE TABLE IF NOT EXISTS win_loss_feature_impacts (
+    id                      TEXT PRIMARY KEY,
+    run_id                  TEXT,
+    feature_tag             TEXT,
+    win_count               INTEGER,
+    loss_count              INTEGER,
+    win_rate                REAL,
+    impact_score            REAL,
+    innovation_signal_id    TEXT,
+    analyzed_at             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wl_feature_impacts_run ON win_loss_feature_impacts(run_id);
+-- Cross-registration target for high-impact win/loss features. init_icdev_db.py
+-- declares pain_point_id as REFERENCES creative_pain_points(id), a parent table
+-- that is not in this fixture, so the clause is dropped rather than left
+-- dangling.
+CREATE TABLE IF NOT EXISTS creative_feature_gaps (
+    id TEXT PRIMARY KEY,
+    pain_point_id TEXT,
+    feature_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    requested_by_count INTEGER DEFAULT 0,
+    competitor_coverage TEXT DEFAULT '{}',
+    gap_score REAL DEFAULT 0.0,
+    market_demand REAL DEFAULT 0.0,
+    signal_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'identified'
+        CHECK(status IN ('identified','validated','spec_generated','addressed','rejected')),
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cfg_gap ON creative_feature_gaps(gap_score);
+-- Voice-of-customer signal capture (tools/voc/). DDL mirrors migration
+-- 069_voc_signals plus the classification column PG carries on
+-- voc_job_statements. Both tables are append-only. TranscriptIngestor.ingest()
+-- and VOCEngine._cluster_and_signal() wrap their writes in a best-effort
+-- except, so a missing table here reads as "extracted zero job statements"
+-- rather than as an error.
+CREATE TABLE IF NOT EXISTS voc_documents (
+    id                  TEXT PRIMARY KEY,
+    filename            TEXT NOT NULL,
+    source_type         TEXT NOT NULL,
+    ingested_at         TEXT NOT NULL,
+    word_count          INTEGER,
+    job_statement_count INTEGER,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE TABLE IF NOT EXISTS voc_job_statements (
+    id                  TEXT PRIMARY KEY,
+    document_id         TEXT NOT NULL,
+    raw_text            TEXT NOT NULL,
+    job_category        TEXT,
+    frequency           INTEGER,
+    severity_score      REAL,
+    strategic_fit_score REAL,
+    composite_score     REAL,
+    creative_gap_id     TEXT,
+    analyzed_at         TEXT NOT NULL,
+    classification      TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_voc_score ON voc_job_statements(composite_score);
+CREATE INDEX IF NOT EXISTS idx_voc_document_id ON voc_job_statements(document_id);
+CREATE INDEX IF NOT EXISTS idx_voc_category ON voc_job_statements(job_category);
 CREATE TABLE IF NOT EXISTS dic_handoff_sessions (
     session_id          TEXT    PRIMARY KEY,
     departing_owner_id  TEXT    NOT NULL,
@@ -3566,6 +3741,114 @@ CREATE TABLE IF NOT EXISTS fa_xp_ledger (
     created_at     TEXT    DEFAULT (datetime('now')),
     classification TEXT    DEFAULT 'CUI',
     tenant_id      TEXT);
+
+-- The instructor workflow (aca-trn-04, migration 323). An assignment targets one
+-- learner or a cohort (a role token, or 'all'); cohort membership is resolved at
+-- read time rather than frozen here, so a learner who enrols into the role
+-- afterwards inherits the assignment.
+CREATE TABLE IF NOT EXISTS fa_assignments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_type TEXT    NOT NULL DEFAULT 'mission',
+    mission_id      INTEGER,
+    track_key       TEXT,
+    target_type     TEXT    NOT NULL DEFAULT 'learner',
+    target_user_id  INTEGER,
+    target_role     TEXT,
+    due_at          TEXT,
+    note            TEXT,
+    assigned_by     TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'open',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One human verdict. override_score writes fa_mission_progress.score and never
+-- moves XP; prior_score records what it replaced so the change is reversible by
+-- inspection.
+CREATE TABLE IF NOT EXISTS fa_instructor_reviews (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    mission_id      INTEGER,
+    step_id         INTEGER,
+    assignment_id   INTEGER,
+    verdict         TEXT    NOT NULL,
+    override_score  INTEGER,
+    prior_score     INTEGER,
+    comment         TEXT,
+    reviewer        TEXT    NOT NULL,
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only (registered in APPEND_ONLY_TABLES). A grade override that cannot be
+-- attributed to a person is indistinguishable from a bug in the grader.
+CREATE TABLE IF NOT EXISTS fa_instructor_audit (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    action          TEXT    NOT NULL,
+    actor           TEXT    NOT NULL,
+    actor_role      TEXT,
+    subject_type    TEXT,
+    subject_id      TEXT,
+    detail_json     TEXT    DEFAULT '{}',
+    tenant_id       TEXT,
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+-- The assessment model (aca-trn-01, migration 324). classify_step runs on every
+-- mission page render, so these have to exist wherever a step row does: a query
+-- against a missing table inside an open transaction aborts that transaction on
+-- PostgreSQL, which is why fa_xp_ledger above is declared here too.
+CREATE TABLE IF NOT EXISTS fa_assessment_items (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id        INTEGER NOT NULL,
+    item_key       TEXT    NOT NULL,
+    prompt         TEXT    NOT NULL,
+    options_json   TEXT    NOT NULL DEFAULT '[]',
+    -- Server-only. Never selected into a client payload.
+    correct_index  INTEGER NOT NULL DEFAULT 0,
+    explanation    TEXT,
+    difficulty     TEXT    DEFAULT 'core',
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id, item_key));
+
+-- Append-only (registered in APPEND_ONLY_TABLES). served_json records which items
+-- were drawn and the permutation mapping displayed option positions back to the
+-- authored ones — without it the indices a client posts are meaningless.
+CREATE TABLE IF NOT EXISTS fa_step_attempts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    step_id        INTEGER NOT NULL,
+    kind           TEXT    NOT NULL DEFAULT 'attempt',
+    attempt_num    INTEGER NOT NULL DEFAULT 1,
+    policy         TEXT    NOT NULL DEFAULT 'practice',
+    served_json    TEXT    NOT NULL DEFAULT '[]',
+    answers_json   TEXT,
+    score_pct      INTEGER,
+    passed         INTEGER,
+    closed_at      TEXT,
+    reason         TEXT,
+    actor          TEXT,
+    classification TEXT    DEFAULT 'CUI',
+    tenant_id      TEXT,
+    created_at     TEXT    DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS fa_step_assessment_policy (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id            INTEGER NOT NULL,
+    policy             TEXT    NOT NULL DEFAULT 'practice',
+    -- NULL means "use the constant", so raising a threshold moves every step that
+    -- never asked for something different.
+    items_per_attempt  INTEGER,
+    pass_threshold_pct INTEGER,
+    max_attempts       INTEGER,
+    updated_at         TEXT,
+    created_at         TEXT    DEFAULT (datetime('now')),
+    UNIQUE(step_id));
 """
 
 

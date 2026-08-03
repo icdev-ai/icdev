@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Optional
 
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.dashboard.nlq_processor")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -286,8 +289,9 @@ def log_nlq_query(
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Best-effort logging
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Best-effort logging
+        logger.warning("log_nlq_query: best-effort INSERT into nlq_queries failed (non-blocking): %s", exc)
 
 
 def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:

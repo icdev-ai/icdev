@@ -43,6 +43,9 @@ if str(_ROOT) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.common.helpers import row_to_dict  # noqa: E402
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.idiq_factory")
 
 
 # ── Constants ─────────────────────────────────────────────────────────
@@ -160,8 +163,9 @@ def _audit(conn, event_type, action, details):
                 "VALUES (%s, %s, %s, %s, %s, %s)",
                 (None, event_type, "idiq_factory", action, det, None),
             )
-        except Exception:
-            pass  # audit is best-effort
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            # audit is best-effort
+            logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _ensure_tables(conn):

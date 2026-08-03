@@ -40,6 +40,8 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from tests import _sql_compat  # noqa: E402
+
 TEMPLATE_DIR = REPO / "tools" / "dashboard" / "templates"
 
 _STUBS = {
@@ -56,41 +58,17 @@ _STUBS = {
 }
 
 
-class _FakeConn:
-    """Thin sqlite3 wrapper translating PostgreSQL %s placeholders to ?.
+def _working_factory(db_path):
+    """A get_connection() stand-in that translates %s -> ? the way the runtime does.
 
-    Supports both `with get_connection() as conn` and the explicit
-    `conn = get_connection(); ...; conn.close()` patterns the blueprint uses.
+    _sql_compat.connect() supports both `with get_connection() as conn` and the
+    explicit `conn = get_connection(); ...; conn.close()` patterns the blueprint
+    uses, and delegates translation to the same translate_sql the runtime calls
+    so this harness cannot drift from the behaviour it stands in for.
     """
 
-    def __init__(self, path):
-        self._c = sqlite3.connect(path)
-        self._c.row_factory = sqlite3.Row
-
-    def execute(self, sql, params=()):
-        return self._c.execute(sql.replace("%s", "?"), params)
-
-    def commit(self):
-        self._c.commit()
-
-    def close(self):
-        self._c.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if exc_type is None:
-            self._c.commit()
-        else:
-            self._c.rollback()
-        self._c.close()
-        return False
-
-
-def _working_factory(db_path):
     def factory():
-        return _FakeConn(db_path)
+        return _sql_compat.connect(db_path)
 
     return factory
 

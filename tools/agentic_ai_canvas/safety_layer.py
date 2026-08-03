@@ -98,8 +98,9 @@ def _forward_siem(design_id: str, event_type: str, state: str, detail: str) -> N
             conn.commit()
         finally:
             conn.close()
-    except Exception:
-        pass  # Table may not exist in all deployments — that's fine
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        # Table may not exist in all deployments — that's fine
+        logger.warning("_forward_siem: best-effort INSERT into siem_events failed (non-blocking): %s", exc)
 
 
 # ---------------------------------------------------------------------------

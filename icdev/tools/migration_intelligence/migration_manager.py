@@ -22,6 +22,9 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.migration_intelligence.migration_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -223,29 +226,33 @@ def stage_promote(db_path=None) -> dict:
 
 def _promote_to_kanban(opp: dict) -> None:
     """Create a Kanban suggestion task for an opportunity."""
+    # swp-scan-01: this targeted `tasks` (an 8-column legacy table with no
+    # description/updated_at) rather than the `kanban_tasks` board, and used
+    # SQLite-only `INSERT OR IGNORE`, which PostgreSQL cannot even parse. Both
+    # failures landed in the bare `except` below, so no opportunity was ever
+    # promoted. task_factory is the sanctioned writer and skips existing ids.
     try:
-        from tools.db.storage import get_connection as get_icdev_conn
-        conn = get_icdev_conn()
-        try:
-            task_id = f"mi-opp-{uuid.uuid4().hex[:8]}"
-            conn.execute(
-                """INSERT OR IGNORE INTO tasks
-                   (id, title, description, status, priority, created_at, updated_at)
-                   VALUES (%s,%s,%s,'suggested',%s,%s,%s)""",
-                (
-                    task_id,
-                    f"[Migration Intel] {opp['title'][:100]}",
-                    f"Migration opportunity identified (score: {opp['composite_score']:.2f}). "
-                    f"Review strategies and schedule for roadmap wave.",
-                    opp.get("priority", "medium"),
-                    _now(), _now(),
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception:
-        pass
+        from tools.kanban.task_factory import create_tasks
+
+        task_id = f"mi-opp-{uuid.uuid4().hex[:8]}"
+        create_tasks(
+            [
+                {
+                    "id": task_id,
+                    "title": f"[Migration Intel] {opp['title'][:100]}",
+                    "description": (
+                        f"Migration opportunity identified "
+                        f"(score: {opp['composite_score']:.2f}). "
+                        f"Review strategies and schedule for roadmap wave."
+                    ),
+                    "status": "suggested",
+                    "priority": opp.get("priority", "medium"),
+                    "dispatch_source": "migration_intelligence",
+                }
+            ]
+        )
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_promote_to_kanban: best-effort task creation failed (non-blocking): %s", exc)
 
 
 # =========================================================================

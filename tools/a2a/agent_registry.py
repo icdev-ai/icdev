@@ -14,6 +14,7 @@ Provides:
 import argparse
 import json
 import sqlite3
+import sys
 from tools.db.storage import get_connection
 from tools.common.helpers import row_to_dict
 from pathlib import Path
@@ -92,7 +93,7 @@ def register_agent(
         c.execute("SELECT * FROM agents WHERE id = %s", (agent_id,))
         row = c.fetchone()
         result = row_to_dict(row)
-        print(f"Agent registered: {agent_id} ({name}) at {url}")
+        print(f"Agent registered: {agent_id} ({name}) at {url}", file=sys.stderr)
         return result
     finally:
         conn.close()
@@ -115,9 +116,9 @@ def deregister_agent(agent_id: str, db_path: Path = None) -> bool:
         conn.commit()
         changed = c.rowcount > 0
         if changed:
-            print(f"Agent deregistered: {agent_id}")
+            print(f"Agent deregistered: {agent_id}", file=sys.stderr)
         else:
-            print(f"Agent not found: {agent_id}")
+            print(f"Agent not found: {agent_id}", file=sys.stderr)
         return changed
     finally:
         conn.close()
@@ -312,7 +313,7 @@ def register_all_from_cards(db_path: Path = None) -> List[dict]:
     """
     registered = []
     if not AGENT_CARDS_DIR.exists():
-        print(f"Agent cards directory not found: {AGENT_CARDS_DIR}")
+        print(f"Agent cards directory not found: {AGENT_CARDS_DIR}", file=sys.stderr)
         return registered
 
     for card_file in sorted(AGENT_CARDS_DIR.glob("*.json")):
@@ -331,7 +332,7 @@ def register_all_from_cards(db_path: Path = None) -> List[dict]:
             )
             registered.append(agent)
         except (json.JSONDecodeError, IOError) as e:
-            print(f"Error loading {card_file}: {e}")
+            print(f"Error loading {card_file}: {e}", file=sys.stderr)
 
     return registered
 

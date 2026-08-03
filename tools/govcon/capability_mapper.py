@@ -32,9 +32,13 @@ import json
 import os
 import sqlite3
 import sys
+import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.capability_mapper")
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
@@ -62,8 +66,8 @@ def _audit(conn, action, details="", actor="capability_mapper"):
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (_now(), "govcon.capability_map", actor, action, details, "govcon"),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _load_config():
@@ -246,18 +250,25 @@ def map_all_patterns(store=True):
 
             if store:
                 try:
+                    # created_at is mapped_at on the live table, and
+                    # capability_name is NOT NULL (swp-scan-01). The statement
+                    # also bound only 7 values to 8 columns, so the pattern id
+                    # was landing in `id` and every value after it was shifted
+                    # one column left.
                     conn.execute(
                         "INSERT INTO icdev_capability_map "
-                        "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "  # noqa: E501
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        "(id, pattern_id, capability_id, capability_name, coverage_score, grade, matched_keywords, mapped_at, metadata) "  # noqa: E501
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (
+                            f"cap-{uuid.uuid4().hex[:12]}",
                             p_dict["id"],
                             m["capability_id"],
+                            m["capability_name"],
                             m["score"],
                             m["grade"],
                             json.dumps(m["matched_keywords"]),
                             _now(),
-                            json.dumps({"capability_name": m["capability_name"], "evidence": m["evidence"]}),
+                            json.dumps({"evidence": m["evidence"]}),
                         ),
                     )
                     stored_count += 1
@@ -294,18 +305,21 @@ def map_single_pattern(pattern_id, store=True):
     if store:
         for m in mappings:
             try:
+                # Same defect as map_all_patterns above (swp-scan-01).
                 conn.execute(
                     "INSERT INTO icdev_capability_map "
-                    "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    "(id, pattern_id, capability_id, capability_name, coverage_score, grade, matched_keywords, mapped_at, metadata) "  # noqa: E501
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
+                        f"cap-{uuid.uuid4().hex[:12]}",
                         pattern_id,
                         m["capability_id"],
+                        m["capability_name"],
                         m["score"],
                         m["grade"],
                         json.dumps(m["matched_keywords"]),
                         _now(),
-                        json.dumps({"capability_name": m["capability_name"], "evidence": m["evidence"]}),
+                        json.dumps({"evidence": m["evidence"]}),
                     ),
                 )
             except sqlite3.IntegrityError:

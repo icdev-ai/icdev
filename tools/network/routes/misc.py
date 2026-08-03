@@ -567,8 +567,8 @@ def register_misc_routes(bp):
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning("_audit_ato_export: best-effort INSERT into nc_nqe_audit_log failed (non-blocking): %s", exc)
 
     def _ato_safe(text):
         """Coerce to latin-1-safe string for fpdf2 core fonts."""
@@ -1038,14 +1038,19 @@ def register_misc_routes(bp):
             from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             conn.execute(
-                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                # `nql_generated`, not `nql_query` (swp-scan-01) — every NQE
+                # audit write raised UndefinedColumn into a bare except.
+                "INSERT INTO nc_nqe_audit_log (action, nql_generated, user_confirmed, created_at) "
                 "VALUES (%s, %s, %s, NOW())",
                 ("translate", nql, False),
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "api_nqe_translate: best-effort INSERT into nc_nqe_audit_log failed (non-blocking): %s",
+                _exc,
+            )
 
         return jsonify({"nql": nql, "confidence": confidence, "source": source})
 
@@ -1111,14 +1116,15 @@ def register_misc_routes(bp):
                 from tools.db.storage import get_canvas_connection
                 conn = get_canvas_connection("NC_STORAGE_BACKEND")
                 conn.execute(
-                    "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, row_count, created_at) "
+                    # `nql_generated`, not `nql_query` (swp-scan-01).
+                    "INSERT INTO nc_nqe_audit_log (action, nql_generated, user_confirmed, row_count, created_at) "
                     "VALUES (%s, %s, %s, %s, NOW())",
                     ("run", nql, True, len(rows)),
                 )
                 conn.commit()
                 conn.close()
-            except Exception:
-                pass
+            except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning("api_nqe_run: best-effort INSERT into nc_nqe_audit_log failed (non-blocking): %s", _exc)
 
             return jsonify({
                 "rows": rows[:500],
@@ -1172,7 +1178,9 @@ def register_misc_routes(bp):
             from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             cur = conn.execute(
-                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                # `nql_generated`, not `nql_query` (swp-scan-01) — every NQE
+                # audit write raised UndefinedColumn into a bare except.
+                "INSERT INTO nc_nqe_audit_log (action, nql_generated, user_confirmed, created_at) "
                 "VALUES (%s, %s, %s, NOW()) RETURNING id",
                 (action, nql, user_confirmed),
             )
@@ -1268,7 +1276,9 @@ def register_misc_routes(bp):
             from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             conn.execute(
-                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                # `nql_generated`, not `nql_query` (swp-scan-01) — every NQE
+                # audit write raised UndefinedColumn into a bare except.
+                "INSERT INTO nc_nqe_audit_log (action, nql_generated, user_confirmed, created_at) "
                 "VALUES (%s, %s, %s, NOW())",
                 ("hitl_approve", audit_payload, True),
             )

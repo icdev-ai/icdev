@@ -27,6 +27,7 @@ Checks:
  17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
  18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
  19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
+ 20. swallowed_persistence — no `except Exception: pass` guarding an INSERT in tools/; best-effort must log (swp-swallow-01)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -237,6 +238,16 @@ def _blueprint_has_route(bp_file: Path) -> bool:
 def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
     """Extract table_name → [column_names] from SQL CREATE TABLE statements."""
     tables: Dict[str, List[str]] = {}
+    # Drop comment-only lines BEFORE matching. The body capture below is
+    # non-greedy up to the first `);`, so a `);` occurring inside a `--` comment
+    # ends the match early and silently truncates the column list — every column
+    # after the comment then reads as "not in the schema". Stripping the comments
+    # afterwards (as the per-segment pass does) is too late to help. Only whole
+    # comment lines are removed, never a mid-line `--`, which could sit inside a
+    # Python string literal in the surrounding source (swp-scan-01).
+    sql_text = "\n".join(
+        line for line in sql_text.splitlines() if not line.lstrip().startswith("--")
+    )
     pattern = re.compile(
         r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\);",
         re.DOTALL | re.IGNORECASE,
@@ -406,6 +417,12 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 #: is inert — the opposite of what the pinning is for.
 _SCHEMA_CODE_BACKEND_PINNED = frozenset({
     "tools/rag/sqlite_vector_store.py",
+    # Builds each affected table in its *pre*-migration-329 shape on a throwaway
+    # SQLite database in order to assert the INSERT fails before the migration and
+    # succeeds after. Its simulation_results INSERT names the Network Canvas columns
+    # on purpose — that is the shape being migrated away from, so measuring it
+    # against the post-migration DDL in init_icdev_db.py is the wrong comparison.
+    "tests/test_insert_column_schema_parity.py",
 })
 
 
@@ -2808,6 +2825,104 @@ def check_sandbox_coverage() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: Swallowed Persistence (swp-swallow-01)
+# ---------------------------------------------------------------------------
+
+
+def check_swallowed_persistence(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """swp-swallow-01 — ban ``except Exception: pass`` around an INSERT.
+
+    A broad handler whose body is exactly ``pass`` over a try block that
+    writes means the write can fail forever and nothing ever reports it.
+    That silence is what let a batch of defects survive undetected long
+    enough to be worth a card of their own.
+
+    Best-effort persistence stays legal — the rule is only that it must be
+    *audible*. Keep the ``except Exception``, add a ``logger.warning``.
+    Narrow handlers, handlers that re-raise or return, and handlers that
+    already log are all untouched by this check.
+
+    Detection is shared with the fixer via
+    :mod:`tools.refactor.swallowed_persistence` so the gate and the tool
+    can never drift apart on what counts as a violation.
+    """
+    check_name = "Swallowed Persistence (swp-swallow-01)"
+    expected = ["no `except Exception: pass` around an INSERT in tools/"]
+
+    try:
+        from tools.refactor.swallowed_persistence import find_sites
+    except ImportError as exc:
+        # A missing detector must not silently pass the very gate it backs.
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=["detector unavailable"],
+            missing=["tools/refactor/swallowed_persistence.py"],
+            extra=[],
+            message=(
+                "cannot import tools.refactor.swallowed_persistence — the "
+                f"swallowed-persistence gate cannot run: {exc}"
+            ),
+        )
+
+    targets = _scan_targets(changed_files, "tools") + _scan_targets(
+        changed_files, "icdev/tools"
+    )
+    if changed_files and not targets:
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no Python files under tools/ in this diff"],
+            missing=[],
+            extra=[],
+            message="no scanned files in diff — swallowed-persistence gate skipped",
+        )
+
+    sites = find_sites(targets, PROJECT_ROOT)
+    if sites:
+        offenders = [
+            f"{site.rel}:{site.handler_lineno}"
+            f" ({site.func_name or '<module>'} -> {site.table})"
+            for site in sites
+        ]
+        return CoherenceCheck(
+            check_id="swallowed_persistence",
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=[f"{len(sites)} swallowed INSERT site(s)"],
+            missing=[],
+            extra=offenders,
+            message=(
+                f"{len(sites)} `except Exception: pass` block(s) guard an INSERT "
+                "— the write can fail forever and nothing reports it. Keep the "
+                "best-effort behaviour and add a logger.warning (see "
+                "tools/canvas/event_bus.py::_audit_event), or narrow the "
+                f"handler. Offenders: {', '.join(offenders[:5])}"
+                + (" ..." if len(offenders) > 5 else "")
+            ),
+        )
+
+    scope = "diff" if changed_files else f"{len(targets)} files"
+    return CoherenceCheck(
+        check_id="swallowed_persistence",
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=[f"no swallowed INSERT sites ({scope})"],
+        missing=[],
+        extra=[],
+        message=f"no `except Exception: pass` guarding an INSERT ({scope})",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check: Direct Anthropic Import (OPT-44)
 # ---------------------------------------------------------------------------
 
@@ -4988,8 +5103,29 @@ def check_spec_discipline(changed_files: Optional[List[Path]] = None) -> Coheren
         and "test" not in f.name.lower()
         and f.exists()
         and str(f).startswith(str(PROJECT_ROOT / "tools"))
+        # Migrations are exempt. Every migration is `<n>_<slug>/up.py`, so the
+        # basename rule below demands `test_up.py` for all of them — one
+        # filename that cannot serve more than one migration. Migration 309,
+        # long merged, fails this rule identically, and no migration in this
+        # repo has ever had a test_up.py. A migration is verified by applying
+        # it and by the schema invariants its feature tests assert, not by a
+        # same-named file.
+        and "db/migrations/" not in f.as_posix()
     ]
     test_files = {f.stem for f in changed_files if f.name.startswith("test_")}
+
+    # Text of every changed test file, so coverage can be judged by whether a
+    # test actually references the module rather than by whether someone
+    # happened to name the file test_<basename>.py. The basename rule alone is
+    # a lottery for any name that repeats across the tree — `init_db.py` exists
+    # in ~10 canvases and they cannot all map to one `test_init_db.py`.
+    changed_test_text = ""
+    for f in changed_files:
+        if f.name.startswith("test_") and f.exists():
+            try:
+                changed_test_text += f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                pass
 
     for impl in impl_files:
         # (b) Beyoncé Rule — new functions without a test file
@@ -5002,10 +5138,21 @@ def check_spec_discipline(changed_files: Optional[List[Path]] = None) -> Coheren
             ]
             if new_fns:
                 expected_test = f"test_{impl.stem}"
-                if expected_test not in test_files:
+                try:
+                    rel = impl.relative_to(PROJECT_ROOT).as_posix()
+                except ValueError:
+                    rel = impl.as_posix()
+                module_path = rel[:-3].replace("/", ".")  # tools/a/b.py -> tools.a.b
+                referenced = (
+                    rel in changed_test_text
+                    or module_path in changed_test_text
+                    or any(fn in changed_test_text for fn in new_fns)
+                )
+                if expected_test not in test_files and not referenced:
                     failures.append(
                         f"[beyonce-rule] {impl.name}: {len(new_fns)} public function(s) "
-                        f"but no {expected_test}.py in changed files"
+                        f"but no {expected_test}.py in changed files, and no changed "
+                        f"test references {module_path}"
                     )
         except (SyntaxError, OSError):
             pass
@@ -5761,8 +5908,41 @@ def _is_sqlite_connect(call: ast.AST) -> bool:
     )
 
 
+def _safe_connection_names(tree: ast.AST, safe_factories: Set[str]) -> Set[str]:
+    """Extend the safe factories with local names bound to a translating connection.
+
+    ``real_conn = _storage_conn(db_path)`` followed by
+    ``recording_conn = _RecordingConn(real_conn)`` is the SQL-recorder pattern:
+    the proxy sits in FRONT of the storage wrapper, so what reaches runtime code
+    still translates ``%s``. Resolving only the factory call would flag the
+    proxy — rejecting the remedy again, one indirection later.
+
+    Propagation is transitive but bounded, and an assignment that reaches
+    ``sqlite3.connect`` anywhere in its value stays raw, so wrapping a raw
+    connection in a proxy is still caught.
+    """
+    safe = set(safe_factories)
+    for _ in range(3):  # factory -> connection -> proxy is the deepest real chain
+        grew = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not targets or all(t in safe for t in targets):
+                continue
+            if any(_is_sqlite_connect(sub) for sub in ast.walk(node.value)):
+                continue
+            refs = {sub.id for sub in ast.walk(node.value) if isinstance(sub, ast.Name)}
+            if refs & safe:
+                safe.update(targets)
+                grew = True
+        if not grew:
+            break
+    return safe
+
+
 def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
-    """Names of local factories that hand back a ``tests/_sql_compat`` connection.
+    """Names of local factories that hand back a placeholder-translating connection.
 
     ``_sql_compat.connect``/``translating`` ARE the sanctioned wrapper — they
     delegate to the same ``translate_sql`` the runtime uses. A file that fixes one
@@ -5770,51 +5950,141 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
     elsewhere for schema setup or for its own assertions, and that residue must
     not keep the file flagged: doing so makes the gate reject its own remedy.
 
+    ``tools.db.storage.get_connection`` counts for the same reason, and more
+    strongly: it is not a stand-in for the runtime wrapper, it IS the runtime
+    wrapper, so a fixture built on it cannot drift from production at all. A
+    factory returning one was still being flagged, which is the remedy-rejection
+    this function exists to prevent.
+
     Only the factory actually named in the patch call is cleared. A second,
     still-raw factory in the same file stays a violation.
     """
     compat_calls: Set[str] = set()
+    # Names bound to the real storage factory: `from tools.db.storage import
+    # get_connection as _real` and `import tools.db.storage as s` both appear.
+    storage_calls: Set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("_sql_compat"):
-            for alias in node.names:
-                compat_calls.add(alias.asname or alias.name)
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module.endswith("_sql_compat"):
+                for alias in node.names:
+                    compat_calls.add(alias.asname or alias.name)
+            elif module.endswith("db.storage"):
+                for alias in node.names:
+                    if alias.name in ("get_connection", "get_canvas_connection"):
+                        storage_calls.add(alias.asname or alias.name)
 
-    def _returns_compat(fn: ast.AST) -> bool:
-        raw = False
-        compat = False
+    def _is_compat_call(sub: ast.AST) -> bool:
+        if not isinstance(sub, ast.Call):
+            return False
+        fname = sub.func
+        # `storage_calls` too: get_connection/get_canvas_connection ARE the
+        # sanctioned translating factories (CLAUDE.md), so a fixture that hands
+        # one back is as safe as one wrapping _sql_compat — flagging it sent
+        # authors toward the raw connect this check exists to stop.
+        if isinstance(fname, ast.Name) and fname.id in (compat_calls | storage_calls):
+            return True
+        return (
+            isinstance(fname, ast.Attribute)
+            and fname.attr in ("connect", "translating")
+            and isinstance(fname.value, ast.Name)
+            and fname.value.id.endswith("_sql_compat")
+        )
+
+    def _has_unwrapped_raw_connect(fn: ast.AST) -> bool:
+        # ``translating(conn)`` takes a raw sqlite3 handle by design — the
+        # fixture needs one anyway to create its schema. Counting the wrapper's
+        # own INPUT as residue made this gate reject the remedy it prescribes,
+        # so a raw connect is only residue when nothing wraps it.
+        wrapped_nodes: Set[int] = set()
+        wrapped_names: Set[str] = set()
         for sub in ast.walk(fn):
-            if _is_sqlite_connect(sub):
-                raw = True
-            elif isinstance(sub, ast.Call):
-                fname = sub.func
-                if isinstance(fname, ast.Name) and fname.id in compat_calls:
-                    compat = True
-                elif (
-                    isinstance(fname, ast.Attribute)
-                    and fname.attr in ("connect", "translating")
-                    and isinstance(fname.value, ast.Name)
-                    and fname.value.id.endswith("_sql_compat")
-                ):
-                    compat = True
-        return compat and not raw
+            if not _is_compat_call(sub):
+                continue
+            for arg in sub.args:
+                if _is_sqlite_connect(arg):
+                    wrapped_nodes.add(id(arg))
+                elif isinstance(arg, ast.Name):
+                    wrapped_names.add(arg.id)
 
-    safe: Set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _returns_compat(node):
-            safe.add(node.name)
+        # Names bound to a raw connect that is later handed to the wrapper.
+        bound: dict[int, str] = {}
+        for sub in ast.walk(fn):
+            if isinstance(sub, ast.Assign) and _is_sqlite_connect(sub.value):
+                for tgt in sub.targets:
+                    if isinstance(tgt, ast.Name):
+                        bound[id(sub.value)] = tgt.id
+
+        for sub in ast.walk(fn):
+            if not _is_sqlite_connect(sub):
+                continue
+            if id(sub) in wrapped_nodes:
+                continue
+            if bound.get(id(sub)) in wrapped_names:
+                continue
+            return True  # a raw connect nothing wraps — still a violation
+        return False
+
+    funcs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    safe: Set[str] = {
+        fn.name for fn in funcs
+        if any(_is_compat_call(sub) for sub in ast.walk(fn)) and not _has_unwrapped_raw_connect(fn)
+    }
+
+    # A helper that hands back what a safe factory produced is itself safe:
+    # ``def shim(): return _shim_conn()`` and the contextmanager
+    # ``def _gc(): yield shim`` are both one level removed from the wrapper, and
+    # it is _gc that gets named in the patch call. Without this the gate flags a
+    # fixture that IS correctly wrapped, just indirectly — which is exactly how
+    # the already-merged canvas emitter fixtures still read as violations.
+    # The unwrapped-raw-connect guard still applies, so indirection cannot
+    # launder a factory that really does hand out a bare sqlite3 handle.
+    changed = True
+    while changed:
+        changed = False
+        for fn in funcs:
+            if fn.name in safe or _has_unwrapped_raw_connect(fn):
+                continue
+            for sub in ast.walk(fn):
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name):
+                    ref = sub.func.id
+                elif isinstance(sub, (ast.Return, ast.Yield)) and isinstance(sub.value, ast.Name):
+                    ref = sub.value.id
+                else:
+                    continue
+                if ref in safe:
+                    safe.add(fn.name)
+                    changed = True
+                    break
     return safe
 
 
 def _patch_replacement_names(node: ast.Call) -> Set[str]:
-    """Names supplied as the replacement in a patch/setattr call."""
+    """Names supplied as the replacement in a patch/setattr call.
+
+    The replacement is usually the factory itself (``side_effect=_conn``), but
+    a factory that needs the tmp path is passed wrapped —
+    ``side_effect=lambda *a, **kw: _storage_conn(db_path)``. Both name the same
+    safe factory, so the wrapped form is unwrapped by collecting the names it
+    calls; treating it as unrecognised flags the fix as the bug.
+    """
     names: Set[str] = set()
+
+    def _add(value: ast.AST) -> None:
+        if isinstance(value, ast.Name):
+            names.add(value.id)
+        elif isinstance(value, ast.Lambda):
+            # patch(target, lambda: shim) — the fixture is named in the body.
+            for sub in ast.walk(value.body):
+                if isinstance(sub, ast.Name):
+                    names.add(sub.id)
+
     for kw in node.keywords:
-        if kw.arg in ("side_effect", "new", "return_value") and isinstance(kw.value, ast.Name):
-            names.add(kw.value.id)
+        if kw.arg in ("side_effect", "new", "return_value"):
+            _add(kw.value)
     # monkeypatch.setattr(target, "get_connection", _conn) — trailing positional.
     for arg in node.args:
-        if isinstance(arg, ast.Name):
-            names.add(arg.id)
+        _add(arg)
     return names
 
 
@@ -5869,7 +6139,12 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
         # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
         # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
         # runtime %s query then hits an untranslated raw sqlite3 connection.
-        safe_factories = _sql_compat_factory_names(tree)
+        # Trigger 1 wants the file-wide set: a patch replacement may name a
+        # connection bound anywhere in the file. Trigger 2 must NOT reuse it --
+        # it resolves per scope, and a file-wide set already contains the very
+        # names it needs to judge, which would clear every one of them.
+        compat_factories = _sql_compat_factory_names(tree)
+        safe_factories = _safe_connection_names(tree, compat_factories)
 
         flagged = False
         for node in ast.walk(tree):
@@ -5895,25 +6170,77 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
 
         # Trigger 2: a raw-sqlite-bound name passed as conn=<name> into a call while
         # %s SQL literals are present in the file.
+        #
+        # Resolved per function scope, not file-wide. `conn` is the obvious name for
+        # a connection, so one test binding it to sqlite3.connect for a read-only
+        # assertion and another binding it to a translating fixture is normal and
+        # correct. Pooling both into one set made the first taint the second and
+        # flagged the fixture that IS the fix -- the gate rejecting its own remedy,
+        # which is what tests/unit/test_audit_trail.py hit.
         if has_pct_s:
-            raw_names: Set[str] = set()
-            for node in ast.walk(tree):
+            # Module scope is the only shared scope: a name bound at module level IS
+            # visible to every function, so it is resolved once and inherited. Both
+            # halves -- raw and safe -- must come from `tree.body` alone. Reusing the
+            # file-wide `safe_factories` here would re-open the very leak this block
+            # closes, one level down: `conn = _factory()` inside ONE test would enter
+            # that set and clear `conn` for every other test in the file.
+            module_body = ast.Module(
+                body=[n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))],
+                type_ignores=[],
+            )
+            module_raw: Set[str] = set()
+            for node in module_body.body:
                 if isinstance(node, ast.Assign) and _is_sqlite_connect(node.value):
                     for tgt in node.targets:
                         if isinstance(tgt, ast.Name):
-                            raw_names.add(tgt.id)
-            if raw_names:
-                for node in ast.walk(tree):
-                    if not isinstance(node, ast.Call):
-                        continue
-                    for kw in node.keywords:
-                        if kw.arg == "conn" and isinstance(kw.value, ast.Name) and kw.value.id in raw_names:
-                            violations.append(
-                                f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
-                                f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
-                                f"Wrap in StorageConnection(conn, 'sqlite')."
-                            )
-                            break
+                            module_raw.add(tgt.id)
+            # Factory *functions* stay file-wide -- they are defs, not connections,
+            # so they cannot carry a per-test binding across scopes.
+            module_safe = _safe_connection_names(module_body, compat_factories)
+
+            # ast.walk is breadth-first, so the OUTERMOST enclosing function wins the
+            # setdefault. That is the conservative direction: a call inside a nested
+            # helper is judged against the whole outer test, whose scope walk already
+            # includes the helper's raw bindings.
+            enclosing: Dict[int, ast.AST] = {}
+            for fn in ast.walk(tree):
+                if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for sub in ast.walk(fn):
+                        enclosing.setdefault(id(sub), fn)
+
+            raw_cache: Dict[int, Set[str]] = {}
+
+            def _raw_in_scope(scope: ast.AST) -> Set[str]:
+                cached = raw_cache.get(id(scope))
+                if cached is not None:
+                    return cached
+                raw = set(module_raw)
+                if scope is not tree:
+                    for sub in ast.walk(scope):
+                        if isinstance(sub, ast.Assign) and _is_sqlite_connect(sub.value):
+                            for tgt in sub.targets:
+                                if isinstance(tgt, ast.Name):
+                                    raw.add(tgt.id)
+                    # A name rebound from a translating factory in this scope is not raw.
+                    raw -= _safe_connection_names(scope, module_safe)
+                raw_cache[id(scope)] = raw
+                return raw
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                for kw in node.keywords:
+                    if (
+                        kw.arg == "conn"
+                        and isinstance(kw.value, ast.Name)
+                        and kw.value.id in _raw_in_scope(enclosing.get(id(node), tree))
+                    ):
+                        violations.append(
+                            f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
+                            f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
+                            f"Wrap in StorageConnection(conn, 'sqlite')."
+                        )
+                        break
 
     if violations:
         tier = "fail" if changed_files else "warn"
@@ -6776,6 +7103,342 @@ def check_doc_command_paths(changed_files: Optional[List[Path]] = None) -> Coher
 
 
 # ---------------------------------------------------------------------------
+# Check 20: INSERT column lists vs the LIVE database schema (swp-gate-01)
+# ---------------------------------------------------------------------------
+#
+# `check_schema_code` compares INSERT columns against the CREATE TABLE text in
+# tools/db/init_icdev_db.py. That misses the failure mode this gate exists for:
+# `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a table
+# created by an older migration keeps its old columns while the DDL in the
+# source moves on. Code and database disagree with nothing in the source tree
+# recording the disagreement. An automated pass against live PostgreSQL found
+# 95 INSERT statements naming columns that do not exist — each one raises at
+# runtime inside `except Exception: pass`, so the feature reports success and
+# persists nothing (module_budget_usage held 0 rows; audit_trail has never
+# received a row from tools/govcon).
+#
+# This check therefore reads the LIVE schema — information_schema.columns on
+# PostgreSQL, PRAGMA table_info on SQLite — not the DDL.
+
+_INSERT_SCHEMA_CONFIG = PROJECT_ROOT / "args" / "insert_schema_gate.yaml"
+
+#: `INSERT [OR REPLACE] INTO [schema.]table (col, ...) VALUES|SELECT`.
+#: The column group excludes parentheses so a function call or a nested SELECT
+#: in the column position simply fails to match rather than mis-parsing.
+_INSERT_COLUMN_LIST_RE = re.compile(
+    r"INSERT\s+(?:OR\s+(?:REPLACE|IGNORE|ABORT|FAIL|ROLLBACK)\s+)?INTO\s+"
+    r'(?:["`\[]?\w+["`\]]?\s*\.\s*)?'  # optional schema/database qualifier
+    r'["`\[]?(?P<table>\w+)["`\]]?\s*'
+    r"\(\s*(?P<cols>[^()]+?)\s*\)\s*(?:VALUES|SELECT)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: Names a module binds when it obtains its own database handle.
+_CONNECTION_FACTORY_NAMES = frozenset({"get_connection", "get_canvas_connection", "get_conn"})
+
+
+def _uses_foreign_database(source: str) -> bool:
+    """True if *source* gets its connection from outside the ICDEV package tree.
+
+    ``tools/ais/ais_importer.py`` imports ``get_connection`` from
+    ``apps.geosigint.models`` and writes to that app's own ``sg_tracks`` — a
+    table whose name also exists, with a completely different shape, in the
+    ICDEV database. Validating it against the ICDEV schema reports nine columns
+    "missing" that are all present in the database the module actually writes
+    to. Canvas ``db/init_db.py`` modules are NOT foreign: every one of them
+    delegates to ``tools.db.storage`` on PostgreSQL, so their tables really do
+    live in the schema this check reads.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if not any(alias.name in _CONNECTION_FACTORY_NAMES for alias in node.names):
+            continue
+        if getattr(node, "level", 0):  # relative import — in-tree by definition
+            continue
+        root = (node.module or "").split(".")[0]
+        if root and root not in ("tools", "icdev"):
+            return True
+    return False
+
+#: A live schema this small is an empty/uninitialised database, not a real one.
+#: Validating against it would report every table as "unknown" (harmless) but
+#: would also let a genuinely broken INSERT pass unnoticed, so warn instead.
+_INSERT_SCHEMA_MIN_TABLES = 20
+
+
+def _extract_insert_column_lists(source: str) -> List[Tuple[int, str, List[str]]]:
+    """Return ``(lineno, table, [columns])`` for every STATIC INSERT in *source*.
+
+    Only fully static statements are returned. If any token in the column list
+    is not a bare SQL identifier — an f-string hole, a ``%s``, a concatenated
+    variable — the statement is dynamic and is skipped entirely rather than
+    guessed at. A dynamic table name (``INSERT INTO {table} (...)``) never
+    matches the pattern in the first place.
+    """
+    found: List[Tuple[int, str, List[str]]] = []
+    for match in _INSERT_COLUMN_LIST_RE.finditer(source):
+        raw_cols = match.group("cols")
+        cols: List[str] = []
+        dynamic = False
+        for token in raw_cols.split(","):
+            col = token.strip().strip('"').strip("`").strip("[]").strip()
+            if not _SQL_IDENTIFIER_RE.match(col):
+                dynamic = True
+                break
+            cols.append(col.lower())
+        if dynamic or not cols:
+            continue
+        lineno = source.count("\n", 0, match.start()) + 1
+        found.append((lineno, match.group("table").lower(), cols))
+    return found
+
+
+def _live_table_columns() -> Tuple[Dict[str, Set[str]], str, str]:
+    """Read ``table -> {columns}`` from the connected database.
+
+    Returns ``(schema, backend, error)``. ``error`` is a non-empty explanation
+    when no usable live schema could be read, in which case ``schema`` is empty
+    and the caller must WARN rather than fail — a gate that fails closed on a
+    missing database would block every commit made without one.
+    """
+    try:
+        from tools.db.storage import (
+            _introspect_backend,
+            _introspect_raw,
+            get_connection,
+            list_tables,
+        )
+    except Exception as exc:  # pragma: no cover - import environment specific
+        return {}, "", f"tools.db.storage unavailable: {exc}"
+
+    conn = None
+    try:
+        conn = get_connection()
+        backend = _introspect_backend(conn)
+        raw = _introspect_raw(conn)
+        schema: Dict[str, Set[str]] = {}
+        if backend == "postgresql":
+            cur = raw.cursor()
+            cur.execute(
+                "SELECT table_name, column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public'"
+            )
+            for row in cur.fetchall():
+                if isinstance(row, dict):
+                    table, column = row["table_name"], row["column_name"]
+                else:
+                    table, column = row[0], row[1]
+                schema.setdefault(str(table).lower(), set()).add(str(column).lower())
+        else:
+            for table in list_tables(conn):
+                if not _SQL_IDENTIFIER_RE.match(table):
+                    continue
+                cur = raw.cursor()
+                cur.execute(f'PRAGMA table_info("{table}")')  # nosec B608 — identifier regex-validated
+                cols = set()
+                for row in cur.fetchall():
+                    name = row["name"] if isinstance(row, dict) else row[1]
+                    cols.add(str(name).lower())
+                if cols:
+                    schema[table.lower()] = cols
+        if len(schema) < _INSERT_SCHEMA_MIN_TABLES:
+            return (
+                {},
+                backend,
+                f"{backend} schema has only {len(schema)} table(s) — database not initialised",
+            )
+        return schema, backend, ""
+    except Exception as exc:
+        return {}, "", f"could not read live schema: {type(exc).__name__}: {exc}"
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _load_insert_schema_gate() -> Tuple[Set[str], Dict[str, str]]:
+    """Load ``(ignored_tables, grandfathered)`` from args/insert_schema_gate.yaml.
+
+    Schema::
+
+        ignore_tables:
+          - some_table_owned_by_another_database
+        grandfathered:
+          "tools/govcon/x.py:audit_trail:actor": "swp-scan-01 backlog"
+
+    Grandfather keys are ``<repo-relative path>:<table>:<column>`` — deliberately
+    line-number-free so an unrelated edit above the statement does not
+    invalidate the entry. A missing file or missing pyyaml yields empty sets:
+    fail-safe CLOSED, so an unreadable allowlist makes the gate stricter.
+    """
+    if not _INSERT_SCHEMA_CONFIG.exists() or not _HAS_YAML:
+        return set(), {}
+    try:
+        raw = yaml.safe_load(_INSERT_SCHEMA_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set(), {}
+    if not isinstance(raw, dict):
+        return set(), {}
+
+    ignored = {
+        str(t).lower()
+        for t in (raw.get("ignore_tables") or [])
+        if isinstance(t, (str, int))
+    }
+    grandfathered: Dict[str, str] = {}
+    entries = raw.get("grandfathered") or {}
+    if isinstance(entries, dict):
+        for key, reason in entries.items():
+            if isinstance(key, str):
+                grandfathered[key.replace("\\", "/")] = str(reason or "")
+    elif isinstance(entries, list):  # tolerate a bare list of keys
+        for key in entries:
+            if isinstance(key, str):
+                grandfathered[key.replace("\\", "/")] = ""
+    return ignored, grandfathered
+
+
+def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Check 20: every static INSERT column list exists in the live schema."""
+    check_id = "insert_schema_parity"
+    check_name = "INSERT / Live Schema Parity"
+    expected = ["every column named in a static INSERT exists in the live database schema"]
+
+    targets = _scan_targets(changed_files, "tools")
+    if not targets:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no Python files under tools/ in scope"],
+            missing=[],
+            extra=[],
+            message="No INSERT statements in scope",
+        )
+
+    schema, backend, error = _live_table_columns()
+    if error:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=expected,
+            actual=[error],
+            missing=[],
+            extra=[],
+            message=(
+                f"Live schema unavailable ({error}) — INSERT column parity NOT verified. "
+                "Point ICDEV_STORAGE_BACKEND at an initialised database to enable this gate."
+            ),
+        )
+
+    ignored_tables, grandfathered = _load_insert_schema_gate()
+
+    new_findings: List[str] = []
+    excused_keys: Set[str] = set()
+    statements = 0
+    validated = 0
+    unknown_tables: Set[str] = set()
+
+    for py_path in targets:
+        if "__pycache__" in str(py_path):
+            continue
+        source = _read_text(py_path)
+        if "INSERT" not in source.upper():
+            continue
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = py_path.name
+        if rel in _SCHEMA_CODE_BACKEND_PINNED or _uses_foreign_database(source):
+            continue
+        for lineno, table, cols in _extract_insert_column_lists(source):
+            statements += 1
+            if table in ignored_tables:
+                continue
+            table_cols = schema.get(table)
+            if table_cols is None:
+                # Not in THIS database — a canvas, tenant, platform or child-app
+                # table. Nothing to validate against; silence beats a guess.
+                unknown_tables.add(table)
+                continue
+            validated += 1
+            absent = sorted(set(cols) - table_cols)
+            for column in absent:
+                key = f"{rel}:{table}:{column}"
+                if key in grandfathered:
+                    excused_keys.add(key)
+                    continue
+                new_findings.append(f"{rel}:{lineno}: INSERT INTO {table} names missing column '{column}'")
+
+    # Stale allowlist entries are only meaningful after a whole-tree scan; a
+    # diff-scoped run has not looked at the files the other entries name.
+    stale: List[str] = []
+    if not changed_files:
+        stale = sorted(set(grandfathered) - excused_keys)
+
+    actual = [
+        f"{statements} static INSERT statement(s) parsed; {validated} validated "
+        f"against {len(schema)} live {backend} table(s)"
+    ]
+
+    if new_findings:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=actual + new_findings,
+            missing=sorted({f.split("names missing column ")[-1].strip("'") for f in new_findings}),
+            extra=new_findings,
+            message=(
+                f"{len(new_findings)} INSERT column(s) do not exist in the live schema "
+                f"({len(excused_keys)} grandfathered). These raise at runtime and are "
+                "usually swallowed — fix the column list, or add a migration that adds "
+                "the column, before merging."
+            ),
+        )
+
+    if excused_keys or stale:
+        bits = []
+        if excused_keys:
+            bits.append(f"{len(excused_keys)} grandfathered mismatch(es) remain")
+        if stale:
+            bits.append(f"{len(stale)} stale allowlist entry(ies) can be removed")
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="warn",
+            expected=expected,
+            actual=actual,
+            missing=sorted(excused_keys),
+            extra=stale,
+            message="No NEW INSERT/schema mismatches — " + "; ".join(bits),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=actual + [f"{len(unknown_tables)} table(s) absent from this database were skipped"],
+        missing=[],
+        extra=[],
+        message=f"All {validated} validated INSERT statement(s) match the live schema",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -6795,6 +7458,7 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "swallowed_persistence": check_swallowed_persistence,
     "reflex_registry": check_reflex_registry,
     "direct_anthropic_import": check_direct_anthropic_import,
     "provider_bypass": check_provider_bypass,
@@ -6829,6 +7493,7 @@ CHECK_REGISTRY = {
     "icdev_mirror_parity": check_icdev_mirror_parity,
     "mirror_drift": check_mirror_drift,
     "doc_command_paths": check_doc_command_paths,
+    "insert_schema_parity": check_insert_schema_parity,
 }
 
 
@@ -6952,6 +7617,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "profile_sync": "skip",  # profile YAML changes require human review
     "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
     "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
+    "insert_schema_parity": "skip",  # drop the column or write a migration — the choice is the fix
 }
 
 
@@ -7107,11 +7773,30 @@ def _run_one_check(
     return result
 
 
+def _timed_out_check(check_id: str, budget: float) -> CoherenceCheck:
+    """A check that never returned inside the sweep budget."""
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_id,
+        status="warn",
+        expected=[],
+        actual=[],
+        missing=[],
+        extra=[],
+        message=(
+            f"timed out — did not finish within the {budget:g}s sweep budget. "
+            "Reported as warn so the sweep still returns a verdict for every "
+            "other check; re-run this one alone to see what it is doing."
+        ),
+    )
+
+
 def run_checks(
     selected: Optional[List[str]] = None,
     changed_files: Optional[List[Path]] = None,
     autofix: bool = False,
     tier: Optional[str] = None,
+    timeout_sec: Optional[float] = None,
 ) -> CoherenceReport:
     """Run selected coherence checks and produce aggregate report.
 
@@ -7125,6 +7810,23 @@ def run_checks(
     subprocess, file I/O, and imports, all of which release the GIL. Autofix
     forces the serial path because fixers mutate the tree and two of them
     landing at once is not something the fix registry is written for.
+
+    ``timeout_sec`` (gpx-perf-01) puts a hard ceiling on the concurrent phase.
+    It is opt-in and off by default: enforcing it requires running the checks in
+    *processes* rather than threads, because a thread cannot be killed, and
+    ``ThreadPoolExecutor`` joins its non-daemon workers at interpreter exit — so
+    a genuinely hung check hangs the process on the way out no matter what the
+    caller does with the futures. Processes can be terminated.
+
+    Any check that has not returned when the budget expires is reported as
+    ``warn: timed out`` rather than being dropped, so the sweep still returns a
+    verdict for every other check instead of one pathological check taking the
+    whole run down with it.
+
+    The default stays on threads deliberately. The gate runs on every commit,
+    and moving it to multi-process by default changes DB connection fan-out and
+    Windows spawn behaviour for every caller — not a trade to make silently for
+    a ceiling almost no run needs. Callers that want the ceiling ask for it.
     """
     if selected:
         checks_to_run = list(selected)
@@ -7135,27 +7837,54 @@ def run_checks(
     workers = 1 if autofix else min(_check_workers(), max(1, len(checks_to_run)))
 
     if workers > 1:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        hard_timeout = bool(timeout_sec and timeout_sec > 0 and not autofix)
+        pool_cls = (
+            concurrent.futures.ProcessPoolExecutor
+            if hard_timeout
+            else concurrent.futures.ThreadPoolExecutor
+        )
+        by_id: Dict[str, CoherenceCheck] = {}
+        pool = pool_cls(max_workers=workers)
+        try:
             futures = {
                 pool.submit(_run_one_check, check_id, changed_files): check_id
                 for check_id in checks_to_run
             }
-            by_id: Dict[str, CoherenceCheck] = {}
-            for future in concurrent.futures.as_completed(futures):
-                check_id = futures[future]
-                try:
-                    by_id[check_id] = future.result()
-                except Exception as exc:  # pragma: no cover — defensive
-                    by_id[check_id] = CoherenceCheck(
-                        check_id=check_id,
-                        check_name=check_id,
-                        status="warn",
-                        expected=[],
-                        actual=[],
-                        missing=[],
-                        extra=[],
-                        message=f"Check error: {exc}",
-                    )
+            try:
+                for future in concurrent.futures.as_completed(
+                    futures, timeout=timeout_sec if hard_timeout else None
+                ):
+                    check_id = futures[future]
+                    try:
+                        by_id[check_id] = future.result()
+                    except Exception as exc:  # pragma: no cover — defensive
+                        by_id[check_id] = CoherenceCheck(
+                            check_id=check_id,
+                            check_name=check_id,
+                            status="warn",
+                            expected=[],
+                            actual=[],
+                            missing=[],
+                            extra=[],
+                            message=f"Check error: {exc}",
+                        )
+            except concurrent.futures.TimeoutError:
+                # Budget blown. Everything still outstanding is reported as a
+                # timeout rather than silently omitted from the report.
+                for check_id in checks_to_run:
+                    if check_id not in by_id:
+                        by_id[check_id] = _timed_out_check(check_id, float(timeout_sec))
+        finally:
+            if hard_timeout:
+                # Kill the workers outright: shutdown(wait=True) would block on
+                # the very check that just blew the budget, which is the whole
+                # thing this is meant to prevent.
+                for proc in list(getattr(pool, "_processes", {}).values()):
+                    if proc.is_alive():
+                        proc.terminate()
+                pool.shutdown(wait=False, cancel_futures=True)
+            else:
+                pool.shutdown(wait=True)
         # Preserve registry order regardless of completion order.
         results = [by_id[check_id] for check_id in checks_to_run if check_id in by_id]
     else:
@@ -7269,6 +7998,17 @@ def main() -> None:
         action="store_true",
         help="Print the check ids the selected tier would run, then exit",
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help=(
+            "Hard ceiling in seconds on the concurrent phase. Runs the checks in "
+            "processes (threads cannot be killed) and reports anything still "
+            "outstanding as 'warn: timed out' instead of letting one pathological "
+            "check block the sweep. Off by default; ignored with --fix."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -7309,7 +8049,9 @@ def main() -> None:
     _real_stdout = sys.stdout
     try:
         sys.stdout = sys.stderr
-        report = run_checks(selected, changed, autofix=args.fix, tier=tier)
+        report = run_checks(
+            selected, changed, autofix=args.fix, tier=tier, timeout_sec=args.timeout
+        )
     finally:
         sys.stdout = _real_stdout
 

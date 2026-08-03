@@ -1,11 +1,12 @@
 # CUI // SP-CTI
-"""Tests for /cpmp/<id> — all 10 contract detail tabs render.
+"""Tests for /cpmp/<id> — every contract detail tab renders.
 
 Verifies:
-1. Template source declares all 10 tab buttons (Overview, CLINs, WBS, Deliverables,
-   EVM, Schedule, Subcontractors, CPARS, Modifications, Risks) with correct switchTab() calls.
-2. Template source declares all 10 tab panel divs with correct IDs.
-3. Rendered HTML includes all 10 tab panel IDs when given a minimal contract context.
+1. Template source declares all tab buttons (Overview, Periods, CLINs, WBS,
+   Deliverables, EVM, Schedule, Subcontractors, CPARS, Modifications, Risks)
+   with correct switchTab() calls.
+2. Template source declares all tab panel divs with correct IDs.
+3. Rendered HTML includes all tab panel IDs when given a minimal contract context.
 4. Overview tab panel is active by default (class="tab-panel active").
 5. Each non-active tab panel is present but not initially active.
 """
@@ -25,6 +26,7 @@ _DETAIL_TEMPLATE = _TEMPLATES_DIR / "cpmp" / "detail.html"
 
 _EXPECTED_TABS = [
     ("overview", "Overview"),
+    ("periods", "Periods"),
     ("clins", "CLINs"),
     ("wbs", "WBS"),
     ("deliverables", "Deliverables"),
@@ -35,6 +37,24 @@ _EXPECTED_TABS = [
     ("mods", "Modifications"),
     ("risks", "Risks"),
 ]
+
+#: Tab count the detail page ships. The original spec listed ten; the Periods
+#: tab (obligation periods, gcpl-ctr-02) landed afterwards and is a real
+#: eleventh tab, so the exact-count assertions below track eleven.
+_TAB_COUNT = len(_EXPECTED_TABS)
+
+
+def _has_tab_label(source: str, label: str) -> bool:
+    """True when *source* declares a tab button whose visible text is *label*.
+
+    Each button now carries a trailing ``<span class="tab-help-btn">?</span>``,
+    so the label is followed by a space rather than by ``<``. Matching on
+    ``>Overview<`` therefore fails even though the button is present — five of
+    these assertions were failing for exactly that reason while the other five
+    passed only because the same word appears elsewhere in the template.
+    """
+    return f">{label}<" in source or f">{label} <" in source
+
 
 # ---------------------------------------------------------------------------
 # Fake data helpers
@@ -101,6 +121,12 @@ def _render_detail(
             FileSystemLoader(str(_TEMPLATES_DIR)),
         ]),
         autoescape=select_autoescape(["html"]),
+    )
+    # detail.html calls url_for('static', ...); a bare Environment has no Flask
+    # app bound, so without this stub every render raises UndefinedError before
+    # a single tab assertion runs.
+    env.globals["url_for"] = lambda endpoint, **values: (
+        f"/{endpoint}/{values.get('filename', '')}".rstrip("/")
     )
     tmpl = env.get_template("cpmp/detail.html")
     return tmpl.render(
@@ -187,61 +213,61 @@ class TestTemplateSourceTabButtons:
 
     def test_overview_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">Overview<" in source, (
+        assert _has_tab_label(source, "Overview"), (
             "cpmp/detail.html must have a tab button labeled 'Overview'"
         )
 
     def test_clins_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">CLINs<" in source, (
+        assert _has_tab_label(source, "CLINs"), (
             "cpmp/detail.html must have a tab button labeled 'CLINs'"
         )
 
     def test_wbs_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">WBS<" in source, (
+        assert _has_tab_label(source, "WBS"), (
             "cpmp/detail.html must have a tab button labeled 'WBS'"
         )
 
     def test_deliverables_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">Deliverables<" in source, (
+        assert _has_tab_label(source, "Deliverables"), (
             "cpmp/detail.html must have a tab button labeled 'Deliverables'"
         )
 
     def test_evm_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">EVM<" in source, (
+        assert _has_tab_label(source, "EVM"), (
             "cpmp/detail.html must have a tab button labeled 'EVM'"
         )
 
     def test_subcontractors_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">Subcontractors<" in source, (
+        assert _has_tab_label(source, "Subcontractors"), (
             "cpmp/detail.html must have a tab button labeled 'Subcontractors'"
         )
 
     def test_cpars_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">CPARS<" in source, (
+        assert _has_tab_label(source, "CPARS"), (
             "cpmp/detail.html must have a tab button labeled 'CPARS'"
         )
 
     def test_schedule_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">Schedule<" in source, (
+        assert _has_tab_label(source, "Schedule"), (
             "cpmp/detail.html must have a tab button labeled 'Schedule'"
         )
 
     def test_mods_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">Modifications<" in source, (
+        assert _has_tab_label(source, "Modifications"), (
             "cpmp/detail.html must have a tab button labeled 'Modifications'"
         )
 
     def test_risks_button_label_present(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
-        assert ">Risks<" in source, (
+        assert _has_tab_label(source, "Risks"), (
             "cpmp/detail.html must have a tab button labeled 'Risks'"
         )
 
@@ -317,8 +343,8 @@ class TestTemplateSourceTabPanels:
     def test_ten_tab_panels_total(self):
         source = _DETAIL_TEMPLATE.read_text(encoding="utf-8")
         count = source.count('class="tab-panel')
-        assert count == 10, (
-            f"cpmp/detail.html must declare exactly 10 tab-panel divs, found {count}"
+        assert count == _TAB_COUNT, (
+            f"cpmp/detail.html must declare exactly {_TAB_COUNT} tab-panel divs, found {count}"
         )
 
     def test_overview_panel_is_active_by_default(self):
@@ -399,8 +425,8 @@ class TestRenderedHtmlTabPanels:
     def test_ten_tab_panel_divs_in_rendered_html(self):
         html = _render_detail()
         count = html.count('class="tab-panel')
-        assert count == 10, (
-            f"Rendered HTML must contain exactly 10 tab-panel divs, found {count}"
+        assert count == _TAB_COUNT, (
+            f"Rendered HTML must contain exactly {_TAB_COUNT} tab-panel divs, found {count}"
         )
 
     def test_all_tab_button_labels_in_rendered_html(self):

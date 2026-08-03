@@ -44,6 +44,9 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.intelligence.bayesian_teacher")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -400,8 +403,12 @@ def score_training_pairs(
                         s["scored_at"],
                     ),
                 )
-            except Exception:
-                pass  # Graceful — don't fail scoring if DB insert fails
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                # Graceful — don't fail scoring if DB insert fails
+                logger.warning(
+                    "score_training_pairs: best-effort INSERT into bayesian_teaching_scores failed (non-blocking): %s",
+                    exc,
+                )
         conn.commit()
 
         # Statistics
@@ -673,8 +680,11 @@ def optimal_compliance_order(
             )
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            logger.warning(
+                "optimal_compliance_order: best-effort INSERT into bayesian_teaching_scores failed (non-blocking): %s",
+                exc,
+            )
 
     _audit(
         "bayesian.optimal_order",

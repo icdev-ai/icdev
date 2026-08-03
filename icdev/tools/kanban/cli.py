@@ -20,6 +20,10 @@ Usage examples:
   # JSON output (pipe-friendly)
   python tools/kanban/cli.py --list --prefix zig-ext --json
   python tools/kanban/cli.py --show zig-ext-08 --json
+
+  # Clear a stale done-gate block without re-dispatching the task
+  python tools/kanban/cli.py --reverify zig-ext-08 --dry-run
+  python tools/kanban/cli.py --reverify zig-ext-08 --json
 """
 
 import argparse
@@ -85,6 +89,16 @@ if str(_repo_root) not in sys.path:
 from dotenv import load_dotenv  # noqa: E402
 load_dotenv(_repo_root / ".env")
 
+# Must stay BELOW the sys.path bootstrap above. As a top-level import it ran
+# before the marker-walk had put the repo root on sys.path, so
+# `python tools/kanban/cli.py` — the invocation CLAUDE.md documents and worker
+# sessions use to report their own completion — died at import with
+# "ModuleNotFoundError: No module named 'tools'" whenever PYTHONPATH was unset.
+# Running the script by path puts tools/kanban/ on sys.path[0], never the root.
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+
+logger = get_logger("icdev.kanban.cli")
+
 # Import the repo-local shim (``tools.db.storage``) — NEVER ``icdev.tools.*``,
 # which a globally-installed editable ``icdev`` package from a foreign repo can
 # capture, silently pointing the CLI at another repo's database.
@@ -101,6 +115,17 @@ VALID_STATUSES = frozenset({
     "backlog", "scheduled", "in_progress", "done",
     "failed", "suggested", "needs_decomposition",
 })
+
+# Moving a task into one of these is a deliberate revival: whatever failure text
+# the row is carrying describes a run that is no longer the current attempt.
+# Leaving it behind keeps the task showing as broken in the dashboard's
+# Autonomous Recovery panel, which filters on `last_failure_reason IS NOT NULL`.
+# The scheduler already does this on re-dispatch (reflexes/kanban.py, the
+# `elif new_status == "in_progress"` branch); the CLI did not, so a task revived
+# from the CLI stayed "failed"-looking until it happened to be dispatched.
+# `failure_count` and `last_failure_at` are deliberately preserved — they are
+# real history and the circuit breaker reads the count.
+_REVIVAL_STATUSES = frozenset({"backlog", "scheduled", "in_progress"})
 
 
 def _now() -> str:
@@ -137,8 +162,11 @@ def _record_manual_transition(conn, task_id: str, from_status, to_status: str,
                 reason or "tools/kanban/cli.py --set-status", _now(),
             ),
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning(
+            "_record_manual_transition: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s",
+            exc,
+        )
 
 
 def _refuses_done(task_id: str) -> str:
@@ -218,10 +246,21 @@ def cmd_set_status(
                     (status, now, now, tid),
                 )
             else:
-                conn.execute(
-                    "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
-                    (status, now, tid),
-                )
+                sql = "UPDATE kanban_tasks SET status = %s, updated_at = %s"
+                vals = [status, now]
+                if status in _REVIVAL_STATUSES:
+                    sql += ", last_failure_reason = NULL"
+                if status == "scheduled":
+                    # _get_due_tasks requires `scheduled_at IS NOT NULL AND
+                    # scheduled_at <= now()`. Moving a task to 'scheduled'
+                    # without stamping it leaves the row invisible to the
+                    # dispatcher — the same silent-failure gap documented in
+                    # reflexes/kanban.py's move-to-scheduled branch.
+                    sql += ", scheduled_at = COALESCE(scheduled_at, %s)"
+                    vals.append(now)
+                sql += " WHERE id = %s"
+                vals.append(tid)
+                conn.execute(sql, tuple(vals))
             if prior_row:
                 _record_manual_transition(
                     conn, tid, prior_status, status,
@@ -285,6 +324,46 @@ def _ascii(s: object) -> str:
            .replace("–", "-").replace("…", "...")
            .replace("✓", "ok").replace("✗", "x"))
     return out.encode("ascii", "replace").decode("ascii")
+
+
+def cmd_reverify(task_id: str, json_out: bool, dry_run: bool = False) -> int:
+    """Recompute a task's verification from git and append a fresh verdict.
+
+    This is the manual escape hatch from the enforced done-gate. `pr_watcher`
+    reads only the LATEST `kanban_verifications` row and nothing writes one
+    except a dispatch, so a task that verified badly once stays blocked from
+    auto-merge until it is re-dispatched — which opens a second PR rather than
+    reusing the first. Re-verifying clears the block without that.
+
+    It does NOT weaken the gate: the verdict is recomputed from the branch's
+    real state, so a task with no work still fails.
+
+    Exit 0 = passed, 1 = failed, 2 = no such task.
+    """
+    from tools.db.storage import get_connection
+    from tools.kanban.reverify import reverify
+
+    try:
+        verdict = reverify(task_id, get_connection, dry_run=dry_run)
+    except LookupError as exc:
+        # Explicit non-zero, never a silent success: this CLI is what worker
+        # sessions use to report their own state, and a typo'd id that exits 0
+        # reads as "cleared" when nothing happened.
+        if json_out:
+            print(json.dumps({"error": "not_found", "task_id": task_id}, indent=2))
+        else:
+            print(f"NOT_FOUND: {exc}", file=sys.stderr)
+        return 2
+
+    if json_out:
+        print(json.dumps(verdict, indent=2, default=str, sort_keys=True))
+    else:
+        state = "would write" if dry_run else (
+            "wrote" if verdict.get("written") else "did not write")
+        print(f"{task_id}: {verdict['result']} ({state})")
+        print(f"  branch: {_ascii(verdict.get('branch'))}")
+        print(f"  {_ascii(verdict.get('reason'))}")
+    return 0 if verdict["result"] == "passed" else 1
 
 
 def cmd_pipeline(task_id: str, json_out: bool) -> int:
@@ -534,6 +613,14 @@ def main():
     parser.add_argument("--pipeline", metavar="TASK_ID",
                         help="Show a task's delivery-pipeline (gate) status (CLI view)")
 
+    # --reverify <id> — recompute the done-gate verdict from git state
+    parser.add_argument("--reverify", metavar="TASK_ID",
+                        help="Recompute a task's verification from its branch and "
+                             "append a fresh verdict, clearing a stale done-gate block "
+                             "without re-dispatching (exit 0=passed, 1=failed, 2=unknown)")
+    parser.add_argument("--dry-run", dest="dry_run", action="store_true",
+                        help="With --reverify: compute the verdict without writing it")
+
     # --list [--prefix PREFIX] [--status STATUS]
     parser.add_argument("--list", action="store_true", help="List tasks")
     parser.add_argument("--prefix", metavar="PREFIX", help="Filter by id prefix (used with --list)")
@@ -589,6 +676,9 @@ def main():
 
     elif args.pipeline:
         sys.exit(cmd_pipeline(args.pipeline, args.json_out))
+
+    elif args.reverify:
+        sys.exit(cmd_reverify(args.reverify, args.json_out, dry_run=args.dry_run))
 
     elif args.list:
         sys.exit(cmd_list(args.prefix, args.status, args.json_out))

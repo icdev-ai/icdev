@@ -2,7 +2,10 @@
 // E2E: gcpl-cset-* — CPMP-SETUP Epic
 // CPMP Portfolio + Contract Setup: portfolio page, contract creation, CLINs, WBS, deliverables
 
-import { test, expect } from '@playwright/test';
+// `test`/`expect` come from ./fixtures/auth, not @playwright/test: every POST and
+// PUT below 403s CSRF_FAILED against a locally started dashboard otherwise (CI
+// hides it with ICDEV_AUTH_BYPASS). See that file for why. tsh-e2e-01-d2.
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI, buildFullFixture, seedOpportunity, seedContract, seedWbs, seedDeliverable, seedClin } from './fixtures/govcon_cpmp';
 
 let oppId: string;

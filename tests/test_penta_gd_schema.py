@@ -8,10 +8,10 @@ Covers:
     500'd on a schema without it. db.py::migrate() must:
       - create the column for a FRESH install (it is now in _DDL), and
       - add it via a guarded ALTER for a PRE-EXISTING table that predates it.
-  * The dead player-registration feature (apps/ai_gameday/registration.py, only
-    ever imported by the sim_lifecycle_e2e demo and backed by tables absent from
-    the runtime DDL) is deleted, along with the demo and the stale flask_login
-    scaffold in auth.py.
+  * The sim_lifecycle_e2e demo and the stale flask_login scaffold in auth.py
+    stay deleted. (The player-registration module penta-gd-03 removed alongside
+    them was later re-introduced as a wired feature by gdx-reg-01 — see the note
+    above test_sim_lifecycle_demo_deleted.)
 
 Uses a temp SQLite DB seeded with the shared conftest schema + the storage
 translate layer (get_connection with %s params) — no raw sqlite3 in the query
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib
 import pathlib
+import re
 
 import pytest
 
@@ -60,13 +61,12 @@ def gameday_db(tmp_path, monkeypatch):
 # Dead-code removal
 # ---------------------------------------------------------------------------
 
-def test_registration_module_deleted():
-    assert not (AI_GAMEDAY / "registration.py").exists(), (
-        "dead player-registration module should be deleted"
-    )
-    assert not (REPO_ROOT / "icdev" / "apps" / "ai_gameday" / "registration.py").exists()
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("apps.ai_gameday.registration")
+# NOTE: penta-gd-03 deleted apps/ai_gameday/registration.py as dead code and
+# asserted here that it stayed deleted. gdx-reg-01 (6cfb79e1e) then re-introduced
+# pre-session registration as a wired feature — blueprint.py imports it and
+# serves /gameday/session/<id>/register — so that assertion has been removed
+# rather than the live module re-deleted. The feature is covered by
+# tests/test_gameday_registration.py and tests/test_gameday_registration_routes.py.
 
 
 def test_sim_lifecycle_demo_deleted():
@@ -89,6 +89,31 @@ def test_auth_flask_login_scaffold_removed():
 # ---------------------------------------------------------------------------
 # ontology_tags_json migration
 # ---------------------------------------------------------------------------
+
+def test_migrate_creates_every_ddl_table(gameday_db):
+    """migrate() must not stop part-way through _DDL.
+
+    Statements were split on a bare ``;``, so the semicolon inside the comment
+    `-- Migration 325 is the shared fix; these blocks ...` cut the script mid-
+    comment: the remainder was executed as SQL, raised, and every table declared
+    after that point — ttx_registrations among them — was silently never created.
+    """
+    _db_path, db_mod = gameday_db
+    from tools.db.storage import get_connection
+
+    db_mod.migrate()
+    conn = get_connection()
+
+    declared = set(
+        re.findall(r"CREATE TABLE IF NOT EXISTS\s+(\w+)", db_mod._DDL, re.IGNORECASE)
+    )
+    assert "ttx_registrations" in declared, "test is stale — the DDL no longer declares it"
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    created = {r[0] for r in rows}
+    assert declared - created == set(), f"migrate() skipped: {sorted(declared - created)}"
+
 
 def test_fresh_migrate_creates_ontology_column(gameday_db):
     """A fresh install: migrate() creates ttx_sessions/ttx_injects WITH the column."""

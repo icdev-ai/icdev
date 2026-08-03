@@ -22,6 +22,7 @@ patching init_db's ``_BACKEND``/``DB_PATH`` rather than replacing its
 """
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -87,25 +88,70 @@ SAFE_GRAPH = {
 }
 
 
-def _insert_design(design_id, graph, *, domain="", safety=0, rights=0):
+# --- Connection hygiene (aca-hyg-06-d4-d2 finding) -------------------------
+# Investigated whether the ``conn.close()`` call in ``_write`` below
+# close a pooled/shared connection and thereby leak state into
+# test_penta_aadc_p2.py. They do not — closing here is correct on both backends:
+#
+#   * SQLite (what this fixture pins): ``init_db.get_connection`` calls
+#     ``storage._get_sqlite_connection``, which does a fresh ``sqlite3.connect``
+#     per call — no cache, no pool. The returned StorageConnection is owned by
+#     the caller, so not closing it would be the leak (an open handle on a
+#     tmp_path file), not closing it.
+#   * PostgreSQL: ``get_canvas_connection`` hands back a ``_PooledPgConnection``
+#     whose ``close()`` *returns* the connection to the shared pool via
+#     ``putconn`` and is idempotent (``storage.py:1446``) — it never destroys a
+#     pool member. Pool state is therefore not carried between test classes.
+#
+# The leak that actually broke test_penta_aadc_p2.py::TestIlMapping was not a
+# closure at all: this file's old fixture *replaced*
+# ``init_db.get_connection`` with a tmp_path closure, and ``canvas_bridge``
+# (imported lazily by ``assess_design``) captured that closure at module scope,
+# outliving monkeypatch teardown. Fixed in b5ae433cc by pinning ``_BACKEND``/
+# ``DB_PATH`` instead; see tests/_aadc_canvas.py and the regression guard in
+# TestFixtureDoesNotLeakAcrossFiles below.
+#
+# One closure defect DID remain, and it is a different question from the
+# one above: the helpers closed on the happy path only, so a write that
+# raised skipped close() altogether. Hence the ``finally`` in ``_write``.
+def _write(sql, params):
+    """Run one write against the canvas store, always releasing the connection.
+
+    The ``finally`` is load-bearing, not style. These helpers previously closed
+    on the happy path only, so any statement that raised — a duplicate design
+    id, schema drift, a bad placeholder — skipped ``close()`` entirely:
+
+    * On PostgreSQL ``get_connection`` hands back a ``_PooledPgConnection`` from
+      the 20-slot pool, and only ``close()`` returns the slot. A connection
+      abandoned mid-statement stays checked out AND idle-in-transaction holding
+      ACCESS SHARE locks, so a handful of failing tests exhausts the pool for
+      the rest of the session (the ``tools/db/storage.py`` lock-storm note).
+    * On SQLite it strands a WAL handle on the fixture's ``tmp_path`` file,
+      which on Windows blocks pytest from tearing the directory down.
+
+    Either way the damage lands on some *later* test, not the one that failed.
+    """
     conn = canvas_init_db.get_connection()
-    conn.execute(
+    try:
+        conn.execute(sql, params)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _insert_design(design_id, graph, *, domain="", safety=0, rights=0):
+    _write(
         "INSERT INTO aadc_designs (id, name, domain, classification, graph_json, "
         "safety_impacting, rights_impacting) VALUES (%s,%s,%s,%s,%s,%s,%s)",
         (design_id, f"design-{design_id}", domain, "CUI", json.dumps(graph), safety, rights),
     )
-    conn.commit()
-    conn.close()
 
 
 def _update_graph(design_id, graph):
-    conn = canvas_init_db.get_connection()
-    conn.execute(
+    _write(
         "UPDATE aadc_designs SET graph_json=%s WHERE id=%s",
         (json.dumps(graph), design_id),
     )
-    conn.commit()
-    conn.close()
 
 
 class TestFabricatedDefaultsGone:
@@ -210,6 +256,42 @@ class TestUsesCanvasConnection:
         # The design read no longer sits under a storage.get_connection import.
         design_read_region = src.split("aadc_designs")[0].rsplit("def generate_ops_config", 1)[-1]
         assert "from tools.db.storage import get_connection" not in design_read_region
+
+
+class TestHelpersReleaseConnections:
+    """Regression guard for the unguarded ``close()`` in this file (aca-hyg-06-d4-d3).
+
+    Nothing about the leak is visible in the test that triggers it — it already
+    failed. It surfaces as an exhausted PG pool (or a locked ``tmp_path``) in
+    whatever runs next, so the only place to catch it is right here.
+    """
+
+    def test_failed_write_still_releases_the_connection(self, canvas_db, monkeypatch):
+        # Bind canvas_bridge's module-scope factory BEFORE patching, so the
+        # lazy-import capture this file's docstring warns about cannot pick up
+        # the recording wrapper below.
+        importlib.import_module("tools.agentic_ai_canvas.canvas_bridge")
+
+        opened = []
+        real_get_connection = canvas_init_db.get_connection
+
+        def _recording_get_connection():
+            conn = real_get_connection()
+            opened.append(conn)
+            return conn
+
+        monkeypatch.setattr(canvas_init_db, "get_connection", _recording_get_connection)
+
+        _insert_design("dupe", SAFE_GRAPH)
+        # Same primary key -> the INSERT raises inside the helper.
+        with pytest.raises(Exception):
+            _insert_design("dupe", SAFE_GRAPH)
+
+        assert len(opened) == 2, "each helper call must open exactly one connection"
+        assert all(getattr(c, "_closed", False) for c in opened), (
+            "a helper that raised mid-write left its connection open — on PG that "
+            "slot never returns to the pool"
+        )
 
 
 class TestFixtureDoesNotLeakAcrossFiles:

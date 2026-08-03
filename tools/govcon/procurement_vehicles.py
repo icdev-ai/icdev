@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.govcon.procurement_vehicles")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -128,30 +131,33 @@ def _now() -> str:
 
 
 def _audit(action: str, details: str, project_id: str = "") -> None:
+    """Append-only audit trail entry (NIST AU). Best-effort.
+
+    This wrote ``(id, tenant_id, user_id, action, resource, details, project_id,
+    classification, recorded_at)``. Four of those columns do not exist on
+    audit_trail, and the required NOT NULL ``event_type``/``actor`` were absent,
+    so both the primary INSERT and its "schema differs" fallback raised and were
+    swallowed — procurement_vehicles never recorded a single audit row.
+    """
     try:
         conn = get_connection()
         conn.execute(
             "INSERT INTO audit_trail "
-            "(id, tenant_id, user_id, action, resource, details, project_id, classification, recorded_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), None, None, action,
-             "procurement_vehicles", details, project_id, "CUI", _now()),
+            "(created_at, event_type, actor, action, details, project_id, classification) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (
+                _now(),
+                "govcon.procurement_vehicle",
+                "procurement_vehicles",
+                action,
+                details,
+                project_id or None,
+                "CUI",
+            ),
         )
         conn.commit()
-    except Exception:
-        # Fallback: insert without project_id column in case schema differs
-        try:
-            conn = get_connection()
-            conn.execute(
-                "INSERT INTO audit_trail "
-                "(id, tenant_id, user_id, action, resource, details, classification, recorded_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (str(uuid.uuid4()), None, None, action,
-                 "procurement_vehicles", details, "CUI", _now()),
-            )
-            conn.commit()
-        except Exception:
-            pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _validate_create(
