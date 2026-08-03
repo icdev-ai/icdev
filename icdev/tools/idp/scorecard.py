@@ -753,12 +753,51 @@ def evaluate(
     scorecard: Scorecard,
     conn: Any = None,
     today: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate *scorecard* over every entity in its collection.
 
     Returns a JSON-safe report: the ladder, per-rule pass counts, and one
     :class:`EntityResult` per entity.
+
+    Tenant scoping (idp-mt-01)
+    --------------------------
+    ``tenant_id`` binds the scope for the whole evaluation — the universe, each
+    rule's query, each filter and the fact rows behind the evidence all read
+    the same reduced collection, so a rule can never pass an entity the
+    universe excluded. The reduction itself happens in the collection adapter
+    (see ``tools/idp/tenancy.py``); this function only pins which tenant is in
+    scope, and reports it back as ``tenant_id`` so a caller persisting the
+    result knows whose row it is writing.
+
+    The binding is explicit rather than ambient because the same process serves
+    both readings: a scheduled reflex recording the platform's own series must
+    keep the platform view even when it runs inside a tenant's request context,
+    and ``evaluate(card, tenant_id=None)`` from that reflex says so.
     """
+    with _tenant_scope(tenant_id):
+        return _evaluate_scoped(scorecard, conn, today, tenant_id)
+
+
+def _tenant_scope(tenant_id: str | None) -> Any:
+    """Bind the IDP tenant scope, or a no-op when the tenancy layer is absent."""
+    try:
+        from tools.idp.tenancy import tenant_scope  # noqa: PLC0415
+
+        return tenant_scope(tenant_id)
+    except Exception:  # noqa: BLE001
+        from contextlib import nullcontext  # noqa: PLC0415
+
+        return nullcontext()
+
+
+def _evaluate_scoped(
+    scorecard: Scorecard,
+    conn: Any,
+    today: str | None,
+    tenant_id: str | None,
+) -> dict[str, Any]:
+    """Body of :func:`evaluate`, run with the tenant scope already bound."""
     _ensure_adapter(scorecard)
     today = today or _today()
 
@@ -867,6 +906,10 @@ def evaluate(
         "collection": scorecard.collection,
         "window": scorecard.window,
         "evaluated_on": today,
+        # Whose estate this report describes. None is the platform's own view.
+        # Carried through to the persisted history row so a stored score is
+        # never ambiguous about which tenant it graded.
+        "tenant_id": tenant_id,
         "entity_count": len(results),
         "ladder": [dataclasses.asdict(lv) for lv in ladder],
         "level_distribution": _level_distribution(results, ladder),
@@ -972,10 +1015,15 @@ def _grade_distribution(results: list[EntityResult], scorecard: Scorecard) -> di
 
 
 def evaluate_all(
-    directory: Path | str | None = None, conn: Any = None
+    directory: Path | str | None = None,
+    conn: Any = None,
+    tenant_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Evaluate every scorecard on disk."""
-    return [evaluate(card, conn=conn) for card in load_scorecards(directory)]
+    """Evaluate every scorecard on disk, all against the same tenant scope."""
+    return [
+        evaluate(card, conn=conn, tenant_id=tenant_id)
+        for card in load_scorecards(directory)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -995,6 +1043,14 @@ def _render(report: dict[str, Any], component: str | None) -> str:
     lines = [
         f"{report['name']} ({report['scorecard']}) — {report['entity_count']} entities "
         f"over {report['collection']}",
+        # Printed only when scoped: an unqualified entity count read as the
+        # whole estate when it was one tenant's slice would be the wrong
+        # number in the most convincing possible way.
+        *(
+            [f"Tenant: {report['tenant_id']} (scoped to this tenant's enabled components)"]
+            if report.get("tenant_id")
+            else []
+        ),
         "",
     ]
     dist = report["level_distribution"]
@@ -1042,6 +1098,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--scorecard", metavar="KEY", help="Evaluate only this scorecard")
     ap.add_argument("--component", metavar="KEY", help="Show only this entity's row")
     ap.add_argument("--dir", metavar="PATH", help="Scorecard directory (default args/scorecards)")
+    ap.add_argument(
+        "--tenant",
+        metavar="ID",
+        help="Score only the components this tenant has enabled "
+        "(default: the platform's own full estate)",
+    )
     ap.add_argument("--json", action="store_true", help="Emit JSON")
     args = ap.parse_args(argv)
 
@@ -1092,7 +1154,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         reports = []
         for card in cards:
-            reports.append(evaluate(card, conn=conn))
+            reports.append(evaluate(card, conn=conn, tenant_id=args.tenant))
     except ScorecardError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

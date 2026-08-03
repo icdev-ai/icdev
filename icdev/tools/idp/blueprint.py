@@ -59,6 +59,28 @@ def _refresh_requested() -> bool:
     return (flask_request.args.get("refresh") or "").strip().lower() in ("1", "true", "yes")
 
 
+def _tenancy() -> dict:
+    """Scoping facts for the current request (idp-mt-01).
+
+    Attached to every read payload, not just the scoped ones. A response that
+    is silent about scope invites the reader to mistake a tenant's 12
+    components for the platform's 66, and the honest way to prevent that is to
+    state the scope every time rather than only when it happens to be narrow.
+
+    Never raises: a portal that cannot describe its own scoping should still
+    serve the rows the adapter already scoped. The empty dict is falsy, so a
+    template guarding on ``tenancy.scoped`` degrades to saying nothing rather
+    than to claiming the surface is unscoped.
+    """
+    try:
+        from tools.idp.tenancy import tenant_context  # noqa: PLC0415
+
+        return tenant_context()
+    except Exception:  # noqa: BLE001
+        logger.warning("idp: tenant context unavailable", exc_info=True)
+        return {}
+
+
 def _render(focus: str):
     from tools.idp.portal import portal_overview
 
@@ -69,6 +91,7 @@ def _render(focus: str):
     return render_template(
         "idp/page.html",
         focus=focus,
+        tenancy=_tenancy(),
         iqe_canvas=IQE_CANVAS,
         iqe_api_route=IQE_API_ROUTE,
         iqe_examples=list(IQE_EXAMPLES),
@@ -161,6 +184,7 @@ def idp_api_catalog():
         "count": len(rows),
         "scorecard": report.get("scorecard"),
         "scorecard_error": report.get("error", ""),
+        "tenancy": _tenancy(),
         # `facts` is the whole upstream fact row and is already on each entry;
         # dropping it keeps the API payload to what a catalog consumer needs.
         "components": [{k: v for k, v in row.items() if k != "facts"} for row in rows],
@@ -173,7 +197,9 @@ def idp_api_scorecard():
     from tools.idp.portal import scorecard_report
 
     report = scorecard_report(_requested_scorecard())
-    return jsonify(report), (500 if report.get("error") else 200)
+    return jsonify({**report, "tenancy": _tenancy()}), (
+        500 if report.get("error") else 200
+    )
 
 
 @bp.route("/api/component/<key>")
@@ -226,6 +252,10 @@ def idp_api_iqe_query():
             "ok": True,
             "iqe": iqe_str,
             "explanation": explanation,
+            # Arbitrary IQE over idp.components. The rows are scoped in the
+            # adapter; saying so here is what stops a scoped result being read
+            # as an estate-wide answer.
+            "tenancy": _tenancy(),
             "results": rows,
             "row_count": len(rows),
         }), 200

@@ -36,6 +36,26 @@
   </div>
   {% endif %}
 
+  {# Scope + isolation posture (idp-mt-01). Shown only for a tenant-scoped
+     read: the platform's own view covers every registered component, so an
+     "unapproved for external offering" notice on it would be noise about a
+     thing that is not happening. #}
+  {% if tenancy and tenancy.scoped %}
+  <div class="alert {% if tenancy.external_offering_approved %}alert-info{% else %}alert-warning{% endif %} py-2 mb-3">
+    <strong>Scoped to tenant {{ tenancy.tenant_id }}.</strong>
+    Showing the {{ tenancy.scope_size }} component(s) this tenant has enabled, not the full platform estate.
+    {% if tenancy.notice %}
+      <div class="small mt-1">{{ tenancy.notice }}</div>
+    {% endif %}
+    <div class="small mt-1">
+      Isolation posture: <code>{{ tenancy.isolation_posture }}</code>
+      {% if tenancy.decision_record %}
+        &middot; decision record: <code>{{ tenancy.decision_record }}</code>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if scorecard_error %}
   <div class="alert alert-danger py-2 mb-3">
     <strong>Scorecard could not be evaluated.</strong>
