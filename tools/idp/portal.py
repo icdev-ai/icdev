@@ -22,13 +22,17 @@ strictly less than one that renders the catalog and names what is dark.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from tools.idp.constants import (
     CATALOG_COLUMNS,
     DEFAULT_LEVEL_COLOR,
     DEFAULT_SCORECARD_KEY,
+    GRADE_BADGE,
     KIND_LABELS,
     STATUS_BADGE,
+    UNASSESSED_BADGE,
+    UNASSESSED_LABEL,
 )
 
 #: Registry key of the portal itself — used by :func:`self_check` so the page
@@ -110,12 +114,14 @@ def build_catalog(facts: list[dict], report: dict[str, Any]) -> list[dict[str, A
     """Join facts with scorecard results into one row per component.
 
     Components with no scorecard result (an unparseable scorecard, or an entity
-    the collection dropped) keep their catalog row with ``level=None`` and
-    ``score=None``. Substituting 0 would be a lie shaped exactly like a real
-    failing grade.
+    the collection dropped) keep their catalog row with ``level=None``,
+    ``score=None`` and ``letter_grade=None``. Substituting 0 or "F" would be a
+    lie shaped exactly like a real failing grade — see ``assessed``, which is
+    the flag the template branches on.
     """
     by_entity = {str(r.get("entity")): r for r in report.get("results") or []}
     colors = _ladder_colors(report)
+    dimension_keys = [str(d.get("key")) for d in report.get("dimensions") or []]
 
     rows: list[dict[str, Any]] = []
     for fact in facts:
@@ -126,6 +132,11 @@ def build_catalog(facts: list[dict], report: dict[str, Any]) -> list[dict[str, A
             if result
             else []
         )
+        # Per-dimension cells, in the scorecard's declared order, so every row
+        # has the same columns whether or not that component was assessed on
+        # each one. A dimension missing from the result renders as a blank
+        # cell, never as a zero.
+        by_dim = {str(d.get("key")): d for d in (result or {}).get("dimensions") or []}
         rows.append({
             "key": key,
             "display_name": fact.get("display_name") or key,
@@ -133,13 +144,27 @@ def build_catalog(facts: list[dict], report: dict[str, Any]) -> list[dict[str, A
             "kind_label": KIND_LABELS.get(str(fact.get("kind")), str(fact.get("kind") or "")),
             "route": fact.get("route") or "",
             "owner": fact.get("owner") or "",
+            "owner_contact": fact.get("owner_contact") or "",
+            "on_call": fact.get("on_call") or "",
             "has_owner": bool(fact.get("has_owner")),
             "enabled": bool(fact.get("enabled")),
             "level": (result or {}).get("level"),
             "level_rank": (result or {}).get("level_rank", 0),
             "level_color": colors.get(str((result or {}).get("level")), DEFAULT_LEVEL_COLOR),
             "score": (result or {}).get("score"),
+            "letter_grade": (result or {}).get("letter_grade"),
+            "grade_class": GRADE_BADGE.get(
+                str((result or {}).get("letter_grade") or ""), UNASSESSED_BADGE
+            ),
+            # `graded`  — the scorecard produced a row for this component at all
+            # `assessed` — that row had at least one applicable rule to score
+            # They differ, and conflating them is how "nobody measured it"
+            # becomes "it scored zero".
             "graded": result is not None,
+            "assessed": bool((result or {}).get("assessed")),
+            "dimensions": [
+                _dimension_cell(by_dim.get(dk), dk) for dk in dimension_keys
+            ],
             "failure_count": len(failures),
             "failures": [str(o.get("identifier")) for o in failures],
             "completeness_declared": bool(fact.get("completeness_declared")),
@@ -147,8 +172,36 @@ def build_catalog(facts: list[dict], report: dict[str, Any]) -> list[dict[str, A
             "completeness_points": int(fact.get("completeness_points") or 0),
             "facts": fact,
         })
-    rows.sort(key=lambda r: (-(r["level_rank"] or 0), -(r["score"] or 0), r["key"]))
+    # Unassessed sorts last rather than first: `score or -1` keeps a real 0%
+    # (measured, failing) above a None (never measured), which is the order an
+    # engineer triaging the catalog wants.
+    rows.sort(key=lambda r: (-(r["level_rank"] or 0), -(r["score"] if r["score"] is not None else -1), r["key"]))
     return rows
+
+
+def _dimension_cell(dim: dict[str, Any] | None, key: str) -> dict[str, Any]:
+    """One catalog cell for one dimension — always present, possibly unassessed."""
+    if not dim:
+        return {
+            "key": key,
+            "label": key.replace("_", " ").title(),
+            "score": None,
+            "letter_grade": None,
+            "assessed": False,
+            "failure_count": 0,
+            "grade_class": UNASSESSED_BADGE,
+        }
+    return {
+        "key": str(dim.get("key") or key),
+        "label": str(dim.get("label") or key),
+        "score": dim.get("score"),
+        "letter_grade": dim.get("letter_grade"),
+        "assessed": bool(dim.get("assessed")),
+        "failure_count": int(dim.get("failure_count") or 0),
+        "grade_class": GRADE_BADGE.get(
+            str(dim.get("letter_grade") or ""), UNASSESSED_BADGE
+        ),
+    }
 
 
 def group_by_kind(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -194,6 +247,14 @@ def portal_overview(
         "window": report.get("window", ""),
         "ladder": report.get("ladder") or [],
         "level_distribution": report.get("level_distribution") or {},
+        "dimensions": report.get("dimensions") or [],
+        "grade_bands": report.get("grade_bands") or [],
+        "grade_distribution": report.get("grade_distribution") or {},
+        "grade_badge": dict(GRADE_BADGE),
+        "unassessed_badge": UNASSESSED_BADGE,
+        "unassessed_label": UNASSESSED_LABEL,
+        "adapter_module": report.get("adapter_module", ""),
+        "scorecard_source": report.get("source_path", ""),
         "rules": report.get("rules") or [],
         "rows": rows,
         "groups": group_by_kind(rows),
@@ -204,6 +265,11 @@ def portal_overview(
         "totals": {
             "components": len(rows),
             "graded": sum(1 for r in rows if r["graded"]),
+            # Counted separately from `graded` on purpose: the headline number
+            # the acceptance criterion cares about is how many components the
+            # scorecard actually had something to say about.
+            "assessed": sum(1 for r in rows if r["assessed"]),
+            "unassessed": sum(1 for r in rows if not r["assessed"]),
             "unowned": sum(1 for r in rows if not r["has_owner"]),
             "canvases": len(canvases),
             "completeness_passing": sum(1 for r in canvases if r["completeness_passed"]),
@@ -241,10 +307,47 @@ def component_detail(
         (r for r in report.get("results") or [] if str(r.get("entity")) == key), None
     )
     rule_titles = {str(r["identifier"]): str(r.get("title") or "") for r in report.get("rules") or []}
-    outcomes = [
-        {**o, "title": rule_titles.get(str(o.get("identifier")), "")}
-        for o in (result or {}).get("rules", [])
+
+    def _decorate(outcome: dict[str, Any]) -> dict[str, Any]:
+        """Attach the rule title and a runnable IQE link to one outcome."""
+        evidence = dict(outcome.get("evidence") or {})
+        identifier = str(outcome.get("identifier") or "")
+        return {
+            **outcome,
+            "title": rule_titles.get(identifier, ""),
+            "evidence": evidence,
+            # Resolves to rule_evidence() via GET /idp/evidence — which re-runs
+            # the rule's own query live. The reader can re-derive the verdict
+            # instead of trusting the badge.
+            "evidence_url": (
+                f"/idp/evidence?component={quote(key)}&rule={quote(identifier)}"
+                f"&scorecard={quote(str(report.get('scorecard') or scorecard_key))}"
+                if identifier
+                else ""
+            ),
+            "status_class": STATUS_BADGE.get(str(outcome.get("status")), "bg-secondary"),
+        }
+
+    outcomes = [_decorate(o) for o in (result or {}).get("rules", [])]
+    by_identifier = {str(o.get("identifier")): o for o in outcomes}
+    dimensions = [
+        {
+            **dim,
+            "grade_class": GRADE_BADGE.get(
+                str(dim.get("letter_grade") or ""), UNASSESSED_BADGE
+            ),
+            # Same decorated outcome objects, grouped — so each dimension on the
+            # page carries the evidence for its own score rather than pointing at
+            # a table somewhere else.
+            "outcomes": [
+                by_identifier[str(o.get("identifier"))]
+                for o in dim.get("rules") or []
+                if str(o.get("identifier")) in by_identifier
+            ],
+        }
+        for dim in (result or {}).get("dimensions") or []
     ]
+
     return {
         "key": key,
         "found": True,
@@ -252,10 +355,146 @@ def component_detail(
         "facts": fact,
         "level": (result or {}).get("level"),
         "score": (result or {}).get("score"),
+        "letter_grade": (result or {}).get("letter_grade"),
+        "grade_class": GRADE_BADGE.get(
+            str((result or {}).get("letter_grade") or ""), UNASSESSED_BADGE
+        ),
+        "assessed": bool((result or {}).get("assessed")),
+        "graded": result is not None,
+        "unassessed_label": UNASSESSED_LABEL,
+        "dimensions": dimensions,
         "outcomes": outcomes,
+        "adapter_module": report.get("adapter_module", ""),
+        "scorecard_source": report.get("source_path", ""),
+        "scorecard_key": report.get("scorecard", scorecard_key),
         "completeness": completeness_points(key),
         "scorecard_error": report.get("error", ""),
     }
+
+
+#: Fact fields that are derived from ``awareness_component_health`` probe rows.
+#: A rule reading one of these gets the underlying rows attached as evidence.
+PROBE_DERIVED_FIELDS = frozenset({"failing_probes", "health_probed"})
+
+
+def rule_evidence(
+    component: str,
+    identifier: str,
+    scorecard_key: str = DEFAULT_SCORECARD_KEY,
+    conn: Any = None,
+) -> dict[str, Any]:
+    """Re-derive one rule's verdict for one component, from source.
+
+    This is what the per-dimension evidence links resolve to. It does not read
+    a cached verdict and hand it back — it re-runs the rule's own IQE query
+    live and reports the passing set, so the caller can see the check execute
+    rather than take the badge's word for it.
+
+    Includes, where they exist:
+      * the exact IQE expression and filter, runnable by hand
+      * the component's observed value for every fact field the rule reads
+      * the probe rows behind a probe-derived fact
+      * the per-point breakdown behind the 8-point completeness fact
+    """
+    report = scorecard_report(scorecard_key, conn=conn)
+    if report.get("error"):
+        return {"found": False, "error": report["error"], "component": component, "rule": identifier}
+
+    rule = next(
+        (r for r in report.get("rules") or [] if str(r.get("identifier")) == identifier), None
+    )
+    if rule is None:
+        return {
+            "found": False,
+            "error": f"no rule {identifier!r} in scorecard {scorecard_key!r}",
+            "component": component,
+            "rule": identifier,
+        }
+
+    result = next(
+        (r for r in report.get("results") or [] if str(r.get("entity")) == component), None
+    )
+    outcome = next(
+        (o for o in (result or {}).get("rules") or [] if str(o.get("identifier")) == identifier),
+        None,
+    )
+    if outcome is None:
+        return {
+            "found": False,
+            "error": f"component {component!r} is not in this scorecard",
+            "component": component,
+            "rule": identifier,
+        }
+
+    evidence = dict(outcome.get("evidence") or {})
+    fact = _fact_index(component_facts(conn=conn)).get(component) or {}
+    fields = list(evidence.get("fields") or [])
+
+    sources: list[dict[str, Any]] = []
+    if PROBE_DERIVED_FIELDS.intersection(fields):
+        rows = _probe_rows(str(fact.get("route") or ""), conn=conn)
+        sources.append({
+            "kind": "probe_rows",
+            "table": "awareness_component_health",
+            "label": "HTTP probe rows for this component's routes",
+            "rows": rows,
+            # An empty list here is "never probed", and the template says so.
+            # Rendering it as "0 failures" would turn silence into a pass.
+            "measured": bool(rows),
+        })
+    if "completeness_passed" in fields or "completeness_points" in fields:
+        points = completeness_points(component)
+        sources.append({
+            "kind": "completeness_gate",
+            "table": "",
+            "label": "8-point dashboard-page completeness gate",
+            "rows": points.get("items") or [],
+            "measured": bool(points.get("declared")),
+        })
+
+    # Re-run the rule live rather than trusting the stored verdict.
+    passing = _run_rule(scorecard_key, str(rule.get("expression") or ""), conn=conn)
+
+    return {
+        "found": True,
+        "component": component,
+        "rule": identifier,
+        "title": rule.get("title", ""),
+        "dimension": rule.get("dimension", ""),
+        "weight": rule.get("weight", 0),
+        "level": rule.get("level"),
+        "status": outcome.get("status"),
+        "message": outcome.get("message", ""),
+        "evidence": evidence,
+        "scorecard": scorecard_key,
+        "scorecard_source": report.get("source_path", ""),
+        "adapter_module": report.get("adapter_module", ""),
+        "passing_count": len(passing),
+        "component_passes": component in passing,
+        "sources": sources,
+    }
+
+
+def _run_rule(scorecard_key: str, expression: str, conn: Any = None) -> set[str]:
+    """Execute one rule expression live and return the entity keys it matched."""
+    if not expression:
+        return set()
+    try:
+        from tools.idp.scorecard import _run_query, load_scorecard  # noqa: PLC0415
+
+        card = load_scorecard(scorecard_key)
+        return set(_run_query(expression, card, conn, where="evidence"))
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _probe_rows(route: str, conn: Any = None) -> list[dict[str, Any]]:
+    try:
+        from tools.iqe.adapters.idp import probe_evidence  # noqa: PLC0415
+
+        return probe_evidence(route, conn=conn)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def completeness_points(key: str) -> dict[str, Any]:

@@ -26,9 +26,11 @@ Routes:
   GET  /idp/catalog                 Portal focused on the catalog
   GET  /idp/scorecards              Portal focused on the scorecard
   GET  /idp/component/<key>         One component's facts, rules and 8 points
+  GET  /idp/evidence                Why one rule landed as it did (idp-ui-01)
   GET  /idp/api/catalog             JSON catalog
   GET  /idp/api/scorecard           JSON scorecard report
   GET  /idp/api/component/<key>     JSON component detail
+  GET  /idp/api/evidence            JSON rule evidence
   POST /idp/api/iqe-query           IQE natural-language query over idp.components
 """
 from __future__ import annotations
@@ -93,6 +95,39 @@ def idp_scorecards_page():
     return _render("scorecard")
 
 
+@bp.route("/evidence")
+def idp_evidence_page():
+    """Why one rule landed the way it did for one component.
+
+    Every per-dimension score on the catalog and the component page links
+    here. The page re-runs the rule's own IQE query rather than replaying a
+    stored verdict, and shows the fact fields, the probe rows and the 8-point
+    breakdown behind it — a score whose source cannot be traced is an
+    assertion, and this is where the trace lands.
+    """
+    from tools.idp.portal import rule_evidence
+
+    component = (flask_request.args.get("component") or "").strip()
+    rule = (flask_request.args.get("rule") or "").strip()
+    widget = {
+        "iqe_canvas": IQE_CANVAS,
+        "iqe_api_route": IQE_API_ROUTE,
+        "iqe_examples": list(IQE_EXAMPLES),
+        "iqe_title": "Ask the component catalog",
+    }
+    if not component or not rule:
+        return render_template(
+            "idp/evidence.html",
+            evidence={"found": False, "error": "component and rule are both required"},
+            **widget,
+        ), 400
+
+    detail = rule_evidence(component, rule, scorecard_key=_requested_scorecard())
+    return render_template("idp/evidence.html", evidence=detail, **widget), (
+        200 if detail.get("found") else 404
+    )
+
+
 @bp.route("/component/<key>")
 def idp_component_page(key: str):
     """One component: its facts, its per-rule outcomes, its 8 points."""
@@ -147,6 +182,20 @@ def idp_api_component(key: str):
     from tools.idp.portal import component_detail
 
     detail = component_detail(key, scorecard_key=_requested_scorecard())
+    return jsonify(detail), (200 if detail.get("found") else 404)
+
+
+@bp.route("/api/evidence")
+def idp_api_evidence():
+    """JSON form of /idp/evidence — ``?component=<key>&rule=<identifier>``."""
+    from tools.idp.portal import rule_evidence
+
+    component = (flask_request.args.get("component") or "").strip()
+    rule = (flask_request.args.get("rule") or "").strip()
+    if not component or not rule:
+        return jsonify({"error": "component and rule are both required"}), 400
+
+    detail = rule_evidence(component, rule, scorecard_key=_requested_scorecard())
     return jsonify(detail), (200 if detail.get("found") else 404)
 
 

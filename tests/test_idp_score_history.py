@@ -414,3 +414,66 @@ def test_rule_outcomes_round_trip_as_json_not_backend_sql(conn, facts):
     )["rule_outcomes"]
     assert isinstance(raw, str)
     assert json.loads(raw)["fail"] == ["has-owner"]
+
+
+# ---------------------------------------------------------------------------
+# Unassessed components (idp-ui-01)
+# ---------------------------------------------------------------------------
+
+
+def test_unassessed_component_is_not_recorded_as_zero(conn):
+    """A component with no applicable rule must not enter the series at 0%.
+
+    idp-ui-01 made `evaluate()` return `score=None` for an entity nothing
+    measured. `idp_scorecard_history.score` is `REAL NOT NULL DEFAULT 0`, so
+    persisting that would store `0.0` — and a 0 in a time series is a
+    measurement, indistinguishable from a component that was graded and failed
+    everything. `get_score_trend` would then show a drop to zero for a
+    component nobody ever probed.
+
+    So the writer skips it and reports the count. The measured zero alongside
+    it still records: the point is to tell the two apart, not to drop both.
+    """
+    report = {
+        "scorecard": "test-history",
+        "window": "24h",
+        "results": [
+            {
+                "entity": "measured-zero", "level": None, "level_rank": 0,
+                "score": 0.0, "earned_weight": 0, "total_weight": 10, "rules": [],
+            },
+            {
+                "entity": "never-measured", "level": None, "level_rank": 0,
+                "score": None, "earned_weight": 0, "total_weight": 0, "rules": [],
+            },
+        ],
+    }
+
+    result = persist_evaluation(report, conn=conn)
+
+    assert result["rows_written"] == 1
+    assert result["skipped_unassessed"] == 1
+    assert result["components"] == ["measured-zero"]
+
+    rows = conn.execute(
+        "SELECT component_key, score FROM idp_scorecard_history ORDER BY component_key"
+    ).fetchall()
+    recorded = {str(r["component_key"]): float(r["score"]) for r in rows}
+    assert recorded == {"measured-zero": 0.0}
+    assert "never-measured" not in recorded
+
+
+def test_a_fully_assessed_report_skips_nothing(conn, facts):
+    """The skip must not fire on the normal path.
+
+    Guards the obvious failure mode of the check above: a predicate that
+    accidentally matched every row would silently stop recording history
+    altogether, and `rows_written` would look like a working reflex reporting
+    zero work.
+    """
+    report = evaluate(_card(), conn=None)
+    assert all(r["score"] is not None for r in report["results"])
+
+    result = persist_evaluation(report, conn=conn)
+    assert result["skipped_unassessed"] == 0
+    assert result["rows_written"] == len(report["results"])
