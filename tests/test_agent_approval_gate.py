@@ -263,8 +263,8 @@ class TestGateHalts:
 # 3. Every decision is recorded, append-only, with actor and reason
 # ---------------------------------------------------------------------------
 def _migration_ddl() -> str:
-    path = REPO_ROOT / "tools" / "db" / "migrations" / "342_agent_approval_log" / "up.py"
-    spec = importlib.util.spec_from_file_location("_m342", path)
+    path = REPO_ROOT / "tools" / "db" / "migrations" / "20260803002224_agent_approval_log" / "up.py"
+    spec = importlib.util.spec_from_file_location("_m_agent_approval_log", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)

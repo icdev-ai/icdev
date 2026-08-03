@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Migration 342 — who approved the irreversible thing, and why.
+"""Migration 20260803002224 — who approved the irreversible thing, and why.
 
 ars-appr-01 added a reversibility gate to the agent loop. A gate whose verdicts
 are not recorded is unfalsifiable: nobody can answer "who let the agent force-push
@@ -40,7 +40,7 @@ from __future__ import annotations
 from tools.db.storage import get_connection, table_exists
 
 _TABLE = "agent_approval_log"
-_TAG = "[342_agent_approval_log]"
+_TAG = "[20260803002224_agent_approval_log]"
 
 # tier/decision vocabularies mirror TIERS and the decision literals in
 # tools/agent_runtime/approval_gate.py. CLAUDE.md: no second hardcoded copy that

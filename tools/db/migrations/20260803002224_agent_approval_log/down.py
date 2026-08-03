@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Migration 342 rollback — drop agent_approval_log.
+"""Migration 20260803002224 rollback — drop agent_approval_log.
 
 Dropping this destroys the only record of who authorised which irreversible
 action. Rolling back is a schema operation, not a routine one: take a dump first
