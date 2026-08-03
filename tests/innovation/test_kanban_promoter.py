@@ -491,3 +491,75 @@ def test_promote_empty_list_creates_nothing(recorded_create_tasks):
     result = kp.promote_signals([], CONFIG, dry_run=False)
     assert result["created"] == 0
     assert recorded_create_tasks == []
+
+
+# ---------------------------------------------------------------------------
+# Real write path — no mock between the promoter and the database
+# ---------------------------------------------------------------------------
+#
+# Everything above asserts the specs handed to a recorded create_tasks. That
+# cannot catch a spec whose columns the real kanban_tasks does not have: a
+# stubbed write reports success against a schema that would reject it. These
+# two tests run the actual task_factory against a real SQLite file whose
+# schema is built by the real init_kanban_tables(), so a column the promoter
+# invents — or one a migration removes — fails here instead of in production.
+
+
+@pytest.fixture
+def real_db(tmp_path, monkeypatch):
+    """Point storage at a throwaway SQLite file for one test.
+
+    monkeypatch.setenv so the pointer cannot leak into later tests or the
+    session: a stray ICDEV_DB_PATH silently redirects every subsequent
+    get_connection() at a dead tmpdir.
+    """
+    db = tmp_path / "kanban_proof.db"
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(db))
+    return db
+
+
+def _rows(db):
+    import sqlite3
+
+    con = sqlite3.connect(str(db))
+    con.row_factory = sqlite3.Row
+    try:
+        return [dict(r) for r in con.execute(
+            "SELECT id, status, dispatch_source, idempotency_key, "
+            "source_prediction_id FROM kanban_tasks"
+        )]
+    finally:
+        con.close()
+
+
+def test_real_write_creates_exactly_one_suggested_task(real_db):
+    """Criteria 1 and 4, through the real factory and the real schema."""
+    sig = _sig("sig-real-0001", "developer_experience", score=0.82)
+    eligible = kp.classify_signals([sig], CONFIG)["eligible"]
+
+    result = kp.promote_signals(eligible, CONFIG, dry_run=False)
+    assert result["created"] == 1
+
+    rows = _rows(real_db)
+    assert len(rows) == 1
+    assert rows[0]["status"] == "suggested"
+    assert rows[0]["dispatch_source"] == "innovation_promoter"
+    assert rows[0]["source_prediction_id"] == "sig-real-0001"
+    assert rows[0]["idempotency_key"] == "innovation-promoter:sig-real-0001"
+    # Nothing may reach the dispatchable column without a human.
+    assert not [r for r in rows if r["status"] == "backlog"]
+
+
+def test_real_write_rerun_creates_nothing(real_db):
+    """Criterion 2: the second run is a genuine no-op in the database."""
+    sig = _sig("sig-real-0002", "developer_experience", score=0.82)
+    eligible = kp.classify_signals([sig], CONFIG)["eligible"]
+
+    first = kp.promote_signals(eligible, CONFIG, dry_run=False)
+    second = kp.promote_signals(eligible, CONFIG, dry_run=False)
+
+    assert first["created"] == 1
+    assert second["created"] == 0
+    assert second["skipped_existing"] == 1
+    assert len(_rows(real_db)) == 1

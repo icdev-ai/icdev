@@ -111,7 +111,30 @@ python tools/innovation/kanban_promoter.py --promote-id <signal_id>
 
 ## Tests
 
-41 tests in `tests/innovation/test_kanban_promoter.py` covering the four
+43 tests in `tests/innovation/test_kanban_promoter.py` covering the four
 acceptance criteria: one gap verdict produces exactly one suggested task; a
 re-run produces none; the caps are enforced and logged when they truncate; and
 nothing can reach `backlog` without confirmation.
+
+41 of those assert against a recorded `create_tasks`. That is fast and precise
+about the specs, but it cannot catch a spec whose columns the real
+`kanban_tasks` does not have — a stubbed write reports success against a schema
+that would reject it. The last two run the **real** `task_factory` against a
+real SQLite file whose schema is built by the real `init_kanban_tables()`:
+
+```
+RUN 1 (real create_tasks): {'created': 1, 'task_ids': ['task-innov-0bd9bc49e9'],
+                            'skipped_existing': 0, 'status': 'suggested'}
+RUN 2 (same signal again): {'created': 0, 'task_ids': [],
+                            'skipped_existing': 1, 'status': 'suggested'}
+VERDICT: total=1 suggested=1 backlog=0
+```
+
+This is not hypothetical hardening. Building that proof against
+`tests/conftest.py`'s `kanban_tasks` fails outright: the conftest schema is
+missing `idempotency_key`, `acceptance_criteria`, `max_retries`,
+`max_runtime_seconds`, `loop_type`, `adversarial_enabled`, `source_doc_id` and
+`source_collection_id` — every one of which `create_tasks` writes. The fixture
+pins `ICDEV_DB_PATH` with `monkeypatch.setenv` so the pointer cannot leak into
+later tests; a stray one silently redirects every subsequent `get_connection()`
+at a dead tmpdir.
